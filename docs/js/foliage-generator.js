@@ -1932,7 +1932,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       let role;
       if(face.tag==='wall')role='walls';
       else if(face.tag==='roof')role='roofs';
-      else if(face.tag==='entryTunnel' && face.solidifiedWall &&
+      else if(face.tag==='entryTunnel' && !options.tunnelAsOpening && face.solidifiedWall &&
         !face.doorwayFrame&&!face.explicitSkywardCap &&
         ['north','south','east','west'].includes(face.extensionFace)){
         // Only the exterior planar sheet of a solidified tunnel side, never
@@ -1980,6 +1980,23 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       if(face.tag==='roof')volume.roof.push([face.v[0],face.v[1],face.v[2]],[face.v[0],face.v[2],face.v[3]]);
     }
     const volumes=[...sectionVolumes.values()].filter(v=>v.floor&&v.eave);
+    // Entrance tunnels act as window-like holes in the invisible growth guide,
+    // not as plantable walls. Their contact line becomes an outer region edge.
+    const entrances=[];
+    if(options.tunnelAsOpening) {
+      const tiles=new Map();
+      for(const face of Array.isArray(options.occlusionFaces)?options.occlusionFaces:[]){
+        if(face?.tag!=='entryTunnel'||!['floor','ceiling'].includes(face.extensionFace)||!Array.isArray(face.v))continue;
+        const key=(face.sourceTile?.x??'?')+','+(face.sourceTile?.y??'?');
+        if(!tiles.has(key))tiles.set(key,{});
+        tiles.get(key)[face.extensionFace]={minX:Math.min(...face.v.map(p=>p[0])),maxX:Math.max(...face.v.map(p=>p[0])),
+          minZ:Math.min(...face.v.map(p=>p[2])),maxZ:Math.max(...face.v.map(p=>p[2])),
+          y:face.v.reduce((n,p)=>n+p[1],0)/face.v.length};
+      }
+      for(const t of tiles.values())if(t.floor&&t.ceiling)entrances.push({
+        minX:t.floor.minX,maxX:t.floor.maxX,minZ:t.floor.minZ,maxZ:t.floor.maxZ,
+        minY:Math.min(t.floor.y,t.ceiling.y),maxY:Math.max(t.floor.y,t.ceiling.y)});
+    }
     const roofHeightAt=(volume,x,z)=>{
       let highest=-Infinity;
       for(const tri of volume.roof){
@@ -2006,16 +2023,18 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       return false;
     };
-    const exposedTriangles=(tri,section,depth=0)=>{
-      if(!section||!volumes.length)return [tri];
+    const exposedTriangles=(tri,section,depth=0,role='walls')=>{
+      if((!section||!volumes.length)&&(!entrances.length||role!=='walls'))return [tri];
       const [a,b,c]=tri,center=a.clone().add(b).add(c).multiplyScalar(1/3);
-      const hidden=[a,b,c,center].map(p=>insideOtherSection(p,section));
+      const hidden=[a,b,c,center].map(p=>insideOtherSection(p,section)||
+        (role==='walls'&&entrances.some(t=>p.x>t.minX+.001&&p.x<t.maxX-.001&&
+          p.z>t.minZ+.001&&p.z<t.maxZ-.001&&p.y>=t.minY-.01&&p.y<t.maxY+.001)));
       if(hidden.every(Boolean))return [];
       if(!hidden.some(Boolean))return [tri];
-      if(depth>=3)return hidden[3]?[]:[tri]; // At most 64 tiny subtriangles from a partially buried face.
+      if(depth>=(entrances.length&&role==='walls'?5:3))return hidden[3]?[]:[tri]; // At most 64 tiny subtriangles from a partially buried face.
       const ab=a.clone().add(b).multiplyScalar(.5),bc=b.clone().add(c).multiplyScalar(.5),ca=c.clone().add(a).multiplyScalar(.5);
       return [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]]
-        .flatMap(part=>exposedTriangles(part,section,depth+1));
+        .flatMap(part=>exposedTriangles(part,section,depth+1,role));
     };
     parent.updateWorldMatrix(true,true);
     const inverse=parent.matrixWorld.clone().invert(),vertex=new T.Vector3();
@@ -2037,7 +2056,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       if(source?.constructionOnly)continue; // Seam caps and internal extension framing never define exposed boundaries.
       for(let i=0;i+2<points.length;i+=3){
-        for(const [a,b,c] of exposedTriangles([points[i],points[i+1],points[i+2]],source.sectionId||'')){
+        for(const [a,b,c] of exposedTriangles([points[i],points[i+1],points[i+2]],source.sectionId||'',0,role)){
           if(!Number.isFinite(a.x+a.y+a.z+b.x+b.y+b.z+c.x+c.y+c.z))continue;
           const normal=b.clone().sub(a).cross(c.clone().sub(a));
           if(normal.lengthSq()<1e-12)continue;
@@ -2184,6 +2203,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       mesh.visible = false; mesh.layers.set(30); // Excluded from normal rendering and default UI raycasts.
       mesh.userData.surfaceFoliageGuide = true;
       mesh.userData.surfaceFoliageRecognizedRegion = source.recognizedSurface === true;
+      mesh.userData.surfaceFoliageOpeningMode = source.openingMode === true;
       mesh.userData.surfaceFoliageGuideOwner = parent.uuid; // The generating room/furniture owns its guides, not nested prefabs.
       mesh.userData.surfaceFoliageGuideId = String(source.id || source.label || count);
       mesh.userData.surfaceFoliageRenderLift = Math.max(0,Math.min(.6,Number(source.renderLift)||0)); // Render over coarse cladding while navigating the original plane. // Preserve distinct named furniture patches when tracing shared edges.
@@ -2214,7 +2234,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       if (!excluded && (settings.target === 'all' || (settings.target === 'selected' ? selected : role === settings.target))) targets.push(object);
     });
     if (settings.style !== 'natural' && settings.target !== 'shingles') {
-      const guides=targets.filter(mesh=>mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideOwner===parent.uuid); // Only authoritative planes may steer guided architectural/named growth.
+      const guides=targets.filter(mesh=>mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideOwner===parent.uuid && !!mesh.userData.surfaceFoliageOpeningMode===settings.tunnelAsOpening); // Only authoritative planes may steer guided architectural/named growth.
       if (guides.length) return guides;
     }
     return targets.filter(mesh=>!mesh.userData?.surfaceFoliageGuide); // Free growth never reads invisible guide duplicates.
@@ -2622,7 +2642,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const regions=surfaceTargets(parent,{...settings,style:'cornerFill'}).filter(mesh=>
         mesh.userData?.surfaceFoliageGuide &&
         mesh.userData.surfaceFoliageGuideOwner===parent.uuid &&
-        mesh.userData.surfaceFoliageRecognizedRegion===true);
+        mesh.userData.surfaceFoliageRecognizedRegion===true && !!mesh.userData.surfaceFoliageOpeningMode===settings.tunnelAsOpening);
       if(regions.length){
         const each=settings.style==='wrap'?Math.max(1,Math.round(settings.density*settings.strandLimit)):Math.min(settings.count,settings.strandLimit),details=[];
         const stats={meshes:regions.length,instances:regions.length,triangles:0,coverTriangles:0,
