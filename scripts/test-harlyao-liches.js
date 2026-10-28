@@ -384,7 +384,7 @@ assert.doesNotMatch(directImpact,/addGooSlow\(/,'Kanthic direct hits do not slow
 assert.match(directImpact,/if\(projectile.type==='kanthic'\)[\s\S]*?makeGasolinePuddle\([\s\S]*?return;/,'Kanthic impacts deposit plasm and exit before the direct-damage path');
 assert.match(puddleUpdate,/PUDDLE_SINK_SECONDS/,'Puddle contact must use sustained lethal immersion, not Entranced control');
 assert.match(lichSource,/PUDDLE_MAX_ACTIVE = 12/,'Visual collision budget must remain bounded');
-assert.match(lichSource,/isProtectedPlasmAt\?\.\(xPx/,'Boss spell impacts must spare protected ruin checkpoints');
+assert.match(lichSource,/isProtectedPlasmAt\?\.\(worldX,worldZ\)/,'Boss spell impacts must spare protected ruin checkpoints');
 assert.match(lichSource,/isProtectedPlasmAt\?\.\(actor.x\/tile/,'Respawned actors must be immune to overlapping boss plasm');
 
 // Isolated live-path test of material sharing, refresh, cap, overlap-safe immersion and cleanup.
