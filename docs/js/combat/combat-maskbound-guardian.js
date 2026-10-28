@@ -9,12 +9,12 @@
   const MASK_ID = 'hachutu_binding_mask_ii'; // All guardians carry the authored binding mask.
   const SCREAM_URL = 'assets/audio/sfx/utterances/sfx_maskbound_scream.mp3'; // Sole combat utterance file; all effects derive from its playback.
   const VOICE_EVENTS = Object.freeze({
-    breath: Object.freeze({ pitch: [-5, -1], tempo: [0.52, 0.82] }),
-    charge: Object.freeze({ pitch: [-8, 1], tempo: [0.73, 1.1] }),
-    strike: Object.freeze({ pitch: [-2, 7], tempo: [1.05, 1.55] }),
-    pain: Object.freeze({ pitch: [-9, 5], tempo: [0.72, 1.35] }),
-    dodge: Object.freeze({ pitch: [0, 8], tempo: [1.12, 1.65] }),
-  }); // Independent pitch and tempo envelopes preserve variety across combat events.
+    breath: Object.freeze([[-5, 0.57], [-3, 0.68], [-1, 0.79]]),
+    charge: Object.freeze([[-8, 0.80], [-4, 0.95], [0, 1.05]]),
+    strike: Object.freeze([[-2, 1.08], [2, 1.25], [6, 1.50]]),
+    pain: Object.freeze([[-8, 0.78], [-3, 0.96], [4, 1.28]]),
+    dodge: Object.freeze([[0, 1.18], [4, 1.38], [8, 1.60]]),
+  }); // Reusable pitch/tempo pairs preserve variety while hitting the mobile WSOLA audio-render cache.
   const TROOPS = Object.freeze({
     sentinel: Object.freeze({
       label: 'Maskbound Sentinel',
@@ -77,15 +77,15 @@
     const speciesId = entity?.rosterRecord?.appearance?.speciesId || entity?.appearance?.speciesId || entity?.speciesId;
     if (speciesId !== SPECIES_ID && entity?.isMaskboundGuardian !== true) return null;
     const kind = Object.hasOwn(VOICE_EVENTS, event) ? event : 'strike'; // Unknown action types still use the scream.
-    const envelope = VOICE_EVENTS[kind]; // Every voice is drawn from the same clip at a new pitch and tempo.
+    const variants = VOICE_EVENTS[kind]; // Short finite variations cache rendered waveforms instead of a unique expensive WSOLA pass each time.
+    const [eventPitch, eventTempo] = variants[Math.floor(Math.random() * variants.length)] || variants[0]; // One coherent pitch/tempo variant per attack or reaction.
     const troop = TROOPS[entity?.maskboundTroop || entity?.rosterRecord?.maskboundTroop] || TROOPS.sentinel;
-    const range = bounds => bounds[0] + Math.random() * (bounds[1] - bounds[0]);
     const troopPitch = troop === TROOPS.bulwark ? -4 : troop === TROOPS.reacher ? 3 : 0; // Broad guardians growl; tall guardians shriek.
     const troopTempo = troop === TROOPS.bulwark ? 0.86 : troop === TROOPS.reacher ? 1.1 : 1; // Mass changes the scream's rhythm.
     return {
       url: SCREAM_URL,
-      pitchOffsetSemitones: range(envelope.pitch) + troopPitch,
-      tempoMultiplier: range(envelope.tempo) * troopTempo,
+      pitchOffsetSemitones: eventPitch + troopPitch,
+      tempoMultiplier: Number((eventTempo * troopTempo).toFixed(3)),
       event: kind,
     };
   }
