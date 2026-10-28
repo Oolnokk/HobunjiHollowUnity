@@ -35,6 +35,7 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
 (async () => {
   const opened = []; // Tracks the existing NPC wardrobe's actual ID-keyed opening.
   let spouseId = 'aliri_ginju'; // Live spouse changes validate assignments, not a stale snapshot.
+  let familySnapshotCalls = 0; // Ensures per-frame focus checks do not repeatedly allocate full family snapshots.
   const popup = { syncInteractionPrompts() {} }; // An ordinary popup must survive untouched by the bridge.
   const w = {
     WorldPopupText: popup,
@@ -42,7 +43,8 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
     LocalDBOverrides: { loadDatabase: async () => runtimeDb },
     NpcWardrobe: { openWardrobePanel: id => { opened.push(id); return true; } },
     RomanceSystem: { getSpouse: () => spouseId ? { npcId: spouseId } : null, helpers: { npcName: id => id === 'aliri_ginju' ? 'Aliri' : id } },
-    RomanceFamily: { snapshot: () => ({ children: [{ id: 'child_tester', name: 'Hushka' }] }) },
+    RomanceFamily: { snapshot: () => { familySnapshotCalls++; return { children: [{ id: 'child_tester', name: 'Hushka' }] }; },
+      isWardrobeChild: id => id === 'child_tester', wardrobeChildName: id => id === 'child_tester' ? 'Hushka' : null },
   }; // Browser globals are limited to the public integration seams used in production.
   const fetchStub = async url => {
     const file = path.resolve(__dirname, '..', 'docs', url); // All registry/map calls use shipping relative URLs.
@@ -71,6 +73,8 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
   const childChest = { id: 'family-child', key: 'chest', npcWardrobeFor: 'child_tester', col: 5, row: 2 };
   assert.equal(api.ownerForPlacement('interior', spouseChest1).npcId, api.ownerForPlacement('interior', spouseChest2).npcId, 'duplicate furniture points at exactly one inventory key');
   assert.equal(api.ownerForPlacement('interior', childChest).npcId, 'child_tester');
+  for (let iteration = 0; iteration < 100; iteration++) api.ownerForPlacement('interior', childChest); // Simulate repeated camera-frame focus polls.
+  assert.equal(familySnapshotCalls, 0, 'repeated wardrobe targeting must not request heavy family snapshots');
   assert.equal(api.ownerForPlacement('interior', { key: 'desk', npcWardrobeFor: 'aliri_ginju' }), null, 'other furniture cannot masquerade as family storage');
   assert.equal(api.ownerForPlacement('farm', spouseChest1), null, 'family wardrobe assignment is house-only');
   assert.equal(api.ownerForPlacement('interior', { key: 'wardrobe', npcWardrobeFor: 'outsider' }), null, 'nonfamily wardrobe access is denied');
