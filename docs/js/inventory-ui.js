@@ -6,6 +6,7 @@
   let decorateQueued = false; // Coalesces mutation bursts into one presentation pass.
   let menuReadabilityObserver = null; // Re-applies menu readability rules after dynamic menu content/state changes.
   let menuReadabilityQueued = false; // Coalesces menu mutation/click refreshes into one computed-style pass.
+  let lastControllerPackPreview = null; // Exposed by debugSnapshot() to diagnose controller Pack highlighting on mobile.
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
   const DEBUG_BUTTON_ID = 'inventoryUiDebugButton'; // Stable id for the in-menu layout-debug control.
@@ -190,11 +191,21 @@
       if (meaningful) scheduleDecorate();
     });
     inventoryObserver.observe(pane, { childList:true, subtree:true, attributes:true, attributeFilter:['src'] }); // Async clothing composites finish by changing <img src>; observe only that attribute so Pack clones refresh once without polling/per-frame work.
+    pane.addEventListener('hobunji-controller-focus', previewControllerPackItem); // The pad's focus event previews Pack items without entering their actions.
     pane.addEventListener('click', scheduleDecorate, true);
     pane.addEventListener('click', event => {
       const categoryButton = event.target.closest?.('.inv-cat'); // Keeps the chosen filter in view when gamepad bumpers or touch move along the wider category row.
       categoryButton?.scrollIntoView?.({ block:'nearest', inline:'nearest', behavior:'auto' });
     }, true);
+  }
+
+  function previewControllerPackItem(event) {
+    const pane = document.getElementById('mpInventory'); // Limits previews to the currently visible Pack page.
+    if (!pane?.classList.contains('active') || pane.classList.contains('inv-mode-gear')) return;
+    const tile = event.target?.closest?.('#invGrid .inv-item-box:not(.empty)'); // Includes normal item stacks and integrated Pack clothing.
+    if (!tile || !pane.contains(tile) || tile.disabled || tile.style.display === 'none') return;
+    lastControllerPackPreview = { key: tile.dataset.key || null, stackId: tile.dataset.stackId || null, clothing: tile.classList.contains('pack-clothing-tile') }; // Live diagnostic identity, never used to select or mutate inventory.
+    tile.click(); // Reuse the existing detail-only selection path; Confirm still enters the action panel separately.
   }
 
   function installMenuReadability() {
@@ -903,6 +914,7 @@
       trinketsWithinOwnedGear: !!document.querySelector('#invEquipSection > .gear-owned-section .gear-owned-trinkets'),
       orphanTrinketGroups: document.querySelectorAll('#invEquipSection > .gear-owned-trinkets').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
+      lastControllerPackPreview, // Reports the most recently highlighted Pack stack/clothing for in-game diagnostics.
       selectedToolMasteryBar: masteryPanel && !masteryPanel.hidden ? masteryPanel.dataset.toolKey || true : false,
       masteryDataAccess: {
         toolDefs: !!combatDeps?.TOOL_ITEM_DEFS,
