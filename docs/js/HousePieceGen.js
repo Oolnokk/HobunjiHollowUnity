@@ -733,7 +733,6 @@
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
       applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
-      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
     }
 
     // Brick or generated-log cladding on frustum body walls + gable ends.
@@ -1571,6 +1570,7 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
     }
 
     // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
