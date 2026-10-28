@@ -12,6 +12,8 @@
   //                         height. 0.6 of 2.5 = 1.5x the original shell.
   //   tallRadiusTiles     - [full height within, eased down to the minimum by]
   //                         tiles from a ruin door.
+  //   entranceOpenSideColumns - extra solid columns opened on EACH side of a
+  //                         procedural cave mouth; 0 keeps the original width.
   //
   // Changing these only affects caves carved afterwards; already-visited
   // caves are re-carved the next time the page loads.
@@ -19,5 +21,6 @@
     fullHeightScale: 2.5,
     minHeightFraction: 0.6,
     tallRadiusTiles: [6, 16],
+    entranceOpenSideColumns: 2,
   };
 })();
