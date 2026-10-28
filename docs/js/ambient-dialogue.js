@@ -109,6 +109,8 @@
   }
 
   function greetingLinesFor(speakerId, targetId) {
+    const spouseLines = targetId === 'player' ? window.RomanceSystem?.spouseDialogueFor?.(speakerId)?.greetings : null; // Only the player's married partner receives the post-wedding pool.
+    if (spouseLines?.length) return spouseLines;
     const authored = state.settings.npcGreetings?.[speakerId];
     if (targetId === 'player' && authored?.player?.length) return authored.player;
     if (targetId !== 'player' && authored?.friends?.[targetId]?.length) return authored.friends[targetId];
@@ -135,6 +137,7 @@
   function playerGreetingPolicy(walker) {
     const npcId = walker?.rec?.id; // Used to apply the two NPC-specific greeting thresholds and the four actual-name exceptions in one event-time lookup.
     const favor = playerGreetingFavor(walker); // Used for both greeting eligibility and actual-name eligibility so favor is not fetched twice.
+    if (window.RomanceSystem?.spouseDialogueFor?.(npcId)) return { allowed: true, mayUseActualName: true }; // Marriage outranks old acquaintance greeting gates, even on a restored low-favor save.
     const playerSpeciesId = npcId === 'kinami_kunji' ? playerGreetingSpeciesId() : ''; // Used only for Kinami's Mao'ao exception, avoiding a species lookup for every other NPC.
     let allowed = true; // Used by tryGreeting to decide whether this already-dwelled proximity entry may actually fire.
     if (npcId === 'takua_ao_hakaru') allowed = favor >= 1;
@@ -250,7 +253,7 @@
     let firstL2V1 = '';
     for (const ch of playerName) { firstL2V1 += ch; if (vowels.has(ch)) break; }
     const dlgState = window.DialogueContent?.getNpcDlgState?.(rec?.id) || {};
-    const localNickname = dlgState.localNickname || playerName;
+    const localNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname || dlgState.localNickname || playerName; // Married partner's address agrees with conversation token resolution.
     let out = String(text || '')
       .replace(/\{\{npcName\}\}/g, rec?.name || '')
       .replace(/\{\{playerName\}\}/g, playerName)
@@ -276,6 +279,8 @@
 
   function conditionedPlayerNicknameFor(walker) {
     const rec = walker?.rec; // Used to find this NPC's conditioned Nicknames phrase pool.
+    const spouseNickname = window.RomanceSystem?.spouseDialogueFor?.(rec?.id)?.nickname; // An affectionate post-wedding name takes priority without destroying saved local nicknames.
+    if (spouseNickname) return spouseNickname;
     const pool = nicknamePoolFor(rec); // Used to preserve authored/conditioned nicknames even when the actual player name is relationship-gated.
     const entry = pickConditionedPoolEntry(pool, rec, walker); // Used to choose the same context-sensitive nickname normal ambient greetings already use.
     if (entry) {
@@ -871,7 +876,7 @@
       faceWalker: walker,
       faceTarget: target.root ? { root: target.root } : { x: target.x, z: target.z },
       faceMode: 'head', // Walking and seated greetings to either the player or another NPC preserve body/seat heading and use only the neck.
-      traceSource: override ? 'pending-request call-over line (procedural task)' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`,
+      traceSource: override ? 'pending-request call-over line (procedural task)' : (window.RomanceSystem?.spouseDialogueFor?.(speakerId) && targetId === 'player' ? 'config/romance-config.js married spouse greeting' : `config/dialogue/ambient-dialogue.json greeting template${lowFavorNickname ? ' + NPC "Nicknames" phrase pool (below +1 heart)' : ''}`),
     });
     return true;
   }
@@ -1051,6 +1056,7 @@
       return {
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
+        spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
     },
   };
