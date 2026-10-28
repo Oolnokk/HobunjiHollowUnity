@@ -49,6 +49,21 @@ for (let p = 0; p < W * H; p++) if (mask[p]) {
 for (let p = 0; p < W * H; p++) if (!mask[p]) for (let c = 0; c < 4; c++) assert.equal(out.pixels[p * 4 + c], src[p * 4 + c]);
 // Deterministic for a given seed.
 assert.deepEqual(Array.from(fillBridge(src, mask, W, H, { outlineThickness: 1, seed: 7 }).pixels), Array.from(out.pixels));
+// Both tones survive: the blocks' lit top band and shaded body continue into a stroke spanning both heights.
+const tall = new Uint8Array(W * H);
+stampLine(tall, W, H, { x: 12, y: 13 }, { x: 48, y: 13 }, 7);
+const banded = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: null });
+assert(banded.shaded > 0 && banded.unshaded > 0, 'Bridge keeps both shaded and unshaded tones.');
+assert.equal(banded.highlighted, 0);
+assert.deepEqual(get(banded.pixels, 30, 18).slice(0, 3), SHADE.slice(0, 3), 'Lower bridge continues the shaded body.');
+assert.deepEqual(get(banded.pixels, 30, 8).slice(0, 3), LIT.slice(0, 3), 'Upper bridge continues the lit band.');
+// Edge highlight lights only the light-facing new edge.
+const lowMask = new Uint8Array(W * H);
+stampLine(lowMask, W, H, { x: 12, y: 18 }, { x: 48, y: 18 }, 4);
+const lit = fillBridge(src, lowMask, W, H, { outlineThickness: 1, seed: 2, lightDirection: [0, -1], highlightWidth: 2 });
+assert(lit.highlighted > 0);
+assert.deepEqual(get(lit.pixels, 30, 16).slice(0, 3), LIT.slice(0, 3), 'Top edge of the bridge is highlighted.');
+assert.deepEqual(get(lit.pixels, 30, 20).slice(0, 3), SHADE.slice(0, 3), 'Bottom edge stays shaded.');
 // A stroke touching no metal is rejected with a clear message.
 const lonely = new Uint8Array(W * H);
 stampLine(lonely, W, H, null, { x: 30, y: 2 }, 1);

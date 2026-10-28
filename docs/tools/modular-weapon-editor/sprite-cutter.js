@@ -306,16 +306,21 @@
         ' Undo restores the previous image.');
     } catch (error) { status('Outline failed: ' + error.message); }
   };
+  function lightDirection() {
+    const value = byId('cut-bridge-light').value; // "x,y" toward the light in screen space, or "none".
+    return value === 'none' ? null : value.split(',').map(Number);
+  }
   byId('cut-bridge-fill').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite and finish the brush stroke first.'); return; }
     try {
       const thickness = Number(byId('cut-bridge-outline').value); // Black rim width where the bridge meets empty space.
       if (!Number.isInteger(thickness) || thickness < 0 || thickness > 32) throw new Error('Bridge outline thickness must be 0–32.');
       const outcome = global.ModularWeaponBridgeFill.fillBridge(pixels, brushMask, FRAME.width, FRAME.height,
-        { outlineThickness: thickness, minAlpha: minAlpha(), seed: Date.now() });
+        { outlineThickness: thickness, minAlpha: minAlpha(), seed: Date.now(), lightDirection: lightDirection(),
+          highlightWidth: Number(byId('cut-bridge-highlight').value) || 0 });
       pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
       status('Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
-        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded), ' + outcome.rim + ' black rim pixels. Undo restores the previous image.');
+        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.highlighted + ' edge-highlighted), ' + outcome.rim + ' black rim pixels. Undo restores the previous image.');
     } catch (error) { status('Bridge fill failed: ' + error.message); }
   };
   byId('cut-bridge-clear').onclick = () => { clearBrush(); renderNow(); status('Brush cleared.'); };
