@@ -61,7 +61,7 @@ assert.match(cornerSource,/offset=settings\.offset\+\(part\.record\.renderLift\|
 assert.match(cornerSource,/if\(settings\.curl>0\)/,'Curl must be a separate cosmetic pass after tracing the edge');
 assert.doesNotMatch(cornerSource,/settings\.radius\+settings\.offset|settings\.offset\+settings\.radius/,'Corner Fill centerline must not float a full radius off the seam');
 const houseAuthorSource=fs.readFileSync('docs/tools/house-piece-author/index.html','utf8');
-assert.match(houseAuthorSource,/renderLift:role==='roofs'\?\.16:0/,
+assert.match(houseAuthorSource,/architecturalSurfaceSources\(faces,\{wallLift:0,roofLift:\.16\}\)/,
   'Unbricked House Editor wall previews must never offset edge-following roots by a masonry clearance');
 assert.match(sourceOfStyles,/const correction=\(part\.otherPlane-n1\.dot\(raw\)\)\/denom/,
   'Gapped intersections must reproject the base spline onto both authoritative planes');
