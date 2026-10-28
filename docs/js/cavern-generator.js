@@ -66,7 +66,9 @@
     const radius = Array.isArray(config.tallRadiusTiles) ? config.tallRadiusTiles.map(Number) : [];
     const inner = Number.isFinite(radius[0]) && radius[0] >= 0 ? radius[0] : 6;
     const outer = Number.isFinite(radius[1]) && radius[1] > inner ? radius[1] : Math.max(inner + 1, 16);
-    return { full, minFraction, base: Math.max(1, full * minFraction), radius: [inner, outer] };
+    const requestedSideColumns = Number(config.entranceOpenSideColumns); // Validated before being passed to the procedural entrance sculptor.
+    const entranceOpenSideColumns = Number.isFinite(requestedSideColumns) ? Math.max(0, Math.min(8, Math.floor(requestedSideColumns))) : 2; // Extra open collision columns on each side of the mouth.
+    return { full, minFraction, base: Math.max(1, full * minFraction), radius: [inner, outer], entranceOpenSideColumns };
   }
   // Shared sculpt options for the tall, roofed cave shell. Growing sizeY
   // extends the probe's vertical sweep upward so the walls are genuinely
@@ -158,7 +160,7 @@
   function generateCavernFloor(seedText, generationOptions = {}) {
     const singleRoom = generationOptions.singleRoom === true; // Explicit callers may request a compact room; named story caves no longer leak into the generic generator through map-id special cases.
     const shape = caveShape(); // Height is part of the cache key so a config change re-carves.
-    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}:h${shape.base}`; // Used to prevent a normal den carve from poisoning the one-room cache.
+    const cacheKey = `${seedText}${generationOptions.fast ? ':fast' : ''}${singleRoom ? ':single-room' : ''}:h${shape.base}:e${shape.entranceOpenSideColumns}`; // Used to prevent a normal den carve from poisoning the one-room cache.
     const useCache = generationOptions.cache !== false; // Regenerating roguelike floors opt out so one cache entry is not retained for every visit.
     if (useCache && _cavernFloorCache.has(cacheKey)) return _cavernFloorCache.get(cacheKey);
     const makeRng = (typeof WildernessMapGenerator !== 'undefined' && WildernessMapGenerator.makeRng) ? WildernessMapGenerator.makeRng : (s => { let a = 1; for (let i = 0; i < s.length; i++) a = (a * 33 + s.charCodeAt(i)) >>> 0; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; });
@@ -186,7 +188,7 @@
       : generationOptions.fast
         ? { branchCount, entranceLength, tileSize, gridN: 32, splineSamples: 5, hitsPerStep: 1, probeDigBursts: 2, probeMaxPasses: 45, enforceWalkableClearance: 1 }
         : { branchCount, entranceLength, tileSize };
-    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(shape.base, seedText), solidOuterRim: true }, rng);
+    const result = window.CavernSculptor.carveMazeCavern({ ...sculptOptions, ...tallCaveSculptOptions(shape.base, seedText), solidOuterRim: true, entranceExtraColumnsPerSide: shape.entranceOpenSideColumns }, rng);
 
     // Shift every tile coordinate (and the mesh's X/Z) from the sculptor's
     // arbitrary centered local space into positive grid space, same +1
@@ -204,7 +206,8 @@
     const positions = result.mesh.positions;
     for (let i = 0; i < positions.length; i += 3) { positions[i] += shiftX; positions[i + 2] += shiftY; }
     const spawnTile = entranceTiles[Math.floor(entranceTiles.length / 2)]; // The guaranteed-walkable middle of the doorway.
-    const rockCovered = rockCoveredFloorTiles(claimedFloor, result.mesh, new Set([spawnTile.join(',')])); // Walkable tiles the shell still bulges over collide like the rock they render as.
+    const protectedEntrance = new Set(entranceTiles.map(tile => tile.join(','))); // Keeps every carved mouth tile open in collision, not just the central spawn tile.
+    const rockCovered = rockCoveredFloorTiles(claimedFloor, result.mesh, protectedEntrance); // Other walkable tiles under solid-looking shell still collide.
     const carvedFloor = claimedFloor.filter(tile => !rockCovered.has(tile.join(',')));
     for (const tile of claimedFloor) if (rockCovered.has(tile.join(','))) outerRimTiles.push(tile);
     const exitTiles = entranceTiles.filter(tile => !rockCovered.has(tile.join(','))); // A doorway end tile buried in the rock is not an exit.
