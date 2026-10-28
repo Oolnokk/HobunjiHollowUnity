@@ -1890,8 +1890,17 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // as independently growable, exposed surfaces.
   function architecturalSurfaceSources(faces, options={}) {
     const wallLift=Math.max(0,Number(options.wallLift)||0),roofLift=Math.max(0,Number(options.roofLift)||0);
-    const result=[];
-    for(const face of Array.isArray(faces)?faces:[]){
+    const result=[],tunnelOuter=new Map(),all=Array.isArray(faces)?faces:[];
+    for(const face of all)if(face?.tag==='entryTunnel'&&face.solidifiedWall&&
+        ['north','south','east','west'].includes(face.extensionFace)&&Array.isArray(face.v)){
+      const side=face.extensionFace,axis=(side==='north'||side==='south')?2:0;
+      const values=face.v.map(v=>v[axis]);
+      if(Math.max(...values)-Math.min(...values)>.001)continue;
+      const key=(face.sourceTile?.x??'')+','+(face.sourceTile?.y??'')+':'+side;
+      const outer=tunnelOuter.get(key),value=values[0],isMin=side==='north'||side==='west';
+      if(outer===undefined||(isMin?value<outer:value>outer))tunnelOuter.set(key,value);
+    }
+    for(const face of all){
       if(!Array.isArray(face?.v)||face.v.length!==4||face.seamCap||face.watertightSeam||face.highlandFrustumBottom||face.highlandFrustumTop)continue;
       let role;
       if(face.tag==='wall')role='walls';
@@ -1904,9 +1913,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         const coord=(face.extensionFace==='north'||face.extensionFace==='south')?2:0;
         const values=face.v.map(p=>p[coord]);
         if(Math.max(...values)-Math.min(...values)>.001)continue;
-        const outer=face.extensionFace==='north'||face.extensionFace==='west'
-          ? Math.min(...values):Math.max(...values);
-        if(Math.abs(values[0]-outer)>.001)continue;
+        const key=(face.sourceTile?.x??'')+','+(face.sourceTile?.y??'')+':'+face.extensionFace;
+        if(Math.abs(values[0]-tunnelOuter.get(key))>.001)continue;
         role='walls';
       }else continue;
       result.push({
