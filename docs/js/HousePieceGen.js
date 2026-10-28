@@ -732,7 +732,7 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
-      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
+
     }
 
     // Brick or generated-log cladding on frustum body walls + gable ends.
@@ -772,6 +772,10 @@
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    // User-selected finish wins over biome/farm structure tints, and is
+    // applied only to this house's shingle material copies.
+    if(opts.shingleMaterial)for(const child of group.children)
+      if(child.userData?.surfaceFoliageRole==='shingles')applyAuthoredShingleFinish(THREE,child,opts.shingleMaterial);
     // Architectural navigation follows pre-cladding wall/gable/roof faces, including actual door/window cuts.
     // Invisible, non-raycastable guides are independent of randomized brick and stacked-log geometry.
     if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
@@ -1570,7 +1574,7 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
-      applyAuthoredShingleFinish(THREE,shingleLayer,opts.shingleMaterial);
+
     }
 
     // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
@@ -1609,6 +1613,10 @@
       group.add(global.HouseWallFixtures.createGroup(THREE, piece, fixtureWorldPoint));
     }
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    // User-selected finish wins over biome/farm structure tints, and is
+    // applied only to this house's shingle material copies.
+    if(opts.shingleMaterial)for(const child of group.children)
+      if(child.userData?.surfaceFoliageRole==='shingles')applyAuthoredShingleFinish(THREE,child,opts.shingleMaterial);
     // The transformed source faces, not WallBuilder bricks or generated log courses, are the navigation authority.
     if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
       // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
