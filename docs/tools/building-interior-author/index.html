@@ -1840,7 +1840,7 @@ function rebuild3D(){
         renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0});
     });
     const foliage=window.FoliageGenerator.forThree(THREE);
-    foliage.replaceSemanticSurfaceGuides(previewGroup,foliage.recognizeArchitecturalSurfaceRegions(previewGroup,guideSources));
+    foliage.replaceSemanticSurfaceGuides(previewGroup,foliage.recognizeArchitecturalSurfaceRegions(previewGroup,guideSources,{clipCoplanarOverlaps:true}));
   }
   var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same architectural planes used by the editor.
   if(growthReport)log(growthReport);
