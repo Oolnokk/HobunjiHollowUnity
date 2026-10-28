@@ -159,4 +159,26 @@ assert.deepStrictEqual(cueCalls.map(c => [c.url, c.pitch]), [
   ['dart-load', 1], ['crossbow-load', 1], ['arrow-shot', 2], ['arrow-shot', 1], ['arrow-shot', 2],
 ], 'blowgun load and shot cues must be weapon-specific for both players and NPCs');
 
+// Execute the actual projectile→impact router, not merely a regex on its source.
+const impactStart = ranged.indexOf('  function playProjectileImpactSfx('); // Beginning of the shipped impact dispatcher.
+const impactEnd = ranged.indexOf('\n  function projectileHit(', impactStart); // End of the dispatcher, before collision resolution.
+assert(impactStart >= 0 && impactEnd > impactStart, 'projectile impact router must remain testable');
+const impactCalls = []; // Confirms per-projectile classification reaches the audio API with an unchanged location.
+const impactContext = {
+  window: { AudioSystem: {
+    playRangedImpactSfx: (x, y, areaId, pitch) => impactCalls.push({ x, y, areaId, pitch }),
+    playWeaponHitSfx: () => impactCalls.push({ thrown: true }),
+  } },
+};
+vm.runInNewContext(ranged.slice(impactStart, impactEnd) + '\nglobalThis.playImpact = playProjectileImpactSfx;', impactContext);
+const dart = { prevX: 0, prevY: 0, x: 20, y: 10, areaId: 'farm', def: { rangedType: 'blowgun' } }; // Projectile impact at half-segment uses (10,5).
+impactContext.playImpact(dart, 0.5);
+impactContext.playImpact({ ...dart, def: { rangedType: 'crossbow' } }, 0.5);
+impactContext.playImpact({ ...dart, def: { rangedType: 'thrown', dmgType: 'sharp' } }, 0.5);
+assert.deepStrictEqual(impactCalls, [
+  { x: 10, y: 5, areaId: 'farm', pitch: 2 },
+  { x: 10, y: 5, areaId: 'farm', pitch: 1 },
+  { thrown: true },
+], 'blowgun darts double impact pitch without changing arrow/crossbow/thrown hits');
+
 console.log('combat SFX wiring: ok');
