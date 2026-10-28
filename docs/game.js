@@ -5970,7 +5970,8 @@
         // Prism (group) tracks the raw aim angle freely — deadzone only governs
         // the interior PNG plane, not the prism's spatial orientation or the
         // movement/targeting logic that drives aimAngle.
-        c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
+        if (kickPoseHeld) c.groupRot = rawTargetRotY; // Finish the 180° turn at impact rather than leaving the render rig slowly rotating through the held pose.
+        else c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
         // PNG planes get a separate deadzone from the prism, never freely
@@ -5991,7 +5992,9 @@
         c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Convert world-bearing hints into this creature's sprite yaw convention.
         window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(creatureMoveX, creatureMoveY) : null);
         const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
-        if (shoulderPetBypassesPlaneDeadzone) {
+        if (kickPoseHeld) {
+          // Preserve the same camera-facing PNG orientation across the full kick hold. Camera deadzone easing must not keep turning a supposedly frozen silhouette.
+        } else if (shoulderPetBypassesPlaneDeadzone) {
           // A perched animal already gets its final orientation from the authored
           // shoulderPerch/shoulderGrip solve below. Running the generic creature
           // billboard deadzone here rotates a flat card around its own center —
