@@ -46,7 +46,14 @@ assert.match(sourceOfStyles,/if\s*\(settings\.style==='cornerFill'\)appendCorner
 assert.match(sourceOfStyles,/settings\.style==='wrap'\?new Map\(\)/,'Wrap must share a per-layer coverage grid to avoid duplicating occupied paths');
 assert.match(sourceOfStyles,/appendDenseCover\(group,triangles,settings\)/,'Maximum density must use a conformal cover, not unbounded extra tube geometry');
 assert.match(sourceOfStyles,/Math\.min\(settings\.density>=\.995\?24:96/,'Strand geometry must stay capped for mobile');
-assert.match(sourceOfStyles,/Math\.round\(settings\.count\*\(\.25\+settings\.density\*1\.75\)\)/,'Wrap count must remain an effective strand-complexity budget');
+assert.match(sourceOfStyles,/Math\.round\(Math\.min\(settings\.count,settings\.strandLimit\)\*\(\.25\+settings\.density\*1\.75\)\)/,
+  'Wrap must respect the strand count and per-surface limit when calculating its density budget');
+assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).strandLimit,2);
+assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).perSurface,true);
+assert.equal(api.normalizeSurfaceGrowth({strandLimit:999}).strandLimit,80);
+assert.equal(api.normalizeSurfaceGrowth({style:'natural'}).perSurface,false,'Legacy Natural preserves original full-mesh behavior');
+assert.match(generatorSource,/function architecturalSurfaceSources\(/,'All architectural editors must use common exposed-surface source policy');
+assert.match(generatorSource,/insideOtherSection\(/,'Recognition must clip triangles hidden within overlapping sections');
 assert.match(sourceOfStyles,/const coverageKey=\(p,n\)=>/,'Occupancy must distinguish perpendicular surface faces');
 const cornerSource=sourceOfStyles.slice(sourceOfStyles.indexOf('function appendCornerGrowth('),sourceOfStyles.indexOf('function appendDenseCover('));
 assert.match(cornerSource,/const raw=sample\.point\.clone\(\)/,'Corner Fill must start each spline point on the exact architectural edge');
