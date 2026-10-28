@@ -64,7 +64,7 @@ window.SurfaceFoliageAuthoring = (() => {
     panel.querySelector('[data-action="apply"]').onclick = () => {
       try {
         const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
-        for(const key of ['kind','target','style','density','seed','count','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
+        for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
         input.perSurface=field('perSurface').checked;
         input.targetIds=input.target==='selected' ? adapter.selectedIds() : [];
         if(input.target==='selected'&&!input.targetIds.length){
