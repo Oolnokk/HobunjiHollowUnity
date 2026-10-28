@@ -329,7 +329,13 @@
       row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
         if ((deps.inventory.gold || 0) < item.price) { deps.showToast('Not enough ganang.', false); return; }
         deps.inventory.gold = (deps.inventory.gold || 0) - item.price;
-        deps.getPackClothing().push({ ...item });
+        const ownedClothing = deps.getPackClothing(); // Purchases are literal articles; the store's daily listing ID is not an instance ID.
+        let purchasedUid; // Used to make repeated buys of one day's listing individually selectable and sellable.
+        let purchaseSerial = 0; // Ensures a collision can never loop forever when time/random sources repeat.
+        do {
+          purchasedUid = item.uid + '_' + Date.now().toString(36) + '_' + (++purchaseSerial).toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+        } while (ownedClothing.some(article => article?.uid === purchasedUid));
+        ownedClothing.push({ ...item, uid: purchasedUid });
         deps.showToast('Bought ' + item.label + '!', true);
         renderGeneralStorePage(); deps.buildInventoryGrid(); deps.buildPackClothingSection();
         deps.saveMemberWorldData();
