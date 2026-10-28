@@ -2125,6 +2125,23 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             if(other===edge.record||visited.has(other))continue;
             visited.add(other);
             const dot=other.normal.dot(edge.normal),planeGap=other.normal.dot(mid)-other.plane;
+            if(edge.record.recognizedRegion&&other.recognizedRegion&&
+               edge.sourceId===other.sourceSurfaceId&&dot>.985&&Math.abs(planeGap)<.012){
+              // Coplanar T-junctions belong to one recognized surface even if
+              // their triangle edges were subdivided differently. A midpoint
+              // that lies along another triangle's *edge* is an internal seam.
+              const vs=[other.triangle.a,other.triangle.b,other.triangle.c];
+              for(let j=0;j<3;j++){
+                const side=vs[(j+1)%3].clone().sub(vs[j]);
+                const sideSq=side.lengthSq();
+                if(sideSq<1e-10)continue;
+                const t=clamp(mid.clone().sub(vs[j]).dot(side)/sideSq,0,1);
+                scratch.copy(vs[j]).addScaledVector(side,t);
+                if(scratch.distanceToSquared(mid)<.008*.008){
+                  edge.hiddenInternal=true;return true;
+                }
+              }
+            }
             if(dot>.9||dot<-.6||planeGap*planeGap>gapSq)continue;
             other.triangle.closestPointToPoint(mid,scratch);
             if(scratch.distanceToSquared(mid)<gapSq){
@@ -2137,14 +2154,17 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           if(probe(cells.get(keyOf(x+ix,y+iy,z+iz))))break outer;
         }
       }
+      if(edge.hiddenInternal)continue;
       if(edge.other)corners.push(edge);
       else if(edge.faces===1||edge.semanticBoundary)boundaries.push(edge); // Wrap starts on named furniture-region edges too.
     }
-    return {corners,boundaries,all:edges};
+    return {corners,boundaries,all:edges,outlineRecognized:triangles.some(record=>record.recognizedRegion)};
   }
 
   function appendCornerGrowth(guide,settings,random,seed,geometries) {
-    const edges=guide.corners,adj=new Map(); // Only the actual intersections of named/architectural planes can guide the spline.
+    const edges=guide.outlineRecognized
+      ? guide.corners.concat(guide.boundaries) // A recognized flat wall or gable has an outer perimeter too.
+      : guide.corners,adj=new Map(); // Legacy natural-geometry Corner Fill still follows sharp intersections only.
     if(!edges.length)return;
     for(const edge of edges)for(const key of [edge.ak,edge.bk]){
       if(!adj.has(key))adj.set(key,[]);
@@ -2320,7 +2340,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     group.userData.surfaceGrowthStats = { meshes: targets.length, instances: surfaceCopies, triangles: triangles.length, samplingReused: !!shared }; // Mobile-friendly evidence that a second cave layer shared the expensive source-surface scan.
     if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
     const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
-    const guide=settings.style==='natural'?null:surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,settings.radius,settings.style==='cornerFill'); // Edge topology is computed only for guided styles.
+    const guide=settings.style==='natural'?null:surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,settings.radius,settings.style==='cornerFill'||triangles.some(record=>record.recognizedRegion)); // Edge topology is computed only for guided styles.
     group.userData.surfaceGrowthStats.guideCorners=guide?.corners.length||0; // Mobile-visible evidence of architectural edges instead of brick micro-creases.
     group.userData.surfaceGrowthStats.guideBoundaries=guide?.boundaries.length||0; // Counts the edges Wrap may start on, including named furniture region borders.
     group.userData.surfaceGrowthStats.guidedBySemanticSurfaces=targets.some(mesh=>!!mesh.userData?.surfaceFoliageGuide);
