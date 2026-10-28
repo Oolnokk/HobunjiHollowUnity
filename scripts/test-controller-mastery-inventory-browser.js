@@ -65,7 +65,12 @@ const root = path.resolve(__dirname, '..');
             });
           }
         };
-        window.EquipmentPanel = { init() {} };
+        window.__clothingClicks = 0;
+        window.EquipmentPanel = { init() {}, previewPackClothingItem(uid) { // Browser adapter verifies that focus calls preview, not clothing's click handler.
+          window.__clothingPreviewUid = uid;
+          delete document.getElementById('iiDetail').dataset.itemKey;
+          document.getElementById('iiName').textContent = 'Traveler Coat';
+        } };
         window.Combat = { deps: {} };
         window.InventoryStacks = { applyHeadIcon() {} };
         window.CookingSystem = { valueMultiplierForStars: () => 1 };
@@ -118,7 +123,9 @@ const root = path.resolve(__dirname, '..');
           tile.dataset.stackId = key + '|plain|0';
           tile.dataset.ctrlDetail = 'invInfo';
           tile.textContent = items.ITEM_DEFS[key].label;
-          tile.onclick = () => select(key, false, { key, count: items.inventory[key], stackId: tile.dataset.stackId });
+          const stack = { key, count: items.inventory[key], stackId: tile.dataset.stackId }; // Captured exact stack identity is used by click and passive focus.
+          tile.onclick = () => select(key, false, stack);
+          tile.addEventListener('hobunji-controller-focus', () => select(key, true, stack));
           document.getElementById('invGrid').appendChild(tile);
         }
       }, gameSource.slice(first, last));
@@ -136,6 +143,7 @@ const root = path.resolve(__dirname, '..');
             key: tile.dataset.key,
             name: document.getElementById('iiName').textContent,
             selected: tile.classList.contains('selected'),
+            selectedIdentity: document.querySelector('#invGrid .inv-item-box.selected')?.dataset?.key || null,
             group: window.ControllerUI.debugState().groupId,
             count: window.__items.inventory[tile.dataset.key],
             debugKey: window.InventoryUI.debugSnapshot().lastControllerPackPreview?.key,
@@ -150,12 +158,24 @@ const root = path.resolve(__dirname, '..');
         assert.ok(preview.name.endsWith(' ×1'), 'every hovered item renders its own stack detail');
         if (preview.key === 'apple') assert.equal(preview.name, 'Apple ×1');
         else assert.notEqual(preview.name, 'Apple ×1');
-        assert.equal(preview.selected, true);
+        assert.equal(preview.selected, false, 'controller highlight must not select an item');
+        assert.equal(preview.selectedIdentity, null, 'no implicit selection is created by controller navigation');
         assert.equal(preview.group, 'invGridArea', 'highlight alone must never enter the detail action group');
         assert.equal(preview.count, 1, 'highlight must not consume or use an item');
         assert.equal(preview.debugKey, preview.key);
       }
       if (previews.focusedKey) assert.equal(previews.focusedName, previews.snapshots.find(row => row.key === previews.focusedKey).name);
+
+      const selectedWhilePreviewing = await page.evaluate(() => { // A previously confirmed selection survives a new highlight.
+        const apple = document.querySelector('#invGrid .inv-item-box[data-key="apple"]');
+        apple.click();
+        const tablet = Array.from(document.querySelectorAll('#invGrid .inv-item-box[data-key]')).find(tile => tile.dataset.key !== 'apple');
+        tablet.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true }));
+        return { selected: document.querySelector('#invGrid .inv-item-box.selected')?.dataset.key, previewKey: document.getElementById('iiDetail').dataset.itemKey, name: document.getElementById('iiName').textContent };
+      });
+      assert.equal(selectedWhilePreviewing.selected, 'apple', 'controller focus must preserve the last explicitly selected item');
+      assert.ok(selectedWhilePreviewing.previewKey && selectedWhilePreviewing.previewKey !== 'apple', 'direct-use binds to the item currently shown in details');
+      assert.notEqual(selectedWhilePreviewing.name, 'Apple ×1', 'the details follow preview rather than the last selection');
 
       const clothingPreview = await page.evaluate(() => {
         const source = document.createElement('div'); // Mirrors the hidden Pack clothing source that InventoryUI clones into the grid.
@@ -164,7 +184,7 @@ const root = path.resolve(__dirname, '..');
         coat.className = 'inv-pcloth-item';
         coat.dataset.key = 'coat-preview';
         coat.textContent = 'Traveler Coat';
-        coat.addEventListener('click', () => { document.getElementById('iiName').textContent = 'Traveler Coat'; });
+        coat.addEventListener('click', () => { window.__clothingClicks++; document.getElementById('iiName').textContent = 'Traveler Coat'; });
         source.appendChild(coat);
         document.getElementById('mpInventory').appendChild(source);
         window.InventoryUI.decorate();
@@ -175,10 +195,16 @@ const root = path.resolve(__dirname, '..');
           selected: tile.classList.contains('selected'),
           preview: window.InventoryUI.debugSnapshot().lastControllerPackPreview,
           group: window.ControllerUI.debugState().groupId,
+          oldSelection: document.querySelector('#invGrid .inv-item-box.selected')?.dataset.key,
+          clicks: window.__clothingClicks,
+          uid: window.__clothingPreviewUid,
         };
       });
       assert.equal(clothingPreview.name, 'Traveler Coat', 'clothing clones must preview through the same source as clicking');
-      assert.equal(clothingPreview.selected, true);
+      assert.equal(clothingPreview.selected, false, 'focus does not actively select clothing');
+      assert.equal(clothingPreview.oldSelection, 'apple', 'clothing preview preserves the explicit Pack selection');
+      assert.equal(clothingPreview.clicks, 0, 'clothing preview must not synthesize a click');
+      assert.equal(clothingPreview.uid, 'coat-preview');
       assert.equal(clothingPreview.preview.key, 'coat-preview');
       assert.equal(clothingPreview.preview.clothing, true);
       assert.equal(clothingPreview.group, 'invGridArea');
