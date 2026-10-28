@@ -370,7 +370,9 @@
     const directAngle = Math.atan2(ctx.target.y - c.y, ctx.target.x - c.x);
     const master = c.master || deps.player;
     const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
-    state.angle = Math.atan2(
+    const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Checks whether an extended-range companion charge should commit directly toward its enemy.
+    const extendingCharge = c.isCompanion && targetDistancePx > (Number(c.def.attackRangePx) || 0); // Preserves the old master-defensive blend for attacks already within melee reach.
+    state.angle = extendingCharge ? directAngle : Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
@@ -379,9 +381,8 @@
     const pounceReachPx = halfSize + halfSize * 2 * 1.5;
     state.distancePx = pounceReachPx / 3;
     state.rangePx = c.def.attackRangePx;
-    if (c.isCompanion && ctx.target) {
-      const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Extends this existing one-shot Guard Charge rather than prepending another separate charge.
-      state.distancePx = Math.min(COMPANION_LUNGE_MAX_TILES * deps.TILE, Math.max(state.distancePx, targetDistancePx - state.rangePx + deps.TILE * 0.08));
+    if (extendingCharge) {
+      state.distancePx = Math.min(COMPANION_LUNGE_MAX_TILES * deps.TILE, Math.max(state.distancePx, targetDistancePx - state.rangePx + deps.TILE * 0.08)); // Extend the ONE native charge, not a second generic approach.
     }
     state.halfConeRad = c.def.attackHalfConeRad;
     state.targets = gatherTargets(c, deps);
