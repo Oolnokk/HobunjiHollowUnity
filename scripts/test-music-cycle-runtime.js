@@ -49,7 +49,7 @@ async function createRuntime(area = 'map_northern_cliffs') {
   window.Music.init({
     getCurrentArea: () => live.area, getHour: () => live.hour, getPaused: () => false, getGameStarted: () => true,
     player: { x: 64, y: 64 }, TILE: 64, // Positional door-audio regression uses a listener one tile from its source.
-    isPlayerInCombat: () => live.combat, _isZoneArea: () => true,
+    isPlayerInCombat: () => live.combat, _isZoneArea: area => area === 'map_northern_cliffs' || area === 'map_western_slope', // Generated ruins are interior maps, not exterior zones.
     EXTERIOR_ZONES: { map_northern_cliffs: {}, map_western_slope: {} }, getWorkspaceMaps: () => [],
     calendar: { day: 1, weather: 'clear', isRaining: false }, MORNING_HOUR: 6,
     clamp: (v, min, max) => Math.min(max, Math.max(min, v)),
