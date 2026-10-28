@@ -25625,7 +25625,9 @@
           // otherwise come out fully crisp, reading as a cutout hole in the
           // haze around it. depthTest still applies, so this correctly
           // leaves outlines on anything nearer than the mist untouched.
-          if (s_cloudForestFog) {
+          // Skipped outside the Cloud Forest: with no mist attached it drew
+          // nothing but still cost a full scene traversal every frame.
+          if (s_cloudForestFog && window.CloudForestFog?.isActive?.()) {
             const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
             camera.layers.set(5);
             renderer.render(activeScene, camera);
@@ -29705,6 +29707,7 @@
         TILE,
         getPlayerGroundY: _playerGroundY,
         getActiveScene: window.GridTileAccessors.getActiveScene,
+        getCurrentArea: () => currentArea,
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
       });
 

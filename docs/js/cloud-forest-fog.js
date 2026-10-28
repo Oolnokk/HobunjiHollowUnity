@@ -39,6 +39,13 @@
   // Settings-tab slider can change these without touching the defaults.
   const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
   const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
+  // Mines, animal dens and the Kanthic ruin borrow the Cloud Forest's
+  // midnight look instead of a flat near-black overlay: the skydome's deepest
+  // night stop for the overlay, plus near-black fog and mist that swallow the
+  // distance while nearby things stay readable.
+  const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
+  const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
+  let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
     cloudForest: Object.freeze({
@@ -274,9 +281,8 @@
     return { ...base, a: clamp01(base.a + currentLunarDarknessAddition()) };
   }
 
-  function updateFogLighting(activeScene) {
+  function updateFogLighting(activeScene, light = getFullDayLighting()) {
     if (!fogDayColor || !fogTimeColor || !fogResultColor) return;
-    const light = getFullDayLighting();
     fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
 
     const cloudTuning = tuning.cloudForest;
@@ -303,21 +309,44 @@
     }
   }
 
+  // Swaps in dark fog on an underground scene (which has none of its own
+  // tuned for this) and puts the original back once the player leaves it.
+  function syncUndergroundFog(scene) {
+    if (undergroundFogOverride?.scene === scene) return;
+    if (undergroundFogOverride) {
+      const { scene: prior, fog, background } = undergroundFogOverride;
+      prior.fog = fog;
+      prior.background = background;
+      undergroundFogOverride = null;
+    }
+    if (!scene) return;
+    undergroundFogOverride = { scene, fog: scene.fog, background: scene.background };
+    scene.fog = new deps.THREE.FogExp2(0x000000, UNDERGROUND_FOG_DENSITY);
+    if (scene.background?.isColor) scene.background = scene.background.clone();
+  }
+
   function update(dt) {
     if (!deps || !group) return;
-    const active = deps.isCloudForestArea();
+    const cloudForest = deps.isCloudForestArea();
+    const underground = !cloudForest && isUndergroundFogArea(deps.getCurrentArea?.());
+    const active = cloudForest || underground;
     const activeScene = active ? deps.getActiveScene() : null;
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
       activeScene?.add(group);
       attachedScene = activeScene;
     }
+    syncUndergroundFog(underground ? activeScene : null);
     group.visible = active;
     if (!active) return;
 
-    const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
-    if (skyRoot) skyRoot.visible = false;
-    updateFogLighting(activeScene);
+    if (cloudForest) {
+      const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
+      if (skyRoot) skyRoot.visible = false;
+      updateFogLighting(activeScene);
+    } else {
+      updateFogLighting(activeScene, UNDERGROUND_NIGHT_LIGHTING);
+    }
 
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
@@ -388,6 +417,16 @@
     if (isMineArea(area)) return 'mine';
     if (isDenArea(area)) return 'den';
     return 'interior';
+  }
+
+  function activeRuinTradition() {
+    return window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme || null;
+  }
+
+  function isUndergroundFogArea(area) {
+    const id = String(area || '').toLowerCase();
+    if (id === 'map_i_dev_random_ruin') return activeRuinTradition() === 'kanthic';
+    return isMineArea(id) || isDenArea(id);
   }
 
   function isUndergroundLanternArea(area) {
@@ -784,7 +823,12 @@
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
 
-    if (enclosed) {
+    // Fog-darkened underground areas fall through to the outdoor overlay below
+    // with a fixed midnight state, but only while the mist is really showing
+    // (the Cloud Forest Mist setting can turn it off), else they keep the
+    // flat darkness.
+    const undergroundFog = isUndergroundFogArea(currentArea) && !!(group?.visible && attachedScene);
+    if (enclosed && !undergroundFog) {
       const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
       ctx.globalCompositeOperation = 'source-over';
       const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
@@ -802,15 +846,15 @@
       return;
     }
 
-    const { r, g, b, a } = getFullDayLighting();
+    const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();
     ctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
     ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
     // Outdoor carried/watch lanterns still clear darkness, but preserve a configurable amount of the active weather tint.
-    drawLanternMasksCompat(currentOutdoorLanternActivation(), true);
-    drawFurnitureLightMasksCompat(true);
+    drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
+    if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
@@ -857,12 +901,16 @@
     // it — this force-hides the group immediately so turning the toggle off
     // is instant. Re-enabling needs no counterpart: the very next update()
     // call sets group.visible from isCloudForestArea() itself.
-    setEnabled: (enabled) => { if (!enabled && group) group.visible = false; },
+    setEnabled: (enabled) => { if (!enabled && group) { group.visible = false; syncUndergroundFog(null); } },
+    // True only while the mist group is attached and showing, so game.js can
+    // skip its layer-5 mist redraw (a full extra scene render) everywhere else.
+    isActive: () => !!(group?.visible && attachedScene),
     getDebugState: () => {
       const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
       const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? null; // Used below to show which underground-area rule is currently active.
       return {
         active: !!deps?.isCloudForestArea?.(),
+        undergroundFog: isUndergroundFogArea(debugArea) && !!(group?.visible && attachedScene),
         area: debugArea,
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
