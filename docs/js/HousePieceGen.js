@@ -15,7 +15,7 @@
   function applyAuthoredShingleFinish(THREE,roofLayer,finish){
     if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
     const color=finish.color,texture=typeof finish.texture==='string'&&
-      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||/^https:\/\/[^\\s]+$/i.test(finish.texture))
+      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||/^https:\/\/[^\s]+$/i.test(finish.texture)||/^data:image\/png;base64,[a-z0-9+/=]+$/i.test(finish.texture))
       ?finish.texture:'';
     const path=texture.startsWith('assets/')&&_housePieceAssetRoot?new URL(texture,_housePieceAssetRoot).href:texture;
     let tex=_roofFinishTextures.get(path);
