@@ -169,7 +169,7 @@
       rangePx: state.rangePx,
       halfConeRad: state.halfConeRad,
       maxDistancePx: Math.max(0, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER),
-      speedPxS: FISH_LEAP_SPEED_PX_S,
+      speedPxS: c.isCompanion ? Math.max(FISH_LEAP_SPEED_PX_S, state.lungeProfile.distancePx * FISH_LEAP_DISTANCE_MULTIPLIER / (attacks.companionLungeTuning?.durationS || 0.12)) : FISH_LEAP_SPEED_PX_S, // Companion leaps travel in one weapon-speed burst; wild Gurumahi keep authored pacing.
       collideRadiusPx: deps.TILE * 0.32,
       detect: attacks.leapConeDetect(),
     });
@@ -230,6 +230,7 @@
     if (fishLeapInstalled || !attacks?.register) return false;
     attacks.register('fishLeap', {
       label: 'Fish Leap',
+      ownsApproach: true, // Fish Leap already begins with an authored crouch and long-distance lunge.
       start: fishLeapStart,
       update: fishLeapUpdate,
       cancel: fishLeapCancel,
