@@ -2030,7 +2030,15 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         (role==='walls'&&entrances.some(t=>p.x>t.minX+.001&&p.x<t.maxX-.001&&
           p.z>t.minZ+.001&&p.z<t.maxZ-.001&&p.y>=t.minY-.01&&p.y<t.maxY+.001)));
       if(hidden.every(Boolean))return [];
-      if(!hidden.some(Boolean))return [tri];
+      // Broad wall triangles can cross a small entrance even with all
+      // vertices and centroid outside its aperture.
+      const overlapsEntrance=role==='walls'&&entrances.some(t=>{
+        const xs=[a.x,b.x,c.x],ys=[a.y,b.y,c.y],zs=[a.z,b.z,c.z];
+        return Math.max(...xs)>t.minX&&Math.min(...xs)<t.maxX&&
+          Math.max(...ys)>t.minY&&Math.min(...ys)<t.maxY&&
+          Math.max(...zs)>t.minZ&&Math.min(...zs)<t.maxZ;
+      });
+      if(!hidden.some(Boolean)&&!overlapsEntrance)return [tri];
       if(depth>=(entrances.length&&role==='walls'?5:3))return hidden[3]?[]:[tri]; // At most 64 tiny subtriangles from a partially buried face.
       const ab=a.clone().add(b).multiplyScalar(.5),bc=b.clone().add(c).multiplyScalar(.5),ca=c.clone().add(a).multiplyScalar(.5);
       return [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]]
@@ -2646,7 +2654,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       if(regions.length){
         const each=settings.style==='wrap'?Math.max(1,Math.round(settings.density*settings.strandLimit)):Math.min(settings.count,settings.strandLimit),details=[];
         const stats={meshes:regions.length,instances:regions.length,triangles:0,coverTriangles:0,
-          guideCorners:0,guideBoundaries:0,guidedBySemanticSurfaces:true,perSurface:true,
+          guideCorners:0,guideBoundaries:0,shrinkwrapRays:0,shrinkwrapHits:0,guidedBySemanticSurfaces:true,perSurface:true,
           strandLimit:settings.strandLimit,surfaces:regions.length,requestedPerSurface:settings.count,
           strandsPerSurface:each,generatedStrands:0};
         for(const [idx,region] of regions.entries()){
@@ -2658,6 +2666,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           stats.coverTriangles+=metrics.coverTriangles||0;
           stats.guideCorners+=metrics.guideCorners||0;
           stats.guideBoundaries+=metrics.guideBoundaries||0;
+          stats.shrinkwrapRays+=metrics.shrinkwrapRays||0;
+          stats.shrinkwrapHits+=metrics.shrinkwrapHits||0;
           stats.generatedStrands+=produced;
           details.push({id:region.userData.surfaceFoliageGuideId,region:idx+1,
             requested:each,actual:produced,triangles:metrics.triangles||0});
