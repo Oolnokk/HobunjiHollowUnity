@@ -12,6 +12,7 @@
   const WOOD_TINT = '#8b6540'; // Shared Furniture + Avatar Author wood tint for the entire entrance assembly.
   const WOOD_TINT_HEX = 0x8b6540; // Immediate fallback while the tinted PNG is loading.
   const PORCH_TAGS = new Set(['porch', 'porchStair', 'railing']); // Ordinary authored assembly faces; doorwayFrame is selected by metadata.
+  const ENTRY_SIDE_ROTATION_DEG = { south: 0, west: 90, north: 180, east: 270 }; // Matches HousePieceGen's orientation for generated farm entry tunnels.
   const MATCH_EPSILON = 1e-4; // Used to match authored quads to HousePieceGen's rendered meshes.
   const SURFACE_SPLIT_ANGLE_DEG = 24; // Same smooth-edge split threshold used by the furniture surface workflow.
   const DEBUG_ENABLED = new URLSearchParams(location.search).get('porchMatDebug') === '1';
@@ -371,19 +372,44 @@
   }
 
   function installPatch() {
-    const originalBuild = housePieces.buildGroupFromPiece;
-    if (typeof originalBuild !== 'function' || originalBuild.__porchSurfaceMaterialPatched) return false;
-    const wrappedBuild = function porchSurfaceMaterialBuild(...args) {
-      const group = originalBuild.apply(this, args);
-      try { applyToBuiltGroup(group, args[1], args[2], args[3], args[4] || {}); }
-      catch (error) { log(`surface replacement failed: ${error?.message || error}`, 'warn'); }
-      return group;
-    };
-    Object.assign(wrappedBuild, originalBuild);
-    wrappedBuild.__porchSurfaceMaterialPatched = true;
-    wrappedBuild.__originalPorchSurfaceMaterialBuild = originalBuild;
-    housePieces.buildGroupFromPiece = wrappedBuild;
-    return true;
+    let installed = false; // Tracks whether either authored-house or generated-entry render boundary was wrapped.
+    const originalBuild = housePieces.buildGroupFromPiece; // Authored house pieces, including town entrances.
+    if (typeof originalBuild === 'function' && !originalBuild.__porchSurfaceMaterialPatched) {
+      const wrappedBuild = function porchSurfaceMaterialBuild(...args) {
+        const group = originalBuild.apply(this, args);
+        try { applyToBuiltGroup(group, args[1], args[2], args[3], args[4] || {}); }
+        catch (error) { log(`surface replacement failed: ${error?.message || error}`, 'warn'); }
+        return group;
+      };
+      Object.assign(wrappedBuild, originalBuild);
+      wrappedBuild.__porchSurfaceMaterialPatched = true;
+      wrappedBuild.__originalPorchSurfaceMaterialBuild = originalBuild;
+      housePieces.buildGroupFromPiece = wrappedBuild;
+      installed = true;
+    }
+
+    // HousePieceGen.buildEntryTunnelGroup invokes its *lexical* buildGroupFromPiece,
+    // bypassing the public authored-house wrapper. Style that generated output too.
+    const originalTunnelBuild = housePieces.buildEntryTunnelGroup; // Live farm entry tunnel factory, already wrapped by the door-furniture bridge.
+    if (typeof originalTunnelBuild === 'function' && !originalTunnelBuild.__entranceWoodTunnelPatched) {
+      const wrappedTunnelBuild = function entranceWoodTunnelBuild(...args) {
+        const group = originalTunnelBuild.apply(this, args);
+        const side = String(args[3] || 'south').toLowerCase(); // Generated doorway orientation when mapping its frame quads.
+        const rotationDeg = ENTRY_SIDE_ROTATION_DEG[side] ?? 0; // Must match HousePieceGen's source-to-world vertex rotation.
+        try {
+          if (typeof housePieces.buildEntryTunnelPiece === 'function') {
+            applyToBuiltGroup(group, housePieces.buildEntryTunnelPiece(), args[1], args[2], { ...(args[4] || {}), rotationDeg });
+          } else log('generated entry tunnel has no source-face accessor', 'warn');
+        } catch (error) { log(`generated entry finish failed: ${error?.message || error}`, 'warn'); }
+        return group;
+      };
+      Object.assign(wrappedTunnelBuild, originalTunnelBuild);
+      wrappedTunnelBuild.__entranceWoodTunnelPatched = true;
+      wrappedTunnelBuild.__originalEntranceWoodTunnelBuild = originalTunnelBuild;
+      housePieces.buildEntryTunnelGroup = wrappedTunnelBuild;
+      installed = true;
+    }
+    return installed;
   }
 
   installPatch();
@@ -407,6 +433,7 @@
       totalSurfaceIslands,
       lastBuild: lastBuild ? { ...lastBuild } : null,
       patchInstalled: !!housePieces.buildGroupFromPiece?.__porchSurfaceMaterialPatched,
+      generatedTunnelPatchInstalled: !!housePieces.buildEntryTunnelGroup?.__entranceWoodTunnelPatched, // Mobile-safe check for the farm-only generated doorframe path.
       elevationPatchPreserved: !!housePieces.buildGroupFromPiece?.__walkableElevationPatched,
     };
   }
