@@ -558,7 +558,7 @@
     }
   }
 
-  attacks.register('causticPellet', { start, update, cancel });
+  attacks.register('causticPellet', { start, update, cancel, ownsApproach: true }); // Ranged projectile attack aims and fires in place, never prepend a melee lunge.
 
   // Compatibility: Drenkirra CREATURE_DB defaults still say pounce until the
   // asynchronous authored creature config arrives. Redirect stale pounce data
