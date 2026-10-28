@@ -691,6 +691,7 @@
     init, tick, serialize, restore, snapshot,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
     openDreamPicker, openNamingPrompt, createChild,
+    wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, getFamily: () => fam },
   };
   window.RomanceFamily = api;
