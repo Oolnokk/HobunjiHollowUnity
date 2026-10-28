@@ -49,20 +49,29 @@ assert.match(sourceOfStyles,/const reserved=\[\],ends=\[\]/,
   'Wrap must reserve beginning and ending anchor space along boundary edges');
 assert.match(sourceOfStyles,/if\(!reached\|\|points\.length<3\)continue/,
   'Wrap must discard any path that does not reach a different actual boundary edge');
-assert.match(sourceOfStyles,/const strandCount=Math\.min\(settings\.count,settings\.strandLimit\)/,
-  'Wrap must obey the per-surface count and maximum without a separate area-coverage quota');
+assert.match(sourceOfStyles,/settings\.style==='wrap'\?Math\.max\(1,Math\.round\(settings\.density\*settings\.strandLimit\)\)/,
+  'Wrap density alone must determine the requested strand count under a safety limit');
 assert.doesNotMatch(sourceOfStyles,/appendDenseCover\(|const occupancy=settings\.style==='wrap'/,
   'Wrap must not use an interior occupancy grid or cover the whole surface');
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).strandLimit,2);
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).perSurface,true);
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:999}).strandLimit,80);
+assert.equal(api.normalizeSurfaceGrowth({inset:-.25,shrinkwrapFinal:true,tunnelAsOpening:true}).inset,-.25);
+assert.equal(api.normalizeSurfaceGrowth({inset:-999}).inset,-.5);
+assert.equal(api.normalizeSurfaceGrowth({inset:999}).inset,.5);
+assert.equal(api.normalizeSurfaceGrowth({}).shrinkwrapFinal,false,'Old recipes preserve their unmodified surface geometry');
+assert.equal(api.normalizeSurfaceGrowth({}).tunnelAsOpening,false,'Old architecture preserves tunnel growth until opted out');
+assert(api.surfaceMaterialPalette().length>=6,'Wilderness bark and vine finishes should populate the shared material palette');
+assert(api.surfaceMaterialPalette([{id:'custom',name:'Custom bark',color:'#123456',texture:'assets/textures/custom.png'}]).some(item=>item.id==='custom'),'Saved user finishes must be reusable alongside wilderness presets');
 assert.equal(api.normalizeSurfaceGrowth({style:'natural'}).perSurface,false,'Legacy Natural preserves original full-mesh behavior');
 assert.match(generatorSource,/function architecturalSurfaceSources\(/,'All architectural editors must use common exposed-surface source policy');
 assert.match(generatorSource,/insideOtherSection\(/,'Recognition must clip triangles hidden within overlapping sections');
 assert.match(sourceOfStyles,/end\.point\.distanceTo\(start\.point\)>=minSpan/,'Wrap endpoint pairs must have a minimum separation');
+assert.match(sourceOfStyles,/if\(distance>settings\.length-travelled\+step\*\.5\)break/,'Wrap Length must constrain cumulative surface wandering');
+assert.match(generatorSource,/function shrinkwrapSurfaceStrands\(/,'Optional shrinkwrap must deform generated rings onto populated geometry');
 const cornerSource=sourceOfStyles.slice(sourceOfStyles.indexOf('function appendCornerGrowth('),sourceOfStyles.indexOf('function appendEdgeToEdgeWrap('));
 assert.match(cornerSource,/const raw=sample\.point\.clone\(\)/,'Corner Fill must start each spline point on the exact architectural edge');
-assert.match(cornerSource,/offset=settings\.offset\+\(part\.record\.renderLift\|\|0\)/,'Render clearance is added after edge alignment; no radius-sized gap');
+assert.match(cornerSource,/offset=settings\.offset\+settings\.inset\+\(part\.record\.renderLift\|\|0\)/,'Render clearance is added after edge alignment; no radius-sized gap');
 assert.match(cornerSource,/if\(settings\.curl>0\)/,'Curl must be a separate cosmetic pass after tracing the edge');
 assert.doesNotMatch(cornerSource,/settings\.radius\+settings\.offset|settings\.offset\+settings\.radius/,'Corner Fill centerline must not float a full radius off the seam');
 const houseAuthorSource=fs.readFileSync('docs/tools/house-piece-author/index.html','utf8');
