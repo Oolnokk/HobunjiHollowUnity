@@ -98,6 +98,13 @@
   let sourceSize = null; // Native dimensions, to warn when game-frame normalization is needed.
   let renderPending = false; // RequestAnimationFrame coalesces move events while dragging.
   let loadSerial = 0; // Discard results of earlier asynchronous sprite loads.
+  let brushMask = new Uint8Array(FRAME.width * FRAME.height); // Bridge brush paint, one byte per pixel; never exported directly.
+  let brushPainted = false; // Skip mask compositing when nothing is painted.
+  let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
+  let hoverPoint = null; // Brush-size cursor preview position.
+  let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
+  const tool = () => byId('cut-tool').value; // 'lasso', 'brush', or 'erase'.
+  const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
   function status(text) { byId('cut-status').textContent = text; }
   function updateOutputName() {
@@ -131,7 +138,20 @@
   function renderNow() {
     renderPending = false;
     ctx.clearRect(0, 0, FRAME.width, FRAME.height);
-    if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
+    if (pixels && brushPainted) {
+      if (!viewBuffer) viewBuffer = new Uint8ClampedArray(pixels.length);
+      viewBuffer.set(pixels);
+      for (let p = 0; p < brushMask.length; p++) if (brushMask[p]) {
+        const o = p * 4; viewBuffer[o] = viewBuffer[o + 1] = viewBuffer[o + 2] = 0; viewBuffer[o + 3] = 255;
+      }
+      ctx.putImageData(new ImageData(viewBuffer, FRAME.width, FRAME.height), 0, 0);
+    } else if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
+    if (hoverPoint && tool() !== 'lasso') {
+      ctx.save();
+      ctx.strokeStyle = tool() === 'erase' ? '#ff7a7a' : '#ffce64'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
     if (path.length) {
       ctx.save();
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 3;
@@ -162,7 +182,7 @@
     if (!opaqueCount(next)) throw new Error('The source image has no visible pixels.');
     original = new Uint8ClampedArray(next); pixels = new Uint8ClampedArray(next);
     source = description; sourceSize = { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
-    history = []; path = []; activePointer = null;
+    history = []; path = []; activePointer = null; clearBrush();
     const inputName = String(suggestedName || ''); // Keep head/shaft export type when reloading an existing part PNG.
     if (/^weaponhead[_-]/i.test(inputName)) byId('cut-kind').value = 'head';
     if (/^weaponshaft[_-]/i.test(inputName)) byId('cut-kind').value = 'shaft';
@@ -201,20 +221,39 @@
       path.push(point); scheduleRender();
     }
   }
+  function clearBrush() { brushMask.fill(0); brushPainted = false; lastBrushPoint = null; }
+  function paint(event) {
+    const point = pointFor(event); // Bridge brush stamps discs in source-pixel space.
+    global.ModularWeaponBridgeFill.stampLine(brushMask, FRAME.width, FRAME.height, lastBrushPoint, point,
+      brushRadius(), tool() === 'erase' ? 0 : 1);
+    lastBrushPoint = point; hoverPoint = point;
+    brushPainted = tool() === 'erase' ? brushMask.includes(1) : true;
+    scheduleRender();
+  }
   canvas.addEventListener('pointerdown', event => {
     if (!pixels || activePointer !== null) return;
     event.preventDefault();
-    activePointer = event.pointerId; path = [];
+    activePointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
+    if (tool() !== 'lasso') { lastBrushPoint = null; paint(event); return; }
+    path = [];
     extend(event);
   });
   canvas.addEventListener('pointermove', event => {
+    if (tool() !== 'lasso' && pixels) { hoverPoint = pointFor(event); if (activePointer === null) scheduleRender(); }
     if (activePointer !== event.pointerId) return;
-    event.preventDefault(); extend(event);
+    event.preventDefault();
+    if (tool() !== 'lasso') paint(event); else extend(event);
   });
+  canvas.addEventListener('pointerleave', () => { if (hoverPoint) { hoverPoint = null; scheduleRender(); } });
   function finish(event, cancel) {
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
+    if (tool() !== 'lasso') {
+      activePointer = null; lastBrushPoint = null; renderNow();
+      status('Brush stroke painted. Hollow & fill bridge turns it into metal; Clear brush discards it.');
+      return;
+    }
     if (!cancel) extend(event); else path = [];
     activePointer = null; renderNow();
     if (!cancel) status(path.length >= 3
@@ -267,6 +306,23 @@
         ' Undo restores the previous image.');
     } catch (error) { status('Outline failed: ' + error.message); }
   };
+  byId('cut-bridge-fill').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite and finish the brush stroke first.'); return; }
+    try {
+      const thickness = Number(byId('cut-bridge-outline').value); // Black rim width where the bridge meets empty space.
+      if (!Number.isInteger(thickness) || thickness < 0 || thickness > 32) throw new Error('Bridge outline thickness must be 0–32.');
+      const outcome = global.ModularWeaponBridgeFill.fillBridge(pixels, brushMask, FRAME.width, FRAME.height,
+        { outlineThickness: thickness, minAlpha: minAlpha(), seed: Date.now() });
+      pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
+      status('Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
+        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded), ' + outcome.rim + ' black rim pixels. Undo restores the previous image.');
+    } catch (error) { status('Bridge fill failed: ' + error.message); }
+  };
+  byId('cut-bridge-clear').onclick = () => { clearBrush(); renderNow(); status('Brush cleared.'); };
+  byId('cut-brush-radius').oninput = () => {
+    byId('cut-brush-radius-value').textContent = byId('cut-brush-radius').value; scheduleRender();
+  };
+  byId('cut-tool').onchange = () => { hoverPoint = null; scheduleRender(); };
   byId('cut-remove').onclick = () => commitSelection('remove');
   byId('cut-isolate').onclick = () => commitSelection('isolate');
   byId('cut-clear-selection').onclick = () => { path = []; activePointer = null; renderNow(); status('Selection cleared.'); };
