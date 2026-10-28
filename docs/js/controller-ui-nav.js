@@ -515,7 +515,9 @@
     if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
     if (!currentTarget.hasAttribute('tabindex') && currentTarget.tabIndex < 0) currentTarget.tabIndex = -1;
     try { currentTarget.focus({ preventScroll: true }); } catch { /* not every candidate supports real focus */ }
-    currentTarget.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Lets owning UI panels preview the highlighted control without activating it or entering its action group.
+    if (typeof CustomEvent === 'function' && typeof currentTarget.dispatchEvent === 'function') {
+      currentTarget.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Native focus previews are optional for lightweight test elements without DOM dispatch.
+    }
     if (opts.scroll !== false) {
       try { currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch {}
     }
