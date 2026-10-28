@@ -1871,7 +1871,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
     return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       style: ['cornerFill','wrap'].includes(value.style) ? value.style : 'natural', // Absent styles keep legacy recipes unchanged.
-      density: finite('density',.45,.05,1), // Used only by Wrap to control area coverage.
+      density: finite('density',.45,.05,1), // Wrap density controls available edge-anchor spacing, not interior-area fill.
       count: Math.floor(finite('count', 12, 1, 80)), strandLimit: Math.floor(finite('strandLimit', 80, 1, 80)),
       perSurface: value.perSurface === true, // Legacy Natural stays on original meshes unless explicitly opted into region-aware budgets.
       length: finite('length', 3, .05, 30),
@@ -2389,7 +2389,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       ? guide.boundaries // Region seams and triangulation edges are NOT endpoints.
       : guide.boundaries.length?guide.boundaries:guide.corners;
     const perimeter=edges.reduce((n,e)=>n+e.length,0),wanted=Math.min(settings.count,settings.strandLimit);
-    const spacing=Math.max(settings.radius*2.1,perimeter/Math.max(2,wanted*2)*(1.6-settings.density*1.2));
+    const longest=Math.max(...edges.map(edge=>edge.length),0);
+    const spacing=Math.max(settings.radius*2.1,Math.min(longest/2,perimeter/Math.max(2,wanted*2)*(1.6-settings.density*1.2)));
     const slots=[];
     if(!edges.length||wanted<1)return {requested:wanted,generated:0,capacity:0,spacing,endpoints:[]};
     for(const edge of edges){
@@ -2493,44 +2494,6 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         startEdge:start.edge.ak+'|'+start.edge.bk,endEdge:end.edge.ak+'|'+end.edge.bk});
     }
     return {requested:wanted,generated:ends.length,capacity:slots.length,spacing,endpoints:ends,attempts};
-  }
-
-  // Maximum Wrap density uses a flat conformal underlayer between the raised
-  // strands. One merged mesh avoids overlapping hundreds of lumpy tubes.
-  function appendDenseCover(group,triangles,settings){
-    if(settings.style!=='wrap'||settings.density<.995||!triangles.length)return;
-    const positions=new Float32Array(triangles.length*9),uvs=new Float32Array(triangles.length*6); // Fixed-size packed buffers minimize allocations.
-    const bounds=[Infinity,Infinity,Infinity,-Infinity,-Infinity,-Infinity]; // Shared surface bounds keep the PNG stretched coherently instead of clamping to a single edge pixel.
-    for(const record of triangles)for(const p of [record.triangle.a,record.triangle.b,record.triangle.c]){
-      bounds[0]=Math.min(bounds[0],p.x);bounds[1]=Math.min(bounds[1],p.y);bounds[2]=Math.min(bounds[2],p.z);
-      bounds[3]=Math.max(bounds[3],p.x);bounds[4]=Math.max(bounds[4],p.y);bounds[5]=Math.max(bounds[5],p.z);
-    }
-    const span=[Math.max(.01,bounds[3]-bounds[0]),Math.max(.01,bounds[4]-bounds[1]),Math.max(.01,bounds[5]-bounds[2])]; // Avoid divide-by-zero on flat surfaces.
-    for(let i=0;i<triangles.length;i++){
-      const record=triangles[i],n=record.normal,axis=Math.abs(n.x)>Math.abs(n.y)&&Math.abs(n.x)>Math.abs(n.z)?0:Math.abs(n.y)>Math.abs(n.z)?1:2;
-      const vertices=[record.triangle.a,record.triangle.b,record.triangle.c],lift=settings.offset+.012+(record.renderLift||0); // Clear the source without obstructing raised roots.
-      for(let j=0;j<3;j++){
-        const p=vertices[j],k=i*9+j*3,u=i*6+j*2;
-        positions[k]=p.x+n.x*lift;positions[k+1]=p.y+n.y*lift;positions[k+2]=p.z+n.z*lift;
-        uvs[u]=axis===0?(p.z-bounds[2])/span[2]:(p.x-bounds[0])/span[0];
-        uvs[u+1]=axis===1?(p.z-bounds[2])/span[2]:(p.y-bounds[1])/span[1];
-      }
-    }
-    const geometry=new T.BufferGeometry(); // Flat mesh is static and requires no game-tick work.
-    geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
-    geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.computeVertexNormals();
-    const mesh=new T.Mesh(geometry,hexBarkMat(parseInt(settings.color.slice(1),16))),originalMaterial=mesh.material;
-    const surfaces=naturalSurfaces||window.NaturalSurfaceMaterials;
-    if(settings.texture&&surfaces?.naturalizeMesh){
-      surfaces.naturalizeMesh(mesh,settings.kind==='roots'?'trunks':'vines','strand-stretch',{texture:settings.texture,tint:settings.color,tintTreatment:'body-sprite-tint'});
-      mesh.material=mesh.material.clone();
-    }else{
-      const sprite=window.HobunjiSpritePngSurface||window.HobunjiPngPlaneUnlit;
-      mesh.material=sprite?.makeMaterial?sprite.makeMaterial(T,null,'surface_growth_solid',{color:parseInt(settings.color.slice(1),16)}):new T.MeshBasicMaterial({color:parseInt(settings.color.slice(1),16)});
-    }
-    originalMaterial.dispose();
-    mesh.name='Dense surface growth';mesh.userData.surfaceGrowthCover=true; // Flat underlayer needs no inverted-hull shell.
-    group.add(mesh);group.userData.surfaceGrowthStats.coverTriangles=triangles.length;
   }
 
   const caveSurfaceSamplingCache = new WeakMap(); // Shares costly immutable cavern-wall triangle indexes between roots and vines, without retaining unloaded scenes.
@@ -2641,7 +2604,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
     const guide=settings.style==='natural'?null:surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,settings.radius,settings.style==='cornerFill'||triangles.some(record=>record.recognizedRegion)); // Edge topology is computed only for guided styles.
     group.userData.surfaceGrowthStats.guideCorners=guide?.corners.length||0; // Mobile-visible evidence of architectural edges instead of brick micro-creases.
-    group.userData.surfaceGrowthStats.guideBoundaries=guide?.boundaries.length||0; // Counts the edges Wrap may start on, including named furniture region borders.
+    group.userData.surfaceGrowthStats.guideBoundaries=guide?.boundaries.length||0; // Counts recognized outer edges eligible to host Wrap start/end anchors.
     group.userData.surfaceGrowthStats.guidedBySemanticSurfaces=targets.some(mesh=>!!mesh.userData?.surfaceFoliageGuide);
     const strandCount=Math.min(settings.count,settings.strandLimit); // Per-surface budget; Wrap now uses edge capacity rather than surface-area occupancy.
     const steps=Math.min(400,Math.ceil(settings.length/Math.min(.15,Math.max(.025,settings.radius*3)))),step=settings.length/steps;
