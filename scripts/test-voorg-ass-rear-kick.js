@@ -137,6 +137,17 @@ async function main() {
     creatureHits.push([source, hit, amount, speed, opts]);
   } };
   const companionDeps = { ...deps, damageCreature() {}, player, players: [player] };
+  // The modular dispatcher must begin Rear Kick's OWN 0.12-second charge even
+  // from extended companion engagement range, without a second generic lunge.
+  windowStub.Combat.deps = companionDeps; // Connects the shared dispatcher to the same world dependencies as direct-handler tests.
+  const distantCompanion = { ...companion, x: 0, y: 0, _animalAttack: null }; // Isolated instance so cooldown/retreat checks below remain intact.
+  const distantEnemy = { ...target, x: deps.TILE * 3 }; // More than normal hoof reach but still within the outer attack-selection band.
+  windowStub.Combat.animalAttacks.start(distantCompanion, 'rearKick', { target: distantEnemy });
+  assert.equal(distantCompanion._animalAttack.approach, null, 'Rear Kick owns its only approach, without a generic pre-lunge');
+  assert.equal(distantCompanion._animalAttack.state.stage, 'lunge', 'selected kick immediately starts its native charge');
+  assert.equal(distantCompanion._animalAttack.state.lungeMaxDistancePx, deps.TILE * 2.6);
+  windowStub.Combat.animalAttacks.cancel(distantCompanion);
+
   const companionState = {};
   kick.start(companion, companionState, { target }, companionDeps);
   assert.ok(!windowStub.VoorgAssRearKick.canUse(companion), 'special cooldown begins on start');
