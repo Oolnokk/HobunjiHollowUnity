@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 15;
+  const VERSION = 16;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -30,6 +30,7 @@
     fadeS: 0.65,
   });
   const BLOWGUN_RAW_DAMAGE = 2; // Used as the deliberately tiny direct dart hit; mastery afflictions are the blowgun's real damage identity.
+  const BLOWGUN_FIRE_SPEED_MULTIPLIER = 2; // Scales only B'shuakauitl firing action time, preserving its authored strike/hold phase ratios and separate load time.
   const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
   const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
     'bleedingHealth', 'woundedStamina', 'congealedHealth', 'infectedStamina',
@@ -261,7 +262,7 @@
       reloadStrikeFrac: 0.56,
       reloadHoldFrac: 0.692,
       gripMode: animation?.gripMode || 'palm-parallel',
-      fireDurationS: animation?.durationS ?? 1.04,
+      fireDurationS: (animation?.durationS ?? 1.04) / BLOWGUN_FIRE_SPEED_MULTIPLIER,
       fireSequence: animation?.sequence || 'attack',
       fireWindupFrac: animation?.windupFrac ?? 0.05,
       fireAtFrac: animation?.strikeFrac ?? 0.08,
