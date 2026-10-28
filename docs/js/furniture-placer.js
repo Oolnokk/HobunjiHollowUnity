@@ -87,6 +87,9 @@
   }
 
   function refreshVisibility() {
+    if (window.FarmworkUI?.isOpen?.() && !window.FarmworkUI.canOpen()) {
+      window.FarmworkUI.close(); // Shared farm/house/zone refresh closes a stale Farmwork panel after travel or marriage reset.
+    }
     const btn = document.getElementById('furniturePlacerBtn');
     if (!btn || !deps) return;
     const area = deps.getCurrentArea();
