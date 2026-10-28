@@ -10,7 +10,8 @@
   const LUNGE_SPEED_TILES_S = LUNGE_MAX_TILES / LUNGE_DURATION_S; // Finite burst speed used by beginConeLunge over the existing 2.6-tile travel budget.
   const KICK_HALF_CONE_RAD = Math.PI / 3; // Shared by the lunge stopping detector and the eventual rear hoof strike.
   const WINDUP_S = 0.32; // Holds the stationary, reversed pose long enough to telegraph the kick.
-  const STRIKE_S = 0.26; // Displays the combined idle-head/run1-hindlegs sprite while the hoof connects.
+  const STRIKE_S = 0.26; // The hoof connects 48% into this strike beat; the split pose is already visible by then.
+  const KICK_POSE_HOLD_S = 1.0; // Hold the idle-head/run1-legs kick silhouette completely still for one second AFTER hoof contact, hit or miss.
   const RECOVERY_S = 0.24; // Brief stationary recovery before escape or companion movement resumes.
   const DAMAGE = 1; // Health damage is intentionally negligible; the kick is a Footing/knockback attack.
   const KNOCKBACK_PX_S = 1900; // Four times Guard Charge's 450 px/s; collision physics still constrain the throw.
@@ -147,6 +148,11 @@
     window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' rear kick lunge', 'wildlife');
   }
 
+  function isHoldingKickPose(creature) {
+    const attack = creature?._animalAttack; // Used by companion target-loss handling to preserve an already-fired kick through its pose hold and recovery.
+    return attack?.id === ATTACK_ID && (attack.state?.stage === 'kickHold' || attack.state?.stage === 'recovery');
+  }
+
   function applyKickSprite(creature, state, deps) {
     if (state.frameApplied || !state.frame || !creature.avatarRef) return;
     deps.setCreatureFrame?.(creature.avatarRef, state.frame, null, 'idle', null);
@@ -228,9 +234,16 @@
         }
       }
       applyKickSprite(creature, state, deps);
-      if (state.t >= STRIKE_S * 0.48) strike(creature, state, deps);
-      if (state.t >= STRIKE_S) { state.stage = 'recovery'; state.t = 0; }
+      if (state.t >= STRIKE_S * 0.48) {
+        strike(creature, state, deps); // The kick has fired even if its target dodged or was already defeated.
+        state.stage = 'kickHold'; // Keep the visible kick pose fixed instead of immediately unwinding into recovery.
+        state.t = 0;
+      }
       return true;
+    }
+    if (state.stage === 'kickHold') {
+      if (state.t >= KICK_POSE_HOLD_S) { state.stage = 'recovery'; state.t = 0; }
+      return true; // Creature remains combat-busy, so neither wild nor companion idle/run animations can replace the kick sprite.
     }
     if (state.t >= RECOVERY_S) {
       finish(creature);
@@ -252,5 +265,5 @@
     isStriking: state => state?.stage === 'lunge' || state?.stage === 'strike',
     isWindingUp: state => state?.stage === 'windup',
   });
-  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, tuning: { LUNGE_MAX_TILES, LUNGE_DURATION_S, LUNGE_SPEED_TILES_S, WINDUP_S, STRIKE_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
+  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, isHoldingKickPose, tuning: { LUNGE_MAX_TILES, LUNGE_DURATION_S, LUNGE_SPEED_TILES_S, WINDUP_S, STRIKE_S, KICK_POSE_HOLD_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
 })();
