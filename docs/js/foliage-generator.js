@@ -1872,7 +1872,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       style: ['cornerFill','wrap'].includes(value.style) ? value.style : 'natural', // Absent styles keep legacy recipes unchanged.
       density: finite('density',.45,.05,1), // Used only by Wrap to control area coverage.
-      count: Math.floor(finite('count', 12, 1, 80)), length: finite('length', 3, .05, 30),
+      count: Math.floor(finite('count', 12, 1, 80)), strandLimit: Math.floor(finite('strandLimit', 80, 1, 80)),
+      perSurface: value.perSurface === true, // Legacy Natural stays on original meshes unless explicitly opted into region-aware budgets.
+      length: finite('length', 3, .05, 30),
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
@@ -2279,10 +2281,47 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
     group.name = 'Surface ' + settings.kind;
     group.userData.surfaceFoliage = true;
+    // Each recognized architectural surface owns its OWN count and limit, not
+    // a slice of one whole-building count. Dispatch once per existing guide;
+    // reusing the same generator keeps texture, seeding, density and movement
+    // behavior consistent with Furniture Author's named patches.
+    if (!input?._surfaceRegionOnly && settings.target!=='shingles' &&
+        (settings.perSurface || settings.style!=='natural')) {
+      const regions=surfaceTargets(parent,{...settings,style:'cornerFill'}).filter(mesh=>
+        mesh.userData?.surfaceFoliageGuide &&
+        mesh.userData.surfaceFoliageGuideOwner===parent.uuid &&
+        mesh.userData.surfaceFoliageRecognizedRegion===true);
+      if(regions.length){
+        const each=Math.min(settings.count,settings.strandLimit),details=[];
+        const stats={meshes:regions.length,instances:regions.length,triangles:0,
+          guideCorners:0,guideBoundaries:0,guidedBySemanticSurfaces:true,perSurface:true,
+          strandLimit:settings.strandLimit,surfaces:regions.length,requestedPerSurface:settings.count,
+          strandsPerSurface:each,generatedStrands:0};
+        for(const [idx,region] of regions.entries()){
+          const part=buildSurfaceGrowth(parent,{...input,count:each,_surfaceRegionOnly:region.userData.surfaceFoliageGuideId,
+            seed:settings.seed+':'+region.userData.surfaceFoliageGuideId});
+          const metrics=part.userData.surfaceGrowthStats||{};
+          const produced=(part.userData.generatedStrands||0);
+          stats.triangles+=metrics.triangles||0;
+          stats.guideCorners+=metrics.guideCorners||0;
+          stats.guideBoundaries+=metrics.guideBoundaries||0;
+          stats.generatedStrands+=produced;
+          details.push({id:region.userData.surfaceFoliageGuideId,region:idx+1,
+            requested:each,actual:produced,triangles:metrics.triangles||0});
+          for(const child of [...part.children])group.add(child); // Keep final geometry flat, preserving existing editor/export readers.
+        }
+        group.userData.surfaceGrowthStats=stats;
+        group.userData.surfaceGrowthSurfaces=details;
+        group.userData.diagnostics=settings.kind+' ('+settings.style+'): '+regions.length+
+          ' recognized surfaces, '+each+' strands/surface (max '+settings.strandLimit+'), '+stats.generatedStrands+' produced.';
+        return group;
+      }
+    }
     const useSharedSampling = input?.reuseSurfaceSampling === true && !!parent.geometry; // Only generated, immutable cave shells opt in; editor meshes still resample after authoring edits.
     const existingSampling = useSharedSampling ? caveSurfaceSamplingCache.get(parent) : null; // Geometry replacement invalidates the prior index.
     const shared = existingSampling?.geometry === parent.geometry && existingSampling?.wallOnly === settings.wallOnly ? existingSampling : null;
-    const targets = shared?.targets || surfaceTargets(parent, settings);
+    const targets = shared?.targets || surfaceTargets(parent, settings).filter(mesh=>
+      !input?._surfaceRegionOnly || (mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideId===input._surfaceRegionOnly));
     const triangles = shared?.triangles || [], large = shared?.large || [], cells = shared?.cells || new Map(), candidates = []; // Cached wall triangles and spatial buckets serve both growth kinds.
     let stamp = 0; // Per-step visit mark: dedupes records that overlap several buckets without a Set insertion per record.
     const gather = list => { for (const record of list) if (record.stamp !== stamp) { record.stamp = stamp; candidates.push(record); } }; // Spatial buckets avoid scanning all brick triangles for every growth step.
@@ -2346,8 +2385,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     group.userData.surfaceGrowthStats.guidedBySemanticSurfaces=targets.some(mesh=>!!mesh.userData?.surfaceFoliageGuide);
     const edgeStarts=guide?(guide.boundaries.length?guide.boundaries:guide.corners.length?guide.corners:Array.from(guide.all.values()).slice(0,1024)):[];
     const strandCount=settings.style==='wrap'
-      ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(settings.count*(.25+settings.density*1.75))),Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
-      : settings.count; // Strict cap on mobile tube geometry, independent of target size.
+      ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(Math.min(settings.count,settings.strandLimit)*(.25+settings.density*1.75))),Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
+      : Math.min(settings.count,settings.strandLimit); // Strict cap on mobile tube geometry, independent of target size.
     const steps = Math.min(400, Math.ceil(settings.length / Math.min(.15, Math.max(.025, settings.radius * 3)))), step = settings.length / steps; // Bounded density protects mobile previews.
     const occupancy=settings.style==='wrap'?new Map():null,coverageCellSize=Math.max(.18,settings.radius*8); // Shared coverage visits repel new strands from occupied areas.
     const coverageKey=(p,n)=>{ // Keep perpendicular faces independent so corner growth does not count as coverage of a neighboring wall.
@@ -2355,7 +2394,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const face=x>y&&x>z?'x'+Math.sign(n.x):y>z?'y'+Math.sign(n.y):'z'+Math.sign(n.z);
       return face+':'+Math.floor(p.x/coverageCellSize)+','+Math.floor(p.y/coverageCellSize)+','+Math.floor(p.z/coverageCellSize);
     };
-    if(settings.style==='cornerFill')appendCornerGrowth(guide,settings,random,seed,geometries);
+    if(settings.style==='cornerFill')appendCornerGrowth(guide,{...settings,count:strandCount},random,seed,geometries);
     for (let strand=0; strand<(settings.style==='cornerFill'?0:strandCount); strand++) {
       const area = random()*totalArea; // Binary search picks an area-weighted starting face.
       let lo=0, hi=triangles.length-1;
@@ -2452,6 +2491,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       mesh.layers.enable(1); // The shared inverted-hull pass outlines these volumetric strands only when Shell Outlines is on.
       geometries.forEach(geometry=>geometry.dispose());group.add(mesh);
     }
+    group.userData.generatedStrands=geometries.length;
     group.userData.diagnostics = settings.kind + ' (' + settings.style + '): ' + geometries.length + '/' + (settings.style==='wrap'?strandCount:settings.count) + ' strands on ' + targets.length + ' meshes / ' + surfaceCopies + ' placed surfaces (' + triangles.length + ' triangles, covered ' + (group.userData.surfaceGrowthStats.coverTriangles||0) + ').';
     return group;
   }
