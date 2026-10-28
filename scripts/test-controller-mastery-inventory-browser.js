@@ -65,7 +65,13 @@ const root = path.resolve(__dirname, '..');
             });
           }
         };
-        window.EquipmentPanel = { init() {} };
+        window.__clothingClicks = 0;
+        window.EquipmentPanel = { init() {}, previewPackClothingItem(uid) { // Browser adapter verifies that focus calls preview, not clothing's click handler.
+          window.__clothingPreviewUid = uid;
+          delete document.getElementById('iiDetail').dataset.itemKey;
+          document.getElementById('iiDetail').dataset.itemKind = 'clothing';
+          document.getElementById('iiName').textContent = 'Traveler Coat';
+        } };
         window.Combat = { deps: {} };
         window.InventoryStacks = { applyHeadIcon() {} };
         window.CookingSystem = { valueMultiplierForStars: () => 1 };
@@ -118,12 +124,118 @@ const root = path.resolve(__dirname, '..');
           tile.dataset.stackId = key + '|plain|0';
           tile.dataset.ctrlDetail = 'invInfo';
           tile.textContent = items.ITEM_DEFS[key].label;
-          tile.onclick = () => select(key, false, { key, count: items.inventory[key], stackId: tile.dataset.stackId });
+          const stack = { key, count: items.inventory[key], stackId: tile.dataset.stackId }; // Captured exact stack identity is used by click and passive focus.
+          tile.onclick = () => select(key, false, stack);
+          tile.addEventListener('hobunji-controller-focus', () => select(key, true, stack));
           document.getElementById('invGrid').appendChild(tile);
         }
       }, gameSource.slice(first, last));
       await page.addScriptTag({ path: path.join(root, 'docs/js/controller-ui-nav.js') });
+      await page.addScriptTag({ path: path.join(root, 'docs/js/inventory-ui.js') });
+      await page.evaluate(() => window.InventoryUI.init({ isDevMode: () => false }));
       await page.evaluate(() => window.dispatchEvent(new Event('gamepadconnected')));
+      // Pad navigation changes the detail before Confirm and never enters the action group.
+      const previews = await page.evaluate(() => {
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        const startingGroup = window.ControllerUI.debugState().groupId; // This controller nests Pack beneath the Inventory group.
+        const snapshots = [];
+        for (const tile of document.querySelectorAll('#invGrid .inv-item-box[data-key]')) {
+          tile.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Exercises every stack without an activation click.
+          snapshots.push({
+            key: tile.dataset.key,
+            name: document.getElementById('iiName').textContent,
+            selected: tile.classList.contains('selected'),
+            selectedIdentity: document.querySelector('#invGrid .inv-item-box.selected')?.dataset?.key || null,
+            group: window.ControllerUI.debugState().groupId,
+            count: window.__items.inventory[tile.dataset.key],
+            debugKey: window.InventoryUI.debugSnapshot().lastControllerPackPreview?.key,
+            kind: document.getElementById('iiDetail').dataset.itemKind,
+          });
+        }
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        const focused = window.ControllerUI.focusedElement();
+        return { snapshots, startingGroup, focusedKey: focused?.dataset.key, focusedName: document.getElementById('iiName').textContent };
+      });
+      assert.equal(previews.snapshots.length, 3);
+      for (const preview of previews.snapshots) {
+        assert.ok(preview.name.endsWith(' ×1'), 'every hovered item renders its own stack detail');
+        if (preview.key === 'apple') assert.equal(preview.name, 'Apple ×1');
+        else assert.notEqual(preview.name, 'Apple ×1');
+        assert.equal(preview.selected, false, 'controller highlight must not select an item');
+        assert.equal(preview.selectedIdentity, null, 'no implicit selection is created by controller navigation');
+        assert.equal(preview.group, previews.startingGroup, 'preview must not change the active controller navigation group');
+        assert.equal(preview.count, 1, 'highlight must not consume or use an item');
+        assert.equal(preview.debugKey, preview.key);
+        assert.equal(preview.kind, 'pack', 'ordinary items are marked separately from clothing');
+      }
+      if (previews.focusedKey) assert.equal(previews.focusedName, previews.snapshots.find(row => row.key === previews.focusedKey).name);
+
+      const selectedWhilePreviewing = await page.evaluate(() => { // A previously confirmed selection survives a new highlight.
+        const apple = document.querySelector('#invGrid .inv-item-box[data-key="apple"]');
+        apple.click();
+        const tablet = Array.from(document.querySelectorAll('#invGrid .inv-item-box[data-key]')).find(tile => tile.dataset.key !== 'apple');
+        tablet.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true }));
+        return { selected: document.querySelector('#invGrid .inv-item-box.selected')?.dataset.key, previewKey: document.getElementById('iiDetail').dataset.itemKey, name: document.getElementById('iiName').textContent };
+      });
+      assert.equal(selectedWhilePreviewing.selected, 'apple', 'controller focus must preserve the last explicitly selected item');
+      assert.ok(selectedWhilePreviewing.previewKey && selectedWhilePreviewing.previewKey !== 'apple', 'direct-use binds to the item currently shown in details');
+      assert.notEqual(selectedWhilePreviewing.name, 'Apple ×1', 'the details follow preview rather than the last selection');
+
+      const clothingPreview = await page.evaluate(() => {
+        const source = document.createElement('div'); // Mirrors the hidden Pack clothing source that InventoryUI clones into the grid.
+        source.id = 'invPackClothing';
+        const coat = document.createElement('button');
+        coat.className = 'inv-pcloth-item';
+        coat.dataset.key = 'coat-preview';
+        coat.textContent = 'Traveler Coat';
+        coat.addEventListener('click', () => { window.__clothingClicks++; document.getElementById('iiName').textContent = 'Traveler Coat'; });
+        source.appendChild(coat);
+        document.getElementById('mpInventory').appendChild(source);
+        window.InventoryUI.decorate();
+        const tile = document.querySelector('#invGrid .pack-clothing-tile');
+        tile.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true }));
+        return {
+          name: document.getElementById('iiName').textContent,
+          selected: tile.classList.contains('selected'),
+          preview: window.InventoryUI.debugSnapshot().lastControllerPackPreview,
+          group: window.ControllerUI.debugState().groupId,
+          oldSelection: document.querySelector('#invGrid .inv-item-box.selected')?.dataset.key,
+          clicks: window.__clothingClicks,
+          uid: window.__clothingPreviewUid,
+        };
+      });
+      assert.equal(clothingPreview.name, 'Traveler Coat', 'clothing clones must preview through the same source as clicking');
+      assert.equal(clothingPreview.selected, false, 'focus does not actively select clothing');
+      assert.equal(clothingPreview.oldSelection, 'apple', 'clothing preview preserves the explicit Pack selection');
+      assert.equal(clothingPreview.clicks, 0, 'clothing preview must not synthesize a click');
+      assert.equal(clothingPreview.uid, 'coat-preview');
+      assert.equal(clothingPreview.preview.key, 'coat-preview');
+      assert.equal(clothingPreview.preview.clothing, true);
+      assert.equal(await page.evaluate(() => document.getElementById('iiDetail').dataset.itemKind), 'clothing');
+      assert.equal(clothingPreview.group, previews.startingGroup, 'clothing preview also remains in the same navigation group');
+      // Even a garment named like a usable scroll must not inherit its Read button.
+      await page.evaluate(() => {
+        document.getElementById('iiName').textContent = window.__items.ITEM_DEFS[window.__lessonKeys[0]].label + ' ×1';
+        document.getElementById('iiDetail').dataset.itemKind = 'clothing';
+      });
+      await page.waitForTimeout(75);
+      assert.equal(await page.evaluate(() => !!document.getElementById('inventoryDirectUseBtn')), false,
+        'clothing with the same label as a tablet must not gain its direct-use action');
+      const directionalPreview = await page.evaluate(() => {
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        window.ControllerUI.press('right'); // Real directional navigation must emit the focus preview without Confirm.
+        return {
+          key: window.ControllerUI.focusedElement()?.dataset?.key,
+          name: document.getElementById('iiName').textContent,
+          group: window.ControllerUI.debugState().groupId,
+        };
+      });
+      if (directionalPreview.key) {
+        assert.equal(directionalPreview.group, previews.startingGroup, 'directional focus never enters the item action group');
+        assert.equal(directionalPreview.name, directionalPreview.key === 'coat-preview' ? 'Traveler Coat' :
+          previews.snapshots.find(row => row.key === directionalPreview.key)?.name, 'directional focus previews the item without Confirm');
+      }
+
       const keys = await page.evaluate(() => window.__lessonKeys);
       for (const key of [keys[1], 'apple', ...keys, 'apple', ...keys]) {
         await page.evaluate(key => {

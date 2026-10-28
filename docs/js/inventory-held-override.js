@@ -316,13 +316,14 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
+    if (detailEl.dataset?.itemKind === 'clothing' || document.getElementById('mpInventory')?.classList?.contains?.('inv-mode-gear')) return null; // Direct bag-use never appears on clothing or permanent gear.
     const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
     if (!detailName) return null;
 
     // The selected Pack slot is the item identity. Looking it up by name through
     // every owned stack on each observed DOM change can stall large inventories.
     const selected = document.querySelector?.('#invGrid .inv-item-box.selected[data-key]:not(.pack-clothing-tile)');
-    const selectedKey = selected?.dataset?.key || clickedDetailKey;
+    const selectedKey = detailEl.dataset?.itemKey || selected?.dataset?.key || clickedDetailKey; // Bind direct use to displayed preview, never a stale selected stack.
     if (selectedKey) {
       const action = inventoryUseAction(selectedKey); // Exactly one canonical metadata lookup for the selected item.
       const def = canonicalDef(selectedKey);
