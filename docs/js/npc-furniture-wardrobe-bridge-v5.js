@@ -136,7 +136,11 @@
   }
 
   function isFamilyOwner(id) {
-    return !!safeId(id) && familyOwners().some(owner => owner.id === id);
+    const candidate = safeId(id); // Targeted chest owner checked on every game frame, without a family snapshot allocation.
+    if (!candidate) return false;
+    if (safeId(window.RomanceSystem?.getSpouse?.()?.npcId) === candidate) return true;
+    if (window.RomanceFamily?.isWardrobeChild) return !!window.RomanceFamily.isWardrobeChild(candidate);
+    return !!window.RomanceFamily?.snapshot?.()?.children?.some(child => child.id === candidate); // Compatibility with older family adapters.
   }
 
   function isFamilyStorage(record) {
@@ -159,9 +163,11 @@
   }
 
   function nameForOwner(id) {
-    const family = familyOwners().find(owner => owner.id === id);
-    if (family) return family.name;
-    return window.RomanceSystem?.helpers?.npcName?.(id) || safeId(id).replace(/[_-]+/g, ' ');
+    const child = window.RomanceFamily?.wardrobeChildName?.(id); // A dynamic child nickname is read directly, without serializing the family each frame.
+    if (child) return child;
+    return window.RomanceSystem?.helpers?.npcName?.(id)
+      || familyOwners().find(owner => owner.id === id)?.name
+      || safeId(id).replace(/[_-]+/g, ' ');
   }
 
   function openWardrobe(npcId, area = null, furnitureId = null) {
