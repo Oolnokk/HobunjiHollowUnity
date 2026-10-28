@@ -6,7 +6,8 @@
 
   const ATTACK_ID = 'rearKick'; // Shared by both Voorg-Ass and Herd-Mother creature definitions.
   const LUNGE_MAX_TILES = 2.6; // Maximum forward charge before the kick executes even on a miss.
-  const LUNGE_SPEED_TILES_S = 5.5; // Lunge moves under the attack state, not the wilderness chase AI.
+  const LUNGE_DURATION_S = 0.12; // Matches Guard Charge's near-instant attack burst rather than ordinary chase movement.
+  const LUNGE_SPEED_TILES_S = LUNGE_MAX_TILES / LUNGE_DURATION_S; // Finite burst speed used by beginConeLunge over the existing 2.6-tile travel budget.
   const KICK_HALF_CONE_RAD = Math.PI / 3; // Shared by the lunge stopping detector and the eventual rear hoof strike.
   const WINDUP_S = 0.32; // Holds the stationary, reversed pose long enough to telegraph the kick.
   const STRIKE_S = 0.26; // Displays the combined idle-head/run1-hindlegs sprite while the hoof connects.
@@ -117,6 +118,7 @@
     state.target = target; // Strike is committed to the original target, even if it subsequently evades.
     state.stage = 'lunge'; // Selection commits immediately: no separate attack-range or AI retry gate.
     state.t = 0;
+    state.lungeElapsedS = 0; // Logs the actual time spent moving when the committed charge stops.
     state.struck = false;
     state.frame = null;
     state.frameApplied = false;
@@ -190,12 +192,13 @@
   function update(creature, state, dt, deps) {
     state.t += Math.max(0, dt);
     if (state.stage === 'lunge') {
+      state.lungeElapsedS += Math.max(0, Number(dt) || 0); // Single scalar keeps mobile diagnostics cheap without per-frame DOM/log updates.
       const stopReason = window.Combat.animalAttacks.advanceConeLunge(creature, state, dt, deps); // Contact, maximum travel, or terrain all commit to the kick.
       if (!stopReason) return true;
       state.lungeStopReason = stopReason; // In-game diagnostics distinguish range exhaustion from target contact.
       state.stage = 'windup';
       state.t = 0;
-      window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' lunge stopped: ' + stopReason, 'wildlife');
+      window.__farmLog?.('[voorg-kick] ' + (creature.id || 'voorg-ass') + ' lunge stopped: ' + stopReason + ' after ' + (state.lungeTraveledPx / Math.max(1, deps.TILE)).toFixed(2) + ' tiles / ' + state.lungeElapsedS.toFixed(3) + 's', 'wildlife');
     }
     creature.facing = state.angleToward + Math.PI;
     creature.vx = 0;
@@ -248,5 +251,5 @@
     isStriking: state => state?.stage === 'lunge' || state?.stage === 'strike',
     isWindingUp: state => state?.stage === 'windup',
   });
-  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, tuning: { LUNGE_MAX_TILES, LUNGE_SPEED_TILES_S, WINDUP_S, STRIKE_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
+  window.VoorgAssRearKick = Object.freeze({ isVoorgAss, canUse, tuning: { LUNGE_MAX_TILES, LUNGE_DURATION_S, LUNGE_SPEED_TILES_S, WINDUP_S, STRIKE_S, RECOVERY_S, DAMAGE, KNOCKBACK_PX_S, DEFAULT_COOLDOWN_MS, MAX_CACHED_KICK_FRAMES, COMPOSITE_GRACE_S }, cacheSize: () => spriteCache.size }); // Mobile console-free diagnostics.
 })();
