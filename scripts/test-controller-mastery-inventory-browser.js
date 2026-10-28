@@ -123,7 +123,40 @@ const root = path.resolve(__dirname, '..');
         }
       }, gameSource.slice(first, last));
       await page.addScriptTag({ path: path.join(root, 'docs/js/controller-ui-nav.js') });
+      await page.addScriptTag({ path: path.join(root, 'docs/js/inventory-ui.js') });
+      await page.evaluate(() => window.InventoryUI.init({ isDevMode: () => false }));
       await page.evaluate(() => window.dispatchEvent(new Event('gamepadconnected')));
+      // Pad navigation changes the detail before Confirm and never enters the action group.
+      const previews = await page.evaluate(() => {
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        const snapshots = [];
+        for (const tile of document.querySelectorAll('#invGrid .inv-item-box[data-key]')) {
+          tile.dispatchEvent(new CustomEvent('hobunji-controller-focus', { bubbles: true })); // Exercises every stack without an activation click.
+          snapshots.push({
+            key: tile.dataset.key,
+            name: document.getElementById('iiName').textContent,
+            selected: tile.classList.contains('selected'),
+            group: window.ControllerUI.debugState().groupId,
+            count: window.__items.inventory[tile.dataset.key],
+            debugKey: window.InventoryUI.debugSnapshot().lastControllerPackPreview?.key,
+          });
+        }
+        window.ControllerUI.showSection('mpInventory', 'invGridArea');
+        const focused = window.ControllerUI.focusedElement();
+        return { snapshots, focusedKey: focused?.dataset.key, focusedName: document.getElementById('iiName').textContent };
+      });
+      assert.equal(previews.snapshots.length, 3);
+      for (const preview of previews.snapshots) {
+        assert.ok(preview.name.endsWith(' ×1'), 'every hovered item renders its own stack detail');
+        if (preview.key === 'apple') assert.equal(preview.name, 'Apple ×1');
+        else assert.notEqual(preview.name, 'Apple ×1');
+        assert.equal(preview.selected, true);
+        assert.equal(preview.group, 'invGridArea', 'highlight alone must never enter the detail action group');
+        assert.equal(preview.count, 1, 'highlight must not consume or use an item');
+        assert.equal(preview.debugKey, preview.key);
+      }
+      if (previews.focusedKey) assert.equal(previews.focusedName, previews.snapshots.find(row => row.key === previews.focusedKey).name);
+
       const keys = await page.evaluate(() => window.__lessonKeys);
       for (const key of [keys[1], 'apple', ...keys, 'apple', ...keys]) {
         await page.evaluate(key => {
