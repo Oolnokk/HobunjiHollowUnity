@@ -55455,8 +55455,8 @@ async function loadRepositoryRuntime(settings) {
 
   captureVerticalPlacementRepositorySnapshot(key); // Must happen before any preview authoring mutates the live repository config object.
 
-  const assetBase = cdnUrl(settings.docsRoot + 'assets/');
-  const configBase = cdnUrl(settings.docsRoot + 'config/');
+  const assetBase = rawUrl(settings.docsRoot + 'assets/');
+  const configBase = rawUrl(settings.docsRoot + 'config/'); // Same raw-first revision as runtime scripts; portrait loading retains a matching CDN fallback.
   state.cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase, configBase });
   if (!state.cosmetics) throw new Error('Portrait cosmetics configuration did not load.');
   try {

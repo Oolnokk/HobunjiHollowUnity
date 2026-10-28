@@ -312,6 +312,35 @@ function resolvePortraitAssetUrl(relPath) {
   }
 }
 
+// Repository mirrors must keep the exact owner, repository and revision.
+// In particular, a preview must never recover by silently borrowing main.
+function portraitRepositoryUrlCandidates(value) {
+  const original = String(value);
+  const candidates = [original];
+  try {
+    const url = new URL(original);
+    let match;
+    if (url.hostname === 'cdn.jsdelivr.net' && (match = /^\/gh\/([^/]+)\/([^/@]+)@([^/]+)\/(.+)$/.exec(url.pathname))) {
+      candidates.push(`https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}${url.search}`);
+    } else if (url.hostname === 'raw.githubusercontent.com' && (match = /^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname))) {
+      candidates.push(`https://cdn.jsdelivr.net/gh/${match[1]}/${match[2]}@${match[3]}/${match[4]}${url.search}`);
+    }
+  } catch (_) { /* Local/relative assets retain their existing serving root. */ }
+  return candidates;
+}
+
+async function fetchPortraitJson(url, options) {
+  let lastError;
+  for (const candidate of portraitRepositoryUrlCandidates(url)) {
+    try {
+      const response = await fetch(candidate, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${candidate}`);
+      return await response.json();
+    } catch (error) { lastError = error; }
+  }
+  throw lastError;
+}
+
 function loadImg(relPath) {
   const cached = IMG_CACHE.get(relPath);
   // Fast path: image already resolved — return a pre-resolved promise so callers
@@ -347,7 +376,7 @@ function loadImg(relPath) {
   ];
 
   const seen = new Set();
-  const uniqueCandidates = candidateUrls.filter((url) => {
+  const uniqueCandidates = candidateUrls.filter(Boolean).flatMap(portraitRepositoryUrlCandidates).filter((url) => {
     if (!url || seen.has(url)) return false;
     seen.add(url);
     return true;
@@ -2224,9 +2253,7 @@ const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, las
 async function loadPortraitSpeciesJson(url) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await fetch(url, attempt ? { cache: 'reload' } : undefined);
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-      return await response.json();
+      return await fetchPortraitJson(url, attempt ? { cache: 'reload' } : undefined);
     } catch (error) {
       if (attempt) throw error;
       portraitSpeciesLoadStatus.retryCount++;
@@ -2241,20 +2268,8 @@ window.portraitSpeciesLoadSnapshot = () => ({ ...portraitSpeciesLoadStatus, figh
  * Throws on unrecoverable failure.
  */
 async function loadPortraitCosmetics(configBase) {
-  let indexBaseUrl = new URL(configBase + 'cosmetics/index.json', window.location.href).toString();
-  let data;
-  try {
-    const resp = await fetch(indexBaseUrl);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    data = await resp.json();
-  } catch (e) {
-    console.warn('[portrait] Primary index fetch failed, falling back to raw GitHub URL', e);
-    const rawUrl = 'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/main/docs/config/cosmetics/index.json';
-    const resp2 = await fetch(rawUrl);
-    if (!resp2.ok) throw new Error('HTTP ' + resp2.status);
-    data = await resp2.json();
-    indexBaseUrl = rawUrl;
-  }
+  const indexBaseUrl = new URL(configBase + 'cosmetics/index.json', window.location.href).toString();
+  const data = await fetchPortraitJson(indexBaseUrl);
 
   const allEntries = (data.entries || []).filter(e => e.id && (e.id.startsWith('appearance::') || !e.id.includes('::')));
   const pathToEntries = new Map();
@@ -2270,9 +2285,7 @@ async function loadPortraitCosmetics(configBase) {
     const jsonUrl = new URL(path, indexBaseUrl).toString();
     let json;
     try {
-      const resp = await fetch(jsonUrl);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status + ' for ' + path);
-      json = await resp.json();
+      json = await fetchPortraitJson(jsonUrl);
     } catch (e) {
       console.warn('[portrait] Could not load cosmetic JSON:', path, e);
       return;
@@ -2366,8 +2379,7 @@ async function loadPortraitCosmetics(configBase) {
       }));
       LAST_SPECIES_DATA_BY_ID = speciesDataById;
       try {
-        const fallbackRes = await fetch(new URL('./cosmetic-fallback-groups.json', speciesIdxUrl).toString());
-        LAST_COSMETIC_FALLBACK_GROUPS = fallbackRes.ok ? await fallbackRes.json() : null;
+        LAST_COSMETIC_FALLBACK_GROUPS = await fetchPortraitJson(new URL('./cosmetic-fallback-groups.json', speciesIdxUrl).toString());
       } catch (e) {
         LAST_COSMETIC_FALLBACK_GROUPS = null;
       }
