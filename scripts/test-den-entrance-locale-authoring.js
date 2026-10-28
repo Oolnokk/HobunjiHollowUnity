@@ -41,7 +41,30 @@ assert.equal(mouthConnector.col, 3);
 assert.equal(mouthConnector.row, 4, 'den entry connector sits inside the cave opening, on its front (floor) row');
 assert.deepEqual(locale.tiles?.['3,4'], { type:'path' }, 'den entry tile is a walkable path tile inside the footprint');
 assert(mouthConnector.row >= cave.row && mouthConnector.row < cave.row + cave.h, 'den entry connector is inside the cave footprint');
-assert.equal(cave.collision?.mode, 'auto', 'default template must preserve the legacy doorway-gap collider until explicitly changed');
+// Both cave entrance variants use the Locale Editor's own custom-rectangle collider,
+ // retaining a solid rear half while removing collision from the full-width front half.
+for (const templatePath of [
+  'docs/config/locales/locale_animal_den_entrance.json',
+  'docs/config/locales/locale_animal_den_entrance_small.json',
+]) {
+  const template = json(templatePath); // Authorable cave document whose collider must survive the editor's load/save workflow.
+  const entrance = template.objects.find(object => object.key === 'cave_small'); // Visual footprint is still untouched; collision is authored independently.
+  assert.equal(entrance?.collision?.mode, 'custom', template.id + ' must use the editor-supported custom rectangle');
+  assert.equal(entrance.collision.colOffset, 0, 'rear collider must start at cave left edge');
+  assert.equal(entrance.collision.rowOffset, 0, 'rear collider must start at cave back edge');
+  assert.equal(entrance.collision.w, entrance.w, 'rear collision must retain its full original width');
+  assert.equal(entrance.collision.h, entrance.h / 2, 'front half of the cave must be open across both flanks');
+  assert.equal(entrance.h, 3, 'template visual cave depth must not change');
+  const scale = 2; // The standard generated wilderness density expands source cave tiles to final-grid collision columns.
+  const blockedRows = entrance.collision.h * scale; // Rear rows that remain solid after template scaling.
+  const expandedWidth = entrance.w * scale; // Final-grid width used to check both formerly blocking flank columns.
+  for (let row = blockedRows; row < entrance.h * scale; row++) {
+    for (const col of [0, 1, expandedWidth - 2, expandedWidth - 1]) {
+      assert.ok(!(col < entrance.collision.w * scale && row < blockedRows), template.id + ' must leave both outer pairs of front columns clear');
+    }
+  }
+}
+assert.match(editor, /mode: \$('insCollisionMode'\)\.value/, 'Locale Editor must save the custom collider without a runtime-only special case');
 assert(localeIndex.locales.some(entry => entry.id === locale.id && entry.category === 'den_entrance'),
   'animal den entrance template must be discoverable in the normal Locale Editor library');
 
