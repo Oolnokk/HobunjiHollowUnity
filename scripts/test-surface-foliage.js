@@ -89,6 +89,16 @@ assert.match(houseAuthorSource,/id="roofFinishPalette"/,'House Editor must expos
 assert.match(houseAuthorSource,/id="roofFinishTexture"/,'House Editor must allow editing the shingle PNG path');
 assert.match(houseAuthorSource,/id="roofFinishSave"/,'House Editor must save reusable tree/foliage and shingle finishes');
 const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
+const preservedAdvanced = api.normalizeSurfaceGrowth({...api.normalizeSurfaceGrowth({
+  kind:'vines',wallOnly:true,hangChance:.6,hangLength:1.4,reuseSurfaceSampling:true,
+  target:'walls',style:'natural'}),length:5}); // Editing Length must not reset unrelated, non-UI growth behavior.
+assert.equal(preservedAdvanced.wallOnly,true,'Wall-only growth survives recipe normalization');
+assert.equal(preservedAdvanced.hangChance,.6,'Hanging-vine chance survives recipe normalization');
+assert.equal(preservedAdvanced.hangLength,1.4,'Hanging-vine length survives recipe normalization');
+assert.match(authorSource,/const input = previous \? \{\.\.\.previous\} : \{\}/,
+  'Editing a saved layer must retain advanced properties absent from its visible controls');
+assert.match(authorSource,/if\(previous\?\.reuseSurfaceSampling===true\)recipe\.reuseSurfaceSampling=true/,
+  'Editing a saved cavern layer must not disable its shared-sampling optimization');
 assert.match(authorSource,/data-count-label/,'Every editor must explain Wrap strand-budget behavior');
 assert.match(authorSource,/\[data-wrap-controls\]'\)\.style\.display/,'Wrap-only controls must be hidden reliably even with flex-row editor CSS');
 assert.match(authorSource,/value="cornerFill"/);
