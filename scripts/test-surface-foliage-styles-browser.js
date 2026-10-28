@@ -320,7 +320,7 @@ const server=http.createServer((request,response)=>{
       return {
         flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
         lowTubes:count(low),highTubes:count(high),partialCover:cover(partial).length,
-        fullCover:cover(full).length,fullTriangles:full.userData.surfaceGrowthStats.coverTriangles,
+        fullCover:cover(full).length,fullTriangles:full.userData.surfaceGrowthStats.coverTriangles||0,
         edgePairs:edgePairs.length,edgeCapacity:edgeBound.userData.surfaceGrowthStats.edgeCapacity,
         correctEdges,endpointSeparation,
         wrapHasUvs:!!full.children[0]?.geometry.attributes.uv,
