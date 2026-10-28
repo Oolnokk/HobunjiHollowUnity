@@ -20,6 +20,7 @@ assert.match(cauldronDef, /name: 'Alchemy Cauldron'/);
 assert.doesNotMatch(cauldronDef, /fixture:\s*true/, 'fixtures never become Dzibim blueprints');
 assert.match(game, /alchemyTableFurniture:\s*\{ wood: 4, stone: 3, bar_nativeCopper: 2 \}/, 'crafting materials must be authored');
 assert.match(game, /\.filter\(\(\[, def\]\) => !def\.fixture\)/, 'normal furniture enters the blueprint catalog');
+assert.match(game, /category: item\.key === 'alchemyTableFurniture' \? 'processing' : 'decorative'/, 'the cauldron recipe belongs in Crafting > Processing');
 assert.match(game, /if \(o\.key === 'alchemyTable'\) return makeAlchemyTableInteractable\(\)/, 'home placement must open alchemy');
 assert.match(game, /alchemyTableFurniture: \(\) => makeAlchemyTableInteractable\(\)/, 'Kunji keeps the same interaction');
 assert.match(game, /registerFarmDecorativeInteractable\(key, col, row/, 'outdoor saved cauldrons must regain interactions');
