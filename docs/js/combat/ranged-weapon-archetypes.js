@@ -623,6 +623,14 @@
     }, PATCH_RETRY_MS);
   }
 
+  function equippedBlowgunTiming() {
+    const ranged = window.RangedWeapons; // Used by mobile diagnostics to inspect the real live weapon config.
+    const itemKey = ranged?.equippedRangedKey?.(); // Identifies the currently equipped ranged weapon for the timing snapshot.
+    const def = ranged?.config?.[itemKey]; // Reads the generated archetype config actually consumed by player and NPC action scheduling.
+    if (def?.rangedType !== BLOWGUN_TYPE) return null;
+    return { fireDurationS: def.fireDurationS, triggerToShotS: def.fireDurationS * def.fireAtFrac, reloadDurationS: def.reloadDurationS };
+  }
+
   window.HobunjiRangedWeaponArchetypes = {
     version: VERSION,
     patchGeneratedDefinitions,
@@ -654,6 +662,7 @@
       blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
       blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
       blowgunFireSpeedMultiplier: BLOWGUN_FIRE_SPEED_MULTIPLIER, // Exposes the effective firing-time scale in mobile debug without changing editor-authored pose data.
+      blowgunFireTiming: equippedBlowgunTiming(), // Reports actual trigger-to-shot delay plus load/recovery timing when a blowgun is equipped.
       blowgunLoadSfx: window.AudioSystem?.combatSfxConfig?.()?.blowgunLoad?.url || null, // Identifies the real active dart-loading recording in mobile debug.
       blowgunLoadSource: 'crossbow-load-copy', blowgunLoadNeutralSource: 'shovel-thrust-rest',
       blowgunStanceSource: window.HeldActionAnimations?.blowgunReady ? 'blowgun-authored-mouth-to-reticle' : 'blowgun-head-forward-fallback',
