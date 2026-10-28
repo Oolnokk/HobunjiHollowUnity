@@ -43,19 +43,24 @@ assert.match(generatorSource,/edge\.hiddenInternal=true/,
   'Interior gable/wall T-junction seams must not become artificial perimeter outlines');
 const sourceOfStyles=generatorSource.slice(generatorSource.indexOf('function surfaceGuideEdges('),generatorSource.indexOf('function applySurfaceGrowth('));
 assert.match(sourceOfStyles,/if\s*\(settings\.style==='cornerFill'\)appendCornerGrowth\(/,'Corner Fill must use true edge topology instead of normal face walks');
-assert.match(sourceOfStyles,/settings\.style==='wrap'\?new Map\(\)/,'Wrap must share a per-layer coverage grid to avoid duplicating occupied paths');
-assert.match(sourceOfStyles,/appendDenseCover\(group,triangles,settings\)/,'Maximum density must use a conformal cover, not unbounded extra tube geometry');
-assert.match(sourceOfStyles,/Math\.min\(settings\.density>=\.995\?24:96/,'Strand geometry must stay capped for mobile');
-assert.match(sourceOfStyles,/Math\.round\(Math\.min\(settings\.count,settings\.strandLimit\)\*\(\.25\+settings\.density\*1\.75\)\)/,
-  'Wrap must respect the strand count and per-surface limit when calculating its density budget');
+assert.match(sourceOfStyles,/function appendEdgeToEdgeWrap\(/,
+  'Wrap must generate a surface-following path from one boundary edge to another');
+assert.match(sourceOfStyles,/const reserved=\[\],ends=\[\]/,
+  'Wrap must reserve beginning and ending anchor space along boundary edges');
+assert.match(sourceOfStyles,/if\(!reached\|\|points\.length<3\)continue/,
+  'Wrap must discard any path that does not reach a different actual boundary edge');
+assert.match(sourceOfStyles,/const strandCount=Math\.min\(settings\.count,settings\.strandLimit\)/,
+  'Wrap must obey the per-surface count and maximum without a separate area-coverage quota');
+assert.doesNotMatch(sourceOfStyles,/appendDenseCover\(|const occupancy=settings\.style==='wrap'/,
+  'Wrap must not use an interior occupancy grid or cover the whole surface');
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).strandLimit,2);
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:2,count:80,perSurface:true}).perSurface,true);
 assert.equal(api.normalizeSurfaceGrowth({strandLimit:999}).strandLimit,80);
 assert.equal(api.normalizeSurfaceGrowth({style:'natural'}).perSurface,false,'Legacy Natural preserves original full-mesh behavior');
 assert.match(generatorSource,/function architecturalSurfaceSources\(/,'All architectural editors must use common exposed-surface source policy');
 assert.match(generatorSource,/insideOtherSection\(/,'Recognition must clip triangles hidden within overlapping sections');
-assert.match(sourceOfStyles,/const coverageKey=\(p,n\)=>/,'Occupancy must distinguish perpendicular surface faces');
-const cornerSource=sourceOfStyles.slice(sourceOfStyles.indexOf('function appendCornerGrowth('),sourceOfStyles.indexOf('function appendDenseCover('));
+assert.match(sourceOfStyles,/end\.point\.distanceTo\(start\.point\)>=minSpan/,'Wrap endpoint pairs must have a minimum separation');
+const cornerSource=sourceOfStyles.slice(sourceOfStyles.indexOf('function appendCornerGrowth('),sourceOfStyles.indexOf('function appendEdgeToEdgeWrap('));
 assert.match(cornerSource,/const raw=sample\.point\.clone\(\)/,'Corner Fill must start each spline point on the exact architectural edge');
 assert.match(cornerSource,/offset=settings\.offset\+\(part\.record\.renderLift\|\|0\)/,'Render clearance is added after edge alignment; no radius-sized gap');
 assert.match(cornerSource,/if\(settings\.curl>0\)/,'Curl must be a separate cosmetic pass after tracing the edge');
