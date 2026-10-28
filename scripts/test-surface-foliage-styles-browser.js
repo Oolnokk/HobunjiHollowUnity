@@ -131,6 +131,35 @@ const server=http.createServer((request,response)=>{
       const partialCorner=Array.from({length:8},(_,i)=>inspectCornerSegments([...wallA,...shortB],i));
       const splitCorner=Array.from({length:12},(_,i)=>inspectCornerSegments([...wallA,...shortB,...upperB],i));
 
+      // Furniture-style architectural surface recognition, including long-wall
+      // T-junctions to subdivided gables and real angle/disconnection breaks.
+      const archQuad=vertices=>[vertices[0],vertices[1],vertices[2],vertices[0],vertices[2],vertices[3]];
+      const baseWall=archQuad([[0,0,0],[4,0,0],[4,2,0],[0,2,0]]);
+      const oneGable=[[0,2,0],[4,2,0],[2,3,0]];
+      const splitGable=[[0,2,0],[2,2,0],[2,3,0],[2,2,0],[4,2,0],[2,3,0]];
+      const angledGable=[[0,2,0],[4,2,0],[2,3,1]];
+      const floatingGable=[[0,3,0],[4,3,0],[2,4,0]];
+      function recognitionReport(vertices){
+        const root=new T.Group();
+        const regions=growth.recognizeArchitecturalSurfaceRegions(root,[{vertices,role:'walls',renderLift:.26}]);
+        growth.replaceSemanticSurfaceGuides(root,regions);
+        const outlines=growth.buildSurfaceGrowth(root,{style:'cornerFill',kind:'roots',target:'walls',
+          seed:'surface-region-test',radius:.05,length:2,count:8,offset:0,curl:0,texture:''});
+        const coverage=growth.buildSurfaceGrowth(root,{style:'wrap',kind:'vines',target:'walls',
+          seed:'surface-region-test',radius:.05,length:2,count:8,offset:0,texture:''});
+        return {regions:regions.length,triangles:regions.map(region=>region.vertices.length/3),
+          outlines:count(outlines),outerEdges:outlines.userData.surfaceGrowthStats.guideBoundaries,
+          coverFaces:coverage.userData.surfaceGrowthStats.triangles};
+      }
+      const coplanarGable=recognitionReport([...baseWall,...oneGable]);
+      const tessellatedGable=recognitionReport([...baseWall,...splitGable]);
+      const steepGable=recognitionReport([...baseWall,...angledGable]);
+      const disconnectedGable=recognitionReport([...baseWall,...floatingGable]);
+      const furnitureStyleAngle=(function(){
+        const root=new T.Group(),source=[{role:'walls',vertices:[...baseWall,...angledGable]}];
+        return {narrow:growth.recognizeArchitecturalSurfaceRegions(root,source,{splitAngleDeg:10}).length,
+          wide:growth.recognizeArchitecturalSurfaceRegions(root,source,{splitAngleDeg:35}).length};
+      })();
       // Build an actual HousePieceGen house with plenty of decorative brick triangles:
       // Corner Fill and Wrap must see only the TWO original sheer wall quads.
       const houseFaces=[
@@ -211,6 +240,7 @@ const server=http.createServer((request,response)=>{
         deterministic:digest(full)===digest(reused),
         houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
         rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
+        coplanarGable,tessellatedGable,steepGable,disconnectedGable,furnitureStyleAngle,
         gappedIntersection,partialCorner,splitCorner,
         hiddenBefore,visibleAfter,budgetLabel,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
@@ -229,11 +259,20 @@ const server=http.createServer((request,response)=>{
     assert(data.splitCorner.some(x=>x.maxY-x.minY>3.4),
       'Multiple short panels on a long wall must support a single continuous Corner Fill strand');
 
+    assert.equal(data.coplanarGable.regions,1,'Coplanar wall and triangular gable must be recognized as one surface');
+    assert.equal(data.coplanarGable.outerEdges,5,'A combined wall/gable should expose only its five true outline edges');
+    assert(data.coplanarGable.outlines>0,'Corner Fill must outline a flat recognized architectural surface');
+    assert.equal(data.tessellatedGable.regions,1,'Gable sections with partial T-junction seams must join the parent wall');
+    assert.equal(data.tessellatedGable.outerEdges,5,'Coplanar shared T-junction edges must not become outline or Wrap starting seams');
+    assert.equal(data.steepGable.regions,2,'Steeply tilted gable remains a different surface');
+    assert.equal(data.disconnectedGable.regions,2,'A detached but coplanar gable remains separate');
+    assert.equal(data.furnitureStyleAngle.narrow,2,'Architectural split-angle threshold must prevent tight-angle merges');
+    assert.equal(data.furnitureStyleAngle.wide,1,'Architecture must support the same configurable split-angle logic as Furniture Author');
     assert.equal(data.houseNatural.sourceTriangles,96,'Legacy Natural house style must still inspect brick meshes');
     assert.equal(data.houseCorners.sourceTriangles,4,'Corner Fill must follow the two original wall quads, not brick polygons');
     assert.equal(data.houseWrap.sourceTriangles,4,'Wrap navigation must follow the two original wall quads, not brick polygons');
-    assert.equal(data.houseCorners.guides,1,'House walls must merge into just one guide mesh');
-    assert.equal(data.houseWrap.guides,1,'Wrap houses must reuse the same efficient guide mesh');
+    assert.equal(data.houseCorners.guides,2,'Perpendicular house walls must be two recognized surfaces, not one role-wide mesh');
+    assert.equal(data.houseWrap.guides,2,'Wrap must use the same detected architectural surfaces as Corner Fill');
     assert(data.houseCorners.guideHidden&&data.houseWrap.guideHidden,'House guides must be invisible and non-raycastable');
     assert(data.houseCorners.renderLift>=.2&&data.houseWrap.renderLift>=.2,'House cladding must lift strands visibly above source planes');
     assert(data.houseCorners.tubes>0,'Architectural wall intersections must produce actual Corner Fill strands');
