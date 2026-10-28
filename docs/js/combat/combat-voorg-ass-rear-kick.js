@@ -248,6 +248,7 @@
 
   window.Combat?.animalAttacks?.register?.(ATTACK_ID, {
     label: 'Rear Kick', start, update, cancel,
+    ownsApproach: true, // Begin its own near-instant charge directly; companions must not prepend a second 2.6-tile lunge.
     isStriking: state => state?.stage === 'lunge' || state?.stage === 'strike',
     isWindingUp: state => state?.stage === 'windup',
   });
