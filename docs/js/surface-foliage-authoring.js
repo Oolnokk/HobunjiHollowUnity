@@ -11,7 +11,9 @@ window.SurfaceFoliageAuthoring = (() => {
       <div class="row"><label>Growth style <select data-field="style"><option value="natural">Natural (original)</option><option value="cornerFill">Corner Fill · follow intersections</option><option value="wrap">Wrap · spread inward from edges</option></select></label></div>
       <div class="row" data-wrap-controls><label>Wrap density <input data-field="density" type="range" min="0.05" max="1" step="0.05" value="0.45"></label><output data-density-label>45%</output></div>
       <p class="hint muted">Natural follows freely across surface faces. Corner Fill pins its base spline directly to real surface intersections, then adds gentle Curl; Clearance offsets the visible strands from those edges. Wrap spreads from edges toward uncovered areas, with Strands acting as a performance budget. Density is an approximate coverage goal; 100% adds a thin, continuous textured cover without piling up tubes.</p>
-      <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label><span data-count-label>Strands</span> <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
+      <div class="row"><label>Seed <input data-field="seed" value="surface-1" style="width:130px"></label><label><span data-count-label>Strands per surface</span> <input data-field="count" type="number" min="1" max="80" value="12" style="width:70px"></label></div>
+      <div class="row"><label>Maximum strands per surface <input data-field="strandLimit" type="number" min="1" max="80" value="80" style="width:70px"></label><label><input data-field="perSurface" type="checkbox" checked> Distribute by detected surface</label></div>
+      <p class="hint muted">Each recognized wall/gable region receives its own Strands budget, capped by its maximum. Legacy Natural layers preserve their previous behavior unless you enable detected surfaces. Shingle layers stay unchanged.</p>
       <div class="row"><label>Length <input data-field="length" type="number" min="0.05" max="30" step="0.1" value="3" style="width:80px"></label><label>Radius <input data-field="radius" type="number" min="0.002" max="0.3" step="0.005" value="0.025" style="width:80px"></label></div>
       <div class="row"><label>Curl <input data-field="curl" type="number" min="0" max="2" step="0.1" value="0.4" style="width:80px"></label><label>Clearance <input data-field="offset" type="number" min="0" max="0.2" step="0.005" value="0.008" style="width:80px"></label><label>Color <input data-field="color" type="color" value="#3a5f3a"></label></div>
       <label>PNG texture <input data-field="texture" type="text" placeholder="assets/textures/example.png" style="width:100%"></label>
@@ -23,9 +25,11 @@ window.SurfaceFoliageAuthoring = (() => {
       const wrap=field('style').value==='wrap';
       panel.querySelector('[data-wrap-controls]').style.display=wrap?'':'none'; // Explicit display prevents editor-specific .row CSS from overriding the hidden attribute.
       panel.querySelector('[data-density-label]').textContent=Math.round(Number(field('density').value)*100)+'%';
-      panel.querySelector('[data-count-label]').textContent=wrap?'Strand budget':'Strands'; // Wrap's count sets a geometric complexity budget rather than a fixed number of strands.
+      panel.querySelector('[data-count-label]').textContent=wrap?'Strand budget per surface':'Strands per surface';
+      field('perSurface').disabled=field('target').value==='shingles'; // Wrap's count sets a geometric complexity budget rather than a fixed number of strands.
     };
     field('style').onchange=updateStyleControls;
+    field('target').onchange=updateStyleControls;
     field('density').oninput=updateStyleControls;
     for (const [value, label] of adapter.targets) { const option = document.createElement('option'); option.value=value;option.textContent=label;field('target').appendChild(option); }
     function refresh() {
@@ -36,7 +40,8 @@ window.SurfaceFoliageAuthoring = (() => {
     }
     field('layer').onchange = () => {
       const recipe = (adapter.read()||[])[Number(field('layer').value)]; // Editing keeps the recipe's captured selected-object IDs.
-      if(recipe)for(const key of ['kind','target','style','density','seed','count','length','radius','curl','offset','color','texture'])field(key).value=window.FoliageGenerator.normalizeSurfaceGrowth(recipe)[key]??'';
+      if(recipe)field('perSurface').checked=window.FoliageGenerator.normalizeSurfaceGrowth(recipe).perSurface;
+      if(recipe)for(const key of ['kind','target','style','density','seed','count','strandLimit','length','radius','curl','offset','color','texture'])field(key).value=window.FoliageGenerator.normalizeSurfaceGrowth(recipe)[key]??'';
       updateStyleControls();
     };
     function applyDefaults() {
@@ -60,6 +65,7 @@ window.SurfaceFoliageAuthoring = (() => {
       try {
         const recipes = [...(adapter.read()||[])], index = Number(field('layer').value), input = {}; // Copy the list so undo snapshots retain the prior state.
         for(const key of ['kind','target','style','density','seed','count','length','radius','curl','offset','color','texture'])input[key]=field(key).value;
+        input.perSurface=field('perSurface').checked;
         input.targetIds=input.target==='selected' ? adapter.selectedIds() : [];
         if(input.target==='selected'&&!input.targetIds.length){
           if(index>=0&&recipes[index]?.target==='selected')input.targetIds=recipes[index].targetIds||[];
