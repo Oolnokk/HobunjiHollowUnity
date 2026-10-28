@@ -5,104 +5,116 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const read = relative => fs.readFileSync(path.resolve(__dirname, '..', relative), 'utf8'); // Reads the shipped runtimes and authored maps, not copied test fixtures.
+const room = JSON.parse(read('docs/config/maps/map_i_inn_F2_hreesh.json')); // A real explicitly authored NPC bedroom.
+const temple = JSON.parse(read('docs/config/maps/map_i_temple.json')); // A real registry-fallback interior.
+const rawDb = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Existing NPC ids and home assignments.
+const overrides = JSON.parse(read('docs/config/npcs/schedule-overrides.json')); // Runtime removals must invalidate placeholders.
+const removed = new Set(overrides.removeNpcIds || []); // Mirrors the local NPC database removal list.
+const runtimeDb = { ...rawDb, npcs: (rawDb.npcs || []).filter(npc => !removed.has(npc.id)) }; // Post-override DB is authoritative.
+const registry = JSON.parse(read('docs/config/npcs/placeholder-wardrobes.json')); // Shipping fallback assignments.
 
-const root = path.resolve(__dirname, '..');
-const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
-const source = read('docs/js/npc-furniture-wardrobe-bridge-v4.js');
-const loader = read('docs/js/combat/combat-config-loader.js');
-const hreeshRoom = JSON.parse(read('docs/config/maps/map_i_inn_F2_hreesh.json'));
-const templeMap = JSON.parse(read('docs/config/maps/map_i_temple.json'));
-const rawNpcDatabase = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json'));
-const scheduleOverrides = JSON.parse(read('docs/config/npcs/schedule-overrides.json'));
-const registry = JSON.parse(read('docs/config/npcs/placeholder-wardrobes.json'));
-const removedNpcIds = new Set(scheduleOverrides.removeNpcIds || []);
-const runtimeNpcDatabase = { ...rawNpcDatabase, npcs: (rawNpcDatabase.npcs || []).filter(rec => !removedNpcIds.has(rec.id)) };
+const bridgeSource = read('docs/js/npc-furniture-wardrobe-bridge-v5.js');
+const furnitureSource = read('docs/js/furniture-table-system.js');
+const loaderSource = read('docs/js/combat/combat-config-loader.js');
+const gameplaySource = read('docs/game.js');
+const saveSource = read('docs/js/farm-editor.js');
+const placerSource = read('docs/js/furniture-placer.js');
+assert.doesNotThrow(() => new vm.Script(bridgeSource));
+assert.doesNotThrow(() => new vm.Script(furnitureSource));
+assert.match(loaderSource, /npc-furniture-wardrobe-bridge-v5\.js/, 'the shipped loader installs the furniture-owned v5 adapter');
+assert.doesNotMatch(bridgeSource, /\b(?:requestAnimationFrame|setInterval|MutationObserver)\s*\(/, 'no permanent wardrobe polling or DOM arch injection');
+assert.doesNotMatch(bridgeSource, /syncInteractionPrompts\s*=/, 'the normal world prompt and its input glyphs must not be filtered or replaced');
+assert.match(gameplaySource, /promptInputs,[\s\S]*?showInputHints: true/, 'ordinary world prompts include keyboard/gamepad/touch input hints');
+assert.doesNotMatch(gameplaySource, /btns\.push\(\{\s*icon: '👗',[\s\S]{0,250}npc_open_wardrobe/, 'no old NPC-proximity wardrobe button');
+assert.match(saveSource, /npcWardrobeFor: obj\.npcWardrobeFor/, 'furniture assignments must be saved in the farm layout');
+assert.match(saveSource, /restoredObject\.npcWardrobeFor = String\(npcWardrobeFor\)/, 'restored chest must regain its exact NPC owner');
+assert.match(placerSource, /assignWardrobeOwner/, 'house furniture menu must expose wardrobe owner assignments');
+assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture menu updates the real placed record');
 
-assert.doesNotThrow(() => new vm.Script(source, { filename: 'npc-furniture-wardrobe-bridge-v4.js' }), 'wardrobe v4 must parse');
-assert.doesNotMatch(source, /\b(?:requestAnimationFrame|setInterval)\s*\(/, 'placeholder wardrobes must not introduce a permanent polling loop');
-assert.match(source, /placeholderEnabled:\s*true/, 'placeholder registry is modular and enabled by default');
-assert.match(source, /LocalDBOverrides\?\.loadDatabase[\s\S]*?loadDatabase\('npcDatabase'\)/, 'placeholder eligibility uses the same post-override NPC database as the game');
-assert.match(source, /delete button\.dataset\.action/, 'suppression removes the semantic wardrobe action rather than merely hiding the button');
-assert.match(source, /const keep = buttons\.map\(entry => actionId\(entry\) !== 'npc_open_wardrobe'\)/, 'world popup filtering removes old NPC-centered wardrobe rows');
-assert.match(source, /options\.promptInputs\.filter\(\(_, index\) => keep\[index\]\)/, 'world popup filtering keeps per-row prompt inputs aligned with the surviving buttons');
-assert.match(loader, /npc-furniture-wardrobe-bridge-v4\.js/, 'runtime loader uses registry-backed wardrobe v4');
+(async () => {
+  const opened = []; // Tracks the existing NPC wardrobe's actual ID-keyed opening.
+  let spouseId = 'aliri_ginju'; // Live spouse changes validate assignments, not a stale snapshot.
+  const popup = { syncInteractionPrompts() {} }; // An ordinary popup must survive untouched by the bridge.
+  const w = {
+    WorldPopupText: popup,
+    SCRATCHBONES_CONFIG: { game: {} },
+    LocalDBOverrides: { loadDatabase: async () => runtimeDb },
+    NpcWardrobe: { openWardrobePanel: id => { opened.push(id); return true; } },
+    RomanceSystem: { getSpouse: () => spouseId ? { npcId: spouseId } : null, helpers: { npcName: id => id === 'aliri_ginju' ? 'Aliri' : id } },
+    RomanceFamily: { snapshot: () => ({ children: [{ id: 'child_tester', name: 'Hushka' }] }) },
+  }; // Browser globals are limited to the public integration seams used in production.
+  const fetchStub = async url => {
+    const file = path.resolve(__dirname, '..', url); // All registry/map calls use shipping relative URLs.
+    if (!file.startsWith(path.resolve(__dirname, '..', 'docs') + path.sep)) throw new Error('Unexpected wardrobe URL ' + url);
+    return { ok: true, json: async () => JSON.parse(fs.readFileSync(file, 'utf8')) };
+  };
+  vm.runInNewContext(bridgeSource, { window: w, fetch: fetchStub, console, Math, Promise });
+  const api = w.NpcFurnitureWardrobes;
+  assert.equal(api.version, 5);
+  assert.equal(w.WorldPopupText, popup, 'v5 leaves floating prompts and bindings under the normal UI owner');
 
-const seenPopupButtons = [];
-const popupStub = {
-  syncInteractionPrompts(options = {}) {
-    seenPopupButtons.push(...(options.buttons || []));
-    return options.buttons || [];
-  },
-};
-const wardrobeWindow = {
-  SCRATCHBONES_CONFIG: { game: { input: { targeting: { orbitRadiusTiles: 0.62 } } } },
-  NpcWardrobe: { openWardrobePanel() { return true; } },
-  WorldPopupText: popupStub,
-  LocalDBOverrides: { loadDatabase(id) { assert.equal(id, 'npcDatabase'); return Promise.resolve(runtimeNpcDatabase); } },
-  __hobunjiFurnitureDebug: { getCurrentArea: () => null, playerState: null, targetAimAngleDeg: 0 },
-  matchMedia: () => ({ matches: false }),
-};
-const documentStub = {
-  readyState: 'complete',
-  documentElement: { dataset: {} },
-  body: { dataset: {} },
-  getElementById() { return null; },
-  addEventListener() {},
-};
-class MutationObserverStub { observe() {} }
+  assert.equal(api.wardrobeBindings(room, 'map_i_inn_F2_hreesh', runtimeDb, registry).filter(b => b.npcId === 'hreesh').length, 1);
+  const hreesh = room.furniture.find(piece => piece.npcWardrobeFor === 'hreesh');
+  assert(hreesh, 'author explicitly bound Hreesh to bedroom furniture');
+  assert.equal(api.ownerForPlacement('map_i_inn_F2_hreesh', hreesh).npcId, 'hreesh', 'authored metadata targets the exact piece immediately');
+  const fallback = api.placeholderWardrobeBindings(temple, 'map_i_temple', runtimeDb, registry).find(b => b.npcId === 'bird_bone');
+  assert(fallback, 'legacy registry links a real piece for Bird Bone');
+  assert.equal(fallback.source, 'placeholder-registry');
+  assert(!api.placeholderWardrobeBindings(temple, 'map_i_temple', runtimeDb, registry).some(b => removed.has(b.npcId)), 'removed NPCs do not revive through the fallback');
+  await api.primeArea('map_i_temple');
+  const fallbackPiece = temple.furniture.find(piece => piece.id === fallback.id);
+  assert.equal(api.ownerForPlacement('map_i_temple', fallbackPiece).npcId, 'bird_bone', 'the registry resolves by existing furniture ID, not aim proximity');
 
-vm.runInNewContext(source, {
-  window: wardrobeWindow,
-  document: documentStub,
-  MutationObserver: MutationObserverStub,
-  fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }),
-  queueMicrotask(fn) { fn(); },
-  localStorage: { getItem: () => null },
-  Math,
-  console,
-});
+  const spouseChest1 = { id: 'family-chest-a', key: 'chest', npcWardrobeFor: 'aliri_ginju', col: 2, row: 2 };
+  const spouseChest2 = { id: 'family-chest-b', key: 'wardrobe', npcWardrobeFor: 'aliri_ginju', col: 8, row: 2 };
+  const childChest = { id: 'family-child', key: 'chest', npcWardrobeFor: 'child_tester', col: 5, row: 2 };
+  assert.equal(api.ownerForPlacement('interior', spouseChest1).npcId, api.ownerForPlacement('interior', spouseChest2).npcId, 'duplicate furniture points at exactly one inventory key');
+  assert.equal(api.ownerForPlacement('interior', childChest).npcId, 'child_tester');
+  assert.equal(api.ownerForPlacement('interior', { key: 'desk', npcWardrobeFor: 'aliri_ginju' }), null, 'other furniture cannot masquerade as family storage');
+  assert.equal(api.ownerForPlacement('farm', spouseChest1), null, 'family wardrobe assignment is house-only');
+  assert.equal(api.ownerForPlacement('interior', { key: 'wardrobe', npcWardrobeFor: 'outsider' }), null, 'nonfamily wardrobe access is denied');
 
-const api = wardrobeWindow.NpcFurnitureWardrobes;
-assert.equal(api?.version, 4, 'wardrobe v4 installs');
-assert.equal(api?.eventDriven, true, 'wardrobe v4 stays event-driven');
+  vm.runInNewContext(furnitureSource, { window: w, performance: { now: () => 0 }, console });
+  const tables = w.FurnitureTableSystem;
+  let aimedX = 2.5, frame = 0; // Simulates the real ray selector choosing the model under the reticle.
+  tables.init({
+    getArea: () => 'interior',
+    getPlayerPosition: () => ({ x: 5, z: 2.5 }),
+    getWalkers: () => [],
+    getAim: () => ({ c: aimedX, r: 2.5 }),
+    frameId: () => frame,
+    focusCandidates: candidates => {
+      const candidate = candidates.find(item => item.box?.min.x <= aimedX && item.box?.max.x >= aimedX);
+      return candidate ? { candidate, distanceWorld: 1 } : null;
+    },
+  });
+  const mesh = x => ({ parent: {}, position: { x, y: 0, z: 2.5 }, scale: { x: 1, y: 1, z: 1 }, userData: {} }); // Real placement root is the anchor, not an NPC or synthetic tile.
+  const mesh1 = mesh(2.5), mesh2 = mesh(8.5), mesh3 = mesh(5.5);
+  tables.registerPlacement('interior', spouseChest1, mesh1, { fw: 1, fd: 1 });
+  tables.registerPlacement('interior', spouseChest2, mesh2, { fw: 1, fd: 1 });
+  tables.registerPlacement('interior', childChest, mesh3, { fw: 1, fd: 1 });
+  let target = tables.objectAt('interior', 2, 2);
+  assert.equal(target?.getButtons()[0].action, 'obj_open_wardrobe', 'wardrobe uses normal obj_* dispatch');
+  assert.equal(target?.getButtons()[0].promptRoot, mesh1, 'the popup floats over the exact selected furniture root');
+  assert.equal(target?.getButtons()[0].worldInteraction, true);
+  assert.match(target?.getButtons()[0].label, /Aliri/);
+  assert.equal(target.onAction('obj_open_wardrobe').ok, true);
+  aimedX = 8.5; frame++;
+  target = tables.objectAt('interior', 8, 2);
+  assert.equal(target?.getButtons()[0].promptRoot, mesh2);
+  target.onAction('obj_open_wardrobe');
+  aimedX = 5.5; frame++;
+  target = tables.objectAt('interior', 5, 2);
+  assert.equal(target?.getButtons()[0].promptRoot, mesh3);
+  target.onAction('obj_open_wardrobe');
+  assert.deepEqual(opened, ['aliri_ginju', 'aliri_ginju', 'child_tester'], 'two chests share spouse contents, while child inventory is distinct');
 
-const hreesh = runtimeNpcDatabase.npcs.find(rec => rec.id === 'hreesh');
-assert(hreesh, 'runtime-effective NPC database contains Hreesh');
-assert.equal(hreesh.homeId, 'inn', 'Hreesh is an inn resident in the real NPC database');
-assert.equal(runtimeNpcDatabase.npcs.some(rec => rec.id === 'hammerhead_tuhupnuk'), false, 'runtime-effective NPC database excludes schedule-override removals');
+  aimedX = 20; frame++;
+  assert.equal(tables.objectAt('interior', 20, 2), null, 'no floating prompt or wardrobe action for an unaimed object');
+  spouseId = null; aimedX = 2.5; frame++;
+  assert.equal(tables.objectAt('interior', 2, 2), null, 'assignment cannot open a former spouse after household changes');
+  assert.equal(api.debugSnapshot().lastOpened.furnitureId, 'family-child', 'mobile diagnostics identify the physical opened piece');
 
-const hreeshPlaceholders = api.placeholderWardrobeBindings(hreeshRoom, 'map_i_inn_F2_hreesh', runtimeNpcDatabase, registry);
-assert.equal(hreeshPlaceholders.some(binding => binding.npcId === 'hreesh'), false, 'authored bedroom wardrobe suppresses Hreesh registry fallback in the same room');
-const hreeshBindings = api.wardrobeBindings(hreeshRoom, 'map_i_inn_F2_hreesh', runtimeNpcDatabase, registry).filter(binding => binding.npcId === 'hreesh');
-assert.equal(hreeshBindings.length, 1, 'Hreesh resolves exactly one wardrobe target in his bedroom');
-assert.equal(hreeshBindings[0].source, 'authored', 'Hreesh bedroom wardrobe comes from npcWardrobeFor metadata');
-assert.equal(hreeshBindings[0].id, 'f_map_i_inn_F2_hreesh_wardrobe', 'Hreesh targets the wardrobe beside his bed');
-
-const templeFallbacks = api.placeholderWardrobeBindings(templeMap, 'map_i_temple', runtimeNpcDatabase, registry);
-const birdBonePlaceholder = templeFallbacks.find(binding => binding.npcId === 'bird_bone');
-assert(birdBonePlaceholder, 'NPCs without authored home storage still resolve a generated registry fallback');
-assert.equal(birdBonePlaceholder.source, 'placeholder-registry', 'un-authored fallback remains explicitly marked registry data');
-
-const authoredOverrideMap = JSON.parse(JSON.stringify(templeMap));
-const overridePiece = authoredOverrideMap.furniture.find(piece => piece.id && piece.id !== birdBonePlaceholder.id) || authoredOverrideMap.furniture[0];
-overridePiece.npcWardrobeFor = 'bird_bone';
-const combined = api.wardrobeBindings(authoredOverrideMap, 'map_i_temple', runtimeNpcDatabase, registry);
-const birdBoneBindings = combined.filter(binding => binding.npcId === 'bird_bone');
-assert.equal(birdBoneBindings.length, 1, 'authored npcWardrobeFor replaces rather than duplicates a generated fallback');
-assert.equal(birdBoneBindings[0].source, 'authored', 'explicit authored wardrobe always wins over placeholder registry logic');
-
-const registryWithRemovedNpc = JSON.parse(JSON.stringify(registry));
-registryWithRemovedNpc.assignments.hammerhead_tuhupnuk = { area: 'map_i_temple', furnitureId: 'fmqfjv69rtvht', itemKey: 'candleTableFurniture', reason: 'test' };
-const filtered = api.placeholderWardrobeBindings(templeMap, 'map_i_temple', runtimeNpcDatabase, registryWithRemovedNpc);
-assert.equal(filtered.some(binding => binding.npcId === 'hammerhead_tuhupnuk'), false, 'registry cannot resurrect a runtime-removed NPC');
-
-popupStub.syncInteractionPrompts({
-  buttons: [
-    { action: 'npc_open_wardrobe', label: 'Wardrobe' },
-    { action: 'npc_offer_gift', label: 'Gift' },
-  ],
-});
-assert.equal(seenPopupButtons.some(entry => entry.action === 'npc_open_wardrobe'), false, 'old NPC wardrobe prompt is removed before WorldPopupText receives it');
-assert.equal(seenPopupButtons.some(entry => entry.action === 'npc_offer_gift'), true, 'non-wardrobe NPC prompts are preserved');
-
-console.log('NPC wardrobe v4 regression passed. Authored bedroom target + generated fallback behavior verified.');
+  console.log('NPC wardrobe v5 regression passed: authored/placeholder map bindings, real target+prompt, duplicate family access, and persistence seams.');
+})().catch(error => { console.error(error); process.exitCode = 1; });
