@@ -241,6 +241,9 @@ input,select,textarea{background:#0f1520;color:var(--text);border:1px solid #394
       </div>
       <div class="row"><button id="markRoofBtn2" type="button">Tag selected as roof</button><button id="rebuildRoofBtn" type="button">Rebuild roof preview</button><button id="clearRoofPreviewBtn" class="danger" type="button">Hide roof preview</button></div>
       <div class="row"><label class="fileButton" for="roofShingleGlbInput">Import shingle GLB with shinglebone</label><input id="roofShingleGlbInput" class="hidden" type="file" accept=".glb,model/gltf-binary"><button id="useTubePreviewBtn" type="button">Use tube preview</button></div>
+      <div class="row" style="margin-top:8px"><label>Shingle finish from shared palette <select id="roofFinishPalette"><option value="">Original GLB material</option></select></label></div>
+      <div class="row"><label>Shingle PNG <input id="roofFinishTexture" type="text" placeholder="assets/textures/wibbly_surface.png" style="width:240px"></label><label>Tint <input id="roofFinishColor" type="color" value="#4a3b33"></label></div>
+      <div class="row"><button id="roofFinishSave" type="button">Save finish to reusable palette</button><button id="roofFinishReset" type="button">Use original shingle finish</button></div>
       <div class="roofStatus" id="roofStatus">No shingle GLB loaded. Roof faces preview as bamboo-like tubes that overhang the face edges.</div>
       <p class="hint">A roof-tagged face generates repeaters along the face. Imported shingle GLBs are cloned onto those repeaters; a hidden object named <b>shinglebone</b> supplies the alignment/stretch axis. Author that marker in the companion shinglebone editor.</p>
     </div>
@@ -1893,6 +1896,7 @@ function ensureRoofConfig(){
   r.peakRotateStrength = Math.min(1, Math.max(0, finite(r.peakRotateStrength,0.5)));
   r.peakRotateFalloff = Math.max(0, finite(r.peakRotateFalloff,0));
   r.shingleSource = r.shingleSource || '';
+  if(r.shingleMaterial && (!/^#[0-9a-f]{6}$/i.test(r.shingleMaterial.color||'')||typeof r.shingleMaterial.texture!=='string'))delete r.shingleMaterial;
   return r;
 }
 function syncRoofFromInputs(){
@@ -1975,6 +1979,9 @@ function syncRoofInputsFromPiece(){
   if($('roofPeakRotateChk')) $('roofPeakRotateChk').checked=!!r.peakRotate;
   if($('roofPeakRotateStrength')) $('roofPeakRotateStrength').value=r.peakRotateStrength;
   if($('roofPeakRotateFalloff')) $('roofPeakRotateFalloff').value=r.peakRotateFalloff;
+  if($('roofFinishTexture'))$('roofFinishTexture').value=r.shingleMaterial?.texture||'';
+  if($('roofFinishColor'))$('roofFinishColor').value=r.shingleMaterial?.color||'#4a3b33';
+  syncRoofFinishPalette();
   if($('roofStatus')) $('roofStatus').textContent = r.shingleSource ? `Loaded shingle template: ${r.shingleSource}. Roof preview uses shinglebone alignment/stretch.` : 'No shingle GLB loaded. Roof faces preview as bamboo-like tubes that overhang the face edges.';
 }
 function roofFaceFrame(face, config){
@@ -2147,6 +2154,36 @@ function targetQuaternionForRoofTarget(target, config=ensureRoofConfig()){
   if(Math.abs(peakRad)>1e-8) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,0,1), peakRad));
   return q;
 }
+const roofPreviewTextures=new Map(),roofPreviewFinishMaterials=new WeakMap();
+function applyPreviewRoofFinish(scene,config){
+  const finish=config.shingleMaterial;
+  if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
+  const path=String(finish.texture||''),url=path.startsWith('assets/')?new URL('../../'+path,location.href).href:path;
+  let texture=roofPreviewTextures.get(url);
+  if(url&&!texture){
+    texture=new THREE.TextureLoader().load(url);
+    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+    if('colorSpace' in texture&&THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+    roofPreviewTextures.set(url,texture);
+  }
+  scene.traverse(mesh=>{
+    if(!mesh.isMesh||!mesh.material)return;
+    const use=src=>{
+      if(!src)return src;
+      let variants=roofPreviewFinishMaterials.get(src);
+      if(!variants){variants=new Map();roofPreviewFinishMaterials.set(src,variants);}
+      const key=path+'|'+finish.color;
+      if(!variants.has(key)){
+        const mat=src.clone();
+        mat.map=texture||null;mat.color?.set(finish.color);mat.vertexColors=false;
+        if('metalness' in mat)mat.metalness=0;if('roughness' in mat)mat.roughness=1;
+        mat.needsUpdate=true;variants.set(key,mat);
+      }
+      return variants.get(key);
+    };
+    mesh.material=Array.isArray(mesh.material)?mesh.material.map(use):use(mesh.material);
+  });
+}
 function makeShingleInstance(target, config=ensureRoofConfig()){
   const tpl=state.roofShingleTemplate;
   if(!tpl) return makeTubePreview(target);
@@ -2165,6 +2202,7 @@ function makeShingleInstance(target, config=ensureRoofConfig()){
     clone.matrixAutoUpdate=false;
   }
   wrapper.add(clone);
+  applyPreviewRoofFinish(clone,config);
   wrapper.userData.roofTarget=target;
   return wrapper;
 }
@@ -2199,6 +2237,18 @@ function alignRoofFaceGroupToEavePlaneCenter(face, group, config){
   const deltaAcross=desired.dot(across)-actual.dot(across);
   const move=dir.multiplyScalar(deltaDir).add(across.multiplyScalar(deltaAcross));
   if(move.lengthSq()>1e-12) group.position.add(move);
+}
+function roofFinishEntries(){
+  return window.FoliageGenerator.surfaceMaterialPalette(state.piece?.materialPalette||[]);
+}
+function syncRoofFinishPalette(){
+  const select=$('roofFinishPalette');
+  if(!select)return;
+  select.replaceChildren(new Option('Original GLB / custom',''));
+  const finish=state.piece?.roof?.shingleMaterial;
+  for(const entry of roofFinishEntries())select.add(new Option(entry.name,entry.id));
+  const matching=roofFinishEntries().find(e=>finish&&e.texture===finish.texture&&e.color.toLowerCase()===finish.color.toLowerCase());
+  select.value=matching?.id||'';
 }
 function rebuildRoofPreview(){
   if(!roofGroup) return;
@@ -2291,10 +2341,12 @@ function rebuildHouseSurfaceFoliage(){
   const recipes=state.piece.surfaceGrowth||[];
   if(recipes.some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap'||recipe.perSurface===true)){
     const faces=window.HouseWallFixtures?.cutFaces(state.piece.base.faces,state.piece.wallFixtures).faces||state.piece.base.faces; // Carved architectural wall panels, never the generated brick preview.
-    const sourcePanels=foliage.architecturalSurfaceSources(faces,{wallLift:0,roofLift:.16});
-    foliage.replaceSemanticSurfaceGuides(root,foliage.recognizeArchitecturalSurfaceRegions(root,sourcePanels,{
-      occlusionFaces:state.piece.base.faces
-    })); // Exposed cross-gable geometry only; the bare editor needs no masonry lift.
+    const modes=[...new Set(recipes.map(recipe=>!!recipe.tunnelAsOpening))];
+    const sources=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(root,
+      foliage.architecturalSurfaceSources(faces,{wallLift:0,roofLift:.16,tunnelAsOpening:mode}),
+      {occlusionFaces:state.piece.base.faces,tunnelAsOpening:mode}).map(region=>({...region,
+        openingMode:mode,id:region.id+':'+(mode?'entrance-open':'tunnel-plant')})));
+    foliage.replaceSemanticSurfaceGuides(root,sources); // Exposed cross-gable geometry only; the bare editor needs no masonry lift.
   } else if(root.userData.surfaceGuideCount) foliage.replaceSemanticSurfaceGuides(root,[]);
   const report=foliage.applySurfaceGrowth(root,recipes);
   return report+' (architectural guide faces: '+(root.userData.surfaceGuideCount||0)+')'; // Mobile-visible diagnostic.
@@ -2329,7 +2381,33 @@ $('refreshExportBtn').onclick=refreshExport; $('downloadJsonBtn').onclick=downlo
 $('jsonInput').onchange=e=>{ const file=e.target.files?.[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ try{ importPayload(JSON.parse(reader.result)); }catch(err){ log(`JSON import failed: ${err.message}`, 'error'); } }; reader.readAsText(file); e.target.value=''; };
 for(const id of ['pieceName','pieceType','basePreset','baseHeight','wallThickness','groundY']) $(id).addEventListener('input',()=>{ syncPieceFromInputs(); refreshExport(); });
 
-SurfaceFoliageAuthoring.mount($('hpaLeftPanel'),{targets:[['all','House surfaces + gables'],['walls','Walls + gables'],['shingles','Highland roof shingles']],read:()=>state.piece.surfaceGrowth,selectedIds:()=>[],write:recipes=>{pushUndo('Surface roots/vines');state.piece.surfaceGrowth=recipes;refreshExport();return rebuildHouseSurfaceFoliage();},log});
+function saveHouseFinishToPalette(texture,color,kind){
+  const name=prompt('Name this reusable material:');
+  if(!name?.trim())return;
+  if(!/^#[0-9a-f]{6}$/i.test(color||''))return;
+  pushUndo('Save reusable material');
+  state.piece.materialPalette=[...(state.piece.materialPalette||[]),{
+    id:newId('material'),name:name.trim(),texture:String(texture||''),color,kind:kind||'vines'}];
+  syncRoofFinishPalette();refreshExport();
+}
+$('roofFinishPalette').addEventListener('change',()=>{
+  const chosen=roofFinishEntries().find(e=>e.id===$('roofFinishPalette').value);
+  if(!chosen)return;
+  pushUndo('Select shingle finish');ensureRoofConfig().shingleMaterial={texture:chosen.texture,color:chosen.color};
+  syncRoofInputsFromPiece();rebuildRoofPreview();refreshExport();
+});
+for(const id of ['roofFinishTexture','roofFinishColor'])$(id).addEventListener('change',()=>{
+  pushUndo('Edit shingle finish');
+  ensureRoofConfig().shingleMaterial={texture:$('roofFinishTexture').value,color:$('roofFinishColor').value};
+  syncRoofFinishPalette();rebuildRoofPreview();refreshExport();
+});
+$('roofFinishReset').onclick=()=>{
+  pushUndo('Restore original shingle material');delete ensureRoofConfig().shingleMaterial;
+  syncRoofInputsFromPiece();rebuildRoofPreview();refreshExport();
+};
+$('roofFinishSave').onclick=()=>saveHouseFinishToPalette($('roofFinishTexture').value,$('roofFinishColor').value,'roots');
+SurfaceFoliageAuthoring.mount($('hpaLeftPanel'),{materialPalette:()=>state.piece.materialPalette||[],
+  saveMaterial:(texture,color,kind)=>saveHouseFinishToPalette(texture,color,kind),targets:[['all','House surfaces + gables'],['walls','Walls + gables'],['shingles','Highland roof shingles']],read:()=>state.piece.surfaceGrowth,selectedIds:()=>[],write:recipes=>{pushUndo('Surface roots/vines');state.piece.surfaceGrowth=recipes;refreshExport();return rebuildHouseSurfaceFoliage();},log});
 try{ updateUndoRedoButtons(); syncSetsFromPiece(); syncRoofInputsFromPiece(); if(!state.piece.base.faces.length && !footprintSet.size) applyBasePreset('highland', false); drawGrid(); rebuildFootprintOverlay(); rebuildFaceMeshes(); rebuildRoofPreview(); renderAssetList(); renderPieceList(); refreshExport(); wallFixtureEditor = mountHouseWallFixtures({
   THREE,state,renderer,camera,faceMeshes,root,pushUndo,refreshExport,rebuildFaceMeshes,log,transform,detachFaceGizmo,
   setTransformTarget:type=>{activeTransformTarget=type;}
