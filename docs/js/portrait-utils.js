@@ -659,6 +659,44 @@ function _imageForTint(img, sourceKey, tint) {
   return img;
 }
 
+// Exact authored marker selection happens before ordinary cloth tinting. Both
+// partitions preserve alpha; only the selected pixels use the third dye.
+const _PIXEL_DYE_CACHE = new PortraitPixelCache(8 * 1024 * 1024);
+function pixelDyeLayerImage(img, layer, rgb) {
+  if (!layer.pixelDye) return img;
+  const key = [layer.url, layer.pixelDye.sourceHex, layer.pixelDyeOnly, ...(rgb || [])].join('|');
+  const cached = _PIXEL_DYE_CACHE.get(key);
+  if (cached) return cached;
+  const source = parseHexColor(layer.pixelDye.sourceHex);
+  if (!source) return img;
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: img.naturalWidth || img.width, height: img.naturalHeight || img.height,
+  });
+  canvas.naturalWidth = canvas.width;
+  canvas.naturalHeight = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let weight = 0, sumX = 0, sumY = 0;
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const data = pixels.data;
+    const matches = data[i] === source.r && data[i + 1] === source.g && data[i + 2] === source.b;
+    if (matches !== !!layer.pixelDyeOnly) { data[i + 3] = 0; continue; }
+    if (layer.pixelDyeOnly && data[i + 3]) {
+      const alpha = data[i + 3];
+      const pixel = i / 4;
+      sumX += (pixel % canvas.width + 0.5) * alpha;
+      sumY += (Math.floor(pixel / canvas.width) + 0.5) * alpha;
+      weight += alpha;
+      [data[i], data[i + 1], data[i + 2]] = rgb || [source.r, source.g, source.b];
+    }
+  }
+  ctx.putImageData(pixels, 0, 0);
+  canvas.pixelDyeCentroid = weight ? { x: sumX / weight / canvas.width, y: sumY / weight / canvas.height } : null;
+  _PIXEL_DYE_CACHE.set(key, canvas);
+  return canvas;
+}
+
 // Behind-view layers that need to cancel the later whole-canvas mirror (see
 // _cloneBehindLayer) carry a negative sx. Doing that via a canvas transform
 // (translate+scale) at the call site breaks as soon as the draw goes through
@@ -1355,6 +1393,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const _needsScale = (_scaleX !== 1 || _scaleY !== 1);
   if (_needsScale) { ctx.save(); ctx.scale(_scaleX, _scaleY); }
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
+  canvas.hobunjiPortraitGlow = null; // Rebuild/removal must clear stale mask lighting.
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
   const tintFor = (slot) => {
@@ -1703,25 +1742,60 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   };
 
+  const withPixelDyeLayer = (entry, draw) => {
+    const { layer, group } = entry;
+    let img = imgMap.get(layer.url);
+    if (!img) return;
+    let tint = entry.tint || entry.filter;
+    let sourceKey = layer.url;
+    if (layer.pixelDye) {
+      const dyeSlot = resolveLayerTintSlot(layer.pixelDye.paletteColorKey || 'C', group?.tintSlot);
+      const rgb = _resolveTargetRgbColor(bodyColors[dyeSlot], _dyeReferenceHexForSlot(dyeSlot, speciesId))
+        || (() => { const c = parseHexColor(layer.pixelDye.defaultHex || layer.pixelDye.sourceHex); return [c.r, c.g, c.b]; })();
+      img = pixelDyeLayerImage(img, layer, layer.pixelDyeOnly ? rgb : null);
+      sourceKey += '|pixelDye|' + !!layer.pixelDyeOnly + '|' + rgb.join(',');
+      if (layer.pixelDyeOnly) {
+        tint = { mode: 'none' }; // Literal dye RGB is the luminous core color.
+        const glow = layer.pixelDye.glow;
+        if (glow && img.pixelDyeCentroid) {
+          const color = '#' + rgb.map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
+          ctx.save();
+          ctx.shadowColor = color;
+          ctx.shadowBlur = Number(glow.blur) || 3;
+          draw(img, tint, sourceKey);
+          ctx.restore();
+          const xf = resolveXform(layer);
+          const h = PORTRAIT_L * xf.sy;
+          const w = img.width / img.height * PORTRAIT_L * Math.abs(xf.sx);
+          const center = img.pixelDyeCentroid;
+          canvas.hobunjiPortraitGlow = {
+            color, radius: glow.radius, intensity: glow.intensity,
+            x: (PORTRAIT_CW / 2 + xf.ay * PORTRAIT_L + (xf.sx < 0 ? 0.5 - center.x : center.x - 0.5) * w) / PORTRAIT_CW,
+            y: (PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L + (center.y - 0.5) * h) / PORTRAIT_CH,
+          };
+          return;
+        }
+      }
+    }
+    draw(img, tint, sourceKey);
+  };
+
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
   const drawEmoteLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
-      const img = imgMap.get(layer.url);
-      if (img) drawLayerWithEmote(img, resolveXform(layer), tint || filter, 1, layer.url);
-    }
+    for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
+      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey);
+    });
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
   const drawBreathingLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
-      const img = imgMap.get(layer.url);
-      if (!img) continue;
+    for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url, imageForTint);
+        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url, imageForTint);
+        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
-    }
+    });
   };
 
   // Neck-rig construction needs the base head's real opaque-pixel centroid,
@@ -1912,6 +1986,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            pixelDye: layer.pixelDye || null,
             materialKind: layer.materialKind || null, // Per-layer hybrid material survives cosmetic portrait layer extraction.
             xformPreset: 'B',
           });
@@ -1963,7 +2038,10 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
       }
     }
   }
-  return layers;
+  return layers.flatMap(layer => layer.pixelDye ? [
+    layer,
+    { ...layer, pixelDyeOnly: true, paletteColorKey: layer.pixelDye.paletteColorKey || 'C' },
+  ] : [layer]);
 }
 
 /**

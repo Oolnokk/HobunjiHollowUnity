@@ -39,7 +39,17 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
             }
           }
         }
@@ -66,7 +76,17 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
             }
           }
         }
@@ -93,7 +113,17 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "pixelDye": {
+                "sourceHex": "#7F00FF",
+                "paletteColorKey": "C",
+                "defaultHex": "#7F00FF",
+                "glow": {
+                  "blur": 3,
+                  "radius": 0.65,
+                  "intensity": 3.5
+                }
+              }
             }
           }
         }

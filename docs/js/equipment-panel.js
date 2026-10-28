@@ -953,6 +953,10 @@
     }
     window.DyeSystem.ensureCollection();
     ensureArticleDyeIds(item);
+    const weaving = window.ClothingWeavingSystem;
+    if (await weaving?.hasPixelDyeForItem?.(item)) {
+      return weaving.openExtendedRedyePanel(item); // Reuse the existing persisted colorC dye editor.
+    }
     const panel = document.getElementById('dyePanel');
     const titleEl = document.getElementById('dyePanelTitle');
     const subslotsEl = document.getElementById('dyePanelSubslots');

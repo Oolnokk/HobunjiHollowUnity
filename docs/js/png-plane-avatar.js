@@ -130,6 +130,7 @@
   function setPortraitsFlipped(enabled, options = {}) {
     portraitsFlipped = !!enabled;
     for (const texture of trackedPortraitTextures) applyPortraitTextureFlip(texture);
+    for (const root of portraitGlowModels) syncPortraitGlow(portraitThreeByRoot.get(root), root, root.userData.sourceCanvas);
     if (options.persist !== false) {
       try { localStorage.setItem(PORTRAIT_FLIP_STORAGE_KEY, portraitsFlipped ? '1' : '0'); } catch {}
     }
@@ -1072,6 +1073,50 @@
     };
   }
 
+  // Authored luminous pixels are baked through the canonical portrait pipeline.
+  // Their small fake-light data source follows the same neck/head transform;
+  // no animation loop or real WebGL lighting is introduced.
+  const portraitThreeByRoot = new WeakMap();
+  const portraitGlowModels = new Set();
+  function syncPortraitGlow(THREE, root, sourceCanvas) {
+    const glow = sourceCanvas?.hobunjiPortraitGlow;
+    let light = root.userData.portraitGlowLight;
+    if (!glow) {
+      if (light) { light.parent?.remove(light); light.dispose?.(); }
+      root.userData.portraitGlowLight = null;
+      portraitGlowModels.delete(root);
+      return;
+    }
+    if (!light) {
+      light = new THREE.PointLight(glow.color, glow.intensity || 3.5, glow.radius || 0.65);
+      light.name = 'Portrait_Dye3_Mote_Light';
+      light.userData.furnitureLightMask = true;
+      light.userData.intentionalFakeLightSource = true;
+      light.layers.set(31); // Also stays overlay-only in editors without the registry bridge.
+      light.castShadow = false;
+      root.userData.portraitGlowLight = light;
+    }
+    light.color.set(glow.color);
+    light.intensity = glow.intensity || 3.5;
+    light.distance = glow.radius || 0.65;
+    const width = root.userData.portraitModelWidth;
+    const height = root.userData.portraitModelHeight;
+    const assemblyY = root.userData.visualCentroidLocalY || 0;
+    const anchorZ = root.userData.visualCentroidLocalZ || 0;
+    const rig = root.userData.neckRig;
+    const x = ((portraitsFlipped ? 1 - glow.x : glow.x) - 0.5) * width;
+    portraitGlowModels.add(root);
+    if (rig?.available) {
+      rig.headScaleJoint.add(light);
+      light.position.set(x - rig.neckLocal.x,
+        (0.5 - glow.y) * height - rig.neckLocal.y, anchorZ - rig.neckLocal.z);
+    } else {
+      root.add(light);
+      light.position.set(x, assemblyY + (0.5 - glow.y) * height, anchorZ);
+    }
+    window.FurnitureLightRegistry?.register(light);
+  }
+
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
     if (!THREE) throw new Error('THREE is required to build an NPC plane avatar model.');
     if (!sourceCanvas) throw new Error('A source canvas or image is required to build an NPC plane avatar model.');
@@ -1201,6 +1246,8 @@
     root.userData.frontTexture = textures.frontOriginal;
     root.userData.backTexture = textures.backForOriginal;
     root.userData.backTextureUsesSilhouette = !(options.backCanvas || options.backImage);
+    portraitThreeByRoot.set(root, THREE);
+    syncPortraitGlow(THREE, root, sourceCanvas);
     return root;
   }
 
@@ -1211,6 +1258,7 @@
     root.userData.sourceCanvas = nextSource;
     drawVariantCanvas(root.userData.frontTexture.image, nextSource);
     root.userData.frontTexture.needsUpdate = true;
+    syncPortraitGlow(portraitThreeByRoot.get(root), root, nextSource);
 
     const nextBack = options.backCanvas || options.backImage || root.userData.backCanvas;
     if (nextBack && root.userData.backTexture) {
@@ -1227,6 +1275,9 @@
 
   function disposeAvatarModel(root) {
     if (!root) return;
+    portraitGlowModels.delete(root);
+    const glowLight = root.userData?.portraitGlowLight;
+    if (glowLight) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); root.userData.portraitGlowLight = null; }
     root.traverse(child => {
       if (child.geometry) child.geometry.dispose();
       const materials = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];

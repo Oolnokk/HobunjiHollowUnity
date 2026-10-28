@@ -677,6 +677,7 @@
 
     const gear = gearInventory();
     const hasSecondary = await hasSecondaryDyeForItem(item); // One-color garments such as Ragged Hood no longer inherit a fake Trim channel from their broad slot type.
+    const thirdLabel = await hasPixelDyeForItem(item) ? 'Dye color 3 · Glow' : 'Pattern';
     const original = { colorA: clone(item.colorA), colorB: clone(item.colorB), colorC: clone(item.colorC), label: item.label };
     let active = 'A';
     let pendingA = item.colorA?.dyeId || null;
@@ -694,7 +695,7 @@
       if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
       if (dyeC) item.colorC = window.DyeSystem.toClothingColor(dyeC);
       previewEl.innerHTML = '';
-      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], ['Pattern', dyeC]]) {
+      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], [thirdLabel, dyeC]]) {
         if (!dye || (label === 'Trim' && !hasSecondary)) continue;
         const chip = document.createElement('span');
         chip.className = 'dye-preview-chip';
@@ -721,7 +722,7 @@
 
     function renderSubslots() {
       subslotsEl.innerHTML = '';
-      const slots = [['A', 'Primary'], ...(hasSecondary ? [['B', 'Trim']] : []), ['C', 'Pattern']];
+      const slots = [['A', 'Primary'], ...(hasSecondary ? [['B', 'Trim']] : []), ['C', thirdLabel]];
       for (const [which, label] of slots) {
         const button = document.createElement('button');
         button.className = 'dye-subslot-btn' + (active === which ? ' active' : '');
@@ -1755,6 +1756,14 @@
   async function hasSecondaryDyeForCosmetic(baseCosmeticIdValue) {
     const layers = await resolveIconLayers(baseCosmeticIdValue); // Uses the same species-aware palette mapping as the actual inventory and loom renderer.
     return layersUseSecondaryDye(layers);
+  }
+
+  async function hasPixelDyeForItem(item) {
+    const config = await cosmeticConfig(baseCosmeticId(item)).catch(() => null);
+    const partsHavePixelDye = parts => Object.values(parts || {}).some(part =>
+      Object.values(part?.layers || {}).some(layer => layer?.pixelDye?.paletteColorKey === 'C'));
+    return partsHavePixelDye(config?.parts) || Object.values(config?.speciesVariants || {})
+      .some(variant => partsHavePixelDye(variant?.parts));
   }
 
   async function hasSecondaryDyeForItem(item) {
@@ -3019,6 +3028,8 @@
     openLoom,
     closeLoom,
     hasSecondaryDyeForItem,
+    hasPixelDyeForItem,
+    openExtendedRedyePanel,
     hasAuthoredTrimForCosmetic: async (baseCosmeticIdValue, speciesId = null, gender = null, view = 'front') => {
       const playerVariant = playerSpeciesGender();
       return !!await authoredTrimPatternForCosmetic(baseCosmeticIdValue, speciesId || playerVariant.speciesId, gender || playerVariant.gender, view);
