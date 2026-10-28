@@ -582,13 +582,18 @@ assert.match(overlayScheduler, /setInterval\(updatePaneTint, PANE_TINT_MS\)/, 'p
 assert.doesNotMatch(overlayScheduler, /baseDraw|daylightDraw|drawLightingOverlay\s*=|WINDOW_REDRAW_MS/, 'scheduler must not alternate base-only and window-composited overlay frames');
 const cloudFog = read('docs/js/cloud-forest-fog.js'); // Shared compositor must keep enclosed rooms stable while local light masks reveal nearby sources.
 assert.match(cloudFog, /const darknessAlpha = enclosedDarknessOverlayAlpha\(currentArea\)/, 'enclosed interiors must retain the established darkness baseline');
-const enclosedBranchStart = cloudFog.indexOf('if (enclosed) {');
-const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = getLightingState();', enclosedBranchStart);
+const enclosedBranchStart = cloudFog.indexOf('if (enclosed && !undergroundFog) {');
+const enclosedBranchEnd = cloudFog.indexOf('const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();', enclosedBranchStart);
 const enclosedBranch = cloudFog.slice(enclosedBranchStart, enclosedBranchEnd);
-assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors and underground spaces must retain the stable positional carried-lantern reveal');
-assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors and underground spaces must retain stable positional furniture-light reveals');
+assert.match(enclosedBranch, /drawLanternMasksCompat\(1\)/, 'ordinary interiors must retain the stable positional carried-lantern reveal');
+assert.match(enclosedBranch, /drawFurnitureLightMasksCompat\(\)/, 'ordinary interiors must retain stable positional furniture-light reveals');
 assert.doesNotMatch(enclosedBranch, /drawBlendedInteriorAtmosphere\(darknessAlpha, rect\)/, 'ordinary interiors must not use the whole-room smoothed atmosphere path that regressed farmhouse readability');
 assert.match(enclosedBranch, /if \(ordinaryBuildingInterior\(currentArea\) && !ruinTradition\) drawWindowLightMasks\(\)/, 'ordinary authored building interiors retain positional daylight-window reveals, but lich ruins remain independent of windows');
+const undergroundBranchStart = enclosedBranchEnd;
+const undergroundBranchEnd = cloudFog.indexOf('if (lightningAlpha > 0) {', undergroundBranchStart);
+const undergroundBranch = cloudFog.slice(undergroundBranchStart, undergroundBranchEnd);
+assert.match(undergroundBranch, /drawLanternMasksCompat\(undergroundFog \? 1 : currentOutdoorLanternActivation\(\), !undergroundFog\)/, 'underground spaces must retain the stable positional carried-lantern reveal');
+assert.match(undergroundBranch, /drawFurnitureLightMasksCompat\(!undergroundFog\)/, 'underground spaces must retain stable positional furniture-light reveals');
 assert.doesNotMatch(cloudFog, /function sampleEnclosedAtmosphere|function drawBlendedInteriorAtmosphere/, 'the retired whole-room atmosphere blend must not linger as dead code');
 assert.match(gameIndex, /cloud-forest-fog\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the unified lighting compositor');
 assert.match(gameIndex, /daylight-window-runtime\.js\?v=[A-Za-z0-9_-]+/, 'game index must cache-bust the canonical daylight-window visual hierarchy');

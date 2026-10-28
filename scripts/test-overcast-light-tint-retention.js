@@ -18,7 +18,9 @@ assert.match(source, /function drawLanternMasksCompat\(activation = 1, preserveO
   'lantern masking must distinguish outdoor weather tint preservation from enclosed-area darkness clearing');
 assert.match(source, /drawLanternMasksCompat\(1\);\s*if \(ruinTradition !== 'kanthic' && ruinTradition !== 'tothal'\) drawFurnitureLightMasksCompat\(\);/s,
   'dens, mines and ordinary buildings retain furniture lights, while cold/pure-black lich ruins suppress warm sources');
-assert.match(source, /drawLanternMasksCompat\(currentOutdoorLanternActivation\(\), true\);\s*drawFurnitureLightMasksCompat\(true\);/s,
+assert.match(source, /drawLanternMasksCompat\(undergroundFog \? 1 : currentOutdoorLanternActivation\(\), !undergroundFog\)/,
+  'outdoor carried/watch light masks must preserve weather tint without changing underground lighting');
+assert.match(source, /drawFurnitureLightMasksCompat\(!undergroundFog\)/,
   'outdoor carried/watch and furniture lights must preserve the active weather tint');
 assert.match(source, /globalCompositeOperation = 'destination-out'/,
   'local lights must still remove actual darkness rather than merely painting a bright halo over it');
