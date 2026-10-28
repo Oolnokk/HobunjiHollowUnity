@@ -1934,7 +1934,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // therefore counts as a shared edge, but vertex-only contact never does.
   function recognizeArchitecturalSurfaceRegions(parent, sources=[], options={}) {
     const degree=Number.isFinite(Number(options.splitAngleDeg))?Number(options.splitAngleDeg):24; // Match Furniture Author's default recognition threshold.
-    const cosThreshold=Math.cos(clamp(degree,0,180)*Math.PI/180),faces=[];
+    const cosThreshold=Math.cos(clamp(degree,0,180)*Math.PI/180);let faces=[];
     // An authored building can contain intersecting solid Highland sections.
     // Their *construction* face quads are not necessarily part of the visible
     // exterior. Derive each section's solid envelope from its true floor,
@@ -2018,6 +2018,49 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           faces.push({vertices:[a,b,c],normal,role,renderLift:Math.max(0,Math.min(.6,Number(source.renderLift)||0))});
         }
       }
+    }
+    // Interior wall panels and their gable backing meshes can contain
+    // coincident, same-facing pieces. These are covered construction surfaces,
+    // not extra perimeter islands. Remove both complete duplicates and the
+    // overlapping portions of partial duplicates before grouping faces.
+    if(options.clipCoplanarOverlaps&&faces.length>1){
+      const exposed=[],planeTolerance=.008;
+      const box=vs=>({minX:Math.min(...vs.map(p=>p.x)),maxX:Math.max(...vs.map(p=>p.x)),
+        minY:Math.min(...vs.map(p=>p.y)),maxY:Math.max(...vs.map(p=>p.y)),
+        minZ:Math.min(...vs.map(p=>p.z)),maxZ:Math.max(...vs.map(p=>p.z))});
+      const overlap=(a,b)=>a.minX<=b.maxX+.003&&b.minX<=a.maxX+.003&&
+        a.minY<=b.maxY+.003&&b.minY<=a.maxY+.003&&
+        a.minZ<=b.maxZ+.003&&b.minZ<=a.maxZ+.003;
+      for(const original of faces){
+        const originalBox=box(original.vertices),n=original.normal,plane=n.dot(original.vertices[0]);
+        const covered=exposed.filter(prev=>prev.role===original.role&&prev.normal.dot(n)>.995&&
+          Math.abs(n.dot(prev.vertices[0])-plane)<planeTolerance&&overlap(originalBox,prev.box));
+        let visible=[original.vertices];
+        for(const prev of covered){
+          const prevTriangle=new T.Triangle(...prev.vertices);
+          const clips=tri=>{const c=tri[0].clone().add(tri[1]).add(tri[2]).multiplyScalar(1/3);
+            const points=[...tri,c],isCovered=points.map(p=>prevTriangle.containsPoint(p));
+            return {isCovered,center:c};
+          };
+          const trim=(tri,depth)=>{
+            const sample=clips(tri);
+            if(sample.isCovered.every(Boolean))return [];
+            if(!sample.isCovered.some(Boolean))return [tri];
+            if(depth===3)return sample.isCovered[3]?[]:[tri];
+            const [a,b,c]=tri,ab=a.clone().add(b).multiplyScalar(.5),
+              bc=b.clone().add(c).multiplyScalar(.5),ca=c.clone().add(a).multiplyScalar(.5);
+            return [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]].flatMap(t=>trim(t,depth+1));
+          };
+          visible=visible.flatMap(v=>trim(v,0));
+          if(!visible.length)break;
+        }
+        for(const vertices of visible){
+          const area=vertices[1].clone().sub(vertices[0]).cross(vertices[2].clone().sub(vertices[0])).length()*.5;
+          if(area<.0001)continue;
+          exposed.push({...original,vertices,box:box(vertices)});
+        }
+      }
+      faces=exposed;
     }
     if(!faces.length)return [];
     const parentFace=faces.map((_,i)=>i),find=i=>{while(parentFace[i]!==i){parentFace[i]=parentFace[parentFace[i]];i=parentFace[i];}return i;};
