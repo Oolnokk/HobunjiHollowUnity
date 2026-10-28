@@ -8,6 +8,7 @@
   let open = false; // Used by the utility wheel, controller panel and farm-world pointer bridge.
   let originC = 0, originR = 0; // Top-left tile of the scrollable designation grid.
   let drag = null; // World pointer drag: { pointerId, plotId, adding, changed } to commit exactly once.
+  let confirmDeleteId = null; // Two-press remove guard usable with controller A, without a native browser confirm modal.
   const pane = () => document.getElementById('farmworkPanel'); // Existing markup registers with ControllerUiNav via data-ctrl-panel.
   const manager = () => window.FarmPlotEditor; // All edits route through the single persisted family-plot owner.
   const context = () => window.FarmEditor?.farmworkTileAccess?.(); // Farm bounds, house collision and world-pointer projection remain in FarmEditor.
@@ -50,6 +51,7 @@
     if (open) render();
   }
   function close() {
+    confirmDeleteId = null;
     endDrag();
     open = false;
     if (pane()) pane().style.display = 'none';
@@ -58,6 +60,7 @@
   }
   function toggle() { return open ? close() : enter(); }
   function changePlot(id) {
+    confirmDeleteId = null;
     manager()?.selectFamilyPlot?.(id);
     const first = plot()?.tiles?.[0];
     if (first) center(first[0], first[1]);
@@ -70,7 +73,14 @@
   }
   function removeCurrent() {
     const current = plot();
-    if (!current || !window.confirm?.(`Stop assigning work to ${current.label}? The current soil and crops will remain.`)) return;
+    if (!current) return;
+    if (confirmDeleteId !== current.id) {
+      confirmDeleteId = current.id; // First A press arms deletion; second A press confirms it.
+      render();
+      pane()?.querySelector('[data-fwdelete]')?.focus({ preventScroll: true });
+      return;
+    }
+    confirmDeleteId = null;
     manager()?.deleteFamilyPlot?.(current.id);
     render();
   }
@@ -159,7 +169,7 @@
         return `<button data-fwtile="${c},${r}" aria-label="Tile ${c + 1}, ${r + 1}${selected ? ', assigned' : other ? ', other plot' : ''}" aria-pressed="${selected}" ${usable ? '' : 'disabled'} title="Column ${c + 1}, row ${r + 1}">${selected ? '✓' : other ? '•' : '·'}</button>`;
       }).join('')}</div>
       <p class="fw-note">Controller: stick or D-pad moves between tiles; A adds/removes them. Page arrows move the map. Touch/mouse can also paint directly on the farm behind this panel. Workers use Farm Storage seeds and follow their schedules.</p>
-      <button class="fw-delete" data-fwdelete>Stop Assigning This Plot</button>`;
+      <button class="fw-delete" data-fwdelete>${confirmDeleteId === chosen.id ? 'Confirm Remove (keeps soil/crops)' : 'Stop Assigning This Plot'}</button>`;
     }
     view.innerHTML = html;
     view.querySelectorAll('[data-fwnew]').forEach(button => button.addEventListener('click', () => create(button.dataset.fwnew)));
