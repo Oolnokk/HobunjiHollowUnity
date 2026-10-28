@@ -16624,7 +16624,7 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = message; }
-        if (detailEl) { detailEl.style.display = 'none'; delete detailEl.dataset.itemKey; } // Clear preview/action identity when no Pack item is shown.
+        if (detailEl) { detailEl.style.display = 'none'; delete detailEl.dataset.itemKey; delete detailEl.dataset.itemKind; } // Clear preview/action identity when no Pack item is shown.
       }
 
       function buildInventoryGrid() {
@@ -16791,7 +16791,7 @@
         const emptyEl  = document.getElementById('iiEmpty');
         const detailEl = document.getElementById('iiDetail');
         if (emptyEl)  emptyEl.style.display  = 'none';
-        if (detailEl) { detailEl.style.display = ''; detailEl.dataset.itemKey = key; } // Exact displayed item identity for preview-safe direct-use buttons.
+        if (detailEl) { detailEl.style.display = ''; detailEl.dataset.itemKey = key; detailEl.dataset.itemKind = 'pack'; } // Item identity and kind keep preview actions attached to the displayed stack.
 
         const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'string' ? 'textContent' : 'innerHTML'] = val; };
         set('iiIcon',  itemIconForKey(key));
