@@ -107,6 +107,7 @@ assert.equal(saves, 1, 're-rendering does not repeat the migration save');
 panel.previewPackClothingItem(pack[0].uid);
 assert.match(nodes.get('iiName').textContent, /×2$/, 'controller preview displays the identical-clothing stack quantity');
 assert.equal(explicitSelectionClears, 0, 'preview does not clear another selected Pack item');
+assert.equal(nodes.get('iiDetail').dataset.itemKind, 'clothing', 'passive clothing previews identify the correct item family');
 assert.equal(nodes.get('iiQuality').textContent !== undefined, true, 'clothing preview updates its own quality metadata');
 packNode.children[0].click();
 assert.equal(explicitSelectionClears, 1, 'explicit clothing click still selects by clearing previous Pack selection');
