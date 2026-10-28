@@ -1,0 +1,103 @@
+{
+  "slot": "hood",
+  "tintSlot": "HOOD",
+  "material": "wood",
+  "tags": [
+    "material:wood",
+    "hides-facial-hair"
+  ],
+  "specialHeadwearRules": false,
+  "onlyExactSpeciesVariant": true,
+  "meta": {
+    "name": "Hachutu Binding Mask (II)"
+  },
+  "palette": {
+    "layers": {
+      "base": "A"
+    }
+  },
+  "parts": {},
+  "speciesVariants": {
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "maskbound-guardian_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/masks/bindingmask_2_mashtz_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "layerRole": "base"
+            }
+          }
+        }
+      }
+    }
+  }
+}
