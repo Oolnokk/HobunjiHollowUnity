@@ -653,6 +653,8 @@
       lastRelease,
       blowgunRawDamage: BLOWGUN_RAW_DAMAGE,
       blowgunAfflictionScale: BLOWGUN_AFFLICTION_SCALE,
+      blowgunFireSpeedMultiplier: BLOWGUN_FIRE_SPEED_MULTIPLIER, // Exposes the effective firing-time scale in mobile debug without changing editor-authored pose data.
+      blowgunLoadSfx: window.AudioSystem?.combatSfxConfig?.()?.blowgunLoad?.url || null, // Identifies the real active dart-loading recording in mobile debug.
       blowgunLoadSource: 'crossbow-load-copy', blowgunLoadNeutralSource: 'shovel-thrust-rest',
       blowgunStanceSource: window.HeldActionAnimations?.blowgunReady ? 'blowgun-authored-mouth-to-reticle' : 'blowgun-head-forward-fallback',
     }),
