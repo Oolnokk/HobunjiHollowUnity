@@ -2436,7 +2436,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         mesh.userData.surfaceFoliageRecognizedRegion===true);
       if(regions.length){
         const each=Math.min(settings.count,settings.strandLimit),details=[];
-        const stats={meshes:regions.length,instances:regions.length,triangles:0,
+        const stats={meshes:regions.length,instances:regions.length,triangles:0,coverTriangles:0,
           guideCorners:0,guideBoundaries:0,guidedBySemanticSurfaces:true,perSurface:true,
           strandLimit:settings.strandLimit,surfaces:regions.length,requestedPerSurface:settings.count,
           strandsPerSurface:each,generatedStrands:0};
@@ -2446,6 +2446,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           const metrics=part.userData.surfaceGrowthStats||{};
           const produced=(part.userData.generatedStrands||0);
           stats.triangles+=metrics.triangles||0;
+          stats.coverTriangles+=metrics.coverTriangles||0;
           stats.guideCorners+=metrics.guideCorners||0;
           stats.guideBoundaries+=metrics.guideBoundaries||0;
           stats.generatedStrands+=produced;
