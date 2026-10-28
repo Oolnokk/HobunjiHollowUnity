@@ -96,7 +96,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
   header{align-items:flex-start;flex-direction:column}
 }
 </style>
-<script src="../../js/surface-foliage-authoring.js?v=20261027h93a9e9e"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261028h0b8c349"></script>
 </head>
 <body>
 <div id="app">
@@ -617,10 +617,10 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../config/hand-model-profiles.js" onerror="window.__hobunjiThreeLoadError.push('hand-model-profiles failed to load')"></script>
 <script src="../../js/leg-bones.js?v=20261013hb53d07e" onerror="window.__hobunjiThreeLoadError.push('leg-bones failed to load')"></script>
 <script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/"; window.__hobunjiFurnitureAssetBase = "../../assets/";</script>
-<script src="../../js/foliage-generator.js?v=20261027h9ef2138"></script>
+<script src="../../js/foliage-generator.js?v=20261028h5f3d264"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/authored-furniture-runtime.js?v=20261019h0a80a02"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
 <script src="../../js/procedural-furniture.js?v=20261025hab1da68" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
 <script src="../../js/furniture-vessel-runtime.js?v=20261027htemple-vessel-a2"></script>
@@ -1131,7 +1131,16 @@ function surfaceFaceOverlap(a,b) { if(!a||!b||a.partId!==b.partId)return 0;const
 function replacementSurface(previousSurface) { if(!previousSurface)return null;let best=null,bestOverlap=0;for(const candidate of surfaceGroups.values()){const overlap=surfaceFaceOverlap(previousSurface,candidate);if(overlap>bestOverlap){best=candidate;bestOverlap=overlap;}}return bestOverlap>0?best:null; }
 function rebuildSurfaceFoliage(){
   for(const [id,mesh] of meshes)mesh.userData.surfaceFoliageId=id;
-  return window.FoliageGenerator.applySurfaceGrowth(root,state.surfaceGrowth);
+  const foliage=window.FoliageGenerator.forThree(THREE); // Furniture uses its own detected/named surfaces, not the raw generic mesh topology.
+  const guided=(state.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap');
+  if(guided)foliage.replaceSemanticSurfaceGuides(root,[...surfaceGroups.values()].map(surface=>{
+    const mesh=meshes.get(surface.partId),settings=ensureSurfaceSetting(surface);
+    return {sourceMesh:mesh,faceIndices:surface.faceIndices,partId:surface.partId,id:surface.id,
+      role:'furniture',label:settings.label||surface.recognizedType}; // Exactly the same named patches as the surface-recognition UI.
+  }));
+  else if(root.userData.surfaceGuideCount)foliage.replaceSemanticSurfaceGuides(root,[]);
+  const report=foliage.applySurfaceGrowth(root,state.surfaceGrowth);
+  return report+' (named surface guides: '+(root.userData.surfaceGuideCount||0)+')'; // Visible editor diagnostics, no devtools.
 }
 function rebuildFurnitureMeshes() {
   syncAllLinkedLiquidTransforms();

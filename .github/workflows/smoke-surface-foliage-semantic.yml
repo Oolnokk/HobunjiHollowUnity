@@ -1,0 +1,39 @@
+name: Semantic surface foliage browser smoke
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/foliage-generator.js'
+      - 'docs/js/HousePieceGen.js'
+      - 'docs/js/authored-furniture-runtime.js'
+      - 'docs/tools/house-piece-author/index.html'
+      - 'docs/tools/building-interior-author/index.html'
+      - 'docs/tools/furniture-avatar-author/index.html'
+      - 'scripts/test-surface-foliage-styles-browser.js'
+      - '.github/workflows/smoke-surface-foliage-semantic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-foliage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate foliage and house JavaScript
+        run: |
+          node --check docs/js/foliage-generator.js
+          node --check docs/js/HousePieceGen.js
+          node --check docs/js/authored-furniture-runtime.js
+          node --check scripts/test-surface-foliage-styles-browser.js
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: House architectural planes, furniture named surfaces, and nested guide ownership
+        run: node scripts/test-surface-foliage-styles-browser.js

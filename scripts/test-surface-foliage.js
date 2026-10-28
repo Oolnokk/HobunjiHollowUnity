@@ -42,6 +42,18 @@ assert.match(sourceOfStyles,/appendDenseCover\(group,triangles,settings\)/,'Maxi
 assert.match(sourceOfStyles,/Math\.min\(settings\.density>=\.995\?24:96/,'Strand geometry must stay capped for mobile');
 assert.match(sourceOfStyles,/Math\.round\(settings\.count\*\(\.25\+settings\.density\*1\.75\)\)/,'Wrap count must remain an effective strand-complexity budget');
 assert.match(sourceOfStyles,/const coverageKey=\(p,n\)=>/,'Occupancy must distinguish perpendicular surface faces');
+const cornerSource=sourceOfStyles.slice(sourceOfStyles.indexOf('function appendCornerGrowth('),sourceOfStyles.indexOf('function appendDenseCover('));
+assert.match(cornerSource,/const raw=sample\.point\.clone\(\)/,'Corner Fill must start each spline point on the exact architectural edge');
+assert.match(cornerSource,/offset=settings\.offset\+\(part\.record\.renderLift\|\|0\)/,'Render clearance is added after edge alignment; no radius-sized gap');
+assert.match(cornerSource,/if\(settings\.curl>0\)/,'Curl must be a separate cosmetic pass after tracing the edge');
+assert.doesNotMatch(cornerSource,/settings\.radius\+settings\.offset|settings\.offset\+settings\.radius/,'Corner Fill centerline must not float a full radius off the seam');
+const houseAuthorSource=fs.readFileSync('docs/tools/house-piece-author/index.html','utf8');
+assert.match(houseAuthorSource,/renderLift:role==='roofs'\?\.16:0/,
+  'Unbricked House Editor wall previews must never offset edge-following roots by a masonry clearance');
+assert.match(sourceOfStyles,/const correction=\(part\.otherPlane-n1\.dot\(raw\)\)\/denom/,
+  'Gapped intersections must reproject the base spline onto both authoritative planes');
+assert.match(sourceOfStyles,/Split at their real endpoints BEFORE classifying adjacent surfaces/,
+  'T-junction wall planes must be split before corner edge classification');
 const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
 assert.match(authorSource,/data-count-label/,'Every editor must explain Wrap strand-budget behavior');
 assert.match(authorSource,/\[data-wrap-controls\]'\)\.style\.display/,'Wrap-only controls must be hidden reliably even with flex-row editor CSS');

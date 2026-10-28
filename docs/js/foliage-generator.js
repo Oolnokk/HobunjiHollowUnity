@@ -1882,6 +1882,61 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
   }
 
+  // Semantic navigation meshes are a non-rendered projection of authored plane faces
+  // (houses/interiors) or named detected surface triangles (furniture). Keeping
+  // them separate from cladding prevents micro-creases on bricks and logs from
+  // redirecting Corner Fill and Wrap. Their only lifetime is the host group.
+  function replaceSemanticSurfaceGuides(parent, sources = []) {
+    const old = []; // Collected before mutation so nested guides cannot be skipped.
+    parent.traverse(node => { if (node.userData?.surfaceFoliageGuide && node.userData.surfaceFoliageGuideOwner === parent.uuid) old.push(node); }); // Never remove guides owned by nested authored furniture.
+    for (const node of old) {
+      node.parent?.remove(node);
+      node.geometry?.dispose();
+      node.material?.dispose();
+    }
+    let count = 0; // Used by editor diagnostics and to detect an empty guide set.
+    for (const source of Array.isArray(sources) ? sources : []) {
+      const host = source?.sourceMesh?.isObject3D ? source.sourceMesh : parent;
+      const positions = []; // Source-local coordinate triples, not the visible cladding geometry.
+      if (Array.isArray(source?.vertices) && source.vertices.length >= 3) {
+        const verts = source.vertices;
+        const emit = p => { if (!Array.isArray(p) || p.length < 3 || !p.slice(0,3).every(Number.isFinite)) return false; positions.push(p[0],p[1],p[2]); return true; };
+        if (verts.length === 4) {
+          emit(verts[0]);emit(verts[1]);emit(verts[2]);emit(verts[0]);emit(verts[2]);emit(verts[3]);
+        } else if (verts.length % 3 === 0) verts.forEach(emit);
+      } else if (source?.sourceMesh?.isMesh && Array.isArray(source.faceIndices)) {
+        const geom = source.sourceMesh.geometry, pos = geom?.getAttribute?.('position'), index = geom?.index;
+        if (!pos) continue;
+        const end = index ? index.count : pos.count;
+        const vertex = new T.Vector3();
+        for (const raw of source.faceIndices.slice(0,100000)) {
+          const face = Math.floor(Number(raw));
+          if (!Number.isFinite(face) || face < 0 || face*3+2 >= end) continue;
+          for (let corner=0;corner<3;corner++) {
+            vertex.fromBufferAttribute(pos,index ? index.getX(face*3+corner) : face*3+corner);
+            if (Number.isFinite(vertex.x+vertex.y+vertex.z)) positions.push(vertex.x,vertex.y,vertex.z);
+          }
+        }
+      }
+      if (!positions.length || positions.length % 9) continue;
+      const geometry = new T.BufferGeometry(); // One small immutable guide geometry per architectural/named surface.
+      geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+      const mesh = new T.Mesh(geometry,new T.MeshBasicMaterial());
+      mesh.name = 'Surface navigation: ' + String(source.label || source.id || count);
+      mesh.visible = false; mesh.layers.set(30); // Excluded from normal rendering and default UI raycasts.
+      mesh.userData.surfaceFoliageGuide = true;
+      mesh.userData.surfaceFoliageGuideOwner = parent.uuid; // The generating room/furniture owns its guides, not nested prefabs.
+      mesh.userData.surfaceFoliageGuideId = String(source.id || source.label || count);
+      mesh.userData.surfaceFoliageRenderLift = Math.max(0,Math.min(.6,Number(source.renderLift)||0)); // Render over coarse cladding while navigating the original plane. // Preserve distinct named furniture patches when tracing shared edges.
+      mesh.userData.surfaceFoliageRole = source.role || 'walls';
+      mesh.userData.surfaceFoliageId = String(source.partId || source.id || '');
+      host.add(mesh);
+      count++;
+    }
+    parent.userData.surfaceGuideCount = count; // Available to mobile editor reports without console access.
+    return count;
+  }
+
   function surfaceTargets(parent, settings) {
     const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
     parent.traverse(object => {
@@ -1899,7 +1954,11 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       if (!excluded && (settings.target === 'all' || (settings.target === 'selected' ? selected : role === settings.target))) targets.push(object);
     });
-    return targets;
+    if (settings.style !== 'natural' && settings.target !== 'shingles') {
+      const guides=targets.filter(mesh=>mesh.userData?.surfaceFoliageGuide && mesh.userData.surfaceFoliageGuideOwner===parent.uuid); // Only authoritative planes may steer guided architectural/named growth.
+      if (guides.length) return guides;
+    }
+    return targets.filter(mesh=>!mesh.userData?.surfaceFoliageGuide); // Free growth never reads invisible guide duplicates.
   }
 
 
@@ -1907,7 +1966,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // triangle index. Mesh seams with different normals qualify as real corners;
   // triangulation diagonals and coplanar brick joins do not.
   function surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,radius,detectAdjacent) {
-    const edges=new Map(), quant=p=>Math.round(p.x*100)+','+Math.round(p.y*100)+','+Math.round(p.z*100); // Authoring-scale tolerance bridges tiny wall gaps.
+    const edges=new Map(), quant=p=>Math.round(p.x*100)+','+Math.round(p.y*100)+','+Math.round(p.z*100); // Quantization only groups authored endpoints; the spline itself uses their full precision.
     for(const record of triangles) {
       const vs=[record.triangle.a,record.triangle.b,record.triangle.c];
       for(let i=0;i<3;i++){
@@ -1915,12 +1974,62 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         if(ak===bk)continue;
         const key=ak<bk?ak+'|'+bk:bk+'|'+ak;
         let edge=edges.get(key);
-        if(!edge){edge={a:a.clone(),b:b.clone(),ak,bk,normal:record.normal,record,faces:1,other:null,length:a.distanceTo(b)};edges.set(key,edge);}
-        else{edge.faces++;const dot=edge.normal.dot(record.normal);if(dot<.91&&dot>-.6)edge.other=record.normal;}
+        if(!edge){edge={a:a.clone(),b:b.clone(),ak,bk,normal:record.normal,record,faces:1,other:null,otherPlane:null,length:a.distanceTo(b),sourceId:record.sourceSurfaceId,semanticBoundary:false};edges.set(key,edge);}
+        else{
+          edge.faces++;
+          if(edge.sourceId!==record.sourceSurfaceId)edge.semanticBoundary=true;
+          const dot=edge.normal.dot(record.normal);
+          if(dot<.91&&dot>-.6){edge.other=record.normal;edge.otherPlane=record.plane;}
+        }
       }
     }
-    const corners=[],boundaries=[],scratch=new T.Vector3(),gap=Math.max(.025,Math.min(.09,radius*1.15)),gapSq=gap*gap; // Gap tolerance for adjacent independent meshes.
-    for(const edge of edges.values()){
+    const originalEdges=Array.from(edges.values());
+    let candidates=originalEdges;
+    if(detectAdjacent){
+      // A long wall's seam may meet two or more shorter wall panels (T-junction).
+      // Split at their real endpoints BEFORE classifying adjacent surfaces.
+      // Otherwise a midpoint probe treats the ENTIRE long edge as a corner,
+      // even where the shorter wall stops, and the spline cannot cross its seam.
+      const border=originalEdges.filter(edge=>edge.faces===1);
+      const ends=border.flatMap(edge=>[edge.a,edge.b]);
+      // Sort endpoints on each coordinate once. A vertical wall edge then scans
+      // only endpoints within its Y interval, not every vertex in the house.
+      const axes=[ends.slice().sort((a,b)=>a.x-b.x),ends.slice().sort((a,b)=>a.y-b.y),ends.slice().sort((a,b)=>a.z-b.z)];
+      const value=(p,axis)=>axis===0?p.x:axis===1?p.y:p.z;
+      const lowerBound=(sorted,axis,low)=>{
+        let l=0,r=sorted.length;
+        while(l<r){const mid=(l+r)>>1;if(value(sorted[mid],axis)<low)l=mid+1;else r=mid;}
+        return l;
+      };
+      const toleranceSq=.012*.012;
+      candidates=[];
+      for(const edge of originalEdges){
+        if(edge.faces!==1||edge.length<.3||ends.length>30000){candidates.push(edge);continue;}
+        const delta=edge.b.clone().sub(edge.a),lengthSq=delta.lengthSq(),ts=[0,1];
+        const pad=.012,axis=Math.abs(delta.x)>=Math.abs(delta.y)&&Math.abs(delta.x)>=Math.abs(delta.z)?0:Math.abs(delta.y)>=Math.abs(delta.z)?1:2;
+        const sorted=axes[axis],min=Math.min(value(edge.a,axis),value(edge.b,axis))-pad,max=Math.max(value(edge.a,axis),value(edge.b,axis))+pad;
+        for(let i=lowerBound(sorted,axis,min);i<sorted.length&&value(sorted[i],axis)<=max;i++){
+          const p=sorted[i];
+          if(p.x<Math.min(edge.a.x,edge.b.x)-pad||p.x>Math.max(edge.a.x,edge.b.x)+pad||
+             p.y<Math.min(edge.a.y,edge.b.y)-pad||p.y>Math.max(edge.a.y,edge.b.y)+pad||
+             p.z<Math.min(edge.a.z,edge.b.z)-pad||p.z>Math.max(edge.a.z,edge.b.z)+pad)continue;
+          const t=delta.dot(p.clone().sub(edge.a))/lengthSq;
+          if(t<=.025/edge.length||t>=1-.025/edge.length)continue;
+          const projected=edge.a.clone().addScaledVector(delta,t);
+          if(projected.distanceToSquared(p)<=toleranceSq)ts.push(t);
+        }
+        if(ts.length===2){candidates.push(edge);continue;}
+        ts.sort((x,y)=>x-y);
+        for(let i=1;i<ts.length;i++){
+          if((ts[i]-ts[i-1])*edge.length<.025)continue;
+          const left=edge.a.clone().addScaledVector(delta,ts[i-1]);
+          const right=edge.a.clone().addScaledVector(delta,ts[i]);
+          candidates.push({...edge,a:left,b:right,ak:quant(left),bk:quant(right),length:left.distanceTo(right),other:null,otherPlane:null});
+        }
+      }
+    }
+    const corners=[],boundaries=[],scratch=new T.Vector3(),gap=Math.max(.025,Math.min(.09,radius*1.15)),gapSq=gap*gap; // Near-miss walls have a small adjacency tolerance.
+    for(const edge of candidates){
       if(edge.length<.025)continue;
       if(detectAdjacent&&!edge.other&&edge.faces===1){
         const mid=edge.a.clone().add(edge.b).multiplyScalar(.5),x=Math.floor(mid.x/cellSize),y=Math.floor(mid.y/cellSize),z=Math.floor(mid.z/cellSize),visited=new Set();
@@ -1931,7 +2040,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             const dot=other.normal.dot(edge.normal),planeGap=other.normal.dot(mid)-other.plane;
             if(dot>.9||dot<-.6||planeGap*planeGap>gapSq)continue;
             other.triangle.closestPointToPoint(mid,scratch);
-            if(scratch.distanceToSquared(mid)<gapSq){edge.other=other.normal;return true;}
+            if(scratch.distanceToSquared(mid)<gapSq){
+              edge.other=other.normal;edge.otherPlane=other.plane;return true;
+            }
           }
           return false;
         };
@@ -1940,44 +2051,79 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
       }
       if(edge.other)corners.push(edge);
-      else if(edge.faces===1)boundaries.push(edge);
+      else if(edge.faces===1||edge.semanticBoundary)boundaries.push(edge); // Wrap starts on named furniture-region edges too.
     }
     return {corners,boundaries,all:edges};
   }
 
   function appendCornerGrowth(guide,settings,random,seed,geometries) {
-    const edges=guide.corners,adj=new Map(); // Neighbor graph keeps strands on actual intersections.
+    const edges=guide.corners,adj=new Map(); // Only the actual intersections of named/architectural planes can guide the spline.
     if(!edges.length)return;
     for(const edge of edges)for(const key of [edge.ak,edge.bk]){
       if(!adj.has(key))adj.set(key,[]);
       adj.get(key).push(edge);
     }
+    const maxRings=128,spacing=Math.max(.14,settings.length/(maxRings-8)); // Bounded subdivisions keep long straight edges smooth without frame work.
     for(let strand=0;strand<settings.count;strand++){
       let edge=edges[Math.min(edges.length-1,Math.floor((strand+random())*edges.length/settings.count))];
       let from=random()<.5?edge.ak:edge.bk,travelled=0;
-      const used=new Set(),points=[];
-      const add=(point,part)=>{
-        const normal=part.other?part.normal.clone().add(part.other).normalize():part.normal;
-        points.push(point.clone().addScaledVector(normal,settings.offset+settings.radius));
-      };
-      add(from===edge.ak?edge.a:edge.b,edge);
-      while(edge&&travelled<settings.length&&used.size<1024){
+      const used=new Set(),samples=[]; // Raw points remain EXACTLY on the mesh seam until the final cosmetic pass.
+      while(edge&&travelled<settings.length&&used.size<64&&samples.length<maxRings){
         used.add(edge);
         const a=from===edge.ak?edge.a:edge.b,b=from===edge.ak?edge.b:edge.a;
-        const forward=b.clone().sub(a).normalize(),length=Math.min(edge.length,settings.length-travelled);
-        add(a.clone().addScaledVector(forward,length),edge);travelled+=length;
+        const tangent=b.clone().sub(a).normalize(),length=Math.min(edge.length,settings.length-travelled);
+        const pieces=Math.max(1,Math.ceil(length/spacing));
+        for(let i=samples.length?1:0;i<=pieces&&samples.length<maxRings;i++){
+          const fraction=i/pieces;
+          samples.push({point:a.clone().addScaledVector(tangent,length*fraction),
+            tangent,edge,fraction,distance:travelled+length*fraction}); // Polyline samples lie directly on the original edge.
+        }
+        travelled+=length;
         if(length<edge.length-1e-6)break;
         const end=from===edge.ak?edge.bk:edge.ak;
         let best=null,bestDot=-.2;
         for(const next of adj.get(end)||[]){
           if(used.has(next))continue;
           const origin=end===next.ak?next.a:next.b,tip=end===next.ak?next.b:next.a;
-          const dot=forward.dot(tip.clone().sub(origin).normalize());
+          const dot=tangent.dot(tip.clone().sub(origin).normalize());
           if(dot>bestDot){best=next;bestDot=dot;}
         }
         edge=best;from=end;
       }
-      if(points.length>1)geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),
+      if(samples.length<2)continue;
+      const phase=random()*Math.PI*2,secondPhase=random()*Math.PI*2;
+      const points=samples.map(sample=>{
+        const part=sample.edge,n0=part.normal,n1=part.other;
+        const raw=sample.point.clone(); // The authoritative edge, before clearance or curl.
+        if(n1&&Number.isFinite(part.otherPlane)){
+          // At a tiny gap between two wall panels, the source edge lies on only
+          // one plane. Move its *base* centerline onto the actual intersection of
+          // both infinite planes, clamped to the same small adjacency tolerance.
+          const dot=n0.dot(n1),along=n1.clone().addScaledVector(n0,-dot),denom=along.lengthSq();
+          if(denom>.08){
+            const correction=(part.otherPlane-n1.dot(raw))/denom;
+            if(Math.abs(correction)*Math.sqrt(denom)<=.09)raw.addScaledVector(along,correction);
+          }
+        }
+        const offset=settings.offset+(part.record.renderLift||0); // Clearance remains user-authored; omitting the radius lets the tube nest against both faces.
+        const dot=n1?n0.dot(n1):1;
+        const outward=n1&&dot>-.75
+          ? n0.clone().add(n1).multiplyScalar(offset/(1+dot)) // Intersection of the two outward-offset wall planes.
+          : n0.clone().multiplyScalar(offset); // Flat/gapped-wall fallback remains finite.
+        raw.add(outward); // Rendering clearance is separate from the edge-following path.
+        if(settings.curl>0){
+          const envelope=Math.sin(Math.PI*sample.fraction)**2; // At each authored vertex, return exactly to the original edge.
+          const magnitude=Math.min(settings.radius*.7,settings.radius*.32*settings.curl)*envelope;
+          if(magnitude>0){
+            const faceNormal=n1&&dot>-.75?n0.clone().add(n1).normalize():n0.clone();
+            const across=sample.tangent.clone().cross(faceNormal).normalize(); // Curl stays transverse to the seam, not along its length.
+            raw.addScaledVector(across,Math.sin(sample.distance*(2.4+settings.curl*1.4)+phase)*magnitude);
+            raw.addScaledVector(faceNormal,Math.sin(sample.distance*5.1+secondPhase)*magnitude*.3); // A subtle outward wonk after edge alignment.
+          }
+        }
+        return raw;
+      });
+      geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),
         radiusFn:t=>settings.radius*lerp(1,.25,t),radialSegments:5,twist:0,noiseAmt:.08,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
   }
@@ -1995,7 +2141,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const span=[Math.max(.01,bounds[3]-bounds[0]),Math.max(.01,bounds[4]-bounds[1]),Math.max(.01,bounds[5]-bounds[2])]; // Avoid divide-by-zero on flat surfaces.
     for(let i=0;i<triangles.length;i++){
       const record=triangles[i],n=record.normal,axis=Math.abs(n.x)>Math.abs(n.y)&&Math.abs(n.x)>Math.abs(n.z)?0:Math.abs(n.y)>Math.abs(n.z)?1:2;
-      const vertices=[record.triangle.a,record.triangle.b,record.triangle.c],lift=settings.offset+.012; // Clear the source without obstructing raised roots.
+      const vertices=[record.triangle.a,record.triangle.b,record.triangle.c],lift=settings.offset+.012+(record.renderLift||0); // Clear the source without obstructing raised roots.
       for(let j=0;j<3;j++){
         const p=vertices[j],k=i*9+j*3,u=i*6+j*2;
         positions[k]=p.x+n.x*lift;positions[k+1]=p.y+n.y*lift;positions[k+2]=p.z+n.z*lift;
@@ -2059,7 +2205,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           if (settings.target === 'floors' && faceNormal.y < .5) continue;
           if (settings.target === 'ceilings' && faceNormal.y > -.1) continue;
           totalArea += area;
-          const record = { triangle, normal: faceNormal, plane: faceNormal.dot(a), stamp: 0, area: totalArea }; // plane = signed offset, a cheap lower bound on distance to the face. // Cumulative area permits binary-search seed placement.
+          const record = { triangle, normal: faceNormal, plane: faceNormal.dot(a), stamp: 0, area: totalArea,
+             sourceSurfaceId:mesh.userData?.surfaceFoliageGuideId ?? null,
+            renderLift:mesh.userData?.surfaceFoliageRenderLift || 0 }; // plane = signed offset, a cheap lower bound on distance to the face. // Cumulative area permits binary-search seed placement.
           triangles.push(record);
           const x0 = Math.floor(Math.min(a.x, b.x, c.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x, c.x) / cellSize); // Bucket range includes the full triangle, not only its centroid.
           const y0 = Math.floor(Math.min(a.y, b.y, c.y) / cellSize), y1 = Math.floor(Math.max(a.y, b.y, c.y) / cellSize);
@@ -2085,6 +2233,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if (!triangles.length) { group.userData.diagnostics = 'No eligible surface triangles.'; return group; }
     const seed = xfnv1a(settings.seed), random = mulberry32(seed), geometries = []; // Deterministic recipes regenerate on import and in gameplay.
     const guide=settings.style==='natural'?null:surfaceGuideEdges(triangles,cells,large,keyOf,cellSize,settings.radius,settings.style==='cornerFill'); // Edge topology is computed only for guided styles.
+    group.userData.surfaceGrowthStats.guideCorners=guide?.corners.length||0; // Mobile-visible evidence of architectural edges instead of brick micro-creases.
+    group.userData.surfaceGrowthStats.guideBoundaries=guide?.boundaries.length||0; // Counts the edges Wrap may start on, including named furniture region borders.
+    group.userData.surfaceGrowthStats.guidedBySemanticSurfaces=targets.some(mesh=>!!mesh.userData?.surfaceFoliageGuide);
     const edgeStarts=guide?(guide.boundaries.length?guide.boundaries:guide.corners.length?guide.corners:Array.from(guide.all.values()).slice(0,1024)):[];
     const strandCount=settings.style==='wrap'
       ? Math.min(settings.density>=.995?24:96,Math.max(1,Math.round(settings.count*(.25+settings.density*1.75))),Math.max(1,Math.round(totalArea*settings.density/Math.max(.4,settings.length*Math.max(.16,settings.radius*8)))))
@@ -2112,7 +2263,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         if(direction.lengthSq()<1e-8)direction.copy(edge.b).sub(edge.a).cross(normal);
         direction.normalize();
       }
-      const points=[anchor.clone().addScaledVector(normal,settings.radius+settings.offset)]; // Radius-aware clearance keeps tubes outside the source.
+      const points=[anchor.clone().addScaledVector(normal,settings.radius+settings.offset+(current.renderLift||0))]; // Radius-aware clearance keeps tubes outside the source.
       const strandCells=occupancy?new Set():null; // Per-strand cells avoid overcounting densely sampled tube segments.
       for (let segment=0; segment<steps; segment++) {
         direction.addScaledVector(normal,-direction.dot(normal));
@@ -2160,7 +2311,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           if(!crossed)break;
         }
         direction.copy(closest).sub(anchor).normalize();anchor=closest;current=best;normal=current.normal.clone();
-        points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset));
+        points.push(anchor.clone().addScaledVector(normal,settings.radius+settings.offset+(current.renderLift||0)));
         if(strandCells){const key=coverageKey(anchor,normal);if(!strandCells.has(key)){strandCells.add(key);occupancy.set(key,(occupancy.get(key)||0)+1);}}
       }
       if(points.length<2)continue;
@@ -2235,7 +2386,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       return runtimeInstances.get(runtime);
     },
-    surfaceGrowthDefaults, normalizeSurfaceGrowth, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);

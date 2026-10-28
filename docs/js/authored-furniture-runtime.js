@@ -79,6 +79,14 @@
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
+    // Gameplay shares the named, detected authoring surfaces (IDs + face memberships).
+    // A carved chair/table must not use incidental triangles from its render mesh as navigation seams.
+    if ((data.surfaceGrowth || []).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')) {
+      window.FoliageGenerator?.replaceSemanticSurfaceGuides(group,(data.recognizedSurfaces||[]).map(surface=>({
+        sourceMesh:meshById.get(surface.partId),faceIndices:surface.faceIndices,
+        role:'furniture',id:surface.id,partId:surface.partId,label:surface.label||surface.recognizedType
+      })));
+    }
     window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth);
     return group;
   }

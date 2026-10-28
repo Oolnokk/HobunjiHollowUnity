@@ -13,12 +13,19 @@ catch(error) {
   process.exit(0);
 }
 const root=path.resolve(__dirname,'..'); // Checked-in browser scripts are served without a deployment.
+const localThree=path.join(root,'node_modules/three/build/three.min.js'); // CI installs pinned Three.js locally; no unreliable CDN request.
 const server=http.createServer((request,response)=>{
   const route=(request.url||'/').split('?')[0];
   if(route==='/test-page'){
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html><head><script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
+    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
     return;
+  }
+  if(route==='/vendor-three.js'){
+    fs.readFile(localThree,(err,bytes)=>{
+      if(err){response.writeHead(404);response.end(err.message);return;}
+      response.setHeader('Content-Type','text/javascript');response.end(bytes);
+    });return;
   }
   const file=path.resolve(root,decodeURIComponent(route).replace(/^\/+/,''));
   if(!file.startsWith(root+path.sep)){response.writeHead(403);response.end();return;}
@@ -36,7 +43,7 @@ const server=http.createServer((request,response)=>{
     const pageErrors=[]; // Captures browser exceptions for CI and mobile-only debugging.
     page.on('pageerror',error=>pageErrors.push(error.stack||error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/test-page',{waitUntil:'domcontentloaded',timeout:30000});
-    await page.waitForFunction(()=>!!(window.THREE?.BoxGeometry&&window.FoliageGenerator?.buildSurfaceGrowth&&window.SurfaceFoliageAuthoring?.mount),null,{timeout:30000});
+    await page.waitForFunction(()=>!!(window.THREE?.BoxGeometry&&window.FoliageGenerator?.buildSurfaceGrowth&&window.SurfaceFoliageAuthoring?.mount&&window.HousePieceGen?.buildGroupFromPiece),null,{timeout:30000});
     const data=await page.evaluate(()=>{
       const T=window.THREE,growth=window.FoliageGenerator; // Actual production THREE and generator.
       function build(geometry,style,density,count=12){ // Consistent authored wall test with no helper meshes.
@@ -65,6 +72,121 @@ const server=http.createServer((request,response)=>{
         0,0,.03,0,2,.03,0,0,2,0,2,.03,0,2,2,0,0,2
       ],3));
       const split=build(segmentGeometry,'cornerFill',.5,7);
+      // Two perpendicular *authored planes* share a vertical structural edge.
+      // Read tube-ring centroids to test the actual spline, not only the presence
+      // of a mesh. The five unique ring vertices (sixth is a UV seam duplicate)
+      // cancel the tube radius so their average approximates the spine.
+      const edgeFaces=[[0,0,0],[0,2,0],[0,2,2],[0,0,0],[0,2,2],[0,0,2],
+        [0,0,0],[2,0,0],[2,2,0],[0,0,0],[2,2,0],[0,2,0]];
+      function edgeSpline(curl,renderLift=0,clearance=0){
+        const root=new T.Group();
+        growth.replaceSemanticSurfaceGuides(root,[{id:'architectural-corner',role:'walls',vertices:edgeFaces,renderLift}]);
+        const generated=growth.buildSurfaceGrowth(root,{
+          style:'cornerFill',kind:'roots',target:'walls',radius:.05,
+          offset:clearance,count:1,length:1.85,seed:'tight-edge-spline',curl,texture:''
+        });
+        const position=generated.children[0].geometry.getAttribute('position'),centers=[];
+        for(let i=0;i<position.count;i+=6){
+          const center=new T.Vector3();
+          for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(position,i+j));
+          centers.push(center.multiplyScalar(1/5));
+        }
+        return {
+          rings:centers.length,
+          maxDeviation:Math.max(...centers.map(p=>Math.hypot(p.x-renderLift-clearance,p.z-renderLift-clearance))),
+          endDeviation:Math.max(Math.hypot(centers[0].x-renderLift-clearance,centers[0].z-renderLift-clearance),
+            Math.hypot(centers[centers.length-1].x-renderLift-clearance,centers[centers.length-1].z-renderLift-clearance))
+        };
+      }
+      const rawEdgeSpline=edgeSpline(0),curledEdgeSpline=edgeSpline(2),cladEdgeSpline=edgeSpline(0,.26),clearanceEdgeSpline=edgeSpline(0,0,.02);
+      // Slightly separated planes must snap to the real intersection of their
+      // infinite wall planes. The old implementation tracked (x=.02,z=0)
+      // rather than the actual intersection (x=.02,z=.03).
+      const quad=q=>[q[0],q[1],q[2],q[0],q[2],q[3]];
+      const wallA=quad([[0,0,0],[0,4,0],[0,4,3],[0,0,3]]);
+      const wallB=quad([[0,0,0],[3,0,0],[3,4,0],[0,4,0]]);
+      const shortB=quad([[0,0,0],[3,0,0],[3,2,0],[0,2,0]]);
+      const upperB=quad([[0,2,0],[3,2,0],[3,4,0],[0,4,0]]);
+      const gapA=quad([[.02,0,0],[.02,4,0],[.02,4,3],[.02,0,3]]);
+      const gapB=quad([[0,0,.03],[3,0,.03],[3,4,.03],[0,4,.03]]);
+      function inspectCornerSegments(vertices,seed){
+        const root=new T.Group();
+        growth.replaceSemanticSurfaceGuides(root,[{role:'walls',id:'test-wall',vertices}]);
+        const result=growth.buildSurfaceGrowth(root,{style:'cornerFill',kind:'roots',target:'walls',
+          count:1,length:3.8,seed:'segmented-'+seed,radius:.05,curl:0,offset:0,texture:''});
+        const pos=result.children[0]?.geometry.getAttribute('position'),centers=[];
+        if(pos)for(let i=0;i<pos.count;i+=6){
+          const center=new T.Vector3();
+          for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(pos,i+j));
+          centers.push(center.multiplyScalar(.2));
+        }
+        return {
+          maxY:centers.length?Math.max(...centers.map(x=>x.y)):0,
+          minY:centers.length?Math.min(...centers.map(x=>x.y)):0,
+          maxGapError:centers.length?Math.max(...centers.map(x=>Math.hypot(x.x-.02,x.z-.03))):100,
+          corners:result.userData.surfaceGrowthStats.guideCorners
+        };
+      }
+      const gappedIntersection=inspectCornerSegments([...gapA,...gapB],0);
+      const partialCorner=Array.from({length:8},(_,i)=>inspectCornerSegments([...wallA,...shortB],i));
+      const splitCorner=Array.from({length:12},(_,i)=>inspectCornerSegments([...wallA,...shortB,...upperB],i));
+
+      // Build an actual HousePieceGen house with plenty of decorative brick triangles:
+      // Corner Fill and Wrap must see only the TWO original sheer wall quads.
+      const houseFaces=[
+        {id:'wall-a',tag:'wall',v:[[0,0,0],[0,2,0],[0,2,3],[0,0,3]]},
+        {id:'wall-b',tag:'wall',v:[[0,0,0],[3,0,0],[3,2,0],[0,2,0]]}
+      ];
+      const housePiece={id:'semantic-house',gridSize:2,footprint:{cells:[{x:0,y:0}]},
+        base:{faces:houseFaces},surfaceGrowth:[]};
+      const brickMaker={build(){
+        const group=new T.Group();
+        for(let i=0;i<8;i++)group.add(new T.Mesh(new T.BoxGeometry(.4,.4,.4),new T.MeshBasicMaterial()));
+        return group;
+      }};
+      const runHouse=style=>{
+        housePiece.surfaceGrowth=[{style,kind:'roots',count:7,length:2,target:'walls',seed:'semantic-house',texture:''}];
+        const group=window.HousePieceGen.buildGroupFromPiece(T,housePiece,0,0,{wallBuilder:brickMaker});
+        const guides=[],growth=[];
+        group.traverse(node=>{
+          if(node.userData?.surfaceFoliageGuide)guides.push(node);
+          if(node.userData?.surfaceFoliage)growth.push(node);
+        });
+        return {guides:guides.length,renderLift:guides[0]?.userData.surfaceFoliageRenderLift||0,
+          guideHidden:guides.every(node=>node.visible===false&&node.layers.mask===(1<<30)),
+          sourceTriangles:growth[0].userData.surfaceGrowthStats.triangles,
+          tubes:count(growth[0]),sceneNodes:guides.length};
+      };
+      const houseNatural=runHouse('natural'),houseCorners=runHouse('cornerFill'),houseWrap=runHouse('wrap');
+
+      // The named regions from Furniture Author (face-index subsets and labels)
+      // replace the entire visible box mesh as the guide, including selected-part targeting.
+      const furniture=new T.Group(),part=new T.Mesh(new T.BoxGeometry(2,1,1),new T.MeshBasicMaterial());
+      part.userData.authoredPartId='test-chair';furniture.add(part);
+      const namedCount=growth.replaceSemanticSurfaceGuides(furniture,[
+        {sourceMesh:part,faceIndices:[0,1],partId:'test-chair',id:'test-chair:surface:0',label:'Right side',role:'furniture'},
+        {sourceMesh:part,faceIndices:[2,3],partId:'test-chair',id:'test-chair:surface:2',label:'Left side',role:'furniture'}
+      ]);
+      const furnitureWrap=growth.buildSurfaceGrowth(furniture,{style:'wrap',kind:'vines',target:'selected',
+        targetIds:['test-chair'],seed:'furniture-named',density:.5,length:2,texture:''});
+      const furnitureNatural=growth.buildSurfaceGrowth(furniture,{style:'natural',kind:'vines',target:'selected',
+        targetIds:['test-chair'],seed:'furniture-named',length:2,texture:''});
+      const namedGuideTriangles=furnitureWrap.userData.surfaceGrowthStats.triangles;
+      const rawFurnitureTriangles=furnitureNatural.userData.surfaceGrowthStats.triangles;
+      const guidesInvisible=part.children.filter(child=>child.userData.surfaceFoliageGuide)
+        .every(child=>!child.visible&&child.layers.mask===(1<<30));
+      const removed=growth.replaceSemanticSurfaceGuides(furniture,[]);
+      const afterClear=part.children.filter(child=>child.userData.surfaceFoliageGuide).length;
+      const outer=new T.Group(),inner=new T.Group();outer.add(inner);
+      const shell=new T.Mesh(new T.BoxGeometry(2,2,2),new T.MeshBasicMaterial()),nested=new T.Mesh(new T.BoxGeometry(.5,.5,.5),new T.MeshBasicMaterial());
+      shell.userData.authoredPartId='outer';nested.userData.authoredPartId='inner';outer.add(shell);inner.add(nested);
+      growth.replaceSemanticSurfaceGuides(inner,[{sourceMesh:nested,faceIndices:[0,1],id:'inner-side',partId:'inner',role:'furniture'}]);
+      growth.replaceSemanticSurfaceGuides(outer,[{sourceMesh:shell,faceIndices:[0,1],id:'outer-side',partId:'outer',role:'furniture'}]);
+      const outerGrowth=growth.buildSurfaceGrowth(outer,{style:'wrap',target:'selected',targetIds:['outer'],texture:'',count:3});
+      const nestedSurvives=nested.children.filter(node=>node.userData.surfaceFoliageGuide).length;
+      const outerTriangles=outerGrowth.userData.surfaceGrowthStats.triangles;
+      growth.replaceSemanticSurfaceGuides(outer,[]);
+      const nestedAfterCleanup=nested.children.filter(node=>node.userData.surfaceFoliageGuide).length;
       let recipes=[]; // Mimics every editor's read/write adapter to verify actual UI serialization.
       window.SurfaceFoliageAuthoring.mount(document.getElementById('controls'),{
         targets:[['all','All walls']],read:()=>recipes,selectedIds:()=>[],
@@ -87,10 +209,41 @@ const server=http.createServer((request,response)=>{
         coverHasUvs:!!cover(full)[0]?.geometry.attributes.uv,
         outline:full.children.find(x=>!x.userData.surfaceGrowthCover)?.layers.mask,
         deterministic:digest(full)===digest(reused),
+        houseNatural,houseCorners,houseWrap,namedCount,namedGuideTriangles,rawFurnitureTriangles,guidesInvisible,removed,afterClear,nestedSurvives,outerTriangles,nestedAfterCleanup,
+        rawEdgeSpline,curledEdgeSpline,cladEdgeSpline,clearanceEdgeSpline,
+        gappedIntersection,partialCorner,splitCorner,
         hiddenBefore,visibleAfter,budgetLabel,
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
     });
+    assert(data.rawEdgeSpline.rings>=10,'Corner Fill should have intermediate spline rings along long straight architectural edges');
+    assert(data.rawEdgeSpline.maxDeviation<.001,'With zero curl and zero clearance the spline must run on the actual corner, not float a radius off it');
+    assert(data.curledEdgeSpline.maxDeviation>.008&&data.curledEdgeSpline.maxDeviation<.055,'Curl should be visible but bounded to roughly the strand radius');
+    assert(data.curledEdgeSpline.endDeviation<.001,'Cosmetic curl must pin the spline back to the real edge at section endpoints');
+    assert(data.cladEdgeSpline.maxDeviation<.001,'Wall cladding clearance must translate the spline along the offset-wall intersection, not away arbitrarily');
+    assert(data.clearanceEdgeSpline.maxDeviation<.001,'Authored clearance must preserve the exact intersection of offset wall planes');
+    assert(data.gappedIntersection.corners>0&&data.gappedIntersection.maxGapError<.001,
+      'Near-gapped wall planes must use their actual plane-intersection line, not either raw mesh edge');
+    assert(data.partialCorner.every(x=>x.corners>=1&&x.maxY<=2.01),
+      'A shorter adjoining wall must not produce phantom Corner Fill above its last panel');
+    assert(data.splitCorner.some(x=>x.maxY-x.minY>3.4),
+      'Multiple short panels on a long wall must support a single continuous Corner Fill strand');
+
+    assert.equal(data.houseNatural.sourceTriangles,96,'Legacy Natural house style must still inspect brick meshes');
+    assert.equal(data.houseCorners.sourceTriangles,4,'Corner Fill must follow the two original wall quads, not brick polygons');
+    assert.equal(data.houseWrap.sourceTriangles,4,'Wrap navigation must follow the two original wall quads, not brick polygons');
+    assert.equal(data.houseCorners.guides,1,'House walls must merge into just one guide mesh');
+    assert.equal(data.houseWrap.guides,1,'Wrap houses must reuse the same efficient guide mesh');
+    assert(data.houseCorners.guideHidden&&data.houseWrap.guideHidden,'House guides must be invisible and non-raycastable');
+    assert(data.houseCorners.renderLift>=.2&&data.houseWrap.renderLift>=.2,'House cladding must lift strands visibly above source planes');
+    assert(data.houseCorners.tubes>0,'Architectural wall intersections must produce actual Corner Fill strands');
+    assert.equal(data.namedCount,2,'Furniture must use the two detected, named surfaces');
+    assert.equal(data.namedGuideTriangles,4,'Furniture Wrap must sample only the named surface faces');
+    assert.equal(data.rawFurnitureTriangles,12,'Furniture Natural must continue sampling all raw visible triangles');
+    assert(data.guidesInvisible&&data.removed===0&&data.afterClear===0,'Semantic guide disposal must not leave selectable artifacts');
+    assert.equal(data.outerTriangles,2,'Parent growth must not sample nested furniture guide triangles');
+    assert.equal(data.nestedSurvives,1,'Parent guide setup must preserve nested furniture guides');
+    assert.equal(data.nestedAfterCleanup,1,'Parent guide cleanup must preserve nested furniture guides');
     assert.equal(data.flatTubes,0,'A flat planar surface has no geometric corner');
     assert(data.cornerTubes>0,'Sharp box corners should grow actual tubes');
     assert(data.splitCornerTubes>0,'Slightly gapped wall panels must form a detected corner');
