@@ -2291,14 +2291,10 @@ function rebuildHouseSurfaceFoliage(){
   const recipes=state.piece.surfaceGrowth||[];
   if(recipes.some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap')){
     const faces=window.HouseWallFixtures?.cutFaces(state.piece.base.faces,state.piece.wallFixtures).faces||state.piece.base.faces; // Carved architectural wall panels, never the generated brick preview.
-    const sourcePanels=['walls','roofs'].map(role=>({
-      vertices:faces.filter(face=>role==='roofs'?face.tag==='roof':['wall','entryTunnel'].includes(face.tag))
-        .flatMap(face=>[face.v[0],face.v[1],face.v[2],face.v[0],face.v[2],face.v[3]]),
-      role,
-      // The editor displays bare authored wall planes, not runtime brickwork.
-      renderLift:role==='roofs'?.16:0
-    }));
-    foliage.replaceSemanticSurfaceGuides(root,foliage.recognizeArchitecturalSurfaceRegions(root,sourcePanels)); // At most two invisible guides; brick count cannot increase navigation complexity.
+    const sourcePanels=foliage.architecturalSurfaceSources(faces,{wallLift:0,roofLift:.16});
+    foliage.replaceSemanticSurfaceGuides(root,foliage.recognizeArchitecturalSurfaceRegions(root,sourcePanels,{
+      occlusionFaces:state.piece.base.faces
+    })); // Exposed cross-gable geometry only; the bare editor needs no masonry lift.
   } else if(root.userData.surfaceGuideCount) foliage.replaceSemanticSurfaceGuides(root,[]);
   const report=foliage.applySurfaceGrowth(root,recipes);
   return report+' (architectural guide faces: '+(root.userData.surfaceGuideCount||0)+')'; // Mobile-visible diagnostic.
