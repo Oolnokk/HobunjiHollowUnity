@@ -782,9 +782,6 @@
       // Detect connected face regions, so coplanar wall and gable patches join while real folds remain separate.
       const foliage=global.FoliageGenerator;
       if(foliage){
-        const panels=foliage.architecturalSurfaceSources(faces,{
-          wallLift:(opts.wallBuilder||generatedLogStyle)?.26:0,roofLift:.16
-        });
         const modes=[...new Set((opts.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
         const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
           foliage.architecturalSurfaceSources(faces,{
@@ -1622,7 +1619,6 @@
       // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
       const foliage=global.FoliageGenerator;
       if(foliage){
-        const panels=foliage.architecturalSurfaceSources(allOff,{wallLift:hideWalls?.26:0,roofLift:.16});
         const modes=[...new Set((piece.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
         const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
           foliage.architecturalSurfaceSources(allOff,{
