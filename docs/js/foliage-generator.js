@@ -1882,6 +1882,92 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       hangChance: finite('hangChance', 0, 0, 1), hangLength: finite('hangLength', 0, 0, 6) }; // Hanging tips are optional; existing authoring recipes are unchanged.
   }
 
+  // Furniture Author's surface recognition is a connected-face flood fill, with
+  // a split-angle threshold. Buildings need the same definition across separate
+  // authored quads, wall sections and gable meshes, rather than role/tag groups.
+  // Unlike furniture, architecture may contain T-junctions: a wall's long upper
+  // edge can meet several smaller gable triangles. Collinear interval overlap
+  // therefore counts as a shared edge, but vertex-only contact never does.
+  function recognizeArchitecturalSurfaceRegions(parent, sources=[], options={}) {
+    const degree=Number.isFinite(Number(options.splitAngleDeg))?Number(options.splitAngleDeg):20;
+    const cosThreshold=Math.cos(clamp(degree,0,180)*Math.PI/180),faces=[];
+    parent.updateWorldMatrix(true,true);
+    const inverse=parent.matrixWorld.clone().invert(),vertex=new T.Vector3();
+    for(const source of Array.isArray(sources)?sources:[]){
+      const role=String(source?.role||'walls'),points=[];
+      if(Array.isArray(source?.vertices)){
+        const v=source.vertices;
+        const push=p=>{if(Array.isArray(p)&&p.length>=3&&p.slice(0,3).every(Number.isFinite))points.push(new T.Vector3(p[0],p[1],p[2]));};
+        if(v.length===4){[v[0],v[1],v[2],v[0],v[2],v[3]].forEach(push);}
+        else if(v.length%3===0)v.forEach(push);
+      }else if(source?.sourceMesh?.isMesh&&Array.isArray(source.faceIndices)){
+        const mesh=source.sourceMesh,geometry=mesh.geometry,pos=geometry?.getAttribute?.('position'),idx=geometry?.index;
+        if(!pos)continue;
+        const matrix=inverse.clone().multiply(mesh.matrixWorld),limit=idx?idx.count:pos.count;
+        for(const raw of source.faceIndices.slice(0,100000)){
+          const i=Math.floor(Number(raw));if(!Number.isFinite(i)||i<0||i*3+2>=limit)continue;
+          for(let c=0;c<3;c++)points.push(vertex.fromBufferAttribute(pos,idx?idx.getX(i*3+c):i*3+c).clone().applyMatrix4(matrix));
+        }
+      }
+      for(let i=0;i+2<points.length;i+=3){
+        const a=points[i],b=points[i+1],c=points[i+2];
+        if(!Number.isFinite(a.x+a.y+a.z+b.x+b.y+b.z+c.x+c.y+c.z))continue;
+        const normal=b.clone().sub(a).cross(c.clone().sub(a));
+        if(normal.lengthSq()<1e-12)continue;
+        normal.normalize();
+        faces.push({vertices:[a,b,c],normal,role,renderLift:Math.max(0,Math.min(.6,Number(source.renderLift)||0))});
+      }
+    }
+    if(!faces.length)return [];
+    const parentFace=faces.map((_,i)=>i),find=i=>{while(parentFace[i]!==i){parentFace[i]=parentFace[parentFace[i]];i=parentFace[i];}return i;};
+    const unite=(a,b)=>{a=find(a);b=find(b);if(a!==b)parentFace[b]=a;};
+    const lines=new Map();
+    for(let i=0;i<faces.length;i++){
+      const face=faces[i],p=face.vertices;
+      for(let k=0;k<3;k++){
+        const a=p[k],b=p[(k+1)%3],direction=b.clone().sub(a),length=direction.length();
+        if(length<.012)continue;
+        direction.multiplyScalar(1/length);
+        // A canonical line direction and its moment group partially overlapping
+        // edges without requiring identical triangulation at wall/gable seams.
+        const d=[direction.x,direction.y,direction.z],axis=d.find(x=>Math.abs(x)>1e-7);
+        if(axis<0)direction.negate();
+        const moment=a.clone().cross(direction),round=x=>Math.round(x*100);
+        const dirKey=[direction.x,direction.y,direction.z].map(x=>Math.round(x*1000)).join(',');
+        const key=face.role+'|'+dirKey+'|'+[round(moment.x),round(moment.y),round(moment.z)].join(',');
+        const t0=a.dot(direction),t1=b.dot(direction),start=Math.min(t0,t1),end=Math.max(t0,t1);
+        if(!lines.has(key))lines.set(key,[]);
+        lines.get(key).push({face:i,start,end});
+      }
+    }
+    for(const entries of lines.values()){
+      entries.sort((a,b)=>a.start-b.start);
+      const active=[];
+      for(const entry of entries){
+        for(let i=active.length-1;i>=0;i--)if(active[i].end<entry.start+.0005)active.splice(i,1);
+        for(const prev of active){
+          if(prev.face===entry.face||Math.min(prev.end,entry.end)-Math.max(prev.start,entry.start)<.001)continue;
+          if(faces[prev.face].normal.dot(faces[entry.face].normal)+1e-7>=cosThreshold)unite(prev.face,entry.face);
+        }
+        active.push(entry);
+      }
+    }
+    const groups=new Map();
+    for(let i=0;i<faces.length;i++){
+      const key=find(i);
+      if(!groups.has(key))groups.set(key,{faces:[],minIndex:i,role:faces[i].role,renderLift:0});
+      const group=groups.get(key);
+      group.faces.push(faces[i]);group.minIndex=Math.min(group.minIndex,i);
+      group.renderLift=Math.max(group.renderLift,faces[i].renderLift);
+    }
+    return [...groups.values()].sort((a,b)=>a.minIndex-b.minIndex).map((region,index)=>({
+      vertices:region.faces.flatMap(face=>face.vertices.map(p=>p.toArray())),
+      role:region.role,id:'recognized-'+region.role+'-'+region.minIndex,
+      label:'Recognized '+region.role+' surface '+(index+1),
+      renderLift:region.renderLift,recognizedSurface:true
+    }));
+  }
+
   // Semantic navigation meshes are a non-rendered projection of authored plane faces
   // (houses/interiors) or named detected surface triangles (furniture). Keeping
   // them separate from cladding prevents micro-creases on bricks and logs from
@@ -1925,6 +2011,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       mesh.name = 'Surface navigation: ' + String(source.label || source.id || count);
       mesh.visible = false; mesh.layers.set(30); // Excluded from normal rendering and default UI raycasts.
       mesh.userData.surfaceFoliageGuide = true;
+      mesh.userData.surfaceFoliageRecognizedRegion = source.recognizedSurface === true;
       mesh.userData.surfaceFoliageGuideOwner = parent.uuid; // The generating room/furniture owns its guides, not nested prefabs.
       mesh.userData.surfaceFoliageGuideId = String(source.id || source.label || count);
       mesh.userData.surfaceFoliageRenderLift = Math.max(0,Math.min(.6,Number(source.renderLift)||0)); // Render over coarse cladding while navigating the original plane. // Preserve distinct named furniture patches when tracing shared edges.
@@ -2207,6 +2294,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           totalArea += area;
           const record = { triangle, normal: faceNormal, plane: faceNormal.dot(a), stamp: 0, area: totalArea,
              sourceSurfaceId:mesh.userData?.surfaceFoliageGuideId ?? null,
+             recognizedRegion:mesh.userData?.surfaceFoliageRecognizedRegion === true,
             renderLift:mesh.userData?.surfaceFoliageRenderLift || 0 }; // plane = signed offset, a cheap lower bound on distance to the face. // Cumulative area permits binary-search seed placement.
           triangles.push(record);
           const x0 = Math.floor(Math.min(a.x, b.x, c.x) / cellSize), x1 = Math.floor(Math.max(a.x, b.x, c.x) / cellSize); // Bucket range includes the full triangle, not only its centroid.
@@ -2386,7 +2474,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
       return runtimeInstances.get(runtime);
     },
-    surfaceGrowthDefaults, normalizeSurfaceGrowth, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
+    surfaceGrowthDefaults, normalizeSurfaceGrowth, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
