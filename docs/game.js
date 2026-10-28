@@ -6565,6 +6565,9 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
+            c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
+          }
           if (c._voorgRearKickThreat && c.state !== 'chase' && c.state !== 'patrol-chase') {
             c._voorgRearKickThreat = null; // A chased-away attacker ends the defensive encounter; escape instead of searching indefinitely.
             c._voorgRearKickSpent = true;
