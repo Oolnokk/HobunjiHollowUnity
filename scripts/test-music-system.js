@@ -55,7 +55,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     ambientMusicOwnsSoundtrack: () => live.exclusive,
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ songFadeInMs: 0, songFadeOutMs: 0 }),
     pauseAmbientForCombat() { live.pauses++; },
     restoreAmbientSchedulerAfterCombat() {},
@@ -121,7 +121,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     resolveAreaAudioIndex: () => 'general', // Shared cue library across farm and town.
-    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false, festivalSilencesAmbient: () => false,
+    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
     resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg', loop: true } : null, // Even a mistakenly looping ordinary BGM must advance the sequential cycle.
@@ -243,7 +243,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     _lyreDucked: false, _gameplayCueDuckOwners: new Set(), _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false,
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
     resolveAreaBgm: () => ({ url: 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3' }),
