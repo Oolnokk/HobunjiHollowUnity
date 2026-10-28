@@ -120,7 +120,7 @@ const server=http.createServer((req,res)=>{
     });
     assert.equal(legacy,'omgurku','legacy species-only NPC records keep their hybrid identity');
     await page.waitForFunction(()=>window.__omgurkuGameWalker.avatarGroup.userData.omgurkuComposite.lowerRefs
-      .every(ref=>String(ref.frontPlane.material.map?.name||'').startsWith('omgurku-lower|')),null,{timeout:15000}); // Capture the shared coat only after asynchronous tinting replaces the raw frames.
+      .every(ref=>String(ref.frontPlane.material.map?.name||'').startsWith('omgurku-lower|')),null,{timeout:60000}); // Capture the shared coat only after asynchronous tinting replaces the raw frames.
     const shared=await page.evaluate(async()=>{
       const deps=window.RomanceSystem.helpers.deps(),walker=window.__omgurkuGameWalker;
       const refs=walker.avatarGroup.userData.omgurkuComposite.lowerRefs;

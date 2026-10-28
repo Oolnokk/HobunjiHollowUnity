@@ -200,7 +200,8 @@
         const pending = Object.entries(contests).filter(([key,data]) => {
           const match = /^(\d+):gorkunash$/.exec(key);
           return match && worldDay() >= Number(match[1]) * 336 + FESTIVAL_START + DAYS
-            && data?.entry && !data.rewarded && winner(data.entry, data.days);
+            && data?.entry && !data.rewarded && !window.DoorstepVisits?.isDone?.('gorkunash-potluck:' + key)
+            && winner(data.entry, data.days);
         }).sort((a,b)=>Number(b[0].split(':')[0])-Number(a[0].split(':')[0]));
         if (!pending.length) return null;
         const [event,data] = pending[0];
