@@ -1,7 +1,6 @@
-// Applies the authored porch wood treatments while preserving the existing
-// HousePieceGen geometry and walkable-elevation behavior. Porch decks/stairs use
-// boards.png; railings/fences use carved_smooth.png. Adjacent smooth faces are
-// detected as connected surface islands so UVs continue across map-tile seams.
+// Gives porch decks, stairs, fences, doorway frames, and authored entrance doors
+// one carved-wood material and tint without changing HousePieceGen geometry,
+// furniture placement, or walkable elevation. Connected smooth faces share UVs.
 (() => {
   'use strict';
 
@@ -9,11 +8,11 @@
   const housePieces = window.HousePieceGen;
   if (!THREE || !housePieces?.buildGroupFromPiece || window.HobunjiPorchSurfaceMaterial?.installed) return;
 
-  const DECK_TEXTURE_PATH = 'assets/textures/boards.png'; // Used by porch decks and porch stairs.
-  const FENCE_TEXTURE_PATH = 'assets/textures/carved_smooth.png'; // Used by porch railings/fences.
-  const WOOD_TINT = '#8b6540'; // Shared Furniture + Avatar Author wood tint used by both porch materials.
+  const WOOD_TEXTURE_PATH = 'assets/textures/carved_smooth.png'; // Shared finish used by porches, stairs, fences, frames, and entrance-door furniture.
+  const WOOD_TINT = '#8b6540'; // Shared Furniture + Avatar Author wood tint for the entire entrance assembly.
   const WOOD_TINT_HEX = 0x8b6540; // Immediate fallback while the tinted PNG is loading.
-  const PORCH_TAGS = new Set(['porch', 'porchStair', 'railing']); // Limits the module to the porch assembly.
+  const PORCH_TAGS = new Set(['porch', 'porchStair', 'railing']); // Ordinary authored assembly faces; doorwayFrame is selected by metadata.
+  const ENTRY_SIDE_ROTATION_DEG = { south: 0, west: 90, north: 180, east: 270 }; // Matches HousePieceGen's orientation for generated farm entry tunnels.
   const MATCH_EPSILON = 1e-4; // Used to match authored quads to HousePieceGen's rendered meshes.
   const SURFACE_SPLIT_ANGLE_DEG = 24; // Same smooth-edge split threshold used by the furniture surface workflow.
   const DEBUG_ENABLED = new URLSearchParams(location.search).get('porchMatDebug') === '1';
@@ -33,11 +32,11 @@
   }
 
   function surfaceClassForTag(tag) {
-    return tag === 'railing' ? 'fence' : 'deck';
+    return 'entrance-wood'; // Shared material family for all entrance components, including frame faces.
   }
 
   function texturePathForTag(tag) {
-    return surfaceClassForTag(tag) === 'fence' ? FENCE_TEXTURE_PATH : DECK_TEXTURE_PATH;
+    return WOOD_TEXTURE_PATH; // Every member uses one texture and one cached material.
   }
 
   function materialForTag(tag) {
@@ -171,10 +170,9 @@
     return { normal: cross.multiplyScalar(1 / twiceArea), area: twiceArea * 0.5 };
   }
 
-  // Topology-first surface recognition. Faces only join when they share an
-  // authored edge, remain within the smooth-angle threshold, AND use the same
-  // porch material family. This lets deck boards flow across tiles without a
-  // fence face enlarging or rotating the deck's UV frame.
+  // Topology-first surface recognition. Faces join only when they share an
+  // authored edge and remain within the smooth-angle threshold; every
+  // entrance component now belongs to the same material family.
   function detectConnectedSurfaceIslands(records) {
     const edgeOwners = new Map();
     const neighbors = Array.from({ length: records.length }, () => new Set());
@@ -194,9 +192,6 @@
         for (let b = a + 1; b < owners.length; b += 1) {
           const ia = owners[a];
           const ib = owners[b];
-          const classA = records[ia].surfaceClass || surfaceClassForTag(records[ia].tag);
-          const classB = records[ib].surfaceClass || surfaceClassForTag(records[ib].tag);
-          if (classA !== classB) continue;
           if (records[ia].normal.dot(records[ib].normal) + 1e-7 < cosThreshold) continue;
           neighbors[ia].add(ib);
           neighbors[ib].add(ia);
@@ -297,6 +292,24 @@
     }
   }
 
+  function isEntranceWoodFace(face) {
+    return PORCH_TAGS.has(face?.tag) || (face?.tag === 'entryTunnel' && face.doorwayFrame === true);
+  }
+
+  function applyToDoorGroup(door) {
+    const material = materialForTag('door'); // Identical material instance used by rendered entrance faces.
+    let converted = 0;
+    door?.traverse?.(node => {
+      if (!node?.isMesh) return;
+      node.material = material;
+      node.userData = node.userData || {};
+      node.userData.hobunjiEntranceWoodMaterial = WOOD_TEXTURE_PATH;
+      converted++;
+    });
+    if (door?.userData) door.userData.entranceWoodMaterial = converted ? WOOD_TEXTURE_PATH : null;
+    return converted;
+  }
+
   function applyToBuiltGroup(group, pieceData, gridX, gridZ, options = {}) {
     const piece = normalizePiece(pieceData);
     const faces = Array.isArray(piece?.base?.faces) ? piece.base.faces : [];
@@ -308,7 +321,7 @@
 
     for (const face of faces) {
       const tag = String(face?.tag || '');
-      if (!PORCH_TAGS.has(tag) || face?.extensionFace === 'floor') continue;
+      if (!isEntranceWoodFace(face) || face?.extensionFace === 'floor') continue;
       const vertices = transformedFaceVertices(piece, face, gridX, gridZ, options);
       const expected = triangulatedPositions(vertices);
       const mesh = candidates.find(candidate => !used.has(candidate) && meshMatchesPositions(candidate, expected));
@@ -333,8 +346,9 @@
     islands.forEach((island, index) => applyIslandUvs(island, index));
     const converted = records.length;
     const largestIslandFaces = islands.reduce((max, island) => Math.max(max, island.length), 0);
-    const deckFaces = records.filter(record => record.surfaceClass === 'deck').length;
-    const fenceFaces = records.filter(record => record.surfaceClass === 'fence').length;
+    const deckFaces = records.filter(record => record.tag === 'porch' || record.tag === 'porchStair').length;
+    const fenceFaces = records.filter(record => record.tag === 'railing').length;
+    const frameFaces = records.filter(record => record.face?.doorwayFrame === true).length; // Doorway-frame surface count for mobile diagnostics.
 
     totalConvertedFaces += converted;
     totalSurfaceIslands += islands.length;
@@ -347,29 +361,55 @@
       missing,
       deckFaces,
       fenceFaces,
+      frameFaces,
       surfaceIslands: islands.length,
       largestIslandFaces,
     };
     if (converted || missing) {
-      log(`${lastBuild.pieceId || 'piece'}: ${deckFaces} board face(s), ${fenceFaces} carved fence face(s), ${islands.length} island(s), ${missing} unmatched`);
+      log(`${lastBuild.pieceId || 'piece'}: ${deckFaces} deck/stair, ${fenceFaces} fence, ${frameFaces} doorway-frame face(s) in shared carved wood; ${islands.length} island(s), ${missing} unmatched`);
     }
-    return { converted, missing, deckFaces, fenceFaces, surfaceIslands: islands.length, largestIslandFaces };
+    return { converted, missing, deckFaces, fenceFaces, frameFaces, surfaceIslands: islands.length, largestIslandFaces };
   }
 
   function installPatch() {
-    const originalBuild = housePieces.buildGroupFromPiece;
-    if (typeof originalBuild !== 'function' || originalBuild.__porchSurfaceMaterialPatched) return false;
-    const wrappedBuild = function porchSurfaceMaterialBuild(...args) {
-      const group = originalBuild.apply(this, args);
-      try { applyToBuiltGroup(group, args[1], args[2], args[3], args[4] || {}); }
-      catch (error) { log(`surface replacement failed: ${error?.message || error}`, 'warn'); }
-      return group;
-    };
-    Object.assign(wrappedBuild, originalBuild);
-    wrappedBuild.__porchSurfaceMaterialPatched = true;
-    wrappedBuild.__originalPorchSurfaceMaterialBuild = originalBuild;
-    housePieces.buildGroupFromPiece = wrappedBuild;
-    return true;
+    let installed = false; // Tracks whether either authored-house or generated-entry render boundary was wrapped.
+    const originalBuild = housePieces.buildGroupFromPiece; // Authored house pieces, including town entrances.
+    if (typeof originalBuild === 'function' && !originalBuild.__porchSurfaceMaterialPatched) {
+      const wrappedBuild = function porchSurfaceMaterialBuild(...args) {
+        const group = originalBuild.apply(this, args);
+        try { applyToBuiltGroup(group, args[1], args[2], args[3], args[4] || {}); }
+        catch (error) { log(`surface replacement failed: ${error?.message || error}`, 'warn'); }
+        return group;
+      };
+      Object.assign(wrappedBuild, originalBuild);
+      wrappedBuild.__porchSurfaceMaterialPatched = true;
+      wrappedBuild.__originalPorchSurfaceMaterialBuild = originalBuild;
+      housePieces.buildGroupFromPiece = wrappedBuild;
+      installed = true;
+    }
+
+    // HousePieceGen.buildEntryTunnelGroup invokes its *lexical* buildGroupFromPiece,
+    // bypassing the public authored-house wrapper. Style that generated output too.
+    const originalTunnelBuild = housePieces.buildEntryTunnelGroup; // Live farm entry tunnel factory, already wrapped by the door-furniture bridge.
+    if (typeof originalTunnelBuild === 'function' && !originalTunnelBuild.__entranceWoodTunnelPatched) {
+      const wrappedTunnelBuild = function entranceWoodTunnelBuild(...args) {
+        const group = originalTunnelBuild.apply(this, args);
+        const side = String(args[3] || 'south').toLowerCase(); // Generated doorway orientation when mapping its frame quads.
+        const rotationDeg = ENTRY_SIDE_ROTATION_DEG[side] ?? 0; // Must match HousePieceGen's source-to-world vertex rotation.
+        try {
+          if (typeof housePieces.buildEntryTunnelPiece === 'function') {
+            applyToBuiltGroup(group, housePieces.buildEntryTunnelPiece(), args[1], args[2], { ...(args[4] || {}), rotationDeg });
+          } else log('generated entry tunnel has no source-face accessor', 'warn');
+        } catch (error) { log(`generated entry finish failed: ${error?.message || error}`, 'warn'); }
+        return group;
+      };
+      Object.assign(wrappedTunnelBuild, originalTunnelBuild);
+      wrappedTunnelBuild.__entranceWoodTunnelPatched = true;
+      wrappedTunnelBuild.__originalEntranceWoodTunnelBuild = originalTunnelBuild;
+      housePieces.buildEntryTunnelGroup = wrappedTunnelBuild;
+      installed = true;
+    }
+    return installed;
   }
 
   installPatch();
@@ -377,35 +417,42 @@
   function debugSnapshot() {
     return {
       installed: true,
-      deckTexturePath: DECK_TEXTURE_PATH,
-      fenceTexturePath: FENCE_TEXTURE_PATH,
+      sharedTexturePath: WOOD_TEXTURE_PATH,
+      deckTexturePath: WOOD_TEXTURE_PATH,
+      fenceTexturePath: WOOD_TEXTURE_PATH,
       woodTint: WOOD_TINT,
       textureStatus: {
-        deck: textureStatus.get(DECK_TEXTURE_PATH) || 'not-requested',
-        fence: textureStatus.get(FENCE_TEXTURE_PATH) || 'not-requested',
+        wood: textureStatus.get(WOOD_TEXTURE_PATH) || 'not-requested',
+        deck: textureStatus.get(WOOD_TEXTURE_PATH) || 'not-requested',
+        fence: textureStatus.get(WOOD_TEXTURE_PATH) || 'not-requested',
       },
       mapping: 'stretch-to-connected-surface-island',
       surfaceSplitAngleDeg: SURFACE_SPLIT_ANGLE_DEG,
-      tags: [...PORCH_TAGS],
+      tags: [...PORCH_TAGS, 'entryTunnel:doorwayFrame', 'door:furniture'],
       totalConvertedFaces,
       totalSurfaceIslands,
       lastBuild: lastBuild ? { ...lastBuild } : null,
       patchInstalled: !!housePieces.buildGroupFromPiece?.__porchSurfaceMaterialPatched,
+      generatedTunnelPatchInstalled: !!housePieces.buildEntryTunnelGroup?.__entranceWoodTunnelPatched, // Mobile-safe check for the farm-only generated doorframe path.
       elevationPatchPreserved: !!housePieces.buildGroupFromPiece?.__walkableElevationPatched,
     };
   }
 
   window.HobunjiPorchSurfaceMaterial = Object.freeze({
     installed: true,
-    deckTexturePath: DECK_TEXTURE_PATH,
-    fenceTexturePath: FENCE_TEXTURE_PATH,
+    sharedTexturePath: WOOD_TEXTURE_PATH,
+    deckTexturePath: WOOD_TEXTURE_PATH,
+    fenceTexturePath: WOOD_TEXTURE_PATH,
     woodTint: WOOD_TINT,
     surfaceSplitAngleDeg: SURFACE_SPLIT_ANGLE_DEG,
     surfaceClassForTag,
     texturePathForTag,
+    materialForTag,
+    applyToDoorGroup,
     applyToBuiltGroup,
     detectConnectedSurfaceIslands,
     debugSnapshot,
   });
   window.__porchSurfaceMaterialDebug = debugSnapshot;
+  window.EntryTunnelDoorFurniture?.restylePendingDoors?.(); // Styles doors attached before this module loaded.
 })();

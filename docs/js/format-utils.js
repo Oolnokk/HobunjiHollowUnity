@@ -24,7 +24,7 @@
   // creates any world structures.
   (function loadEntryTunnelDoorFurniture() {
     if (typeof document === 'undefined') return;
-    const src = 'js/entry-tunnel-door-furniture.js?v=20260907b'; // Used by this one-time parser-synchronous companion loader.
+    const src = 'js/entry-tunnel-door-furniture.js?v=20261028entrancewood1'; // Used by this one-time parser-synchronous companion loader.
     if (window.EntryTunnelDoorFurniture || document.querySelector('script[data-entry-tunnel-door-furniture]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-entry-tunnel-door-furniture="1"><\/script>`);
