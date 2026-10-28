@@ -196,7 +196,7 @@
       const collision = object?.collision;
       const isCave = object === transform.cave;
       if (isCave) {
-        if (!collision || collision.mode === 'auto') continue;
+        if (!den?.entranceTemplateId || !collision || collision.mode === 'auto') continue; // Only explicitly assigned Locale Editor entrance templates replace the legacy cave collider.
         useLegacyCave = false;
       }
       if (!collision || collision.mode === 'auto' || collision.mode === 'none') continue;
