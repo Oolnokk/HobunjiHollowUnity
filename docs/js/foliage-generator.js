@@ -2024,7 +2024,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     // not extra perimeter islands. Remove both complete duplicates and the
     // overlapping portions of partial duplicates before grouping faces.
     if(options.clipCoplanarOverlaps&&faces.length>1){
-      const exposed=[],planeTolerance=.008;
+      const exposed=[],coverage=[],planeTolerance=.008;
       const box=vs=>({minX:Math.min(...vs.map(p=>p.x)),maxX:Math.max(...vs.map(p=>p.x)),
         minY:Math.min(...vs.map(p=>p.y)),maxY:Math.max(...vs.map(p=>p.y)),
         minZ:Math.min(...vs.map(p=>p.z)),maxZ:Math.max(...vs.map(p=>p.z))});
@@ -2033,7 +2033,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         a.minZ<=b.maxZ+.003&&b.minZ<=a.maxZ+.003;
       for(const original of faces){
         const originalBox=box(original.vertices),n=original.normal,plane=n.dot(original.vertices[0]);
-        const covered=exposed.filter(prev=>prev.role===original.role&&prev.normal.dot(n)>.995&&
+        const covered=coverage.filter(prev=>prev.role===original.role&&prev.normal.dot(n)>.995&&
           Math.abs(n.dot(prev.vertices[0])-plane)<planeTolerance&&overlap(originalBox,prev.box));
         let visible=[original.vertices];
         for(const prev of covered){
@@ -2046,7 +2046,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             const sample=clips(tri);
             if(sample.isCovered.every(Boolean))return [];
             if(!sample.isCovered.some(Boolean))return [tri];
-            if(depth===3)return sample.isCovered[3]?[]:[tri];
+            if(depth===2)return sample.isCovered[3]?[]:[tri]; // Small bounded fragments prevent editor rebuild cost from exploding.
             const [a,b,c]=tri,ab=a.clone().add(b).multiplyScalar(.5),
               bc=b.clone().add(c).multiplyScalar(.5),ca=c.clone().add(a).multiplyScalar(.5);
             return [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]].flatMap(t=>trim(t,depth+1));
@@ -2059,6 +2059,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           if(area<.0001)continue;
           exposed.push({...original,vertices,box:box(vertices)});
         }
+        coverage.push({...original,box:originalBox}); // Compare later faces to ORIGINAL covering triangles, not hundreds of tiny trimmed fragments.
       }
       faces=exposed;
     }
