@@ -167,7 +167,7 @@ const storeDocument = {
   }),
 };
 const renderStoreClothing = vm.runInNewContext(
-  storeSource.slice(storeStart, storeEnd) + '\\nrenderGeneralStoreClothing',
+  storeSource.slice(storeStart, storeEnd) + '\nrenderGeneralStoreClothing',
   { document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
     renderGeneralStorePage:() => {}, Date:{ now:() => 42 }, Math:{ random:() => 0.123456 } },
 );
