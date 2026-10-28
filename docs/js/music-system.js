@@ -1156,6 +1156,11 @@
 
   // Live festival music replaces the ordinary soundtrack. This applies to scheduled BGM and ambient cues only; combat music keeps its own eligibility.
   function festivalSilencesAmbient(area) { return window.FestivalSystem?.silencesTownMusic?.(area) === true; }
+
+  // The unlocked Great Door plays a positional source from the ruin itself; keep the scheduler silent so that source can be heard at its authored distance.
+  function ruinVaultSilencesAmbient(area) {
+    return area === 'map_i_dev_random_ruin' && window.DevRandomRuinSanctum?.isGreatDoorUnlocked?.() === true;
+  }
   function isAudioEntryEligible(entry, area = deps.getCurrentArea()) {
     if (!entry) return false;
     return window.ConditionRegistry?.entryEligible
@@ -1335,6 +1340,14 @@
         stopAmbientCue('area changed to ' + currentArea);
         resetAmbientCueTimer(currentArea);
       }
+    }
+
+    if (ruinVaultSilencesAmbient(currentArea)) {
+      if (_ambientCueState.currentBgm || _ambientCueState.currentCue) stopAmbientCue('Great Door unlocked');
+      if (_ambientCueState.currentCombatBgm) stopMusicSlot('currentCombatBgm', 'Great Door unlocked');
+      _ambientCueState.combatOverrideActive = false; // An unlocked vault cancels combat soundtrack ownership until the player leaves the ruin.
+      _ambientCueState.combatSchedulerPausedAt = 0; // No paused exploration track should resume over the door source on later ticks.
+      return; // Positional door audio, weather and other SFX continue through their separate update paths.
     }
 
     // Area transitions can still retire a soundtrack, but mere weather/time
@@ -1961,7 +1974,7 @@
     playGameplayCue,
     resetAmbientCueTimer,
     updateAmbientCues,
-    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
+    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()), ruinVaultSilenced: ruinVaultSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
     updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,
