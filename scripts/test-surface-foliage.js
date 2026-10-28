@@ -81,6 +81,13 @@ assert.match(sourceOfStyles,/const correction=\(part\.otherPlane-n1\.dot\(raw\)\
   'Gapped intersections must reproject the base spline onto both authoritative planes');
 assert.match(sourceOfStyles,/Split at their real endpoints BEFORE classifying adjacent surfaces/,
   'T-junction wall planes must be split before corner edge classification');
+const houseGenerator=fs.readFileSync('docs/js/HousePieceGen.js','utf8');
+assert.match(generatorSource,/mesh\.userData\.surfaceFoliageRole==='roofs'/,'Roof planes must guide shingle Wrap instead of overlapping GLB triangles');
+assert.match(houseGenerator,/applyAuthoredShingleFinish\(THREE,shingleLayer,opts\.shingleMaterial\)/,
+  'Both house generators must apply serialized shingle materials');
+assert.match(houseAuthorSource,/id="roofFinishPalette"/,'House Editor must expose the reusable shingle material palette');
+assert.match(houseAuthorSource,/id="roofFinishTexture"/,'House Editor must allow editing the shingle PNG path');
+assert.match(houseAuthorSource,/id="roofFinishSave"/,'House Editor must save reusable tree/foliage and shingle finishes');
 const authorSource=fs.readFileSync('docs/js/surface-foliage-authoring.js','utf8');
 assert.match(authorSource,/data-count-label/,'Every editor must explain Wrap strand-budget behavior');
 assert.match(authorSource,/\[data-wrap-controls\]'\)\.style\.display/,'Wrap-only controls must be hidden reliably even with flex-row editor CSS');
