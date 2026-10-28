@@ -2390,11 +2390,11 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       : guide.boundaries.length?guide.boundaries:guide.corners;
     const perimeter=edges.reduce((n,e)=>n+e.length,0),wanted=Math.min(settings.count,settings.strandLimit);
     const longest=Math.max(...edges.map(edge=>edge.length),0);
-    const spacing=Math.max(settings.radius*2.1,Math.min(longest/2,perimeter/Math.max(2,wanted*2)*(1.6-settings.density*1.2)));
+    const spacing=Math.max(settings.radius*2.1,Math.min(longest/2,perimeter/Math.max(2,wanted*2)*(1.0-settings.density*.75)));
     const slots=[];
     if(!edges.length||wanted<1)return {requested:wanted,generated:0,capacity:0,spacing,endpoints:[]};
     for(const edge of edges){
-      const usable=Math.max(0,Math.floor(edge.length/spacing));
+      const usable=edge.length<settings.radius*1.2?0:Math.max(1,Math.floor(edge.length/spacing));
       const samples=Math.min(256,usable);
       for(let i=0;i<samples;i++){
         const t=(i+.5)/samples;
