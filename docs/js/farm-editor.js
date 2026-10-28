@@ -565,13 +565,13 @@
     if (!deps) return null;
     const editable = deps.getCurrentArea() === 'farm' && deps.isFarmOwner() && !deps.getFarmEditMode(); // Gameplay workers may modify only their owned farm.
     const valid = (c, r) => Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < deps.COLS && r < deps.ROWS;
+    const blockedTiles = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Shared for all map buttons within this Farmwork render, avoiding per-tile allocations.
     return {
       editable, cols: deps.COLS, rows: deps.ROWS,
       canDesignate: (c, r, kind) => {
         if (!editable || (kind !== 'till' && kind !== 'dig') || !valid(c, r) || deps.isHouseFootprint(c, r)) return false;
         const tile = deps.getGrid()?.[r]?.[c]; // Reject permanent obstructions instead of promising an NPC impossible work.
-        const blocked = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Only farm terrain types which a worker could not ordinarily till/dig.
-        return !!tile && !blocked.has(tile.type);
+        return !!tile && !blockedTiles.has(tile.type);
       },
       screenTile: (x, y) => {
         const tile = deps._screenToFarmTile(x, y); // Same world-pointer projection as the developer editor, not a second raycaster.
