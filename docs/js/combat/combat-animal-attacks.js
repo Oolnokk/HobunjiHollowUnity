@@ -14,6 +14,14 @@
   if (!window.Combat) { console.error('combat-animal-attacks.js requires combat-core.js to load first'); return; }
 
   const ATTACKS = {};
+  const COMPANION_LUNGE_MAX_TILES = 2.6; // Shared attack engagement budget used by game.js and the named-attack dispatcher.
+  const COMPANION_LUNGE_DURATION_S = 0.12; // Combat-burst duration, matching Guard Charge and Voorg-Ass Rear Kick.
+
+  function companionEngagementRangePx(creature, tilePx) {
+    const attackReach = Number(creature?.def?.attackRangePx); // Baseline reach before adding one committed burst.
+    return Number.isFinite(attackReach) && attackReach > 0 && Number.isFinite(tilePx) && tilePx > 0
+      ? attackReach + tilePx * COMPANION_LUNGE_MAX_TILES : attackReach;
+  }
 
   function register(id, def) { ATTACKS[id] = def; }
 
@@ -29,8 +37,23 @@
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
     if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
     const state = {};
-    def.start(c, state, ctx, deps);
-    c._animalAttack = { id, def, state };
+    const target = ctx?.target; // Original companion decision remains locked during the opening charge.
+    const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
+    const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.hypot(target.x - c.x, target.y - c.y) : 0; // Only eligible targets outside melee reach need the burst.
+    let approach = null;
+    if (c.isCompanion && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) {
+      approach = {}; // Separate shared-lunge state never leaks into a signature attack's own state machine.
+      beginConeLunge(c, approach, ctx, deps, {
+        targets: [target], rangePx: reach, halfConeRad: Math.PI, // The committed approach stops as soon as its target is in the animal's normal strike reach.
+        maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
+        speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
+      });
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' charging for ' + id, 'wildlife');
+    } else {
+      def.start(c, state, ctx, deps);
+    }
+    c._animalAttack = { id, def, state, approach, ctx };
     deps?.requestThreatGrowl?.(c, `attack:${id}`);
     return true;
   }
@@ -38,6 +61,14 @@
   function update(c, dt) {
     const aa = c._animalAttack;
     if (!aa) return false;
+    if (aa.approach) {
+      const reason = advanceConeLunge(c, aa.approach, dt, window.Combat.deps); // Uses the same collision substeps as every other animal attack lunge.
+      if (!reason) return true;
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' stopped: ' + reason + ' after ' + (aa.approach.lungeTraveledPx / Math.max(1, window.Combat.deps.TILE)).toFixed(2) + ' tiles', 'wildlife');
+      aa.approach = null;
+      aa.def.start(c, aa.state, aa.ctx, window.Combat.deps); // One committed original attack, without paying its Stamina/cooldown twice.
+      return true;
+    }
     const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
     if (!busy) endAttackPresentation(c);
     return busy;
@@ -59,18 +90,19 @@
   // is its committed/strike window; Pounce's is the whole leap.
   function isStriking(c) {
     const aa = c?._animalAttack;
-    return !!(aa?.def?.isStriking?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
   function isWindingUp(c) {
     const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
-    return !!(aa?.def?.isWindingUp?.(aa.state, c));
+    return !aa?.approach && !!(aa?.def?.isWindingUp?.(aa.state, c));
   }
 
   function cancel(c) {
     const aa = c._animalAttack;
     if (!aa) return;
-    if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
+    if (aa.approach) { c.vx = 0; c.vy = 0; } // Cancel an unstarted signature attack without calling its stage-specific cleanup.
+    else if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
     endAttackPresentation(c);
   }
 
@@ -136,6 +168,8 @@
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
     beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
+    companionEngagementRangePx,
+    companionLungeTuning: Object.freeze({ maxTiles: COMPANION_LUNGE_MAX_TILES, durationS: COMPANION_LUNGE_DURATION_S }), // Mobile-accessible inspection of shared engagement timing.
   };
 
   // ── Pounce ──────────────────────────────────────────────────────────
