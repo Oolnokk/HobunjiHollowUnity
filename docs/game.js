@@ -8294,10 +8294,13 @@
                 moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
                 if (st.t >= STAGE_BACKUP_S * (companionTempo?.recovery || 1)) { st.mode = 'active'; st.t = 0; }
               } else {
-                if (dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
                 const companionAttackCost = def.attackStaminaCost * (companionTempo?.stamina || 1); // Same scaled amount is checked and paid, including empty Stamina edge cases.
-                if (dist <= def.attackRangePx && c.attackCooldownT <= 0 && c.stamina >= companionAttackCost && !isCreatureSwimming(c)) {
+                const companionEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Attack selection includes one short, collision-checked lunge instead of requiring ordinary chase into melee range.
+                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina >= companionAttackCost && !isCreatureSwimming(c); // A prepared companion stops jogging before launching its burst.
+                if (!companionCanCommit && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
+                if (companionCanCommit) {
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
+                  if (tacticalAttack?.waiting && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt); // Waiting for tactical cooldown must not strand an animal at the outer burst radius.
                   if (!tacticalAttack?.waiting) {
                     window.ResourceSystem?.spendStamina(c, companionAttackCost, 'creature attack');
                     c.attackCooldownT = def.attackCooldownS * (companionTempo?.cooldown || 1);
