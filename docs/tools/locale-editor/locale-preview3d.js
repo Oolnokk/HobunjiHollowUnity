@@ -951,13 +951,24 @@
     return true;
   }
 
-  function addColliderMarker(group, object, merged) {
-    const collision = object?.collision;
-    if (!collision || collision.mode === 'auto' || collision.mode === 'none') return;
-    const x = collision.mode === 'custom' && Number.isFinite(Number(collision.x)) ? Number(collision.x) : Number(object.x);
-    const z = collision.mode === 'custom' && Number.isFinite(Number(collision.y)) ? Number(collision.y) : Number(object.y);
-    const w = collision.mode === 'custom' ? Math.max(.1, Number(collision.w) || Number(object.w) || 1) : Math.max(.1, Number(object.w) || 1);
-    const h = collision.mode === 'custom' ? Math.max(.1, Number(collision.h) || Number(object.h) || 1) : Math.max(.1, Number(object.h) || 1);
+  function colliderMarkerRect(object, source = null) {
+    const collision = object?.collision; // Authored Locale Editor collider or its already-scaled runtime instance.
+    if (!collision || collision.mode === 'auto' || collision.mode === 'none') return null;
+    const custom = collision.mode === 'custom'; // Custom rectangles may differ from the rendered cave/prop footprint.
+    const scaleX = Math.max(.01, Number(object.w) || 1) / Math.max(.01, Number(source?.w) || Number(object.w) || 1); // Preview's source-to-world column scale.
+    const scaleZ = Math.max(.01, Number(object.h) || 1) / Math.max(.01, Number(source?.h) || Number(object.h) || 1); // Preview's source-to-world row scale.
+    const worldRect = custom && Number.isFinite(Number(collision.x)) && Number.isFinite(Number(collision.y)); // Terrain-aware instances already contain absolute world-grid collider coordinates/sizes.
+    const x = worldRect ? Number(collision.x) : Number(object.x) + (custom ? (Number(collision.colOffset) || 0) * scaleX : 0); // Locale-relative custom offset when previewing an unstamped template.
+    const z = worldRect ? Number(collision.y) : Number(object.y) + (custom ? (Number(collision.rowOffset) || 0) * scaleZ : 0); // Same rule for depth.
+    const w = custom ? Math.max(.1, Number(collision.w) || Number(source?.w) || Number(object.w) || 1) * (worldRect ? 1 : scaleX) : Math.max(.1, Number(object.w) || 1); // Runtime-scaled collision sizes must not be scaled a second time.
+    const h = custom ? Math.max(.1, Number(collision.h) || Number(source?.h) || Number(object.h) || 1) * (worldRect ? 1 : scaleZ) : Math.max(.1, Number(object.h) || 1); // Used to draw the true collision depth.
+    return { x, z, w, h };
+  }
+
+  function addColliderMarker(group, object, merged, source) {
+    const rect = colliderMarkerRect(object, source); // Both generated and ghost/authoring previews use the same actual collider shape.
+    if (!rect) return;
+    const { x, z, w, h } = rect;
     const y = surfaceY(merged, x + w/2, z + h/2) + 0.08;
     const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, .16, h));
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color:0xff6b6b, transparent:true, opacity:.85 }));
@@ -1017,7 +1028,7 @@
       object.collision ||= source?.collision;
       object.rot = object.rot ?? source?.rot ?? 0;
       if (object.key === 'cave_small' || source?.visual?.renderer === 'cave_small') {
-        addColliderMarker(group, object, merged);
+        addColliderMarker(group, object, merged, source);
         continue;
       }
       let loaded = false;
@@ -1026,7 +1037,7 @@
       }
       if (!loaded) loaded = await addGlbObject(group, object, merged, token, ghost);
       if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
-      addColliderMarker(group, object, merged);
+      addColliderMarker(group, object, merged, source);
     }
     renderAnchorMarkers(group, instance, merged, ghost);
 
