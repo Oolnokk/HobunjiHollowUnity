@@ -107,7 +107,7 @@ const server=http.createServer((req,res)=>{
     assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
     // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
     await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:90000}); // Software-rendered CI frames are slow, so the 5 Hz ecology pass needs generous headroom.
-    await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:45000}); // Rival tribes actually trade blows.
+    await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:90000}); // Rival tribes actually trade blows (slow software-rendered CI frames need the same headroom as the targeting wait).
     if(SHOTS){
       await page.evaluate(()=>{for(const id of ['ob-overlay','save-startup-gate'])document.getElementById(id)?.style.setProperty('display','none');if(window.Combat.deps.playerMesh)window.Combat.deps.playerMesh.visible=false;}); // Review-only: reveal the fighters under the new-world overlay and behind the player.
       await page.screenshot({path:path.join(SHOTS,'tribe-fight.png')});

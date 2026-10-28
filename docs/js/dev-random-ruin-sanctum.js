@@ -1097,6 +1097,7 @@
     planLayout,
     igniteAll:() => { for (const brazier of s?.braziers || []) igniteBrazier(brazier); return !!s; }, // Diagnostics.
     enter:() => enterSanctum(),
+    isGreatDoorUnlocked:() => !!s?.door && s.door.state !== 'sealed', // The unlocked Great Door's positional music replaces the ruin soundtrack until this ruin is cleared.
     debugShove:(entity, dirX, dirZ, speedPxS = 900) => { const t = deps?.TILE || 64; if (!entity) return false; deps?.damageCreature?.(entity, 1, entity.x - dirX * t, entity.y - dirZ * t, speedPxS, {}); return true; }, // Headless tests: a 1-damage hit from the opposite side.
     debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),

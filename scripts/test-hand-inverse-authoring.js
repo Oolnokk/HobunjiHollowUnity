@@ -74,7 +74,8 @@ for (const removed of [
 ]) assert(!bootstrap.includes(removed), `${removed} must stay out of the direct-hand bootstrap`);
 
 assert(ranged.includes('fireAtFrac: 0.08'), 'crossbow strike/fire stage must remain at 8% of the attack');
-assert(ranged.includes("strikeFrac: kind === 'fire' ? def.fireAtFrac"), 'visual strike stage must use the exact fireAtFrac value');
+assert(ranged.includes("strikeFrac: kind === 'fire' ? fireReleaseFrac(def)"), 'visual strike stage must follow the accelerated release timing');
+assert(ranged.includes('MAX_FIRE_TRIGGER_TO_PROJECTILE_S = 0.012'), 'all fire actions must use a near-instant trigger-to-projectile cap');
 assert(ranged.includes("playRangedActionSfx(action.itemKey, 'fire')"), 'fire SFX must be emitted at the same fire/strike event, not hit resolution');
 assert(crossbowTrim.includes('TRIM_START_S = 0.10'), 'crossbow clip must skip its leading dead air');
 assert(crossbowTrim.includes('combatSfx?.rangedFire'), 'audio trim must read the real combat SFX config path');
