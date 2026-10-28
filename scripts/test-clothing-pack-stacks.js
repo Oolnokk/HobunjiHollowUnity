@@ -136,4 +136,47 @@ nodes.get('invPackClothing').children[0].click();
 nodes.get('iiActions').children.find(child => child.textContent.startsWith('Sell')).click();
 assert.equal(pack.length, 1, 'a late duplicate UID cannot cause a sale to destroy the whole stack');
 
+// Exercise the real General Store buy callback: repeated purchases of the same daily listing
+// must create distinct physical articles, even with constant clock/random sources.
+const storeSource = fs.readFileSync(path.join(__dirname, '../docs/js/general-store.js'), 'utf8');
+const storeStart = storeSource.indexOf('  function renderGeneralStoreClothing(list) {');
+const storeEnd = storeSource.indexOf('  function renderGeneralStorePage() {', storeStart);
+assert(storeStart >= 0 && storeEnd > storeStart, 'store clothing renderer remains available');
+const purchases = []; // Captures each purchased clothing article across repeated clicks on a single listing.
+const storeItems = [{ uid:'citem_gs_day_one', label:'Brown Hood', slot:'hood', price:10, cosmeticId:'ragged_hood' }];
+const storeDeps = {
+  calendar: { day:1 },
+  inventory: { gold:100 },
+  getPackClothing: () => purchases,
+  showToast: () => {},
+  buildInventoryGrid: () => {},
+  buildPackClothingSection: () => {},
+  saveMemberWorldData: () => {},
+  esc: value => value,
+};
+const storeButtons = []; // Stubbed DOM holds the real clothing-buy click handler.
+const storeDocument = {
+  createElement: () => ({
+    className: '', textContent: '', innerHTML: '',
+    querySelector(selector) {
+      if (selector !== '.gs-cloth-buy') return null;
+      const button = { addEventListener(type, handler) { if (type === 'click') this.click = handler; } };
+      storeButtons.push(button);
+      return button;
+    },
+  }),
+};
+const renderStoreClothing = vm.runInNewContext(
+  storeSource.slice(storeStart, storeEnd) + '\\nrenderGeneralStoreClothing',
+  { document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
+    renderGeneralStorePage:() => {}, Date:{ now:() => 42 }, Math:{ random:() => 0.123456 } },
+);
+renderStoreClothing({ appendChild() {} });
+assert.equal(storeButtons.length, 1, 'one daily stock row has one purchase action');
+storeButtons[0].click();
+storeButtons[0].click();
+assert.equal(purchases.length, 2, 'two purchases create two literal pack articles');
+assert.notEqual(purchases[0].uid, purchases[1].uid, 'even identical purchases made within the same millisecond have distinct UIDs');
+assert.equal(groupClothingForDisplay(purchases).length, 1, 'both identically configured purchases display in the same stack');
+
 console.log('Clothing stack rendering, migration, sale, and transfer transactions passed');
