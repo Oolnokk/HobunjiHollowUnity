@@ -83,7 +83,7 @@ assert.match(sourceOfStyles,/Split at their real endpoints BEFORE classifying ad
   'T-junction wall planes must be split before corner edge classification');
 const houseGenerator=fs.readFileSync('docs/js/HousePieceGen.js','utf8');
 assert.match(generatorSource,/mesh\.userData\.surfaceFoliageRole==='roofs'/,'Roof planes must guide shingle Wrap instead of overlapping GLB triangles');
-assert.match(houseGenerator,/applyAuthoredShingleFinish\(THREE,shingleLayer,opts\.shingleMaterial\)/,
+assert.match(houseGenerator,/applyAuthoredShingleFinish\(THREE,child,opts\.shingleMaterial\)/,
   'Both house generators must apply serialized shingle materials');
 assert.match(houseAuthorSource,/id="roofFinishPalette"/,'House Editor must expose the reusable shingle material palette');
 assert.match(houseAuthorSource,/id="roofFinishTexture"/,'House Editor must allow editing the shingle PNG path');
