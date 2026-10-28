@@ -5,6 +5,7 @@ const vm = require('vm');
 const read = (path) => fs.readFileSync(path, 'utf8');
 const config = read('docs/config/scratchbones-config.js');
 const audio = read('docs/js/audio-system.js');
+const ranged = read('docs/js/combat/ranged-weapons.js'); // Exercises weapon-specific load/fire and projectile impact routing.
 const attackValues = JSON.parse(read('docs/config/combat/attack-values.json'));
 const core = read('docs/js/combat/combat-core.js');
 const combo = read('docs/js/combat/combat-combo.js');
@@ -29,6 +30,9 @@ for (const file of expectedAssets) {
   assert(fs.existsSync(`docs/assets/audio/sfx/combat/${file}`), `missing combat asset ${file}`);
   assert(config.includes(`assets/audio/sfx/combat/${file}`), `combat config does not wire ${file}`);
 }
+assert(fs.existsSync('docs/assets/audio/sfx/sfx_load_dart.m4a'), 'blowgun dart load asset must be committed');
+assert.match(config, /"blowgunLoad": \{ "url": "assets\/audio\/sfx\/sfx_load_dart\.m4a"/, 'blowguns must have their own dart loading cue');
+assert.match(ranged, /playRangedImpactSfx\?\.\(x, y, p\.areaId, p\.def\?\.rangedType === 'blowgun' \? 2 : 1\)/, 'only blowgun projectiles may double the arrow impact pitch');
 assert.match(config, /"bandageStart": \{[^\n]*"gainBoost": 2/, 'bandage start must use true 2x WebAudio gain');
 assert.match(config, /"bandageLoop": \{[^\n]*"preload": true, "overlapMs": 120/, 'bandage loop must preload and overlap each pass by 120 ms');
 
@@ -63,7 +67,7 @@ class FakeAudio {
   load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   pause() { this.paused = true; }
   addEventListener() {}
-  play() { FakeAudio.plays++; this.paused = false; return Promise.resolve(); }
+  play() { FakeAudio.plays++; FakeAudio.lastPlayed = this; this.paused = false; return Promise.resolve(); }
 }
 
 const combatSfx = {
@@ -123,7 +127,36 @@ context.window.AudioSystem.playRangedImpactSfx(0, 0, 'farm');
 debug = context.window.AudioSystem.combatSfxDebugSnapshot();
 assert.equal(debug.last.key, 'rangedImpact');
 assert.equal(debug.last.detail.rangedImpact, true);
+assert.equal(debug.last.detail.pitch, 1, 'ordinary arrow impacts retain default pitch');
+context.window.AudioSystem.playRangedImpactSfx(0, 0, 'farm', 2);
+assert.equal(context.window.AudioSystem.combatSfxDebugSnapshot().last.detail.pitch, 2, 'blowgun dart impacts are tagged for mobile audio diagnostics');
+assert(Math.abs(FakeAudio.lastPlayed.playbackRate - 2) < 0.1, 'blowgun dart impacts must actually play at roughly 2x pitch');
 assert.equal(debug.maxStartDelayMs, 140, 'stale mobile combat play requests need a strict deadline');
-assert.equal(FakeAudio.plays, 5, 'named bandage loop plus swing, melee impact, block, and arrow impact should each render exactly once');
+assert.equal(FakeAudio.plays, 6, 'named bandage loop plus swing, melee impact, block, and two arrow impacts should each render exactly once');
+
+// Exercise the actual shared cue router independently of world/projectile rendering.
+const sfxStart = ranged.indexOf('  function playRangedActionSfx('); // First byte of the unchanged gameplay SFX routine.
+const sfxEnd = ranged.indexOf('\n  function triggerPlayerVisual(', sfxStart); // Last byte, avoiding unrelated Three.js setup.
+assert(sfxStart > -1 && sfxEnd > sfxStart, 'shared ranged SFX routine must remain present');
+const cueCalls = []; // Captures the requested asset and effective playback pitch for each weapon/owner.
+const rangedContext = {
+  window: { AudioSystem: {
+    combatSfxConfig: () => ({ rangedLoad: { url: 'crossbow-load' }, blowgunLoad: { url: 'dart-load' }, rangedFire: { url: 'arrow-shot' } }),
+    playOneShotSfx: (cfg, volume, pitch) => cueCalls.push({ url: cfg.url, pitch, volume }),
+    playCreatureSfxAt: (owner, cfg, pitch) => cueCalls.push({ owner: owner.id, url: cfg.url, pitch }),
+  } },
+  defFor: key => ({ rangedType: key.startsWith('bshuakauitl') ? 'blowgun' : 'crossbow' }),
+  SCATTERBOW_LOAD_CHORUS_MS: [0], SCATTERBOW_FIRE_CHORUS_MS: [0],
+  lastAudioEvent: '', setTimeout: () => { throw Error('single-shot cues must not be delayed'); },
+};
+vm.runInNewContext(ranged.slice(sfxStart, sfxEnd) + '\nglobalThis.fireCue = playRangedActionSfx;', rangedContext);
+rangedContext.fireCue('bshuakauitl_copper', 'load');
+rangedContext.fireCue('crossbow', 'load');
+rangedContext.fireCue('bshuakauitl_copper', 'fire');
+rangedContext.fireCue('crossbow', 'fire');
+rangedContext.fireCue('bshuakauitl_copper', 'fire', { id: 'npc-blowgun' });
+assert.deepStrictEqual(cueCalls.map(c => [c.url, c.pitch]), [
+  ['dart-load', 1], ['crossbow-load', 1], ['arrow-shot', 2], ['arrow-shot', 1], ['arrow-shot', 2],
+], 'blowgun load and shot cues must be weapon-specific for both players and NPCs');
 
 console.log('combat SFX wiring: ok');
