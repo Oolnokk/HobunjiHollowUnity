@@ -47,6 +47,7 @@ assert.equal(dialogue.testTokens('{{playerLocalNickname}}', sloomi.rec), 'Sprout
 assert.equal(ambient._test.playerNicknameFor(sloomi), 'Sprout');
 assert.equal(ambient._test.playerGreetingPolicy(neighbor).mayUseActualName, false, 'unmarried greeting favor gate unchanged');
 const ordinaryGreetings = ambient._test.greetingLinesFor('sloomi', 'player'); // Ordinary pool used to verify the marriage switch reverses on restore.
+const npcGreetings = ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju'); // NPC-to-NPC lines must not become spouse greetings.
 assert.ok(ordinaryGreetings.length);
 romance.completeWedding('sloomi');
 const married = romance.spouseDialogueFor('sloomi'); // Marriage-specific lines and nickname resolved from config.
@@ -60,7 +61,7 @@ assert.equal(ambient._test.playerGreetingPolicy(sloomi).mayUseActualName, true);
 assert.equal(ambient._test.playerGreetingPolicy(neighbor).mayUseActualName, false);
 assert.equal(ambient._test.greetingLinesFor('sloomi', 'player').length, married.greetings.length);
 assert.match(ambient._test.templateLine('sweetheart', 'sloomi', 'player', 10, { walker: sloomi }), /sweetheart/);
-assert.equal(ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju'), ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju'), 'NPC-to-NPC greeting path remains normal');
+assert.deepEqual(Array.from(ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju')), Array.from(npcGreetings), 'NPC-to-NPC greeting path remains normal');
 
 const saved = JSON.parse(JSON.stringify(romance.serialize())); // Snapshot used to test save restoration and preserve existing dialogue nickname.
 romance.restore(null);
