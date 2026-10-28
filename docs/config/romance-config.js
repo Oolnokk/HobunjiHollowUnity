@@ -128,7 +128,7 @@
             'Hi, {targetName}. I still smile every time I see you.',
           ] },
           namui_u_hakaru: { nickname: 'my heart', greetings: [
-            'There is my {targetName}! I was beginning to miss you.',
+            'There you are, {targetName}! I was beginning to miss you.',
             'Come close, {targetName}. I have stories to tell you.',
           ] },
           oddclaw_unumanuk: { nickname: 'treasure', greetings: [
