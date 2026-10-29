@@ -280,6 +280,8 @@
         tableId: obj.tableId || null, surfaceItems: obj.surfaceItems || null, serviceId: obj.serviceId || null,
         npcWardrobeFor: obj.npcWardrobeFor || null, // Shared NPC inventory owner of this exact placed chest/wardrobe; duplicates intentionally use one character ID.
         patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
+        widthTiles: obj.key === 'rug' && Number.isInteger(obj.widthTiles) ? obj.widthTiles : null,
+        heightTiles: obj.key === 'rug' && Number.isInteger(obj.heightTiles) ? obj.heightTiles : null, // Per-instance woven-rug dimensions are kept across world reloads.
         localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
         localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
         wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
@@ -447,21 +449,22 @@
         console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor }) => {
+    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles }) => {
       try {
         if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
         const def = deps.DECORATIVE_FURNITURE_DEFS[key];
         if (!def) return;
         const decorArea = area || 'farm';
         const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
-        const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
+        const dimensions = key === 'rug' && Number.isInteger(widthTiles) && Number.isInteger(heightTiles) ? { widthTiles, heightTiles } : null; // Older rug saves keep their authored default.
+        const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0, dimensions);
         const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
         let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
         if (result) {
           restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
             mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
             ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-            localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
+            localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}) };
           restoredObject.tableId = tableId || ''; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
           if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
           window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
