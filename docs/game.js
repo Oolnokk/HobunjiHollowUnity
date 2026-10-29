@@ -8779,7 +8779,7 @@
         const world = (meta?.worlds || []).find(w => w.id === worldId);
         if (!world) throw new Error('The active world is missing from the save snapshot.');
         if (!world.members) world.members = {};
-        if (pendingOrdersWorldId === worldId) world.pendingSupplyOrders = pendingOrders.map(order => ({ ...order })); // World-scoped paid receipts survive reload and changes of player character.
+        if (typeof pendingOrdersWorldId !== 'undefined' && pendingOrdersWorldId === worldId) world.pendingSupplyOrders = pendingOrders.map(order => ({ ...order })); // World-scoped paid receipts survive reload and changes of player character.
         const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
         member.nonGearInventory = { ...inventory };
         member.packClothing    = [...packClothing];
