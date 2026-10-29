@@ -215,6 +215,24 @@ assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the s
   assert(sep.swapped > 0 && tally(mixed, LIT) === litBefore, 'Tone counts preserved.');
   assert(borders(mixed) < bordersBefore / 3, 'Tones consolidated: ' + bordersBefore + ' → ' + borders(mixed));
 }
+// Clean up outline: grime and enclosed black specks become metal; a lumpy outline comes back even; a groove stays.
+{
+  const T = window.ModularWeaponBridgeFill, CW = 60, CH = 40;
+  const at = (a, x, y) => Array.from(a.slice((y * CW + x) * 4, (y * CW + x) * 4 + 4)).join();
+  const img = new Uint8ClampedArray(CW * CH * 4), put = (x, y, c) => img.set(c, (y * CW + x) * 4);
+  for (let y = 8; y < 32; y++) for (let x = 8; x < 52; x++) put(x, y, x < 11 || y < 11 || x > 48 || y > 28 ? INK : (y < 16 ? LIT : SHADE));
+  for (let y = 4; y < 8; y++) for (let x = 20 + (y % 2); x < 26; x++) put(x, y, INK); // A lumpy bulge on the outline.
+  for (let y = 20; y < 26; y++) for (let x = 14; x < 46; x++) put(x, y, INK); // A 6px groove: real detail, bigger than a speck.
+  put(30, 18, INK); put(31, 18, INK); // An enclosed 2px speck.
+  const GRIME = [24, 40, 40, 255]; for (let x = 34; x < 38; x++) put(x, 27, GRIME); // Dark outline fringe smudged in.
+  const res = T.cleanOutline(img, CW, CH, new Uint8Array(CW * CH).fill(1), { speck: 20, smoothing: 2 });
+  assert(res.specks >= 6, 'Speck and grime pulled out: ' + res.specks);
+  assert.notEqual(at(img, 30, 18), INK.join(), 'Enclosed speck became metal.');
+  assert.equal(at(img, 30, 23), INK.join(), 'The groove stays.');
+  assert.notEqual(at(img, 35, 27), GRIME.join(), 'Grime became clean metal.');
+  const tops = [14, 20, 23, 30, 40].map(x => { let y = 0; while (y < CH && at(img, x, y).split(',')[3] === '0') y++; return y; });
+  assert(tops.every(t => t === tops[0]), 'Outline top edge is even after clean-up: ' + tops);
+}
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.
@@ -254,11 +272,14 @@ console.log('modular weapon bridge fill OK');
     scriptAt('junction-picker.js') < scriptAt('sprite-cutter.js'), 'Junction picker loads before its users.');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: { strokes: [
     { tool: 'plow', r: 9, points: [[1, 2], [5, 2]], seed: 4 }, { tool: 'revert', r: 6, strength: 3, points: [[1, 1]] },
-    { shading: true, tolerance: 0.9, pool: 7 }, { tool: 'erase-everything', r: 3, points: [[0, 0]] }, { revertPoint: true } ] } };
+    { shading: true, tolerance: 0.9, pool: 7 }, { tool: 'erase-everything', r: 3, points: [[0, 0]] }, { revertPoint: true },
+    { clean: true, smoothing: 99, speck: 50 }, { tool: 'clean', r: 10, points: [[3, 3]], smoothing: 3, speck: 20 } ] } };
   const toolOps = api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges.strokes;
   assert.equal(toolOps[0].tool, 'plow'); assert.equal(toolOps[1].strength, 1, 'Strength clamped.');
   assert.equal(JSON.stringify(toolOps[2]), '{"shading":true,"tolerance":0.5,"pool":7}');
-  assert.equal(toolOps.length, 4, 'Unknown tools are dropped, never replayed as something else.');
+  assert.equal(toolOps.length, 6, 'Unknown tools are dropped, never replayed as something else.');
+  assert.equal(JSON.stringify(toolOps[4]), '{"clean":true,"smoothing":12,"speck":50}', 'Whole-weapon clean-up kept, clamped.');
+  assert(toolOps[5].tool === 'clean' && toolOps[5].smoothing === 3 && toolOps[5].speck === 20, 'Clean brush strokes kept.');
   assert.equal(JSON.stringify(toolOps[3]), '{"revertPoint":true}', 'Revert points are kept in order.');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: null };
   assert.equal(api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges, null, 'Explicit removal is kept.');

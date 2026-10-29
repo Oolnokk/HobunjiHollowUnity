@@ -2,7 +2,9 @@
   'use strict';
   const api = window.ModularWeapons; // Runtime compositor, line transform and import validator.
   window.ModularWeaponsKeepReference = true; // compose() keeps the pre-smudge image so the revert brush can preview live.
-  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff']; // Brushes that move/restore metal and rebuild the outline.
+  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff', 'clean']; // Brushes that rework metal and rebuild the outline.
+  const cleanSettings = prefix => ({ smoothing: Number(document.getElementById(prefix + '-clean-smoothing').value),
+    speck: Number(document.getElementById(prefix + '-clean-speck').value) });
   const toolStrength = prefix => Number(document.getElementById(prefix + '-tool-strength').value) / 100;
   const byId = id => document.getElementById(id); // Shared authoring UI lookup.
   let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable copy of validated config.
@@ -478,7 +480,8 @@
       const mode = byId('pair-brush-mode').value, canvas = bridgeView.composed, frame = bridgeView.frame;
       const image = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       const stroke = mode === 'smudge' ? { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] }
-        : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0 };
+        : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0,
+          ...(mode === 'clean' ? cleanSettings('pair') : {}) };
       bridgePaint = { pointer: event.pointerId, stroke, smudge: { image, stepper: window.ModularWeaponBridgeFill.toolStepper(
         image.data, image.width, image.height, stroke, { scale: image.width / frame.width, reference: canvas.modularReference || null }) } };
     } else {
@@ -522,7 +525,7 @@
     if (event.type === 'pointercancel') { pendingStrokes = []; drawBridgeOverlay(); return; }
     if (finished.smudge) {
       if (points.length === 1 && finished.stroke.tool === 'puff') smudgeLive(points[0], points[0], finished); // A tap puffs too.
-      if (points.length > 1 || finished.stroke.tool === 'puff') applyStrokes([finished.stroke]); else drawBridgeOverlay();
+      if (points.length > 1 || finished.stroke.tool === 'puff' || finished.stroke.tool === 'clean') applyStrokes([finished.stroke]); else drawBridgeOverlay();
       return;
     }
     applyStrokes(pendingStrokes);
@@ -557,6 +560,11 @@
   byId('pair-set-revert-point').onclick = () => {
     if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
     applyStrokes([{ revertPoint: true }], 'Revert point set: the revert brush now eases back to this.');
+  };
+  byId('pair-clean-outline').onclick = () => {
+    if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
+    if (!pairOverride().bridges?.strokes?.length) { bridgeStatus('Nothing to clean yet: the clean-up works on brush-worked areas (use the Clean outline brush for original artwork).'); return; }
+    applyStrokes([{ clean: true, ...cleanSettings('pair') }], 'Cleaned up the outline.');
   };
   byId('pair-separate-shading').onclick = () => {
     if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
@@ -609,7 +617,8 @@
     if (button && !button.disabled) { event.preventDefault(); button.click(); }
   });
   // Slider readouts for both editors' tool settings.
-  for (const id of ['pair-tool-strength', 'pair-shading-tolerance', 'pair-shading-pool', 'cut-tool-strength', 'cut-shading-tolerance', 'cut-shading-pool']) {
+  for (const id of ['pair-tool-strength', 'pair-shading-tolerance', 'pair-shading-pool', 'cut-tool-strength', 'cut-shading-tolerance', 'cut-shading-pool',
+    'pair-clean-smoothing', 'pair-clean-speck', 'cut-clean-smoothing', 'cut-clean-speck']) {
     const input = byId(id), readout = byId(id + '-value');
     if (input && readout) input.addEventListener('input', () => { readout.textContent = input.value; });
   }

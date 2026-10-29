@@ -105,7 +105,8 @@
   let hoverPoint = null; // Brush-size cursor preview position.
   let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
   const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill), 'junction', or a smudge-family tool.
-  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff']; // Move/restore metal; the outline is rebuilt on release.
+  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff', 'clean']; // Rework metal; the outline is rebuilt on release.
+  const cleanSettings = () => ({ smoothing: Number(byId('cut-clean-smoothing').value), speck: Number(byId('cut-clean-speck').value) });
   let smudge = null; // Active smudge-family drag: { stepper, last, tool }.
   let smudgeReference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
   const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
@@ -250,7 +251,8 @@
     if (SMUDGE_TOOLS.includes(tool())) { // Snapshot for Undo (also the "before" the outline is measured on), then work.
       if (!smudgeReference) smudgeReference = new Uint8ClampedArray(pixels);
       pushUndo('smudge');
-      const op = { tool: tool(), r: brushRadius(), strength: Number(byId('cut-tool-strength').value) / 100, seed: (Math.random() * 2147483647) | 0 };
+      const op = { tool: tool(), r: brushRadius(), strength: Number(byId('cut-tool-strength').value) / 100, seed: (Math.random() * 2147483647) | 0,
+        ...(tool() === 'clean' ? cleanSettings() : {}) };
       smudge = { tool: op.tool, last: pointFor(event), stepper: global.ModularWeaponBridgeFill.toolStepper(pixels, FRAME.width, FRAME.height, op,
         { minAlpha: minAlpha(), reference: smudgeReference }) };
       return;
@@ -290,10 +292,10 @@
       if (cancel) { byId('cut-undo').click(); return; }
       const end = pointFor(event); // Finish the last partial step (the plow only steps every few pixels).
       if (end.x !== done.last.x || end.y !== done.last.y) done.stepper.step(done.last, end);
-      else if (done.tool === 'puff') done.stepper.step(done.last, done.last); // A tap puffs too.
+      else if (done.tool === 'puff' || done.tool === 'clean') done.stepper.step(done.last, done.last); // A tap works too.
       const result = done.stepper.finish();
       renderNow();
-      const verb = { smudge: 'Smudged', revert: 'Reverted', plow: 'Plowed', puff: 'Puffed out' }[done.tool];
+      const verb = { smudge: 'Smudged', revert: 'Reverted', plow: 'Plowed', puff: 'Puffed out', clean: 'Cleaned (' + (result.specks || 0) + ' black pixels pulled out)' }[done.tool];
       status(result.changed ? verb + '; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
         result.drawn + ' drawn). Undo reverts the whole stroke.' : done.tool === 'revert' ? 'Nothing to revert here: it already matches the image before smudging.' : 'No metal changed under the stroke.');
       return;
@@ -391,6 +393,16 @@
     if (!pixels) { status('Load a sprite first.'); return; }
     smudgeReference = new Uint8ClampedArray(pixels);
     status('Revert point set: the revert brush now eases back to the image as it is now.');
+  };
+  byId('cut-clean-outline').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const worked = global.ModularWeaponBridgeFill.changedRegion(pixels, original); // Only what you've changed since loading.
+    if (!worked) { status('Nothing to clean: the sprite is unchanged since it was loaded (use the Clean outline brush to clean original artwork).'); return; }
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.cleanOutline(next, FRAME.width, FRAME.height, worked, { minAlpha: minAlpha(), ...cleanSettings() });
+    pushUndo('smudge'); pixels = next; renderNow();
+    status('Cleaned up the outline: pulled ' + result.specks + ' black pixels out of the metal, regenerated the outline at an even ' +
+      result.thickness + ' px. Undo restores it.');
   };
   byId('cut-separate-shading').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }

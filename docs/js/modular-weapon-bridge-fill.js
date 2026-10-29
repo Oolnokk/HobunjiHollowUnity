@@ -658,7 +658,7 @@
       // Local width: the upper-quartile width in each 24 px cell (so cut-off outline ends and stray samples are
       // outvoted), blended smoothly between cells, so new outline matches the original outline nearest to it
       // (a guard's thin outline next to a blade's thick one) without steps. Outliers (interior detail) are left out.
-      if (mode && !options.outlineThickness) {
+      if (mode && !options.outlineThickness && !options.uniform) { // `uniform`: one even thickness everywhere.
         const C = 24, gx = Math.ceil(ww / C), gy = Math.ceil(wh / C), buckets = Array.from({ length: gx * gy }, () => []);
         for (let i = 0; i < m; i++) if (sample[i] > 0 && sample[i] <= 2 * mode + 2) buckets[((i / ww / C) | 0) * gx + ((i % ww) / C | 0)].push(sample[i]);
         const cell = new Float32Array(gx * gy).fill(-1), fillOrder = [];
@@ -754,6 +754,31 @@
       }
     }
     for (let i = 0; i < m; i++) if (zone[i] >= 0 && kinds[i] <= INK) kinds[i] = classify(pixels, idx(i) * 4);
+    // Smoothing (clean-up): with the old outline gone, the metal's edge in the zone is evened out by a square
+    // closing (fills dents and pinholes, taking the nearest metal's color) then a square opening (shaves bumps and
+    // whiskers thinner than the smoothing size), so the outline drawn next runs smooth.
+    const smoothing = Math.max(0, Math.min(12, Math.round(options.smoothing || 0)));
+    if (smoothing) {
+      const k = smoothing, nearMetal = chessNearest(m, ww, wh, i => kinds[i] === METAL);
+      const grown = new Uint8Array(m);
+      for (let i = 0; i < m; i++) grown[i] = kinds[i] !== OTHER && chessDist(ww, i, nearMetal[i]) <= k ? 1 : 0;
+      const nearOutside = chessNearest(m, ww, wh, i => !grown[i]);
+      for (let i = 0; i < m; i++) {
+        if (zone[i] < 0 || kinds[i] === METAL || kinds[i] === OTHER || !grown[i] || chessDist(ww, i, nearOutside[i]) <= k) continue;
+        const e = nearMetal[i], o = idx(i) * 4, so = idx(e) * 4;
+        pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
+        kinds[i] = METAL; drawn++;
+      }
+      // Only the outer silhouette is shaved (distance to empty space): metal beside interior detail stays whole.
+      const nearEmpty = chessNearest(m, ww, wh, i => kinds[i] === EMPTY);
+      const core = new Uint8Array(m);
+      for (let i = 0; i < m; i++) core[i] = kinds[i] === METAL && chessDist(ww, i, nearEmpty[i]) > k ? 1 : 0;
+      const nearCore = chessNearest(m, ww, wh, i => core[i] === 1);
+      for (let i = 0; i < m; i++) {
+        if (zone[i] < 0 || kinds[i] !== METAL || chessDist(ww, i, nearCore[i]) <= k) continue;
+        const o = idx(i) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0; kinds[i] = EMPTY; erased++;
+      }
+    }
     // 4. Draw new outline: empty pixels in the zone within `thickness` of metal.
     const source = new Int32Array(m).fill(-1); head = tail = 0;
     for (let i = 0; i < m; i++) {
@@ -840,6 +865,26 @@
     return changed;
   }
 
+  // Nearest-source propagation with improvement, in square (chessboard) distance over a ww×wh window: a square
+  // closing fills square dents completely and leaves flat and diagonal edges exactly where they are, so repeated
+  // smoothing never grows or shrinks a clean shape.
+  function chessNearest(m, ww, wh, isSource) { // Plain multi-source BFS: 8-connected steps are exact chessboard distance.
+    const near = new Int32Array(m).fill(-1), queue = new Int32Array(m);
+    let head = 0, tail = 0;
+    for (let i = 0; i < m; i++) if (isSource(i)) { near[i] = i; queue[tail++] = i; }
+    while (head < tail) {
+      const i = queue[head++], x = i % ww, y = (i / ww) | 0, e = near[i];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const qx = x + dx, qy = y + dy;
+        if (qx < 0 || qy < 0 || qx >= ww || qy >= wh) continue;
+        const j = qy * ww + qx;
+        if (near[j] < 0) { near[j] = e; queue[tail++] = j; }
+      }
+    }
+    return near;
+  }
+  const chessDist = (ww, i, e) => e < 0 ? Infinity : Math.max(Math.abs(e % ww - i % ww), Math.abs(((e / ww) | 0) - ((i / ww) | 0)));
+
   // Puff-out: inside the brush, dents in the metal's edge are filled outward (a morphological closing of radius
   // strength × radius / 2), each new pixel taking the color of the nearest metal, so a wrinkled edge becomes smooth
   // and continuous like an inflated bag. Never covers other materials.
@@ -852,24 +897,7 @@
     if (ww < 1 || wh < 1) return 0;
     const kinds = new Uint8Array(m);
     for (let i = 0; i < m; i++) kinds[i] = classify(pixels, (((i / ww) | 0) + y0) * w * 4 + ((i % ww) + x0) * 4);
-    // Nearest-source propagation with improvement, in square (chessboard) distance: a square closing fills square
-    // dents completely and leaves flat and diagonal edges exactly where they are, so repeated steps never grow.
-    const nearestOf = isSource => {
-      const near = new Int32Array(m).fill(-1), queue = [];
-      for (let i = 0; i < m; i++) if (isSource(i)) { near[i] = i; queue.push(i); }
-      for (let head = 0; head < queue.length; head++) {
-        const i = queue[head], x = i % ww, y = (i / ww) | 0, e = near[i], ex = e % ww, ey = (e / ww) | 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const qx = x + dx, qy = y + dy;
-          if (qx < 0 || qy < 0 || qx >= ww || qy >= wh) continue;
-          const j = qy * ww + qx, c = near[j];
-          if (c >= 0 && Math.max(Math.abs(c % ww - qx), Math.abs(((c / ww) | 0) - qy)) <= Math.max(Math.abs(ex - qx), Math.abs(ey - qy))) continue;
-          near[j] = e; queue.push(j);
-        }
-      }
-      return near;
-    };
-    const dist = (i, e) => e < 0 ? Infinity : Math.max(Math.abs(e % ww - i % ww), Math.abs(((e / ww) | 0) - ((i / ww) | 0)));
+    const nearestOf = isSource => chessNearest(m, ww, wh, isSource), dist = (i, e) => chessDist(ww, i, e);
     const nearMetal = nearestOf(i => kinds[i] === METAL);
     const dilated = new Uint8Array(m);
     for (let i = 0; i < m; i++) dilated[i] = kinds[i] !== OTHER && dist(i, nearMetal[i]) <= k ? 1 : 0;
@@ -897,6 +925,74 @@
     return changed;
   }
 
+  // Pulls outline black out of the metal, inside `region`:
+  //  - grime: metal pixels darker than the metal's own shaded tone (the hand-drawn outline's dark, blurry fringe,
+  //    spread through the metal by smudging) take the color of the nearest clean metal;
+  //  - specks: blobs of outline-black up to `speck` pixels that touch no empty space and no other material take the
+  //    color of the nearest metal. Interior detail (a blade's groove) is larger or joined to the outline, so it stays.
+  function removeSpecks(pixels, width, height, region, options = {}) {
+    const w = width, h = height, n = w * h, classify = options.classify || makeClassifier(options);
+    const speck = Math.max(0, Math.round(options.speck ?? 40));
+    const kinds = new Uint8Array(n), lumas = [];
+    for (let p = 0; p < n; p++) { kinds[p] = classify(pixels, p * 4); if (kinds[p] === METAL) lumas.push(luma(pixels, p * 4)); }
+    let removed = 0;
+    if (lumas.length > 16) {
+      // The shaded tone is the most common brightness below the shaded/unshaded split; grime is clearly darker.
+      const split = otsu(lumas), hist = new Uint32Array(256);
+      for (const v of lumas) if (v < split) hist[Math.round(v)]++;
+      let mode = 0, best = -1;
+      for (let b = 2; b < 254; b++) { const sum = hist[b - 2] + hist[b - 1] + hist[b] + hist[b + 1] + hist[b + 2]; if (sum > best) { best = sum; mode = b; } }
+      const grime = mode - Math.max(8, (options.grimeTolerance ?? 0.15) * mode);
+      const dirty = p => kinds[p] === METAL && luma(pixels, p * 4) < grime;
+      const nearClean = chessNearest(n, w, h, p => kinds[p] === METAL && !dirty(p));
+      for (let p = 0; p < n; p++) {
+        if (!region[p] || !dirty(p) || nearClean[p] < 0) continue;
+        pixels.copyWithin(p * 4, nearClean[p] * 4, nearClean[p] * 4 + 4); removed++;
+      }
+    }
+    if (!speck) return removed;
+    const seen = new Uint8Array(n), nearMetal = chessNearest(n, w, h, p => kinds[p] === METAL);
+    for (let s0 = 0; s0 < n; s0++) {
+      if (kinds[s0] !== INK || seen[s0]) continue;
+      const blob = [s0]; let open = false, touched = !!region[s0];
+      seen[s0] = 1;
+      for (let k = 0; k < blob.length; k++) {
+        const p = blob[k], x = p % w, y = (p / w) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const qx = x + dx, qy = y + dy;
+          if (qx < 0 || qy < 0 || qx >= w || qy >= h) { open = true; continue; }
+          const q = qy * w + qx;
+          if (kinds[q] === EMPTY || kinds[q] === OTHER) open = true;
+          else if (kinds[q] === INK && !seen[q]) { seen[q] = 1; blob.push(q); if (region[q]) touched = true; }
+        }
+        if (blob.length > speck) open = true; // Too big to be a speck; keep walking only to mark it seen.
+      }
+      if (open || !touched) continue;
+      for (const p of blob) {
+        const e = nearMetal[p]; if (e < 0) continue;
+        pixels.copyWithin(p * 4, e * 4, e * 4 + 4); removed++;
+      }
+    }
+    return removed;
+  }
+  // Marks every pixel that differs from `base`: the brush-worked areas, so a clean-up only touches generated
+  // outline and leaves the original artwork (tapered outline tips, thin authored lines) exactly as drawn.
+  function changedRegion(pixels, base) {
+    const region = new Uint8Array(pixels.length / 4);
+    let any = 0;
+    for (let p = 0, o = 0; p < region.length; p++, o += 4) {
+      if (pixels[o] !== base[o] || pixels[o + 1] !== base[o + 1] || pixels[o + 2] !== base[o + 2] || pixels[o + 3] !== base[o + 3]) { region[p] = 1; any++; }
+    }
+    return any ? region : null;
+  }
+  // Clean up outline: pull stray black out of the metal, then strip, smooth and regenerate the outline around the
+  // metal in `region`, at one even thickness unless `uniform` is false.
+  function cleanOutline(pixels, width, height, region, options = {}) {
+    const before = new Uint8ClampedArray(pixels), classify = options.classify || makeClassifier(options);
+    const specks = removeSpecks(pixels, width, height, region, { ...options, classify });
+    return { specks, ...rebuildOutline(before, pixels, width, height, region, { uniform: true, smoothing: 2, ...options, classify }) };
+  }
+
   // One brush stroke of the smudge-family tools (smudge, revert, plow, puff), stepped point by point so the editor's
   // live preview and the saved replay run the exact same steps. finish() rebuilds the outline around what changed.
   function toolStepper(pixels, width, height, op, options = {}) {
@@ -911,6 +1007,7 @@
         if (tool === 'smudge') changed += smudgeStep(pixels, width, height, from, to, r, { classify, region });
         else if (tool === 'revert' && options.reference) changed += revertStep(pixels, options.reference, width, height, from, to, r, { strength, random, region });
         else if (tool === 'plow') changed += plowStep(pixels, width, height, from, to, r, { classify, region });
+        else if (tool === 'clean') { stampLine(region, width, height, from, to, r); changed++; } // Applied on finish.
         else if (tool === 'puff') {
           const len = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(len / Math.max(1, r / 3)));
           for (let i = 1; i <= steps; i++) changed += puffStep(pixels, width, height,
@@ -918,7 +1015,11 @@
         }
         return changed;
       },
-      finish() { return { changed, ...rebuildOutline(before, pixels, width, height, region, { ...options, classify }) }; }
+      finish() {
+        if (tool === 'clean') return { changed, ...cleanOutline(pixels, width, height, region, { ...options, classify,
+          smoothing: (op.smoothing ?? 2) * scale, speck: (op.speck ?? 40) * scale * scale }) };
+        return { changed, ...rebuildOutline(before, pixels, width, height, region, { ...options, classify }) };
+      }
     };
   }
   // Replays one saved smudge-family stroke (points in stored coordinates) and rebuilds the outline, in place.
@@ -991,5 +1092,5 @@
 
   global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
     smudgeStep, rebuildOutline, smudgeStroke, makeClassifier, revertStep, plowStep, puffStep, toolStepper, toolStroke,
-    separateShading });
+    separateShading, removeSpecks, cleanOutline, changedRegion });
 })(typeof window === 'object' ? window : globalThis);

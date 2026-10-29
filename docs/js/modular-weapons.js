@@ -42,18 +42,20 @@
     if (!raw || !Array.isArray(raw.strokes)) return null;
     const strokes = raw.strokes.slice(0, 512).map(stroke => typeof stroke?.junction === 'string' ? cleanJunction(stroke)
       : stroke?.revertPoint === true ? { revertPoint: true } // Marks what the revert brush eases back to.
+      : stroke?.clean === true ? { clean: true, smoothing: finite(stroke.smoothing, 2, 0, 12), speck: finite(stroke.speck, 40, 0, 2000) } // Whole-weapon clean-up.
       : stroke?.shading === true ? { shading: true, tolerance: finite(stroke.tolerance, 0.2, 0, 0.5), pool: Math.round(finite(stroke.pool, 5, 1, 32)) }
-      : stroke?.tool !== undefined && !['revert', 'plow', 'puff'].includes(stroke.tool) ? null // Unknown tools are dropped.
+      : stroke?.tool !== undefined && !['revert', 'plow', 'puff', 'clean'].includes(stroke.tool) ? null // Unknown tools are dropped.
       : ({
       r: finite(stroke?.r, 16, 1, 160),
       ...(stroke?.closed === true ? { closed: true } : {}), // Auto-bridge polygons.
       ...(stroke?.smudge === true ? { smudge: true } : {}), // Metal smudge strokes, replayed in order.
-      ...(['revert', 'plow', 'puff'].includes(stroke?.tool) ? { tool: stroke.tool, strength: finite(stroke.strength, 0.5, 0, 1),
+      ...(['revert', 'plow', 'puff', 'clean'].includes(stroke?.tool) ? { tool: stroke.tool, strength: finite(stroke.strength, 0.5, 0, 1),
         seed: Math.round(finite(stroke.seed, 1, 0, 2147483647)) } : {}), // Other smudge-family tools.
+      ...(stroke?.tool === 'clean' ? { smoothing: finite(stroke.smoothing, 2, 0, 12), speck: finite(stroke.speck, 40, 0, 2000) } : {}),
       points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
         .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
         .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
-    })).filter(stroke => stroke && (stroke.junction || stroke.shading || stroke.revertPoint || stroke.points.length));
+    })).filter(stroke => stroke && (stroke.junction || stroke.shading || stroke.revertPoint || stroke.clean || stroke.points.length));
     if (!strokes.length) return null;
     const light = raw.light === null ? null : Array.isArray(raw.light) && raw.light.length === 2
       ? [finite(raw.light[0], 0, -1, 1), finite(raw.light[1], -1, -1, 1)] : [0, -1];
@@ -84,9 +86,16 @@
       } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
     };
     let reference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
+    const base = bridges.strokes.some(op => op.clean) ? new Uint8ClampedArray(image.data) : null; // Before any brush work.
     for (const stroke of bridges.strokes) {
       if (stroke.shading) { flush(); fill.separateShading(image.data, canvas.width, canvas.height, stroke); continue; }
       if (stroke.revertPoint) { flush(); reference = new Uint8ClampedArray(image.data); continue; }
+      if (stroke.clean) {
+        flush();
+        const worked = fill.changedRegion(image.data, base); // Only where brush work changed the weapon.
+        if (worked) fill.cleanOutline(image.data, canvas.width, canvas.height, worked, { smoothing: stroke.smoothing * sx, speck: stroke.speck * sx * sx });
+        continue;
+      }
       if (stroke.junction) {
         flush();
         const piece = junctionImages[stroke.junction];
