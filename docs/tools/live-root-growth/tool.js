@@ -6,7 +6,7 @@
   const $ = id => document.getElementById(id); // Local authoring form lookup, never used by the game.
   const status = $('hud'), diagnostics = $('debug'), errorBox = $('errors');
   const trackedFields = ['seed','floorWidth','floorDepth','branchCount','strandLimit','radius',
-    'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','duration','showGuide'];
+    'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','duration','showGuide'];
   const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
