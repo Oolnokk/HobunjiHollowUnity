@@ -8,7 +8,7 @@
     <script src="js/tap-reliability.js?v=20261010a"></script>
     <link
       rel="stylesheet"
-      href="tools/enemy-loadout-editor/style.css?v=20261028a"
+      href="tools/enemy-loadout-editor/style.css?v=20261029enemyParity1"
     />
     <script type="importmap">
       {
@@ -116,6 +116,12 @@
           </div>
         </div>
         <div class="playback">
+          <label>Game lighting<select id="lighting">
+            <option value="noon">Clear noon</option>
+            <option value="storm">Storm</option>
+            <option value="sunset">Sunset</option>
+            <option value="night">Night</option>
+          </select></label>
           <label
             >Movement<select id="motion">
               <option value="idle">Idle / combat stance</option>
@@ -216,7 +222,7 @@
     <div id="toast" role="status" hidden></div>
     <script
       type="module"
-      src="tools/enemy-loadout-editor/app.js?v=20261028a"
+      src="tools/enemy-loadout-editor/app.js?v=20261029enemyParity1"
     ></script>
   </body>
 </html>

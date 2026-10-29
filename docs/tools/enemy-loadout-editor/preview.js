@@ -20,6 +20,9 @@ const files = [
   'js/npc-movement-head-target.js?v=20261028a',
   'js/leg-bones.js?v=20261028a',
   'js/procedural-leg-animation.js?v=20261028a',
+  'js/procedural-feet-outline-parity.js?v=20261029a',
+  'js/png-plane-outline-occluder.js?v=20261029enemyParity1',
+  'js/weather-fx.js?v=20261029enemyParity1',
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',
   'js/pants-garment-renderer.js?v=20261028a',
@@ -36,17 +39,22 @@ const files = [
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
-  'js/combat/ranged-weapons.js?v=20261028a',
+  'js/combat/ranged-weapons.js?v=20261029h3f4fe60',
   'js/alchemy-system.js?v=20261028a',
   'js/combat/enemy-loadout-rules.js?v=20261028a',
-  'js/combat/combat-bandit.js?v=20261028a',
+  'js/combat/combat-bandit.js?v=20261029enemyParity1',
+  'js/weapon-tool-stances.js?v=20261029a',
+  'js/combat/enemy-weapon-stances.js?v=20261029a',
   'js/combat/combat-minion.js?v=20261028a',
   'js/combat/combat-maskbound-guardian.js?v=20261028a',
-  'js/combat/combat-lich.js?v=20261028a',
+  'js/combat/combat-lich.js?v=20261029enemyParity1',
+  'js/player-body-transform-composer.js?v=20261029a',
+  'js/drunk-locomotion.js?v=20261029a',
+  'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261028a',
+  'tools/enemy-loadout-editor/source-data.js?v=20261029enemyParity1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -67,6 +75,8 @@ export class EnemyPreview {
     this.glowPools = [];
     this.lightPoint = new THREE.Vector3();
     this.headUndo = [];
+    this.projectPoint = new THREE.Vector3();
+    this.lightingMode = 'noon';
   }
   async init() {
     const abilities = {};
@@ -82,15 +92,14 @@ export class EnemyPreview {
     };
     for (const file of files) {
       if (file.split('?')[0] === 'js/portrait-breathing.js')
-        window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = new URL(
-          'config/',
-          document.baseURI,
-        ).href;
+        window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase =
+          new URL('config/', document.baseURI).href;
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = new URL(file, document.baseURI).href;
         s.onload = resolve;
-        s.onerror = () => reject(Error('Runtime module unavailable: ' + file));
+        s.onerror = () =>
+          reject(Error('Runtime module unavailable: ' + file));
         document.head.append(s);
       });
     }
@@ -111,9 +120,22 @@ export class EnemyPreview {
       powerPreference: 'low-power',
     });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    // Match game.js: r128's linear output, NoToneMapping and soft shadows.
+    // sRGB output here applied a second conversion and washed out sprite dyes.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.shellMaterial = this.data.makeShellMaterial(THREE);
+    this.shellMaterial.uniforms.uThickness.value =
+      this.data.outline.shell.thicknessNdc;
+    window.PngPlaneOutlineOccluder.init({
+      renderer: this.renderer,
+      camera: this.camera,
+    });
     this.host.append(this.renderer.domElement);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(
+      this.camera,
+      this.renderer.domElement,
+    );
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 0.5;
@@ -128,15 +150,46 @@ export class EnemyPreview {
     this.floor.rotation.x = -Math.PI / 2;
     this.floor.position.y = -0.012;
     this.scene.add(this.floor);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-    const sun = new THREE.DirectionalLight(0xffe6bd, 0.6);
-    sun.position.set(3, 6, 4);
-    this.scene.add(sun);
+    this.scene.fog = new THREE.FogExp2(this.scene.background, 0.018);
+    this.lights = this.data.makeLighting(THREE, this.scene);
+    this.lightingCanvas = document.createElement('canvas');
+    this.lightingCanvas.className = 'lighting-overlay';
+    this.host.append(this.lightingCanvas);
+    this.lightingContext = this.lightingCanvas.getContext('2d');
+    this.lightProjection = {
+      camera: this.camera,
+      lctx: this.lightingContext,
+      worldToOverlay: (x, y, z) => {
+        const p = this.projectPoint.set(x, y, z).project(this.camera);
+        return {
+          x: ((p.x + 1) * this.width) / 2,
+          y: ((1 - p.y) * this.height) / 2,
+          visible: p.z > -1 && p.z < 1,
+        };
+      },
+      getFurnitureLightSources: () =>
+        window.FurnitureLightRegistry.list(this.scene).map((light) => {
+          light.getWorldPosition(this.lightPoint);
+          return {
+            x: this.lightPoint.x,
+            y: this.lightPoint.y,
+            z: this.lightPoint.z,
+            distance: light.distance,
+            intensity: light.intensity,
+            color: {
+              r: Math.round(light.color.r * 255),
+              g: Math.round(light.color.g * 255),
+              b: Math.round(light.color.b * 255),
+            },
+          };
+        }),
+    };
+    this.setLighting('noon');
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.host);
     this.resize();
     const d = this.data;
-    this.items = {};
+    this.items = copy(d.rangedItems);
     for (const [shapeKey, shape] of Object.entries(d.shapes))
       for (const [metalKey, metal] of Object.entries(d.metals))
         if (metal.tier) {
@@ -156,6 +209,15 @@ export class EnemyPreview {
       d.metals,
       Object.keys(d.metals).filter((k) => d.metals[k].tier),
     );
+    this.weaponTextures = {};
+    this.makeGameWeaponMesh = d.weaponMeshFactory(
+      THREE,
+      this.items,
+      (key) => this.weaponTextures[key],
+      this.weaponTextures,
+      d.heldObjectRenderOrder,
+      (root) => window.PngPlaneOutlineOccluder.markPngPlane(root),
+    );
     this.dependencies = {
       rnd: () => this.random(),
       clamp: (n, a, b) => Math.max(a, Math.min(b, n)),
@@ -174,7 +236,15 @@ export class EnemyPreview {
       getActiveCols: () => 1,
       getActiveRows: () => 1,
       tileSurfaceYInArea: () => 0,
-      markPngPlane: () => {},
+      worldSurfaceY: () => 0,
+      markPngPlane: (root) =>
+        window.PngPlaneOutlineOccluder.markPngPlane(root),
+      setRangedLoadedVisual: (key, loaded, owner) =>
+        this.setWeaponLoaded(
+          owner?._banditRangedToolHolder?.children?.[0],
+          key,
+          loaded,
+        ),
       makeToolPlaneMesh: (key) => this.weaponMesh(key),
       makeCharacterGroundShadow: () => {
         const m = new THREE.Mesh(
@@ -214,20 +284,30 @@ export class EnemyPreview {
     window.DialogueContent.init({ getNpcRecords: () => this.data.npcs });
     window.HarlyaoLichCombat.installWrappers();
     window.BanditCombat.init(this.dependencies);
-    window.ProceduralHandAttachments?.installGameRuntime(this.dependencies);
-    window.ProceduralHandFrameDriver?.installGameRuntime?.(this.dependencies);
+    window.WeaponToolStances.init(this.dependencies);
+    await window.WeaponToolStances.reloadConfig();
+    window.ProceduralHandAttachments?.installGameRuntime(
+      this.dependencies,
+    );
+    window.ProceduralHandFrameDriver?.installGameRuntime?.(
+      this.dependencies,
+    );
     window.RangedWeapons.init?.(this.dependencies);
     window.Combat.applyComboConfig?.(d.attackValues.combo);
     window.Combat.applyQuickAttackConfig?.(d.attackValues.quickAttacks);
-    window.Combat.applyChargedBreakerConfig?.(d.attackValues.chargedBreaker);
+    window.Combat.applyChargedBreakerConfig?.(
+      d.attackValues.chargedBreaker,
+    );
     window.Combat.applyCounterShieldConfig?.(d.attackValues.counterShield);
     window.RangedWeapons.applyConfig?.(d.attackValues.rangedWeapons);
     window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions();
     window.BanditCombat.applyBanditConfig(d.attackValues.bandit);
-    this.cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics({
-      assetBase: new URL('assets/', document.baseURI).href,
-      configBase: new URL('config/', document.baseURI).href,
-    });
+    this.cosmetics = await window.NpcAvatarPreview.ensurePortraitCosmetics(
+      {
+        assetBase: new URL('assets/', document.baseURI).href,
+        configBase: new URL('config/', document.baseURI).href,
+      },
+    );
     this.animate = this.animate.bind(this);
     this.frame = requestAnimationFrame(this.animate);
     this.log(
@@ -238,7 +318,17 @@ export class EnemyPreview {
   resize() {
     if (!this.renderer) return;
     const r = this.host.getBoundingClientRect();
-    this.renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false);
+    this.width = Math.max(1, r.width);
+    this.height = Math.max(1, r.height);
+    this.renderer.setSize(this.width, this.height, false);
+    if (this.lightingCanvas) {
+      this.lightingCanvas.width = Math.round(
+        this.width * this.renderer.getPixelRatio(),
+      );
+      this.lightingCanvas.height = Math.round(
+        this.height * this.renderer.getPixelRatio(),
+      );
+    }
     this.camera.aspect = r.width / Math.max(1, r.height);
     this.camera.updateProjectionMatrix();
   }
@@ -254,44 +344,140 @@ export class EnemyPreview {
       blank,
       key,
     );
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.5, 0.5),
-      window.HobunjiSpritePngSurface.makeMaterial(THREE, texture, key, {
-        side: THREE.DoubleSide,
-      }),
-    );
-    plane.rotation.x = -Math.PI / 2;
-    plane.renderOrder = 8;
-    const group = new THREE.Group();
-    group.add(plane);
-    group.userData.itemKey = key;
-    group.userData.toolPlane = plane;
+    // The live game's actual mesh factory owns materials, plane basis, flip,
+    // render order and metadata. Only asynchronous asset delivery lives here.
+    this.weaponTextures[key] = texture;
+    texture.minFilter = texture.magFilter = THREE.NearestFilter;
+    const group = this.makeGameWeaponMesh(key);
+    if (!group) {
+      texture.dispose();
+      return null;
+    }
+    const plane = group.userData.toolPlane;
     const metal = this.data.metals[def.metalKey];
     let disposed = false;
     texture.addEventListener('dispose', () => {
       disposed = true;
     });
-    const task = window.ToolMetalRecolor.getRecoloredCanvas(
-      new URL(def.sprite, document.baseURI).href,
-      {
-        targetHex: metal?.hex || '#B87333',
-        verdigrisHex: metal?.verdigrisHex || '#3FAF9F',
-        oxidationAmount: 0,
-      },
-    )
-      .then((canvas) => {
+    const load = async (sprite, recolor) => {
+      if (recolor)
+        return window.ToolMetalRecolor.getRecoloredCanvas(
+          new URL(sprite, document.baseURI).href,
+          {
+            targetHex: metal.hex,
+            verdigrisHex: metal.verdigrisHex || '#3FAF9F',
+            oxidationAmount: 0,
+          },
+        );
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = () =>
+          reject(Error('Sprite unavailable: ' + sprite));
+        image.src = new URL(sprite, document.baseURI).href;
+      });
+    };
+    const task = Promise.all([
+      load(def.sprite, !!metal),
+      def.loadedSprite ? load(def.loadedSprite, false) : null,
+    ])
+      .then(([image, loadedImage]) => {
         if (disposed) return;
-        texture.image = canvas;
+        texture.image = image;
         texture.needsUpdate = true;
+        def._imgW = image.naturalWidth || image.width;
+        def._imgH = image.naturalHeight || image.height;
         plane.geometry.dispose();
         plane.geometry = new THREE.PlaneGeometry(
           0.5,
-          (0.5 * canvas.height) / canvas.width,
+          (0.5 * def._imgH) / def._imgW,
         );
+        group.userData.unloadedTexture = texture;
+        if (loadedImage) {
+          const loaded = window.HobunjiSpritePngSurface.makeCanvasTexture(
+            THREE,
+            loadedImage,
+            key + '-loaded',
+          );
+          loaded.minFilter = loaded.magFilter = THREE.NearestFilter;
+          group.userData.loadedTexture = loaded;
+        }
+        this.setWeaponLoaded(group, key, group.userData.loaded !== false);
       })
-      .catch((e) => this.log('Weapon ' + key + ': ' + e.message));
+      .catch((e) => {
+        this.log('Weapon ' + key + ': ' + e.message);
+        throw e;
+      });
     this.textureTasks.push(task);
     return group;
+  }
+  capture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = this.renderer.domElement.width;
+    canvas.height = this.renderer.domElement.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(this.renderer.domElement, 0, 0);
+    ctx.drawImage(this.lightingCanvas, 0, 0);
+    return canvas;
+  }
+  setWeaponLoaded(mesh, key, loaded) {
+    if (!mesh || mesh.userData.itemKey !== key) return false;
+    mesh.userData.loaded = loaded;
+    const texture =
+      (loaded && mesh.userData.loadedTexture) ||
+      mesh.userData.unloadedTexture;
+    if (texture) mesh.userData.toolPlane.material.map = texture;
+    return true;
+  }
+  setLighting(mode) {
+    this.lightingMode = mode;
+    const hour = mode === 'night' ? 22 : mode === 'sunset' ? 18.5 : 12;
+    this.lightingState = window.WeatherFX.lightingStateFor(hour, {
+      isRaining: mode === 'storm',
+      rainStrength: 3,
+    });
+    const { ambientLight, sunLight } = this.lights;
+    this.data.applyLighting(
+      this.scene,
+      ambientLight,
+      sunLight,
+      this.lightingState,
+    );
+  }
+  render() {
+    const renderer = this.renderer,
+      scene = this.scene,
+      camera = this.camera;
+    const mask = camera.layers.mask;
+    renderer.autoClear = true;
+    renderer.render(scene, camera);
+    renderer.autoClear = false;
+    renderer.autoClearColor = false;
+    renderer.autoClearDepth = false;
+    try {
+      window.PngPlaneOutlineOccluder.renderDepth(scene);
+      scene.overrideMaterial = this.shellMaterial;
+      camera.layers.set(1);
+      renderer.render(scene, camera);
+    } finally {
+      scene.overrideMaterial = null;
+      camera.layers.mask = mask;
+      renderer.autoClear = true;
+      renderer.autoClearColor = true;
+      renderer.autoClearDepth = true;
+    }
+    const ctx = this.lightingContext,
+      ratio = renderer.getPixelRatio();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, this.width, this.height);
+    window.WeatherFX.drawSkyTint(
+      ctx,
+      this.width,
+      this.height,
+      this.lightingState,
+    );
+    window.WeatherFX.drawFurnitureLightMasks(this.lightProjection);
   }
   async roll(kind, tier, seed) {
     this.random = window.EnemyLoadoutRules.seedRandom(
@@ -320,7 +506,7 @@ export class EnemyPreview {
     const old = this.actor;
     this.actor = next;
     this.attack = null;
-    if (old) window.BanditCombat.discardEntity(old);
+    if (old) this.discard(old);
     const a = next.avatarRef;
     next.facing = Math.PI / 2;
     next.groupRot = 0;
@@ -329,55 +515,8 @@ export class EnemyPreview {
     if (a.frontPlane) a.frontPlane.rotation.y = Math.PI / 2;
     if (a.backPlane) a.backPlane.rotation.y = -Math.PI / 2;
     if (a.legsPivot) a.legsPivot.rotation.y = 0;
-    if (a.frontPlane && a.legs) {
-      const leanRoot = new THREE.Group();
-      leanRoot.name = 'enemy_workshop_visual_lean';
-      a.group.add(leanRoot);
-      leanRoot.add(a.frontPlane, a.backPlane);
-      next.previewLeanRoot = leanRoot;
-    }
     this.dependencies.hostileObjects = [next];
-    this.rebuildGlowPools();
-  }
-  rebuildGlowPools() {
-    for (const pool of this.glowPools) {
-      this.scene.remove(pool.mesh);
-      pool.mesh.geometry.dispose();
-      pool.mesh.material.map.dispose();
-      pool.mesh.material.dispose();
-    }
-    this.glowPools = [];
-    for (const light of window.FurnitureLightRegistry.list(this.scene)) {
-      // Deliberately procedural fake-light footprint, rather than an authored PNG.
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 128;
-      const ctx = canvas.getContext('2d'),
-        rgb = [light.color.r, light.color.g, light.color.b].map((n) =>
-          Math.round(n * 255),
-        );
-      const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      const strength = Math.min(0.7, 0.2 + light.intensity * 0.12);
-      gradient.addColorStop(0, `rgba(${rgb},${strength})`);
-      gradient.addColorStop(0.35, `rgba(${rgb},${strength * 0.45})`);
-      gradient.addColorStop(1, `rgba(${rgb},0)`);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 128, 128);
-      const texture = new THREE.CanvasTexture(canvas);
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({
-          map: texture,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.scale.set(light.distance * 2, light.distance * 2, 1);
-      mesh.position.y = 0.007;
-      this.scene.add(mesh);
-      this.glowPools.push({ light, mesh });
-    }
+    window.PngPlaneOutlineOccluder.prune();
   }
   snapshot(kind, tier, seed) {
     const a = this.actor;
@@ -406,32 +545,27 @@ export class EnemyPreview {
     const saved = window.EnemyLoadoutRules.snapshot();
     window.EnemyLoadoutRules.set({ schema: saved.schema, rules: {} });
     try {
-      const c = await window.BanditCombat.makeEntity(
-        this.data.gang,
-        record.kind.startsWith('bandit:') ? record.kind.split(':')[1] : 'grunt',
+      window.TownMine.restore({
+        townValue: record.context?.townValue || 0,
+      });
+      this.textureTasks = [];
+      const c = await window.EnemyLoadoutSourceData.spawn(
+        record.kind,
         record.tier,
-        0,
-        0,
+        this.data,
         {
+          seed: record.seed,
+          preserveRoster: true,
+          roster: copy(record.roster),
           rosterOverride: copy(record.roster),
           defOverride: copy(record.definition),
-          scene: this.scene,
           avatarRigScale: record.rigScale,
-          mountSpecies: record.mountSpecies,
-          extra: {
-            lichType: record.lichType,
-            isHarlyaoLich: !!record.lichType,
-            maskboundTroop: record.maskboundTroop,
-            enemyLoadoutKind: record.kind,
-          },
         },
       );
       if (!c) throw Error('Saved enemy could not be rebuilt');
-      if (record.lichType) {
-        c.avatarRef.legs?.setHoverMode(true);
-        for (const child of c._banditToolHolder?.children || [])
-          child.visible = false;
-      }
+      // Restore definitions after class initialization, without re-rolling saved equipment.
+      c.def = copy(record.definition);
+      await Promise.all(this.textureTasks);
       this.replace(c);
       this.fit();
     } finally {
@@ -495,7 +629,11 @@ export class EnemyPreview {
           ? steps.map((step, i) => ({
               id: id + ':' + i,
               label:
-                slot + ' · ' + id + ' · ' + (step.name || 'step ' + (i + 1)),
+                slot +
+                ' · ' +
+                id +
+                ' · ' +
+                (step.name || 'step ' + (i + 1)),
             }))
           : [{ id, label: slot + ' · ' + id }];
       });
@@ -511,9 +649,16 @@ export class EnemyPreview {
       });
     if (actor.lichType)
       return [
-        { id: 'primary', label: actor.lichType + ' · primary spell gesture' },
+        {
+          id: 'primary',
+          label: actor.lichType + ' · primary spell gesture',
+        },
         { id: 'summon', label: 'Summon · casting gesture' },
-      ];
+      ].filter(
+        (entry) =>
+          window.EnemyLoadoutRules.ruleFor('lich:' + actor.lichType)
+            ?.specialAttacks?.[entry.id] !== false,
+      );
     return list;
   }
   play(id, progress = 0, frozen = false) {
@@ -529,8 +674,12 @@ export class EnemyPreview {
       windup = 0.3,
       strike = 0.25;
     let steps = window.Combat.comboData?.[id];
+    let castStep = null;
+    let power = 1;
+    const shapeSpeed = Number(c.def.weaponShapeStats?.speed) || 1;
     if (id === 'primary' || id === 'summon') {
-      steps = window.Combat.comboData?.pokeCombo;
+      castStep = window.HarlyaoLichCombat.lichCastStep(c, id);
+      steps = [castStep];
       anim = 'thrust';
     }
     if (steps?.length) {
@@ -545,20 +694,26 @@ export class EnemyPreview {
       anim = step.anim || anim;
       windup = step.windupS || windup;
       strike = step.strikeS || strike;
+      power = pose ? 1 : Number(step.power) || 1;
+      if (!castStep) {
+        windup /= shapeSpeed;
+        strike /= shapeSpeed;
+      }
     }
     const quick = window.Combat.quickAttackData;
     if (quick?.TECHNIQUES?.[id]) {
       pose = quick.quickAttackPose?.();
       anim = 'thrust';
-      windup = quick.WINDUP_S;
-      strike = quick.STRIKE_S;
+      windup = quick.WINDUP_S / shapeSpeed;
+      strike = quick.STRIKE_S / shapeSpeed;
     }
     if (id === 'chargedBreaker') {
       const cb = window.Combat.chargedBreakerData;
       pose = window.Combat.poses.SWEEP_POSE;
       anim = 'sweep';
       windup = cb.holdSecondsForPoseCharge?.(0.85) || 1;
-      strike = cb.STRIKE_S;
+      strike = cb.STRIKE_S / shapeSpeed;
+      windup /= shapeSpeed;
     }
     if (id === 'counterShield') {
       pose = window.HeldActionAnimations.counterShield.poses;
@@ -569,36 +724,49 @@ export class EnemyPreview {
     if (id === 'throwFlask') {
       pose = window.HeldActionAnimations.throwFlask.poses;
       c._banditFlaskActionActive = true;
-      anim = 'chop';
+      const action = window.HeldActionAnimations.throwFlask;
+      anim = action.style || 'chop';
+      const duration = Math.max(0.2, Number(action.durationS) || 1.04);
+      windup = Math.max(
+        0.12,
+        duration *
+          Math.max(
+            0.05,
+            Math.min(0.95, Number(action.windupFrac) || 0.49),
+          ),
+      );
+      strike = Math.max(0.05, duration - windup);
     } else c._banditFlaskActionActive = false;
     c._rangedMode = id === 'ranged';
     if (id === 'ranged') {
       const def = window.RangedWeapons.config[c.def.rangedWeaponKey];
       pose = def?.firePose || pose;
       anim = 'ranged';
-      c._rangedAction = {
-        kind: 'fire',
-        t: 0,
-        durationS: 1,
-        chargeDurationS: 0,
-        fired: false,
-      };
+      window.RangedWeapons.setLoaded(c.def.rangedWeaponKey, true, c);
+      window.RangedWeapons.beginBanditAction(c, 'fire', {
+        x: c.x,
+        y: c.y + this.dependencies.TILE,
+      });
+      windup = c._rangedAction.releaseAtS;
+      strike = c._rangedAction.durationS - windup;
     }
-    c._banditSwingDirSign = steps?.[stepIndex]?.dirSign || 1;
+    c._banditSwingDirSign = (castStep || steps?.[stepIndex])?.dirSign || 1;
     c._banditSwingPower =
       id === 'chargedBreaker'
         ? window.Combat.chargedBreakerData.POWER || 1.7
-        : 1;
+        : power;
     c._banditSwingPoseScale = id === 'chargedBreaker' ? 0.85 : 1;
     c._banditSwingAnim = anim;
     c._banditSwingPose = pose;
     c._banditSwingReturnS = 0.35;
     c._banditSwingHoldS = 0.08;
     c._banditAction = { windupS: windup, strikeS: strike, t: 0 };
+    const duration =
+      id === 'ranged' ? c._rangedAction.durationS : windup + strike + 0.43;
     this.attack = {
       id: selection,
-      elapsed: progress * (windup + strike + 0.43),
-      duration: windup + strike + 0.43,
+      elapsed: progress * duration,
+      duration,
       frozen,
       windup,
       strike,
@@ -617,55 +785,64 @@ export class EnemyPreview {
     }
     this.controls.update();
     this.headUndo.length = 0;
-    if (this.actor?.previewLeanRoot && this.actor.previewLean)
-      window.NpcMovementHeadTarget.applyHostileRunPitch(
-        this.actor.avatarRef,
-        this.actor.previewLean,
-        this.actor.previewLeanHeading,
-        this.headUndo,
-      );
+    window.HobunjiDrunkProneCompositionBridge.prepareBanditSwayForRender(
+      this.headUndo,
+    );
     try {
-      this.renderer.render(this.scene, this.camera);
+      this.render();
     } finally {
-      for (let i = this.headUndo.length - 1; i >= 0; i--) this.headUndo[i]();
+      for (let i = this.headUndo.length - 1; i >= 0; i--)
+        this.headUndo[i]();
     }
   }
   update(dt) {
     const c = this.actor,
       a = c.avatarRef;
     const move =
-      this.motion === 'walk' ? 1.2 : this.motion === 'sprint' ? 2.6 : 0;
+      this.motion === 'walk'
+        ? c.def.moveSpeed / this.dependencies.TILE
+        : this.motion === 'sprint'
+          ? c.def.chaseSpeed / this.dependencies.TILE
+          : 0;
     const hover = this.motion === 'hover' || !!c.lichType;
     a.legs?.setHoverMode(hover);
     a.legs?.update(dt, move, false, null, {
       speed: move,
       velocityX: 0,
       velocityZ: move,
+      combat: this.motion === 'sprint' || !!this.attack,
       allowSpeedRun: this.motion === 'sprint',
     });
-    window.HobunjiOmgurkuSpecies?.setPreviewMotion(a.handRigAvatarRoot, move);
-    c.previewLean = Number(a.legs?.getRunLean?.()) || 0;
-    if (c.previewLeanRoot) {
-      c.previewLeanHeading =
-        Math.PI / 2 -
-        (c.facing || 0) -
-        (c.def.aimAngleOffset || 0) -
-        (a.group.rotation.y || 0);
-      this.data.forwardLeanQuaternion(
-        c.previewLeanRoot.quaternion,
-        c.previewLean,
-        c.previewLeanHeading,
-      );
-    }
+    window.HobunjiOmgurkuSpecies?.setPreviewMotion(
+      a.handRigAvatarRoot,
+      move,
+    );
+    window.HarlyaoLichCombat.updateLichHoverPresentation(c, dt);
     const base = c.halfHeight || 0.45;
-    a.group.position.y =
-      base + (hover ? 0.45 + Math.sin(this.clock * 2.2) * 0.025 : 0);
+    a.group.position.y = c.lichType
+      ? c.groundLift
+      : base + (hover ? 0.45 : 0);
     if (move) this.grid.position.z = (this.clock * move) % 0.5;
     if (this.attack) {
       const attack = this.attack;
       if (!attack.frozen) attack.elapsed += dt;
       if (c._banditAction) c._banditAction.t = attack.elapsed;
-      if (c._rangedAction) c._rangedAction.t = attack.elapsed;
+      if (c._rangedAction) {
+        const action = c._rangedAction;
+        action.t = attack.elapsed;
+        if (!action.fired && action.t >= action.releaseAtS) {
+          action.fired = true;
+          if (
+            window.RangedWeapons.config[c.def.rangedWeaponKey]
+              ?.rangedType !== 'thrown'
+          )
+            window.RangedWeapons.setLoaded(
+              c.def.rangedWeaponKey,
+              false,
+              c,
+            );
+        }
+      }
       this.onTimeline?.(
         Math.min(1, attack.elapsed / attack.duration),
         attack.elapsed < attack.windup
@@ -686,22 +863,30 @@ export class EnemyPreview {
       }
     }
     window.BanditCombat.updateToolMesh(c);
-    for (const pool of this.glowPools) {
-      pool.light.getWorldPosition(this.lightPoint);
-      pool.mesh.position.x = this.lightPoint.x;
-      pool.mesh.position.z = this.lightPoint.z;
-    }
-    if (a.neckJoint) {
-      const yaw = Math.sin(this.clock * 0.7) * 0.08;
-      if (a.neckJoint.front) a.neckJoint.front.rotation.y = yaw;
-      if (a.neckJoint.back) a.neckJoint.back.rotation.y = yaw;
-    }
+    window.BanditCombat.updateMovementHeadLook(c, dt, move > 0, c.facing);
+  }
+  discard(actor) {
+    // Gameplay caches these maps globally; the workshop owns per-roll textures.
+    const textures = new Set();
+    for (const holder of [
+      actor._banditToolHolder,
+      actor._banditRangedToolHolder,
+    ])
+      for (const child of holder?.children || []) {
+        if (child.userData.unloadedTexture)
+          textures.add(child.userData.unloadedTexture);
+        if (child.userData.loadedTexture)
+          textures.add(child.userData.loadedTexture);
+      }
+    window.BanditCombat.discardEntity(actor);
+    for (const texture of textures) texture.dispose();
   }
   dispose() {
     cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();
-    if (this.actor) window.BanditCombat.discardEntity(this.actor);
+    if (this.actor) this.discard(this.actor);
     this.controls.dispose();
+    this.shellMaterial.dispose();
     this.renderer.dispose();
   }
 }

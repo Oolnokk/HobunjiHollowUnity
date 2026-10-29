@@ -15,7 +15,7 @@ assert.match(occluderSource,
   /const LAYER = 4;/,
   'PNG avatars have a dedicated outline-occlusion layer');
 assert.match(occluderSource,
-  /function markPngPlane\(obj\)[\s\S]{0,760}child\.layers\.enable\(LAYER\);/,
+  /function markPngPlane\(obj\)[\s\S]*?child\.layers\.enable\(LAYER\);/,
   'all player and creature plane meshes join the occluder layer');
 assert.match(gameSource,
   /function _markPngPlane\(obj\) \{ window\.PngPlaneOutlineOccluder\.markPngPlane\(obj\); \}/,

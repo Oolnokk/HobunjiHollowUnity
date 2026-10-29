@@ -38,7 +38,7 @@ assert.equal(fineBodyWrap.palette?.layers?.trim, 'B');
 assert.match(gameSource, /randomSeed: `mine-ghoul:[^\n]*[\s\S]*?equippedCosmetics: \[\]/, 'Mine spawns really start without clothing and depend on this new outfitter');
 assert(dyeCatalog.includes('dye:CLOTH:pale_blue'), 'Pale Blue is an actual dye');
 assert(dyeCatalog.includes('dye:CLOTH:silver'), 'Silver is an actual dye');
-assert.match(banditSource, /if \(roster\?\.appearance\?\.speciesId === 'ghoul'\) styleGhoulRoster\(roster\)/,
+assert.match(banditSource, /if \(roster\?\.appearance\?\.speciesId === 'ghoul' && !opts\.preserveRoster\) styleGhoulRoster\(roster\)/,
   'Ghoul outfit transformation runs on the actual BanditCombat entity creation path');
 
 const styleStart = banditSource.indexOf('  const GHOUL_OVERWEAR_POOL ='); // First line of the pure production ghoul outfit transform.

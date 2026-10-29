@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261028a';
+import { EnemyPreview } from './preview.js?v=20261029enemyParity1';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -812,6 +812,7 @@ $('gridToggle').onchange = () => {
 };
 $('bonesToggle').onchange = () =>
   window.ProceduralLegAnimation?.setShowBones($('bonesToggle').checked);
+$('lighting').onchange = () => preview.setLighting($('lighting').value);
 $('motion').onchange = () => {
   preview.motion = $('motion').value;
 };
@@ -837,7 +838,7 @@ $('scrub').oninput = () => {
 };
 $('captureBtn').onclick = () => {
   if (preview.renderer)
-    preview.renderer.domElement.toBlob((blob) =>
+    preview.capture().toBlob((blob) =>
       download('enemy-preview.png', blob, 'image/png'),
     );
 };

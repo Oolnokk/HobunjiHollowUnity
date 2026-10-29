@@ -29,35 +29,24 @@
     const expression = new RegExp(
       'const ' + name + ' = (\\{[\\s\\S]*?\\n      \\});',
     ).exec(source)?.[1];
-    if (!expression) throw Error('Game catalog declaration missing: ' + name);
+    if (!expression)
+      throw Error('Game catalog declaration missing: ' + name);
     return Function('"use strict";return (' + expression + ');')();
   }
   async function load() {
-    const [
-      gang,
-      porakaneki,
-      omgurku,
-      game,
-      attackValues,
-      index,
-      npcDb,
-      compositionSource,
-    ] = await Promise.all([
-      read('config/bandits/bandit-gang-config.json'),
-      read('config/porakaneki-camp.json'),
-      read('config/omgurku-camp.json'),
-      fetch('game.js').then((r) => {
-        if (!r.ok) throw Error('Game source HTTP ' + r.status);
-        return r.text();
-      }),
-      read('config/combat/attack-values.json'),
-      read('config/species/index.json'),
-      read('config/npcs/hobunji-starter-npc-database.json'),
-      fetch('js/drunk-prone-composition-bridge.js').then((r) => {
-        if (!r.ok) throw Error('Movement composition source unavailable');
-        return r.text();
-      }),
-    ]);
+    const [gang, porakaneki, omgurku, game, attackValues, index, npcDb] =
+      await Promise.all([
+        read('config/bandits/bandit-gang-config.json'),
+        read('config/porakaneki-camp.json'),
+        read('config/omgurku-camp.json'),
+        fetch('game.js').then((r) => {
+          if (!r.ok) throw Error('Game source HTTP ' + r.status);
+          return r.text();
+        }),
+        read('config/combat/attack-values.json'),
+        read('config/species/index.json'),
+        read('config/npcs/hobunji-starter-npc-database.json'),
+      ]);
     const shapes = {
       ...declaration(game, 'TOOL_SHAPE_DEFS'),
       ...declaration(game, 'MELEE_WEAPON_SHAPE_DEFS'),
@@ -83,15 +72,78 @@
         )[0] +
         ');',
     )(metals);
-    const forwardLeanQuaternion = Function(
-      'return (' +
-        /function setForwardLeanQuaternion\(target, pitch, yaw\) \{[\s\S]*?\n  \}/.exec(
-          compositionSource,
-        )[0] +
+    // Evaluate the live game's shader and lighting setup, just as we read its
+    // immutable equipment tables. The workshop never maintains a shader copy.
+    const shellSource =
+      /const shellOutlineMat = (new THREE\.ShaderMaterial\([\s\S]*?\n      \}\));/.exec(
+        game,
+      )?.[1];
+    const lightingSource =
+      /const ambientLight = new THREE\.AmbientLight[\s\S]*?scene\.add\(hemiLight\);/.exec(
+        game,
+      )?.[0];
+    const lightingUpdate =
+      /ambientLight\.intensity = 0\.3[\s\S]*?scene\.fog\.color\.copy\(scene\.background\);/.exec(
+        game,
+      )?.[0];
+    if (!shellSource || !lightingSource || !lightingUpdate)
+      throw Error(
+        'Game rendering source unavailable; preview cannot claim rendering parity',
+      );
+    const makeShellMaterial = Function(
+      'THREE',
+      'return (' + shellSource + ');',
+    );
+    const makeLighting = Function(
+      'THREE',
+      'scene',
+      lightingSource + '\nreturn {ambientLight,sunLight,hemiLight};',
+    );
+    const applyLighting = Function(
+      'scene',
+      'ambientLight',
+      'sunLight',
+      'state',
+      'const {r,g,b,a}=state;const brightnessMul=1-a*0.7;\n' +
+        lightingUpdate,
+    );
+    const toolMeshSource =
+      /function makeToolPlaneMesh\(itemKey, opts = \{\}\) \{[\s\S]*?\n      \}/.exec(
+        game,
+      )?.[0];
+    if (!toolMeshSource)
+      throw Error('Game weapon mesh factory unavailable');
+    const weaponMeshFactory = Function(
+      'THREE',
+      'TOOL_ITEM_DEFS',
+      'ensureToolTexture',
+      'toolTextures',
+      'HELD_OBJECT_RENDER_ORDER',
+      '_markPngPlane',
+      'const TOOL_MODEL_WIDTH=0.5;const modularToolGeometries=new Map();return (' +
+        toolMeshSource +
         ');',
-    )();
+    );
+    const rangedItems = {};
+    for (const id of ['crossbow', 'scatterbow']) {
+      const literal = new RegExp(
+        '^        ' + id + ': +([\\s\\S]*?\\}),?$',
+        'm',
+      ).exec(game)?.[1];
+      if (!literal) throw Error('Game ranged catalog missing: ' + id);
+      rangedItems[id] = Function('return (' + literal + ');')();
+    }
     return {
-      forwardLeanQuaternion,
+      makeShellMaterial,
+      makeLighting,
+      applyLighting,
+      rangedItems,
+      weaponMeshFactory,
+      outline: await read('config/outline-rendering.json'),
+      heldObjectRenderOrder:
+        Number(
+          /const HELD_OBJECT_RENDER_ORDER = ([0-9.]+);/.exec(game)?.[1],
+        ) || 1.5,
       npcs: npcDb.npcs || npcDb,
       metalDamage,
       gang,
@@ -144,7 +196,8 @@
     if (bandit || tribe)
       for (const slot of data.gang.clothingPool.slots)
         clothing[slot] = {
-          chance: data.gang.clothingPool.fillProbabilityByRank[rank] ?? 0.5,
+          chance:
+            data.gang.clothingPool.fillProbabilityByRank[rank] ?? 0.5,
           items: Object.fromEntries(
             data.gang.clothingPool.itemsBySlot[slot].map((id) => [id, 1]),
           ),
@@ -176,7 +229,10 @@
           },
         },
         hood: { chance: 0.4, items: { facewrap: 1, fine_hood: 1 } },
-        hat: { chance: 0.6, items: { 'appearance::hat::basic_headband': 1 } },
+        hat: {
+          chance: 0.6,
+          items: { 'appearance::hat::basic_headband': 1 },
+        },
       });
     if (!tribe)
       clothing.pants = {
@@ -211,10 +267,9 @@
     return {
       species,
       genders: Object.fromEntries(
-        (data.species[fixed]?.genders || ['male', 'female']).map((gender) => [
-          gender,
-          1,
-        ]),
+        (data.species[fixed]?.genders || ['male', 'female']).map(
+          (gender) => [gender, 1],
+        ),
       ),
       weapons: pool,
       clothing,
@@ -259,7 +314,11 @@
         ...shared,
         type: kind.split(':')[1],
       });
-    if (['mao-ao-skeleton', 'harlyao-skeleton', 'ghost-marcher'].includes(kind))
+    if (
+      ['mao-ao-skeleton', 'harlyao-skeleton', 'ghost-marcher'].includes(
+        kind,
+      )
+    )
       return window.MinionCombat.makeEntity({
         ...shared,
         speciesId: kind,
@@ -268,7 +327,8 @@
       });
     const rank = kind.startsWith('bandit:') ? kind.split(':')[1] : 'grunt';
     let config = data.gang;
-    if (kind === 'ghoul') config = { ...config, speciesWeights: { ghoul: 1 } };
+    if (kind === 'ghoul')
+      config = { ...config, speciesWeights: { ghoul: 1 } };
     const tribe = kind.split(':')[0];
     if (data.tribes[tribe]) {
       const source = data.tribes[tribe];
@@ -293,26 +353,48 @@
           : null,
         nameOverride: types.find((t) => t.id === kind).label,
         bodyColorsOverride:
-          tribe === 'porakaneki'
+          options.roster?.appearance?.bodyColors ||
+          (tribe === 'porakaneki'
             ? window.HobunjiPorakanekiSpecies?.bodyColorsForSeed?.(
                 'loadout-editor-' + options.seed,
                 'male',
               )
-            : null,
+            : null),
         defOverride: {
           weaponKey: shape + '_' + metal,
+          weaponShapeKey: shape,
+          weaponMetalKey: metal,
           attackTag: data.shapes[shape]?.dmgType || 'sharp',
           rangedWeaponKey: shape === 'dagger' ? shape + '_' + metal : null,
+          ...(options.defOverride || {}),
         },
         extra: {
           ...shared.extra,
+          isPorakanekiHunter: tribe === 'porakaneki',
+          porakanekiWeaponShape: shape,
           isTribeHunter: true,
           tribeId: tribe,
           isTribeAvenger: kind.endsWith('avenger'),
         },
       });
     }
-    return window.BanditCombat.makeEntity(config, rank, tier, 0, 0, shared);
+    const entity = await window.BanditCombat.makeEntity(
+      config,
+      rank,
+      tier,
+      0,
+      0,
+      shared,
+    );
+    if (entity && kind.endsWith('avenger')) {
+      const multiplier = Math.max(
+        1,
+        Number(data.tribes[tribe].avengers.combatSpeedMultiplier) || 1.4,
+      );
+      entity.def.moveSpeed *= multiplier;
+      entity.def.chaseSpeed *= multiplier;
+    }
+    return entity;
   }
   window.EnemyLoadoutSourceData = Object.freeze({
     types,

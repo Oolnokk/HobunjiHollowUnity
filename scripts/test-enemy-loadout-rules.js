@@ -188,7 +188,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   context.window.BanditCombat = {
     makeEntity: (...args) => {
       calls.push(['bandit', ...args]);
-      return args;
+      return {def:{moveSpeed:100,chaseSpeed:150}};
     },
   };
   for (const key of [
@@ -226,7 +226,9 @@ const read = (p) => fs.readFileSync(p, 'utf8');
   assert.equal(calls.at(-1)[1].type, 'tothal');
   await source.spawn('harlyao-skeleton', 1, data);
   assert.equal(calls.at(-1)[0], 'MinionCombat');
-  await source.spawn('porakaneki:avenger', 1, data);
+  const avenger = await source.spawn('porakaneki:avenger', 1, data);
+  assert.equal(avenger.def.moveSpeed,140);
+  assert.equal(avenger.def.chaseSpeed,210);
   assert.equal(calls.at(-1)[6].mountSpecies, 'nazgraku');
   assert.equal(calls.at(-1)[6].defOverride.weaponKey, 'hatchet_tinBronze');
   const banditWindow = {

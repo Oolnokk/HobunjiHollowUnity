@@ -190,6 +190,7 @@ a {
   margin-top: 6px;
 }
 .main-panel {
+  min-width: 0;
   padding: 25px 24px;
 }
 .title-row {
@@ -451,6 +452,7 @@ h2 {
   border-color: var(--accent);
 }
 .inspector {
+  min-width: 0;
   padding: 26px 19px;
   background: #17201b;
   border-left: 1px solid var(--line);
@@ -676,6 +678,12 @@ code {
   .workspace {
     grid-template-columns: 175px minmax(350px, 1fr);
   }
+  .library {
+    /* Both columns share a row above the inspector. Sticky positioning here
+       escapes that row and covers the inspector when the page scrolls. */
+    position: static;
+    align-self: start;
+  }
   .inspector {
     grid-column: 1/-1;
     max-height: none;
@@ -724,6 +732,9 @@ code {
     flex-direction: column;
   }
   .library {
+    align-self: stretch;
+    min-width: 0;
+    width: 100%;
     padding: 12px;
     border-right: none;
     border-bottom: 1px solid var(--line);
@@ -844,4 +855,10 @@ code {
   border-radius: 50%;
   margin-right: 7px;
   vertical-align: -2px;
+}
+
+#stage canvas.lighting-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
