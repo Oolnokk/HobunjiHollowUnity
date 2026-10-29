@@ -1875,6 +1875,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       count: Math.floor(finite('count', 12, 1, 80)), strandLimit: Math.floor(finite('strandLimit', 80, 1, 80)),
       perSurface: value.perSurface === true, // Legacy Natural stays on original meshes unless explicitly opted into region-aware budgets.
       tunnelAsOpening: value.tunnelAsOpening === true, shrinkwrapFinal: value.shrinkwrapFinal === true,
+      shrinkwrapHidden: value.shrinkwrapHidden === true, // Only purpose-built invisible geometry opts into final-surface ray targets.
+      shrinkwrapInside: value.shrinkwrapInside === true, // Move tube centerlines INTO the source volume, never outward from its skin.
       inset: finite('inset',0,-.5,.5), // Signed placement relative to the simplified surface, independent of positive clearance.
       length: finite('length', 3, .05, 30),
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
@@ -2580,7 +2582,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     parent.updateWorldMatrix(true,true);
     const visible=[],wallCladding=[];
     parent.traverse(mesh=>{
-      if(!mesh.isMesh||!mesh.visible||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage) return;
+      if(!mesh.isMesh||(!mesh.visible&&!settings.shrinkwrapHidden)||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage) return;
       let node=mesh,role='',clad=false,excluded=false;
       while(node){
         if(node.userData?.surfaceFoliage || node.userData?.surfaceFoliageExclude)excluded=true;
@@ -2597,6 +2599,12 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if(!physical.length)return {rays:0,hits:0};
     const toWorld=parent.matrixWorld,toLocal=parent.matrixWorld.clone().invert(),normalMat=new T.Matrix3().getNormalMatrix(toWorld);
     const raycaster=new T.Raycaster(), scratch=new T.Vector3(),candidate=new T.Vector3(),origin=new T.Vector3(),direction=new T.Vector3();
+    // The outside normal hits the true guide skin first. Inside mode also needs
+    // the reverse-facing exit of a closed part to cap how deeply roots can enter.
+    // Raycast against temporary double-sided materials on this private query only.
+    const originalMaterials=new Map();
+    const rayMaterial=settings.shrinkwrapInside?new T.MeshBasicMaterial({side:T.DoubleSide}):null;
+    if(rayMaterial) for(const mesh of physical){originalMaterials.set(mesh,mesh.material);mesh.material=rayMaterial;}
     const budget=1200, totalRings=geometries.reduce((n,g)=>n+Math.floor(g.getAttribute('position').count/6),0);
     const stride=Math.max(1,Math.ceil(totalRings/budget));let rays=0,hits=0;
     for(const geometry of geometries){
@@ -2627,12 +2635,28 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         origin.copy(center).applyMatrix4(toWorld).addScaledVector(direction,.8);
         raycaster.set(origin,direction.clone().negate());
         raycaster.far=1.7;rays++;
-        const hit=raycaster.intersectObjects(physical,false)[0];
+        const intersections=raycaster.intersectObjects(physical,false);
+        const hit=intersections[0];
         if(!hit){movements[i]=new T.Vector3();continue;}
         hits++;
-        // Follow the actual visible surface, retaining tube radius and the
-        // signed user inset. The original guide's renderLift is superseded.
-        const physicalPoint=hit.point.clone().addScaledVector(direction,settings.radius+settings.offset+settings.inset);
+        // For inward shrinkwrap, the first face is the guide's real exterior
+        // and the next opposite-facing face on the same mesh is the interior
+        // thickness limit. Keep the entire strand inside even on thin parts.
+        let depth=settings.radius+settings.offset+settings.inset;
+        if(settings.shrinkwrapInside){
+          const exit=intersections.find(next=>next.distance>hit.distance+0.0001 &&
+            next.object===hit.object &&
+            next.face?.normal && hit.face?.normal &&
+            next.face.normal.dot(hit.face.normal)<-0.25);
+          if(exit){
+            const thickness=exit.distance-hit.distance;
+            // At narrow sections, the tube itself may be wider than the part.
+            // Center the strand within that thickness instead of crossing the far side.
+            depth=Math.min(Math.max(settings.radius,depth),thickness*.5);
+          } else depth=Math.max(settings.radius,depth);
+        }
+        const physicalPoint=hit.point.clone().addScaledVector(direction,
+          settings.shrinkwrapInside?-depth:depth);
         movements[i]=physicalPoint.applyMatrix4(toLocal).sub(center);
       }
       for(let stop=1;stop<stops.length;stop++){
@@ -2643,6 +2667,10 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
       }
       pos.needsUpdate=true;geometry.computeBoundingSphere();
+    }
+    if(rayMaterial){
+      for(const [mesh,material] of originalMaterials) mesh.material=material;
+      rayMaterial.dispose();
     }
     return {rays,hits};
   }
