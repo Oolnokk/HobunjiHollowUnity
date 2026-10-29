@@ -18,7 +18,7 @@ class Vector3 {
   fromBufferAttribute(attr,i){this.x=attr.getX(i);this.y=attr.getY(i);this.z=attr.getZ(i);return this;}
 }
 class Group {
-  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.rotation={x:0,y:0,z:0};this.visible=true;this.layers={mask:1,enable(n){this.mask|=(1<<n);},disable(n){this.mask&=~(1<<n);}};}
+  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.scale=new Vector3(1,1,1);this.quaternion={copy() {return this;}};this.rotation={x:0,y:0,z:0};this.visible=true;this.layers={mask:1,enable(n){this.mask|=(1<<n);},disable(n){this.mask&=~(1<<n);}};}
   add(...children){children.forEach(child=>{child.parent=this;this.children.push(child);});}
   remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
   traverse(fn){fn(this);this.children.forEach(child=>child.traverse(fn));}
@@ -27,7 +27,7 @@ class Group {
   worldToLocal(v){let node=this;while(node){v.sub(node.position);node=node.parent;}return v;}
   clone(recursive){
     const result=new this.constructor();
-    result.position.copy(this.position);result.rotation={...this.rotation};result.visible=this.visible;
+    result.position.copy(this.position);result.scale.copy(this.scale);result.rotation={...this.rotation};result.visible=this.visible;
     result.userData={...this.userData};
     if(recursive)this.children.forEach(child=>result.add(child.clone(true)));
     return result;
@@ -65,7 +65,7 @@ class Mesh extends Group {
   constructor(geometry=new Geometry(),material=new Material()){
     super();this.isMesh=true;this.geometry=geometry;this.material=material;
   }
-  clone(){const c=new Mesh(this.geometry,this.material);c.name=this.name;c.position.copy(this.position);c.visible=this.visible;c.userData={...this.userData};return c;}
+  clone(recursive){const c=new Mesh(this.geometry,this.material);c.name=this.name;c.position.copy(this.position);c.scale.copy(this.scale);c.visible=this.visible;c.userData={...this.userData};if(recursive)this.children.forEach(child=>c.add(child.clone(true)));return c;}
 }
 class Curve {
   constructor(points){this.points=points;}
@@ -109,6 +109,19 @@ assert.equal(first.target.children[0].visible,false,'the imported furniture must
 assert.equal(first.getProgress(),0);
 assert.equal(first.getDiagnostics().floorNodesFromWrap,true);
 assert.equal(first.getDiagnostics().shapeWrapEndpointPairs,1);
+const glbInput=new Group(), glbDriver=new Mesh(new Geometry(),new Material()); // Async GLB owner keeps a non-renderable placeholder geometry.
+glbDriver.userData.furnitureGlbPart=true;glbDriver.userData.glbReady=true;
+glbDriver.position=new Vector3(0,1,0);glbDriver.add(new Mesh(new Geometry(),new Material()));
+glbInput.add(glbDriver);
+const glbCase=feature.create({...options,target:glbInput});
+assert.equal(glbInput.children[0].isMesh,true,'the caller retains its original GLB driver');
+assert.equal(glbCase.target.children[0].isMesh,undefined,'the growth clone replaces the placeholder with a group');
+assert.equal(glbCase.target.children[0].children[0].isMesh,true,'real GLB child geometry is retained');
+assert.equal(glbCase.target.children[0].position.y,1,'the wrapper retains original furniture transforms');
+glbCase.dispose();
+const glbPending=new Group(),notLoaded=new Mesh(new Geometry(),new Material());
+notLoaded.userData.furnitureGlbPart=true;glbPending.add(notLoaded);
+assert.throws(()=>feature.create({...options,target:glbPending}),/not finished loading/);
 const temple=JSON.parse(fs.readFileSync('docs/config/pieces/temple.json','utf8'));
 assert(temple.surfaceGrowth.filter(layer=>layer.kind==='roots').every(layer=>layer.color===feature.TEMPLE_ROOT_FINISH.color && layer.texture===feature.TEMPLE_ROOT_FINISH.texture));
 assert.deepEqual(first.rootFinish,feature.TEMPLE_ROOT_FINISH);
