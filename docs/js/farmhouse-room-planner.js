@@ -35,7 +35,7 @@
         const start = Math.max(a.col, b.col) * 2, end = Math.min(a.col + a.w, b.col + b.w) * 2;
         for (let c = start; c < end; c++) strip.push(cell(c, bottom.row * 2));
       }
-      if (strip.length < 3) continue;
+      if (strip.length < 2) continue; // A one-exterior-tile wing still has two interior cells: one wall cell and one doorway.
       const id = 'join:' + [a.id, b.id].sort().join(':');
       result.push({ id, strip, builtIn: true });
     }
@@ -51,7 +51,7 @@
     const resolved = [];
     for (const segment of segments) {
       const allowed = segment.strip.filter(p => floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
-      if (allowed.length < 3 || allowed.length !== segment.strip.length) continue;
+      if (allowed.length < (segment.builtIn ? 2 : 3) || allowed.length !== segment.strip.length) continue;
       const savedDoor = segment.builtIn ? joinDoors[segment.id] : segment.door;
       const savedSlot = Number.isInteger(savedDoor?.slot) ? savedDoor.slot : -1; // Section doors retain their offset when either entire room moves.
       const door = (savedSlot >= 0 && savedSlot < allowed.length ? allowed[savedSlot] : null)
