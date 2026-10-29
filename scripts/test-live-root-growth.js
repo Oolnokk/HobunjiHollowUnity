@@ -220,7 +220,7 @@ assert.equal(emitted.length,before+1,'completed emitters must continue updating 
 assert.equal(emitted.at(-1).active,true);
 emission.retract();emission.update(.1);
 assert.equal(emitted.at(-1).active,false,'retracting immediately disables new emission');
-emission.setProgress(1);emission.update(.1);
+emission.pause();emission.setProgress(1);emission.update(.1); // Matches the editor scrub behavior: pause animation before seeking.
 assert.equal(emitted.at(-1).active,true,'scrubbing to completion also starts effects');
 emission.setProgress(0);emission.update(.1);
 assert.equal(emitted.at(-1).active,false,'scrubbing below completion stops effects');
