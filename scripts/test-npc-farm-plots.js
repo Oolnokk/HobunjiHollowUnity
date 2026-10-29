@@ -171,12 +171,12 @@ const farmApi = {
     const t = farmTile(c, r);
     return { tilled: t.type === 'tilled', crop: t.crop, ready: false, dug: t.type === 'trench' && t.depth >= 0.6, canTill: ['grass', 'trench'].includes(t.type) && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
   },
-  seedAvailable: crop => crop === 'needlegrain' && farm.storage.needlegrainSeed > 0,
+  seedAvailable: crop => (farm.storage[crop + 'Seed'] || 0) > 0,
   applyFarmJob: (job, c, r, crop, plotId) => {
     const t = farmTile(c, r);
     if (job === 'till') { t.type = 'tilled'; t.depth = 0; t.water = 0; }
     else if (job === 'dig') { t.type = 'trench'; t.depth = 1; }
-    else if (job === 'seed') { if (!(farm.storage.needlegrainSeed > 0) || t.type !== 'tilled') return false; farm.storage.needlegrainSeed -= 1; t.crop = crop; }
+    else if (job === 'seed') { if (!(farm.storage[crop + 'Seed'] > 0) || t.type !== 'tilled') return false; farm.storage[crop + 'Seed'] -= 1; t.crop = crop; }
     farm.calls.push({ job, c, r, plotId }); // Assert actions stay on their owned alternating rows.
     farm.jobs.push(job);
     return true;
@@ -251,6 +251,36 @@ assert.equal(farmTile(30, 31).type, 'tilled');
 assert.equal(farmTile(30, 31).depth, 0);
 assert.equal(farmTile(30, 31).water, 0);
 console.log('ok - intermeshed family trench and planting rows');
+
+// Seed priorities are evaluated for each block independently, using shared storage at action time.
+api.registerFarmPlots([
+  { id: 'priority_field', kind: 'till', crop: 'needlegrain', tiles: [[40, 40], [40, 41], [41, 40], [41, 41]], workers: ['spouse1'],
+    seedBlocks: [
+      { id: 'north_block', tiles: [[40, 40], [40, 41]], seeds: ['needlegrain', 'heftroot', 'ongyums'] },
+      { id: 'empty_block', tiles: [[41, 40]], seeds: [] },
+    ] },
+]);
+const priorityField = api.plots().find(p => p.id === 'priority_field');
+for (const [c, r] of [[40, 40], [40, 41], [41, 40], [41, 41]]) farmTile(c, r).type = 'tilled';
+farm.storage.heftrootSeed = 2;
+farm.storage.ongyumsSeed = 2;
+assert.equal(api._test.seedForTile(priorityField, 40, 40), 'heftroot', 'empty first priority falls back to the second stored seed');
+assert.equal(api._test.seedForTile(priorityField, 41, 40), null, 'an empty block never falls back to the whole-field crop');
+assert.equal(api._test.seedForTile(priorityField, 41, 41), null, 'unblocked tiles use the original whole-field crop, but wait if none is stocked');
+const blockJobs = api._test.jobsFor(priorityField, 'spouse1');
+assert.deepEqual(Array.from(blockJobs, j => [j.c, j.r, j.crop]), [[40, 40, 'heftroot'], [40, 41, 'heftroot']]);
+api._test.applyJob(priorityField, blockJobs[0]);
+assert.equal(farmTile(40, 40).crop, 'heftroot');
+assert.equal(farm.storage.heftrootSeed, 1, 'family seeder consumes exactly one chosen seed from storage');
+farm.storage.heftrootSeed = 0;
+assert.equal(api._test.seedForTile(priorityField, 40, 41), 'ongyums', 'seed priorities advance when higher-preference stock runs out');
+api._test.applyJob(priorityField, { c: 40, r: 41, job: 'seed', crop: 'heftroot' }); // Simulates a job claimed before stock changed.
+assert.equal(farmTile(40, 41).crop, 'ongyums', 'stale seed jobs choose currently available stock at execution');
+farm.storage.needlegrainSeed = 1;
+assert.equal(api._test.seedForTile(priorityField, 41, 41), 'needlegrain', 'the original field crop remains the unblocked fallback');
+assert.equal(api._test.seedForTile(priorityField, 40, 40), 'needlegrain', 'restocked primary outranks a still-available lower preference');
+assert.equal(api._test.jobsFor(priorityField, 'spouse1').some(j => j.c === 41 && j.r === 40 && j.job === 'seed'), false, 'an intentionally empty seed block stays unseeded');
+console.log('ok - ordered seed blocks consume farm storage with priority fallback');
 
 // The player's farm editor must release assignments immediately when painting over a group.
 context.document = { getElementById: () => null };
