@@ -58,14 +58,15 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <label>Wrap limit <input id="strandLimit" type="number" min="1" max="80" value="80"></label>
 <label>Root radius <input id="radius" type="number" min=".005" max=".3" step=".005" value=".045"></label>
 <label>Branch radius <input id="branchRadius" type="number" min=".008" max=".3" step=".005" value=".065"></label>
-<label>Floor density <input id="floorDensity" type="number" min=".05" max="1" step=".05" value="1"></label>
-<label>Shape density <input id="targetDensity" type="number" min=".05" max="1" step=".05" value="1"></label>
+<label>Floor density <input id="floorDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
+<label>Shape density <input id="targetDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
 <label>Floor path length <input id="floorLength" type="number" min=".5" max="30" step=".5" value="12"></label>
 <label>Shape path length <input id="targetLength" type="number" min=".5" max="30" step=".5" value="12"></label>
 <label>Bend <input id="bend" type="number" min="0" max="3" step=".1" value=".42"></label>
 <label>Arc concavity <input id="arcConcavity" type="number" min="0" max="1" step=".05" value=".72"></label>
-<label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".25" value="3.5"></label>
+<label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".05" value=".5"></label>
 </div><p>Arc concavity: 0 = straight vertical rise; 1 = branches hug the root-covered floor longer before sweeping upward toward the furniture. Seeded variation keeps the curves organic.</p>
+<p>Density 6 layers six separately seeded Wrap passes on the floor and furniture (rather than capping at density 1). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
 <div class="controls" style="margin-top:10px"><button id="rebuild">Rebuild</button><button id="randomSeed">New seed</button></div>
 </section>
 <section><h2>3 · Animate</h2>
