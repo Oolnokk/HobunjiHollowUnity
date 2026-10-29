@@ -100,6 +100,10 @@ const normalized=feature.normalizeRecipe({branchCount:Infinity,floorWidth:-2,tar
 assert.equal(normalized.branchCount,9);assert.equal(normalized.floorWidth,1);
 assert.equal(normalized.targetDensity,5);assert.equal(normalized.duration,0.5);
 assert.equal(feature.DEFAULTS.floorDensity,6);
+assert.equal(feature.DEFAULTS.shapeInset,.035);
+assert.equal(feature.DEFAULTS.volumeFillDepth,.24);
+assert.equal(feature.normalizeRecipe({shapeInset:50,volumeFillDepth:50}).shapeInset,.5);
+assert.equal(feature.normalizeRecipe({shapeInset:-3,volumeFillDepth:-4}).volumeFillDepth,0);
 assert.equal(feature.DEFAULTS.targetDensity,6);
 assert.equal(feature.normalizeRecipe({targetDensity:100,floorDensity:100}).targetDensity,6);
 assert.equal(feature.normalizeRecipe({targetDensity:100,floorDensity:100}).floorDensity,6);
@@ -122,6 +126,16 @@ assert.equal(first.getDiagnostics().shapeDensityPasses,6);
 assert.equal(first.getDiagnostics().floorStrands,78);
 assert.equal(first.getDiagnostics().shapeStrands,78);
 assert.equal(calls.length,12,'six seeded floor Wraps and six seeded furniture Wraps must actually be generated');
+const shapeRecipes=calls.slice(6,12).map(call=>call.recipe);
+assert(shapeRecipes.every(recipe=>recipe.shrinkwrapFinal && recipe.shrinkwrapHidden && recipe.shrinkwrapInside),
+  'every shape Wrap must shrinkwrap inward against actual invisible furniture');
+assert.equal(shapeRecipes[0].inset,.035);
+assert(Math.abs(shapeRecipes[5].inset-.275)<1e-10);
+assert(shapeRecipes.every((recipe,i)=>i===0 || recipe.inset>shapeRecipes[i-1].inset),
+  'volume-filling layers must move progressively deeper inside the target');
+assert(calls.slice(0,6).every(call=>!call.recipe.shrinkwrapInside),
+  'floor roots must remain ordinary exterior floor-wraps');
+assert.equal(first.getDiagnostics().insideShrinkwrap,true);
 assert(calls.every(call=>call.recipe.density===1),'each Wrap pass respects the shared generator density cap');
 assert.equal(first.targetGrowth.children.length,6,'all furniture density layers must be retained');
 const glbInput=new Group(), glbDriver=new Mesh(new Geometry(),new Material()); // Async GLB owner keeps a non-renderable placeholder geometry.
@@ -170,6 +184,9 @@ for (const branch of first.branches) {
     'concave path must rise monotonically and not plunge through the floor');
 }
 assert(checkedRising>0, 'the fixture must exercise branches rising toward furniture');
+const finalTargets=first.branches.map(branch=>spine(branch).at(-1).toArray());
+assert(finalTargets.some(pt=>pt[1]!==.5&&pt[1]!==.8),
+  'new branches should aim at the inward-wrapped root centerlines, not exterior guide endpoints');
 const straight = feature.create({...options,recipe:{...options.recipe,arcConcavity:0}}); // Zero concavity is the original chord-height control.
 for (const branch of straight.branches) {
   const [start,p1,p2,end] = spine(branch),rise=end.y-start.y;
@@ -238,10 +255,18 @@ assert.match(fs.readFileSync('docs/tools/index.html','utf8'),/live-root-growth\/
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/js\/live-root-growth\.js\?v=[A-Za-z0-9_-]+/);
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/id="arcConcavity"/);
 assert(fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8').includes("'arcConcavity'"), 'the UI must save and restore arc concavity');
+assert(fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8').includes("'shapeInset'"), 'the editor must preserve inset in exported recipes');
+assert(fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8').includes("'volumeFillDepth'"), 'the editor must preserve volumetric fill depth');
 const authorHtml=fs.readFileSync('docs/tools/live-root-growth/index.html','utf8');
 assert.match(authorHtml,/id="floorDensity"[^>]*value="6"/);
 assert.match(authorHtml,/id="targetDensity"[^>]*value="6"/);
 assert.match(authorHtml,/id="duration"[^>]*value="\.5"/);
+assert.match(authorHtml,/id="shapeInset"[^>]*value="\.035"/);
+assert.match(authorHtml,/id="volumeFillDepth"[^>]*value="\.24"/);
+const foliageSource=fs.readFileSync('docs/js/foliage-generator.js','utf8');
+assert(foliageSource.includes('shrinkwrapHidden: value.shrinkwrapHidden === true'));
+assert(foliageSource.includes('shrinkwrapInside: value.shrinkwrapInside === true'));
+assert(foliageSource.includes('settings.shrinkwrapInside?-depth:depth'));
 const authoredIndex=JSON.parse(fs.readFileSync('docs/config/furniture-authored/index.json','utf8'));
 assert(authoredIndex.furniture.some(entry=>entry.key==='woodenDoor'));
 const editor=fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8');
