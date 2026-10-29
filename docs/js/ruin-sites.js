@@ -273,11 +273,6 @@
         if (saved.spent) return [{ icon:'🪨', label:'Collapsed — the passage is choked with rubble', action:'obj_ruin_site_door', style:'secondary', allowed:false }];
         if (!window.DelversGuild?.hasStone?.()) return [{ icon:'🔒', label:"A licensed Delver's Stone is required", action:'obj_ruin_site_door', style:'secondary', allowed:false }];
         if (!saved.open) return [{ icon:'🔴', label:"Unlock with Delver's Stone", action:'obj_ruin_site_door', style:'primary', allowed:true }];
-        if (!saved.open) {
-          const total = record.pillars.length;
-          const struck = record.pillars.filter(pillar => pillar.struck).length;
-          return [{ icon:'🔴', label:`Sealed — strike every glyph pillar (${struck}/${total})`, action:'obj_ruin_site_door', style:'secondary', allowed:false }];
-        }
         return [{ icon:'🚪', label:'Enter the ruin', action:'obj_ruin_site_door', style:'primary', allowed:true }];
       },
       onAction(action) {
