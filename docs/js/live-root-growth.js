@@ -269,8 +269,14 @@
     target.updateWorldMatrix(true, true);
     parent.updateWorldMatrix(true, true);
     const toParent = world => parent.worldToLocal(world);
-    if (interior) for (const mesh of (selectedGrowths ?
-      selectedGrowths.flatMap(group=>growthMeshes(group)) : growthMeshes(growth))) {
+    const interiorMeshes=selectedGrowths ?
+      selectedGrowths.flatMap((partGroup,i)=>growthMeshes(partGroup).map(mesh=>({
+        mesh,source:selectedSourceMeshes?.[i]||null
+      }))) : growthMeshes(growth).map(mesh=>({mesh,source:null}));
+    if (interior) for (const {mesh,source} of interiorMeshes) {
+      const bounds=source?new THREE.Box3().setFromObject(source):null;
+      const entryCeiling=bounds ? bounds.min.y+
+        Math.max(.12,(bounds.max.y-bounds.min.y)*.25) : Infinity;
       const pos=mesh.geometry.getAttribute('position');
       const ringCount=Math.floor(pos.count/6);
       if(!ringCount) continue;
@@ -279,7 +285,9 @@
         const center=new THREE.Vector3();
         for(let j=0;j<5;j++)center.add(new THREE.Vector3().fromBufferAttribute(pos,ring*6+j));
         center.multiplyScalar(.2); // Tube centerline, not an outermost skin vertex.
-        points.push(toParent(mesh.localToWorld(center)));
+        const world=mesh.localToWorld(center);
+        if(world.y>entryCeiling)continue; // Floor shoots attach near the FEET, not near the top of a leg.
+        points.push(toParent(world));
       }
     }
     if (!points.length && !selectedGrowths) for (const entry of endpoints) for (const key of ['start', 'end']) {
@@ -299,8 +307,19 @@
           if (Number.isFinite(v.x + v.y + v.z)) candidates.push(toParent(mesh.localToWorld(v)));
         }
       };
-      if (selectedSourceMeshes) selectedSourceMeshes.forEach(appendCandidates);
-      else target.traverse(appendCandidates);
+      if (selectedSourceMeshes) for(const mesh of selectedSourceMeshes){
+        // Even if the Wrap generator made no near-floor strands, use the
+        // ground source mesh's LOWEST vertices, never an upper leg tip.
+        const bounds=new THREE.Box3().setFromObject(mesh);
+        const ceiling=bounds.min.y+Math.max(.12,(bounds.max.y-bounds.min.y)*.25);
+        const attr=mesh.geometry?.getAttribute?.('position');
+        if(!attr)continue;
+        for(let i=0;i<attr.count;i++){
+          const world=mesh.localToWorld(new THREE.Vector3().fromBufferAttribute(attr,i));
+          if(world.y<=ceiling&&Number.isFinite(world.x+world.y+world.z))
+            candidates.push(toParent(world));
+        }
+      }else target.traverse(appendCandidates);
     } // Never fall back to a floating tabletop just because grounded wraps produced no strands.
     const source = points.length ? points : candidates;
     if (!source.length) throw new Error('Imported furniture has no usable triangles or surface endpoints.');
@@ -474,6 +493,7 @@
       const targetCenter=part.bounds.getCenter(new THREE.Vector3());
       const from=nearestStrandPoint(THREE,partGrowths[parentPart.index],targetCenter,group);
       const end=nearestStrandPoint(THREE,partGrowths[part.index],from,group);
+      if(from.distanceTo(end)<.03)from.y-=Math.max(.04,recipe.branchRadius); // Avoid zero-length tubes at adjoining pieces.
       const connector=makeBranch(THREE,from,end,branches.length+connectors.length,
         recipe,random,branchMaterial);
       connector.name='Root transfer: '+parentPart.label+' → '+part.label;
