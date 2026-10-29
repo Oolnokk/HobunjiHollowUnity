@@ -7,43 +7,42 @@
   const THREE = global.THREE;
 
 
-  // Per-house finish: never mutate farm/town's shared shingle template material.
-  // One tinted material per original material, one cached PNG per asset path.
-  const _roofFinishTextures=new Map();
-  const _housePieceAssetRoot=typeof document!=='undefined'&&document.currentScript?.src
-    ?new URL('../',document.currentScript.src).href:'';
+  // Authored shingles use exactly the same unlit, body-sprite-tinted PNG
+  // rendering as surface-growth roots. GLB lit-material color multiplication
+  // would otherwise make equal colors appear to have different brightness.
   function applyAuthoredShingleFinish(THREE,roofLayer,finish){
     if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
-    const color=finish.color,texture=typeof finish.texture==='string'&&
-      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||/^https:\/\/[^\s]+$/i.test(finish.texture)||/^data:image\/png;base64,[a-z0-9+/=]+$/i.test(finish.texture))
+    const texture=typeof finish.texture==='string'&&
+      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||
+       /^https:\/\/[^\s]+$/i.test(finish.texture)||
+       /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(finish.texture))
       ?finish.texture:'';
-    const path=texture.startsWith('assets/')&&_housePieceAssetRoot?new URL(texture,_housePieceAssetRoot).href:texture;
-    let tex=_roofFinishTextures.get(path);
-    if(path&&!tex){
-      tex=new THREE.TextureLoader().load(path);
-      tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
-      if('colorSpace' in tex&&THREE.SRGBColorSpace)tex.colorSpace=THREE.SRGBColorSpace;
-      else if('encoding' in tex&&THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
-      _roofFinishTextures.set(path,tex);
+    const painter=global.NaturalSurfaceMaterials?.forThree?.(THREE)||
+      global.NaturalSurfaceMaterials; // Same material/texture cache as roots in this Three runtime.
+    if(!painter?.naturalizeMesh){
+      _shingleTextureLog('authored finish requires NaturalSurfaceMaterials; keeping original roof finish','warn');
+      return;
     }
-    const materialCache=new Map();
+    const materials=new Map(); // One unique material per original material on this house, not per shingle.
     roofLayer.traverse(mesh=>{
-      if(!mesh.isMesh)return;
-      const apply=old=>{
-        if(!old)return old;
-        if(!materialCache.has(old)){
-          const next=old.clone();
-          next.map=tex||null;
-          if(next.color)next.color.set(color);
-          next.vertexColors=false;
-          if('metalness' in next)next.metalness=0;
-          if('roughness' in next)next.roughness=1;
-          next.needsUpdate=true;
-          materialCache.set(old,next);
-        }
-        return materialCache.get(old);
+      if(!mesh.isMesh||/shinglebone/i.test(mesh.name||''))return;
+      const finishMaterial=original=>{
+        if(!original)return original;
+        if(materials.has(original))return materials.get(original);
+        const proxy=new THREE.Mesh(mesh.geometry,original); // Existing shingle UVs are retained.
+        painter.naturalizeMesh(proxy,'trunks','strand-stretch',{
+          texture,tint:finish.color,tintTreatment:'body-sprite-tint'
+        });
+        const painted=proxy.material.clone(); // Own the material, share the recolored PNG.
+        painted.vertexColors=false;
+        painted.userData=Object.assign({},painted.userData,{
+          authoredShingleSpriteTint:true,authoredShingleFinishColor:finish.color
+        });
+        materials.set(original,painted);
+        return painted;
       };
-      mesh.material=Array.isArray(mesh.material)?mesh.material.map(apply):apply(mesh.material);
+      mesh.material=Array.isArray(mesh.material)
+        ?mesh.material.map(finishMaterial):finishMaterial(mesh.material);
     });
   }
 
