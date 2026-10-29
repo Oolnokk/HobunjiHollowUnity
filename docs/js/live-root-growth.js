@@ -4,6 +4,10 @@
 (function (root) {
   'use strict';
 
+  const TEMPLE_ROOT_FINISH = Object.freeze({
+    color: '#0e0d06', texture: 'assets/textures/wibbly_surface.png'
+  }); // Fallback matches the Temple's authored roots in config/pieces/temple.json.
+
   const DEFAULTS = Object.freeze({
     seed: 'ruin-root-growth-1', floorWidth: 8, floorDepth: 8, floorY: 0,
     branchCount: 9, duration: 3.5, branchRadius: 0.065, bend: 0.42,
@@ -140,6 +144,8 @@
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'Growth branch ' + (index + 1);
     mesh.userData.rootGrowthBranch = true;
+    mesh.userData.noOutline = false; // Same outline eligibility as FoliageGenerator surface roots.
+    mesh.layers?.enable?.(1); // Runtime shell pass already selects layer 1; editor preview uses the same layer.
     mesh.userData.fullDrawCount = geometry.index ? geometry.index.count : position.count;
     mesh.geometry.setDrawRange(0, 0);
     return mesh;
@@ -151,6 +157,13 @@
     if (!THREE || !foliage?.buildSurfaceGrowth || !foliage?.normalizeSurfaceGrowth) throw new Error('LiveRootGrowth requires THREE and FoliageGenerator.');
     if (!options.target?.isObject3D) throw new TypeError('Pass a Three.js furniture group as options.target.');
     const recipe = normalizeRecipe(options.recipe), random = randomFromSeed(recipe.seed);
+    const proposedFinish = options.rootFinish || TEMPLE_ROOT_FINISH; // Editor may provide the current Temple configuration at build time.
+    const rootFinish = {
+      color: /^#[0-9a-f]{6}$/i.test(proposedFinish?.color || '') ? proposedFinish.color : TEMPLE_ROOT_FINISH.color,
+      texture: typeof proposedFinish?.texture === 'string' &&
+        /^(?:assets\/[^?#]*\.png(?:[?#].*)?|data:image\/png;base64,[a-z0-9+/=]+)$/i.test(proposedFinish.texture)
+        ? proposedFinish.texture : TEMPLE_ROOT_FINISH.texture
+    }; // Keep serialized material inputs safe for all callers.
     const group = new THREE.Group(); // Public scene-owned root, containing floor, hidden shape and generated foliage.
     group.name = 'Live root growth';
     const target = options.target.clone(true); // Imported furniture and its materials remain owned by the caller.
@@ -165,13 +178,14 @@
     group.add(floorHost, target);
     target.traverse(mesh => {
       if (!mesh.isMesh) return;
-      mesh.visible = recipe.showGuide && !mesh.userData?.surfaceFoliageGuide;
+      mesh.visible = recipe.showGuide &&
+        !mesh.userData?.surfaceFoliageGuide && !mesh.userData?.surfaceFoliage;
+      mesh.layers?.disable?.(1); // A visible debug furniture guide is never part of the root-only shell outline pass.
       if (mesh.userData?.surfaceFoliage || mesh.userData?.surfaceFoliageGuide) mesh.userData.surfaceFoliageExclude = true;
     }); // The furniture is never rendered in normal mode, but its triangles remain eligible for sampling.
-    const floorDefaults = foliage.surfaceGrowthDefaults?.('roots') || {};
     const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
-      offset:0.012, density:recipe.floorDensity, color:floorDefaults.color, texture:floorDefaults.texture};
+      offset:0.012, density:recipe.floorDensity, color:rootFinish.color, texture:rootFinish.texture};
     const floorGrowth = foliage.buildSurfaceGrowth(floorHost, {
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
     }); // Dense permanent cover uses precisely the temple Wrap solver.
@@ -211,7 +225,7 @@
       }
     };
     const api = {
-      group, target, floorGrowth, targetGrowth, branches, recipe,
+      group, target, floorGrowth, targetGrowth, branches, recipe, rootFinish,
       setProgress(value) { if (!disposed) { progress = number(value, progress, 0, 1); apply(); } return progress; },
       getProgress() { return progress; },
       extend() { if (!disposed) direction = 1; },
@@ -225,7 +239,7 @@
         apply(); return progress;
       },
       getDiagnostics() {
-        return {progress, direction, branchCount:branches.length,
+        return {progress, direction, branchCount:branches.length, rootFinish, outlinedBranches:branches.length,
           floorStrands:floorGrowth.userData?.generatedStrands || 0,
           shapeStrands:targetGrowth.userData?.generatedStrands || 0,
           floorNodesFromWrap:source.derivedFromWrap, sampledFloorNodes:source.candidateCount,
@@ -249,5 +263,5 @@
     return api;
   }
 
-  root.LiveRootGrowth = {version:1, DEFAULTS, normalizeRecipe, create};
+  root.LiveRootGrowth = {version:2, DEFAULTS, TEMPLE_ROOT_FINISH, normalizeRecipe, create};
 })(typeof window !== 'undefined' ? window : globalThis);
