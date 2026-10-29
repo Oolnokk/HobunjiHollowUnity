@@ -241,6 +241,26 @@
     return model;
   }
 
+  async function waitForFurnitureGlbs(model) {
+    const drivers = []; // Only GLB-backed furniture parts need asynchronous readiness checks.
+    model.traverse(node => { if (node.isMesh && node.userData?.furnitureGlbPart) drivers.push(node); });
+    if (!drivers.length) return;
+    const started = Date.now(); // Bounding waits avoid an infinite import spinner on mobile.
+    await new Promise((resolve,reject) => {
+      const check = () => {
+        const failed = drivers.find(node=>node.userData.glbError);
+        if (failed) { reject(new Error('Furniture model failed: ' + failed.userData.glbError)); return; }
+        if (drivers.every(node=>node.userData.glbReady)) { resolve(); return; }
+        if (Date.now() - started > 30000) {
+          reject(new Error('Furniture GLB did not finish loading within 30 seconds. Try importing it again.'));
+          return;
+        }
+        setTimeout(check, 80); // Import-only polling, never a per-frame scene walk.
+      };
+      check();
+    });
+  }
+
   async function importRepoFurniture() {
     const entry = repoCatalog.get($('repoFurnitureList').value);
     if (!entry) throw new Error('Choose a repository furniture piece.');
@@ -261,6 +281,7 @@
         json = await response.json();
         model = buildAuthoredFurniture(json);
       }
+      await waitForFurnitureGlbs(model); // Growth must use real imported geometry, never a 1-mm GLB placeholder.
       // Only swap the model after its actual geometry was successfully generated.
       source.kind = entry.kind === 'procedural' ? 'repo-procedural' : 'repo-authored';
       source.name = entry.name; source.data = json; source.file = entry.path || entry.key; source.model = model;
@@ -301,6 +322,7 @@
     } else if (ext === 'json') {
       const json = JSON.parse(await file.text());
       const model = buildAuthoredFurniture(json);
+      await waitForFurnitureGlbs(model);
       source.kind = 'authored-furniture'; source.name = file.name; source.data = json; source.file = file.name; source.model = model;
     } else throw new Error('Choose a GLB or Furniture + Avatar Author JSON.');
     $('targetY').value = source.kind === 'glb' ? '1.5' : '0.6';
@@ -340,6 +362,7 @@
     if (['authored-furniture','repo-authored','repo-procedural'].includes(json.target?.kind) &&
         Array.isArray(json.target.furniture?.parts)) {
       const model = buildAuthoredFurniture(json.target.furniture);
+      await waitForFurnitureGlbs(model);
       source.model=model;source.data=json.target.furniture;source.kind=json.target.kind;
       source.name=json.target.file ? humanizeKey(json.target.file.split('/').pop().replace(/\.json$/,'')) : 'Embedded furniture';
       source.file=json.target.file||null;
