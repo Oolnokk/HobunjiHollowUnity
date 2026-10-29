@@ -125,7 +125,7 @@ assert.equal(calls.length,12,'six seeded floor Wraps and six seeded furniture Wr
 assert(calls.every(call=>call.recipe.density===1),'each Wrap pass respects the shared generator density cap');
 assert.equal(first.targetGrowth.children.length,6,'all furniture density layers must be retained');
 const glbInput=new Group(), glbDriver=new Mesh(new Geometry(),new Material()); // Async GLB owner keeps a non-renderable placeholder geometry.
-glbDriver.userData.furnitureGlbPart=true;glbDriver.userData.glbReady=true;
+glbDriver.userData.furnitureGlbPart=true;glbDriver.userData.glbReady=true;glbDriver.userData.authoredPartId='glb-attachment';
 glbDriver.position=new Vector3(0,1,0);glbDriver.add(new Mesh(new Geometry(),new Material()));
 glbInput.add(glbDriver);
 const glbCase=feature.create({...options,target:glbInput});
@@ -133,6 +133,8 @@ assert.equal(glbInput.children[0].isMesh,true,'the caller retains its original G
 assert.equal(glbCase.target.children[0].isMesh,undefined,'the growth clone replaces the placeholder with a group');
 assert.equal(glbCase.target.children[0].children[0].isMesh,true,'real GLB child geometry is retained');
 assert.equal(glbCase.target.children[0].position.y,1,'the wrapper retains original furniture transforms');
+assert.equal(glbCase.target.children[0].userData.authoredPartId,'glb-attachment',
+  'GLB-backed furniture keeps its authored particle attachment ID after placeholder removal');
 glbCase.dispose();
 const glbPending=new Group(),notLoaded=new Mesh(new Geometry(),new Material());
 notLoaded.userData.furnitureGlbPart=true;glbPending.add(notLoaded);
