@@ -41,20 +41,49 @@
     }
     return result;
   }
+  function protectedInteriorCells(base) {
+    const entrances = new Set((base.doors || []).filter(door => isCell(door.enter))
+      .map(door => key(door.enter.c, door.enter.r))); // A cut-through wall must never strand the player at the farmhouse entrance.
+    const hearths = new Set(); // Existing two-by-one chimney hearth footprints stay usable at section corners.
+    for (const hearth of (base.hearths || [])) {
+      const cx = Number(hearth.cx), cz = Number(hearth.cz), yaw = Number(hearth.yaw) || 0;
+      if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
+      for (let r = Math.floor(cz - 1.5); r <= Math.ceil(cz + 1.5); r++) {
+        for (let c = Math.floor(cx - 1.5); c <= Math.ceil(cx + 1.5); c++) {
+          const dx = c + 0.5 - cx, dz = r + 0.5 - cz;
+          const x = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
+          const z = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+          if (Math.abs(x) < 1 && Math.abs(z) < 0.5) hearths.add(key(c, r));
+        }
+      }
+    }
+    return { entrances, hearths };
+  }
   function apply(base, pieces) {
     const floorSet = new Set(base.floorSet);
     const exitSet = new Set(base.exitSet);
+    const { entrances, hearths: protectedHearths } = protectedInteriorCells(base); // Derived from the same entry/hearth records used by the game scene.
     const joins = seamRecords(pieces);
     const segments = [...joins, ...customWalls.map(w => ({ ...w, strip: points(w.a, w.b), builtIn: false }))];
     const blocked = new Set();
     const doorTiles = [];
     const resolved = [];
+    const skipped = []; // Explain unusual blocked seams in the in-game wall diagnostics.
     for (const segment of segments) {
       const allowed = segment.strip.filter(p => floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
-      if (allowed.length < (segment.builtIn ? 2 : 3) || allowed.length !== segment.strip.length) continue;
+      if (allowed.length < (segment.builtIn ? 2 : 3) || allowed.length !== segment.strip.length) {
+        skipped.push({ id: segment.id, reason: 'Not a continuous interior floor strip' });
+        continue;
+      }
+      const forcedDoorways = allowed.filter(p => entrances.has(key(p.c, p.r))); // Entering from outside must land on walkable floor.
+      if (forcedDoorways.length > 1 || allowed.some(p => protectedHearths.has(key(p.c, p.r)))) {
+        skipped.push({ id: segment.id, reason: forcedDoorways.length > 1 ? 'Multiple exterior entrances' : 'Chimney hearth overlaps the wall' });
+        continue; // Keep both access paths / the hearth intact rather than creating an impassable partition.
+      }
       const savedDoor = segment.builtIn ? joinDoors[segment.id] : segment.door;
       const savedSlot = Number.isInteger(savedDoor?.slot) ? savedDoor.slot : -1; // Section doors retain their offset when either entire room moves.
-      const door = (savedSlot >= 0 && savedSlot < allowed.length ? allowed[savedSlot] : null)
+      const door = forcedDoorways[0]
+        || (savedSlot >= 0 && savedSlot < allowed.length ? allowed[savedSlot] : null)
         || allowed.find(p => isCell(savedDoor) && p.c === savedDoor.c && p.r === savedDoor.r)
         || allowed[Math.floor(allowed.length / 2)];
       // A single floor cell is retained as the doorway. The rest of the
@@ -64,7 +93,7 @@
       resolved.push({ id: segment.id, builtIn: segment.builtIn, strip: allowed, door });
     }
     for (const k of blocked) floorSet.delete(k);
-    latest = { originalFloor: new Set(base.floorSet), exitSet, segments: resolved, floorSet, blocked,
+    latest = { originalFloor: new Set(base.floorSet), exitSet, segments: resolved, floorSet, blocked, skipped, entrances, protectedHearths,
       pieces: pieces.filter(p => p.stage === 'built').map(p => ({ id:p.id, col:p.col, row:p.row, w:p.w, h:p.h })) }; // Room bounds link added walls to the correct movable house section.
     return { ...base, floorSet, exitSet, doorTiles, wallCells: blocked, partitions: resolved };
   }
@@ -79,13 +108,15 @@
     const occupied = new Set(latest.segments.flatMap(s => s.strip.map(p => key(p.c, p.r))));
     const owner = ownerForCell(a); // Manually subdivided rooms keep their walls when their owning section moves.
     return !!owner && run.every(p => ownerForCell(p)?.id === owner.id && !occupied.has(key(p.c, p.r))
-      && deps.canBlockCell?.(p.c, p.r) !== false);
+      && !latest.protectedHearths.has(key(p.c, p.r)) && deps.canBlockCell?.(p.c, p.r) !== false)
+      && run.filter(p => latest.entrances.has(key(p.c, p.r))).length <= 1; // One protected arrival can become the automatic door, never an impassable wall.
   }
   function canMoveDoor(id, col, row) {
     if (!deps?.canEdit?.() || !latest) return false;
     const segment = latest.segments.find(s => s.id === id);
     return !!segment && segment.strip.some(p => p.c === col && p.r === row)
-      && !latest.exitSet.has(key(col, row));
+      && !latest.exitSet.has(key(col, row))
+      && (!segment.strip.some(p => latest.entrances.has(key(p.c, p.r))) || latest.entrances.has(key(col, row))); // A movable door must not strand a nearby exterior entrance.
   }
   function armWall() { if (!deps?.canEdit?.()) return false; mode = { type: 'wall' }; firstCorner = null; deps.refresh?.(); return true; }
   function armDoor(id) { if (!deps?.canEdit?.() || !latest?.segments.some(s => s.id === id)) return false; mode = { type: 'door', id }; firstCorner = null; deps.refresh?.(); return true; }
@@ -95,7 +126,8 @@
     if (mode.type === 'door') return canMoveDoor(mode.id, col, row);
     const p = cell(col, row);
     return firstCorner ? canWall(firstCorner, p) : !!latest?.originalFloor.has(key(col, row))
-      && !latest?.exitSet.has(key(col, row)) && deps.canBlockCell?.(col, row) !== false;
+      && !latest?.exitSet.has(key(col, row)) && !latest?.protectedHearths.has(key(col, row))
+      && deps.canBlockCell?.(col, row) !== false;
   }
   function confirm(col, row) {
     if (!mode || !canTarget(col, row)) return { ok: false, message: 'Choose a clear floor tile on the selected wall.' };
@@ -158,6 +190,7 @@
   function debug() {
     return { mode: clone(mode), firstCorner: clone(firstCorner), walls: clone(customWalls), joins: clone(joinDoors),
       segments: latest?.segments.map(s => ({ id: s.id, builtIn: s.builtIn, length: s.strip.length, door: s.door })) || [],
+      skipped: latest?.skipped || [], protectedEntries: latest?.entrances?.size || 0, protectedHearthTiles: latest?.protectedHearths?.size || 0,
       wallTiles: latest?.blocked.size || 0 };
   }
   window.FarmhouseRoomPlanner = { init, apply, seamRecords, points, armWall, armDoor, cancel, canTarget, confirm, removeWall,
