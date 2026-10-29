@@ -168,6 +168,19 @@
     group.name = 'Live root growth';
     const target = options.target.clone(true); // Imported furniture and its materials remain owned by the caller.
     target.name = 'Invisible growth shape';
+    // Imported furniture GLBs use a tiny Mesh as an async driver. Replace the
+    // loaded driver with a transform-identical Group so wrapping sees only the
+    // real rendered geometry, not its 1-mm placeholder box.
+    const glbDrivers = []; // Collected before editing the hierarchy to avoid traverse mutations.
+    target.traverse(node => { if (node.isMesh && node.userData?.furnitureGlbPart) glbDrivers.push(node); });
+    for (const driver of glbDrivers) {
+      if (!driver.userData.glbReady) throw new Error('Furniture GLB has not finished loading: ' + driver.name);
+      const holder = new THREE.Group(); // Preserves authored transforms and the real GLB child hierarchy.
+      holder.name = driver.name; holder.position.copy(driver.position);
+      holder.quaternion.copy(driver.quaternion); holder.scale.copy(driver.scale);
+      for (const child of [...driver.children]) holder.add(child);
+      driver.parent.add(holder); driver.parent.remove(driver);
+    }
     const floorHost = new THREE.Group(), floor = new THREE.Mesh(
       new THREE.PlaneGeometry(recipe.floorWidth, recipe.floorDepth),
       new THREE.MeshBasicMaterial({visible:false}));
@@ -178,10 +191,15 @@
     group.add(floorHost, target);
     target.traverse(mesh => {
       if (!mesh.isMesh) return;
-      mesh.visible = recipe.showGuide &&
-        !mesh.userData?.surfaceFoliageGuide && !mesh.userData?.surfaceFoliage;
+      const wasVisible = mesh.visible !== false; // Hidden GLB bones and existing guide meshes must remain excluded.
+      let ancestor = mesh, isOriginalGrowth = false; // Existing authored foliage must never become a new target.
+      while (ancestor && ancestor !== target) {
+        if (ancestor.userData?.surfaceFoliage || ancestor.userData?.surfaceFoliageGuide) isOriginalGrowth = true;
+        ancestor = ancestor.parent;
+      }
+      mesh.visible = wasVisible && recipe.showGuide && !isOriginalGrowth;
       mesh.layers?.disable?.(1); // A visible debug furniture guide is never part of the root-only shell outline pass.
-      if (mesh.userData?.surfaceFoliage || mesh.userData?.surfaceFoliageGuide) mesh.userData.surfaceFoliageExclude = true;
+      if (!wasVisible || isOriginalGrowth) mesh.userData.surfaceFoliageExclude = true;
     }); // The furniture is never rendered in normal mode, but its triangles remain eligible for sampling.
     const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
