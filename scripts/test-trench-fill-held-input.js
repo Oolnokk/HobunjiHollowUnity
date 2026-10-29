@@ -9,7 +9,8 @@ const fs = require('node:fs');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 
 function braceBlockAt(source, start) {
-  const open = source.indexOf('{', start);
+  const headerEnd = source.indexOf(') {', start); // Skip braces inside default-argument template literals.
+  const open = headerEnd < 0 ? -1 : headerEnd + 2;
   assert(open >= 0, 'expected a body opening brace');
   let depth = 0;
   for (let i = open; i < source.length; i++) {
