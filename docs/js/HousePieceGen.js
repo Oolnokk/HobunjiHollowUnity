@@ -660,6 +660,7 @@
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
+    applyAuthoredShingleFinish: applyAuthoredShingleFinish, // Lets the house preview and mobile diagnostic tools inspect one per-house roof tint without touching global variants.
     shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug, { variants: Object.keys(_shingleVariants), tints: Object.keys(_shingleVariants).reduce(function (out, name) { out[name] = _shingleVariants[name].appliedTintKey; return out; }, {}) }); },
     shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
     makeShingleModel: makeShingleModel,
