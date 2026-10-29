@@ -22278,10 +22278,10 @@
       let strikeFired   = false;
       let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
-      // True while the primary action input (key/click/button) is physically held
-      // down. Drives the multi-stage dig/fill charge below — releasing it, or
-      // retargeting a different tile, mid-charge cancels the whole thing.
+      // True while the active action input is physically held, whether it is
+      // Action 1, 2 or 3. Multi-stage trench charges cancel on release or retarget.
       let actionHeldDown = false;
+      let heldChargeInputId = null; // Physical action input that must release a multi-stage shovel/axe/pick charge.
       // Multi-stage charge in progress: digging a brand-new trench or filling an
       // existing one in. Each stage plays one tool swing (sized by digSpeed); the
       // action only actually happens once every stage completes uninterrupted.
@@ -27460,11 +27460,13 @@
         const buttons = computeActionButtons();
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
-      function runActionButtonAtSlot(slotIndex) {
+      function runActionButtonAtSlot(slotIndex, inputActionId = `action${slotIndex}`) {
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
-        actionHeldDown = slotIndex === 1;
+        const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
+        if (startsCharge) heldChargeInputId = inputActionId;
+        actionHeldDown = slotIndex === 1 || startsCharge;
         useActiveAction();
       }
       function runInteractAction() {
@@ -27665,7 +27667,12 @@
         }
         if (phase === 'release') {
           if (flaskActionPresses.delete(actionId)) { window.AlchemyFlasks?.confirmThrow(); return; }
-          if (actionId === 'action1') actionHeldDown = false;
+          if (heldChargeInputId === actionId) {
+            heldChargeInputId = null;
+            actionHeldDown = false;
+          } else if (actionId === 'action1' && !heldChargeInputId) {
+            actionHeldDown = false;
+          }
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
@@ -27694,7 +27701,7 @@
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
-          runActionButtonAtSlot(visibleOverride.slot);
+          runActionButtonAtSlot(visibleOverride.slot, actionId);
           return;
         }
         const weaponSlot = weaponActionSlot(actionId);
