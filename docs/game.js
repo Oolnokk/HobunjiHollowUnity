@@ -29936,6 +29936,7 @@
             canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
           };
         },
+        farmSeedStock: () => _loadWorldStorage(), // One world-storage snapshot per NPC plot scan; seed order is checked at work completion.
         seedAvailable: crop => {
           const seedKey = cropData[crop]?.seedKey;
           return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
@@ -29962,7 +29963,7 @@
             if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
             store[data.seedKey] -= 1;
             if (store[data.seedKey] <= 0) delete store[data.seedKey];
-            _saveWorldStorage(store); // Seeds come out of Farm Storage, not your pockets.
+            if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
             tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
           } else return false;
           markTileDirty(c, r);
