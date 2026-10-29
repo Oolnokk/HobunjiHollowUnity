@@ -568,6 +568,9 @@
     // the meshes for whatever dew piles are already sitting in the grid,
     // same two-phase split as furniture (data now, objects/meshes here).
     window.DewVats.rebuildMeshesFromGrid();
+    if (window.__farmhouseFurnitureRecovery?.some(entry => entry.action === 'moved' || entry.action === 'stored')) {
+      saveFarmLayout(); // Commit migrated placements after barns, house pieces and every decor record have been restored.
+    }
   }
 
   // Normal-play Farmwork works on plot designations, never on the dev Farm Editor's terrain brush.
