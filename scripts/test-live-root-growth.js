@@ -18,7 +18,7 @@ class Vector3 {
   fromBufferAttribute(attr,i){this.x=attr.getX(i);this.y=attr.getY(i);this.z=attr.getZ(i);return this;}
 }
 class Group {
-  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.visible=true;}
+  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.rotation={x:0,y:0,z:0};this.visible=true;}
   add(...children){children.forEach(child=>{child.parent=this;this.children.push(child);});}
   remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
   traverse(fn){fn(this);this.children.forEach(child=>child.traverse(fn));}
@@ -27,7 +27,7 @@ class Group {
   worldToLocal(v){let node=this;while(node){v.sub(node.position);node=node.parent;}return v;}
   clone(recursive){
     const result=new this.constructor();
-    result.position.copy(this.position);result.visible=this.visible;
+    result.position.copy(this.position);result.rotation={...this.rotation};result.visible=this.visible;
     result.userData={...this.userData};
     if(recursive)this.children.forEach(child=>result.add(child.clone(true)));
     return result;
@@ -53,7 +53,7 @@ class TubeGeometry extends Geometry {
       const p=curve.getPointAt(ring/segments);
       for(let spoke=0;spoke<=radial;spoke++)points.push(p.clone().add(new Vector3(Math.cos(spoke)*radius,0,Math.sin(spoke)*radius)));
     }
-    super(points);this.index={count:segments*radial*6};
+    super(points);this.parameters={path:curve};this.index={count:segments*radial*6};
   }
 }
 class Material {
