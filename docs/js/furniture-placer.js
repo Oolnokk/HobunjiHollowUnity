@@ -229,7 +229,7 @@
         const output = document.getElementById('farmhouseRoomDebug') || document.createElement('pre');
         output.id = 'farmhouseRoomDebug';
         output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:11px';
-        output.textContent = JSON.stringify(roomPlanner.debug(), null, 2);
+        output.textContent = JSON.stringify({ ...roomPlanner.debug(), furnitureRecovery: window.__farmhouseFurnitureRecovery || [] }, null, 2);
         if (!output.parentElement) list.insertBefore(output, debug.nextSibling);
         else output.hidden = !output.hidden;
       };
