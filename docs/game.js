@@ -3180,6 +3180,8 @@
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
             if (!tile || tile.type === TileType.ROCK) return false;
+            if (area === 'interior' && (_interiorRoomDoorTiles.has(c + ',' + r)
+                || _interiorArrivalTiles.has(c + ',' + r))) return false; // Keep room doors and exterior entrance landings free of furniture.
             if (area === 'farm') {
               if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
               const occupyingWorldObject = getWorldObjectAt(c, r);
@@ -3841,10 +3843,11 @@
         }
       }
 
-      function moveDecorativeFurniture(id, col, row) {
-        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
+      function moveDecorativeFurniture(id, col, row, options = {}) {
+        const area = options.area || currentArea; // Partition migration may move indoor furniture while the player is still outside.
+        const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === area);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
-        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, currentArea, obj)) return { ok: false, message: 'Cannot move furniture there.' };
+        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, obj)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
@@ -3861,8 +3864,60 @@
         if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
         registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
-        window.FarmEditor.saveFarmLayout();
+        if (!options.skipSave) window.FarmEditor.saveFarmLayout(); // The caller batches migration saves only after all furniture and rooms have loaded.
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
+      }
+
+      function reconcileFurnitureWithFarmhousePartitions() {
+        const changes = []; // Visible mobile diagnostics report displaced saved items rather than silently losing them.
+        const built = housePieces.filter(piece => piece.stage === 'built'); // Search valid rooms before considering storage recovery.
+        for (const obj of [...interiorFurnitureObjects]) {
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          const clearFootprint = (c, r) => {
+            for (let y = r; y < r + fd; y++) for (let x = c; x < c + fw; x++) {
+              if (interiorGrid[y]?.[x]?.type === TileType.ROCK || _interiorRoomDoorTiles.has(x + ',' + y) || _interiorArrivalTiles.has(x + ',' + y)) return false;
+            }
+            return true;
+          };
+          if (clearFootprint(obj.col, obj.row)) continue;
+          const preferredRoom = built.find(piece => piece.id === obj.ownerPieceId)
+            || built.find(piece => obj.col >= piece.col * 2 && obj.col < (piece.col + piece.w) * 2
+              && obj.row >= piece.row * 2 && obj.row < (piece.row + piece.h) * 2); // Old saves may predate stable ownerPieceId.
+          const orderedRooms = preferredRoom ? [preferredRoom, ...built.filter(piece => piece !== preferredRoom)] : built;
+          const candidates = [];
+          for (const piece of orderedRooms) {
+            for (let row = piece.row * 2; row <= (piece.row + piece.h) * 2 - fd; row++) {
+              for (let col = piece.col * 2; col <= (piece.col + piece.w) * 2 - fw; col++) {
+                if (!clearFootprint(col, row)) continue;
+                const distance = Math.abs(col - obj.col) + Math.abs(row - obj.row);
+                candidates.push({ col, row, distance, preferred: piece === preferredRoom ? 0 : 1 });
+              }
+            }
+          }
+          candidates.sort((a, b) => a.preferred - b.preferred || a.distance - b.distance || a.row - b.row || a.col - b.col);
+          const candidate = candidates.find(pos => canPlaceDecorativeFurnitureAt(pos.col, pos.row, obj.id, obj.key, obj.rotYDeg || 0, 'interior', obj));
+          if (candidate) {
+            const moved = moveDecorativeFurniture(obj.id, candidate.col, candidate.row, { area: 'interior', skipSave: true });
+            if (moved.ok) {
+              changes.push({ id: obj.id, furniture: obj.key, action: 'moved', from: [obj.col, obj.row], to: [candidate.col, candidate.row] });
+              continue;
+            }
+          }
+          const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          if (itemKey) {
+            const stored = _loadWorldStorage(); // Refund only after the world-scoped storage transaction succeeds.
+            stored[itemKey] = (stored[itemKey] || 0) + 1;
+            if (_saveWorldStorage(stored)) {
+              disposeDecorativeFurniture(obj, false);
+              changes.push({ id: obj.id, furniture: obj.key, action: 'stored' });
+              continue;
+            }
+          }
+          changes.push({ id: obj.id, furniture: obj.key, action: 'unresolved' }); // Never delete an item if safe recovery fails.
+        }
+        window.__farmhouseFurnitureRecovery = changes; // Displayed by the in-game furniture debug button on mobile.
+        return changes;
       }
 
       function removeDecorativeFurniture(id) {
@@ -20241,6 +20296,8 @@
       // it doesn't wall off the opening. Rebuilt by rebuildInteriorGeometry()
       // whenever a piece is built/demolished.
       let _interiorExitTiles = new Set();
+      let _interiorRoomDoorTiles = new Set(); // Shared no-furniture doorway footprint for partition doors.
+      let _interiorArrivalTiles = new Set(); // Prevent furniture from blocking a floorless exterior entrance's indoor landing.
       let _farmhouseDoorRoot = null; // Replaced on each rebuild to keep door meshes attached exactly once.
       let _farmhouseDoorVersion = 0; // Guards asynchronous authored-door asset loading after house edits.
       const _farmhouseDoorInteractables = new Map(); // Room-door tile -> shared wooden-door runtime interaction.
@@ -20260,6 +20317,8 @@
         window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
         const { floorSet, exitSet, doors, doorTiles = [], hearths } = window.HousePieces.computeInteriorLayout();
         _interiorExitTiles = exitSet;
+        _interiorRoomDoorTiles = new Set(doorTiles.map(([c, r]) => c + ',' + r)); // Generated interior doors must remain unobstructed.
+        _interiorArrivalTiles = new Set(doors.map(d => d.enter.c + ',' + d.enter.r)); // Existing entrance triggers remain on the floorless marker.
 
         _derivedHearthMeshes.forEach(h => {
           interiorScene.remove(h.mesh);
@@ -20286,6 +20345,7 @@
             interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
           }
         }
+        reconcileFurnitureWithFarmhousePartitions(); // Migrates old saves before partition walls render over existing furniture.
 
         if (interiorFloorGroup) { interiorScene.remove(interiorFloorGroup); interiorFloorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
         if (interiorWallGroup)  { WallBuilder.disposeGroup(interiorWallGroup); interiorScene.remove(interiorWallGroup); }
@@ -30671,6 +30731,10 @@
 
       window.FarmhouseRoomPlanner?.init({
         canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
+        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o => o.area === 'interior'
+          && c >= o.col && r >= o.row
+          && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
+          && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd), // Door relocation never discards an owned decoration.
         canBlockCell: (c, r) => {
           const occupiedByPlayer = Math.floor(player.x / TILE) === c && Math.floor(player.y / TILE) === r; // Never build a wall through the player.
           const occupiedByFurniture = interiorFurnitureObjects.some(o => o.area === 'interior'
