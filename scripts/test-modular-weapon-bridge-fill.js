@@ -191,6 +191,19 @@ console.log('modular weapon bridge fill OK');
   assert.equal(saved.outline, 32, 'Outline clamped.');
   assert.equal(JSON.stringify(saved.light), '[0,-1]');
   assert.equal(api.settings(shaftKey, headKey).bridges.shade, 0.4, 'Settings expose the pair bridges to compose().');
+  // Junction pieces are kept with validated placement; unsafe names are dropped; order with strokes is preserved.
+  cfg.shafts[shaftKey].overrides[headKey] = { bridges: { strokes: [
+    { r: 8, points: [[1, 2], [3, 4]] },
+    { junction: 'sphere', x: 120, y: 340, rotation: 400, scale: 99, behind: true },
+    { junction: '../evil', x: 0, y: 0 } ] } };
+  const ops = api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges.strokes;
+  assert.equal(ops.length, 2, 'Unsafe junction name dropped.');
+  assert.equal(JSON.stringify(ops[1]), '{"junction":"sphere","x":120,"y":340,"rotation":360,"scale":8,"behind":true}');
+  assert.equal(api.junctionPath('band'), 'assets/toolsprites/modular_pieces/weaponjunction_band.png');
+  for (const name of api.JUNCTIONS) assert(fs.existsSync('docs/' + api.junctionPath(name)), 'Bundled junction piece exists: ' + name);
+  const scriptAt = name => editorHtml.indexOf('src="' + name);
+  assert(scriptAt('junction-picker.js') > 0 && scriptAt('junction-picker.js') < scriptAt('editor.js') &&
+    scriptAt('junction-picker.js') < scriptAt('sprite-cutter.js'), 'Junction picker loads before its users.');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: null };
   assert.equal(api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges, null, 'Explicit removal is kept.');
 }

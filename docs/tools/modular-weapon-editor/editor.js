@@ -448,7 +448,10 @@
       for (const pt of pts.slice(1)) ctx.lineTo(...pt);
       if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], stroke.r * sx, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
     }
-    if (bridgeHover && byId('pair-bridge-on').checked) {
+    if (bridgeHover && byId('pair-bridge-on').checked && byId('pair-brush-mode').value === 'junction') {
+      ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy); // Ghost of the piece, in source pixels.
+      window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
+    } else if (bridgeHover && byId('pair-bridge-on').checked) {
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc((bridgeHover[0] - frame.left) * sx, (bridgeHover[1] - frame.top) * sy, bridgeRadius() * sx, 0, Math.PI * 2); ctx.stroke();
     }
@@ -458,7 +461,10 @@
   previewCanvas.addEventListener('pointerdown', event => {
     if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
     event.preventDefault();
-    if (byId('pair-brush-mode').value === 'smudge') {
+    if (byId('pair-brush-mode').value === 'junction') { // Position with a ghost; placed on release.
+      bridgePaint = { pointer: event.pointerId, junction: true, stroke: { points: [] } };
+      bridgeHover = logicalPoint(event);
+    } else if (byId('pair-brush-mode').value === 'smudge') {
       const canvas = bridgeView.composed; // Smudge a copy live; the saved stroke is replayed by compose() on release.
       bridgePaint = { pointer: event.pointerId, stroke: { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] },
         smudge: { image: canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height),
@@ -472,7 +478,8 @@
   previewCanvas.addEventListener('pointermove', event => {
     if (!byId('pair-bridge-on').checked || !bridgeView) return;
     bridgeHover = logicalPoint(event);
-    if (bridgePaint?.pointer === event.pointerId) {
+    if (bridgePaint?.pointer === event.pointerId && bridgePaint.junction) event.preventDefault();
+    else if (bridgePaint?.pointer === event.pointerId) {
       event.preventDefault();
       const points = bridgePaint.stroke.points, last = points[points.length - 1]; // Thin stored points; the fill interpolates.
       const spacing = bridgePaint.smudge ? 1 : Math.max(1, bridgePaint.stroke.r / 3); // Smudges replay every stored step.
@@ -485,6 +492,13 @@
   });
   function endBridgePaint(event) {
     if (bridgePaint?.pointer !== event.pointerId) return;
+    if (bridgePaint.junction) {
+      const [x, y] = logicalPoint(event);
+      bridgePaint = null;
+      if (event.type === 'pointercancel') { drawBridgeOverlay(); return; }
+      applyStrokes([junctionPicker.placement(x, y)], 'Placed a ' + byId('pair-junction').value + ' junction.');
+      return;
+    }
     const points = bridgePaint.stroke.points, end = logicalPoint(event), last = points[points.length - 1];
     if (end[0] !== last[0] || end[1] !== last[1]) { points.push(end); if (bridgePaint.smudge) smudgeLive(last, end); }
     const finished = bridgePaint;
@@ -506,7 +520,7 @@
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
     const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
-    const fills = strokes.filter(stroke => !stroke.smudge); // Smudges can't fail; only bridge fills need a check.
+    const fills = strokes.filter(stroke => !stroke.smudge && !stroke.junction); // Only bridge fills can fail.
     for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
     if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
@@ -520,6 +534,11 @@
   previewCanvas.addEventListener('pointerup', endBridgePaint);
   previewCanvas.addEventListener('pointercancel', endBridgePaint);
   previewCanvas.addEventListener('pointerleave', () => { if (bridgeHover) { bridgeHover = null; drawBridgeOverlay(); } });
+  const junctionPicker = window.ModularJunctionPicker.bind('pair', () => drawBridgeOverlay());
+  byId('pair-brush-mode').onchange = () => {
+    byId('pair-junction-controls').hidden = byId('pair-brush-mode').value !== 'junction';
+    drawBridgeOverlay();
+  };
   byId('pair-bridge-on').onchange = () => {
     previewCanvas.style.cursor = byId('pair-bridge-on').checked ? 'crosshair' : '';
     bridgeHover = null; drawBridgeOverlay();
@@ -560,6 +579,16 @@
     if (key !== 'z' && key !== 'y') return;
     const button = byId((lastPanel === 'cutter' ? 'cut-' : 'pair-') + (redo ? 'redo' : 'undo'));
     if (button && !button.disabled) { event.preventDefault(); button.click(); }
+  });
+  // Maximize: one preview fills its floating panel (the others hide); pressing again restores them.
+  for (const button of document.querySelectorAll('[data-max]')) button.addEventListener('click', () => {
+    const figure = button.closest('figure'), panel = button.closest('.float-panel');
+    const on = !figure.classList.contains('maximized');
+    for (const other of panel.querySelectorAll('figure.maximized')) other.classList.remove('maximized');
+    for (const other of panel.querySelectorAll('[data-max]')) { other.setAttribute('aria-pressed', 'false'); other.textContent = '⤢ Maximize'; }
+    figure.classList.toggle('maximized', on); panel.classList.toggle('has-max', on);
+    button.setAttribute('aria-pressed', String(on)); button.textContent = on ? '⤡ Restore' : '⤢ Maximize';
+    panel.scrollTop = 0;
   });
   // Pinned previews sit just below the sticky header (desktop); on phones the header scrolls away.
   const header = document.querySelector('header');

@@ -104,7 +104,7 @@
   let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
   let hoverPoint = null; // Brush-size cursor preview position.
   let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
-  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill) or 'smudge'.
+  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill), 'smudge' or 'junction'.
   let smudge = null; // Active smudge drag: { region, classify, last }.
   const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
@@ -148,7 +148,8 @@
       }
       ctx.putImageData(new ImageData(viewBuffer, FRAME.width, FRAME.height), 0, 0);
     } else if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
-    if (hoverPoint && tool() !== 'lasso') {
+    if (hoverPoint && tool() === 'junction') global.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(hoverPoint.x, hoverPoint.y));
+    else if (hoverPoint && tool() !== 'lasso') {
       ctx.save();
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke();
@@ -239,6 +240,7 @@
     event.preventDefault();
     activePointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
+    if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); return; } // Placed on release.
     if (tool() === 'smudge') { // Snapshot for Undo (and as the "before" the outline is measured on), then push metal.
       pushUndo();
       smudge = { region: new Uint8Array(FRAME.width * FRAME.height), last: pointFor(event),
@@ -253,7 +255,8 @@
     if (tool() !== 'lasso' && pixels) { hoverPoint = pointFor(event); if (activePointer === null) scheduleRender(); }
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
-    if (smudge) {
+    if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); }
+    else if (smudge) {
       const point = pointFor(event);
       global.ModularWeaponBridgeFill.smudgeStep(pixels, FRAME.width, FRAME.height, smudge.last, point, brushRadius(),
         { classify: smudge.classify, region: smudge.region });
@@ -264,6 +267,11 @@
   function finish(event, cancel) {
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
+    if (tool() === 'junction') {
+      activePointer = null;
+      if (!cancel) placeJunction(pointFor(event)); else renderNow();
+      return;
+    }
     if (smudge) {
       const done = smudge; smudge = null; activePointer = null;
       if (cancel) { byId('cut-undo').click(); return; }
@@ -349,6 +357,20 @@
         '. Undo restores the previous image.');
     } catch (error) { clearBrush(); renderNow(); status('Bridge fill failed: ' + error.message); }
   }
+  const junctionPicker = global.ModularJunctionPicker.bind('cut', () => scheduleRender());
+  async function placeJunction(point) {
+    const piece = junctionPicker.placement(point.x, point.y);
+    try {
+      const img = await junctionPicker.image(piece.junction);
+      const work = document.createElement('canvas'); // Stamp through a 2D canvas so rotation/scale resample cleanly.
+      work.width = FRAME.width; work.height = FRAME.height;
+      const workCtx = work.getContext('2d', { willReadFrequently: true });
+      workCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels), FRAME.width, FRAME.height), 0, 0);
+      global.ModularWeapons.drawJunction(workCtx, img, piece);
+      pushUndo(); pixels = workCtx.getImageData(0, 0, FRAME.width, FRAME.height).data; renderNow();
+      status('Placed a ' + piece.junction + ' junction. Bridge, smudge or Auto-bridge it to the parts; Undo removes it.');
+    } catch (error) { status('Junction piece unavailable: ' + error.message); }
+  }
   byId('cut-regenerate-outline').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
     const before = new Uint8ClampedArray(pixels), next = new Uint8ClampedArray(pixels);
@@ -373,7 +395,7 @@
   byId('cut-brush-radius').oninput = () => {
     byId('cut-brush-radius-value').textContent = byId('cut-brush-radius').value; scheduleRender();
   };
-  byId('cut-tool').onchange = () => { hoverPoint = null; scheduleRender(); };
+  byId('cut-tool').onchange = () => { hoverPoint = null; byId('cut-junction-controls').hidden = tool() !== 'junction'; scheduleRender(); };
   byId('cut-remove').onclick = () => commitSelection('remove');
   byId('cut-isolate').onclick = () => commitSelection('isolate');
   byId('cut-clear-selection').onclick = () => { path = []; activePointer = null; renderNow(); status('Selection cleared.'); };

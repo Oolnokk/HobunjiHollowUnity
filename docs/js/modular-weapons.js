@@ -20,30 +20,47 @@
   function point(raw) {
     return { x: finite(raw?.x, 225, 0, 450), y: finite(raw?.y, 602, 0, 1204) };
   }
+  // Junction pieces: small metal sprites (assets/toolsprites/modular_pieces/weaponjunction_<name>.png) placed between a
+  // head and haft to bridge them at any angle. Placed centred on (x, y) in composed-frame source pixels.
+  const JUNCTIONS = ['band', 'block', 'sphere']; // Bundled pieces; the editor can discover later uploads.
+  const junctionPath = name => 'assets/toolsprites/modular_pieces/weaponjunction_' + name + '.png';
+  function cleanJunction(raw) {
+    if (!/^[a-z0-9_-]{1,40}$/i.test(raw.junction)) return null;
+    return { junction: raw.junction, x: finite(raw.x, 225, -2400, 2850), y: finite(raw.y, 602, -2400, 3604),
+      rotation: finite(raw.rotation, 0, -360, 360), scale: finite(raw.scale, 1, 0.1, 8),
+      ...(raw.behind === true ? { behind: true } : {}) };
+  }
+  function drawJunction(ctx, image, piece) { // ctx already maps source pixels; draws the piece centred and rotated.
+    ctx.save();
+    if (piece.behind) ctx.globalCompositeOperation = 'destination-over'; // Slips under existing pixels.
+    ctx.translate(piece.x, piece.y); ctx.rotate(piece.rotation * Math.PI / 180); ctx.scale(piece.scale, piece.scale);
+    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+    ctx.restore();
+  }
   function cleanBridges(raw) {
     // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
     if (!raw || !Array.isArray(raw.strokes)) return null;
-    const strokes = raw.strokes.slice(0, 256).map(stroke => ({
+    const strokes = raw.strokes.slice(0, 256).map(stroke => typeof stroke?.junction === 'string' ? cleanJunction(stroke) : ({
       r: finite(stroke?.r, 16, 1, 160),
       ...(stroke?.closed === true ? { closed: true } : {}), // Auto-bridge polygons.
       ...(stroke?.smudge === true ? { smudge: true } : {}), // Metal smudge strokes, replayed in order.
       points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
         .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
         .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
-    })).filter(stroke => stroke.points.length);
+    })).filter(stroke => stroke && (stroke.junction || stroke.points.length));
     if (!strokes.length) return null;
     const light = raw.light === null ? null : Array.isArray(raw.light) && raw.light.length === 2
       ? [finite(raw.light[0], 0, -1, 1), finite(raw.light[1], -1, -1, 1)] : [0, -1];
     return { strokes, outline: Math.round(finite(raw.outline, 10, 0, 32)), light,
       shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
   }
-  function applyBridges(canvas, frame, bridges) {
+  function applyBridges(canvas, frame, bridges, junctionImages = {}) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
     // Strokes replay in the order they were made: each run of bridge strokes fills together, each smudge stroke
     // moves metal and rebuilds the outline on its own.
@@ -61,6 +78,16 @@
       } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
     };
     for (const stroke of bridges.strokes) {
+      if (stroke.junction) {
+        flush();
+        const piece = junctionImages[stroke.junction];
+        if (!piece) continue; // Missing upload: skip this piece, keep everything else.
+        ctx.putImageData(image, 0, 0);
+        ctx.save(); ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+        drawJunction(ctx, piece, stroke); ctx.restore();
+        image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        continue;
+      }
       if (!stroke.smudge) { pending.push(stroke); continue; }
       flush();
       fill.smudgeStroke(image.data, canvas.width, canvas.height, stroke, toPixel, sx);
@@ -307,7 +334,10 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
-    const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base)]).then(([shaftImage, headImage]) => {
+    const pieces = [...new Set((settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
+      () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
+    const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
       const frame = compositionFrame(shaft, head, visibleBounds(headImage), values); // Expand to contain every rotated, scaled and translated head.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
@@ -337,7 +367,7 @@
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-      applyBridges(canvas, frame, values.bridges); // Pair-specific bridge brush, cached with this canvas.
+      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList)); // Pair-specific brush work, cached with this canvas.
       return canvas;
     });
     canvases.set(cacheKey, task);
@@ -384,5 +414,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+    JUNCTIONS, junctionPath, drawJunction,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

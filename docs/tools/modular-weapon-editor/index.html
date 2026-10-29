@@ -19,6 +19,15 @@
 .cut-stage.float-panel{padding:8px}
 @media(max-width:760px){.pair-area{grid-template-columns:1fr}.pair-area>.float-panel,.cut-stage.float-panel{order:-1;top:0;box-shadow:0 6px 12px #0008}
 .float-panel .sprites canvas,.cut-stage.float-panel canvas{height:36vh;min-height:160px}}
+/* Maximize: one preview fills the floating panel; the panel scrolls inside itself if the preview is taller. */
+.max-toggle{min-height:30px;padding:3px 8px;font-size:12px;margin-left:6px}
+.float-panel.has-max{max-height:calc(100vh - var(--header-h,0px));overflow:auto}
+.float-panel.has-max .float-bar{position:sticky;top:0;z-index:1;background:#142431}
+.float-panel.has-max .sprites{grid-template-columns:1fr}
+.float-panel.has-max .sprites figure:not(.maximized){display:none}
+.float-panel.has-max figure.maximized canvas,.cut-stage.float-panel.has-max canvas{height:auto;width:100%;min-height:0}
+.cut-stage.float-panel.has-max{max-width:none;justify-self:stretch}
+@media(max-width:760px){.float-panel.has-max{max-height:65vh}}
 </style></head><body>
 <header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: companion tangs at every eye mount, explicit per-pair layer order, and automatic migration of earlier editor drafts.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
@@ -54,7 +63,14 @@
 <h2>Bridge brush for this pair</h2>
 <p>Click Auto-bridge gaps to join a head that floats off its haft automatically, or paint fat strokes on the assembled weapon yourself; each stroke applies as soon as you let go. The game re-runs the same hollow-and-fill once when it builds this exact combination (cached, never per frame). Metal under strokes is kept; only empty space and outlines are regrown.</p>
 <label><input id="pair-bridge-on" type="checkbox"> Paint on the assembled weapon preview</label>
-<label>Brush <select id="pair-brush-mode"><option value="bridge">Bridge fill — paint a stroke, it fills with metal</option><option value="smudge">Smudge metal — push metal around; the outline is rebuilt on release</option></select></label>
+<label>Brush <select id="pair-brush-mode"><option value="bridge">Bridge fill — paint a stroke, it fills with metal</option><option value="smudge">Smudge metal — push metal around; the outline is rebuilt on release</option><option value="junction">Place junction piece — a metal connector to bridge to</option></select></label>
+<div class="junction-controls" id="pair-junction-controls" hidden>
+<label>Junction piece <select id="pair-junction"></select></label><button id="pair-junction-refresh" type="button">Refresh pieces from main</button>
+<label>Piece scale: <span id="pair-junction-scale-value">1</span>× <input id="pair-junction-scale" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+<label>Piece rotation: <span id="pair-junction-rotation-value">0</span>° <input id="pair-junction-rotation" type="range" min="-180" max="180" step="1" value="0"></label>
+<label><input id="pair-junction-behind" type="checkbox"> Place behind existing pixels</label>
+<p>Press, drag to position (a ghost follows), release to place. Then bridge, smudge or Auto-bridge it to the parts on either side.</p></div>
+
 <label>Brush radius: <span id="pair-bridge-radius-value">16</span> px <input id="pair-bridge-radius" type="range" min="1" max="160" step="1" value="16"></label>
 <label>Bridge outline thickness (pixels) <input id="pair-bridge-outline" type="number" min="0" max="32" step="1" value="10"></label>
 <label>Light comes from (outline shading is thickest on the far side) <select id="pair-bridge-light"><option value="0,-1">Top</option><option value="-1,-1">Top-left</option><option value="1,-1">Top-right</option><option value="-1,0">Left</option><option value="1,0">Right</option><option value="0,1">Bottom</option><option value="none">No direction (even shading)</option></select></label>
@@ -66,9 +82,9 @@
 <p>Drafts save in this browser; gameplay uses the validated draft on reload. Export the config to update docs/config/modular-weapons.js for everyone.</p>
 <details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
 <section class="float-panel" aria-label="Pinned preview"><div class="float-bar" role="toolbar" aria-label="History"><button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button></div><div class="sprites">
-<figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines</figcaption></figure>
-<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line</figcaption></figure>
-<figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon</figcaption></figure></div>
+<figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize haft lines preview">⤢ Maximize</button></figcaption></figure>
+<figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize head line preview">⤢ Maximize</button></figcaption></figure>
+<figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize assembled weapon preview">⤢ Maximize</button></figcaption></figure></div>
 </section></div><section id="sprite-cutter"><h2>Make a modular head or shaft from a full weapon</h2>
 <p>Load a complete PNG, draw around any pixels with a finger, stylus, or mouse, then remove the selected region or keep only the selection. Repeat on the remaining image; Undo and Reset protect the original artwork. Export retains the game’s 450 × 1204 coordinates and all surviving RGBA colors/transparency.</p>
 <div class="cut-grid"><div class="cut-controls">
@@ -77,7 +93,14 @@
 <label>Uploaded modular heads and shafts on main <select id="cut-uploaded"></select></label>
 <div class="toolbar"><button id="cut-load-uploaded" type="button">Load uploaded part</button><button id="cut-refresh-uploaded" type="button">Refresh main uploads</button></div>
 <label>Or choose a PNG from this device <input id="cut-file" type="file" accept="image/png,.png"></label>
-<label>Canvas tool <select id="cut-tool"><option value="lasso">Lasso selection</option><option value="brush">Bridge brush</option><option value="smudge">Smudge metal</option></select></label>
+<label>Canvas tool <select id="cut-tool"><option value="lasso">Lasso selection</option><option value="brush">Bridge brush</option><option value="smudge">Smudge metal</option><option value="junction">Place junction piece</option></select></label>
+<div class="junction-controls" id="cut-junction-controls" hidden>
+<label>Junction piece <select id="cut-junction"></select></label><button id="cut-junction-refresh" type="button">Refresh pieces from main</button>
+<label>Piece scale: <span id="cut-junction-scale-value">1</span>× <input id="cut-junction-scale" type="range" min="0.25" max="4" step="0.05" value="1"></label>
+<label>Piece rotation: <span id="cut-junction-rotation-value">0</span>° <input id="cut-junction-rotation" type="range" min="-180" max="180" step="1" value="0"></label>
+<label><input id="cut-junction-behind" type="checkbox"> Place behind existing pixels</label>
+<p>Press, drag to position (a ghost follows), release to place. Then bridge, smudge or Auto-bridge it to the parts on either side.</p></div>
+
 <label>Bridge brush radius: <span id="cut-brush-radius-value">16</span> px <input id="cut-brush-radius" type="range" min="1" max="160" step="1" value="16"></label>
 <label>Bridge outline thickness (pixels) <input id="cut-bridge-outline" type="number" min="0" max="32" step="1" value="10"></label>
 <label>Light comes from (outline shading is thickest on the far side) <select id="cut-bridge-light"><option value="0,-1">Top</option><option value="-1,-1">Top-left</option><option value="1,-1">Top-right</option><option value="-1,0">Left</option><option value="1,0">Right</option><option value="0,1">Bottom</option><option value="none">No direction (even shading)</option></select></label>
@@ -99,8 +122,8 @@
 <button id="cut-export" type="button">Export transparent PNG</button>
 <p id="cut-status" role="status" aria-live="polite"></p>
 <details><summary>Sprite cutter diagnostics</summary><pre id="cut-debug"></pre></details>
-</div><figure class="cut-stage float-panel"><div class="float-bar" role="toolbar" aria-label="Sprite cutter history"><button id="cut-undo" type="button" disabled>↶ Undo</button><button id="cut-redo" type="button" disabled>↷ Redo</button></div><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
+</div><figure class="cut-stage float-panel"><div class="float-bar" role="toolbar" aria-label="Sprite cutter history"><button id="cut-undo" type="button" disabled>↶ Undo</button><button id="cut-redo" type="button" disabled>↷ Redo</button> <button class="max-toggle" type="button" data-max aria-pressed="false" aria-label="Maximize sprite cutter canvas">⤢ Maximize</button></div><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
 <p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
 </section></main>
-<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029smudge001"></script><script src="../../js/modular-weapons.js?v=20261029smudge001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261029smudge001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029smudge001"></script>
+<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029junction001"></script><script src="../../js/modular-weapons.js?v=20261029junction001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029junction001"></script><script src="editor.js?v=20261029junction001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029junction001"></script>
 </body></html>
