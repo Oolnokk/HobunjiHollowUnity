@@ -257,7 +257,9 @@
     maps.set(mapId, state);
     if (!tiles.length) return state;
     const data = await loadDoorData();
-    if (!data || !window.AuthoredFurniture?.buildGroup) return state;
+    // A farmhouse rebuild can supersede this scene while the authored door
+    // loads. Never let an old async completion register stale door mechanisms.
+    if (maps.get(mapId) !== state || !data || !window.AuthoredFurniture?.buildGroup) return state;
     const pairedData = doubleDoorData(data); // Reused immutable paired geometry for this scene build.
     const records = [];
     const objectById = new Map();
