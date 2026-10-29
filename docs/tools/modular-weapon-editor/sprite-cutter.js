@@ -296,7 +296,9 @@
       const result = done.stepper.finish();
       renderNow();
       const verb = { smudge: 'Smudged', revert: 'Reverted', plow: 'Plowed', puff: 'Puffed out', clean: 'Cleaned (' + (result.specks || 0) + ' black pixels pulled out)' }[done.tool];
-      status(result.changed ? verb + '; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
+      const puffReach = Math.min(24, Math.max(1, Math.round(brushRadius() * Number(byId('cut-tool-strength').value) / 100 * 0.8))) * 2;
+      status(!result.changed && done.tool === 'puff' ? 'Nothing to puff: no dent in the edge under the brush is narrower than ' + puffReach + ' px. Raise the strength or the brush size (bumps are shaved by Even out outline wobble instead).'
+        : result.changed ? verb + '; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
         result.drawn + ' drawn). Undo reverts the whole stroke.' : done.tool === 'revert' ? 'Nothing to revert here: it already matches the image before smudging.' : 'No metal changed under the stroke.');
       return;
     }
@@ -393,6 +395,32 @@
     if (!pixels) { status('Load a sprite first.'); return; }
     smudgeReference = new Uint8ClampedArray(pixels);
     status('Revert point set: the revert brush now eases back to the image as it is now.');
+  };
+  function workedRegion(action) { // Brush work since the sprite was loaded; null (with a message) when there is none.
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return null; }
+    const worked = global.ModularWeaponBridgeFill.changedRegion(pixels, original);
+    if (!worked) status('Nothing to ' + action + ': the sprite is unchanged since it was loaded. Use brush tools first (the Clean outline brush works on original artwork).');
+    return worked;
+  }
+  byId('cut-even-outline').onclick = () => {
+    const worked = workedRegion('even out'); if (!worked) return;
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.evenOutline(next, FRAME.width, FRAME.height, worked,
+      { minAlpha: minAlpha(), amount: Number(byId('cut-even-amount').value) / 100 });
+    pushUndo('smudge'); pixels = next; renderNow();
+    const wobble = result.wobble;
+    status('Evened out the outline at ' + result.thickness + ' px' + (wobble ? ': edges averaged over ' + wobble.sigma + ' px (' + wobble.moved + ' pixels moved to the local mean line)' : '') + '. Undo restores it.');
+  };
+  byId('cut-style-cleanup').onclick = () => {
+    const worked = workedRegion('clean'); if (!worked) return;
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.styleCleanup(next, FRAME.width, FRAME.height, worked,
+      { minAlpha: minAlpha(), amount: Number(byId('cut-even-amount').value) / 100, pool: Number(byId('cut-style-pool').value) });
+    pushUndo('smudge'); pixels = next; renderNow();
+    const tones = result.style.tones.map(c => 'rgb(' + c.slice(0, 3).join(',') + ')').join(' / ');
+    status('Cleaned up to your style (' + (result.style.fromUntouched ? 'read from your untouched art' : 'defaults: little untouched art') + '): flat tones ' + tones +
+      '; pulled ' + result.specks + ' black pixels out, flattened ' + result.snapped + ' pixels, merged ' + result.merged + ' pixels of patches under ' + result.minPool +
+      ' px; outline evened at ' + result.thickness + ' px' + (result.wobble ? ', edges averaged over ' + result.wobble.sigma + ' px (' + result.wobble.moved + ' pixels moved)' : '') + '. Undo restores it.');
   };
   byId('cut-clean-outline').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }

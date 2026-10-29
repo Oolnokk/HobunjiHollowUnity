@@ -595,29 +595,17 @@
     return changed;
   }
 
-  // Removes the black outline around the metal in the changed area and regenerates it. The sprite's own outline
-  // near the change (before it) is measured: its typical width becomes the new thickness, and its widest common
-  // width sets how deep the old outline is erased, so none of it is left behind. New outline is drawn around metal
-  // that borders empty space. Outline belonging to other materials (wood, grip wraps) and interior detail far from
-  // empty space (a blade's groove) are kept. Pass a region of all ones to regenerate the whole sprite's outline.
-  function rebuildOutline(before, pixels, width, height, region, options = {}) {
-    const w = width, h = height, classify = options.classify || makeClassifier(options);
-    let x0 = w, y0 = h, x1 = -1, y1 = -1;
-    for (let y = 0; y < h; y++) for (let x = 0, row = y * w; x < w; x++) if (region[row + x]) {
-      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-    }
-    if (x1 < 0) return { thickness: 0, erased: 0, drawn: 0 };
-    const windowOf = margin => {
-      const wx = Math.max(0, x0 - margin), wy = Math.max(0, y0 - margin);
-      return { wx, wy, ww: Math.min(w - 1, x1 + margin) - wx + 1, wh: Math.min(h - 1, y1 + margin) - wy + 1 };
-    };
+  // Measures the sprite's outline in a window (before any change): its typical thickness, how deep to erase it,
+  // and (unless `uniform` or an explicit thickness) a smoothly blended local width. Returns
+  // { thickness, eraseDepth, widthFor(frameX, frameY) }.
+  function measureOutline(before, w, h, win, classify, options = {}) {
     // 1. Outline widths, measured on the sprite before the change: for every outline pixel touching metal, the
     //    straight-line distance to the nearest empty pixel. The most common width is the outline's thickness
     //    (interior detail joined to the outline, like a blade's groove, only adds a long thin tail of large widths).
     let thickness = options.outlineThickness, eraseDepth = 0;
     let widthFor = () => thickness; // Local outline width near a frame pixel (filled in below when measurable).
     {
-      const { wx, wy, ww, wh } = windowOf(48), m = ww * wh;
+      const { wx, wy, ww, wh } = win, m = ww * wh;
       const kinds = new Uint8Array(m), nearestEmpty = new Int32Array(m).fill(-1), queue = []; // Grows: pixels may improve.
       let head = 0;
       for (let i = 0; i < m; i++) kinds[i] = classify(before, (((i / ww) | 0) + wy) * w * 4 + ((i % ww) + wx) * 4);
@@ -680,6 +668,28 @@
     }
     thickness = Math.max(1, Math.min(32, Math.round(thickness)));
     eraseDepth = Math.max(thickness, Math.min(48, eraseDepth)) + 1;
+    return { thickness, eraseDepth, widthFor };
+  }
+
+  // Removes the black outline around the metal in the changed area and regenerates it. The sprite's own outline
+  // near the change (before it) is measured: its typical width becomes the new thickness, and its widest common
+  // width sets how deep the old outline is erased, so none of it is left behind. New outline is drawn around metal
+  // that borders empty space. Outline belonging to other materials (wood, grip wraps) and interior detail far from
+  // empty space (a blade's groove) are kept. Pass a region of all ones to regenerate the whole sprite's outline.
+  function rebuildOutline(before, pixels, width, height, region, options = {}) {
+    const w = width, h = height, classify = options.classify || makeClassifier(options);
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0, row = y * w; x < w; x++) if (region[row + x]) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 < 0) return { thickness: 0, erased: 0, drawn: 0 };
+    const windowOf = margin => {
+      const wx = Math.max(0, x0 - margin), wy = Math.max(0, y0 - margin);
+      return { wx, wy, ww: Math.min(w - 1, x1 + margin) - wx + 1, wh: Math.min(h - 1, y1 + margin) - wy + 1 };
+    };
+    // 1. Outline widths, measured on the sprite before the change (see measureOutline).
+    const measured = measureOutline(before, w, h, windowOf(48), classify, options);
+    const { thickness, eraseDepth, widthFor } = measured;
     // 2. Work zone: the changed pixels grown by the outline thickness, inside a window around them.
     const { wx, wy, ww, wh } = windowOf(eraseDepth + 2), m = ww * wh;
     const idx = i => (((i / ww) | 0) + wy) * w + (i % ww) + wx; // Window index → frame pixel.
@@ -779,6 +789,50 @@
         const o = idx(i) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0; kinds[i] = EMPTY; erased++;
       }
     }
+    // Wobble: broad averaging of the metal's edge (see prepareEdge/edgeFlips). With the outline stripped, the shape
+    // is everything not empty; the averaging size is picked automatically, as the smallest that brings the edge's
+    // wobble (how far it wanders from its own broad average) under a target set by `amount` (0–1, default 0.6),
+    // unless `sigma` is given. Flips stay within 0.8× the outline thickness of the original edge.
+    let wobble = null;
+    if (options.wobble) {
+      const spec = options.wobble, amount = Math.max(0, Math.min(1, spec.amount ?? 0.6));
+      const solid0 = new Uint8Array(m), only = new Uint8Array(m);
+      for (let i = 0; i < m; i++) { solid0[i] = kinds[i] !== EMPTY ? 1 : 0; only[i] = zone[i] >= 0 ? 1 : 0; }
+      const refSigma = Math.max(6, 2 * thickness), maxShift = Math.max(3, Math.round(thickness * 0.8));
+      const wobbleBefore = maskWobble(solid0, ww, wh, refSigma, only);
+      if (amount > 0 || spec.sigma) {
+        // Only truly empty space counts as outside here: the outline is already stripped, so any black left is
+        // interior detail (a groove) or another material's outline, and must never be filled.
+        const ctx = prepareEdge(kinds, { wx, wy, ww, wh }, { outerBand: 0 });
+        const reach = eraseDepth + 1; // The edge averaging fades to nothing toward the cleaned area's border.
+        const fade = i => {
+          const e = zone[i];
+          if (e < 0) return 0;
+          const t = Math.min(1, Math.hypot(e % ww - i % ww, ((e / ww) | 0) - ((i / ww) | 0)) / reach), u = 1 - t;
+          return u * u * (3 - 2 * u);
+        };
+        const flipOptions = { maxShift, bias: 0, solidKind: k => k !== EMPTY, only, weight: fade };
+        // The wobble is measured for every averaging size; the best calm-down any size achieves counts as 100%
+        // (part of the "wobble" is the weapon's own shape, which no size removes), and `amount` says how much of it
+        // to take: the smallest size reaching that share is used. Flips are bounded by maxShift, so thin parts
+        // cannot be eaten however large the size.
+        const candidates = spec.sigma ? [spec.sigma] : [2, 3, 5, 8, 12, 16, 24];
+        const trials = [];
+        for (const sigma of candidates) {
+          const flips = edgeFlips(ctx, sigma, flipOptions), trial = Uint8Array.from(solid0);
+          for (const i of flips.on) trial[i] = 1;
+          for (const i of flips.off) trial[i] = 0;
+          trials.push({ sigma, flips, wob: maskWobble(trial, ww, wh, refSigma, only) });
+        }
+        const best = Math.min(wobbleBefore, ...trials.map(t => t.wob)), room = wobbleBefore - best;
+        const pick = trials.find(t => room <= 1e-6 || (wobbleBefore - t.wob) >= amount * room - 1e-9) || trials[trials.length - 1];
+        const chosen = pick.flips, chosenSigma = pick.sigma;
+        applyEdgeFlips(pixels, w, ctx, chosen, region);
+        const solid1 = new Uint8Array(m);
+        for (let i = 0; i < m; i++) solid1[i] = kinds[i] !== EMPTY ? 1 : 0;
+        wobble = { before: wobbleBefore, after: maskWobble(solid1, ww, wh, refSigma, only), sigma: chosenSigma, moved: chosen.on.length + chosen.off.length };
+      } else wobble = { before: wobbleBefore, after: wobbleBefore, sigma: 0, moved: 0 };
+    }
     // 4. Draw new outline: empty pixels in the zone within `thickness` of metal.
     const source = new Int32Array(m).fill(-1); head = tail = 0;
     for (let i = 0; i < m; i++) {
@@ -797,7 +851,7 @@
         const o = idx(j) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = 0; pixels[o + 3] = 255; drawn++;
       }
     }
-    return { thickness, erased, drawn };
+    return { thickness, erased, drawn, wobble };
   }
 
   // Weighted revert: within the brush, each pass flips a weighted random share of pixels back to `reference` (the
@@ -885,42 +939,137 @@
   }
   const chessDist = (ww, i, e) => e < 0 ? Infinity : Math.max(Math.abs(e % ww - i % ww), Math.abs(((e / ww) | 0) - ((i / ww) | 0)));
 
-  // Puff-out: inside the brush, dents in the metal's edge are filled outward (a morphological closing of radius
-  // strength × radius / 2), each new pixel taking the color of the nearest metal, so a wrinkled edge becomes smooth
-  // and continuous like an inflated bag. Never covers other materials.
+  // Broad averaging: a Gaussian blur (three box passes per axis) of a float field over a ww×wh window.
+  function gaussBlur(field, ww, wh, sigma) {
+    if (sigma < 0.5) return Float32Array.from(field);
+    const r = Math.max(1, Math.round((Math.sqrt(4 * sigma * sigma + 1) - 1) / 2)), win = 2 * r + 1;
+    let a = Float32Array.from(field), b = new Float32Array(field.length);
+    const line = (src, dst, n, stride, offset) => {
+      let sum = 0;
+      for (let k = -r; k <= r; k++) sum += src[offset + Math.max(0, Math.min(n - 1, k)) * stride];
+      for (let k = 0; k < n; k++) {
+        dst[offset + k * stride] = sum / win;
+        sum += src[offset + Math.min(n - 1, k + r + 1) * stride] - src[offset + Math.max(0, k - r) * stride];
+      }
+    };
+    for (let pass = 0; pass < 3; pass++) {
+      for (let y = 0; y < wh; y++) line(a, b, ww, 1, y * ww);
+      for (let x = 0; x < ww; x++) line(b, a, wh, ww, x);
+    }
+    return a;
+  }
+  // Edge roughness: how much longer the shape's edge is than a broadly smoothed version of the same shape (0 =
+  // as smooth as its own average; 0.2 = 20% extra edge from wobble). Comparing against the shape's own smoothed
+  // outline makes the measure independent of the weapon's overall shape. `solid` is 1 inside the shape; only edge
+  // cells inside `only` (when given) are counted.
+  function maskWobble(solid, ww, wh, refSigma, only) {
+    const field = gaussBlur(solid, ww, wh, refSigma);
+    let own = 0, ref = 0;
+    for (let y = 1; y < wh - 1; y++) for (let x = 1; x < ww - 1; x++) {
+      const i = y * ww + x;
+      if (only && !only[i]) continue;
+      const s = solid[i], r = field[i] >= 0.5 ? 1 : 0;
+      for (const j of [i + 1, i + ww]) {
+        if (s !== solid[j]) own++;
+        if (r !== (field[j] >= 0.5 ? 1 : 0)) ref++;
+      }
+    }
+    return ref ? Math.max(0, own / ref - 1) : 0;
+  }
+  // Edge averaging in a window of the frame (win = {wx, wy, ww, wh}; kinds holds each pixel's class). The shape
+  // (pixels whose kind passes `solidKind`) is blurred broadly; metal pixels near the edge whose blurred value says
+  // "outside" are removed (bumps shaved) and outline/empty pixels near the metal whose blurred value says "inside"
+  // are filled with the nearest metal's color (dents filled), so both are pulled toward the local mean line.
+  // Changes are bounded by `maxShift`, never reach interior detail (fills only happen in the outer outline band),
+  // and can be weighted per pixel. prepareEdge does the distance work once; edgeFlips can run for several sigmas.
+  function prepareEdge(kinds, win, options = {}) {
+    const { ww, wh } = win, m = ww * wh, outerBand = options.outerBand ?? Infinity;
+    const nearEmpty = chessNearest(m, ww, wh, i => kinds[i] === EMPTY);
+    const isOuter = i => kinds[i] === EMPTY || (kinds[i] === INK && chessDist(ww, i, nearEmpty[i]) <= outerBand);
+    const outer = new Uint8Array(m);
+    for (let i = 0; i < m; i++) outer[i] = isOuter(i) ? 1 : 0;
+    return { kinds, win, m, outer, nearOuter: chessNearest(m, ww, wh, i => outer[i] === 1),
+      nearMetal: chessNearest(m, ww, wh, i => kinds[i] === METAL) };
+  }
+  function edgeFlips(ctx, sigma, options = {}) {
+    const { kinds, win, m, outer, nearOuter, nearMetal } = ctx, { ww, wh } = win;
+    const maxShift = Math.max(1, Math.round(options.maxShift ?? sigma)), bias = options.bias ?? 0;
+    const solidKind = options.solidKind || (k => k !== EMPTY), weight = options.weight, only = options.only;
+    const shave = options.shave !== false; // false: only fill dents, never remove metal (keeps sharp corners).
+    const solid = new Float32Array(m);
+    for (let i = 0; i < m; i++) solid[i] = solidKind(kinds[i]) ? 1 : 0;
+    const field = gaussBlur(solid, ww, wh, sigma), off = [], on = [];
+    for (let i = 0; i < m; i++) {
+      if (only && !only[i]) continue;
+      const wgt = weight ? weight(i) : 1;
+      if (wgt <= 0) continue;
+      if (kinds[i] === METAL) {
+        if (shave && field[i] < wgt * (0.5 - bias) && chessDist(ww, i, nearOuter[i]) <= maxShift) off.push(i);
+      } else if (outer[i] && nearMetal[i] >= 0) {
+        if (field[i] > 1 - wgt * (0.5 + bias) && chessDist(ww, i, nearMetal[i]) <= maxShift) on.push(i);
+      }
+    }
+    return { off, on, solid };
+  }
+  // Applies flips from edgeFlips to the frame's pixels and the window's kinds.
+  function applyEdgeFlips(pixels, w, ctx, flips, region) {
+    const { kinds, win, nearMetal } = ctx, { wx, wy, ww } = win;
+    const at = i => (((i / ww) | 0) + wy) * w + (i % ww) + wx;
+    for (const i of flips.on) pixels.copyWithin(at(i) * 4, at(nearMetal[i]) * 4, at(nearMetal[i]) * 4 + 4);
+    for (const i of flips.off) { const o = at(i) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0; }
+    for (const i of flips.on) { kinds[i] = METAL; if (region) region[at(i)] = 1; }
+    for (const i of flips.off) { kinds[i] = EMPTY; if (region) region[at(i)] = 1; }
+  }
+
+  // Puff out: inside the brush, dents in the metal's edge are filled by a closing at a size that scales with the
+  // brush (strength × 80% of the radius, up to 24 px, so dents up to twice that wide fill), the way a wrinkly bag
+  // smooths when packed with air: dents fill out, bumps and sharp corners stay and a straight edge never grows.
+  // Fills happen only where the black can reach open space through black alone within the outline's width
+  // (`outlineWidth`) plus the closing size (a dent of depth d is black outline + d deep and opens straight to the
+  // outside), so interior detail such as a blade's groove, which only reaches open space by running its whole
+  // length, is not filled however close its sides are. Returns how many pixels were filled.
   function puffStep(pixels, width, height, at, radius, options = {}) {
     const w = width, h = height, classify = options.classify || makeClassifier(options), region = options.region;
-    const r = Math.max(1, radius), k = Math.max(1, Math.round(r * Math.max(0.05, Math.min(1, options.strength ?? 0.5)) / 2));
-    const x0 = Math.max(0, Math.floor(at.x - r - k - 2)), y0 = Math.max(0, Math.floor(at.y - r - k - 2));
-    const x1 = Math.min(w - 1, Math.ceil(at.x + r + k + 2)), y1 = Math.min(h - 1, Math.ceil(at.y + r + k + 2));
-    const ww = x1 - x0 + 1, wh = y1 - y0 + 1, m = ww * wh;
-    if (ww < 1 || wh < 1) return 0;
-    const kinds = new Uint8Array(m);
-    for (let i = 0; i < m; i++) kinds[i] = classify(pixels, (((i / ww) | 0) + y0) * w * 4 + ((i % ww) + x0) * 4);
-    const nearestOf = isSource => chessNearest(m, ww, wh, isSource), dist = (i, e) => chessDist(ww, i, e);
-    const nearMetal = nearestOf(i => kinds[i] === METAL);
+    const r = Math.max(1, radius), strength = Math.max(0.05, Math.min(1, options.strength ?? 0.5));
+    const k = Math.max(1, Math.min(24, Math.round(r * strength * 0.8)));
+    const band = Math.max(3, Math.round(options.outlineWidth ?? 12)) + k;
+    const margin = k + band + 3;
+    // The window may extend past the frame: beyond it is open space, which a closing must see to leave edges alone.
+    const wx = Math.floor(at.x - r - margin), wy = Math.floor(at.y - r - margin);
+    const ww = Math.ceil(at.x + r + margin) - wx + 1, wh = Math.ceil(at.y + r + margin) - wy + 1;
+    if (ww < 3 || wh < 3) return 0;
+    const m = ww * wh, kinds = new Uint8Array(m);
+    for (let i = 0; i < m; i++) {
+      const fx = (i % ww) + wx, fy = ((i / ww) | 0) + wy;
+      kinds[i] = fx < 0 || fy < 0 || fx >= w || fy >= h ? EMPTY : classify(pixels, (fy * w + fx) * 4);
+    }
+    const nearMetal = chessNearest(m, ww, wh, i => kinds[i] === METAL);
+    const geo = new Int32Array(m).fill(-1), geoQueue = new Int32Array(m); // Steps to open space through black only.
+    let gh = 0, gt = 0;
+    for (let i = 0; i < m; i++) if (kinds[i] === EMPTY) { geo[i] = 0; geoQueue[gt++] = i; }
+    while (gh < gt) {
+      const i = geoQueue[gh++], x = i % ww, y = (i / ww) | 0;
+      if (geo[i] >= band) continue;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const qx = x + dx, qy = y + dy;
+        if (qx < 0 || qy < 0 || qx >= ww || qy >= wh) continue;
+        const j = qy * ww + qx;
+        if (geo[j] < 0 && kinds[j] === INK) { geo[j] = geo[i] + 1; geoQueue[gt++] = j; }
+      }
+    }
     const dilated = new Uint8Array(m);
-    for (let i = 0; i < m; i++) dilated[i] = kinds[i] !== OTHER && dist(i, nearMetal[i]) <= k ? 1 : 0;
-    const nearOutside = nearestOf(i => !dilated[i]);
+    for (let i = 0; i < m; i++) dilated[i] = kinds[i] !== OTHER && chessDist(ww, i, nearMetal[i]) <= k ? 1 : 0;
+    const nearOutside = chessNearest(m, ww, wh, i => !dilated[i]);
     let changed = 0;
     for (let i = 0; i < m; i++) {
-      if (!dilated[i] || kinds[i] === METAL || kinds[i] === OTHER || dist(i, nearOutside[i]) <= k) continue;
-      const fx = (i % ww) + x0, fy = ((i / ww) | 0) + y0;
-      if ((fx + 0.5 - at.x) ** 2 + (fy + 0.5 - at.y) ** 2 >= r * r) continue;
-      const e = nearMetal[i], so = (((e / ww) | 0) + y0) * w * 4 + ((e % ww) + x0) * 4, o = (fy * w + fx) * 4;
+      const kind = kinds[i];
+      if (!dilated[i] || (kind !== EMPTY && !(kind === INK && geo[i] >= 0))) continue; // Black that opens to the outside only.
+      if (chessDist(ww, i, nearOutside[i]) <= k) continue; // Still within k of open space: not inside a dent.
+      const fx = (i % ww) + wx, fy = ((i / ww) | 0) + wy;
+      if (fx < 0 || fy < 0 || fx >= w || fy >= h || (fx + 0.5 - at.x) ** 2 + (fy + 0.5 - at.y) ** 2 >= r * r) continue;
+      const e = nearMetal[i], so = (((e / ww) | 0) + wy) * w * 4 + ((e % ww) + wx) * 4, o = (fy * w + fx) * 4;
       pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
-      kinds[i] = METAL; changed++; if (region) region[fy * w + fx] = 1;
-    }
-    // Pinholes the closing leaves at a dent's mouth: a gap pixel in the brush with metal on two opposite sides.
-    for (let i = 0; i < m; i++) {
-      if (kinds[i] === METAL || kinds[i] === OTHER) continue;
-      const x = i % ww, y = (i / ww) | 0, fx = x + x0, fy = y + y0;
-      if ((fx + 0.5 - at.x) ** 2 + (fy + 0.5 - at.y) ** 2 >= r * r || x < 1 || y < 1 || x >= ww - 1 || y >= wh - 1) continue;
-      const from = kinds[i - 1] === METAL && kinds[i + 1] === METAL ? i - 1 : kinds[i - ww] === METAL && kinds[i + ww] === METAL ? i - ww : -1;
-      if (from < 0) continue;
-      const so = (((from / ww) | 0) + y0) * w * 4 + ((from % ww) + x0) * 4, o = (fy * w + fx) * 4;
-      pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
-      kinds[i] = METAL; changed++; if (region) region[fy * w + fx] = 1;
+      changed++; if (region) region[fy * w + fx] = 1;
     }
     return changed;
   }
@@ -993,6 +1142,142 @@
     return { specks, ...rebuildOutline(before, pixels, width, height, region, { uniform: true, smoothing: 2, ...options, classify }) };
   }
 
+  // Reads the art's own style from `pixels` outside `region` (the untouched art; all the art when too little is
+  // left): the metal's flat tones (the shaded and unshaded colors, each the median of its most common brightness),
+  // the brightness that separates them, and the smallest tone pool the art ever uses (10th percentile of tone
+  // patch sizes, bounded to 8–80 px). Outline thickness is measured separately, by measureOutline.
+  const DEFAULT_TONES = [[57, 82, 80, 255], [81, 116, 112, 255]]; // Stock weapon metal: shaded, unshaded.
+  function learnStyle(pixels, width, height, region, options = {}) {
+    const w = width, h = height, n = w * h, classify = options.classify || makeClassifier(options);
+    const kinds = new Uint8Array(n);
+    for (let p = 0; p < n; p++) kinds[p] = classify(pixels, p * 4);
+    const interior = p => { // Metal with only metal around it: not the blurry fringe.
+      const x = p % w, y = (p / w) | 0;
+      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (kinds[p + dy * w + dx] !== METAL) return false;
+      return true;
+    };
+    let samples = [];
+    for (let p = 0; p < n; p++) if (kinds[p] === METAL && !region[p] && interior(p)) samples.push(p);
+    const fromUntouched = samples.length >= 200;
+    if (!fromUntouched) { samples = []; for (let p = 0; p < n; p++) if (kinds[p] === METAL && interior(p)) samples.push(p); }
+    if (samples.length < 20) return { tones: DEFAULT_TONES, threshold: luma(DEFAULT_TONES[1], 0) * 0.5 + luma(DEFAULT_TONES[0], 0) * 0.5, minPool: 30, single: false, fromUntouched: false, learned: false };
+    const lumas = samples.map(p => luma(pixels, p * 4));
+    let low = Infinity, high = -Infinity;
+    for (const v of lumas) { if (v < low) low = v; if (v > high) high = v; }
+    const single = high - low < 12, threshold = single ? -1 : otsu(lumas);
+    const toneOf = p => luma(pixels, p * 4) < threshold ? 0 : 1;
+    const tones = [0, 1].map(t => {
+      const own = samples.filter(p => toneOf(p) === t);
+      if (!own.length) return null;
+      const hist = new Uint32Array(256);
+      for (const p of own) hist[Math.round(luma(pixels, p * 4))]++;
+      let mode = 0, best = -1;
+      for (let b = 0; b < 256; b++) {
+        let sum = 0;
+        for (let k = Math.max(0, b - 3); k <= Math.min(255, b + 3); k++) sum += hist[k];
+        if (sum > best) { best = sum; mode = b; }
+      }
+      const core = own.filter(p => Math.abs(luma(pixels, p * 4) - mode) <= 6);
+      return medianColor(pixels, (core.length ? core : own).map(p => p * 4));
+    });
+    if (!tones[0]) tones[0] = tones[1]; if (!tones[1]) tones[1] = tones[0];
+    // Smallest tone pool: sizes of connected same-tone patches among the sampled metal.
+    const label = new Int32Array(n).fill(-1), tone = new Int8Array(n).fill(-1);
+    for (const p of samples) tone[p] = single ? 0 : toneOf(p);
+    const sizes = [];
+    for (const s0 of samples) {
+      if (label[s0] >= 0) continue;
+      const stack = [s0]; label[s0] = sizes.length; let size = 0;
+      while (stack.length) {
+        const p = stack.pop(); size++;
+        const x = p % w, y = (p / w) | 0;
+        for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+          if (q >= 0 && label[q] < 0 && tone[q] === tone[s0]) { label[q] = label[s0]; stack.push(q); }
+        }
+      }
+      sizes.push(size);
+    }
+    sizes.sort((a, b) => a - b);
+    const minPool = sizes.length >= 5 ? Math.max(8, Math.min(80, sizes[Math.floor((sizes.length - 1) * 0.1)])) : 30;
+    return { tones, threshold, minPool, single, fromUntouched, learned: true };
+  }
+  // Merges tone patches smaller than `minPool` (touching the worked region) into the tone around them, so flat
+  // shading stays in a few broad pools instead of speckle.
+  function mergePools(pixels, width, height, region, style, minPool, classify) {
+    const w = width, h = height, n = w * h;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0, row = y * w; x < w; x++) if (region[row + x]) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 < 0) return 0;
+    x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2); x1 = Math.min(w - 1, x1 + 2); y1 = Math.min(h - 1, y1 + 2);
+    const toneAt = p => classify(pixels, p * 4) !== METAL ? -1 : (style.single || luma(pixels, p * 4) >= style.threshold ? (style.single ? 0 : 1) : 0);
+    let merged = 0;
+    for (let pass = 0; pass < 5; pass++) {
+      const label = new Int32Array(n).fill(-1), tone = new Int8Array(n).fill(-1);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tone[y * w + x] = toneAt(y * w + x);
+      let changed = 0;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const s0 = y * w + x;
+        if (tone[s0] < 0 || label[s0] >= 0) continue;
+        const patch = [s0]; label[s0] = s0; let touched = !!region[s0];
+        for (let k = 0; k < patch.length; k++) {
+          const p = patch[k], px = p % w, py = (p / w) | 0;
+          for (const q of [px > x0 ? p - 1 : -1, px < x1 ? p + 1 : -1, py > y0 ? p - w : -1, py < y1 ? p + w : -1]) {
+            if (q >= 0 && label[q] < 0 && tone[q] === tone[s0]) { label[q] = s0; patch.push(q); if (region[q]) touched = true; }
+          }
+        }
+        if (patch.length >= minPool || !touched) continue;
+        const votes = [0, 0];
+        for (const p of patch) {
+          const px = p % w, py = (p / w) | 0;
+          for (const q of [px > x0 ? p - 1 : -1, px < x1 ? p + 1 : -1, py > y0 ? p - w : -1, py < y1 ? p + w : -1]) {
+            if (q >= 0 && tone[q] >= 0 && tone[q] !== tone[s0]) votes[tone[q]]++;
+          }
+        }
+        const other = tone[s0] === 0 ? 1 : 0;
+        if (!votes[other]) continue; // Not touching the other tone: nothing to merge into.
+        for (const p of patch) pixels.set(style.tones[other], p * 4);
+        changed++; merged += patch.length;
+      }
+      if (!changed) break;
+    }
+    return merged;
+  }
+  // Even out outline wobble: inside `region`, strips the outline, averages the metal's edge broadly (bumps pulled
+  // in, dents pulled out toward the local mean line; the averaging size is picked automatically from how much the
+  // edge wobbles, `amount` 0–1 sets how calm it must get) and redraws the outline at one even thickness. Reports
+  // the wobble before and after (px).
+  function evenOutline(pixels, width, height, region, options = {}) {
+    const before = new Uint8ClampedArray(pixels), classify = options.classify || makeClassifier(options);
+    return rebuildOutline(before, pixels, width, height, region, { uniform: true, smoothing: 1, ...options, classify,
+      wobble: { amount: options.amount ?? 0.6, sigma: options.sigma } });
+  }
+  // Clean up to the art's style: inside `region`, pulls black out of the metal, flattens the metal to the art's own
+  // tones (every metal pixel becomes exactly the shaded or unshaded color, black outline pure black, no
+  // half-transparent pixels), merges tone patches smaller than the art's smallest pool into the tone around them,
+  // then evens out the outline as above. Style (tones, smallest pool) is read from the untouched art.
+  function styleCleanup(pixels, width, height, region, options = {}) {
+    const w = width, h = height, n = w * h, before = new Uint8ClampedArray(pixels), classify = options.classify || makeClassifier(options);
+    const style = learnStyle(pixels, w, h, region, { classify });
+    const specks = removeSpecks(pixels, w, h, region, { classify, speck: options.speck ?? 40 });
+    let snapped = 0;
+    for (let p = 0; p < n; p++) {
+      if (!region[p]) continue;
+      const o = p * 4, kind = classify(pixels, o);
+      if (kind === METAL) {
+        const tone = style.single || luma(pixels, o) >= style.threshold ? (style.single ? 0 : 1) : 0, c = style.tones[tone];
+        if (pixels[o] !== c[0] || pixels[o + 1] !== c[1] || pixels[o + 2] !== c[2] || pixels[o + 3] !== 255) { pixels.set(c, o); snapped++; }
+      } else if (kind === INK) pixels.set([0, 0, 0, 255], o);
+      else if (kind === EMPTY && pixels[o + 3]) pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0;
+    }
+    const minPool = options.pool > 0 ? options.pool : style.minPool;
+    const merged = mergePools(pixels, w, h, region, style, minPool, classify);
+    const rebuilt = rebuildOutline(before, pixels, w, h, region, { uniform: true, smoothing: 1, classify, wobble: { amount: options.amount ?? 0.6 } });
+    return { specks, snapped, merged, minPool, style, ...rebuilt };
+  }
+
   // One brush stroke of the smudge-family tools (smudge, revert, plow, puff), stepped point by point so the editor's
   // live preview and the saved replay run the exact same steps. finish() rebuilds the outline around what changed.
   function toolStepper(pixels, width, height, op, options = {}) {
@@ -1000,7 +1285,7 @@
     const classify = options.classify || makeClassifier(options), region = new Uint8Array(width * height);
     const before = new Uint8ClampedArray(pixels), random = mulberry32(op.seed ?? 1), scale = options.scale ?? 1;
     const r = op.r * scale, strength = op.strength;
-    let changed = 0;
+    let changed = 0, outlineWidth = null;
     return {
       region,
       step(from, to) {
@@ -1009,9 +1294,14 @@
         else if (tool === 'plow') changed += plowStep(pixels, width, height, from, to, r, { classify, region });
         else if (tool === 'clean') { stampLine(region, width, height, from, to, r); changed++; } // Applied on finish.
         else if (tool === 'puff') {
+          if (outlineWidth === null) { // Measured once per stroke, near where it starts, on the image before the stroke.
+            const margin = Math.ceil(r) + 60, wx = Math.max(0, Math.floor(from.x - margin)), wy = Math.max(0, Math.floor(from.y - margin));
+            const win = { wx, wy, ww: Math.min(width - 1, Math.ceil(from.x + margin)) - wx + 1, wh: Math.min(height - 1, Math.ceil(from.y + margin)) - wy + 1 };
+            outlineWidth = win.ww > 2 && win.wh > 2 ? measureOutline(before, width, height, win, classify, { uniform: true }).eraseDepth : 12;
+          }
           const len = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(len / Math.max(1, r / 3)));
           for (let i = 1; i <= steps; i++) changed += puffStep(pixels, width, height,
-            { x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps }, r, { classify, region, strength });
+            { x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps }, r, { classify, region, strength, outlineWidth });
         }
         return changed;
       },
@@ -1092,5 +1382,6 @@
 
   global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
     smudgeStep, rebuildOutline, smudgeStroke, makeClassifier, revertStep, plowStep, puffStep, toolStepper, toolStroke,
-    separateShading, removeSpecks, cleanOutline, changedRegion });
+    separateShading, removeSpecks, cleanOutline, changedRegion, gaussBlur, maskWobble, measureOutline,
+    learnStyle, evenOutline, styleCleanup });
 })(typeof window === 'object' ? window : globalThis);

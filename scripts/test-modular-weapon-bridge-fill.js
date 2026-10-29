@@ -233,6 +233,78 @@ assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the s
   const tops = [14, 20, 23, 30, 40].map(x => { let y = 0; while (y < CH && at(img, x, y).split(',')[3] === '0') y++; return y; });
   assert(tops.every(t => t === tops[0]), 'Outline top edge is even after clean-up: ' + tops);
 }
+// Broad averaging: Puff fills wide dents but keeps bumps and corners; Even out wobble calms a wobbly edge but keeps
+// grooves; Clean up to style flattens noisy tones and merges speckle; none of them touch untouched art.
+{
+  const T = window.ModularWeaponBridgeFill, PW = 140, PH = 120, cls = T.makeClassifier();
+  const mk = () => new Uint8ClampedArray(PW * PH * 4);
+  const px = (a, x, y, c) => a.set(c, (y * PW + x) * 4);
+  const kindAt = (a, x, y) => cls(a, (y * PW + x) * 4);
+  // A 2-tone block with a 4px outline: metal x 24..115, y 30..89 (left half shaded, right half unshaded).
+  const block = noise => { const a = mk(); let seed = 11; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let y = 26; y < 94; y++) for (let x = 20; x < 120; x++) {
+      const edge = x < 24 || x > 115 || y < 30 || y > 89;
+      const base = x < 70 ? SHADE : LIT, n = noise ? Math.round((rnd() - 0.5) * 6) : 0;
+      px(a, x, y, edge ? INK : [base[0] + n, base[1] + n, base[2] + n, 255]);
+    } return a; };
+  const leftMetal = (a, y) => { for (let x = 0; x < PW; x++) if (kindAt(a, x, y) === 2) return x; return -1; };
+  // Puff: a 16px-wide, 3px-deep dent in the top edge fills (the brush scales with radius × strength); a bump stays.
+  // (A dent deeper than the outline is treated as interior detail, like a groove, and left alone.)
+  const dented = block(false);
+  for (let y = 30; y < 33; y++) for (let x = 60; x < 76; x++) px(dented, x, y, INK);
+  const puff = T.toolStepper(dented, PW, PH, { tool: 'puff', r: 24, strength: 0.8, points: [] });
+  puff.step({ x: 50, y: 33 }, { x: 86, y: 33 }); const puffed = puff.finish();
+  assert(puffed.changed >= 40, 'A 16px-wide dent filled: ' + puffed.changed);
+  for (let x = 60; x < 76; x++) assert.equal(kindAt(dented, x, 31), 2, 'Dent filled with metal at x=' + x);
+  for (let x = 60; x < 76; x++) assert.equal(kindAt(dented, x, 29), 1, 'Outline runs straight across at x=' + x);
+  // A groove deep inside the metal (well beyond a dent's reach from empty space) is never filled by Puff.
+  const grooved = block(false);
+  for (let y = 56; y < 62; y++) for (let x = 40; x < 100; x++) px(grooved, x, y, INK);
+  const groovePuff = T.toolStepper(grooved, PW, PH, { tool: 'puff', r: 24, strength: 1, points: [] });
+  groovePuff.step({ x: 50, y: 59 }, { x: 90, y: 59 }); groovePuff.finish();
+  for (let x = 45; x < 95; x += 7) assert.equal(kindAt(grooved, x, 58), 1, 'Puff leaves the groove at x=' + x);
+  // Even a groove that opens onto the outline (so it is close to the outside across the metal) stays: only black that
+  // reaches open space within the outline plus dent depth is filled, and a groove's black reaches it along its length.
+  const openGroove = block(false);
+  for (let y = 30; y < 90; y++) for (let x = 66; x < 74; x++) px(openGroove, x, y, INK);
+  const openPuff = T.toolStepper(openGroove, PW, PH, { tool: 'puff', r: 24, strength: 1, points: [] });
+  openPuff.step({ x: 70, y: 60 }, { x: 70, y: 75 }); openPuff.finish();
+  for (let y = 54; y < 68; y += 4) assert.equal(kindAt(openGroove, 70, y), 1, 'Puff leaves the open-ended groove at y=' + y); // The middle, beyond the mouths' reach.
+  const bumpy = block(false);
+  for (let y = 26; y < 30; y++) for (let x = 60; x < 70; x++) px(bumpy, x, y - 4, INK); // a bump of outline above the edge
+  const bumpBefore = Array.from(bumpy), bumpPuff = T.toolStepper(bumpy, PW, PH, { tool: 'puff', r: 24, strength: 0.8, points: [] });
+  bumpPuff.step({ x: 50, y: 40 }, { x: 86, y: 40 }); bumpPuff.finish();
+  assert.equal(kindAt(bumpy, 24, 30), kindAt(Uint8ClampedArray.from(bumpBefore), 24, 30), 'Puff leaves a straight edge and corner as they were.');
+  // Even out wobble: a sinusoidal left edge (kept inside the worked region) is calmed; a groove inside survives.
+  const wavy = mk(), xl = y => Math.round(34 + 5 * Math.sin(y / 9) + 3 * Math.sin(y / 23)), xr = y => Math.round(110 + 5 * Math.sin(y / 11 + 1));
+  for (let y = 20; y < 100; y++) for (let x = xl(y) - 5; x <= xr(y) + 5; x++) px(wavy, x, y, x < xl(y) || x > xr(y) ? INK : SHADE);
+  for (let y = 40; y < 80; y++) for (let x = 70; x < 76; x++) px(wavy, x, y, INK); // A 6px groove (interior detail).
+  const spread = a => { const v = []; for (let y = 40; y < 80; y++) v.push(leftMetal(a, y)); const m = v.reduce((u, t) => u + t, 0) / v.length; return Math.sqrt(v.reduce((u, t) => u + (t - m) ** 2, 0) / v.length); };
+  const region = new Uint8Array(PW * PH); for (let y = 30; y < 90; y++) for (let x = 20; x < 125; x++) region[y * PW + x] = 1;
+  const evened = Uint8ClampedArray.from(wavy), evenResult = T.evenOutline(evened, PW, PH, Uint8Array.from(region), { amount: 0.9 });
+  assert(spread(evened) < spread(wavy) * 0.75, 'Edge wobble calmed: ' + spread(wavy).toFixed(2) + ' → ' + spread(evened).toFixed(2));
+  assert(evenResult.wobble && evenResult.wobble.after < evenResult.wobble.before, 'The measured wobble fell: ' + JSON.stringify(evenResult.wobble));
+  assert.equal(kindAt(evened, 72, 60), 1, 'The groove is still black.');
+  const gentle = Uint8ClampedArray.from(wavy); T.evenOutline(gentle, PW, PH, Uint8Array.from(region), { amount: 0.2 });
+  assert(spread(gentle) >= spread(evened), 'A lower smoothing setting leaves more wobble.');
+  // Clean up to style: noisy tones become exactly two flat colors; speckle patches merge; a big patch and the groove stay.
+  const noisy = block(true), speck = new Uint8ClampedArray(noisy);
+  for (const [sx, sy] of [[40, 50], [90, 60], [45, 70]]) {
+    const opposite = speck[(sy * PW + sx) * 4] < 80 ? LIT : SHADE; // Read once: the loop below changes the pixel.
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 3; x++) px(speck, sx + x, sy + y, opposite); // Opposite-tone specks.
+  }
+  for (let y = 40; y < 52; y++) for (let x = 90; x < 104; x++) px(speck, x, y, SHADE); // A big (168 px) patch inside the lit half: kept.
+  const sRegion = new Uint8Array(PW * PH); for (let y = 36; y < 84; y++) for (let x = 36; x < 105; x++) sRegion[y * PW + x] = 1;
+  const flat = Uint8ClampedArray.from(speck), sr = T.styleCleanup(flat, PW, PH, sRegion, { amount: 0.6 });
+  const colors = new Set(); for (let y = 40; y < 80; y++) for (let x = 40; x < 100; x++) if (kindAt(flat, x, y) === 2) colors.add(get2(flat, x, y));
+  function get2(a, x, y) { return Array.from(a.slice((y * PW + x) * 4, (y * PW + x) * 4 + 4)).join(); }
+  assert(colors.size <= 3, 'Metal in the worked area is flat (' + colors.size + ' colors): ' + [...colors].join(' | '));
+  assert(sr.merged >= 6 && sr.snapped > 1000, 'Specks merged and noise snapped: ' + sr.merged + ' / ' + sr.snapped);
+  assert.equal(get2(flat, 45, 50).split(',')[0], get2(flat, 60, 60).split(',')[0], 'The speck became the tone around it.');
+  assert.equal(get2(flat, 95, 45), SHADE.join().replace(/^60,90,95/, get2(flat, 95, 45).split(',').slice(0, 3).join()), 'The big patch stays.');
+  assert(sr.style.fromUntouched && sr.style.tones.length === 2, 'Style is read from the untouched art.');
+  for (let y = 0; y < PH; y++) for (let x = 0; x < 20; x++) assert.equal(get2(flat, x, y), get2(speck, x, y), 'Untouched art is exactly as it was.');
+}
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.
@@ -273,13 +345,16 @@ console.log('modular weapon bridge fill OK');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: { strokes: [
     { tool: 'plow', r: 9, points: [[1, 2], [5, 2]], seed: 4 }, { tool: 'revert', r: 6, strength: 3, points: [[1, 1]] },
     { shading: true, tolerance: 0.9, pool: 7 }, { tool: 'erase-everything', r: 3, points: [[0, 0]] }, { revertPoint: true },
-    { clean: true, smoothing: 99, speck: 50 }, { tool: 'clean', r: 10, points: [[3, 3]], smoothing: 3, speck: 20 } ] } };
+    { clean: true, smoothing: 99, speck: 50 }, { tool: 'clean', r: 10, points: [[3, 3]], smoothing: 3, speck: 20 },
+    { even: true, amount: 7 }, { style: true, amount: 0.4, pool: -5 } ] } };
   const toolOps = api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges.strokes;
   assert.equal(toolOps[0].tool, 'plow'); assert.equal(toolOps[1].strength, 1, 'Strength clamped.');
   assert.equal(JSON.stringify(toolOps[2]), '{"shading":true,"tolerance":0.5,"pool":7}');
-  assert.equal(toolOps.length, 6, 'Unknown tools are dropped, never replayed as something else.');
+  assert.equal(toolOps.length, 8, 'Unknown tools are dropped, never replayed as something else.');
   assert.equal(JSON.stringify(toolOps[4]), '{"clean":true,"smoothing":12,"speck":50}', 'Whole-weapon clean-up kept, clamped.');
   assert(toolOps[5].tool === 'clean' && toolOps[5].smoothing === 3 && toolOps[5].speck === 20, 'Clean brush strokes kept.');
+  assert.equal(JSON.stringify(toolOps[6]), '{"even":true,"amount":1}', 'Even-out op kept, amount clamped.');
+  assert.equal(JSON.stringify(toolOps[7]), '{"style":true,"amount":0.4,"pool":0}', 'Style op kept, pool clamped.');
   assert.equal(JSON.stringify(toolOps[3]), '{"revertPoint":true}', 'Revert points are kept in order.');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: null };
   assert.equal(api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges, null, 'Explicit removal is kept.');

@@ -561,6 +561,16 @@
     if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
     applyStrokes([{ revertPoint: true }], 'Revert point set: the revert brush now eases back to this.');
   };
+  byId('pair-even-outline').onclick = () => {
+    if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
+    if (!pairOverride().bridges?.strokes?.length) { bridgeStatus('Nothing to even out yet: this works on brush-worked areas.'); return; }
+    applyStrokes([{ even: true, amount: Number(byId('pair-even-amount').value) / 100 }], 'Evened out the outline wobble.');
+  };
+  byId('pair-style-cleanup').onclick = () => {
+    if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
+    if (!pairOverride().bridges?.strokes?.length) { bridgeStatus('Nothing to clean yet: this works on brush-worked areas.'); return; }
+    applyStrokes([{ style: true, amount: Number(byId('pair-even-amount').value) / 100, pool: Number(byId('pair-style-pool').value) }], 'Cleaned up to your style.');
+  };
   byId('pair-clean-outline').onclick = () => {
     if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
     if (!pairOverride().bridges?.strokes?.length) { bridgeStatus('Nothing to clean yet: the clean-up works on brush-worked areas (use the Clean outline brush for original artwork).'); return; }
@@ -618,9 +628,13 @@
   });
   // Slider readouts for both editors' tool settings.
   for (const id of ['pair-tool-strength', 'pair-shading-tolerance', 'pair-shading-pool', 'cut-tool-strength', 'cut-shading-tolerance', 'cut-shading-pool',
-    'pair-clean-smoothing', 'pair-clean-speck', 'cut-clean-smoothing', 'cut-clean-speck']) {
+    'pair-clean-smoothing', 'pair-clean-speck', 'cut-clean-smoothing', 'cut-clean-speck', 'pair-even-amount', 'cut-even-amount']) {
     const input = byId(id), readout = byId(id + '-value');
     if (input && readout) input.addEventListener('input', () => { readout.textContent = input.value; });
+  }
+  for (const pre of ['pair', 'cut']) { // Pool size 0 means "learn it from the art".
+    const input = byId(pre + '-style-pool'), readout = byId(pre + '-style-pool-value');
+    input.addEventListener('input', () => { readout.textContent = Number(input.value) ? input.value + ' px' : 'auto'; });
   }
   // Maximize: one preview fills its floating panel (the others hide); pressing again restores them.
   for (const button of document.querySelectorAll('[data-max]')) button.addEventListener('click', () => {
