@@ -97,6 +97,102 @@
     return layers;
   }
 
+  // Build a ground-rooted part graph from actual geometry, not part names.
+  // This works for authored furniture parts and for independent GLB/procedural
+  // meshes, including renamed legs/posts and multi-part arches.
+  function planFurnitureGrowth(THREE, target, floorY, radius) {
+    target.updateWorldMatrix(true, true);
+    const parts=[];
+    target.traverse(mesh=>{
+      if(!mesh.isMesh || !mesh.geometry?.getAttribute?.('position'))return;
+      let node=mesh,excluded=false;
+      while(node){ excluded ||= !!(node.userData?.surfaceFoliage ||
+        node.userData?.surfaceFoliageExclude || node.userData?.surfaceFoliageGuide);
+        if(node===target)break; node=node.parent; }
+      if(excluded)return;
+      const bounds=new THREE.Box3().setFromObject(mesh);
+      if(bounds.isEmpty?.())return;
+      const min=bounds.min,max=bounds.max;
+      if(![min.x,min.y,min.z,max.x,max.y,max.z].every(Number.isFinite))return;
+      parts.push({index:parts.length,mesh,bounds,
+        label:String(mesh.userData?.authoredPart?.name || mesh.name || 'Furniture part '+parts.length),
+        parent:null,depth:0,grounded:false,linkGap:0});
+    });
+    if(!parts.length)throw new Error('The imported furniture has no valid growth parts.');
+    const floorGap=Math.max(.18,radius*4);
+    let grounded=parts.filter(p=>p.bounds.min.y<=floorY+floorGap &&
+      p.bounds.max.y>=floorY-floorGap);
+    if(!grounded.length){ // An elevated asset still needs one entry point, never all-at-once targets.
+      const minHeight=Math.min(...parts.map(p=>p.bounds.min.y));
+      grounded=parts.filter(p=>p.bounds.min.y<=minHeight+floorGap);
+    }
+    for(const part of grounded)part.grounded=true;
+    const visited=new Set(grounded);
+    // AABB contact is independent of naming and mesh origin. Non-touching
+    // sections can still be bridged by a visible connector from the nearest
+    // already-rooted section; they must never sprout directly from the floor.
+    const gap=(a,b)=>{
+      const axis=(a0,a1,b0,b1)=>Math.max(0,a0-b1,b0-a1);
+      return Math.hypot(axis(a.min.x,a.max.x,b.min.x,b.max.x),
+        axis(a.min.y,a.max.y,b.min.y,b.max.y),
+        axis(a.min.z,a.max.z,b.min.z,b.max.z));
+    };
+    while(visited.size<parts.length){
+      let best=null;
+      for(const parent of visited)for(const child of parts){
+        if(visited.has(child))continue;
+        const separation=gap(parent.bounds,child.bounds);
+        const upward=Math.max(0,child.bounds.min.y-parent.bounds.min.y);
+        const backwards=Math.max(0,parent.bounds.min.y-child.bounds.min.y);
+        const cost=separation+upward*.015+backwards*.35+parent.depth*.005;
+        if(!best||cost<best.cost)best={parent,child,separation,cost};
+      }
+      if(!best)break;
+      best.child.parent=best.parent.index;best.child.depth=best.parent.depth+1;
+      best.child.linkGap=best.separation;
+      visited.add(best.child);
+    }
+    return parts;
+  }
+
+  // Find an actual rooted strand near each piece-to-piece connection. A
+  // connecting shoot is animated BEFORE the newly reached part can fill in.
+  function nearestStrandPoint(THREE, growth, destination) {
+    let nearest=null,dist=Infinity;
+    for(const mesh of growthMeshes(growth)){
+      const attr=mesh.geometry.getAttribute('position'),step=Math.max(6,Math.floor(attr.count/1800/6)*6);
+      for(let i=0;i+5<attr.count;i+=step){
+        const p=new THREE.Vector3();
+        for(let j=0;j<5;j++)p.add(new THREE.Vector3().fromBufferAttribute(attr,i+j));
+        p.multiplyScalar(.2);
+        const d=p.distanceToSquared(destination);
+        if(d<dist){dist=d;nearest=p;}
+      }
+    }
+    return nearest||destination.clone();
+  }
+
+  // Indexed triangles are grouped into ascending-height buckets, retaining
+  // topology and UVs. Draw ranges can then grow up a leg/post rather than
+  // revealing arbitrarily ordered whole strands along its length.
+  function orderGrowthByHeight(mesh) {
+    const geometry=mesh.geometry,index=geometry?.getIndex?.(),position=geometry?.getAttribute?.('position');
+    const entries=index?.array;
+    if(!entries||!position||entries.length<6)return;
+    geometry.computeBoundingBox?.();
+    const minY=geometry.boundingBox?.min?.y??0,maxY=geometry.boundingBox?.max?.y??minY;
+    const buckets=Array.from({length:32},()=>[]);
+    const range=Math.max(.0001,maxY-minY);
+    for(let i=0;i<entries.length;i+=3){
+      const y=Math.min(position.getY(entries[i]),position.getY(entries[i+1]),position.getY(entries[i+2]));
+      const bin=clamp(Math.floor((y-minY)/range*32),0,31);
+      buckets[bin].push(entries[i],entries[i+1],entries[i+2]);
+    }
+    let offset=0;
+    for(const bucket of buckets){entries.set(bucket,offset);offset+=bucket.length;}
+    index.needsUpdate=true;
+  }
+
   // Particle emitters need real world positions but must NOT become descendants
   // of hidden furniture meshes. Rebuild the source part's transform-only ancestry
   // in a visible host, retaining nested part offsets/rotation/scale exactly.
@@ -164,13 +260,14 @@
     return { nodes: chosen, derivedFromWrap: !!candidates.length, candidateCount: candidates.length };
   }
 
-  function sampledTargetPoints(THREE, target, growth, count, random, parent, interior = false) {
+  function sampledTargetPoints(THREE, target, growth, count, random, parent, interior = false, selectedGrowths = null) {
     const endpoints = Array.isArray(growth.userData?.surfaceGrowthEndpoints) ? growth.userData.surfaceGrowthEndpoints : [];
     const points = []; // Inward-shrinkwrapped geometry replaces the old exterior boundary endpoints.
     target.updateWorldMatrix(true, true);
     parent.updateWorldMatrix(true, true);
     const toParent = world => parent.worldToLocal(world);
-    if (interior) for (const mesh of growthMeshes(growth)) {
+    if (interior) for (const mesh of (selectedGrowths ?
+      selectedGrowths.flatMap(group=>growthMeshes(group)) : growthMeshes(growth))) {
       const pos=mesh.geometry.getAttribute('position');
       const ringCount=Math.floor(pos.count/6);
       if(!ringCount) continue;
@@ -299,19 +396,35 @@
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
     }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
     floorHost.add(floorGrowth);
-    const targetGrowth = buildDenseWrap(THREE, foliage, target, {
-      ...growthOptions, seed:recipe.seed+':shape', target:'all',
-      length:recipe.targetLength,
-      shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
-    }, recipe.targetDensity, (pass, passes) => ({
-      // Distribute the six layers through the volume, starting just inside
-      // its actual surface. The raycaster caps depth at half local wall thickness.
-      inset: Math.min(0.5,recipe.shapeInset +
-        recipe.volumeFillDepth * (passes<=1?0:pass/(passes-1)))
-    })); // The inside surface, not the furniture's outside cage, is the final keyframe.
+    const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
+    const targetGrowth=new THREE.Group();
+    targetGrowth.name='Staged furniture interior roots';
+    targetGrowth.userData.surfaceFoliage=true;
+    targetGrowth.userData.generatedStrands=0;
+    targetGrowth.userData.surfaceGrowthEndpoints=[];
+    // A per-mesh plan keeps elevated tabletop/overhang triangles out of the
+    // initial roots. Each part retains the same six inward shrinkwrap passes.
+    const partGrowths=partPlan.map(part=>{
+      const wrapped=buildDenseWrap(THREE, foliage, target, {
+        ...growthOptions, seed:recipe.seed+':part-'+part.index,
+        target:'all', targetMeshId:part.mesh.uuid, length:recipe.targetLength,
+        shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
+      },recipe.targetDensity,(pass,passes)=>({
+        inset:Math.min(.5,recipe.shapeInset+
+          recipe.volumeFillDepth*(passes<=1?0:pass/(passes-1)))
+      }));
+      wrapped.name='Roots of '+part.label;
+      wrapped.userData.rootGrowthPartIndex=part.index;
+      wrapped.userData.growthDepth=part.depth;
+      targetGrowth.add(wrapped);
+      targetGrowth.userData.generatedStrands+=wrapped.userData.generatedStrands||0;
+      targetGrowth.userData.surfaceGrowthEndpoints.push(...(wrapped.userData.surfaceGrowthEndpoints||[]));
+      return wrapped;
+    });
     target.add(targetGrowth);
-    const shapeMesh = findGrowthMesh(targetGrowth), floorMesh = findGrowthMesh(floorGrowth);
-    const targets = sampledTargetPoints(THREE, target, targetGrowth, recipe.branchCount, random, group, true);
+    const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
+    const groundGrowth=partPlan.filter(part=>part.grounded).map(part=>partGrowths[part.index]);
+    const targets=sampledTargetPoints(THREE,target,targetGrowth,recipe.branchCount,random,group,true,groundGrowth);
     const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random);
     const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
     const branchMaterial = branchSourceMaterial?.clone?.() ||
@@ -323,9 +436,32 @@
       branchGroup.add(branch); return branch;
     });
     group.add(branchGroup);
-    const shapeMeshes = growthMeshes(targetGrowth); // Every seeded density layer must grow/retract, not only its first mesh.
-    for (const mesh of shapeMeshes) mesh.userData.fullDrawCount =
-      mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count;
+    const maxDepth=Math.max(0,...partPlan.map(part=>part.depth));
+    const stageStart=.28, stageLength=(1-stageStart)/(maxDepth+1);
+    const partWindows=partPlan.map(part=>({
+      start:stageStart+part.depth*stageLength,
+      end:stageStart+(part.depth+1)*stageLength
+    }));
+    const shapeMeshes=growthMeshes(targetGrowth);
+    for(const mesh of shapeMeshes){
+      orderGrowthByHeight(mesh);
+      mesh.userData.fullDrawCount=mesh.geometry.index?
+        mesh.geometry.index.count:mesh.geometry.attributes.position.count;
+    }
+    const connectors=[]; // Only from an already rooted part; never directly to a tabletop or arch beam.
+    for(const part of partPlan){
+      if(part.parent===null)continue;
+      const parentPart=partPlan[part.parent];
+      const targetCenter=part.bounds.getCenter(new THREE.Vector3());
+      const from=nearestStrandPoint(THREE,partGrowths[parentPart.index],targetCenter);
+      const end=nearestStrandPoint(THREE,partGrowths[part.index],from);
+      const connector=makeBranch(THREE,from,end,branches.length+connectors.length,
+        recipe,random,branchMaterial);
+      connector.name='Root transfer: '+parentPart.label+' → '+part.label;
+      connector.userData.fromPart=parentPart.index;
+      connector.userData.toPart=part.index;
+      connectors.push(connector);branchGroup.add(connector);
+    }
     const emitterRecords = Array.isArray(options.particleEmitters) ? options.particleEmitters :
       (Array.isArray(target.userData?.authoredParticleEmitters) ? target.userData.authoredParticleEmitters : []);
     const emitterRuntime = options.emitterRuntime || root.AuthoredFurniture;
@@ -337,7 +473,7 @@
       .map(record=>emitterRuntime.createEmitterVisual(effectHost,record)); // Reuses the authored-furniture particle renderer.
     let progress = 0, direction = 0, disposed = false; // Per-instance animation state, independent of purpose/trigger.
     const apply = () => {
-      const extent = smooth(progress / .68), wrap = smooth((progress - .45) / .55);
+      const extent=smooth(progress / stageStart);
       for (let i = 0; i < branches.length; i++) {
         // Small per-branch offsets keep the growth organic without changing the authored final pose.
         const phase = clamp((extent - (i % 4) * .065) / (1 - (i % 4) * .065), 0, 1);
@@ -345,13 +481,25 @@
         branches[i].geometry.setDrawRange(0, count);
         branches[i].visible = count > 0;
       }
-      for (const mesh of shapeMeshes) {
-        const count = Math.floor(mesh.userData.fullDrawCount * wrap / 3) * 3;
-        mesh.geometry.setDrawRange(0, count);
+      for(const part of partPlan){
+        const window=partWindows[part.index],local=smooth((progress-window.start)/(window.end-window.start));
+        for(const mesh of growthMeshes(partGrowths[part.index])){
+          const count=Math.floor(mesh.userData.fullDrawCount*local/3)*3;
+          mesh.geometry.setDrawRange(0,count);
+        }
+      }
+      for(const connector of connectors){
+        const childWindow=partWindows[connector.userData.toPart];
+        const span=Math.min(.08,stageLength*.32);
+        const start=childWindow.start-span,end=childWindow.start+span;
+        const local=smooth((progress-start)/(end-start));
+        connector.geometry.setDrawRange(0,Math.floor(connector.userData.fullDrawCount*local/3)*3);
+        connector.visible=local>0;
       }
     };
     const api = {
-      group, target, floorGrowth, targetGrowth, branches, recipe, rootFinish, emitterVisuals,
+      group, target, floorGrowth, targetGrowth, branches, connectors, partPlan, partGrowths,
+      recipe, rootFinish, emitterVisuals,
       setProgress(value) { if (!disposed) { progress = number(value, progress, 0, 1); apply(); } return progress; },
       getProgress() { return progress; },
       extend() { if (!disposed) direction = 1; },
@@ -373,13 +521,21 @@
         return {progress, direction, branchCount:branches.length, rootFinish, outlinedBranches:branches.length,
           floorStrands:floorGrowth.userData?.generatedStrands || 0,
           shapeStrands:targetGrowth.userData?.generatedStrands || 0,
+          groundedParts:partPlan.filter(part=>part.grounded).map(part=>part.label),
+          partCount:partPlan.length, rootTransferCount:connectors.length,
+          maxPartDepth:maxDepth,
+          partGrowth:partPlan.map(part=>({label:part.label,grounded:part.grounded,
+            parent:part.parent,depth:part.depth,progress:clamp((progress-
+              partWindows[part.index].start)/stageLength,0,1),gap:part.linkGap})),
           floorDensityPasses:floorGrowth.userData?.densityPasses || 1,
           shapeDensityPasses:targetGrowth.userData?.densityPasses || 1,
           insideShrinkwrap:true, shapeInset:recipe.shapeInset, volumeFillDepth:recipe.volumeFillDepth,
-          shrinkwrapRays: (targetGrowth.userData?.surfaceGrowthStats?.shrinkwrapRays || 0) +
-            (targetGrowth.children || []).reduce((n,layer)=>n+(layer.userData?.surfaceGrowthStats?.shrinkwrapRays||0),0),
-          shrinkwrapHits: (targetGrowth.userData?.surfaceGrowthStats?.shrinkwrapHits || 0) +
-            (targetGrowth.children || []).reduce((n,layer)=>n+(layer.userData?.surfaceGrowthStats?.shrinkwrapHits||0),0),
+          shrinkwrapRays:partGrowths.reduce((n,part)=>n+
+            (part.userData?.surfaceGrowthStats?.shrinkwrapRays||0)+
+            (part.children||[]).reduce((k,layer)=>k+(layer.userData?.surfaceGrowthStats?.shrinkwrapRays||0),0),0),
+          shrinkwrapHits:partGrowths.reduce((n,part)=>n+
+            (part.userData?.surfaceGrowthStats?.shrinkwrapHits||0)+
+            (part.children||[]).reduce((k,layer)=>k+(layer.userData?.surfaceGrowthStats?.shrinkwrapHits||0),0),0),
           furnitureEmitterCount:emitterVisuals.length, furnitureEmittersActive:progress >= 1,
           floorNodesFromWrap:source.derivedFromWrap, sampledFloorNodes:source.candidateCount,
           shapeWrapEndpointPairs:targets.wrapEndpointCount, shapeEndpointFallback:targets.usedFallback,
@@ -390,7 +546,7 @@
         group.parent?.remove(group);
         // Only dispose generated assets; source clone materials/geometries can be shared with the importer.
         for (const visual of emitterVisuals) visual.dispose(); // Stops spawning and frees particles without touching the furniture.
-        for (const mesh of branches) mesh.geometry.dispose();
+        for (const mesh of [...branches,...connectors]) mesh.geometry.dispose();
         branchMaterial.dispose();
         for (const growth of [floorGrowth, targetGrowth]) growth.traverse(node => {
           node.geometry?.dispose?.(); if (Array.isArray(node.material)) node.material.forEach(mat => mat.dispose());
