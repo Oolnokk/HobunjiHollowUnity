@@ -8335,7 +8335,7 @@
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
               const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
-              const furiousStarted = !isBanditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
+              const furiousStarted = !c.banditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
                 && !!window.Combat?.animalAttacks?.startFuriousSpecial?.(c, { target }); // Bypasses current cooldown and Stamina only when the most expensive enabled special is fully funded.
               if (furiousStarted) {
                 st.mode = 'backingUp'; st.t = 0; aimAngle = c.facing; // Attack owns motion immediately; its saved cooldown resumes after completion/cancellation.

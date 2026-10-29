@@ -96,7 +96,8 @@ assert.match(playerQuick, /if \(conditionBonusUsed\) window\.AudioSystem\?\.play
 assert.match(enemyQuick, /impactTech\.bonusActive[\s\S]{0,350}playQuickAttackBonusSfx/, 'NPC quick attack bonus is re-evaluated and played at target contact');
 assert.match(audio, /function playQuickAttackBonusSfx\(/);
 assert.match(audio, /function playSoursapBurstSfx\(/);
-assert.match(audio, /renderDecodedIndependentBuffer\(entry\.buffer, combatPositionalContext/, 'Soursap uses the existing independent pitch/tempo DSP');
+assert.match(audio, /const renderer = window\.AnimalVoiceIndependentPlayback\?\.renderDecodedIndependentBuffer/, 'Soursap reuses the existing independent pitch/tempo DSP');
+assert.match(audio, /renderer\(entry\.buffer, combatPositionalContext/, 'decoded recording is passed through the shared processor');
 assert.match(audio, /tempo: 0\.8, pitchSemitones: -12/, 'the independent WSOLA request uses precisely the requested sound transformation');
 assert.match(config, /"quickAttackBonusSlash"[^\n]+sfx_anime_slash\.wav/);
 assert.match(config, /"soursapSplat"[^\n]+sfx_splat_1\.mp3/, 'Soursap references the Drenkirra pellet splat file');
