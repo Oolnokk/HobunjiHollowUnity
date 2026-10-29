@@ -773,6 +773,7 @@
     _unregisterFootprint(entry);
     _disposeMesh(entry._mesh);
     deps.setHousePieces(pieces.filter(p => p.id !== id));
+    window.FarmhouseRoomPlanner?.onPieceRemoved?.(id); // Custom subdivisions belong to their wing; demolishing it removes their wall records.
     // Removing this piece can change its former neighbors' roof-axis vote
     // and/or same-direction extensions, not just its own geometry.
     _rebuildAllStructureMeshes();
