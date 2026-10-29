@@ -3691,7 +3691,8 @@
         const surfaceY = furnitureSurfaceYAtWorld(area, centerX, centerZ); // Farm decor follows the farmhouse/barn hill; interiors and authored external maps keep their existing local Y.
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
         if (furnitureKey === 'rug' && dimensions) {
-          group.scale.set((dimensions.widthTiles || def.fw) / def.fw, 1, (dimensions.heightTiles || def.fd) / def.fd);
+          const rugSize = decorativeFurnitureSize('rug', 0, dimensions); // Sanitize saved sizes before any visual scale.
+          group.scale.set(rugSize.fw / def.fw, 1, rugSize.fd / def.fd);
         } // Stretch the authored woven-rug visual to its two selected tile dimensions.
         group.position.set(centerX, surfaceY, centerZ);
         group.rotation.y = rotYDeg * Math.PI / 180;
@@ -4079,7 +4080,7 @@
         if (!spec) { clearFurniturePlacementGhost(); return; }
         const rect = spec.key === 'rug' && !spec.ignoreId ? rugRectangleAt(col, row) : null;
         const anchorCol = rect?.col ?? col, anchorRow = rect?.row ?? row; // The top-left rug tile becomes its permanent placement anchor.
-        const dimensions = rect || spec.dimensions || null; // Existing rugs preview their authored shape when moved.
+        const dimensions = rect || spec.dimensions || (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1 } : null); // First rug click previews one tile; dragged opposite corner sets its final bounds.
         const dimensionsValid = !rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16);
         const isProcessing = spec.kind === 'processing';
         const valid = dimensionsValid && (isProcessing
@@ -26215,7 +26216,7 @@
               ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
               : (() => {
                 const rect = placementSpec.key === 'rug' && !placementSpec.ignoreId ? rugRectangleAt(placementReticle.col, placementReticle.row) : null;
-                const dims = rect || placementSpec.dimensions || null;
+                const dims = rect || placementSpec.dimensions || (placementSpec.key === 'rug' ? { widthTiles: 1, heightTiles: 1 } : null);
                 return (!rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16))
                   && canPlaceDecorativeFurnitureAt(rect?.col ?? placementReticle.col, rect?.row ?? placementReticle.row,
                     placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg, currentArea, dims);
@@ -30665,6 +30666,14 @@
 
       window.FarmhouseRoomPlanner?.init({
         canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
+        canBlockCell: (c, r) => {
+          const occupiedByPlayer = Math.floor(player.x / TILE) === c && Math.floor(player.y / TILE) === r; // Never build a wall through the player.
+          const occupiedByFurniture = interiorFurnitureObjects.some(o => o.area === 'interior'
+            && c >= o.col && r >= o.row
+            && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
+            && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd);
+          return !occupiedByPlayer && !occupiedByFurniture; // Prevent new walls from trapping owned furniture or people.
+        },
         rebuild: () => rebuildInteriorGeometry(),
         save: () => { window.FarmEditor.saveFarmLayout(); saveMemberWorldData(); },
         refresh: () => { window.FurniturePlacer?.render?.(); refreshActionBar(); },
