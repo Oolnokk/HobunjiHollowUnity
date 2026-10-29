@@ -49,4 +49,31 @@ assert.equal(planner.removeWall(custom.id).ok, true);
 assert.equal(rebuild().partitions.length, 1);
 planner.restore({ walls: [{ id: 'bad', a: { c: 2, r: 2 }, b: { c: 3, r: 3 } }] });
 assert.equal(rebuild().partitions.length, 1, 'diagonal walls must never be loaded');
+// Narrow wings still need a door and at least one partition cell.
+const narrowPieces = [
+  { id: 'tiny-a', col: 0, row: 0, w: 2, h: 1, stage: 'built' },
+  { id: 'tiny-b', col: 2, row: 0, w: 1, h: 1, stage: 'built' },
+];
+const narrowFloor = new Set(); // Includes both 2x-scaled house-piece interiors.
+for (let c = 0; c < 6; c++) for (let r = 0; r < 2; r++) narrowFloor.add(`${c},${r}`);
+const narrowLayout = planner.apply({ floorSet: narrowFloor, exitSet: new Set(), doors: [], hearths: [] }, narrowPieces);
+assert.equal(narrowLayout.partitions.length, 1);
+assert.equal(narrowLayout.wallCells.size, 1);
+assert.equal(narrowLayout.doorTiles.length, 1);
+// A manual wall is attached to its room and follows 2x-scaled house movement and 90° rotation.
+planner.restore(null);
+rebuild();
+planner.armWall();
+assert.equal(planner.confirm(4, 2).ok, true);
+assert.equal(planner.confirm(4, 6).ok, true);
+const beforeMove = planner.serialize().walls[0];
+assert.equal(beforeMove.ownerPieceId, 'main');
+planner.transformWithPiece('main', { col: 1, row: 1, w: 4, h: 3 }, { col: 2, row: 1, w: 4, h: 3 }, false);
+const moved = planner.serialize().walls[0];
+assert.equal(moved.a.c, beforeMove.a.c + 2);
+planner.transformWithPiece('main', { col: 2, row: 1, w: 4, h: 3 }, { col: 2, row: 1, w: 3, h: 4 }, true);
+const rotated = planner.serialize().walls[0];
+assert.equal(rotated.a.r, rotated.b.r);
+planner.onPieceRemoved('main');
+assert.equal(planner.serialize().walls.length, 0);
 console.log('Farmhouse room planner: all regression assertions passed.');
