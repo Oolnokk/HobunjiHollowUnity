@@ -75,6 +75,7 @@
     roster.metalArmorItems = []; // Wooden puppets never inherit Harlyao's Town-Value armor set.
     roster.appearance.bodyColors = woodColors(troop.wood); // Also drives procedural hand/foot texture tint.
     roster.appearance.anatomy = { ...troop.anatomy }; // Save/diagnostic representation of the troop-scale input.
+    roster.pixelDyeSeed = 'maskbound:' + Math.random().toString(36).slice(2) + Date.now().toString(36); // Each spawned guardian's mask eyes roll their own oil-slick hue.
     roster.maskboundTroop = troop.key; // Reconstruction and future authored encounter placement use this identifier.
     roster.maskboundGait = { ...troop.gait }; // Passes per-troop walking data to the hostile avatar's procedural legs.
     return roster;

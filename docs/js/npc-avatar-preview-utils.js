@@ -199,6 +199,7 @@
       gender: appearance.gender,
     });
     if (!profile) return null;
+    profile.pixelDyeSeed = npc.pixelDyeSeed || profileSeed; // Stable per character (NPCs/player) unless the record supplies its own (hostiles roll a fresh one per spawn).
     if (npc.id || Object.hasOwn(npc, 'restingExpression')) {
       profile.restingExpression = restingExpressionForRecord(npc);
       profile.portraitSeatId = npc.id || npc.name || 'npc';

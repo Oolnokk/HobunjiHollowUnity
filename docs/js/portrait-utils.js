@@ -1781,6 +1781,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   };
 
+  // Dye 3 (the luminous pixel dye) may declare a defaultHexPool: unless the wearer applied a dye, the colour is one of the pool's hues,
+  // chosen per wearer by a seed kept on the profile (so every render of the same character agrees and never flickers).
+  const pixelDyeDefaultRgb = (pixelDye, dyeSlot) => {
+    const pool = Array.isArray(pixelDye.defaultHexPool) ? pixelDye.defaultHexPool.filter(hex => parseHexColor(hex)) : [];
+    let hex = pixelDye.defaultHex || pixelDye.sourceHex;
+    if (pool.length) {
+      const seed = profile.pixelDyeSeed ||= 'pixel-dye:' + Math.random().toString(36).slice(2); // No identity supplied: random once per profile.
+      let h = 2166136261;
+      for (const ch of seed + '|' + dyeSlot) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+      hex = pool[(h >>> 0) % pool.length];
+    }
+    const c = parseHexColor(hex);
+    return [c.r, c.g, c.b];
+  };
+
   const withPixelDyeLayer = (entry, draw) => {
     const { layer, group } = entry;
     let img = imgMap.get(layer.url);
@@ -1790,7 +1805,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (layer.pixelDye) {
       const dyeSlot = resolveLayerTintSlot(layer.pixelDye.paletteColorKey || 'C', group?.tintSlot);
       const rgb = _resolveTargetRgbColor(bodyColors[dyeSlot], _dyeReferenceHexForSlot(dyeSlot, speciesId))
-        || (() => { const c = parseHexColor(layer.pixelDye.defaultHex || layer.pixelDye.sourceHex); return [c.r, c.g, c.b]; })();
+        || pixelDyeDefaultRgb(layer.pixelDye, dyeSlot);
       img = pixelDyeLayerImage(img, layer, layer.pixelDyeOnly ? rgb : null);
       sourceKey += '|pixelDye|' + !!layer.pixelDyeOnly + '|' + rgb.join(',');
       if (layer.pixelDyeOnly) {
