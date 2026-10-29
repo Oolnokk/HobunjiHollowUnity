@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+'use strict';
+// node scripts/test-farmhouse-room-spacing.js
+// Real farmhouse geometry and window projection; outdoor house records remain untouched.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const source = file => fs.readFileSync(path.join(__dirname, '../docs/js/', file), 'utf8'); // Test checked-in modules, not parallel reimplementations.
+const context = vm.createContext({ window: {} });
+for (const file of ['farmhouse-room-planner.js', 'house-pieces-core.js', 'interior-scene-builder.js', 'interior-door-tiles.js', 'house-window-linkage.js']) {
+  vm.runInContext(source(file), context, { filename: file });
+}
+const { FarmhouseRoomPlanner: planner, HousePieces: house, InteriorDoorTiles: doorApi, InteriorSceneBuilder: walls, HouseWindowLinkage: windows } = context.window;
+const pieces = [ // One exterior boundary shared by the starter section and annex.
+  { id:'house_starter', col:2, row:2, w:4, h:3, stage:'built', features:[
+    { id:'entry', lx:1, ly:2, side:'south', edgeSlot:1, type:'entrance', _doorObj:{} },
+    { id:'chimney', lx:2, ly:0, side:'north', type:'chimney' },
+  ] },
+  { id:'house_starter_annex', col:6, row:2, w:3, h:3, stage:'built', features:[] },
+];
+house.init({ TileType:{}, getHousePieces:() => pieces });
+planner.restore(null);
+let layout = house.computeInteriorLayout();
+const main = planner.roomRect(pieces[0]), annex = planner.roomRect(pieces[1]);
+assert.equal(main.col, 4);
+assert.equal(annex.col, main.col + main.w + 1, 'complete rooms have exactly one indoor-only gap');
+assert.equal(pieces[1].col, 6, 'exterior farmhouse coordinates never change');
+assert.equal(layout.floorSet.size, main.w * main.h + annex.w * annex.h + 1);
+assert.equal(layout.exitSet.size, 1, 'only exterior doors trigger Exit House');
+assert.equal(layout.doors.length, 1);
+const exit = layout.doors[0], outside = exit.exitCells[0];
+assert.equal(layout.floorSet.has(outside), false, 'the exterior marker is floorless');
+assert.equal(exit.enter.c, main.col + 3);
+assert.equal(exit.enter.r, main.row + 5);
+assert.equal(layout.hearths.length, 1);
+assert.equal(layout.hearths[0].cx, main.col + 5);
+const join = layout.partitions[0];
+assert.equal(join.door.c, main.col + main.w);
+assert.equal(layout.floorSet.has(join.door.c + ',' + join.door.r), true);
+const wallPanels = walls.buildWallPanels(layout.floorSet, layout.exitSet, 1.75);
+assert.ok(wallPanels.length > 0, 'the room floor boundaries generate actual wall panels');
+const doorGroups = doorApi.doorGroupsOf({
+  doorTiles: layout.doorTiles,
+  exits: [{ id:'entry', tiles:[outside.split(',').map(Number)], direction:'north', generateDoor:true }],
+}, layout.floorSet);
+assert.equal(doorGroups.length, 2, 'one entrance door and one inter-room door');
+assert.equal(doorGroups.filter(d => d.exitId).length, 1);
+assert.equal(doorGroups.filter(d => !d.exitId).length, 1);
+
+const binding = { pieceId:'house_starter_annex', side:'north', localStart:0, localEnd:3, u01:0.5, v01:0.5 };
+const run = windows.__test.resolveRun(binding);
+// run needs the farm editor's live piece adapter, so test the reversible room
+// mapping with the same resolved piece used by placementForArea.
+const directRun = { pieceId:pieces[1].id, piece:pieces[1], side:'north' };
+const interiorPoint = windows.__test.toIndoorPoint(directRun, 7, 2, 0.875);
+assert.equal(interiorPoint[0], annex.col + 2);
+assert.equal(interiorPoint[2], annex.row);
+const back = windows.__test.fromIndoorPoint(directRun, interiorPoint);
+assert.equal(back[0], 7); assert.equal(back[1], 2);
+
+// Offset every exterior piece. The indoor relative layout and the full
+// footprint must remain stable, including the attached entrance and hearth.
+pieces.forEach(piece => { piece.col += 2; piece.row += 3; });
+layout = house.computeInteriorLayout();
+const nextMain = planner.roomRect(pieces[0]), nextAnnex = planner.roomRect(pieces[1]);
+assert.equal(nextAnnex.col - (nextMain.col + nextMain.w), 1);
+assert.equal(layout.floorSet.size, main.w * main.h + annex.w * annex.h + 1);
+assert.equal(layout.doors[0].enter.c - exit.enter.c, 4);
+assert.equal(layout.hearths[0].cz -  (main.row + 0.5), 6);
+console.log('Farmhouse full-size geometry, exit, wall, and window regressions passed.');
