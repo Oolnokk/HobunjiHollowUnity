@@ -15889,7 +15889,8 @@
         player.x       = (entryCol + 0.5) * TILE;
         player.y       = (entryRow + 0.5) * TILE;
         player.vx      = 0;  player.vy = 0;
-        facingAngle    = Math.PI / 2;   // face south (into the room)
+        const enterFacing = { north: Math.PI / 2, south: -Math.PI / 2, west: 0, east: Math.PI }; // Match the actual interior direction of each exterior entrance.
+        facingAngle    = enterFacing[door?.side] ?? Math.PI / 2;
         player.angle   = facingAngle;
         _snapCameraTarget();
         // Move player mesh into interior scene
@@ -26265,7 +26266,8 @@
         // Interior: exit button near any door's exit threshold + interact button for interior world objects
         if (currentArea === 'interior') {
           const reticle  = getReticleTile();
-          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row);
+          const nearExit = _interiorExitTiles.has(reticle.col + ',' + reticle.row)
+            || [[0, -1], [0, 1], [-1, 0], [1, 0]].some(([dc, dr]) => _interiorExitTiles.has((reticle.col + dc) + ',' + (reticle.row + dr))); // A floorless door must also be usable from its adjacent inside floor tile.
           const btns     = [];
           if (nearExit) btns.push({ icon: '🚪', label: 'Exit House', action: 'obj_exit_house', style: 'primary', allowed: true });
           // getInteriorInteractableAt, not getWorldObjectAt — worldObjects is
