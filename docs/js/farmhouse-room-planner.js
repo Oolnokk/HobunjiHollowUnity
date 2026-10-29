@@ -116,7 +116,8 @@
     const segment = latest.segments.find(s => s.id === id);
     return !!segment && segment.strip.some(p => p.c === col && p.r === row)
       && !latest.exitSet.has(key(col, row))
-      && (!segment.strip.some(p => latest.entrances.has(key(p.c, p.r))) || latest.entrances.has(key(col, row))); // A movable door must not strand a nearby exterior entrance.
+      && (!segment.strip.some(p => latest.entrances.has(key(p.c, p.r))) || latest.entrances.has(key(col, row)))
+      && deps.canHostDoor?.(col, row) !== false; // Neither a saved furniture footprint nor a person can be displaced by moving a door.
   }
   function armWall() { if (!deps?.canEdit?.()) return false; mode = { type: 'wall' }; firstCorner = null; deps.refresh?.(); return true; }
   function armDoor(id) { if (!deps?.canEdit?.() || !latest?.segments.some(s => s.id === id)) return false; mode = { type: 'door', id }; firstCorner = null; deps.refresh?.(); return true; }
