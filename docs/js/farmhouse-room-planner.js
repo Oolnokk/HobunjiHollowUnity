@@ -24,32 +24,21 @@
   }
   function layoutBuiltRooms(pieces) {
     const built = pieces.filter(p => p.stage === 'built');
-    const offsets = new Map(built.map(p => [p.id, { x: 0, z: 0 }])); // Room-local offsets separate physically joined exterior pieces.
-    // Adjacent sections impose a one-cell gap on the axis of their shared
-    // exterior wall. Longest-path relaxation is deterministic (positive,
-    // monotonic constraints), unlike dependence on house-piece array order.
-    for (let pass = 0; pass < built.length; pass++) {
-      let changed = false;
-      for (const left of built) for (const right of built) {
-        if (left === right) continue;
-        const xOverlap = Math.min(left.col + left.w, right.col + right.w) - Math.max(left.col, right.col);
-        const zOverlap = Math.min(left.row + left.h, right.row + right.h) - Math.max(left.row, right.row);
-        if (left.col + left.w === right.col && zOverlap > 0) {
-          const dest = offsets.get(right.id), candidate = offsets.get(left.id).x + 1;
-          if (candidate > dest.x) { dest.x = candidate; changed = true; }
-        }
-        if (left.row + left.h === right.row && xOverlap > 0) {
-          const dest = offsets.get(right.id), candidate = offsets.get(left.id).z + 1;
-          if (candidate > dest.z) { dest.z = candidate; changed = true; }
-        }
-      }
-      if (!changed) break;
+    const verticalCuts = new Set(); // Global indoor X separation lines; count monotonically so sections can never overlap after shifting.
+    const horizontalCuts = new Set(); // Same for Z separation: outdoor geometry is unaffected by either list.
+    for (const a of built) for (const b of built) {
+      if (a === b) continue;
+      if (a.col + a.w === b.col
+        && Math.min(a.row + a.h, b.row + b.h) > Math.max(a.row, b.row)) verticalCuts.add(b.col);
+      if (a.row + a.h === b.row
+        && Math.min(a.col + a.w, b.col + b.w) > Math.max(a.col, b.col)) horizontalCuts.add(b.row);
     }
+    const xs = [...verticalCuts].sort((a, b) => a - b), zs = [...horizontalCuts].sort((a, b) => a - b);
     roomOrigins = new Map(built.map(piece => [piece.id, {
-      col: piece.col * 2 + offsets.get(piece.id).x,
-      row: piece.row * 2 + offsets.get(piece.id).z,
+      col: piece.col * 2 + xs.filter(x => x <= piece.col).length,
+      row: piece.row * 2 + zs.filter(z => z <= piece.row).length,
       w: piece.w * 2, h: piece.h * 2,
-    }])); // Exterior coordinates and footprints remain untouched.
+    }])); // Every room keeps its full area; all original non-overlap relations remain valid.
     return roomOrigins;
   }
   function roomRect(pieceOrId) {
@@ -63,31 +52,69 @@
     const built = pieces.filter(p => p.stage === 'built');
     const result = [];
     for (let i = 0; i < built.length; i++) for (let j = i + 1; j < built.length; j++) {
-      const a = built[i], b = built[j];
-      const ar = roomRect(a), br = roomRect(b);
-      let strip = [], bridge = [];
+      const a = built[i], b = built[j], ar = roomRect(a), br = roomRect(b);
       const zOverlap = Math.min(a.row + a.h, b.row + b.h) - Math.max(a.row, b.row);
       const xOverlap = Math.min(a.col + a.w, b.col + b.w) - Math.max(a.col, b.col);
+      let strip = [], edge = null;
       if ((a.col + a.w === b.col || b.col + b.w === a.col) && zOverlap > 0) {
         const left = a.col < b.col ? ar : br, right = a.col < b.col ? br : ar;
         const start = Math.max(left.row, right.row), end = Math.min(left.row + left.h, right.row + right.h);
         const gapStart = left.col + left.w, gapEnd = right.col - 1;
         if (gapStart > gapEnd) continue;
-        for (let r = start; r < end; r++) strip.push(cell(gapStart, r));
-        for (let c = gapStart; c <= gapEnd; c++) bridge.push(cell(c, start + Math.floor((end - start) / 2)));
+        if (end > start) for (let r = start; r < end; r++) strip.push(cell(gapStart, r));
+        else strip.push(cell(gapStart, Math.max(left.row, Math.min(left.row + left.h - 1, right.row + Math.floor(right.h / 2)))));
+        edge = { axis: 'x', first: left, second: right, gapStart, gapEnd }; // A dogleg corridor can bridge unequal perpendicular origins.
       } else if ((a.row + a.h === b.row || b.row + b.h === a.row) && xOverlap > 0) {
         const top = a.row < b.row ? ar : br, bottom = a.row < b.row ? br : ar;
         const start = Math.max(top.col, bottom.col), end = Math.min(top.col + top.w, bottom.col + bottom.w);
         const gapStart = top.row + top.h, gapEnd = bottom.row - 1;
         if (gapStart > gapEnd) continue;
-        for (let c = start; c < end; c++) strip.push(cell(c, gapStart));
-        for (let r = gapStart; r <= gapEnd; r++) bridge.push(cell(start + Math.floor((end - start) / 2), r));
+        if (end > start) for (let c = start; c < end; c++) strip.push(cell(c, gapStart));
+        else strip.push(cell(Math.max(top.col, Math.min(top.col + top.w - 1, bottom.col + Math.floor(bottom.w / 2))), gapStart));
+        edge = { axis: 'z', first: top, second: bottom, gapStart, gapEnd };
       }
-      if (!strip.length) continue;
-      const id = 'join:' + [a.id, b.id].sort().join(':');
-      result.push({ id, strip, bridge, builtIn: true });
+      if (!strip.length || !edge) continue;
+      result.push({ id: 'join:' + [a.id, b.id].sort().join(':'), strip, edge, builtIn: true });
     }
     return result;
+  }
+  function corridorForJoin(segment, door, blockedFloor) {
+    const e = segment.edge;
+    if (!e) return null;
+    const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+    const start = e.axis === 'x'
+      ? cell(e.gapStart, clamp(door.r, e.first.row, e.first.row + e.first.h - 1))
+      : cell(clamp(door.c, e.first.col, e.first.col + e.first.w - 1), e.gapStart);
+    const end = e.axis === 'x'
+      ? cell(e.gapEnd, clamp(door.r, e.second.row, e.second.row + e.second.h - 1))
+      : cell(clamp(door.c, e.second.col, e.second.col + e.second.w - 1), e.gapEnd);
+    const path = (from, to, margin) => {
+      const minC = Math.min(from.c, to.c, door.c) - margin, maxC = Math.max(from.c, to.c, door.c) + margin;
+      const minR = Math.min(from.r, to.r, door.r) - margin, maxR = Math.max(from.r, to.r, door.r) + margin;
+      const queue = [from], visited = new Set([key(from.c, from.r)]), parents = new Map();
+      for (let index = 0; index < queue.length; index++) {
+        const now = queue[index];
+        if (now.c === to.c && now.r === to.r) {
+          const result = [now];
+          while (parents.has(key(result[0].c, result[0].r))) result.unshift(parents.get(key(result[0].c, result[0].r)));
+          return result;
+        }
+        const neighbors = [[1,0],[-1,0],[0,1],[0,-1]]
+          .map(([dc,dr]) => cell(now.c+dc, now.r+dr))
+          .sort((x,y) => (Math.abs(x.c-to.c)+Math.abs(x.r-to.r)) - (Math.abs(y.c-to.c)+Math.abs(y.r-to.r)));
+        for (const next of neighbors) {
+          const k = key(next.c, next.r);
+          if (next.c < minC || next.c > maxC || next.r < minR || next.r > maxR || visited.has(k) || blockedFloor.has(k)) continue;
+          visited.add(k); parents.set(k, now); queue.push(next);
+        }
+      }
+      return null;
+    };
+    for (const margin of [2, 8]) {
+      const a = path(start, door, margin), b = path(door, end, margin);
+      if (a && b) return a.concat(b.slice(1));
+    }
+    return null; // A blocked layout is reported in debug rather than generating overlapping rooms or floors.
   }
   function protectedInteriorCells(base) {
     const entrances = new Set((base.doors || []).filter(door => isCell(door.enter))
@@ -154,16 +181,12 @@
         || allowed.find(p => isCell(savedDoor) && p.c === savedDoor.c + (rect?.col || 0) && p.r === savedDoor.r + (rect?.row || 0))
         || allowed[Math.floor(allowed.length / 2)];
       if (inGap) {
-        const doorSlot = allowed.findIndex(p => p === door);
-        // The only floor in the one-tile separation is the door threshold.
-        // A wider fallback gap receives a single-tile-wide corridor, never
-        // a duplicate doorway or a reduced room footprint.
-        for (const p of segment.bridge || []) {
-          const bridgePoint = segment.strip[0].c === segment.strip[segment.strip.length - 1].c
-            ? cell(p.c, door.r) : cell(door.c, p.r);
-          floorSet.add(key(bridgePoint.c, bridgePoint.r));
+        const corridor = corridorForJoin(segment, door, base.floorSet); // One full-size-room-to-room walkway; never excavate a room's own tiles.
+        if (!corridor) {
+          skipped.push({ id: segment.id, reason: 'No unobstructed route through the indoor-only gap' });
+          continue;
         }
-        floorSet.add(key(door.c, door.r));
+        corridor.forEach(p => floorSet.add(key(p.c, p.r)));
       } else for (const p of allowed) if (p !== door) blocked.add(key(p.c, p.r));
       doorTiles.push([door.c, door.r]);
       resolved.push({ id: segment.id, builtIn: inGap, strip: allowed, door });
