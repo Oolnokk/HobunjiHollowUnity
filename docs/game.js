@@ -667,8 +667,8 @@
       // HousePieces.computeInteriorLayout()) — sized to the whole farm
       // rather than tightly to the current house, since the merged interior
       // grows as more pieces get built.
-      const INTERIOR_COLS        = COLS * 2;
-      const INTERIOR_ROWS        = ROWS * 2;
+      const INTERIOR_COLS        = COLS * 3; // One added indoor grid cell per joined section fits within 3× the exterior bounds.
+      const INTERIOR_ROWS        = ROWS * 3; // Outdoor geometry retains the original farm grid; only interior room allocation expands.
       const INTERIOR_WALL_HEIGHT = 1.75; // wall height in world units
 
       // ── Voxel render constants ──
@@ -3197,15 +3197,21 @@
         });
       }
 
-      function housePieceOwningInteriorCell(col, row) {
-        return housePieces.find(p => p.stage === 'built'
-          && col >= p.col * 2 && col < (p.col + p.w) * 2
-          && row >= p.row * 2 && row < (p.row + p.h) * 2) || null;
+      function interiorRoomRect(piece) {
+        return window.FarmhouseRoomPlanner?.roomRect?.(piece) // New room space keeps exterior house rectangles untouched.
+          || (piece ? { col: piece.col * 2, row: piece.row * 2, w: piece.w * 2, h: piece.h * 2 } : null);
       }
-
+      function housePieceOwningInteriorCell(col, row) {
+        return housePieces.find(p => {
+          if (p.stage !== 'built') return false;
+          const rect = interiorRoomRect(p); // Each room has its own offset and original full-size footprint.
+          return rect && col >= rect.col && col < rect.col + rect.w && row >= rect.row && row < rect.row + rect.h;
+        }) || null;
+      }
       function furnitureOwnerFields(col, row) {
         const owner = housePieceOwningInteriorCell(col, row);
-        return owner ? { ownerPieceId: owner.id, localCol: col - owner.col * 2, localRow: row - owner.row * 2 } : {};
+        const rect = interiorRoomRect(owner);
+        return rect ? { ownerPieceId: owner.id, localCol: col - rect.col, localRow: row - rect.row } : {};
       }
 
       // Exact oriented-footprint collision for furniture. Placement remains
@@ -3882,13 +3888,14 @@
           };
           if (clearFootprint(obj.col, obj.row)) continue;
           const preferredRoom = built.find(piece => piece.id === obj.ownerPieceId)
-            || built.find(piece => obj.col >= piece.col * 2 && obj.col < (piece.col + piece.w) * 2
-              && obj.row >= piece.row * 2 && obj.row < (piece.row + piece.h) * 2); // Old saves may predate stable ownerPieceId.
+            || built.find(piece => { const rect = interiorRoomRect(piece); return obj.col >= rect.col && obj.col < rect.col + rect.w
+              && obj.row >= rect.row && obj.row < rect.row + rect.h; }); // Old saves may predate stable ownerPieceId.
           const orderedRooms = preferredRoom ? [preferredRoom, ...built.filter(piece => piece !== preferredRoom)] : built;
           const candidates = [];
           for (const piece of orderedRooms) {
-            for (let row = piece.row * 2; row <= (piece.row + piece.h) * 2 - fd; row++) {
-              for (let col = piece.col * 2; col <= (piece.col + piece.w) * 2 - fw; col++) {
+            const room = interiorRoomRect(piece); // Search full room footprints, excluding corridor and door cells.
+            for (let row = room.row; row <= room.row + room.h - fd; row++) {
+              for (let col = room.col; col <= room.col + room.w - fw; col++) {
                 if (!clearFootprint(col, row)) continue;
                 const distance = Math.abs(col - obj.col) + Math.abs(row - obj.row);
                 candidates.push({ col, row, distance, preferred: piece === preferredRoom ? 0 : 1 });
@@ -3968,36 +3975,58 @@
       });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
-        window.FarmhouseRoomPlanner?.transformWithPiece?.(pieceId, oldRect, newRect, rotateClockwise); // House walls follow their owner before a scene rebuild.
+        window.FarmhouseRoomPlanner?.transformWithPiece?.(pieceId, oldRect, newRect, rotateClockwise); // Room-owned walls remain in local coordinates.
+        const oldRoom = interiorRoomRect({ ...oldRect, id: pieceId }); // Cached old indoor origin before the geometry rebuild.
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
-          const insideOld = obj.col >= oldRect.col * 2 && obj.col < (oldRect.col + oldRect.w) * 2
-            && obj.row >= oldRect.row * 2 && obj.row < (oldRect.row + oldRect.h) * 2;
+          if (obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) return;
+          const insideOld = oldRoom && obj.col >= oldRoom.col && obj.col < oldRoom.col + oldRoom.w
+            && obj.row >= oldRoom.row && obj.row < oldRoom.row + oldRoom.h;
           if (obj.ownerPieceId !== pieceId && !(obj.ownerPieceId == null && insideOld)) return;
-          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          const oldSize = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
-          let fw = oldSize.fw, fd = oldSize.fd;
-          let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRect.col * 2;
-          let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRect.row * 2;
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRoom.col;
+          let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRoom.row;
+          let fw = size.fw, fd = size.fd;
           if (rotateClockwise) {
             const nextCol = oldRect.h * 2 - (localRow + fd);
             const nextRow = localCol;
             localCol = nextCol; localRow = nextRow;
             obj.rotYDeg = ((obj.rotYDeg || 0) + 90) % 360;
             obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
-            const newSize = decorativeFurnitureSize(obj.key, obj.rotYDeg, obj);
-            fw = newSize.fw; fd = newSize.fd;
+            const rotated = decorativeFurnitureSize(obj.key, obj.rotYDeg, obj);
+            fw = rotated.fw; fd = rotated.fd;
           }
-          localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
-          localRow = Math.max(0, Math.min(newRect.h * 2 - fd, localRow));
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
-          obj.ownerPieceId = pieceId; obj.localCol = localCol; obj.localRow = localRow;
-          obj.col = newRect.col * 2 + localCol; obj.row = newRect.row * 2 + localRow;
-          obj.mesh.position.set(obj.col + fw * 0.5, 0, obj.row + fd * 0.5);
-          if (obj.light) obj.light.position.set(obj.col + fw * 0.5, def?.light?.height || 0.6, obj.row + fd * 0.5);
-          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
-          registerChairNpcStation(obj.key, obj.col, obj.row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+          obj.ownerPieceId = pieceId;
+          obj.localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
+          obj.localRow = Math.max(0, Math.min(newRect.h * 2 - fd, localRow));
+          // The whole-house/section geometry callback updates every room's
+          // absolute furniture positions once the new offsets are known.
         });
+      }
+
+      function syncFurnitureWithIndoorRoomOrigins() {
+        for (const obj of interiorFurnitureObjects) {
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          const piece = housePieces.find(p => p.id === obj.ownerPieceId && p.stage === 'built')
+            || housePieces.find(p => p.stage === 'built' && obj.col >= p.col * 2 && obj.col < (p.col + p.w) * 2
+              && obj.row >= p.row * 2 && obj.row < (p.row + p.h) * 2); // Compatibility with pre-room-local legacy furniture.
+          if (!piece) continue;
+          const rect = interiorRoomRect(piece);
+          const localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - piece.col * 2;
+          const localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - piece.row * 2;
+          const col = rect.col + localCol, row = rect.row + localRow;
+          obj.ownerPieceId = piece.id; obj.localCol = localCol; obj.localRow = localRow;
+          if (obj.col === col && obj.row === row) continue;
+          const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          obj.col = col; obj.row = row;
+          obj.mesh.position.set(col + size.fw * 0.5, 0, row + size.fd * 0.5);
+          if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
+          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
+          obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', col + size.fw * 0.5, row + size.fd * 0.5, window.Music?.resolveFurnitureSfx(def));
+          registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+          window.FurnitureTableSystem?.registerPlacement('interior', obj, obj.mesh, def);
+        }
       }
 
       function clearInteriorFurniture() {
@@ -20349,7 +20378,7 @@
         _interiorGeometryBuilt = true;
         window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
         const { floorSet, exitSet, doors, doorTiles = [], hearths } = window.HousePieces.computeInteriorLayout();
-        _interiorExitTiles = exitSet;
+        _interiorExitTiles = exitSet; // ONLY outdoor thresholds trigger Exit House; room-door corridors never do.
         _interiorRoomDoorTiles = new Set(doorTiles.map(([c, r]) => c + ',' + r)); // Generated interior doors must remain unobstructed.
         _interiorArrivalTiles = new Set(doors.map(d => d.enter.c + ',' + d.enter.r)); // Existing entrance triggers remain on the floorless marker.
 
@@ -20378,6 +20407,7 @@
             interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
           }
         }
+        syncFurnitureWithIndoorRoomOrigins(); // All room furniture keeps its full local coordinate even if a neighboring room moves.
         if (!window.FarmEditor?.isRestoringLayout?.()) {
           reconcileFurnitureWithFarmhousePartitions(); // Intermediate room builds during a save restore must not displace saved furniture.
         }
