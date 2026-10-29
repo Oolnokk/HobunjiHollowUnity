@@ -342,7 +342,7 @@
           apply();
         }
         const complete = progress >= 1; // Emitters activate on completion, never during partial growth.
-        for (const visual of emitterVisuals) visual.update(delta,complete);
+        for (const visual of emitterVisuals) visual.update(delta,complete,complete ? {enabled:true} : undefined); // Completion explicitly turns on even initially disabled authored emitters.
         return progress;
       },
       getDiagnostics() {
