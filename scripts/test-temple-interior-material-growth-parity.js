@@ -9,6 +9,7 @@ const editor = read('docs/tools/building-interior-author/index.html'); // Verifi
 const floorControls = read('docs/js/interior-fire-floor-integration.js'); // Ensures floor selection and authoring are active.
 const foliage = read('docs/js/foliage-generator.js'); // Checks shingle-target normalization and surface following.
 const shingleBuilder = read('docs/js/HousePieceGen.js'); // Checks roof mesh tagging in both build paths.
+const townBuildingRuntime = read('docs/js/town-zone-buildings.js'); // Provides the actual town-roof tint and shared shingle variant.
 const houseEditor = read('docs/tools/house-piece-author/index.html'); // Checks author preview support.
 
 assert.deepEqual(templeInterior.floorStyle, {
@@ -41,9 +42,22 @@ assert.equal(interiorWalls[2].radius,.175,'Latest Wrap root thickness must survi
 assert.equal(interiorWalls[2].inset,-.1,'Latest Wrap root inset must survive');
 assert(interiorWalls.every(recipe => recipe.shrinkwrapFinal && recipe.tunnelAsOpening),
   'Both Temple wall vegetation contexts must retain shrinkwrap and entrance-opening settings');
-assert.deepEqual(templeExterior.roof.shingleMaterial,{
-  texture:interiorWalls[0].texture,color:interiorWalls[0].color
-},'Temples shingles and roots must share the exact bark PNG and authored tint');
+const townShingleFill=townBuildingRuntime.match(/const TOWN_SHINGLE_FILL = '(#[0-9a-f]{6})'/i)?.[1];
+assert.equal(townShingleFill,'#0e0d06','The actual town/zone roof tint must remain the near-black brown');
+assert.match(townBuildingRuntime, /tintShingleMaterial\('assets\/textures\/carved_smooth\.png', TOWN_SHINGLE_FILL, 'town'\)/,
+  'Town houses must use carved-smooth shingles in their own standard shared variant');
+assert.match(townBuildingRuntime, /shingleVariant: 'town'/,
+  'Town-building geometry must select the shared town shingle variant');
+assert.equal(Object.hasOwn(templeExterior.roof,'shingleMaterial'),false,
+  'Temple must inherit the standard town-house roof finish instead of overriding it');
+assert.equal(interiorWalls.filter(recipe=>recipe.kind==='roots').length,2);
+for (const recipe of [...templeExterior.surfaceGrowth,...templeInterior.surfaceGrowth].filter(recipe=>recipe.kind==='roots')) {
+  assert.equal(recipe.color,townShingleFill,'Every authored Temple root must match the town roof tint');
+  assert.equal(recipe.texture,'assets/textures/wibbly_surface.png',
+    'Temple roots must keep the wibbly root texture instead of using the town shingle PNG');
+}
+assert(templeExterior.surfaceGrowth.filter(recipe=>recipe.kind==='vines').every(recipe=>recipe.color==='#406040'),
+  'Retinting roots must not modify the Temple vine colors');
 assert(shingleBuilder.includes("painter.naturalizeMesh(proxy,'trunks','strand-stretch'"),
   'Gameplay roof finishes must use the same unlit body-sprite-tint material path as roots');
 assert(shingleBuilder.includes("tintTreatment:'body-sprite-tint'"),
