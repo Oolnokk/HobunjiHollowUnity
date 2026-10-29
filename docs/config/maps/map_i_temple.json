@@ -776,7 +776,10 @@
         ]
       ],
       "doorwayTiles": [
-        [10, 16]
+        [
+          10,
+          16
+        ]
       ],
       "targetMap": "",
       "spawnCol": 9,
@@ -3376,16 +3379,72 @@
   "surfaceGrowth": [
     {
       "kind": "roots",
-      "seed": "surface-1",
-      "count": 68,
-      "length": 6,
-      "radius": 0.15,
+      "seed": "surface-2",
+      "style": "cornerFill",
+      "density": 0.45,
+      "count": 48,
+      "strandLimit": 80,
+      "perSurface": true,
+      "length": 12,
+      "radius": 0.2,
       "offset": 0.008,
-      "curl": 0.4,
-      "color": "#4a3b33",
+      "curl": 1.4,
+      "color": "#0e0d06",
       "texture": "assets/textures/wibbly_surface.png",
       "target": "walls",
-      "targetIds": []
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.25
+    },
+    {
+      "kind": "vines",
+      "seed": "surface-1",
+      "style": "wrap",
+      "density": 0.1,
+      "count": 28,
+      "strandLimit": 40,
+      "perSurface": true,
+      "length": 12,
+      "radius": 0.075,
+      "offset": 0.008,
+      "curl": 0.9,
+      "color": "#406040",
+      "texture": "assets/textures/carved_smooth.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
+    },
+    {
+      "kind": "roots",
+      "seed": "surface-9",
+      "style": "wrap",
+      "density": 0.4,
+      "count": 12,
+      "strandLimit": 12,
+      "perSurface": true,
+      "length": 30,
+      "radius": 0.175,
+      "offset": 0.008,
+      "curl": 2,
+      "color": "#0e0d06",
+      "texture": "assets/textures/wibbly_surface.png",
+      "target": "walls",
+      "targetIds": [],
+      "wallOnly": false,
+      "hangChance": 0,
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.1
     }
   ],
   "doorTiles": []

@@ -6,6 +6,46 @@
 
   const THREE = global.THREE;
 
+
+  // Authored shingles use exactly the same unlit, body-sprite-tinted PNG
+  // rendering as surface-growth roots. GLB lit-material color multiplication
+  // would otherwise make equal colors appear to have different brightness.
+  function applyAuthoredShingleFinish(THREE,roofLayer,finish){
+    if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
+    const texture=typeof finish.texture==='string'&&
+      (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||
+       /^https:\/\/[^\s]+$/i.test(finish.texture)||
+       /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(finish.texture))
+      ?finish.texture:'';
+    const painter=global.NaturalSurfaceMaterials?.forThree?.(THREE)||
+      global.NaturalSurfaceMaterials; // Same material/texture cache as roots in this Three runtime.
+    if(!painter?.naturalizeMesh){
+      _shingleTextureLog('authored finish requires NaturalSurfaceMaterials; keeping original roof finish','warn');
+      return;
+    }
+    const materials=new Map(); // One unique material per original material on this house, not per shingle.
+    roofLayer.traverse(mesh=>{
+      if(!mesh.isMesh||/shinglebone/i.test(mesh.name||''))return;
+      const finishMaterial=original=>{
+        if(!original)return original;
+        if(materials.has(original))return materials.get(original);
+        const proxy=new THREE.Mesh(mesh.geometry,original); // Existing shingle UVs are retained.
+        painter.naturalizeMesh(proxy,'trunks','strand-stretch',{
+          texture,tint:finish.color,tintTreatment:'body-sprite-tint'
+        });
+        const painted=proxy.material.clone(); // Own the material, share the recolored PNG.
+        painted.vertexColors=false;
+        painted.userData=Object.assign({},painted.userData,{
+          authoredShingleSpriteTint:true,authoredShingleFinishColor:finish.color
+        });
+        materials.set(original,painted);
+        return painted;
+      };
+      mesh.material=Array.isArray(mesh.material)
+        ?mesh.material.map(finishMaterial):finishMaterial(mesh.material);
+    });
+  }
+
   // ── Highland constants ──────────────────────────────────────────────────────
   const HIGHLAND_BODY_TOP_SCALE = 0.85;
 
@@ -620,6 +660,7 @@
   global.HousePieceGen = {
     buildGroup: buildGroup, buildGroupFromPiece: buildGroupFromPiece,
     loadShingleGlb: loadShingleGlb, shingleReady: shingleReady, tintShingleMaterial: tintShingleMaterial,
+    applyAuthoredShingleFinish: applyAuthoredShingleFinish, // Lets the house preview and mobile diagnostic tools inspect one per-house roof tint without touching global variants.
     shingleSurfaceSnapshot: function () { return Object.assign({}, _shingleSurfaceDebug, { variants: Object.keys(_shingleVariants), tints: Object.keys(_shingleVariants).reduce(function (out, name) { out[name] = _shingleVariants[name].appliedTintKey; return out; }, {}) }); },
     shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
     makeShingleModel: makeShingleModel,
@@ -692,6 +733,7 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+
     }
 
     // Brick or generated-log cladding on frustum body walls + gable ends.
@@ -731,6 +773,25 @@
     }
 
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    // User-selected finish wins over biome/farm structure tints, and is
+    // applied only to this house's shingle material copies.
+    if(opts.shingleMaterial)for(const child of group.children)
+      if(child.userData?.surfaceFoliageRole==='shingles')applyAuthoredShingleFinish(THREE,child,opts.shingleMaterial);
+    // Architectural navigation follows pre-cladding wall/gable/roof faces, including actual door/window cuts.
+    // Invisible, non-raycastable guides are independent of randomized brick and stacked-log geometry.
+    if ((opts.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
+      // Detect connected face regions, so coplanar wall and gable patches join while real folds remain separate.
+      const foliage=global.FoliageGenerator;
+      if(foliage){
+        const modes=[...new Set((opts.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
+        const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
+          foliage.architecturalSurfaceSources(faces,{
+            wallLift:(opts.wallBuilder||generatedLogStyle)?.26:0,roofLift:.16,tunnelAsOpening:mode}),
+          {occlusionFaces:faces,tunnelAsOpening:mode}).map(region=>({...region,
+            openingMode:mode,id:region.id+':'+(mode?'entrance-open':'tunnel-plant')})));
+        foliage.replaceSemanticSurfaceGuides(group,guides);
+      }
+    }
     global.FoliageGenerator?.applySurfaceGrowth(group, opts.surfaceGrowth);
     return group;
   }
@@ -1506,6 +1567,8 @@
       group.add(mesh);
     }
 
+    // Per-piece shingle finish does not change shared farm/town template defaults.
+    if(piece.roof?.shingleMaterial)opts=Object.assign({},opts,{shingleMaterial:piece.roof.shingleMaterial});
     // Shingles on roof faces (same as buildGroup)
     var roofChildStart = group.children.length; // Marks only the newly emitted roof shingles for optional farm finishes.
     _addShingles(group, roofFaces, allOff, Object.assign({ matTube: matTube }, opts));
@@ -1513,6 +1576,7 @@
       var shingleLayer = group.children[childIndex]; // Marks placed HighlandLongshingle GLBs as surface-following vine targets, in both authored and regenerated houses.
       shingleLayer.userData.surfaceFoliageRole = 'shingles';
       shingleLayer.traverse(function (mesh) { if (mesh.isMesh) mesh.userData.farmMaterialRole = 'wood'; });
+
     }
 
     // Authored body/gable walls can use exact-length generated foliage logs instead of bricks.
@@ -1551,6 +1615,24 @@
       group.add(global.HouseWallFixtures.createGroup(THREE, piece, fixtureWorldPoint));
     }
     if (opts.farmNaturalColors) global.FarmWorldSettings?.tintStructure(group, opts.farmNaturalColors);
+    // User-selected finish wins over biome/farm structure tints, and is
+    // applied only to this house's shingle material copies.
+    if(opts.shingleMaterial)for(const child of group.children)
+      if(child.userData?.surfaceFoliageRole==='shingles')applyAuthoredShingleFinish(THREE,child,opts.shingleMaterial);
+    // The transformed source faces, not WallBuilder bricks or generated log courses, are the navigation authority.
+    if ((piece.surfaceGrowth || []).some(recipe => recipe.style === 'cornerFill' || recipe.style === 'wrap' || recipe.perSurface === true)) {
+      // Group sheer authored faces by shared edges and normal angle, not material or wall/gable labels.
+      const foliage=global.FoliageGenerator;
+      if(foliage){
+        const modes=[...new Set((piece.surfaceGrowth||[]).map(recipe=>!!recipe.tunnelAsOpening))];
+        const guides=modes.flatMap(mode=>foliage.recognizeArchitecturalSurfaceRegions(group,
+          foliage.architecturalSurfaceSources(allOff,{
+            wallLift:hideWalls?.26:0,roofLift:.16,tunnelAsOpening:mode}),
+          {occlusionFaces:allOff,tunnelAsOpening:mode}).map(region=>({...region,
+            openingMode:mode,id:region.id+':'+(mode?'entrance-open':'tunnel-plant')})));
+        foliage.replaceSemanticSurfaceGuides(group,guides);
+      }
+    }
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
     return group;
   }

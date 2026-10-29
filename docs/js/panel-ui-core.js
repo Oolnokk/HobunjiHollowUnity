@@ -616,7 +616,7 @@ if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.path
 // a tool-specific extension instead of duplicating/restructuring that editor.
 if (/\/tools\/building-interior-author\/(?:index\.html)?$/.test(location.pathname)) {
   const npcWardrobeScript = document.createElement('script'); // Used to add instance-level npcWardrobeFor authoring to the selected-furniture inspector.
-  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261027scheduler-a1';
+  npcWardrobeScript.src = '../../js/building-interior-npc-wardrobe-editor.js?v=20261027h4775e6a';
   npcWardrobeScript.defer = true;
   document.head.appendChild(npcWardrobeScript);
 }
@@ -632,7 +632,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261028localeopen1';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261027hcbf7a78';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 

@@ -53,7 +53,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 #qhelpPopover .qhelp-close{position:absolute;top:5px;right:9px;cursor:pointer;color:var(--muted);font-weight:800;font-size:13px}
 #qhelpPopover .qhelp-close:hover{color:var(--text)}
 </style>
-<script src="../../js/panel-ui.js?v=20261027h9f76d06"></script>
+<script src="../../js/panel-ui.js?v=20261027h6007ec0"></script>
 <script src="../../js/map-live-preview.js?v=20260910a"></script>
 </head>
 <body>
@@ -395,10 +395,10 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 <script src="../../js/WallBuilder.js"></script>
-<script src="../../js/foliage-generator.js?v=20261027h9ef2138"></script>
+<script src="../../js/foliage-generator.js?v=20261028temple-finish"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/surface-foliage-authoring.js?v=20261027h93a9e9e"></script>
+<script src="../../js/surface-foliage-authoring.js?v=20261028temple-finish"></script>
 <script src="../../js/wood-cut-surfaces.js"></script>
 <script src="../../js/stacked-log-walls.js"></script>
 <script src="../../js/terrain-preview.js"></script>
@@ -416,7 +416,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 <script src="../../js/procedural-furniture.js"></script>
 <!-- Use the game\'s authored furniture meshes and live fallback upgrade for rug/pattern parity. -->
 <script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/";</script>
-<script src="../../js/authored-furniture-runtime.js?v=20261026hTempleParity1"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=20261027h13f3a6f"></script>
 <script src="../../js/furniture-vessel-runtime.js?v=20261027scheduler-a1"></script>
 <script src="../../js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
@@ -426,7 +426,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
      nested tool pages the same wall/window runtime as the game. -->
 <script src="../../js/wall-ornament-placement.js?v=20261027h8bf7bae"></script>
 <script src="../../js/daylight-window-runtime.js?v=20261027hglassB1"></script>
-<script src="../../js/building-interior-wall-ornament-editor.js?v=20261027scheduler-a1"></script>
+<script src="../../js/building-interior-wall-ornament-editor.js?v=20261027h76f6578"></script>
 
 <script>
 (function () {
@@ -1818,7 +1818,31 @@ function rebuild3D(){
     previewGroup.add(grp);
   });
 
-  var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same geometry used by the scene.
+  // Use the same unrendered rectangular wall planes used to author and clip openings.
+  // Brick outlines, stacked log courses and individual masonry pieces are never navigation edges.
+  if ((interior.surfaceGrowth||[]).some(recipe=>recipe.style==='cornerFill'||recipe.style==='wrap'||recipe.perSurface===true)) {
+    const guidePanels=InteriorSceneBuilder.applyWallOpenings(panels,windowOpenings);
+    const guideSources=[{ // Wall-panel triangles are grouped into detected surfaces together with the gable backings below.
+      vertices:guidePanels.flatMap(panel=>{
+        const v=InteriorSceneBuilder.panelCornersFor(THREE,panel).map(vertex=>vertex.toArray());
+        return [v[0],v[1],v[2],v[0],v[2],v[3]];
+      }),
+      role:'walls',id:'interior-wall-planes',label:'Interior architectural walls',
+      renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0
+    }];
+    // Every real gable backing is already a sheer plane, even when bricks/logs cover it.
+    // Keep it in the same navigation graph so roots can run up adjoining gable corners.
+    previewGroup.traverse(node=>{
+      if (!node.isMesh || !node.userData?.interiorGable || !node.geometry) return;
+      const faceCount=Math.floor((node.geometry.index?.count||node.geometry.attributes.position?.count||0)/3);
+      guideSources.push({sourceMesh:node,faceIndices:Array.from({length:faceCount},(_,i)=>i),
+        role:'walls',id:node.name,label:'Interior gable '+node.name,
+        renderLift:['logs','log','stackedlogs','stacked-logs','','brick'].includes(interior.wallStyle||'')?.26:0});
+    });
+    const foliage=window.FoliageGenerator.forThree(THREE);
+    foliage.replaceSemanticSurfaceGuides(previewGroup,foliage.recognizeArchitecturalSurfaceRegions(previewGroup,guideSources,{clipCoplanarOverlaps:true}));
+  }
+  var growthReport=window.FoliageGenerator.applySurfaceGrowth(previewGroup,interior.surfaceGrowth); // Rebuilt with the same architectural planes used by the editor.
   if(growthReport)log(growthReport);
   scene3.add(previewGroup);
   refreshAppearanceTargets();
