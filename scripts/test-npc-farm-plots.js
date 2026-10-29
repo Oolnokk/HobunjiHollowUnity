@@ -163,20 +163,21 @@ assert.ok(tile('plot_a', seedJob.c, seedJob.r));
 
 console.log('ok - npc farm plots');
 // ── The player's farm: family plots work the real grid, seeds come from Farm Storage ────────────────────────────
-const farm = { tiles: {}, storage: { needlegrainSeed: 1 }, jobs: [] };
+const farm = { tiles: {}, storage: { needlegrainSeed: 1 }, jobs: [], calls: [] };
 const key = (c, r) => `${c},${r}`;
 const farmTile = (c, r) => farm.tiles[key(c, r)] || (farm.tiles[key(c, r)] = { type: 'grass', crop: '', depth: 0 });
 const farmApi = {
   farmTileInfo: (c, r) => {
     const t = farmTile(c, r);
-    return { tilled: t.type === 'tilled', crop: t.crop, ready: false, dug: t.type === 'trench' && t.depth >= 0.6, canTill: t.type === 'grass' && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
+    return { tilled: t.type === 'tilled', crop: t.crop, ready: false, dug: t.type === 'trench' && t.depth >= 0.6, canTill: ['grass', 'trench'].includes(t.type) && !t.crop, canDig: !t.crop && (t.type === 'trench' ? t.depth < 1 : true) };
   },
   seedAvailable: crop => crop === 'needlegrain' && farm.storage.needlegrainSeed > 0,
-  applyFarmJob: (job, c, r, crop) => {
+  applyFarmJob: (job, c, r, crop, plotId) => {
     const t = farmTile(c, r);
-    if (job === 'till') t.type = 'tilled';
+    if (job === 'till') { t.type = 'tilled'; t.depth = 0; t.water = 0; }
     else if (job === 'dig') { t.type = 'trench'; t.depth = 1; }
     else if (job === 'seed') { if (!(farm.storage.needlegrainSeed > 0) || t.type !== 'tilled') return false; farm.storage.needlegrainSeed -= 1; t.crop = crop; }
+    farm.calls.push({ job, c, r, plotId }); // Assert actions stay on their owned alternating rows.
     farm.jobs.push(job);
     return true;
   },
@@ -224,6 +225,33 @@ assert.equal(api.targetFor(rec('kid1'), { familyOnly: true }).toolActivity, 'dig
 assert.equal(api.targetFor(rec('stranger')), null);
 console.log('ok - farm family plots');
 
+// Alternating trench and planting rows share a footprint, but not individual tile ownership.
+const trenchRows = [[30, 30], [31, 30], [30, 32], [31, 32]];
+const fieldRows = [[30, 31], [31, 31]];
+api.registerFarmPlots([
+  { id: 'intermesh_dig', kind: 'dig', tiles: trenchRows, workers: ['spouse1'] },
+  { id: 'intermesh_field', kind: 'till', tiles: fieldRows, workers: ['spouse1'], crop: '' },
+]);
+const trenchGroup = api.plots().find(p => p.id === 'intermesh_dig');
+const fieldGroup = api.plots().find(p => p.id === 'intermesh_field');
+assert.deepEqual(api._test.jobsFor(trenchGroup, 'spouse1').map(j => key(j.c, j.r)).sort(), trenchRows.map(([c, r]) => key(c, r)).sort());
+assert.deepEqual(api._test.jobsFor(fieldGroup, 'spouse1').map(j => key(j.c, j.r)).sort(), fieldRows.map(([c, r]) => key(c, r)).sort());
+for (const job of api._test.jobsFor(trenchGroup, 'spouse1')) api._test.applyJob(trenchGroup, job);
+assert.ok(fieldRows.every(([c, r]) => farmTile(c, r).type === 'grass'), 'digging both trench rows leaves the interleaved planting row untouched');
+for (const job of api._test.jobsFor(fieldGroup, 'spouse1')) api._test.applyJob(fieldGroup, job);
+assert.ok(fieldRows.every(([c, r]) => farmTile(c, r).type === 'tilled'), 'spouse tills only the planting row');
+assert.ok(trenchRows.every(([c, r]) => farmTile(c, r).type === 'trench'), 'the trench rows stay excavated');
+const callsBeforeStale = farm.calls.length;
+api._test.applyJob(trenchGroup, { c: 30, r: 31, job: 'dig' });
+assert.equal(farm.calls.length, callsBeforeStale, 'a stale dig claim cannot excavate the planting plot');
+farmTile(30, 31).type = 'trench'; farmTile(30, 31).depth = 1; farmTile(30, 31).water = 1;
+assert.equal(api._test.jobsFor(fieldGroup, 'spouse1').some(j => j.c === 30 && j.r === 31 && j.job === 'till'), true, 'field worker can repair an incorrectly dug planting tile');
+api._test.applyJob(fieldGroup, { c: 30, r: 31, job: 'till' });
+assert.equal(farmTile(30, 31).type, 'tilled');
+assert.equal(farmTile(30, 31).depth, 0);
+assert.equal(farmTile(30, 31).water, 0);
+console.log('ok - intermeshed family trench and planting rows');
+
 // The player's farm editor must release assignments immediately when painting over a group.
 context.document = { getElementById: () => null };
 vm.runInContext(fs.readFileSync(path.join(root, 'js/farm-plot-editor.js'), 'utf8'), context, { filename: 'farm-plot-editor.js' });
@@ -233,5 +261,20 @@ editor.restore([{ id: 'painted', kind: 'till', tiles: [[12, 12]], crop: 'needleg
 assert.ok(api.plots().some(p => p.id === 'painted'), 'restored family plot exists in runtime');
 editor.onTerrainPaint(12, 12, 'grass');
 assert.equal(api.plots().some(p => p.id === 'painted'), false, 'erasing the last plot tile unassigns the live worker immediately');
-console.log('ok - family plot editor live erase');
+
+// Old overlapping saves are resolved before workers start; fields win to protect crops.
+editor.restore([
+  { id: 'legacy_dig', kind: 'dig', tiles: [[20, 20], [20, 21]], workers: ['spouse1'] },
+  { id: 'legacy_field', kind: 'till', tiles: [[20, 20], [21, 20]], workers: ['spouse1'] },
+]);
+assert.equal(editor.plots().find(p => p.id === 'legacy_dig').tiles.some(t => t[0] === 20 && t[1] === 20), false);
+assert.equal(editor.plots().find(p => p.id === 'legacy_field').tiles.some(t => t[0] === 20 && t[1] === 20), true);
+const legacyDig = api.plots().find(p => p.id === 'legacy_dig');
+const legacyField = api.plots().find(p => p.id === 'legacy_field');
+assert.equal(api._test.jobsFor(legacyDig, 'spouse1').some(j => j.c === 20 && j.r === 20), false);
+assert.equal(api._test.jobsFor(legacyField, 'spouse1').some(j => j.c === 20 && j.r === 20), true);
+const beforeWrongKind = farm.calls.length;
+api._test.applyJob(legacyDig, { c: 20, r: 20, job: 'dig' });
+assert.equal(farm.calls.length, beforeWrongKind, 'editor ownership denies a misdirected dig even after restoration');
+console.log('ok - legacy overlapping family plots and safe ownership');
 process.exit(0);
