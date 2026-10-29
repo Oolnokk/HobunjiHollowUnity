@@ -83,6 +83,12 @@ assert(tasks.includes('window.DelversGuild?.syncQuest?.()'));
   assert.equal(await api.playIntro(), true);
   assert.equal(api.hasStone(), true);
   assert.equal(inventory.delversStone, 1);
+  delete inventory.delversStone; // Simulate losing the physical amulet while the saved Guild license remains.
+  assert.equal(api.isMember(), true);
+  assert.equal(api.hasStone(), false, 'membership alone must never open a Harlyao ruin');
+  assert.equal(api.restoreMembershipItem(), true);
+  assert.equal(inventory.delversStone, 1);
+  assert.equal(api.hasStone(), true, 'restoring the missing membership Stone must re-enable ruin access');
   assert.equal(defs.delversStone.quest, true);
   assert.equal(api.canEnchant(), false);
   assert.equal(api.dialogueTree().nodes[1].id, 'delvers_start_trust');
