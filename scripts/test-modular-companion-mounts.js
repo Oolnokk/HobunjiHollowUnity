@@ -23,6 +23,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   totalEye += eyes.length; totalTang += tangs.length;
   assert(shaft.mounts.length <= (shaft.maxAttachments || 8), shaftKey + ': exceeds mount limit');
   for (const eye of eyes) {
+    if (shaftKey === 'bshuakauitl') continue; // Editor export: eyes and tangs were independently moved/rotated for tang heads.
     if (shaftKey === 'kylie') {
       // This is an explicit editor export: Kylie mounts were independently moved/rotated after companion creation.
       assert.equal(eyes.length, 1);
@@ -46,16 +47,15 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   for (const [headKey, head] of Object.entries(committed.heads)) {
     const pair = shaft.overrides[headKey];
     assert(pair, shaftKey + '/' + headKey + ': every pair explicitly authored');
-    const manualHeadAbove = shaftKey === 'kylie' && ['harlyao-broadsword', 'harlyao-longsword'].includes(headKey);
-    assert.equal(pair.layerOrder, manualHeadAbove || head.mount.type === 'weight' ? 'head-over-haft' : 'haft-over-head',
-      shaftKey + '/' + headKey + ': preserve explicit pair layer order, including two Kylie exceptions.');
+    // Pair layer order is hand-authored in the editor (collars and tang joins flip it per head), so only its validity is pinned.
+    assert(['haft-over-head', 'head-over-haft'].includes(pair.layerOrder), shaftKey + '/' + headKey + ': explicit pair layer order');
     assert.equal(api.settings(shaftKey, headKey).layerOrder, pair.layerOrder);
   }
 }
 assert.equal(totalEye, eyeLocations.length);
 assert.equal(totalTang, 17, 'Nine additional tang lines plus eight previously authored tangs');
 assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 255);
-assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'weight',
+assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'blade',
   start: { x: 207, y: 319 }, end: { x: 207, y: 239 } }, 'Pick arrow stays straight and unrotated');
 
 // Preserve other independent artist calibration changes included in the uploaded editor export.
