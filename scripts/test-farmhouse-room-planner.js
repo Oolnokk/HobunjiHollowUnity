@@ -76,4 +76,35 @@ const rotated = planner.serialize().walls[0];
 assert.equal(rotated.a.r, rotated.b.r);
 planner.onPieceRemoved('main');
 assert.equal(planner.serialize().walls.length, 0);
+// An exterior entry on the joining strip must become the doorway, never a solid wall.
+planner.restore(null);
+const entryLayout = planner.apply({ ...base, doors: [{ enter: { c: 10, r: 3 } }] }, pieces);
+assert.equal(entryLayout.partitions[0].door.c, 10);
+assert.equal(entryLayout.partitions[0].door.r, 3);
+assert.equal(entryLayout.floorSet.has('10,3'), true);
+planner.armDoor(entryLayout.partitions[0].id);
+assert.equal(planner.canTarget(10, 5), false, 'a movable join door cannot strand an exterior entry');
+planner.cancel();
+// Two separate protected entries on the same strip cannot share one door.
+const doubleEntry = planner.apply({ ...base, doors: [{ enter: { c: 10, r: 3 } }, { enter: { c: 10, r: 5 } }] }, pieces);
+assert.equal(doubleEntry.partitions.length, 0);
+assert.equal(planner.debug().skipped.length, 1);
+// A chimney hearth crossing a joining strip prevents cutting its solid cooking footprint.
+const chimneyLayout = planner.apply({ ...base, hearths: [{ cx: 10.5, cz: 4.5, yaw: Math.PI / 2 }] }, pieces);
+assert.equal(chimneyLayout.partitions.length, 0);
+assert.equal(planner.debug().skipped[0].reason, 'Chimney hearth overlaps the wall');
+// Wall/door editing respects occupied tiles without needing desktop devtools.
+planner.init({ canEdit: () => true, canHostDoor: (c, r) => c !== 10 || r !== 5,
+  canBlockCell: (c, r) => c !== 4 || r !== 4,
+  rebuild, save: () => saved.push(planner.serialize()), refresh: () => {} });
+const clearLayout = rebuild();
+planner.armDoor(clearLayout.partitions[0].id);
+assert.equal(planner.canTarget(10, 5), false, 'door relocation cannot displace furniture');
+assert.equal(planner.canTarget(10, 6), true, 'an unoccupied join slot remains selectable');
+planner.cancel();
+planner.armWall();
+assert.equal(planner.canTarget(4, 4), false, 'a furniture-occupied corner is not a valid wall start');
+assert.equal(planner.confirm(4, 2).ok, true);
+assert.equal(planner.canTarget(4, 6), false, 'a wall cannot pass through existing furniture');
+planner.cancel();
 console.log('Farmhouse room planner: all regression assertions passed.');
