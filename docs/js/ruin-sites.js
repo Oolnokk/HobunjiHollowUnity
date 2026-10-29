@@ -271,6 +271,8 @@
       getButtons() {
         const saved = entranceState(site.id);
         if (saved.spent) return [{ icon:'🪨', label:'Collapsed — the passage is choked with rubble', action:'obj_ruin_site_door', style:'secondary', allowed:false }];
+        if (!window.DelversGuild?.hasStone?.()) return [{ icon:'🔒', label:"A licensed Delver's Stone is required", action:'obj_ruin_site_door', style:'secondary', allowed:false }];
+        if (!saved.open) return [{ icon:'🔴', label:"Unlock with Delver's Stone", action:'obj_ruin_site_door', style:'primary', allowed:true }];
         if (!saved.open) {
           const total = record.pillars.length;
           const struck = record.pillars.filter(pillar => pillar.struck).length;
@@ -282,8 +284,9 @@
         if (action !== 'obj_ruin_site_door') return { ok:false, message:'Unknown action.' };
         const saved = entranceState(site.id);
         if (saved.spent) return { ok:false, message:'The way in has collapsed.' };
-        if (!saved.open) return { ok:false, message:'The door is sealed. Strike every glyph pillar in the courtyard.' };
-        enterSite({ kind:'entrance', id:site.id, zoneId:site.zoneId, name:site.name, returnAt:approach });
+        if (!window.DelversGuild?.hasStone?.()) return { ok:false, message:"Only licensed Delvers with a Delver's Stone may enter a Harlyao ruin." };
+        if (!saved.open) openDoor(record); // The Guild stone bypasses the former glyph puzzle and opens the seal directly.
+        if (!enterSite({ kind:'entrance', id:site.id, zoneId:site.zoneId, name:site.name, returnAt:approach })) return { ok:false, message:'The ruin cannot be entered yet.' };
         return { ok:true, message:'You step through into the dark.' };
       },
     };
@@ -325,10 +328,10 @@
     const object = {
       id:`ruinhole_${hole.zoneId}_${hole.col}_${hole.row}`, type:'ruin_hole', col:hole.col, row:hole.row, mesh:piece,
       label:'🕳️ Ruin Burrow',
-      getButtons() { return [{ icon:'🪜', label:'Climb down into the ruin', action:'obj_ruin_hole', style:'primary', allowed:true }]; },
+      getButtons() { return [{ icon:'🪜', label:window.DelversGuild?.hasStone?.() ? 'Climb down into the ruin' : "Requires a Delver's Stone", action:'obj_ruin_hole', style:'primary', allowed:!!window.DelversGuild?.hasStone?.() }]; },
       onAction(action) {
         if (action !== 'obj_ruin_hole') return { ok:false, message:'Unknown action.' };
-        enterSite({ kind:'hole', id, zoneId:hole.zoneId, name:'Ruin Burrow', returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } });
+        if (!enterSite({ kind:'hole', id, zoneId:hole.zoneId, name:'Ruin Burrow', returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } })) return { ok:false, message:"A Delver's Stone is required." };
         return { ok:true, message:'You climb down the shaft.' };
       },
     };
@@ -414,6 +417,10 @@
 
   // ── Entering / leaving ────────────────────────────────────────────────────
   function enterSite(visit) {
+    if (!window.DelversGuild?.hasStone?.()) {
+      deps?.showToast?.("A Delver's Stone is required to enter Harlyao ruins.", false);
+      return false;
+    }
     const R = window.DevRandomRuin;
     if (!R?.generate) { deps?.showToast?.('The ruin is not ready yet — try again in a moment.', false); return false; }
     activeVisit = { ...visit };
