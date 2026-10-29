@@ -138,22 +138,25 @@
     const built = pieces.filter(p => p.stage === 'built');
     layoutBuiltRooms(built); // Fresh room coordinates supersede the old exterior×2 floor union.
     if (legacyWallSpace) {
+      let pending = false; // Additional saved deed rooms may not exist until the final restore pass.
       customWalls.forEach(w => {
+        if (w.roomLocalV2) return;
         const owner = built.find(p => p.id === w.ownerPieceId)
           || built.find(p => points(w.a, w.b).every(q => q.c >= p.col * 2 && q.c < (p.col + p.w) * 2 && q.r >= p.row * 2 && q.r < (p.row + p.h) * 2));
-        if (!owner) return;
+        if (!owner) { pending = true; return; }
         w.ownerPieceId = owner.id;
         w.a = cell(w.a.c - owner.col * 2, w.a.r - owner.row * 2);
         w.b = cell(w.b.c - owner.col * 2, w.b.r - owner.row * 2);
         if (isCell(w.door)) w.door = cell(w.door.c - owner.col * 2, w.door.r - owner.row * 2);
+        w.roomLocalV2 = true; // Defer other walls without double-converting successfully restored sections.
       });
-      legacyWallSpace = false; // Migration happens once; future saves use room-local wall coordinates.
+      legacyWallSpace = pending;
     }
     const floorSet = new Set(base.floorSet);
     const exitSet = new Set(base.exitSet);
     const { entrances, hearths: protectedHearths } = protectedInteriorCells(base);
     const joins = seamRecords(built);
-    const manual = customWalls.map(w => {
+    const manual = customWalls.filter(w => !legacyWallSpace || w.roomLocalV2).map(w => {
       const rect = roomRect(w.ownerPieceId);
       return { ...w, builtIn: false, strip: rect ? points(
         cell(rect.col + w.a.c, rect.row + w.a.r),
