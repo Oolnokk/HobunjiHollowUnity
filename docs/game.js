@@ -3150,9 +3150,11 @@
         return entry ? entry[0] : null;
       }
 
-      function decorativeFurnitureSize(furnitureKey, rotYDeg = 0) {
+      function decorativeFurnitureSize(furnitureKey, rotYDeg = 0, dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
-        const baseW = def?.fw || 1, baseD = def?.fd || 1;
+        const isRug = furnitureKey === 'rug'; // Only woven rugs use two-corner tile sizing; ordinary furniture keeps its authored footprint.
+        const baseW = isRug && Number.isInteger(dimensions?.widthTiles) ? Math.max(1, Math.min(16, dimensions.widthTiles)) : (def?.fw || 1);
+        const baseD = isRug && Number.isInteger(dimensions?.heightTiles) ? Math.max(1, Math.min(16, dimensions.heightTiles)) : (def?.fd || 1);
         const angle = (rotYDeg || 0) * Math.PI / 180;
         const cos = Math.abs(Math.cos(angle)), sin = Math.abs(Math.sin(angle));
         return {
@@ -3161,9 +3163,9 @@
         };
       }
 
-      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea) {
+      function canPlaceDecorativeFurnitureAt(col, row, ignoreId = null, furnitureKey = null, rotYDeg = 0, area = currentArea, dimensions = null) {
         const g = area === 'interior' ? interiorGrid : grid;
-        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg, dimensions);
         // Farm decor also has to respect worldObjects — the same shared
         // occupancy map processing furniture, barns, and the sell/supply
         // crates register into (see canPlaceFurnitureAt above) — or a
@@ -3188,7 +3190,7 @@
         }
         return !interiorFurnitureObjects.find(o => {
           if (o.id === ignoreId || o.area !== area) return false;
-          const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
       }
@@ -3211,7 +3213,7 @@
       function decorativeFurnitureBlocksPoint(obj, x, z) {
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         if (!def || def.walkable) return false;
-        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
         const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
         const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
         const dx = x - cx, dz = z - cz;
@@ -3643,7 +3645,7 @@
         if (derivedHearth) return makeCookingInteractable();
         const o = interiorFurnitureObjects.find(f => {
           if (f.area !== 'interior') return false;
-          const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0); // Used to make every tile of a multi-cell hearth targetable.
+          const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0, f); // Each resizable rug retains its actual tile footprint.
           return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
         });
         if (!o) return null;
@@ -3680,14 +3682,17 @@
         return light;
       }
 
-      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0) {
+      function makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, area = currentArea, rotYDeg = 0, dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return null;
-        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg);
+        const { fw, fd } = decorativeFurnitureSize(furnitureKey, rotYDeg, dimensions);
         const centerX = col + fw * 0.5; // Furniture anchor X used by placement and the farm's continuous height sampler.
         const centerZ = row + fd * 0.5; // Furniture anchor Z paired with centerX for slope-conforming placement.
         const surfaceY = furnitureSurfaceYAtWorld(area, centerX, centerZ); // Farm decor follows the farmhouse/barn hill; interiors and authored external maps keep their existing local Y.
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
+        if (furnitureKey === 'rug' && dimensions) {
+          group.scale.set((dimensions.widthTiles || def.fw) / def.fw, 1, (dimensions.heightTiles || def.fd) / def.fd);
+        } // Stretch the authored woven-rug visual to its two selected tile dimensions.
         group.position.set(centerX, surfaceY, centerZ);
         group.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(group);
@@ -3730,18 +3735,18 @@
         return furnitureKey === 'alchemyTable' || !!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit;
       }
 
-      function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag') {
+      function placeDecorativeFurniture(col, row, furnitureKey, source = 'bag', dimensions = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def) return { ok: false, message: 'Unknown furniture type.' };
         const isInInterior = currentArea === 'interior';
         const isOnFarm = currentArea === 'farm';
         if (def.area === 'interior' && !isInInterior && !isOnFarm) return { ok: false, message: `${def.name} can only be placed inside the house or on your farm.` };
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
-        if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey)) return { ok: false, message: 'Cannot place furniture here.' };
+        if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey, 0, currentArea, dimensions)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
         if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return { ok: false, message: `No available ${def.name} or furniture permission.` };
         const targetScene = isInInterior ? interiorScene : scene;
-        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea);
+        const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, targetScene, currentArea, 0, dimensions);
         if (!result) return { ok: false, message: 'Could not create furniture mesh.' };
         if (!consumeFurnitureStock(itemKey, source)) {
           disposeDecorativeFurniture({ ...result, key: furnitureKey, col, row, area: currentArea });
@@ -3749,7 +3754,8 @@
         }
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
         const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
-          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0, ...owner }; // Stable save record also owns editable table membership.
+          mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0,
+          ...(furnitureKey === 'rug' && dimensions ? { widthTiles: dimensions.widthTiles, heightTiles: dimensions.heightTiles } : {}), ...owner }; // Every rug owns the dimensions chosen with its two corners.
         interiorFurnitureObjects.push(placedFurniture);
         window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
         if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
@@ -3821,9 +3827,9 @@
       function moveDecorativeFurniture(id, col, row) {
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
-        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0)) return { ok: false, message: 'Cannot move furniture there.' };
+        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, currentArea, obj)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         obj.col = col; obj.row = row;
@@ -3856,11 +3862,11 @@
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
         const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
-        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot)) {
+        if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot, currentArea, obj)) {
           return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
         }
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot);
+        const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot, obj);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
@@ -3894,7 +3900,7 @@
             && obj.row >= oldRect.row * 2 && obj.row < (oldRect.row + oldRect.h) * 2;
           if (obj.ownerPieceId !== pieceId && !(obj.ownerPieceId == null && insideOld)) return;
           const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          const oldSize = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0);
+          const oldSize = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           let fw = oldSize.fw, fd = oldSize.fd;
           let localCol = Number.isFinite(obj.localCol) ? obj.localCol : obj.col - oldRect.col * 2;
           let localRow = Number.isFinite(obj.localRow) ? obj.localRow : obj.row - oldRect.row * 2;
@@ -3904,7 +3910,7 @@
             localCol = nextCol; localRow = nextRow;
             obj.rotYDeg = ((obj.rotYDeg || 0) + 90) % 360;
             obj.mesh.rotation.y = obj.rotYDeg * Math.PI / 180;
-            const newSize = decorativeFurnitureSize(obj.key, obj.rotYDeg);
+            const newSize = decorativeFurnitureSize(obj.key, obj.rotYDeg, obj);
             fw = newSize.fw; fd = newSize.fd;
           }
           localCol = Math.max(0, Math.min(newRect.w * 2 - fw, localCol));
@@ -3981,10 +3987,12 @@
       let furniturePlacementSource = 'bag'; // Armed placements debit this source only after a successful placement.
       let furniturePlacementArmedKey = null;
       let furnitureMoveArmedId = null;
+      let rugFirstCorner = null; // First rug placement Action 1 tile, retained until the opposite corner is selected or canceled.
       let furniturePlacementGhost = null;
       function armFurniturePlacement(itemKey, source = 'bag') {
         furniturePlacementSource = source === 'storage' ? 'storage' : 'bag';
         furniturePlacementArmedKey = itemKey || null;
+        rugFirstCorner = null; // Starting any new piece does not reuse another rug's original corner.
         if (furniturePlacementArmedKey) furnitureMoveArmedId = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -4010,6 +4018,7 @@
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
         furnitureMoveArmedId = id || null;
+        rugFirstCorner = null; // Moving an existing rug uses its saved dimensions, not a fresh two-corner selection.
         if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -4031,7 +4040,7 @@
       function furniturePlacementSpec() {
         if (furnitureMoveArmedId) {
           const obj = interiorFurnitureObjects.find(o => o.id === furnitureMoveArmedId && o.area === currentArea);
-          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id };
+          if (obj) return { kind: 'decorative', key: obj.key, rotYDeg: obj.rotYDeg || 0, ignoreId: obj.id, dimensions: obj };
           const processor = currentArea === 'farm' ? processingFurnitureById(furnitureMoveArmedId) : null;
           return processor ? { kind: 'processing', key: processor.furnitureKey, rotYDeg: processor.rotYDeg || 0, ignoreId: processor.id, ignoreObject: processor } : null;
         }
@@ -4041,13 +4050,25 @@
         return processingKey ? { kind: 'processing', key: processingKey, rotYDeg: 0, ignoreId: null } : null;
       }
 
+      function rugRectangleAt(col, row) {
+        if (!rugFirstCorner) return null;
+        return {
+          col: Math.min(col, rugFirstCorner.col), row: Math.min(row, rugFirstCorner.row),
+          widthTiles: Math.abs(col - rugFirstCorner.col) + 1, heightTiles: Math.abs(row - rugFirstCorner.row) + 1,
+        }; // Inclusive opposite corners match the Interior Editor's broad tile-dimension resizing.
+      }
       function showFurniturePlacementGhost(col, row) {
+        if (window.FarmhouseRoomPlanner?.isArmed?.()) { clearFurniturePlacementGhost(); return; }
         const spec = furniturePlacementSpec();
         if (!spec) { clearFurniturePlacementGhost(); return; }
+        const rect = spec.key === 'rug' && !spec.ignoreId ? rugRectangleAt(col, row) : null;
+        const anchorCol = rect?.col ?? col, anchorRow = rect?.row ?? row; // The top-left rug tile becomes its permanent placement anchor.
+        const dimensions = rect || spec.dimensions || null; // Existing rugs preview their authored shape when moved.
+        const dimensionsValid = !rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16);
         const isProcessing = spec.kind === 'processing';
-        const valid = isProcessing
-          ? canPlaceFurnitureAt(col, row, spec.ignoreObject)
-          : canPlaceDecorativeFurnitureAt(col, row, spec.ignoreId, spec.key, spec.rotYDeg);
+        const valid = dimensionsValid && (isProcessing
+          ? canPlaceFurnitureAt(anchorCol, anchorRow, spec.ignoreObject)
+          : canPlaceDecorativeFurnitureAt(anchorCol, anchorRow, spec.ignoreId, spec.key, spec.rotYDeg, currentArea, dimensions));
         if (!furniturePlacementGhost || furniturePlacementGhost.kind !== spec.kind || furniturePlacementGhost.key !== spec.key || furniturePlacementGhost.rotYDeg !== spec.rotYDeg || furniturePlacementGhost.area !== currentArea) {
           clearFurniturePlacementGhost();
           const group = buildFurnitureVisual(spec.key, 0x5cff7a);
@@ -4058,9 +4079,12 @@
           (currentArea === 'interior' ? interiorScene : scene).add(group);
           furniturePlacementGhost = { group, kind: spec.kind, key: spec.key, rotYDeg: spec.rotYDeg, area: currentArea };
         }
-        const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg);
-        const previewX = col + fw * 0.5; // Shared preview center used for both placement X and the exact farm-height sample.
-        const previewZ = row + fd * 0.5; // Shared preview center used for both placement Z and the exact farm-height sample.
+        const { fw, fd } = isProcessing ? { fw: 1, fd: 1 } : decorativeFurnitureSize(spec.key, spec.rotYDeg, dimensions);
+        const def = DECORATIVE_FURNITURE_DEFS[spec.key]; // Fixed authored rug dimensions supply the visual stretch baseline.
+        furniturePlacementGhost.group.scale.set(spec.key === 'rug' && dimensions ? dimensions.widthTiles / (def.fw || 2) : 1, 1,
+          spec.key === 'rug' && dimensions ? dimensions.heightTiles / (def.fd || 2) : 1);
+        const previewX = anchorCol + fw * 0.5; // Shared preview center used for both placement X and the exact farm-height sample.
+        const previewZ = anchorRow + fd * 0.5; // Shared preview center used for both placement Z and the exact farm-height sample.
         const previewBaseY = currentArea === 'farm'
           ? farmSurfaceYAtWorld(previewX, previewZ)
           : (isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0); // Interior decor stays on its local floor.
@@ -4070,8 +4094,8 @@
         furniturePlacementGhost.group.traverse(child => {
           if (child.isMesh) child.material.color.set(valid ? 0x5cff7a : 0xff5555);
         });
-        furniturePlacementGhost.col = col;
-        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.col = anchorCol;
+        furniturePlacementGhost.row = anchorRow;
         furniturePlacementGhost.valid = valid;
       }
 
@@ -26173,9 +26197,15 @@
             ? window.FarmhouseRoomPlanner.canTarget(placementReticle.col, placementReticle.row)
             : !!placementSpec && (placementSpec.kind === 'processing'
               ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
-              : canPlaceDecorativeFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg));
+              : (() => {
+                const rect = placementSpec.key === 'rug' && !placementSpec.ignoreId ? rugRectangleAt(placementReticle.col, placementReticle.row) : null;
+                const dims = rect || placementSpec.dimensions || null;
+                return (!rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16))
+                  && canPlaceDecorativeFurnitureAt(rect?.col ?? placementReticle.col, rect?.row ?? placementReticle.row,
+                    placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg, currentArea, dims);
+              })());
           return [
-            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : furnitureMoveArmedId ? 'Move Here' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
+            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : rugFirstCorner ? 'Set Opposite Rug Corner' : furnitureMoveArmedId ? 'Move Here' : 'Place / First Corner', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
             { icon: '✕', label: 'Cancel', action: 'furniture_place_cancel', style: 'secondary', allowed: true },
           ];
         }
@@ -28711,6 +28741,7 @@
         const wasArmed = furniturePlacementModeArmed(); // Used to avoid a misleading cancel toast when no placement session exists.
         furniturePlacementArmedKey = null;
         furnitureMoveArmedId = null;
+        rugFirstCorner = null; // Aborting midway through a rug never consumes its owned item.
         window.FarmhouseRoomPlanner?.cancel?.(); // Cancel wall/corner/door editing alongside normal furniture placement.
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -28724,6 +28755,17 @@
           const result = window.FarmhouseRoomPlanner.confirm(col, row); // First corner stays armed; second corner commits the full wall.
           showToast(result.message, result.ok);
           return result.ok;
+        }
+        const rugKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        if (rugKey === 'rug' && !rugFirstCorner) {
+          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug')) {
+            showToast('Choose a clear first rug corner.', false);
+            return false;
+          }
+          rugFirstCorner = { col, row }; // Action 1 begins the two-corner rug placement without spending inventory.
+          showToast('First rug corner set. Aim at the opposite corner and press Action 1.', true);
+          refreshActionBar();
+          return true;
         }
         showFurniturePlacementGhost(col, row);
         if (!furniturePlacementGhost) return false;
@@ -28739,9 +28781,12 @@
           const itemKey = furniturePlacementArmedKey;
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
           const processingKey = currentArea === 'farm' ? getFurnitureKeyByItemKey(itemKey) : null;
-          result = decorKey
-            ? placeDecorativeFurniture(col, row, decorKey, furniturePlacementSource)
-            : processingKey
+          const rugRect = decorKey === 'rug' ? rugRectangleAt(col, row) : null; // Only the second Action 1 resolves a rectangular rug.
+          result = rugRect && (rugRect.widthTiles > 16 || rugRect.heightTiles > 16)
+            ? { ok: false, message: 'Woven rugs are limited to 16 × 16 tiles.' }
+            : decorKey
+              ? placeDecorativeFurniture(rugRect?.col ?? col, rugRect?.row ?? row, decorKey, furniturePlacementSource, rugRect)
+              : processingKey
               ? placeProcessingFurniture(col, row, processingKey, furniturePlacementSource)
               : { ok: false, message: 'Furniture not found.' };
           showToast(result.message, result.ok);
@@ -28751,6 +28796,7 @@
             window.FarmEditor.saveFarmLayout();
             saveMemberWorldData();
           }
+          if (result.ok) rugFirstCorner = null; // Each successfully placed rug starts a fresh two-corner interaction.
           if (result.ok && furnitureStock(itemKey, furniturePlacementSource) <= 0) furniturePlacementArmedKey = null;
         }
         clearFurniturePlacementGhost();
@@ -28805,6 +28851,7 @@
             source: furniturePlacementSource,
             remaining: furnitureStock(furniturePlacementArmedKey, furniturePlacementSource),
             moveId: furnitureMoveArmedId,
+            rugFirstCorner: rugFirstCorner ? { ...rugFirstCorner } : null, // Mobile diagnostics expose both stages of rug placement.
             reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
             ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
           };
