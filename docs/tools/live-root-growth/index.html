@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<base href="../../">
+<title>Hobunji Hollow — Live Root Growth Author</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="js/foliage-generator.js?v=20261028temple-finish"></script>
+<script src="js/GLTFLoader.js"></script>
+<script src="js/procedural-furniture.js"></script>
+<script src="js/authored-furniture-runtime.js"></script>
+<script src="js/live-root-growth.js?v=20261029rootgrowth1"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
+button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
+input[type=number],input[type=text]{width:100%;background:#091925;color:#e7f5ff;border:1px solid #476578;border-radius:7px;padding:8px}
+input[type=range]{width:100%;accent-color:#8dcaff}
+#app{display:grid;grid-template-columns:minmax(280px,345px) 1fr;height:100%;overflow:hidden}
+aside{overflow-y:auto;padding:12px;background:#121f2c;border-right:1px solid #395267;-webkit-overflow-scrolling:touch}
+h1{font-size:18px;margin:0}h2{font-size:12px;margin:0 0 9px;color:#a6d2f1}
+p,.hint{font-size:11px;color:#abc0d2;margin:6px 0}
+section{border:1px solid #354d61;border-radius:10px;padding:10px;margin:10px 0;background:#152636}
+label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls label{margin:0}.controls button{width:100%}
+#viewport{min-width:0;min-height:0;position:relative;background:radial-gradient(circle at center,#1b3843,#07101a 70%)}
+#render{position:absolute;inset:0;touch-action:none}
+#hud{position:absolute;top:10px;left:10px;right:10px;pointer-events:none;background:#071523cc;border:1px solid #476578;border-radius:7px;padding:8px;white-space:pre-wrap;font:11px/1.4 monospace}
+#errors{white-space:pre-wrap;color:#ffc4c4;display:none;border-color:#ff7580}
+#debug{white-space:pre-wrap;word-break:break-word;font:10px/1.4 monospace;max-height:210px;overflow:auto;background:#06121d;padding:8px}
+#scrub{margin-top:10px}.toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+@media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:minmax(250px,44vh) 1fr}#viewport{grid-row:1}aside{grid-row:2;border-right:none;border-top:1px solid #395267}#hud{font-size:9px}}
+</style></head>
+<body><div id="app">
+<aside>
+<h1>🌳 Live Root Growth Author</h1>
+<p>Prototype living root structures around an invisible imported furniture shape. Roots originate at concealed nodes on the dense wrapped floor; the same controller extends and retracts.</p>
+<section><h2>1 · Shape to grow</h2>
+<label for="modelFile">Import authored furniture JSON or GLB</label><input id="modelFile" type="file" accept=".json,.glb">
+<p id="sourceName">Demo: raised rectangular platform. Replace with any furniture export or GLB.</p>
+<div class="controls"><label>Shape X <input id="targetX" type="number" step=".25" value="0"></label><label>Shape Y <input id="targetY" type="number" step=".25" value="1.5"></label><label>Shape Z <input id="targetZ" type="number" step=".25" value="0"></label><label>Show guide <input id="showGuide" type="checkbox"></label></div>
+</section>
+<section><h2>2 · Root growth settings</h2>
+<label for="seed">Deterministic branch seed</label><input id="seed" type="text" value="ruin-root-growth-1" maxlength="128">
+<div class="controls">
+<label>Floor width <input id="floorWidth" type="number" min="1" max="32" step=".5" value="8"></label>
+<label>Floor depth <input id="floorDepth" type="number" min="1" max="32" step=".5" value="8"></label>
+<label>Branches <input id="branchCount" type="number" min="1" max="32" value="9"></label>
+<label>Wrap limit <input id="strandLimit" type="number" min="1" max="80" value="80"></label>
+<label>Root radius <input id="radius" type="number" min=".005" max=".3" step=".005" value=".045"></label>
+<label>Branch radius <input id="branchRadius" type="number" min=".008" max=".3" step=".005" value=".065"></label>
+<label>Floor density <input id="floorDensity" type="number" min=".05" max="1" step=".05" value="1"></label>
+<label>Shape density <input id="targetDensity" type="number" min=".05" max="1" step=".05" value="1"></label>
+<label>Floor path length <input id="floorLength" type="number" min=".5" max="30" step=".5" value="12"></label>
+<label>Shape path length <input id="targetLength" type="number" min=".5" max="30" step=".5" value="12"></label>
+<label>Bend <input id="bend" type="number" min="0" max="3" step=".1" value=".42"></label>
+<label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".25" value="3.5"></label>
+</div><div class="controls" style="margin-top:10px"><button id="rebuild">Rebuild</button><button id="randomSeed">New seed</button></div>
+</section>
+<section><h2>3 · Animate</h2>
+<div class="toolbar"><button id="extend">Grow</button><button id="pause">Pause</button><button id="retract">Retract</button></div>
+<label for="scrub">Manual growth progress · <output id="progressLabel">0%</output></label>
+<input id="scrub" type="range" min="0" max="100" step="1" value="0">
+<div class="controls"><button id="reset">Reset</button><button id="full">Full growth</button></div>
+</section>
+<section><h2>4 · Recipe</h2><div class="controls"><button id="download">Export JSON</button><button id="copy">Copy recipe</button></div>
+<label for="recipeFile">Import saved recipe</label><input id="recipeFile" type="file" accept=".json">
+<p>Furniture JSON is saved with the recipe. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
+</section>
+<section id="errors" role="alert"></section>
+<section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
+</aside>
+<main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
+</div>
+<script src="tools/live-root-growth/tool.js?v=20261029rootgrowth1"></script>
+</body></html>
