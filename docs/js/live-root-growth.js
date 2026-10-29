@@ -216,7 +216,9 @@
     const shapeMesh = findGrowthMesh(targetGrowth), floorMesh = findGrowthMesh(floorGrowth);
     const targets = sampledTargetPoints(THREE, target, targetGrowth, recipe.branchCount, random, group);
     const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random);
-    const branchMaterial = (shapeMesh?.material || floorMesh?.material || new THREE.MeshBasicMaterial({color:0x69513e})).clone();
+    const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
+    const branchMaterial = branchSourceMaterial?.clone?.() ||
+      new THREE.MeshBasicMaterial({color:parseInt(rootFinish.color.slice(1),16)}); // No-shape fallback still uses Temple bark color.
     const branchGroup = new THREE.Group(); // Animation-only intermediate roots, independent of shape and collision.
     branchGroup.name = 'Extending branch roots';
     const branches = targets.points.map((point, i) => {
