@@ -54965,6 +54965,7 @@ const MOVEMENT_PRESETS = Object.freeze({ // Supplies repository-faithful Regular
     irregularity: 0.12, stumble: 0.12, recoilDistance: 0.045, recoilSpeed: 4, rebalanceSpeed: 7,
     arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54119,
     gaitProfile: { style: 'maskbound-lurch', dragSide: 'left', cadence: 0.82, stance: 0.65, dragLift: 0.13, lurchDegrees: 13 },
+    bodyScale: { x: 1.0, y: 1.34, head: 1, offsetY: -0.07 }, // Same authored proportions as the live Sentinel; previewed on the game's floor-root scale path.
   },
   maskbound_bulwark: {
     label: 'Maskbound Bulwark', speed: 1.45, sprintMultiplier: 1, acceleration: 4.1, turnAcceleration: 5.5,
@@ -54972,6 +54973,7 @@ const MOVEMENT_PRESETS = Object.freeze({ // Supplies repository-faithful Regular
     irregularity: 0.18, stumble: 0.08, recoilDistance: 0.035, recoilSpeed: 3, rebalanceSpeed: 5,
     arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54120,
     gaitProfile: { style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 },
+    bodyScale: { x: 1.62, y: 1.02, head: 1, offsetY: -0.12 }, // Same authored proportions as the live Bulwark.
   },
   maskbound_reacher: {
     label: 'Maskbound Reacher', speed: 2.0, sprintMultiplier: 1, acceleration: 6.5, turnAcceleration: 8,
@@ -54979,6 +54981,7 @@ const MOVEMENT_PRESETS = Object.freeze({ // Supplies repository-faithful Regular
     irregularity: 0.15, stumble: 0.13, recoilDistance: 0.055, recoilSpeed: 4.4, rebalanceSpeed: 6.8,
     arenaRadius: 4.5, autoWalk: true, cameraRelative: true, followCamera: true, loopArena: false, feetEnabled: true, seed: 54121,
     gaitProfile: { style: 'maskbound-lurch', dragSide: 'left', cadence: 0.92, stance: 0.62, dragLift: 0.22, lurchDegrees: 16 },
+    bodyScale: { x: 0.72, y: 1.82, head: 1, offsetY: 0.12 }, // Same authored proportions as the live Reacher.
   },
 });
 
@@ -59229,12 +59232,39 @@ function normalizeMaskboundEditorGait(value) { // Same clamped per-troop authori
   };
 }
 
+function normalizeEditorBodyScale(value) { // Troop body proportions are authored in the game's x/y/head/offsetY domain; null means the previewed NPC's own species scale.
+  if (!value || typeof value !== 'object') return null;
+  const api = window.HobunjiCharacterRigScale;
+  const limit = (n, lo, hi) => Number.isFinite(Number(n)) ? Math.min(hi, Math.max(lo, Number(n))) : null;
+  const out = {
+    x: limit(value.x, api?.minScale ?? 0.1, api?.maxScale ?? 4),
+    y: limit(value.y, api?.minScale ?? 0.1, api?.maxScale ?? 4),
+    head: limit(value.head, api?.minScale ?? 0.1, api?.maxScale ?? 4),
+    offsetY: limit(value.offsetY, -(api?.maxOffsetFraction ?? 0.5), api?.maxOffsetFraction ?? 0.5),
+  };
+  return out.x && out.y && out.head && out.offsetY != null ? out : null;
+}
+
+function syncPreviewBodyScale() { // Re-applies the game's single floor-root body scale (species default, or the active troop's proportions) after a preset/import change.
+  const model = state.three.model;
+  const api = window.HobunjiCharacterRigScale;
+  const root = procedural.locomotionRoot;
+  if (!model || !root || !api?.applyToParent || !model.userData?.speciesId || !model.userData?.gameGrounding?.enabled) return;
+  const species = model.userData.speciesId, gender = model.userData.gender || 'male';
+  const age = api.ageFor?.({ avatarRoot: model }) || 0;
+  if (!api.applyToParent(root, species, gender, procedural.settings.bodyScale || null, age)) return;
+  procedural.bodyRigScale = { ...root.userData.hobunjiCharacterRigScaleState.factor, species, gender, troop: !!procedural.settings.bodyScale };
+  model.userData.gameGrounding.bodyRigScale = procedural.bodyRigScale;
+  bindPreviewNpcMovementHead(model); // Neutral eye height follows the new body.
+}
+
 function normalizedAnimationSettings(value, fallbackPreset = 'drunken') { // Validates local/imported settings before they reach the simulation.
   const fallback = MOVEMENT_PRESETS[fallbackPreset] || MOVEMENT_PRESETS.drunken;
   const source = value && typeof value === 'object' ? value : {};
   return {
     label: String(source.label || fallback.label || 'Custom'),
     gaitProfile: normalizeMaskboundEditorGait(source.gaitProfile ?? fallback.gaitProfile), // Authorable walking profile survives save/import/export.
+    bodyScale: normalizeEditorBodyScale(source.bodyScale ?? fallback.bodyScale), // Troop proportions travel with the troop gait through save/import/export.
     speed: clampNumber(source.speed ?? fallback.speed, 0.2, 4),
     sprintMultiplier: clampNumber(source.sprintMultiplier ?? fallback.sprintMultiplier, 1, 3),
     acceleration: clampNumber(source.acceleration ?? fallback.acceleration, 0.5, 20),
@@ -59532,6 +59562,7 @@ function applyAnimationPreset(name) { // Replaces the authored values with one n
   procedural.pose.basePreset = name;
   procedural.pose.transforms = createPresetDirectionalPoses(name);
   procedural.pose.sprintTransform = createPresetSprintPose(name);
+  syncPreviewBodyScale();
   resetProceduralMovement({ resetCamera: true, preservePlayback: true });
   syncExperimentalFeetVisibility();
   renderAnimationEditor();
@@ -59699,8 +59730,8 @@ function bindProceduralModel(model, options = {}) { // Wraps the repository avat
     const rigSpecies = model.userData.speciesId;
     const rigGender = model.userData.gender || 'male';
     const age = window.HobunjiCharacterRigScale.ageFor?.({ avatarRoot: model }) || 0;
-    if (window.HobunjiCharacterRigScale.applyToParent(locomotionRoot, rigSpecies, rigGender, null, age)) {
-      procedural.bodyRigScale = { ...locomotionRoot.userData.hobunjiCharacterRigScaleState.factor, species: rigSpecies, gender: rigGender };
+    if (window.HobunjiCharacterRigScale.applyToParent(locomotionRoot, rigSpecies, rigGender, procedural.settings?.bodyScale || null, age)) { // An active Maskbound troop preset previews that troop's body, not the NPC's species scale.
+      procedural.bodyRigScale = { ...locomotionRoot.userData.hobunjiCharacterRigScaleState.factor, species: rigSpecies, gender: rigGender, troop: !!procedural.settings?.bodyScale };
     }
   }
   model.userData.gameGrounding = {
@@ -60131,6 +60162,7 @@ async function importAnimationFile(file) { // Loads either a settings export or 
     procedural.pose.basePreset = MOVEMENT_PRESETS[parsed.directionalPosePreset] ? parsed.directionalPosePreset : (MOVEMENT_PRESETS[namedPreset] ? namedPreset : 'drunken');
     procedural.pose.transforms = normalizeDirectionalPoses(parsed.directionalPoses || settings.directionalPoses || createPresetDirectionalPoses(procedural.pose.basePreset));
     procedural.pose.sprintTransform = normalizeDirectionalTransform(parsed.sprintPose || settings.sprintPose, createPresetSprintPose(procedural.pose.basePreset));
+    syncPreviewBodyScale();
     resetProceduralMovement({ resetCamera: true, preservePlayback: true });
     syncExperimentalFeetVisibility();
     renderAnimationEditor();

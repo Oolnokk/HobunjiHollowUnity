@@ -312,6 +312,29 @@
     return true;
   }
 
+  // The one floor-relative node that owns a character's whole visual rig
+  // (portrait + feet + hands). The player's hand parent IS that node
+  // (playerMesh). NPC walkers keep their hands under a lean pivot below it, so
+  // they flag the real owner with userData.hobunjiCharacterRigScaleRoot and
+  // hand attachment scales that — otherwise only the hands (not the body and
+  // feet they belong to) received the species scale.
+  function rigScaleRootFor(node) {
+    for (let current = node; current; current = current.parent) {
+      if (current.userData?.hobunjiCharacterRigScaleRoot === true) return current;
+    }
+    return node || null;
+  }
+
+  // True when an ancestor already carries this character's species body scale
+  // (hostiles scale their whole center-anchored group), so the hand parent
+  // must inherit it instead of being scaled a second time.
+  function rigScaleInheritedFor(node) {
+    for (let current = node; current; current = current.parent) {
+      if (current.userData?.hobunjiCharacterRigScaleInherited === true) return true;
+    }
+    return false;
+  }
+
   // Authored part axes act in the floor-parent frame before joint rotations.
   // Conjugating through the joint chain keeps the part origin/arm reach fixed
   // and gives the same size during idle, grip rotation, and leg animation.
@@ -368,6 +391,8 @@
     applyToParent,
     applyHeadCompensation,
     clearFromParent,
+    rigScaleRootFor,
+    rigScaleInheritedFor,
     installProfileDefaults,
     installPartScaleAxes,
   });
@@ -386,7 +411,7 @@
       // parent by this point, so the head-compensation lookup inside
       // applyToParent finds it. Age comes from the NPC's authored aging block
       // (see ageFor) so this reapplication keeps the build-time hunch.
-      applyToParent(parent, options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, ageFor(options));
+      if (!rigScaleInheritedFor(parent)) applyToParent(rigScaleRootFor(parent), options.speciesId || options.profile?.speciesId || options.profile?.species, options.gender || options.profile?.gender, null, ageFor(options));
       return base(THREE, parent, options);
     };
     Object.assign(wrapped, base);

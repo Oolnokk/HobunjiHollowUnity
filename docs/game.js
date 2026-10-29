@@ -12303,11 +12303,22 @@
           groundShadow.scale.set(animalShadow.radiusX, 1, animalShadow.radiusZ);
         }
         root.add(groundShadow);
-        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
+        // Humanoids get one floor-relative rig root owning portrait, hands AND
+        // feet (the NPC equivalent of the player's playerMesh), so
+        // HobunjiCharacterRigScale's species body scale reaches all three. It
+        // used to land on the lean pivot (the hands' parent) and leave NPC feet
+        // at 1.0 under a scaled body.
+        const npcCharacterRigRoot = namedAnimalDef ? root : new THREE.Group();
+        if (npcCharacterRigRoot !== root) {
+          npcCharacterRigRoot.name = 'npc_character_rig_root';
+          npcCharacterRigRoot.userData.hobunjiCharacterRigScaleRoot = true; // Hand attachment scales this instead of the lean pivot (HobunjiCharacterRigScale.rigScaleRootFor).
+          root.add(npcCharacterRigRoot);
+        }
+        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, npcCharacterRigRoot, avatarGroup, rec?.id);
         const npcRunLeanPivot = namedAnimalDef ? null : new THREE.Group(); // Only humanoids need the shared full-body run lean; the separate feet and held tools remain unaffected.
         if (npcRunLeanPivot) {
           npcRunLeanPivot.name = 'npc_run_lean_visual';
-          (alcoholPoseGroup || root).add(npcRunLeanPivot);
+          (alcoholPoseGroup || npcCharacterRigRoot).add(npcRunLeanPivot);
           npcRunLeanPivot.add(avatarGroup); // Reparent the portrait under an additive ground-anchored pivot, not under the animated foot bones.
         } else if (!alcoholPoseGroup) root.add(avatarGroup);
 
@@ -12328,11 +12339,11 @@
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
-        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // Procedural feet attach directly under the floor-anchored rig root (Y=0),
         // NOT under avatarGroup (offset up by avatarHeight/2 — see
         // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
         // Creatures/wildlife never call this; only humanoid species get legs.
-        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, root, {
+        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, npcCharacterRigRoot, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,

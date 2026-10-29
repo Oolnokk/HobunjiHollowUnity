@@ -550,6 +550,7 @@
     handsPivot.position.y = -(modelHeight / 2);
     group.add(handsPivot);
     portrait.position.set(0, -(modelHeight / 2), 0); // The original PNGPlaneAvatar root is now a metadata/hand-driver sentinel at the hostile's true floor origin.
+    handsPivot.userData.hobunjiCharacterRigScaleInherited = true; // The whole hostile group carries the species body scale (applyAuthoredHostileRigScale); hands inherit it rather than being scaled again by the hand-attach hook.
     portrait.userData.proceduralHandParent = handsPivot; // ProceduralHandFrameDriver attaches rendered hands to this visible hostile hierarchy instead of the discarded portrait assembly.
     group.add(portrait); // Its front/back meshes were already extracted above, so parenting it enables hand discovery without double-rendering the portrait.
     // legsPivot's rotation.y is kept in sync with the same pngRot-derived
