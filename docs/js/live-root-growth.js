@@ -12,6 +12,7 @@
     seed: 'ruin-root-growth-1', floorWidth: 8, floorDepth: 8, floorY: 0,
     branchCount: 9, duration: 0.5, branchRadius: 0.065, bend: 0.42, arcConcavity: 0.72,
     floorDensity: 6, targetDensity: 6, strandLimit: 80,
+    shapeInset: 0.035, volumeFillDepth: 0.24, // Inward bark surface clearance plus internal layers filling the target volume.
     targetLength: 12, floorLength: 12,
     radius: 0.045, curl: 0.6, showGuide: false
   }); // Every instance gets its own normalized, serializable configuration.
@@ -35,6 +36,8 @@
     result.strandLimit = Math.round(number(data.strandLimit, DEFAULTS.strandLimit, 1, 80));
     for (const key of ['floorLength', 'targetLength']) result[key] = number(data[key], DEFAULTS[key], 0.5, 30);
     result.radius = number(data.radius, DEFAULTS.radius, 0.005, 0.3);
+    result.shapeInset = number(data.shapeInset, DEFAULTS.shapeInset, 0, 0.5);
+    result.volumeFillDepth = number(data.volumeFillDepth, DEFAULTS.volumeFillDepth, 0, 0.5);
     result.curl = number(data.curl, DEFAULTS.curl, 0, 2);
     result.showGuide = data.showGuide === true;
     return result;
@@ -66,8 +69,9 @@
   // The shared FoliageGenerator deliberately caps each Wrap pass at density 1.
   // Higher values here mean layered independent seeded Wrap passes, rather
   // than modifying the generator's global semantics or silently clamping to 1.
-  function buildDenseWrap(THREE, foliage, parent, options, density) {
-    if (density <= 1) return foliage.buildSurfaceGrowth(parent, {...options,density});
+  function buildDenseWrap(THREE, foliage, parent, options, density, layerOptions = null) {
+    if (density <= 1) return foliage.buildSurfaceGrowth(parent,{...options,density,
+      ...(layerOptions?.(0,1) || {})});
     const layers = new THREE.Group();
     layers.name = 'Layered surface roots';
     layers.userData.surfaceFoliage = true; // Other layers must ignore all already-generated growth.
@@ -75,8 +79,10 @@
     layers.userData.generatedStrands = 0;
     let remaining = density, pass = 0;
     while (remaining > 0.00001) {
+      const totalPasses=Math.ceil(density);
       const layer = foliage.buildSurfaceGrowth(parent, {
-        ...options, density:Math.min(1,remaining), seed:options.seed+':layer-'+pass
+        ...options, density:Math.min(1,remaining), seed:options.seed+':layer-'+pass,
+        ...(layerOptions?.(pass,totalPasses) || {})
       });
       layers.add(layer); // Only generated geometry; the floor/furniture remains the source.
       layers.userData.generatedStrands += layer.userData?.generatedStrands || 0;
@@ -158,13 +164,25 @@
     return { nodes: chosen, derivedFromWrap: !!candidates.length, candidateCount: candidates.length };
   }
 
-  function sampledTargetPoints(THREE, target, growth, count, random, parent) {
+  function sampledTargetPoints(THREE, target, growth, count, random, parent, interior = false) {
     const endpoints = Array.isArray(growth.userData?.surfaceGrowthEndpoints) ? growth.userData.surfaceGrowthEndpoints : [];
-    const points = []; // The established Wrap solver's edge endpoints are the preferred termination points.
+    const points = []; // Inward-shrinkwrapped geometry replaces the old exterior boundary endpoints.
     target.updateWorldMatrix(true, true);
     parent.updateWorldMatrix(true, true);
     const toParent = world => parent.worldToLocal(world);
-    for (const entry of endpoints) for (const key of ['start', 'end']) {
+    if (interior) for (const mesh of growthMeshes(growth)) {
+      const pos=mesh.geometry.getAttribute('position');
+      const ringCount=Math.floor(pos.count/6);
+      if(!ringCount) continue;
+      const stride=Math.max(1,Math.ceil(ringCount/60)); // Bounded interior end-point choices even for six dense layers.
+      for(let ring=0;ring<ringCount;ring+=stride){
+        const center=new THREE.Vector3();
+        for(let j=0;j<5;j++)center.add(new THREE.Vector3().fromBufferAttribute(pos,ring*6+j));
+        center.multiplyScalar(.2); // Tube centerline, not an outermost skin vertex.
+        points.push(toParent(mesh.localToWorld(center)));
+      }
+    }
+    if (!points.length) for (const entry of endpoints) for (const key of ['start', 'end']) {
       const coords = entry?.[key];
       if (!Array.isArray(coords) || coords.length < 3 || !coords.slice(0, 3).every(Number.isFinite)) continue;
       points.push(toParent(target.localToWorld(new THREE.Vector3(...coords))));
@@ -283,11 +301,17 @@
     floorHost.add(floorGrowth);
     const targetGrowth = buildDenseWrap(THREE, foliage, target, {
       ...growthOptions, seed:recipe.seed+':shape', target:'all',
-      length:recipe.targetLength
-    }, recipe.targetDensity); // The final keyframe follows the imported furniture's actual surface triangles.
+      length:recipe.targetLength,
+      shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
+    }, recipe.targetDensity, (pass, passes) => ({
+      // Distribute the six layers through the volume, starting just inside
+      // its actual surface. The raycaster caps depth at half local wall thickness.
+      inset: Math.min(0.5,recipe.shapeInset +
+        recipe.volumeFillDepth * (passes<=1?0:pass/(passes-1)))
+    })); // The inside surface, not the furniture's outside cage, is the final keyframe.
     target.add(targetGrowth);
     const shapeMesh = findGrowthMesh(targetGrowth), floorMesh = findGrowthMesh(floorGrowth);
-    const targets = sampledTargetPoints(THREE, target, targetGrowth, recipe.branchCount, random, group);
+    const targets = sampledTargetPoints(THREE, target, targetGrowth, recipe.branchCount, random, group, true);
     const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random);
     const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
     const branchMaterial = branchSourceMaterial?.clone?.() ||
@@ -351,6 +375,11 @@
           shapeStrands:targetGrowth.userData?.generatedStrands || 0,
           floorDensityPasses:floorGrowth.userData?.densityPasses || 1,
           shapeDensityPasses:targetGrowth.userData?.densityPasses || 1,
+          insideShrinkwrap:true, shapeInset:recipe.shapeInset, volumeFillDepth:recipe.volumeFillDepth,
+          shrinkwrapRays: (targetGrowth.userData?.surfaceGrowthStats?.shrinkwrapRays || 0) +
+            (targetGrowth.children || []).reduce((n,layer)=>n+(layer.userData?.surfaceGrowthStats?.shrinkwrapRays||0),0),
+          shrinkwrapHits: (targetGrowth.userData?.surfaceGrowthStats?.shrinkwrapHits || 0) +
+            (targetGrowth.children || []).reduce((n,layer)=>n+(layer.userData?.surfaceGrowthStats?.shrinkwrapHits||0),0),
           furnitureEmitterCount:emitterVisuals.length, furnitureEmittersActive:progress >= 1,
           floorNodesFromWrap:source.derivedFromWrap, sampledFloorNodes:source.candidateCount,
           shapeWrapEndpointPairs:targets.wrapEndpointCount, shapeEndpointFallback:targets.usedFallback,
