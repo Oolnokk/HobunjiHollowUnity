@@ -373,7 +373,9 @@
 
     const maxStamina = Number.isFinite(creature.maxStamina) ? creature.maxStamina : (creature.def.maxStamina || 0); // Used to convert the 90% immediate stamina cost into points.
     const staminaCost = maxStamina * tuning.SELF_STAMINA_DRAIN_FRACTION; // Used as the post-attack stamina spend through the shared resource rules.
-    window.ResourceSystem?.spendStamina?.(creature, staminaCost, 'grehlr burrow exhaustion');
+    if (creature._furiousSpecial?.id !== 'grehlrBurrow') {
+      window.ResourceSystem?.spendStamina?.(creature, staminaCost, 'grehlr burrow exhaustion'); // Ordinary Burrow retains its severe self-exhaustion penalty.
+    } // Furious Burrow already paid its complete attack commitment from Furious Stamina; only the authored Footing penalty remains.
   }
 
   function resolveBite(creature, state, deps) {

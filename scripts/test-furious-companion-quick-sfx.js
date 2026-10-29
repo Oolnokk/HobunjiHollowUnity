@@ -101,5 +101,24 @@ assert.match(audio, /renderer\(entry\.buffer, combatPositionalContext/, 'decoded
 assert.match(audio, /tempo: 0\.8, pitchSemitones: -12/, 'the independent WSOLA request uses precisely the requested sound transformation');
 assert.match(config, /"quickAttackBonusSlash"[^\n]+sfx_anime_slash\.wav/);
 assert.match(config, /"soursapSplat"[^\n]+sfx_splat_1\.mp3/, 'Soursap references the Drenkirra pellet splat file');
-assert.match(objects, /window\.AudioSystem\?\.playSoursapBurstSfx/, 'shared fruit burst dispatches the sound regardless of impact cause');
-console.log('Furious companion interrupt, cancellation, and conditional audio wiring: PASS');
+assert.match(objects, /playSoursapBurstSfx\?\.\(x\*tileSize\(\),z\*tileSize\(\),fruit\.mapId\)/, 'the actual explosion location and mapId own the splat, even when visual scene setup fails');
+assert.match(audio, /const approximateRate = Math\.sqrt\(pitchRatio \* tempoRatio\)/, 'native first-hit fallback avoids a double application of the 80%-tempo and -12 st factors');
+const burrowCode = fs.readFileSync('docs/js/combat/combat-grehlr-burrow.js', 'utf8'); // Uses the real Burrow exhaustion implementation rather than reimplementing that penalty.
+const startBurrowCost = burrowCode.indexOf('  function applySelfExhaustion(creature) {'); // Isolates the genuine Burrow resource transaction in a lightweight VM.
+const endBurrowCost = burrowCode.indexOf('\n  function resolveBite', startBurrowCost);
+assert(startBurrowCost > 0 && endBurrowCost > startBurrowCost);
+const burrowCostFn = burrowCode.slice(startBurrowCost, endBurrowCost); // Preserves the authored Footing penalty and post-burrow Stamina rules.
+let burrowOrdinaryPaid = 0; // Every ordinary Stamina point paid at Burrow emergence is counted.
+const selfExhaust = vm.runInNewContext(burrowCostFn + '\napplySelfExhaustion;', {
+  tuning: { SELF_FOOTING_DRAIN_FRACTION: 0.8, SELF_STAMINA_DRAIN_FRACTION: 0.9 },
+  window: { ResourceSystem: { spendStamina(_creature, cost) { burrowOrdinaryPaid += cost; } } },
+});
+const burrowCompanion = { maxStamina: 100, maxFooting: 100, footing: 100, def: { maxStamina: 100 }, _furiousSpecial: { id: 'grehlrBurrow' } }; // Fury-funded Grehlr has the same post-emergence penalty phase as a normal burrower.
+selfExhaust(burrowCompanion);
+assert.equal(burrowCompanion.footing, 20, 'Furious Burrow preserves the signature 80% self-Footing penalty');
+assert.equal(burrowOrdinaryPaid, 0, 'Furious Burrow must not pay a hidden second cost from ordinary Stamina');
+delete burrowCompanion._furiousSpecial;
+burrowCompanion.footing = 100;
+selfExhaust(burrowCompanion);
+assert.equal(burrowOrdinaryPaid, 90, 'ordinary Grehlr Burrow still pays the original 90% self-Stamina cost');
+console.log('Furious companion interrupt, Grehlr exhaustion, fruit origin, and conditional audio wiring: PASS');

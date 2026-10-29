@@ -1505,8 +1505,9 @@
         return;
       }
     }
-    recordCombatSfx('soursapSplat', cfgEntry, { semitones: -12, tempo: tempoRatio, backend: 'native-unprocessed-fallback' });
-    playOneShotSfx(cfgEntry, spatial.gain, pitchRatio * tempoRatio, spatial); // Immediate first-hit/mobile fallback while asynchronous processing warms up.
+    const approximateRate = Math.sqrt(pitchRatio * tempoRatio); // Native playback couples pitch and time: compromise between the two requested axes until WSOLA is ready.
+    recordCombatSfx('soursapSplat', cfgEntry, { requestedSemitones: -12, requestedTempo: tempoRatio, backend: 'coupled-native-fallback', actualPlaybackRate: approximateRate });
+    playOneShotSfx(cfgEntry, spatial.gain, approximateRate, spatial); // Never slow to 40% tempo by multiplying both independent rates.
   }
 
   function playCounterShieldBlockSfx(x, y, areaId) {
