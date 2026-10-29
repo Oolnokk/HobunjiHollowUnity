@@ -3876,7 +3876,7 @@
           const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           const clearFootprint = (c, r) => {
             for (let y = r; y < r + fd; y++) for (let x = c; x < c + fw; x++) {
-              if (interiorGrid[y]?.[x]?.type === TileType.ROCK || _interiorRoomDoorTiles.has(x + ',' + y) || _interiorArrivalTiles.has(x + ',' + y)) return false;
+              if (!interiorGrid[y]?.[x] || interiorGrid[y][x].type === TileType.ROCK || _interiorRoomDoorTiles.has(x + ',' + y) || _interiorArrivalTiles.has(x + ',' + y)) return false;
             }
             return true;
           };
@@ -3898,9 +3898,10 @@
           candidates.sort((a, b) => a.preferred - b.preferred || a.distance - b.distance || a.row - b.row || a.col - b.col);
           const candidate = candidates.find(pos => canPlaceDecorativeFurnitureAt(pos.col, pos.row, obj.id, obj.key, obj.rotYDeg || 0, 'interior', obj));
           if (candidate) {
+            const originalTile = [obj.col, obj.row]; // Report the actual pre-migration position in the mobile diagnostic.
             const moved = moveDecorativeFurniture(obj.id, candidate.col, candidate.row, { area: 'interior', skipSave: true });
             if (moved.ok) {
-              changes.push({ id: obj.id, furniture: obj.key, action: 'moved', from: [obj.col, obj.row], to: [candidate.col, candidate.row] });
+              changes.push({ id: obj.id, furniture: obj.key, action: 'moved', from: originalTile, to: [candidate.col, candidate.row] });
               continue;
             }
           }
