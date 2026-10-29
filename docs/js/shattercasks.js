@@ -1503,7 +1503,7 @@
     }
     burstEffects.push({group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
       dummy:new THREE.Object3D()});
-    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'medium');
+    window.AudioSystem?.playSoursapBurstSfx?.(x*tileSize(),z*tileSize(),area()); // Wet fruit burst, not a hard weapon impact; all impact causes share this path.
   }
   function detonateFruit(fruit,cause) {
     if(!fruit||fruit.exploded)return false;

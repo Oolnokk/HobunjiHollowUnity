@@ -1448,6 +1448,28 @@
     playOneShotSfx(cfgEntry, falloff, pitch, spatial);
   }
 
+  function playQuickAttackBonusSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const cfgEntry = combatSfxConfig().quickAttackBonusSlash; // One semantic anime-slash cue for player and all NPC conditional quick hits.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    recordCombatSfx('quickAttackBonusSlash', cfgEntry, { conditional: true });
+    playOneShotSfx(cfgEntry, spatial.gain, 1, spatial);
+  }
+
+  function playSoursapBurstSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const cfgEntry = combatSfxConfig().soursapSplat; // Same authored wet splat as Drenkirra pellets, without their acid sizzle.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const pitchRatio = Math.pow(2, -12 / 12); // One octave below the source recording.
+    const tempoRatio = 0.8; // Requested 80% tempo; the shared one-shot player couples pitch and tempo into playbackRate.
+    recordCombatSfx('soursapSplat', cfgEntry, { semitones: -12, tempo: tempoRatio, effectivePlaybackRate: pitchRatio * tempoRatio });
+    playOneShotSfx(cfgEntry, spatial.gain, pitchRatio * tempoRatio, spatial);
+  }
+
   function playCounterShieldBlockSfx(x, y, areaId) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().counterShieldBlock;
@@ -1602,6 +1624,8 @@
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,
+    playQuickAttackBonusSfx,
+    playSoursapBurstSfx,
     playCounterShieldBlockSfx,
     playRangedImpactSfx,
     combatSfxDebugSnapshot,

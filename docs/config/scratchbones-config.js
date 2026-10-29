@@ -3859,6 +3859,8 @@ window.SCRATCHBONES_CONFIG = {
           "weaponSwing1": { "url": "assets/audio/sfx/combat/sfx_swing_1.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing2": { "url": "assets/audio/sfx/combat/sfx_swing_2.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
           "weaponSwing3": { "url": "assets/audio/sfx/combat/sfx_swing_3.mp3", "volume": 1.0, "pitchVarianceMul": 0.025, "preload": true },
+          "quickAttackBonusSlash": { "url": "assets/audio/sfx/combat/sfx_anime_slash.wav", "volume": 0.9, "preload": true }, // Plays for every player/NPC Quick Attack hit whose conditional bonus actually procs.
+          "soursapSplat": { "url": "assets/audio/sfx/combat/sfx_splat_1.mp3", "volume": 0.9, "preload": true }, // Reuses the Drenkirra pellet wet splat at the fruit's explosion position.
           "harpoonHit": { "url": "assets/audio/sfx/sfx_harpoon_hit_1.mp3", "volume": 1.0 },
           "rangedLoad": { "url": "assets/audio/sfx/combat/sfx_loading_mechanism.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 },
           "blowgunLoad": { "url": "assets/audio/sfx/sfx_load_dart.m4a", "volume": 0.42, "pitchVarianceMul": 0.025 }, // Dedicated blowgun loading recording (currently committed as sfx_load_dart.m4a).
