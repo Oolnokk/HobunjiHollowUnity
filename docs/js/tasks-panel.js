@@ -169,6 +169,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.DelversGuild?.bindQuestDeps?.(injectedDeps); // Shares the live quest store with the Guild's three-key-stones story task.
     _installBanditCampDangerSubtitle();
   }
 
@@ -294,6 +295,7 @@
     if (!list) return;
     list.innerHTML = '';
 
+    window.DelversGuild?.syncQuest?.(); // Refreshes three-key possession before the existing quest list renders.
     const progress = _questProgressSnapshot(); // Used to ensure this pass reads one consistent live quest-state object.
     const summary = _questStateSummary(progress); // Used by both filtering and mobile diagnostics.
     const active = summary.entries
