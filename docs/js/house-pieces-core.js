@@ -632,7 +632,7 @@
         onAction(action) {
           if (action === 'obj_enter_house') {
             recordEnteredEntrance(entry.id, f.id);
-            deps.startSceneTransition(() => deps.enterInterior(entry.id));
+            deps.startSceneTransition(() => deps.enterInterior(entry.id, f.id)); // Each attached doorway enters through its own interior landing, even when multiple doors share a room.
             return { ok: true, message: 'Entering the house…' };
           }
           return { ok: false, message: 'Unknown house action.' };
