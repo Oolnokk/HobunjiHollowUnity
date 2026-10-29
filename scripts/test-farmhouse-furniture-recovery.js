@@ -26,6 +26,7 @@ const scene = vm.createContext({
   interiorFurnitureObjects: furniture,
   interiorGrid,
   TileType: { ROCK: rock },
+  interiorRoomRect: piece => ({ col: piece.col * 2, row: piece.row * 2, w: piece.w * 2, h: piece.h * 2 }), // The new recovery loop searches the actual indoor piece rectangle.
   _interiorRoomDoorTiles: new Set(['5,2']), // Door tiles must stay unoccupied after a migration.
   _interiorArrivalTiles: new Set(['5,3']), // Exterior house arrivals must stay unoccupied too.
   DECORATIVE_FURNITURE_DEFS: { chair: { itemKey: 'chairFurniture' } },
