@@ -119,10 +119,9 @@ assert.match(game, /function orbitScaledRangedToolPointTowardReticle\(point, ret
 assert.match(game, /const reticleFrame = rangedTracksAim \? playerRangedReticleOrbitFrame\(\) : null[\s\S]*toolAimPitchRad = rangedTracksAim \? -\(reticleFrame\?\.pitchRad \?\? currentPlayerAimPitch\(\)\) : 0[\s\S]*orbitScaledRangedToolPointTowardReticle\(toolHolder\.position, reticleFrame, toolVθ\)/, 'idle ranged stance must use the shared reticle target while applying the corrected visual pitch sign');
 assert.match(game, /const reticleAligned = combatSwingAlignToReticle && \(activeTool === 'ranged' \|\| activeTool === 'harpoon'\)[\s\S]*const reticleFrame = reticleAligned \? playerRangedReticleOrbitFrame\(combatSwingAimTargetOverride\) : null[\s\S]*orbitScaledRangedToolPointTowardReticle\(toolHolder\.position, reticleFrame, vθ\)/, 'ranged and fishing throw poses must share the same scaled aim-frame path, with fishing able to pin the selected water tile');
 assert.match(game, /rangedReticleOrbit:[\s\S]*species-scale-then-shared-reticle-orbit/, 'mobile pose debug must expose the shared reticle target and reticle-driven orbit mode');
+// Player/hostile rig height and orbit equality is executed in test-enemy-mask-slots-and-rig.js.
 assert.match(bandit, /poseOrbitScale/, 'bandit melee must propagate explicit orbit scale');
-assert.match(bandit, /transformPosePoint[\s\S]*rigScaleY: 1/, 'bandit melee must use the full X\/Z plus authored-Y mapping without inventing an unapplied body scale');
 assert.match(bandit, /scaleForPose/, 'bandit melee debug/result scale must not derive primarily from arm length');
-assert.match(ranged, /transformPosePoint[\s\S]*rigScaleY: 1/, 'bandit ranged must use the same full pose transform contract as bandit melee');
 assert.match(npc, /transformPosePoint[\s\S]*baseWorld[\s\S]*rigScaleY: 1/, 'NPC held equipment must map authored Y after its real parent hierarchy contributes body scale exactly once');
 assert.match(lifePreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding life preview must use the same full pose transform contract');
 assert.match(weaponPreview, /transformPosePoint[\s\S]*rigScaleY: 1/, 'onboarding weapon view must use the same full pose transform contract');

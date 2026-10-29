@@ -122,7 +122,7 @@
   // a colorRange and no `appearance` block -> CLOTH), which is why this is a
   // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
   // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
-  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD', pants: 'PANTS' };
+  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD', mask: 'MASK', pants: 'PANTS' };
 
   const BANDIT_NAME_PARTS = {
     first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
@@ -459,15 +459,19 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
-    const neckPivotPx = window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    const headCanvas = document.createElement('canvas');
+    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, {forceEyesOpen:true,onlyHeadSprite:true});
+    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:frontCanvas, headCanvas })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:backCanvas, headCanvas })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -490,9 +494,9 @@
     // its authored mask light onto the visible hostile neck before discarding
     // that original hierarchy, so the real fake-light registry sees it.
     if (portrait.userData?.portraitGlowLight) {
-      const neck = frontNeckSkin?.neckBone;
+      const neck = frontNeckSkin?.headScaleBone || frontNeckSkin?.neckBone;
       window.PNGPlaneAvatar.setPortraitGlowAttachment?.(portrait, neck || frontPivot, {
-        x: neck?.position.x || 0, y: frontPivot.position.y + (neck?.position.y || 0), z: 0,
+        x: frontNeckSkin?.neckBone?.position.x || 0, y: frontPivot.position.y + (frontNeckSkin?.neckBone?.position.y || 0), z: 0,
       });
     }
 
@@ -510,6 +514,17 @@
     // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
     group.userData.portraitModelWidth = modelWidth;
     group.userData.portraitModelHeight = modelHeight;
+    if (frontNeckSkin) {
+      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12);
+      group.userData.sourceCanvas = frontCanvas;
+      group.userData.neckRig = {
+        available:true, skinnedPlane:frontNeckSkin.mesh,
+        neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
+        neckLocal:{...frontNeckSkin.neckBone.position},
+        headCentroidPx:headPixels?.centroidPx || neckPivotPx,
+        headBoundsPx:headPixels?.boundsPx || null,
+      }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
+    }
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
@@ -578,6 +593,7 @@
       // readable neck pivot could be detected (e.g. a fully transparent
       // portrait canvas), in which case that system just no-ops.
       neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
+      headScaleJoint: (frontNeckSkin && backNeckSkin) ? {front:frontNeckSkin.headScaleBone,back:backNeckSkin.headScaleBone} : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
       // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -2582,11 +2598,13 @@
     const speciesId = avatarRef?.speciesId || group.userData?.speciesId || null; // Used by the shared portrait-height ratio.
     const gender = avatarRef?.gender || group.userData?.gender || 'male';
     const scaler = window.HobunjiSpeciesPoseScale; // Shared transform keeps player, bandit, and NPC interpretation identical.
-    const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null; // Bandit visuals are not parent-scaled by CharacterRigScale, so their hierarchy contributes 1.0 here.
+    const poseModelHeight = avatarRef.poseModelHeight || modelHeight;
+    const rigScaleY = avatarRef.poseRigScaleY || 1;
+    const height = scaler?.heightMetrics?.(speciesId, gender, poseModelHeight, rigScaleY) || null; // Keep raw PNG height and the full character-rig multiplier separate, as the player does.
     if (scaler?.transformPosePoint) {
       scaler.transformPosePoint(holder.position, {
         cx: group.position.x, cz: group.position.z, floorY, baseY,
-        speciesId, gender, modelHeight, rigScaleY: 1,
+        speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: poseYawRad,
       });
     } else {
@@ -2663,21 +2681,25 @@
     const y = positive(explicitScale.y) ? Math.min(4, Math.max(0.1, Number(explicitScale.y))) : 1;
     const head = positive(explicitScale.head) ? Math.min(4, Math.max(0.1, Number(explicitScale.head))) : 1;
     const offsetY = Number.isFinite(Number(explicitScale.offsetY)) ? Math.max(-0.5, Math.min(0.5, Number(explicitScale.offsetY))) : 0;
-    const originalHeight = avatarRef.modelHeight; // Head-neck offset is expressed against the unscaled local avatar height.
+    const originalHeight = avatarRef.modelHeight;
+    const originalWidth = avatarRef.modelWidth; // Head-neck offset is expressed against the unscaled local avatar height.
     // Both the skinned face and rear head track their independently rotated neck bones.
     // Counteract non-uniform whole-rig scaling so the skull stays undistorted.
-    for (const joint of [avatarRef.neckJoint?.front, avatarRef.neckJoint?.back]) {
+    for (const joint of [avatarRef.headScaleJoint?.front || avatarRef.neckJoint?.front, avatarRef.headScaleJoint?.back || avatarRef.neckJoint?.back]) {
       if (!joint?.scale) continue;
       joint.scale.x *= head / x;
       joint.scale.y *= head / y;
+      joint.scale.z = (Number(joint.scale.z) || 1) * head / x;
       if (joint.position) joint.position.y += originalHeight * offsetY;
       joint.updateMatrix?.();
     }
     avatarRef.group.scale.set(avatarRef.group.scale.x * x, avatarRef.group.scale.y * y, avatarRef.group.scale.z * x);
     avatarRef.modelWidth *= x; // makeBanditDef, melee targeting and collision must see the same dimensions as the rendered enemy.
+    avatarRef.poseModelHeight = originalHeight;
+    avatarRef.poseRigScaleY = y;
     avatarRef.modelHeight *= y;
-    avatarRef.group.userData.portraitModelWidth = avatarRef.modelWidth; // Runtime hitbox and pose-height metadata read the same scaled box.
-    avatarRef.group.userData.portraitModelHeight = avatarRef.modelHeight;
+    avatarRef.group.userData.portraitModelWidth = originalWidth; // Scene hitboxes apply matrixWorld scale themselves; metadata stays local.
+    avatarRef.group.userData.portraitModelHeight = originalHeight;
     avatarRef.rigScale = { x, y, head, offsetY }; // Mobile-readable proof of the actual values applied.
     return true;
   }
@@ -2688,6 +2710,14 @@
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
+    const legacyMask = (roster.equippedCosmetics || []).find(id=>window.isPortraitMaskCosmeticId?.(id) && roster.cosmeticSlots?.[id] === 'hood');
+    if (legacyMask) {
+      roster={...roster,cosmeticSlots:{...roster.cosmeticSlots,[legacyMask]:'mask'},appliedDyes:{...roster.appliedDyes},appearance:{...roster.appearance,bodyColors:{...roster.appearance?.bodyColors}}};
+      for (const suffix of ['', '_B', '_C']) {
+        roster.appliedDyes['MASK'+suffix] ??= roster.appliedDyes['HOOD'+suffix];
+        roster.appearance.bodyColors['MASK'+suffix] ??= roster.appearance.bodyColors['HOOD'+suffix];
+      }
+    }
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
     if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
@@ -2695,7 +2725,8 @@
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
-    if (avatarRef && opts.avatarRigScale) applyAuthoredHostileRigScale(avatarRef, opts.avatarRigScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
+    const characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
+    if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');

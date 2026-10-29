@@ -4,7 +4,7 @@
   'use strict';
 
   const WOOD_HEX = '#493426'; // Default dark-wood tone used for extremities and fallback NPC portraits.
-  const MASK_ID = 'hachutu_binding_mask_ii'; // Guardian hood-slot article also worn by living Mao'ao/Mashtzarr.
+  const MASK_ID = 'hachutu_binding_mask_ii'; // Guardian mask-slot article also worn by living Mao'ao/Mashtzarr.
   const bridge = window.HobunjiSkeletonSpeciesBridge?.create({
     speciesId: 'maskbound-guardian',
     label: 'Maskbound Guardian',
@@ -14,7 +14,7 @@
     genders: ['male'], // Current Mao'ao skeleton body art is male-only.
     variableBodyColors: true, // Unlike ordinary bones, wooden puppets use troop-authored A/B/C color values.
     scaleMultiplier: 1,
-    allowedClothingIds: [MASK_ID],
+    allowedClothingIds: [MASK_ID, 'ragged_hood'],
     behindHeads: null,
     expectedAssets: {
       maleHead: 'fightersprites/mao-ao-m/head_maoskel_m.png',

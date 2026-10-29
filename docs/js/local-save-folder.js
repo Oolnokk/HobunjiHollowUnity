@@ -16,4 +16,4 @@ document.write('<script src="js/folder-save-quit-guard.js?v=20261022he68b2ba"><\
 document.write('<script src="js/folder-save-debug-ui.js?v=20261022hcde41bc"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260920startup4"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');
-document.write('<script src="js/save-startup-gate.js?v=20261010ha1a2f1c"><\/script>');
+document.write('<script src="js/save-startup-gate.js?v=20261029maskSlots2"><\/script>');

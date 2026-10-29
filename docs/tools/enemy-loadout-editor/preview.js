@@ -3,16 +3,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261028a',
+  'config/scratchbones-config.js?v=20261029maskSlots2',
   'config/attachment-rig-profiles.js?v=20261028a',
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261028a',
   'js/color-fill.js?v=20261028a',
-  'js/portrait-utils.js?v=20261028a',
+  'js/portrait-utils.js?v=20261029maskSlots2',
   'js/portrait-breathing.js?v=20261028a',
-  'js/npc-avatar-preview-utils.js?v=20261028a',
-  'js/png-plane-avatar.js?v=20261028a',
-  'js/species-pose-scaling.js?v=20261028a',
+  'js/npc-avatar-preview-utils.js?v=20261029maskSlots2',
+  'js/png-plane-avatar.js?v=20261029maskSlots2',
+  'js/species-pose-scaling.js?v=20261029maskSlots2',
+  'config/portrait-mouth-points.js?v=20261029a',
   'js/furniture-light-registry.js?v=20261028a',
   'js/tool-metal-recolor.js?v=20261028a',
   'js/metal-armor-system.js?v=20261028a',
@@ -29,7 +30,7 @@ const files = [
   'js/creature-genetics-render.js?v=20261028a',
   'config/modular-weapons.js?v=20261028a',
   'js/modular-weapons.js?v=20261028a',
-  'js/held-action-animations.js?v=20261028a',
+  'js/held-action-animations.js?v=20261029maskSlots2',
   'js/combat/shared-attack-pose.js?v=20261028a',
   'js/combat/attack-pose-templates.js?v=20261028a',
   'js/combat/melee-pose-spacing.js?v=20261028a',
@@ -39,14 +40,14 @@ const files = [
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
-  'js/combat/ranged-weapons.js?v=20261029h3f4fe60',
+  'js/combat/ranged-weapons.js?v=20261029maskSlots2',
   'js/alchemy-system.js?v=20261028a',
-  'js/combat/enemy-loadout-rules.js?v=20261028a',
-  'js/combat/combat-bandit.js?v=20261029enemyParity1',
+  'js/combat/enemy-loadout-rules.js?v=20261029maskSlots2',
+  'js/combat/combat-bandit.js?v=20261029maskSlots2',
   'js/weapon-tool-stances.js?v=20261029a',
   'js/combat/enemy-weapon-stances.js?v=20261029a',
   'js/combat/combat-minion.js?v=20261028a',
-  'js/combat/combat-maskbound-guardian.js?v=20261028a',
+  'js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2',
   'js/combat/combat-lich.js?v=20261029enemyParity1',
   'js/player-body-transform-composer.js?v=20261029a',
   'js/drunk-locomotion.js?v=20261029a',
@@ -54,7 +55,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261029enemyParity1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261029maskSlots2',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -113,6 +114,7 @@ export class EnemyPreview {
     this.scene.background = new THREE.Color('#162118');
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.01, 80);
     this.camera.position.set(2, 1.2, 3);
+    window.SharedAttackPose.setCameraProvider(() => this.camera);
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       preserveDrawingBuffer: true,
@@ -532,6 +534,9 @@ export class EnemyPreview {
       roster: copy(a.rosterRecord),
       definition: copy(a.def),
       rigScale: a.avatarRef.rigScale || null,
+      poseOrbitAxes: a.avatarRef.poseOrbitAxes
+        ? copy(a.avatarRef.poseOrbitAxes)
+        : null,
       mountSpecies: a.rosterRecord.mountSpecies || null,
       lichType: a.lichType || null,
       maskboundTroop: a.maskboundTroop || null,

@@ -380,14 +380,14 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 </div>
 
 <script src="../../js/local-db-overrides.js"></script>
-<script src="../../config/scratchbones-config.js?v=20261028hsourcfg1"></script>
+<script src="../../config/scratchbones-config.js?v=20261029maskSlots2"></script>
 <script src="../../config/colors/config.js?v=20261026h7f369c3"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/metal-armor-system.js?v=20261024haceb249"></script>
 <script src="../../js/sprite-recolor.js?v=20261027h649a218" data-character-studio-sprite-recolor="1"></script>
 <script src="../../js/repo-pattern-library.js?v=20261026hRepoDefaults5" data-character-studio-repo-pattern-library="1"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261028h16bb717" data-character-studio-weaving-compositor="1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261029maskSlots2" data-character-studio-weaving-compositor="1"></script>
 <script src="../../js/repo-picker.js?v=20261021hhybridhelm"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
 <script src="../../js/npc-wardrobe.js?v=20261018h5a78853"></script>
@@ -397,7 +397,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/skeleton-species-runtime.js?v=20261010skelbridge1"></script>
 <script src="../../js/harlyao-skeleton-species-runtime.js?v=20261010h93464d4"></script>
 <script src="../../js/mao-ao-skeleton-species-runtime.js?v=20261010maoskel1"></script>
-<script src="../../js/png-plane-avatar.js?v=20261028h8a668f7"></script>
+<script src="../../js/png-plane-avatar.js?v=20261029maskSlots2"></script>
 <script src="../../js/avatar-preview-scene.js"></script>
 <script>
 (() => {
@@ -910,7 +910,7 @@ function buildPreviewProfile(appearance) {
   const cosmetics = _cosmetics;
   if (!cosmetics || !window.getPortraitFighters || !window.randomProfileSeeded) return null;
   const { optionCache, hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions,
-          upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions,
+          upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, maskOptions, torsoPortraitOptions, armPortraitOptions,
           bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter,
           forcedCosmeticsByFighter, conditionalCosmeticsByFighter,
           mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter } = cosmetics;
@@ -997,6 +997,7 @@ function buildPreviewProfile(appearance) {
   };
   applyEquip('hat', 'hat', hatOptions[0]);
   applyEquip('hood', 'hood', hoodOptions[0]);
+  applyEquip('mask', 'mask', maskOptions[0]);
   applyEquip('pauldron', 'pauldron', none);
   applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions[0]);
   applyEquip('overwear', 'armCosmetic', armPortraitOptions[0]);
@@ -1441,6 +1442,7 @@ function renderCollections() {
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: 'Hat',      category: 'hat',      tintKeys: ['HAT',   'HAT_B',   'HAT_C'] },
     { key: 'hood',     label: 'Hood',     category: 'hood',     tintKeys: ['HOOD',  'HOOD_B',  'HOOD_C'] },
+    { key: 'mask',     label: 'Mask',     category: 'mask',     tintKeys: ['MASK', 'MASK_B', 'MASK_C'] },
     { key: 'pauldron', label: 'Pauldrons', category: 'pauldron', tintKeys: ['PAULDRON'] },
     { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
     { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },

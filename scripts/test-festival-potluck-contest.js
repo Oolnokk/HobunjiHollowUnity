@@ -122,7 +122,7 @@ assert.equal(granted.length,0,'dialogue beginning does not award item');
 assert(provider.onComplete(visit),'natural completion awards helm');
 assert(complete && saveCount>0 && granted[0]==='replica_bzabag_helm','Hreesh awards the expected cosmetic');
 const awardedHelm=awardedPack[0]; // Actual awarded item is now tested against the real MetalArmorSystem, not a stub.
-assert.equal(awardedHelm.slot,'hat','the potluck helm uses the real hat slot rather than the mask hood slot');
+assert.equal(awardedHelm.slot,'hat','the potluck helm uses the real hat slot independently from masks');
 assert.equal(awardedHelm.label,'Replica Helm of Bzabag','the prize keeps its name when cosmetic item definitions are not registered');
 assert.equal(awardedHelm.materialKind,'metal','prize upgrades to smith metal armor');
 assert(['nativeCopper','lowTinBronze'].includes(awardedHelm.metalKey),'starting faceguard alloy obeys current chest Town Value eligibility');
@@ -135,7 +135,7 @@ assert(window.MetalArmorSystem.prepareFestivalHelmPrize(),'rechecking an already
 assert.equal(awardedHelm.metalKey,prizeMetal,'rechecking the reward never rerolls its already-owned alloy');
 assert.equal(provider.next(),null,'reward cannot recur');
 assert(grantMask('festivalmask_gar-wolf'),'ordinary Hachutukara masks still grant');
-assert.equal(awardedPack.at(-1).slot,'hood','festival animal masks retain their hood slot');
+assert.equal(awardedPack.at(-1).slot,'mask','festival animal masks use their independent mask slot');
 const cosmetic = JSON.parse(fs.readFileSync('docs/config/cosmetics/clothes/hat/replica_bzabag_helm.json','utf8'));
 const catalog = JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json','utf8'));
 assert(catalog.entries.some(entry=>entry.id===rules.HELM_ID));

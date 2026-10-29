@@ -1652,7 +1652,7 @@
     if (!holder) return;
     holder.visible = !!c._rangedMode;
     if (!holder.visible) return;
-    const θ = c.facing || c._rangedAimAngle || 0;
+    const θ = Math.PI / 2 - (c.facing ?? c._rangedAimAngle ?? 0); // Same logical-facing to visual-yaw basis as the player and bandit melee.
     const action = c._rangedAction;
     const def = defFor(c.def.rangedWeaponKey);
     if (!def) return;
@@ -1671,6 +1671,10 @@
         pose = poseAtAction(def, action.kind, Math.min(1, releaseT / releaseDurationS));
       }
     }
+    const group = c.avatarRef.group;
+    const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
+    group.rotation.y = vθ - (c.def.aimAngleOffset || 0);
+    c.groupRot = group.rotation.y;
     const attach = window.SharedAttackPose;
     if (pose.headRelative && attach && c.avatarRef?.group) {
       // Head-anchored: the weapon's aperture mates with the species mouth point and the head supplies rotation and scale.
@@ -1686,27 +1690,26 @@
         return;
       }
     }
-    const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
     const rx = Math.cos(vθ), rz = -Math.sin(vθ), fx = Math.sin(vθ), fz = Math.cos(vθ);
-    const group = c.avatarRef.group; // Converted bandit portrait root used to reconstruct the raw floor-relative hand base.
+    // Converted portrait root is model-center anchored; keep its raw hand scan.
     const modelHeight = Number(c.avatarRef?.modelHeight ?? group.userData?.portraitModelHeight) || 0.9;
     const handAttachY = Number(c.avatarRef?.handAttachY ?? group.userData?.handAttachY);
     const floorY = group.position.y - modelHeight / 2; // Converted bandit group is centered vertically.
     const baseY = floorY + (Number.isFinite(handAttachY) ? handAttachY : modelHeight / 2); // Raw hand anchor used by shared Y mapping.
-    // Preserve the existing ranged horizontal base exactly; this review fix is
-    // only adding the missing shared vertical-height contract, not re-authoring
-    // the ranged stance's X/Z calibration.
-    holder.position.set(c.x / deps.TILE + rx * (-0.34 + pose.x) + fx * pose.z, baseY + pose.y, c.y / deps.TILE + rz * (-0.34 + pose.x) + fz * pose.z);
+    const baseX = Number(c.avatarRef.handAttachX ?? group.userData?.handAttachX ?? -0.34);
+    holder.position.set(c.x / deps.TILE + rx * (baseX + pose.x) + fx * pose.z, baseY + pose.y, c.y / deps.TILE + rz * (baseX + pose.x) + fz * pose.z);
     const armLength = Number(c.avatarRef?.armLength ?? group.userData?.armLength); // Anatomical reach retained only as a backwards-compatible fallback.
     const poseOrbitScale = c.avatarRef?.poseOrbitAxes ?? group.userData?.poseOrbitAxes ?? Number(c.avatarRef?.poseOrbitScale ?? group.userData?.poseOrbitScale); // Per-axis { x, y, z } when the species authored one.
     const speciesId = c.avatarRef?.speciesId || group.userData?.speciesId || null; // Used by the shared portrait-height ratio.
     const gender = c.avatarRef?.gender || group.userData?.gender || 'male';
     const scaler = window.HobunjiSpeciesPoseScale;
-    const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null; // Bandit portrait hierarchy itself has no CharacterRigScale parent.
+    const poseModelHeight = c.avatarRef.poseModelHeight || modelHeight;
+    const rigScaleY = c.avatarRef.poseRigScaleY || 1;
+    const height = scaler?.heightMetrics?.(speciesId, gender, poseModelHeight, rigScaleY) || null; // Same raw-height plus rig-height stack as the player.
     if (scaler?.transformPosePoint) {
       scaler.transformPosePoint(holder.position, {
         cx: group.position.x, cz: group.position.z, floorY, baseY,
-        speciesId, gender, modelHeight, rigScaleY: 1,
+        speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: vθ,
       });
     } else {

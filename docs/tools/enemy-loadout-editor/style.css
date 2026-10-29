@@ -862,3 +862,31 @@ code {
   inset: 0;
   pointer-events: none;
 }
+
+.clothing-intro {
+  grid-column: 1/-1;
+}
+.clothing-intro .help {
+  margin-top: 0;
+}
+.clothing-mode {
+  max-width: 160px;
+  font-size: 11px;
+  padding: 6px;
+}
+.clothing-summary {
+  font-size: 11px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.add-choice select {
+  width: 100%;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.currently-worn {
+  font-size: 11px;
+  color: var(--accent);
+  margin: 8px 0;
+}

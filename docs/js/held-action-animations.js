@@ -324,7 +324,7 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261027maskbound1', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261029maskSlots2', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261025h7c7ee63', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261024hef37f20', docsBase).href,
@@ -333,7 +333,7 @@
     // The editor starts its first avatar rebuild immediately after these parser-time
     // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
     // adapters run so a missed/cached helper request cannot strand the preview.
-    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261024h480a01e', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261029maskSlots2', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);

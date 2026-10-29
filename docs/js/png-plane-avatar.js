@@ -465,6 +465,16 @@
       : smoothstep01(1 - (dx - inner) / (outer - inner));
   }
 
+  function headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turnWeight) {
+    if (!bounds) return turnWeight;
+    // The whole bare skull (and its mask) has one size. The broad head-turn
+    // blend can still reach the shoulders, but scale fades only BELOW the
+    // skull, with a grid-cell margin so its last painted row is fully rigid.
+    const fullBelow = modelHeight / 36;
+    const blendBelow = modelHeight * 0.08;
+    return smoothstep01((y - (neckY - blendBelow)) / (blendBelow - fullBelow)) * headScaleGateAtPixel(pixelX, bounds);
+  }
+
   // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
   // Every grid vertex receives root/head weights regardless of the texel alpha
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
@@ -507,8 +517,9 @@
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      const headScaleWeight = headWeight * headScaleGateAtPixel(pixelX, headBoundsPx);
+      const turnWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
+      const headScaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight);
+      const headWeight = Math.max(turnWeight, headScaleWeight);
       const headRotateWeight = headWeight - headScaleWeight;
       skinIndices.push(0, 1, 2, 0);
       skinWeights.push(1 - headWeight, headRotateWeight, headScaleWeight, 0);
@@ -527,7 +538,7 @@
       for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, 1);
     }
     const frontVertexCount = positions.length / 3;
-    for (let row = 0; row < segmentsY; row++) {
+    if (!options.frontOnly) for (let row = 0; row < segmentsY; row++) {
       for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, -1);
     }
 
@@ -543,7 +554,7 @@
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.addGroup(0, frontVertexCount, 0);
-    geometry.addGroup(frontVertexCount, frontVertexCount, 1);
+    if (!options.frontOnly) geometry.addGroup(frontVertexCount, frontVertexCount, 1);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData = {
@@ -556,7 +567,7 @@
   }
 
   // Builds the neck-rigged variant of the single-plane assembly: a
-  // THREE.SkinnedMesh (root bone + neck bone) instead of the two rigid front/
+  // THREE.SkinnedMesh (root, neck, and independent head-scale bones) instead of the two rigid front/
   // back Mesh objects createSinglePlaneAssembly makes, so `neckJoint.rotation`
   // can bend just the head region of the plane. Returns null if no neck pivot
   // could be detected (e.g. an unreadable/tainted canvas) — callers should
@@ -673,8 +684,18 @@
     const pivotU = mirrorX ? 1 - pivotNormalized.x : pivotNormalized.x;
     const pivotLocalX = (pivotU - 0.5) * planeWidth;
     const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
-    const blendHeight = Math.max(planeHeight * .02, planeHeight * .22);
-    const weightedGeometry = buildAutoNeckWeightedGeometry(THREE, plane.geometry, pivotLocalY, blendHeight);
+    const sourceCanvas = fallbackDimensions.sourceCanvas;
+    const detectedHead = sourceCanvas ? detectHeadRigPixels(fallbackDimensions.headCanvas, sourceCanvas, 12) : null;
+    const headBounds = detectedHead?.boundsPx;
+    const pixelWidth = sourceCanvas?.width || 1;
+    const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
+      {x:pivotLocalX,y:pivotLocalY,z:0}, {
+        frontOnly:true, pixelWidth, pixelHeight:sourceCanvas?.height || 1,
+        headBoundsPx:headBounds && mirrorX ? {...headBounds,left:pixelWidth-headBounds.right,right:pixelWidth-headBounds.left} : headBounds,
+      });
+    // The converted hostile keeps separate front/rear meshes. Reuse the exact
+    // player skin grid/weights, drawing just its front half on each mesh.
+    weightedGeometry.setDrawRange(0, weightedGeometry.groups[0].count);
     const material = plane.material; // Reused so cosmetic/texture updates keep working unchanged.
     material.skinning = true;
     material.needsUpdate = true;
@@ -685,6 +706,9 @@
     neckBone.name = `${plane.name}_neck_bone`;
     neckBone.position.set(pivotLocalX, pivotLocalY, 0);
     torsoBone.add(neckBone);
+    const headScaleBone = new THREE.Bone();
+    headScaleBone.name = `${plane.name}_head_scale_bone`;
+    neckBone.add(headScaleBone);
 
     const skinned = new THREE.SkinnedMesh(weightedGeometry, material);
     skinned.name = plane.name;
@@ -697,9 +721,9 @@
     skinned.userData = { ...plane.userData };
     skinned.onBeforeRender = plane.onBeforeRender;
     skinned.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckBone]);
+    const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone };
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1001,7 +1025,7 @@
     );
     const neckY = Number(rig.neckLocal?.y) || 0;
     const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
-    const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
+    let headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
 
     // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
     // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
@@ -1018,7 +1042,8 @@
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
-      ? headWeight * headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
+      ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
+    headWeight = Math.max(headWeight, headScaleWeight);
     for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
       const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
       if (!weight) continue;
@@ -1334,8 +1359,10 @@
     loadThreeModules,
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
+    detectHeadRigPixels,
     upgradePlaneToAutoNeckSkin,
     headScaleGateAtPixel,
+    headScaleWeightAt,
     resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,

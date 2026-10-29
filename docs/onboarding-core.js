@@ -333,6 +333,7 @@
   const CLOTHING_SLOTS = [
     { key: 'hat',      label: '🎩 Hat',      category: 'hat' },
     { key: 'hood',     label: '🧣 Hood',     category: 'hood' },
+    { key: 'mask',     label: 'Mask',         category: 'mask' },
     { key: 'pauldron', label: '🛡 Pauldrons', category: 'pauldron' },
     { key: 'torso',    label: '👘 Torso',    category: 'torso' },
     { key: 'overwear', label: '🧥 Overwear', category: 'overwear' },
@@ -509,7 +510,7 @@
       // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
       // multiplier with no room to grow into.
       tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
-      clothing: { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null },
+      clothing: { hat: null, hood: null, mask: null, pauldron: null, torso: null, overwear: null, pants: null },
       charms: [], whistles: [],
       keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
       // Redye system: every dye the character has ever unlocked (see
@@ -800,6 +801,7 @@
     };
     applyEquip('hat',      'hat',           hatOptions?.[0]);
     applyEquip('hood',     'hood',          hoodOptions?.[0]);
+    applyEquip('mask',     'mask',          cosm.maskOptions?.[0]);
     applyEquip('pauldron', 'pauldron',      none);
     applyEquip('torso',    'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic',   armPortraitOptions?.[0]);
@@ -838,14 +840,14 @@
     if (clothDyeA) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA),
+        HAT: clothDyeColor(clothDyeA), HOOD: clothDyeColor(clothDyeA), MASK: clothDyeColor(clothDyeA),
         PAULDRON: clothDyeColor(clothDyeA), TORSO: clothDyeColor(clothDyeA), CLOTH: clothDyeColor(clothDyeA),
       };
     }
     if (clothDyeB) {
       profile.bodyColors = {
         ...(profile.bodyColors || {}),
-        HOOD_B: clothDyeColor(clothDyeB), CLOTH_B: clothDyeColor(clothDyeB),
+        HOOD_B: clothDyeColor(clothDyeB), MASK_B: clothDyeColor(clothDyeB), CLOTH_B: clothDyeColor(clothDyeB),
       };
     }
 
@@ -2115,7 +2117,7 @@
     const dyeB = selectedClothDye('B') || dyeA;
     // NPC records carry clothing dyes as tint-slot → dye id (the same tint
     // namespace buildPreviewProfile previews them in).
-    const clothDyes = dyeA ? { HAT: dyeA.id, HOOD: dyeA.id, PAULDRON: dyeA.id, TORSO: dyeA.id, CLOTH: dyeA.id, HOOD_B: dyeB.id, CLOTH_B: dyeB.id } : {};
+    const clothDyes = dyeA ? { HAT: dyeA.id, HOOD: dyeA.id, MASK: dyeA.id, PAULDRON: dyeA.id, TORSO: dyeA.id, CLOTH: dyeA.id, HOOD_B: dyeB.id, MASK_B: dyeB.id, CLOTH_B: dyeB.id } : {};
     const result = {
       nickname: (_state.nickname || '').trim(),
       appearance: { ..._state.appearance, cosmetics: { ..._state.appearance.cosmetics }, bodyColors: { ..._state.appearance.bodyColors } },

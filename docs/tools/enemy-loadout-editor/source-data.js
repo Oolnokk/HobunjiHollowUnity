@@ -215,8 +215,13 @@
         hood: { chance: 1, items: { ragged_hood: 1 } },
         overwear: { chance: 1, items: { tankan_bodywrap: 1 } },
       });
-    if (troop)
-      clothing.hood = { chance: 1, items: { hachutu_binding_mask_ii: 1 } };
+    if (troop) {
+      clothing.mask = { chance: 1, items: { hachutu_binding_mask_ii: 1 } };
+      clothing.hood = {
+        chance: window.MaskboundGuardianCombat.hoodChance,
+        items: { ragged_hood: 1 },
+      };
+    }
     if (kind === 'ghoul')
       Object.assign(clothing, {
         overwear: {

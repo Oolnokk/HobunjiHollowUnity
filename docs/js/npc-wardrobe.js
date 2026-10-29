@@ -56,6 +56,7 @@
   const TINT_KEYS_BY_SLOT = Object.freeze({
     hat: ['HAT'],
     hood: ['HOOD', 'HOOD_B'],
+    mask: ['MASK', 'MASK_B'],
     pauldron: ['PAULDRON'],
     torso: ['TORSO'],
     overwear: ['CLOTH', 'CLOTH_B'],
@@ -240,7 +241,8 @@
     const blueprint = window.MetalArmorSystem?.blueprintForItem?.({ cosmeticId: id }); // Uses the smith's canonical slot, including circlets and crafted instance IDs.
     if (blueprint?.slot) return blueprint.slot;
     if (/hat|kasa|helmet|headband|circlet/.test(id)) return 'hat';
-    if (/hood|festivalmask/.test(id)) return 'hood';
+    if (window.isPortraitMaskCosmeticId?.(id)) return 'mask';
+    if (/hood/.test(id)) return 'hood';
     if (/pauldron|shoulder.?armor/.test(id)) return 'pauldron';
     if (/poncho|cloak|wrap|overwear/.test(id)) return 'overwear';
     if (/pants|trouser|skirt|legging/.test(id)) return 'pants';

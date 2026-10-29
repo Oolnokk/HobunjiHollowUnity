@@ -14,7 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
-  const CLOTHING_SLOTS = ['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
+  const CLOTHING_SLOTS = ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
   const clothingIconTintUrlCache = new Map(); // Used to reuse SpriteRecolor output instead of re-encoding the same dyed icon every panel rebuild.
 
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
@@ -357,7 +357,7 @@
       uid: item.uid || 'gcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId: item.cosmeticId,
       baseCosmeticId: item.baseCosmeticId || null,
-      slot: item.slot,
+      slot: window.isPortraitMaskCosmeticId?.(item.cosmeticId) ? 'mask' : item.slot,
       label: item.label,
       baseLabel: clothingArticleLabel(item),
       description: item.description || null,
@@ -496,6 +496,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'mask') return ['MASK', 'MASK_B'];
     if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
@@ -665,12 +666,22 @@
     if (!gearInventory) return false;
     let changed = false; // Used to make legacy clothing migration save itself exactly when needed.
     if (!gearInventory.clothing) {
-      gearInventory.clothing = { hat: null, hood: null, pauldron: null, torso: null, overwear: null, pants: null };
+      gearInventory.clothing = { hat: null, hood: null, mask: null, pauldron: null, torso: null, overwear: null, pants: null };
       changed = true;
     }
     if (!Array.isArray(gearInventory.clothingItems)) {
       gearInventory.clothingItems = [];
       changed = true;
+    }
+    const isMask = item => window.isPortraitMaskCosmeticId?.(item?.cosmeticId);
+    for (const item of gearInventory.clothingItems) if (isMask(item) && item.slot !== 'mask') {item.slot='mask';changed=true;}
+    if (isMask(gearInventory.clothing.hood)) {
+      const mask = gearInventory.clothing.hood;
+      mask.slot='mask';
+      if (!gearInventory.clothing.mask) gearInventory.clothing.mask=mask;
+      else if (!gearInventory.clothingItems.some(item=>item.uid===mask.uid)) gearInventory.clothingItems.push(mask);
+      gearInventory.clothing.hood=null;
+      changed=true;
     }
     if (ensureStarterPants(gearInventory)) changed = true;
     for (const slot of CLOTHING_SLOTS) {

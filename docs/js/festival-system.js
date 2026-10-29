@@ -874,7 +874,7 @@
     window.NpcWardrobe?.registerAppearanceDecorator('festivals', data => {
       if (festival()?.id !== 'hachutukara' || !residents().some(rec => rec.id === data.id)) return data;
       const index = [...data.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % MASKS.length; // Stable animal mask for each named resident.
-      return { ...data, equippedCosmetics: [...(data.equippedCosmetics || []).filter(id => !id.startsWith('festivalmask_') && !['hood', 'hat'].includes(window.NpcWardrobe.slotForCosmetic(id))), `festivalmask_${MASKS[index]}`] };
+      return { ...data, equippedCosmetics: [...(data.equippedCosmetics || []).filter(id => !id.startsWith('festivalmask_') && !['mask'].includes(window.NpcWardrobe.slotForCosmetic(id))), `festivalmask_${MASKS[index]}`] };
     });
     window.NpcScheduling?.registerTargetOverride('festivals', npcTarget);
     window.EffectBuffBar?.registerProvider('festivals', () => [...buffEntries(), ...foodDurationEntries()]);
@@ -945,7 +945,7 @@
   registerActivity('masks', payload => {
     if (!MASKS.includes(payload.mask)) return fail('Choose one of the festival masks.');
     if (claimed('mask')) return fail('You have already chosen your free mask this year.');
-    const id = `festivalmask_${payload.mask}`; // Existing hood cosmetic retains all authored tint layers and species variants.
+    const id = `festivalmask_${payload.mask}`; // Existing mask cosmetic retains all authored tint layers and species variants.
     if (!deps.grantMask?.(id)) return fail('The mask is unavailable. Try again once its assets have loaded.');
     mark('mask');
     return commit('Your silly animal mask is in your clothing inventory. Equip it from the item panel.');

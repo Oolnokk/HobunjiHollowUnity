@@ -16,7 +16,7 @@ assert(species.male.portraitBodyLayers.every(layer => layer.tintSlot === 'A'), '
 assert(species.male.headSprite.includes('maoskel'), 'guardian reuses Mao-ao skeleton head art');
 assert(speciesIndex.entries.some(entry => entry.speciesId === 'maskbound-guardian'));
 assert(cosmeticsIndex.entries.some(entry => entry.id === 'hachutu_binding_mask_ii'));
-assert.equal(mask.slot, 'hood');
+assert.equal(mask.slot, 'mask');
 for (const [variant,filename] of Object.entries({
   'mao-ao_male': 'bindingmask_2_m.png',
   'maskbound-guardian_male': 'bindingmask_2_m.png',
@@ -87,6 +87,15 @@ vm.runInContext(read('docs/js/combat/combat-maskbound-guardian.js'), spawnContex
     assert(captured.avatarRigScale.y > 0);
     assert(combat.formatDebug(creature).includes('mask=yes'));
   }
+  spawnContext.GameRandom = {random:()=>0};
+  const hooded = combat.rollRoster('sentinel');
+  assert(hooded.equippedCosmetics.includes('ragged_hood'));
+  assert.equal(hooded.cosmeticSlots.ragged_hood,'hood');
+  assert.equal(hooded.cosmeticSlots.hachutu_binding_mask_ii,'mask');
+  spawnContext.GameRandom = {random:()=>0.99};
+  assert(!combat.rollRoster('sentinel').equippedCosmetics.includes('ragged_hood'));
+  for (const troop of Object.values(combat.troopTypes)) assert.equal(troop.anatomy.headScale,1);
+  assert.equal(combat.rigScaleFor({anatomy:{rigScaleX:2,rigScaleY:2,headScale:0.1}}).head,1,'old/custom troop anatomy cannot resize the skull');
   const sentinel = combat.troopTypes.sentinel.anatomy;
   const bulwark = combat.troopTypes.bulwark.anatomy;
   const reacher = combat.troopTypes.reacher.anatomy;
@@ -111,5 +120,8 @@ vm.runInContext(read('docs/js/combat/combat-maskbound-guardian.js'), spawnContex
   assert(Math.abs(front.scale.x - 0.9 / 1.6) < 1e-9, 'head counters body width');
   assert(Math.abs(back.scale.y - 0.9 / 1.3) < 1e-9, 'back head counters height');
   assert.equal(avatar.rigScale.head, 0.9);
+  assert.equal(avatar.group.userData.portraitModelHeight,0.9,'scene hitbox metadata must not double-count the rig scale');
+  assert.equal(avatar.poseModelHeight,0.9);
+  assert.equal(avatar.poseRigScaleY,1.3);
   console.log('PASS maskbound guardians: sprites, manifest, wood palettes, troop scales, combat and rig geometry');
 })().catch(error => { console.error(error); process.exitCode = 1; });

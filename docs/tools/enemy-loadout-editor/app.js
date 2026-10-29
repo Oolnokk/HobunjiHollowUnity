@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261029enemyParity1';
+import { EnemyPreview } from './preview.js?v=20261029maskSlots2';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -59,7 +59,9 @@ function setBusy(value) {
     'resetRuleBtn',
   ])
     $(id).disabled = value;
-  for (const button of document.querySelectorAll('.enemy-button,.history-card'))
+  for (const button of document.querySelectorAll(
+    '.enemy-button,.history-card',
+  ))
     button.disabled = value;
 }
 function rules() {
@@ -172,8 +174,104 @@ function pool(
   toggle.type = 'checkbox';
   toggle.checked = enabled;
   label.append(toggle, document.createTextNode(title));
-  header.append(label, el('span', 'native', enabled ? 'OVERRIDE' : 'NATIVE'));
+  header.append(
+    label,
+    el('span', 'native', enabled ? 'OVERRIDE' : 'NATIVE'),
+  );
+  if (isClothing) {
+    label.replaceChildren(document.createTextNode(title));
+    header.querySelector('.native')?.remove();
+    const mode = el('select', 'clothing-mode');
+    mode.setAttribute('aria-label', title + ' clothing mode');
+    for (const [id, text] of [
+      ['native', 'Game defaults'],
+      ['custom', 'Custom choices'],
+      ['never', 'Leave empty'],
+    ]) {
+      const opt = el('option', null, text);
+      opt.value = id;
+      mode.append(opt);
+    }
+    mode.value = !enabled
+      ? 'native'
+      : value.chance === 0
+        ? 'never'
+        : 'custom';
+    mode.onchange = () => {
+      const choices = Object.fromEntries(
+        Object.entries(defaults).filter(
+          ([id, w]) => id !== 'none' && w > 0,
+        ),
+      );
+      const total = Object.values(defaults).reduce(
+        (sum, w) => sum + Number(w),
+        0,
+      );
+      const chosen = Object.values(choices).reduce(
+        (sum, w) => sum + Number(w),
+        0,
+      );
+      let chance =
+        total && chosen ? ((chanceDefault ?? 1) * chosen) / total : 1;
+      if (!chosen) {
+        const first = catalog.find((id) => id !== 'none');
+        if (first) choices[first] = 1;
+        else chance = 0;
+      }
+      mutate((r) =>
+        pathSet(
+          r,
+          path,
+          mode.value === 'native'
+            ? undefined
+            : mode.value === 'never'
+              ? { chance: 0, items: { none: 1 } }
+              : {
+                  chance,
+                  items: Object.keys(choices).length
+                    ? choices
+                    : { none: 1 },
+                },
+        ),
+      );
+      renderPools();
+    };
+    header.append(mode);
+    box.classList.remove('disabled');
+    const worn = (state.selected?.roster?.equippedCosmetics || []).filter(
+      (id) =>
+        (state.selected.roster.cosmeticSlots?.[id] ||
+          preview.cosmetics.optionCache.get(id)?.slot) === path[1],
+    );
+    box.append(
+      el(
+        'p',
+        'currently-worn',
+        'Currently shown: ' + (worn.map(labelFor).join(', ') || 'Empty'),
+      ),
+    );
+  }
   box.append(header, el('p', 'pool-hint', hint));
+  if (isClothing && box.querySelector('.currently-worn'))
+    box.append(box.querySelector('.currently-worn'));
+  if (isClothing && (!enabled || value.chance === 0)) {
+    box.append(
+      el(
+        'p',
+        'clothing-summary',
+        enabled
+          ? 'Nothing will spawn in this slot.'
+          : 'Default wear chance: ' +
+              Math.round((chanceDefault ?? 0) * 100) +
+              '%. Choices: ' +
+              Object.keys(defaults)
+                .map((id) => (id === 'none' ? 'No item' : labelFor(id)))
+                .join(', '),
+      ),
+    );
+    $('poolPanel').append(box);
+    return;
+  }
   const setPool = (next) =>
     mutate((r) =>
       pathSet(
@@ -199,29 +297,41 @@ function pool(
     renderPools();
   };
   if (isClothing) {
-    const line = el('label', 'chance', 'Slot chance');
+    const line = el('label', 'chance', 'Chance to wear (%)');
     const n = el('input');
     n.type = 'number';
     n.min = '0';
-    n.max = '1';
-    n.step = '.05';
-    n.value = enabled ? value.chance : chanceDefault;
+    n.max = '100';
+    n.step = '5';
+    n.value = Math.round(100 * (enabled ? value.chance : chanceDefault));
     n.disabled = !enabled;
     n.onchange = () => {
       mutate((r) => {
-        pathGet(r, path).chance = Number(n.value);
+        pathGet(r, path).chance = Number(n.value) / 100;
       });
       renderPools();
     };
     line.append(n);
     box.append(line);
   }
+  if (isClothing)
+    box.append(
+      el(
+        'p',
+        'pool-hint',
+        'Choose one article per spawn. Weights control how often each option wins.',
+      ),
+    );
   const all = Object.entries(weights || {});
   const total = all.reduce((n, [, w]) => n + Number(w), 0);
   const list = el('div', 'weight-list');
   for (const [id, weight] of all) {
     const row = el('div', 'weight-row');
-    const name = el('span', 'name', labelFor(id));
+    const name = el(
+      'span',
+      'name',
+      id === 'none' && isClothing ? 'No item' : labelFor(id),
+    );
     name.title = id;
     if (path[0] === 'dyes') {
       const color = id.startsWith('#') ? id : state.dyeColors?.get(id);
@@ -255,7 +365,11 @@ function pool(
       const next = { ...weights };
       delete next[id];
       if (!Object.values(next).some((w) => w > 0)) {
-        toast('Keep at least one positive choice, or disable the override.');
+        toast(
+          isClothing
+            ? 'Keep one clothing option, or choose Leave empty.'
+            : 'Keep at least one positive choice, or disable the override.',
+        );
         return;
       }
       setPool(next);
@@ -276,20 +390,25 @@ function pool(
   box.append(list);
   if (enabled) {
     const line = el('div', 'add-choice');
-    const idInput = el('input');
+    const idInput = el(isClothing ? 'select' : 'input');
     idInput.placeholder = 'Choose or type an ID…';
     idInput.setAttribute('aria-label', 'Add ' + title + ' choice');
     const listId = 'choices-' + path.join('-');
     const datalist = el('datalist');
     datalist.id = listId;
-    for (const id of [...new Set(catalog)]) {
+    for (const id of [...new Set(catalog)].filter(
+      (id) => !isClothing || id !== 'none',
+    )) {
       const option = el('option');
       option.value = id;
       option.label = labelFor(id);
-      datalist.append(option);
+      if (isClothing) {
+        option.textContent = id === 'none' ? 'No item' : labelFor(id);
+        idInput.append(option);
+      } else datalist.append(option);
     }
     idInput.setAttribute('list', listId);
-    const add = el('button', null, '+');
+    const add = el('button', null, isClothing ? 'Add option' : '+');
     add.title = 'Add weighted choice';
     add.onclick = () => {
       const id = idInput.value.trim();
@@ -346,6 +465,10 @@ function scalar(title, key, fallback) {
 function renderPools() {
   if (!state.ready) return;
   $('poolPanel').replaceChildren();
+  $('poolHelp').textContent =
+    state.tab === 'clothing'
+      ? 'Choose game defaults, custom spawn choices, or an empty slot. Preview clothing changes to see your edits.'
+      : 'Unchecked pools use the game generator. Enable a pool to replace its choices; changes affect the next roll.';
   const d = window.EnemyLoadoutSourceData.defaults(state.kind, state.data);
   const current = state.selected?.roster?.appearance || {};
   const species = current.speciesId || Object.keys(d.species)[0];
@@ -404,14 +527,19 @@ function renderPools() {
         1, 2,
       ];
       for (const [id, m] of Object.entries(state.data.metals))
-        if (m.tier >= range[0] && m.tier <= range[1] + Number($('tier').value))
+        if (
+          m.tier >= range[0] &&
+          m.tier <= range[1] + Number($('tier').value)
+        )
           metalDefaults[id] = 1;
     }
     pool(
       'Weapon metal',
       ['metals'],
       metalDefaults,
-      Object.keys(state.data.metals).filter((k) => state.data.metals[k].tier),
+      Object.keys(state.data.metals).filter(
+        (k) => state.data.metals[k].tier,
+      ),
     );
     scalar(
       'Chance of ranged weapon',
@@ -457,7 +585,26 @@ function renderPools() {
       $('poolPanel').append(box);
     }
   } else if (state.tab === 'clothing') {
-    for (const slot of ['hat', 'hood', 'torso', 'overwear', 'pants']) {
+    const intro = el('section', 'clothing-intro');
+    intro.append(
+      el(
+        'p',
+        'help',
+        'Each slot can use game defaults, your custom choices, or stay empty. A mask and hood can be worn together. Custom slots choose one article per spawn; wear chance controls whether it appears.',
+      ),
+    );
+    const apply = el('button', 'primary', 'Preview clothing changes');
+    apply.onclick = () => roll(false);
+    intro.append(apply);
+    $('poolPanel').append(intro);
+    for (const slot of [
+      'mask',
+      'hood',
+      'hat',
+      'torso',
+      'overwear',
+      'pants',
+    ]) {
       let def = d.clothing[slot] || { chance: 0, items: { none: 1 } };
       if (state.kind.startsWith('bandit:') || d.tribe) {
         const ids = state.data.gang.clothingPool.itemsBySlot[slot];
@@ -488,7 +635,7 @@ function renderPools() {
         ['clothing', slot],
         def.items,
         ['none', ...candidates, ...Object.keys(def.items)],
-        'Native choices shown for the rolled species/gender. Overrides replace this slot after class guarantees.',
+        'Choices available to this species and gender. Custom choices replace the normal roll for this slot.',
         def.chance,
       );
     }
@@ -519,7 +666,8 @@ function renderPools() {
         .map((o) =>
           o.id === 'none'
             ? 'none'
-            : [...opts.entries()].find(([, entry]) => entry === o)?.[0] || o.id,
+            : [...opts.entries()].find(([, entry]) => entry === o)?.[0] ||
+              o.id,
         );
       pool(
         slot,
@@ -530,14 +678,19 @@ function renderPools() {
       );
     }
   } else if (state.tab === 'identity') {
-    pool('Species', ['species'], d.species, Object.keys(state.data.species));
+    pool(
+      'Species',
+      ['species'],
+      d.species,
+      Object.keys(state.data.species),
+    );
     pool(
       'Gender',
       ['genders'],
       Object.fromEntries(
-        (state.data.species[species]?.genders || Object.keys(d.genders)).map(
-          (gender) => [gender, 1],
-        ),
+        (
+          state.data.species[species]?.genders || Object.keys(d.genders)
+        ).map((gender) => [gender, 1]),
       ),
       ['male', 'female'],
       'Species with one authored gender retain that restriction.',
@@ -549,6 +702,9 @@ function renderPools() {
       'HOOD',
       'HOOD_B',
       'HOOD_C',
+      'MASK',
+      'MASK_B',
+      'MASK_C',
       'HAT',
       'HAT_B',
       'TORSO',
@@ -561,13 +717,19 @@ function renderPools() {
       pool(
         slot.startsWith('A') || ['B', 'C'].includes(slot)
           ? 'Body color ' + slot
-          : 'Dye · ' + slot,
+          : slot === 'MASK_C'
+            ? 'Mask · glow (color 3)'
+            : slot === 'MASK'
+              ? 'Mask · base color'
+              : slot === 'MASK_B'
+                ? 'Mask · trim'
+                : 'Dye · ' + slot,
         ['dyes', slot],
-        slot === 'HOOD_C' && state.kind.startsWith('maskbound:')
+        slot === 'MASK_C' && state.kind.startsWith('maskbound:')
           ? { '#7F00FF': 1 }
           : d.dyes,
         [...dyeIds, ...Object.keys(d.dyes)],
-        'Dye IDs or an exact #RRGGBB color. HOOD_C is mask dye color 3.',
+        'Dye IDs or an exact #RRGGBB color. MASK_C is mask dye color 3; HOOD colors are independent.',
       );
   } else if (state.tab === 'attacks') {
     if (d.lich) {
@@ -611,9 +773,12 @@ function renderPools() {
 async function selectKind(kind) {
   if (state.busy) return;
   state.kind = kind;
-  const type = window.EnemyLoadoutSourceData.types.find((t) => t.id === kind);
+  const type = window.EnemyLoadoutSourceData.types.find(
+    (t) => t.id === kind,
+  );
   $('enemyTitle').textContent = type.label;
-  $('family').textContent = type.group.toUpperCase() + ' / LOADOUT PREVIEW';
+  $('family').textContent =
+    type.group.toUpperCase() + ' / LOADOUT PREVIEW';
   library();
   $('ruleBadge').textContent = Object.keys(rule()).length
     ? 'Authored pools'
@@ -630,7 +795,11 @@ function showRecord(record) {
   state.selected = record;
   const a = record.roster.appearance,
     def = record.definition;
-  $('actorTag').textContent = (a.speciesId + ' / ' + a.gender).toUpperCase();
+  $('actorTag').textContent = (
+    a.speciesId +
+    ' / ' +
+    a.gender
+  ).toUpperCase();
   const facts = $('rollFacts');
   facts.replaceChildren(
     fact('Species', a.speciesId),
@@ -640,6 +809,14 @@ function showRecord(record) {
     fact('Ranged', def.rangedWeaponKey),
     fact('Outfit', record.roster.equippedCosmetics.join(', '), true),
     fact('Mount', record.mountSpecies),
+    fact(
+      'Weapon orbit · X / Y / Z',
+      record.poseOrbitAxes &&
+        ['x', 'y', 'z']
+          .map((axis) => Number(record.poseOrbitAxes[axis]).toFixed(2))
+          .join(' / '),
+      true,
+    ),
     fact(
       'Attacks',
       Object.entries(def.banditAbilityLoadout || {})
@@ -838,9 +1015,9 @@ $('scrub').oninput = () => {
 };
 $('captureBtn').onclick = () => {
   if (preview.renderer)
-    preview.capture().toBlob((blob) =>
-      download('enemy-preview.png', blob, 'image/png'),
-    );
+    preview
+      .capture()
+      .toBlob((blob) => download('enemy-preview.png', blob, 'image/png'));
 };
 $('resetRuleBtn').onclick = () => {
   const data = rules();
@@ -913,7 +1090,9 @@ $('clearHistory').onclick = () => {
   state.history = [];
   renderHistory();
 };
-window.addEventListener('pagehide', () => preview.dispose(), { once: true });
+window.addEventListener('pagehide', () => preview.dispose(), {
+  once: true,
+});
 window.addEventListener('error', (e) => log(e.message));
 window.addEventListener('unhandledrejection', (e) =>
   log(e.reason?.stack || e.reason),
@@ -951,7 +1130,8 @@ window.EnemyLoadoutWorkshop = { state, preview, roll, selectKind, rules };
     await selectKind(state.kind);
   } catch (e) {
     log(e.stack || e.message);
-    $('stageMessage').textContent = 'Workshop could not start: ' + e.message;
+    $('stageMessage').textContent =
+      'Workshop could not start: ' + e.message;
     $('draftState').textContent = 'Runtime load failed · see diagnostics';
     setBusy(false);
   }

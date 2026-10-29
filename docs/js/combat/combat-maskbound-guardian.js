@@ -6,6 +6,7 @@
 
   const SPECIES_ID = 'maskbound-guardian'; // NPC-only skeleton species supplied by maskbound-guardian-species-runtime.js.
   const CLASS_ID = 'maskbound-guardian'; // Distinct hostile category in combat, loot and arena diagnostics.
+  const HOOD_CHANCE = 0.5;
   const MASK_ID = 'hachutu_binding_mask_ii'; // All guardians carry the authored binding mask.
   const SCREAM_URL = 'assets/audio/sfx/utterances/sfx_maskbound_scream.mp3'; // Sole combat utterance file; all effects derive from its playback.
   const VOICE_EVENTS = Object.freeze({
@@ -18,21 +19,21 @@
   const TROOPS = Object.freeze({
     sentinel: Object.freeze({
       label: 'Maskbound Sentinel',
-      anatomy: Object.freeze({ rigScaleX: 1.0, rigScaleY: 1.34, headScale: 0.88, headOffsetY: -0.07 }),
+      anatomy: Object.freeze({ rigScaleX: 1.0, rigScaleY: 1.34, headScale: 1, headOffsetY: -0.07 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.82, stance: 0.65, dragLift: 0.13, lurchDegrees: 13 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: '#443126',
       weapons: Object.freeze(['fishingspear', 'harlyaoLongsword']),
     }),
     bulwark: Object.freeze({
       label: 'Maskbound Bulwark',
-      anatomy: Object.freeze({ rigScaleX: 1.62, rigScaleY: 1.02, headScale: 0.72, headOffsetY: -0.12 }),
+      anatomy: Object.freeze({ rigScaleX: 1.62, rigScaleY: 1.02, headScale: 1, headOffsetY: -0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: '#352419',
       weapons: Object.freeze(['warhammer', 'hatchet']),
     }),
     reacher: Object.freeze({
       label: 'Maskbound Reacher',
-      anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.82, headScale: 1.16, headOffsetY: 0.12 }),
+      anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.82, headScale: 1, headOffsetY: 0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.92, stance: 0.62, dragLift: 0.22, lurchDegrees: 16 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: '#503929',
       weapons: Object.freeze(['fishingspear', 'daggerSword']),
@@ -48,7 +49,8 @@
       A: { hex: shade(1), tintMode: 'hexShadeFill' },
       B: { hex: shade(0.79), tintMode: 'hexShadeFill' },
       C: { hex: shade(0.59), tintMode: 'hexShadeFill' },
-      HOOD: { hex: '#9b8063', tintMode: 'hexShadeFill' },
+      MASK: { hex: '#9b8063', tintMode: 'hexShadeFill' },
+      HOOD: { hex: '#50483f', tintMode: 'hexShadeFill' },
     };
   }
 
@@ -63,7 +65,12 @@
     const roster = window.MinionCombat?.rollRoster?.(SPECIES_ID, troop.label, { gender: 'male' });
     if (!roster) throw new Error('MinionCombat is required for maskbound guardian equipment.');
     roster.equippedCosmetics = [MASK_ID]; // Never pick the Minion's clothing pool or BanditCombat's forced headwear.
-    roster.cosmeticSlots = { [MASK_ID]: 'hood' }; // Actual cosmetic slot, used in renderer and corpse loot.
+    roster.cosmeticSlots = { [MASK_ID]: 'mask' }; // Actual cosmetic slot, used in renderer and corpse loot.
+    const hoodChance = HOOD_CHANCE; // A separate hood roll never displaces the binding mask.
+    if ((window.GameRandom?.random?.() ?? Math.random()) < hoodChance) {
+      roster.equippedCosmetics.push('ragged_hood');
+      roster.cosmeticSlots.ragged_hood = 'hood';
+    }
     roster.appliedDyes = {}; // Wood coloration is an anatomy/body palette, not a removable cloth dye.
     roster.metalArmorItems = []; // Wooden puppets never inherit Harlyao's Town-Value armor set.
     roster.appearance.bodyColors = woodColors(troop.wood); // Also drives procedural hand/foot texture tint.
@@ -91,15 +98,18 @@
   }
 
   function rigScaleFor(troop) {
-    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(SPECIES_ID, 'male', { anatomy: troop.anatomy });
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(SPECIES_ID, 'male', { anatomy: {...troop.anatomy,headScale:1} });
     if (!scale) throw new Error('CharacterRigScale is required for maskbound guardian proportions.');
     return scale; // Canonical x/y/head/offsetY validation is shared with species/gender defaults.
   }
 
   async function makeEntity(options = {}) {
     const troop = troopFor(options.troopType || options.roster?.maskboundTroop);
-    const roster = options.roster || rollRoster(troop.key); // Rehydrated enemies can supply their existing loot/equipment record.
-    const rigScale = rigScaleFor({ anatomy: roster.appearance?.anatomy || troop.anatomy });
+    const roster = options.roster ? JSON.parse(JSON.stringify(options.roster)) : rollRoster(troop.key); // Rehydrated enemies can supply their existing loot/equipment record.
+    roster.appearance ||= {speciesId:SPECIES_ID,gender:'male'};
+    roster.appearance.anatomy = {...troop.anatomy,...roster.appearance.anatomy,headScale:1};
+    roster.cosmeticSlots ||= {};
+    const rigScale = rigScaleFor({ anatomy: roster.appearance.anatomy });
     const entity = await window.MinionCombat?.makeEntity?.({
       ...options,
       speciesId: SPECIES_ID,
@@ -130,6 +140,6 @@
 
   window.MaskboundGuardianCombat = Object.freeze({
     classId: CLASS_ID, speciesId: SPECIES_ID, maskId: MASK_ID,
-    troopTypes: TROOPS, troopFor, woodColors, rollRoster, rigScaleFor, voiceSource: SCREAM_URL, voiceVariantFor, makeEntity, formatDebug,
+    troopTypes: TROOPS, hoodChance: HOOD_CHANCE, troopFor, woodColors, rollRoster, rigScaleFor, voiceSource: SCREAM_URL, voiceVariantFor, makeEntity, formatDebug,
   });
 })();

@@ -2275,7 +2275,7 @@
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
           tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
-          clothing: { hat: null, hood: null, torso: null, overwear: null, pants: null },
+          clothing: { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null },
           clothingItems: [],
           charms: [],
           whistles: [
@@ -30289,8 +30289,8 @@
           const helmId = window.FestivalPotluckContest?.HELM_ID;
           const isHelm = !!helmId && id === helmId;
           if (!isHelm && !window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
-          const piece = { category: isHelm ? 'hat' : 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
-          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'hood', label: piece.label, baseLabel: piece.label,
+          const piece = { category: isHelm ? 'hat' : 'mask', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
+          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'mask', label: piece.label, baseLabel: piece.label,
             colorA: { hex: '#ddaf64', h: 37, s: 55, v: 87 }, colorB: { hex: '#8072bd', h: 251, s: 40, v: 74 }, colorC: { hex: '#e7d8aa', h: 45, s: 26, v: 91 }, sprite: window.EquipmentPanel.clothingSpriteForCosmetic(id), sellPrice: Math.floor((piece.price || 0) * .4) });
           return true;
         },
@@ -31846,7 +31846,7 @@
         // new slot is immediately testable without invalidating old saves.
         gearInventory.tools.crossbow ??= true;
         gearInventory.tools.scatterbow ??= true;
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null, pants: null };
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];

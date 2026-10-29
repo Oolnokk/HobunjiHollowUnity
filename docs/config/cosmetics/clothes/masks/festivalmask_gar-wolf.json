@@ -1,6 +1,6 @@
 {
-  "slot": "hood",
-  "tintSlot": "HOOD",
+  "slot": "mask",
+  "tintSlot": "MASK",
   "specialHeadwearRules": false,
   "material": "cloth",
   "tags": [

@@ -36,6 +36,7 @@
         throw Error(`${label}: invalid choice or weight`);
   }
   function validate(data) {
+    data = clone(data); // Migrations must not mutate an imported draft behind its caller.
     if (
       data?.schema !== SCHEMA ||
       !data.rules ||
@@ -89,8 +90,23 @@
           rule.rangedChance > 1)
       )
         throw Error('Ranged chance must be between 0 and 1');
+      const legacyHood = rule.clothing?.hood;
+      if (legacyHood) weights(legacyHood.items, `${kind}.clothing.hood`);
+      const legacyMasks = Object.fromEntries(Object.entries(legacyHood?.items || {}).filter(([id])=>window.isPortraitMaskCosmeticId?.(id)));
+      if (Object.keys(legacyMasks).length) {
+        const rest=Object.fromEntries(Object.entries(legacyHood.items).filter(([id])=>!window.isPortraitMaskCosmeticId?.(id)));
+        const sum=pool=>Object.values(pool).reduce((total,n)=>total+Number(n),0);
+        const total=sum(legacyHood.items);
+        rule.clothing.mask ||= sum(legacyMasks)>0 ? {chance:legacyHood.chance*sum(legacyMasks)/total,items:legacyMasks} : {chance:0,items:{none:1}};
+        if (Object.keys(rest).length) rule.clothing.hood=sum(rest)>0 ? {chance:legacyHood.chance*sum(rest)/total,items:rest} : {chance:0,items:{none:1}};
+        else delete rule.clothing.hood;
+        if (rule.dyes) for (const [slot,pool] of Object.entries(rule.dyes)) if (/^HOOD(?:_|$)/.test(slot)) {
+          rule.dyes[slot.replace('HOOD','MASK')] ||= pool;
+          if (!Object.keys(rest).length) delete rule.dyes[slot];
+        }
+      }
       for (const [slot, value] of Object.entries(rule.clothing || {})) {
-        if (!['hat', 'hood', 'torso', 'overwear', 'pants'].includes(slot))
+        if (!['hat', 'hood', 'mask', 'torso', 'overwear', 'pants'].includes(slot))
           throw Error('Unknown clothing slot: ' + slot);
         if (
           !Number.isFinite(value.chance) ||

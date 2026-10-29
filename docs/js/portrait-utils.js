@@ -13,6 +13,12 @@
 // ── Xform Presets ──────────────────────────────────────────
 // B: used for all portrait layers (head, ur-head overlays, body, and cosmetics)
 // C/D: placeholder presets (identity)
+const portraitMaskIds = new Set();
+function isPortraitMaskCosmeticId(id) {
+  return portraitMaskIds.has(id) || /^(?:festivalmask_|hachutu_binding_mask)/.test(String(id || ''));
+}
+window.isPortraitMaskCosmeticId = isPortraitMaskCosmeticId;
+
 const _XFORM_PRESET_DEFAULTS = {
   A: { ax: -0.2,    ay: 0,       sx: 2.55, sy: 2.55 },
   B: { ax: -0.0983, ay: -0.0809, sx: 2.49, sy: 2.49 },
@@ -1135,7 +1141,7 @@ function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
 
 function getProfileSpriteXforms(profile) {
   if (!profile) return [];
-  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
+  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
   const headUrl = resolvedFighter?.headUrl || fighter?.headUrl;
@@ -1206,6 +1212,7 @@ function getProfileSpriteXforms(profile) {
     // Hat (under hood), hood, pauldron, hat (over hood)
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
+    pushGroupRecords(mask);
     pushGroupRecords(hood, layer => layer.pos !== 'back');
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
@@ -1378,7 +1385,7 @@ function resolveLayerTintSlot(key, baseTintSlot) {
 // ── Rendering ──────────────────────────────────────────────
 
 async function renderProfile(canvas, profile, renderOptions = {}) {
-  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
+  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
   const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
@@ -1474,7 +1481,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const hiddenCosmeticGroups = new Set([
     ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
-    ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
+    ...((hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask)) ? [facialHair] : []),
   ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
@@ -1487,6 +1494,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
   const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull instead of repainting over it.
+  const maskLayers = []; // Face masks share the head rig but equip independently from hoods.
   const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
   const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
@@ -1560,6 +1568,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   }
   if (renderHeadCosmetics) {
+    pushToTarget(mask, maskLayers);
     const hoodIsWorn = !!hood && String(hood.id || '').toLowerCase() !== 'none'; // A selected hood/facewrap counts as occupied even if the structural layer itself is not a selectable hairstyle.
     for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art unless their own visibility rule suppresses them.
       if (fixedLayer?.hideWhenHood === true && hoodIsWorn) continue; // Generic fixed-layer rule used by Harlyao Skeleton female default hair so it never clips through a hood.
@@ -1587,7 +1596,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
+      elevatedEyeAccessoryLayers, maskLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
@@ -1605,7 +1614,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const cosmeticLayerLists = [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, upperFaceLayers, hoodBackLayers, hoodLayers, pauldronLayers,
+      elevatedEyeAccessoryLayers, upperFaceLayers, maskLayers, hoodBackLayers, hoodLayers, pauldronLayers,
       hatUnderLayers, hatOverLayers,
     ];
     for (const layerList of cosmeticLayerLists) {
@@ -1643,6 +1652,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...frontHairLayers.map(({ layer }) => layer.url),
     ...hatUnderLayers.map(({ layer }) => layer.url),
     ...(renderBehindView ? [] : elevatedEyeAccessoryLayers.map(({ layer }) => layer.url)),
+    ...maskLayers.map(({ layer }) => layer.url),
     ...hoodBackLayers.map(({ layer }) => layer.url),
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
@@ -1851,6 +1861,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // -- otherwise the head is the one thing still mirrored relative to the
       // front while hair/hood/cosmetics and the arms/torso are not.
       head:          () => {
+        drawEmoteLayers(maskLayers); // The far-side face mask must remain behind the rear skull.
         if (headUrl) {
           const img = imgMap.get(headUrl);
           if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl);
@@ -1958,6 +1969,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
+  drawEmoteLayers(maskLayers);
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
@@ -2234,6 +2246,7 @@ function portraitOptionFromJson(entry, json) {
   const resolvedTintSlot = taggedTintSlot || (
                            json.slot === 'hat' && colorRange ? 'HAT'
                          : json.slot === 'hood' && colorRange ? 'HOOD'
+                         : json.slot === 'mask' && colorRange ? 'MASK'
                          : json.slot === 'torso' && colorRange ? 'TORSO'
                          : !json.appearance && colorRange ? 'CLOTH'
                          : json.slot === 'hood' && !json.appearance ? (json.tintSlot ?? 'HOOD')
@@ -2308,6 +2321,7 @@ async function loadPortraitCosmetics(configBase) {
   const facialHairOptions = [{ id: 'none', label: 'No Facial Hair', tintSlot: null, layers: [] }];
   const upperFaceOptions = [{ id: 'none', label: 'No Upper Face', tintSlot: null, layers: [] }];
   const hatOptions        = [{ id: 'none', label: 'No Hat',         tintSlot: null, layers: [] }];
+  const maskOptions = [{ id: 'none', label: 'No Mask', tintSlot: null, layers: [] }];
   const hoodOptions       = [{ id: 'none', label: 'No Hood',        tintSlot: null, layers: [] }];
   const torsoPortraitOptions = [{ id: 'none', label: 'No Torso Clothing', tintSlot: null, layers: [] }];
   const armPortraitOptions = [{ id: 'none', label: 'No Arm Clothing', tintSlot: null, layers: [] }];
@@ -2328,6 +2342,7 @@ async function loadPortraitCosmetics(configBase) {
               : opt.portraitSlot === 'upperFace'  ? 'upperFace'
               : opt.slot === 'hat'        ? 'hat'
               : opt.slot === 'hood'       ? 'hood'
+              : opt.slot === 'mask'       ? 'mask'
               : opt.hairSlot === 'front'  ? 'hairFront'
               : opt.hairSlot === 'back'   ? 'hairBack'
               : opt.hairSlot === 'side'   ? 'hairSide'
@@ -2335,6 +2350,7 @@ async function loadPortraitCosmetics(configBase) {
               : portraitCategoryForEntry(entry);
     if      (cat === 'hat')        hatOptions.push(opt);
     else if (cat === 'hood')       hoodOptions.push(opt);
+    else if (cat === 'mask') { maskOptions.push(opt); portraitMaskIds.add(opt.id); }
     else if (cat === 'hairFront')  hairFrontOptions.push(opt);
     else if (cat === 'hairBack')   hairBackOptions.push(opt);
     else if (cat === 'hairSide')   hairSideOptions.push(opt);
@@ -2565,7 +2581,7 @@ async function loadPortraitCosmetics(configBase) {
   portraitSpeciesLoadStatus.phase = 'ready';
   LAST_RANDOMIZATION_RULES_BY_FIGHTER = randomizationRulesByFighter;
 
-  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
+  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, maskOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
 }
 
 // ── Seeded randomisation ───────────────────────────────────
@@ -2668,7 +2684,7 @@ function isClothPortraitOption(option, clothMaterialTag) {
   // Older cloth cosmetics predate explicit material tags. Treat untyped
   // portrait clothing as cloth while preserving tagged non-cloth items such as
   // leather bandoliers and rigid-fiber hats.
-  return !option.materialTag && (option.slot === 'hood' || option.slot === 'torso' || option.slot === 'overwear');
+  return !option.materialTag && (option.slot === 'hood' || option.slot === 'mask' || option.slot === 'torso' || option.slot === 'overwear');
 }
 
 
@@ -2937,6 +2953,7 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
     ? weightedPickRng(filteredHat.length ? filteredHat : [noHat], weights.hat, rng)
     : (rng() < 0.5 ? pickRng(filteredHat) : noHat);
   const noHood     = filteredHood.find(o => o.id === 'none') ?? filteredHood[0];
+  const mask = {id:'none',label:'No Mask',tintSlot:null,layers:[]};
   let hood = weights?.hood
     ? weightedPickRng(filteredHood.length ? filteredHood : [noHood], weights.hood, rng)
     : noHood;
@@ -3127,7 +3144,7 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
       : randomColorFromRangeSeeded(hatSourceRange, rng);
   }
   return ensurePortraitClothingPaletteColors(
-    { fighter, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, hat, torsoCosmetic, armCosmetic, bodyColors },
+    { fighter, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, upperFace, facialHair, hat, torsoCosmetic, armCosmetic, bodyColors },
     rng,
     { clothingRule }
   );
