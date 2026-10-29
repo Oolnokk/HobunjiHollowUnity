@@ -241,6 +241,10 @@
   }
 
   function requireService(id) {
+    if (window.DelversGuild && !window.DelversGuild.isMember()) {
+      deps?.showToast?.("Join the Delver's Guild before requesting Garanki's artifact services.", false);
+      return false;
+    }
     if ((id === 'base' || id === 'flourish') && window.DelversGuild && !window.DelversGuild.canEnchant()) {
       deps?.showToast?.('Creating new enchantments is forbidden. Earn Garanki\'s trust and discuss it privately in his tent.', false);
       return false;
@@ -428,7 +432,7 @@
       const shape = SHAPES[relic.shape];
       list.appendChild(row(shape.icon, esc(`Bound ${shape.label}`),
         esc(describeEnchantments(relic.enchantments).join(' · ') || 'No enchantments'),
-        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (deps.inventory.gold || 0) < price)]));
+        [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < price)]));
     }
 
     // Enchant a weapon
@@ -453,7 +457,7 @@
         .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · ${defs[id].alignment}` })));
       const pick = select(options, current);
       const controls = [pick, button(`Apply (${TUNING.APPLY_BASE_PRICE}g)`, () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove')));
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('✦', `Base Enchantment ${i + 1}`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
     }
@@ -465,7 +469,7 @@
       const pick = select(options, current);
       const any = options.length > 1;
       const controls = [pick, button(`Apply (${TUNING.APPLY_FLOURISH_PRICE}g)`, () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any)];
-      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove')));
+      if (current) controls.push(button(`Remove (${TUNING.REMOVE_PRICE}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('❋', `${esc(flourishTriggerLabel(slotId, selectedWeaponKey))} Flourish`,
         esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
     }
