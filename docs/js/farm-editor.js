@@ -254,6 +254,7 @@
     const shippingBoxObject = deps.getShippingBoxObject();
     const supplyBoxObject = deps.getSupplyBoxObject();
     const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
+    layout.farmhousePartitions = window.FarmhouseRoomPlanner?.serialize?.() || previousLayout?.farmhousePartitions || null; // Saved per world, including custom walls and moved join doors.
     const farmPlots = window.FarmPlotEditor?.serialize?.() ?? previousLayout?.farmPlots;
     if (farmPlots?.length) layout.farmPlots = farmPlots; // Persist assigned family plot groups alongside normal layout.
     if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
@@ -432,6 +433,7 @@
         const nb = window.FarmCrates.makeSupplyBox(c, r); deps.setSupplyBoxObject(nb); deps.worldObjects.set(c + ',' + r, nb);
       }
     }
+    window.FarmhouseRoomPlanner?.restore?.(layout.farmhousePartitions); // Older saves default to no manual subdivisions.
     (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
       // Guarded per-entry: one malformed saved processing station must not
       // throw and abort the rest of this restore (decor, house pieces,
