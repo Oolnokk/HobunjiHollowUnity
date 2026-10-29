@@ -8222,7 +8222,9 @@
           }
 
           const def = c.def;
-          c.attackCooldownT = Math.max(0, c.attackCooldownT - dt);
+          c.attackCooldownT = c._furiousSpecial
+            ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
+            : Math.max(0, c.attackCooldownT - dt);
           if (!tickCreatureResources(c, dt)) continue;
           const companionTempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Saved tempo changes recovery/base Stamina while species attack timelines stay intact.
 
@@ -8332,7 +8334,12 @@
               // separated from the next by a tempo-scaled backup beat.
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
-              if (st.mode === 'backingUp') {
+              const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
+              const furiousStarted = !isBanditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
+                && !!window.Combat?.animalAttacks?.startFuriousSpecial?.(c, { target }); // Bypasses current cooldown and Stamina only when the most expensive enabled special is fully funded.
+              if (furiousStarted) {
+                st.mode = 'backingUp'; st.t = 0; aimAngle = c.facing; // Attack owns motion immediately; its saved cooldown resumes after completion/cancellation.
+              } else if (st.mode === 'backingUp') {
                 const awayAngle = aimAngle + Math.PI;
                 moving = moveCreatureToward(c, c.x + Math.cos(awayAngle) * TILE, c.y + Math.sin(awayAngle) * TILE, def.moveSpeed, dt);
                 if (st.t >= STAGE_BACKUP_S * (companionTempo?.recovery || 1)) { st.mode = 'active'; st.t = 0; }
