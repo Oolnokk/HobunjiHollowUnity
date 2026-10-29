@@ -2868,10 +2868,10 @@
     "direction": "u",
     "lift": 0.04,
     "flipX": true,
-    "flipY": false,
+    "flipY": true,
     "flipZ": false,
     "shingleScaleX": 1.2,
-    "shingleScaleY": 1.2,
+    "shingleScaleY": 1,
     "shingleScaleZ": 2,
     "shingleRotX": -10,
     "shingleRotZ": 0,
@@ -2880,9 +2880,9 @@
     "secondLayerAcross": 0.25,
     "secondLayerLift": 0,
     "secondLayerOverhang": 1,
-    "secondLayerWallOriginReach": false,
+    "secondLayerWallOriginReach": true,
     "secondLayerShingleScaleX": 1.5,
-    "secondLayerShingleScaleY": 1.2,
+    "secondLayerShingleScaleY": 1.5,
     "secondLayerShingleScaleZ": 2,
     "secondLayerShingleRotX": 0,
     "secondLayerPeakRotateAway": false,
@@ -2931,7 +2931,11 @@
         "originalY0": 8,
         "originalY1": 11
       }
-    ]
+    ],
+    "shingleMaterial": {
+      "texture": "assets/textures/wibbly_surface.png",
+      "color": "#504030"
+    }
   },
   "assets": [],
   "extensionGeneration": {
@@ -2945,43 +2949,49 @@
   "surfaceGrowth": [
     {
       "kind": "roots",
-      "seed": "surface-1",
+      "seed": "surface-2",
       "style": "cornerFill",
       "density": 0.45,
-      "count": 40,
+      "count": 48,
       "strandLimit": 80,
       "perSurface": true,
       "length": 12,
-      "radius": 0.15,
+      "radius": 0.2,
       "offset": 0.008,
-      "curl": 0.4,
+      "curl": 1.4,
       "color": "#504030",
       "texture": "assets/textures/wibbly_surface.png",
       "target": "walls",
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.25
     },
     {
       "kind": "vines",
       "seed": "temple-highland-shingle-weave",
       "style": "wrap",
-      "density": 0.45,
+      "density": 0.35,
       "count": 40,
-      "strandLimit": 40,
-      "perSurface": false,
+      "strandLimit": 20,
+      "perSurface": true,
       "length": 3.4,
-      "radius": 0.04,
+      "radius": 0.1,
       "offset": 0.006,
       "curl": 1.1,
       "color": "#406040",
       "texture": "assets/textures/carved_smooth.png",
-      "target": "shingles",
+      "target": "all",
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
     },
     {
       "kind": "vines",
@@ -3001,18 +3011,21 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
     },
     {
       "kind": "roots",
       "seed": "surface-9",
       "style": "wrap",
-      "density": 0.2,
+      "density": 0.4,
       "count": 12,
       "strandLimit": 12,
       "perSurface": true,
       "length": 30,
-      "radius": 0.15,
+      "radius": 0.175,
       "offset": 0.008,
       "curl": 2,
       "color": "#504030",
@@ -3021,7 +3034,10 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.1
     }
   ],
   "wallFixtures": [
