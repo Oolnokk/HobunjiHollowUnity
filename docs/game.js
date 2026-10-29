@@ -15962,12 +15962,15 @@
       // spawns just inside that piece's room. Falls back to any available
       // door (or the interior's center, if somehow none exist yet) when
       // called without one, e.g. legacy 'interior' travel transitions.
-      function enterInterior(pieceId) {
+      function enterInterior(pieceId, featureId = null) {
         const fromScene = currentArea === 'town' ? townScene : scene;
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle, area: currentArea };
         currentArea    = 'interior';
         const layout = window.HousePieces.computeInteriorLayout();
-        const door = layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
+        const selectedFeatureId = featureId || (window.HousePieces?.lastEnteredEntrance?.()?.pieceId === pieceId
+          ? window.HousePieces.lastEnteredEntrance().featureId : null); // Remember which independently attached door the player used.
+        const door = layout.doors.find(d => d.pieceId === pieceId && d.featureId === selectedFeatureId)
+          || layout.doors.find(d => d.pieceId === pieceId) || layout.doors[0];
         const entryCol = door ? door.enter.c : INTERIOR_COLS / 2;
         const entryRow = door ? door.enter.r : INTERIOR_ROWS / 2;
         player.x       = (entryCol + 0.5) * TILE;
@@ -28979,7 +28982,7 @@
         buildingInteractableAt: (mapId, col, row) => _buildingInteractables.get(mapId + ',' + col + ',' + row),
         buildingInteractableCount: () => _buildingInteractables.size,
         renderFarmProcessors: () => window.FarmPanel.renderFarmProcessors(),
-        enterInterior: (pieceId) => enterInterior(pieceId),
+        enterInterior: (pieceId, featureId) => enterInterior(pieceId, featureId),
         exitInterior: () => exitInterior(),
         getCurrentArea: () => currentArea,
         interiorFurnitureObjects: () => interiorFurnitureObjects,
