@@ -1503,7 +1503,6 @@
     }
     burstEffects.push({group,shardMeshes:[spray],parts,flash,age:0,duration:.90,radius:FRUIT_RADIUS,
       dummy:new THREE.Object3D()});
-    window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'medium');
   }
   function detonateFruit(fruit,cause) {
     if(!fruit||fruit.exploded)return false;
@@ -1519,6 +1518,7 @@
     rec?.vases.delete(fruit.id);
     const x=world.x,z=world.z,y=thrownGround(x,z)+.16;
     fruitBurstVisual(rec?.scene||scene(),x,z,y);
+    window.AudioSystem?.playSoursapBurstSfx?.(x*tileSize(),z*tileSize(),fruit.mapId); // Every explosion, including off-scene visual fallback, uses the actual fruit's area for positional audio.
     applyFruitBlast(fruit.mapId,x,z);
     if(rec){
       const col=Math.floor(x),row=Math.floor(z);

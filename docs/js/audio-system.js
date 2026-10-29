@@ -687,6 +687,7 @@
         .then(buffer => {
           if (!buffer?.duration) throw new Error('combat audio decoded an empty clip');
           entry.buffer = buffer; entry.state = 'ready';
+          if (entry.url === combatSfxConfig().soursapSplat?.url) prepareSoursapIndependentClip(entry); // Render the splat's independent -12 st / 80% tempo waveform once, ahead of the first impact.
         })
         .catch(error => {
           entry.state = 'failed';
@@ -713,9 +714,35 @@
     pumpCombatDecodeQueue();
   }
 
+  let soursapRenderedSource = null; // The decoded splat source associated with our independently shifted, time-stretched cached recording.
+  let soursapRenderedClip = null; // Reuses the shared animal-voice WSOLA renderer, avoiding main-thread DSP at each fruit impact.
+  let soursapRenderPending = null; // Ensures multiple exploding fruits do not start duplicate render jobs.
+  function prepareSoursapIndependentClip(entry) {
+    if (!entry?.buffer || !combatPositionalContext) return;
+    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // Already-used pitch/tempo-independent WSOLA implementation.
+    if (typeof renderer !== 'function') return;
+    if (soursapRenderedSource !== entry.buffer) {
+      soursapRenderedSource = entry.buffer;
+      soursapRenderedClip = null;
+      soursapRenderPending = null;
+    }
+    if (soursapRenderedClip || soursapRenderPending) return;
+    soursapRenderPending = renderer(entry.buffer, combatPositionalContext, {
+      tempo: 0.8, pitchSemitones: -12, trimSilence: false, tailPadS: 0, edgeFadeS: 0,
+    }).then(rendered => {
+      if (soursapRenderedSource === entry.buffer) soursapRenderedClip = rendered;
+    }).catch(error => {
+      combatSpatialLastError = 'soursap independent-pitch rendering: ' + (error?.message || error);
+    }).finally(() => { soursapRenderPending = null; });
+  }
+
   function preloadSpecialCombatSfx() {
     const pelletCues = window.HobunjiDrenkirraPellet?.sfx || {};
     for (const cfg of Object.values(pelletCues)) if (cfg?.url) prepareCombatPositionalClip(cfg.url);
+    for (const key of ['soursapSplat', 'quickAttackBonusSlash']) {
+      const cfg = combatSfxConfig()[key]; // Decode the new impact cues ahead of contact, preserving real-time combat timing.
+      if (cfg?.url) prepareCombatPositionalClip(cfg.url);
+    }
   }
 
   function updateCombatDirectionalRoutes(frame = {}) {
@@ -799,16 +826,17 @@
     return { node: null, backend: 'mono-fallback', dispose() {} };
   }
 
-  function playDecodedCombatSfx(cfgEntry, volume, rate, spatial) {
+  function playDecodedCombatSfx(cfgEntry, volume, rate, spatial, bufferOverride = null) {
     const entry = combatDecodedByUrl.get(cfgEntry.url);
     const ctx = combatPositionalContext;
-    if (!entry?.buffer || ctx?.state !== 'running') return null;
+    const playbackBuffer = bufferOverride || entry?.buffer; // Only independently rendered splats replace a clip; all other combat SFX use their cached original.
+    if (!playbackBuffer || ctx?.state !== 'running') return null;
     let source = null, gain = null, lowpass = null, route = null, wet = null; // A mobile AudioContext can interrupt between graph setup and start; unwind partial graphs before native fallback.
     try {
       source = ctx.createBufferSource();
       gain = ctx.createGain();
       lowpass = typeof ctx.createBiquadFilter === 'function' && spatial.gain < 0.92 ? ctx.createBiquadFilter() : null; // Distant attacks lose direct treble without silencing their echoes.
-      source.buffer = entry.buffer; source.playbackRate.value = rate;
+      source.buffer = playbackBuffer; source.playbackRate.value = rate;
       gain.gain.value = Math.max(0, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1));
       source.connect(gain);
       if (lowpass) {
@@ -1448,6 +1476,40 @@
     playOneShotSfx(cfgEntry, falloff, pitch, spatial);
   }
 
+  function playQuickAttackBonusSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const cfgEntry = combatSfxConfig().quickAttackBonusSlash; // One semantic anime-slash cue for player and all NPC conditional quick hits.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    recordCombatSfx('quickAttackBonusSlash', cfgEntry, { conditional: true });
+    playOneShotSfx(cfgEntry, spatial.gain, 1, spatial);
+  }
+
+  function playSoursapBurstSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.() || gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
+    const cfgEntry = combatSfxConfig().soursapSplat; // Exactly the Drenkirra pellet recording, but separately transposed and slowed.
+    if (!cfgEntry) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
+    if (spatial.gain <= 0.002) return;
+    const entry = combatDecodedByUrl.get(cfgEntry.url); // The shared positional decode pipeline is reused, not another audio loader.
+    if (entry?.buffer) prepareSoursapIndependentClip(entry);
+    const rendered = soursapRenderedSource === entry?.buffer && soursapRenderedClip; // Only play the processed buffer associated with the current decoded asset.
+    const pitchRatio = Math.pow(2, -12 / 12); // One octave lower, independent of clip duration.
+    const tempoRatio = 0.8; // Independently lengthens the recorded splat by 25%.
+    if (rendered?.buffer) {
+      const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+        * Math.max(0, Number(gameAudioConfig().sfxVolume ?? 1)) * spatial.gain;
+      if (playDecodedCombatSfx(cfgEntry, volume, rendered.playbackRate, spatial, rendered.buffer)) {
+        recordCombatSfx('soursapSplat', cfgEntry, { semitones: -12, tempo: tempoRatio, backend: 'independent-WSOLA' });
+        return;
+      }
+    }
+    const approximateRate = Math.sqrt(pitchRatio * tempoRatio); // Native playback couples pitch and time: compromise between the two requested axes until WSOLA is ready.
+    recordCombatSfx('soursapSplat', cfgEntry, { requestedSemitones: -12, requestedTempo: tempoRatio, backend: 'coupled-native-fallback', actualPlaybackRate: approximateRate });
+    playOneShotSfx(cfgEntry, spatial.gain, approximateRate, spatial); // Never slow to 40% tempo by multiplying both independent rates.
+  }
+
   function playCounterShieldBlockSfx(x, y, areaId) {
     if (areaId !== deps.getCurrentArea()) return;
     const cfgEntry = combatSfxConfig().counterShieldBlock;
@@ -1602,6 +1664,8 @@
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,
+    playQuickAttackBonusSfx,
+    playSoursapBurstSfx,
     playCounterShieldBlockSfx,
     playRangedImpactSfx,
     combatSfxDebugSnapshot,

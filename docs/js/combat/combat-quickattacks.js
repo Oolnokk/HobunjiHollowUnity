@@ -334,6 +334,7 @@
               quickBonusEffectProc: conditionBonusUsed, // Cross-cutting effects such as Flourishes follow the same cooldown gate as the Quick Attack bonus package.
             });
             deps.playWeaponHitSfx?.(deps.currentWeaponDamageType(), c.x, c.y, c.areaId, undefined, conditionBonusUsed ? 'huge' : 'small');
+            if (conditionBonusUsed) window.AudioSystem?.playQuickAttackBonusSfx?.(c.x, c.y, c.areaId); // Each cooldown-ready qualifying hit gets its anime slash, in addition to the weapon's ordinary impact.
             hits++;
             lastName = c.def.label;
             if (hitTech.conditionMatched) conditionalHits++;

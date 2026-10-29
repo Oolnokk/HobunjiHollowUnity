@@ -34,7 +34,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261028entrancewood1"></script>
+  <script src="js/format-utils.js?v=20261028hfuryformat1"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -155,7 +155,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261028blowgunload1"></script>
+  <script src="config/scratchbones-config.js?v=20261028hsourcfg1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -322,7 +322,7 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261028hcompanionaudit3"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261028hfurycombat1"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261028hattachaudit2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261027hcarryload1"></script>
@@ -336,7 +336,7 @@
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
   <script src="js/combat/combat-combo.js?v=20261027h5c49c6e"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261027hc561d51"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261028hquickplayer1"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261027shape2"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
   <script src="js/combat/combat-charged-breaker.js?v=20261027shape2"></script>
@@ -366,7 +366,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261027h8b5b8e5"></script>
+  <script src="js/combat/combat-bandit.js?v=20261028hquicknpc1"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
@@ -386,7 +386,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261028h584c3ac"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261028hfuryloader1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -459,7 +459,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261027h19fc43e"></script>
+  <script src="js/farm-troughs.js?v=20261028hfurytrough1"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -847,7 +847,7 @@
   <script src="js/cave-site-system.js?v=20261027extension4"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
-  <script src="js/shattercasks.js?v=20261027soursapCarry1"></script>
+  <script src="js/shattercasks.js?v=20261028hfruitburst2"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261003h12be717"></script>
@@ -2646,7 +2646,7 @@
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261028blowgunimpact1"></script>
+  <script src="js/audio-system.js?v=20261028hsplat2"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
@@ -2846,7 +2846,7 @@
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
-  <script src="game.js?v=20261028h334b532"></script>
+  <script src="game.js?v=20261028hfurygame2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261022hcamopt2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

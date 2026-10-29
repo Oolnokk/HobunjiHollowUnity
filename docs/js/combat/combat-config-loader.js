@@ -135,7 +135,7 @@
     ['js/drunk-prone-composition-bridge.js?v=20261027h08969ec', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
-    ['js/combat/combat-grehlr-burrow.js?v=20261028hnativeburrow1', () => !!window.HobunjiGrehlrBurrow],
+    ['js/combat/combat-grehlr-burrow.js?v=20261028hfuryburrow1', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20261028hnativestink1', () => !!window.HobunjiGrehlrStink],
     ['js/combat/combat-corroded-health.js?v=20261026renthealth1', () => !!window.HobunjiCorrodedHealth],
     ['js/combat/enemy-combat-health-recovery.js?v=20260924combatheal2', () => Number(window.CombatHealthRecoveryPolicy?.version || window.EnemyCombatHealthRecoveryPolicy?.version) >= 2],
