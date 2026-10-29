@@ -285,7 +285,7 @@ function verifyGroundFirst(label,parts,lowNames,highNames){
   const plan=grown.partPlan;
   assert.equal(plan.length,parts.length,label+': must plan each authored part separately');
   const grounded=plan.filter(p=>p.grounded);
-  assert.deepEqual(grounded.map(p=>p.label).sort(),lowNames.slice().sort(),
+  assert.deepEqual(Array.from(grounded,p=>p.label).sort(),lowNames.slice().sort(),
     label+': only floor-adjacent parts may be initial targets');
   for(const p of plan.filter(p=>highNames.includes(p.label))){
     assert(!p.grounded && p.parent!==null && p.depth>0,
