@@ -20,6 +20,45 @@
   function point(raw) {
     return { x: finite(raw?.x, 225, 0, 450), y: finite(raw?.y, 602, 0, 1204) };
   }
+  function cleanBridges(raw) {
+    // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
+    if (!raw || !Array.isArray(raw.strokes)) return null;
+    const strokes = raw.strokes.slice(0, 64).map(stroke => ({
+      r: finite(stroke?.r, 16, 1, 160),
+      points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
+        .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
+        .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
+    })).filter(stroke => stroke.points.length);
+    if (!strokes.length) return null;
+    const light = raw.light === null ? null : Array.isArray(raw.light) && raw.light.length === 2
+      ? [finite(raw.light[0], 0, -1, 1), finite(raw.light[1], -1, -1, 1)] : [0, -1];
+    return { strokes, outline: Math.round(finite(raw.outline, 10, 0, 32)), light,
+      shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
+  }
+  function applyBridges(canvas, frame, bridges) {
+    // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
+    const fill = global.ModularWeaponBridgeFill;
+    if (!fill || !bridges?.strokes?.length) return;
+    const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const mask = new Uint8Array(canvas.width * canvas.height);
+    for (const stroke of bridges.strokes) {
+      let previous = null;
+      for (const [x, y] of stroke.points) {
+        const point = { x: (x - frame.left) * sx, y: (y - frame.top) * sy };
+        fill.stampLine(mask, canvas.width, canvas.height, previous, point, stroke.r * sx);
+        previous = point;
+      }
+    }
+    try {
+      const result = fill.fillBridge(image.data, mask, canvas.width, canvas.height, {
+        outlineThickness: Math.round(bridges.outline * sx), lightDirection: bridges.light,
+        shadeWidth: bridges.shade, seed: bridges.seed });
+      image.data.set(result.pixels);
+      ctx.putImageData(image, 0, 0);
+    } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
+  }
   function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
     const result = {}; // Sparse overrides preserve unchecked inheritance.
     for (const key of transforms) {
@@ -30,6 +69,9 @@
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
+    const bridges = cleanBridges(raw?.bridges); // Optional pair-specific bridge brush strokes.
+    if (bridges) result.bridges = bridges;
+    else if (raw?.bridges === null) result.bridges = null; // Explicit removal, so committed strokes aren't re-inherited.
     return result;
   }
   function line(raw, kind, fallback) {
@@ -139,6 +181,10 @@
         if (pair.layerOrder && !shaft.overrides[head]?.layerOrder) {
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].layerOrder = pair.layerOrder; // Missing values from old exports inherit each explicitly authored layer choice.
+        }
+        if (pair.bridges && !Object.hasOwn(raw.overrides?.[head] || {}, 'bridges') && !shaft.overrides[head]?.bridges) {
+          const bridges = cleanBridges(pair.bridges); // Imports predating bridge strokes keep the committed ones.
+          if (bridges) (shaft.overrides[head] ||= {}).bridges = bridges;
         }
       }
     }
@@ -282,6 +328,7 @@
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
+      applyBridges(canvas, frame, values.bridges); // Pair-specific bridge brush, cached with this canvas.
       return canvas;
     });
     canvases.set(cacheKey, task);

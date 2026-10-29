@@ -12,6 +12,11 @@
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
   const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
+  let bridgeView = null; // Last composed preview bitmap and its logical frame, for painting bridge strokes over it.
+  let pendingStrokes = []; // Unapplied bridge strokes, in composed-frame source-pixel coordinates.
+  let pendingKey = ''; // Pair the pending strokes belong to.
+  let bridgePaint = null; // Active bridge brush drag.
+  let bridgeHover = null; // Brush-size cursor over the preview.
   const neutral = { scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep' }; // No global transform fields.
   function options(id, entries) {
     for (const [key, record] of Object.entries(entries)) {
@@ -98,6 +103,8 @@
         canvas.width = composed.width; canvas.height = composed.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(composed, 0, 0);
+        bridgeView = { composed, frame: composed.modularFrame };
+        drawBridgeOverlay();
         const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
@@ -106,6 +113,7 @@
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
         }, null, 2);
       } else {
+        bridgeView = null;
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
         byId('debug').textContent = JSON.stringify({
@@ -168,6 +176,8 @@
   }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
+    const pairKey = byId('shaft').value + '|' + headKey;
+    if (pairKey !== pendingKey) { pendingStrokes = []; pendingKey = pairKey; syncBridgeControls(); }
     mountIndex = Math.min(mountIndex, shaft.mounts.length - 1);
     byId('socket').replaceChildren();
     shaft.mounts.forEach((mount, index) => {
@@ -374,6 +384,108 @@
   byId('reset').onclick = () => {
     data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); // Restores shipped lines and pair corrections.
     mountIndex = 0; render(); msg('Restored committed directed mount data.');
+  };
+  // Pair bridge brush: strokes painted on the assembled preview are stored on this pair and re-filled by
+  // ModularWeapons.compose() (which the game also uses), so the preview shows exactly what gameplay renders.
+  const pairOverride = () => chosenShaft().overrides[byId('head').value] ||= {};
+  const bridgeRadius = () => Number(byId('pair-bridge-radius').value) || 1;
+  const bridgeStatus = text => { byId('pair-bridge-status').textContent = text; };
+  function bridgeSettings() {
+    const light = byId('pair-bridge-light').value; // "x,y" toward the light, or "none".
+    return { outline: Math.max(0, Math.min(32, Math.round(Number(byId('pair-bridge-outline').value) || 0))),
+      light: light === 'none' ? null : light.split(',').map(Number),
+      shade: Math.max(0, Math.min(100, Number(byId('pair-bridge-shade').value) || 0)) / 100, seed: 1 };
+  }
+  function syncBridgeControls() {
+    const bridges = chosenShaft().overrides[byId('head').value]?.bridges; // Show this pair's saved settings.
+    if (!bridges) { bridgeStatus('No bridge on this pair.'); return; }
+    byId('pair-bridge-outline').value = String(bridges.outline);
+    byId('pair-bridge-light').value = bridges.light ? bridges.light.join(',') : 'none';
+    if (!byId('pair-bridge-light').value) byId('pair-bridge-light').value = '0,-1';
+    byId('pair-bridge-shade').value = String(Math.round(bridges.shade * 100));
+    bridgeStatus(bridges.strokes.length + ' applied bridge stroke(s) on this pair.');
+  }
+  function contentRect(canvas) {
+    const rect = canvas.getBoundingClientRect(); // object-fit: contain may letterbox the bitmap inside the element.
+    const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+    return { left: rect.left + (rect.width - canvas.width * scale) / 2, top: rect.top + (rect.height - canvas.height * scale) / 2, scale };
+  }
+  function logicalPoint(event) {
+    const canvas = byId('preview'), box = contentRect(canvas), frame = bridgeView.frame;
+    const bx = (event.clientX - box.left) / box.scale, by = (event.clientY - box.top) / box.scale; // Bitmap pixels.
+    return [Math.round((frame.left + bx * frame.width / canvas.width) * 2) / 2,
+      Math.round((frame.top + by * frame.height / canvas.height) * 2) / 2];
+  }
+  function drawBridgeOverlay() {
+    if (!bridgeView) return;
+    const canvas = byId('preview'), ctx = canvas.getContext('2d'), frame = bridgeView.frame;
+    const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(bridgeView.composed, 0, 0);
+    ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = '#000';
+    for (const stroke of pendingStrokes) {
+      const pts = stroke.points.map(([x, y]) => [(x - frame.left) * sx, (y - frame.top) * sy]);
+      ctx.lineWidth = stroke.r * 2 * sx;
+      ctx.beginPath(); ctx.moveTo(...pts[0]);
+      for (const pt of pts.slice(1)) ctx.lineTo(...pt);
+      if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], stroke.r * sx, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
+    }
+    if (bridgeHover && byId('pair-bridge-on').checked) {
+      ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc((bridgeHover[0] - frame.left) * sx, (bridgeHover[1] - frame.top) * sy, bridgeRadius() * sx, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  const previewCanvas = byId('preview');
+  previewCanvas.addEventListener('pointerdown', event => {
+    if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
+    event.preventDefault();
+    const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
+    pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
+    previewCanvas.setPointerCapture(event.pointerId); drawBridgeOverlay();
+  });
+  previewCanvas.addEventListener('pointermove', event => {
+    if (!byId('pair-bridge-on').checked || !bridgeView) return;
+    bridgeHover = logicalPoint(event);
+    if (bridgePaint?.pointer === event.pointerId) {
+      event.preventDefault();
+      const points = bridgePaint.stroke.points, last = points[points.length - 1]; // Thin stored points; the fill interpolates.
+      if (Math.hypot(bridgeHover[0] - last[0], bridgeHover[1] - last[1]) >= Math.max(1, bridgePaint.stroke.r / 3)) points.push(bridgeHover);
+    }
+    drawBridgeOverlay();
+  });
+  function endBridgePaint(event) {
+    if (bridgePaint?.pointer !== event.pointerId) return;
+    const points = bridgePaint.stroke.points, end = logicalPoint(event), last = points[points.length - 1];
+    if (end[0] !== last[0] || end[1] !== last[1]) points.push(end);
+    bridgePaint = null; drawBridgeOverlay();
+    bridgeStatus(pendingStrokes.length + ' unapplied stroke(s). Apply bridge to fill them.');
+  }
+  previewCanvas.addEventListener('pointerup', endBridgePaint);
+  previewCanvas.addEventListener('pointercancel', endBridgePaint);
+  previewCanvas.addEventListener('pointerleave', () => { if (bridgeHover) { bridgeHover = null; drawBridgeOverlay(); } });
+  byId('pair-bridge-on').onchange = () => {
+    previewCanvas.style.cursor = byId('pair-bridge-on').checked ? 'crosshair' : '';
+    bridgeHover = null; drawBridgeOverlay();
+  };
+  byId('pair-bridge-radius').oninput = () => { byId('pair-bridge-radius-value').textContent = byId('pair-bridge-radius').value; drawBridgeOverlay(); };
+  byId('pair-bridge-apply').onclick = () => {
+    if (!pendingStrokes.length) { bridgeStatus('Paint at least one stroke on the assembled weapon first.'); return; }
+    const pair = pairOverride(), previous = pair.bridges?.strokes || [];
+    pair.bridges = { ...bridgeSettings(), strokes: previous.concat(pendingStrokes) }; // All strokes fill together in one pass.
+    pendingStrokes = []; save(); syncBridgeControls();
+  };
+  byId('pair-bridge-discard').onclick = () => { pendingStrokes = []; drawBridgeOverlay(); syncBridgeControls(); };
+  byId('pair-bridge-undo').onclick = () => {
+    const pair = pairOverride();
+    if (!pair.bridges?.strokes?.length) { bridgeStatus('No applied strokes to remove.'); return; }
+    pair.bridges.strokes.pop();
+    if (!pair.bridges.strokes.length) pair.bridges = null; // Explicit removal survives committed defaults.
+    save(); syncBridgeControls();
+  };
+  byId('pair-bridge-clear').onclick = () => { pairOverride().bridges = null; pendingStrokes = []; save(); syncBridgeControls(); };
+  for (const id of ['pair-bridge-outline', 'pair-bridge-light', 'pair-bridge-shade']) byId(id).onchange = () => {
+    const pair = pairOverride(); // Settings changes re-fill an already applied bridge immediately.
+    if (pair.bridges?.strokes?.length) { Object.assign(pair.bridges, bridgeSettings()); save(); }
   };
   msg('Ready. Drag arrows over head and shaft images to define matching mounting lines.');
   render();

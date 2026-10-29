@@ -5,12 +5,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const window = {};
 const context = vm.createContext({ window, Uint8Array, Uint8ClampedArray, Int8Array, Int32Array, Math });
-const file = 'docs/tools/modular-weapon-editor/sprite-bridge-fill.js';
+const file = 'docs/js/modular-weapon-bridge-fill.js';
 vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
 const { fillBridge, stampLine } = window.ModularWeaponBridgeFill;
 const editorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8');
-assert(/sprite-bridge-fill\.js\?v=[A-Za-z0-9_-]+/.test(editorHtml), 'Editor must load the bridge fill module.');
-assert(editorHtml.indexOf('sprite-bridge-fill.js') < editorHtml.indexOf('sprite-cutter.js'), 'Bridge fill loads before the cutter.');
+assert(/modular-weapon-bridge-fill\.js\?v=[A-Za-z0-9_-]+/.test(editorHtml), 'Editor must load the bridge fill module.');
+assert(editorHtml.indexOf('modular-weapon-bridge-fill.js') < editorHtml.indexOf('sprite-cutter.js'), 'Bridge fill loads before the cutter.');
 
 const W = 60, H = 30;
 const SHADE = [60, 90, 95, 255], LIT = [110, 150, 155, 255], INK = [0, 0, 0, 255];
@@ -127,3 +127,30 @@ stampLine(lonely, W, H, null, { x: 30, y: 2 }, 1);
 assert.throws(() => fillBridge(src, lonely, W, H), /touch metal/);
 assert.throws(() => fillBridge(src, new Uint8Array(W * H), W, H), /Paint over/);
 console.log('modular weapon bridge fill OK');
+
+// Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.
+{
+  const gameHtml = fs.readFileSync('docs/index.html', 'utf8');
+  assert(/js\/modular-weapon-bridge-fill\.js\?v=[A-Za-z0-9_-]+/.test(gameHtml), 'The game loads the bridge fill module.');
+  assert(gameHtml.indexOf('js/modular-weapon-bridge-fill.js') < gameHtml.indexOf('js/modular-weapons.js'), 'Bridge fill loads before the compositor.');
+  const win = { console };
+  const ctx = vm.createContext({ window: win, JSON, Object, Array, Number, Math, String, Map, WeakMap, Promise, Error });
+  for (const path of ['docs/config/modular-weapons.js', 'docs/js/modular-weapons.js']) {
+    vm.runInContext(fs.readFileSync(path, 'utf8'), ctx, { filename: path });
+  }
+  const api = win.ModularWeapons;
+  const cfg = JSON.parse(JSON.stringify(api.getConfig()));
+  const shaftKey = Object.keys(cfg.shafts)[0], headKey = Object.keys(cfg.heads)[0];
+  cfg.shafts[shaftKey].overrides[headKey] = { bridges: {
+    strokes: [{ r: 12, points: [[100, 200], [140, 260], ['bad', 3]] }, { r: 5, points: [] }],
+    outline: 99, light: [0, -1], shade: 0.4, seed: 3 } };
+  const saved = api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges;
+  assert.equal(saved.strokes.length, 1, 'Empty strokes dropped.');
+  assert.equal(JSON.stringify(saved.strokes[0].points), '[[100,200],[140,260]]', 'Non-numeric points dropped.');
+  assert.equal(saved.outline, 32, 'Outline clamped.');
+  assert.equal(JSON.stringify(saved.light), '[0,-1]');
+  assert.equal(api.settings(shaftKey, headKey).bridges.shade, 0.4, 'Settings expose the pair bridges to compose().');
+  cfg.shafts[shaftKey].overrides[headKey] = { bridges: null };
+  assert.equal(api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges, null, 'Explicit removal is kept.');
+}
+console.log('modular weapon pair bridges OK');

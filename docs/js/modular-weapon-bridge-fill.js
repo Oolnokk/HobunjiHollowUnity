@@ -105,8 +105,9 @@
     }
     if (!painted) throw new Error('Paint over the gap with the bridge brush first.');
 
-    // 1. Black rim: painted pixels within `thickness` (8-connected) of empty space outside the stroke or the frame edge.
-    const rimDist = new Int32Array(n).fill(-1);
+    // 1. Black rim: painted pixels within `thickness` (straight-line distance, so diagonal strokes get the same rim as
+    //    straight ones) of empty space outside the stroke or the frame edge.
+    const rimSource = new Int32Array(n).fill(-1); // Nearest stroke pixel touching empty space, for rim pixels only.
     let queue = new Int32Array(n), head = 0, tail = 0;
     for (let p = 0; p < n && thickness; p++) {
       if (!mask[p]) continue;
@@ -118,21 +119,20 @@
         const q = ny * w + nx;
         if (!mask[q] && kind[q] === EMPTY) { touchesEmpty = true; break; }
       }
-      if (touchesEmpty) { rimDist[p] = 1; queue[tail++] = p; }
+      if (touchesEmpty) { rimSource[p] = p; queue[tail++] = p; }
     }
     while (head < tail) {
-      const p = queue[head++], d = rimDist[p];
-      if (d >= thickness) continue;
+      const p = queue[head++], e = rimSource[p], ex = e % w, ey = (e / w) | 0;
       const x = p % w, y = (p / w) | 0;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const q = ny * w + nx;
-        if (mask[q] && rimDist[q] < 0) { rimDist[q] = d + 1; queue[tail++] = q; }
+        if (mask[q] && rimSource[q] < 0 && Math.hypot(nx - ex, ny - ey) < thickness) { rimSource[q] = e; queue[tail++] = q; }
       }
     }
     // Metal (and other-colored material) the stroke painted over is never overwritten; painted metal joins the seeds.
-    const isRim = p => kind[p] <= INK && rimDist[p] > 0 && rimDist[p] <= thickness;
+    const isRim = p => kind[p] <= INK && rimSource[p] >= 0;
     const fillable = new Uint8Array(n); // The hollowed interior (empty space and outline ink) that metal regrows into.
     let fillCount = 0, preserved = 0;
     for (let p = 0; p < n; p++) {
