@@ -11,7 +11,7 @@
   if (window.FarmPlotEditor) return;
 
   const KIND_FOR_BRUSH = { tilled: 'till', trench: 'dig' };
-  const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'blackMustard', 'greenMustard'];
+  const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard'];
   const SLOTS = 3;
   let deps = null;
   let plots = []; // { id, label, kind, tiles: [[c, r]], crop, workers: [npcId], hours: [from, to] }
