@@ -150,7 +150,10 @@
     $('scrub').value = String(percent); $('progressLabel').textContent = percent+'%';
     const message = source.name + ' · ' + percent + '% grown\n' +
       info.branchCount + ' branches · ' + info.floorStrands + ' floor wraps · ' +
-      info.shapeStrands + ' shape wraps · ' + info.shrinkwrapHits + '/' + info.shrinkwrapRays + ' inward shrinkwrap hits';
+      info.shapeStrands + ' shape wraps · ' + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
+      ' inward hits\n' + info.groundedParts.length + ' grounded parts → ' +
+      (info.partCount-info.groundedParts.length) + ' raised parts (' +
+      info.rootTransferCount + ' connecting shoots, depth ' + info.maxPartDepth + ')';
     if (force || message !== lastStatus) { status.textContent = message; lastStatus = message; }
     const details = JSON.stringify({
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,
