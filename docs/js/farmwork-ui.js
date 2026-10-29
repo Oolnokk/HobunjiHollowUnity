@@ -1,47 +1,100 @@
 // Ordinary gameplay Farmwork manager. Uses FarmPlotEditor records + FarmEditor's existing grid access,
-// but never enables the dev terrain painter. The 7x7 tile window is fully controller navigable.
+// but never enables the dev terrain painter. Plots are painted in the world and previewed as individual silhouettes.
 (() => {
   'use strict';
   if (window.FarmworkUI) return;
 
-  const SIZE = 7; // Tile window width/height; keeps gamepad navigation and mobile layout manageable.
+  const SIZE = 7; // Maximum plot footprint in either dimension (the former single-page size).
   let open = false; // Used by the utility wheel, controller panel and farm-world pointer bridge.
-  let originC = 0, originR = 0; // Top-left tile of the scrollable designation grid.
+  let planning = false; // The temporary planning tool owns actions while the settings panel is tucked away.
+  let visualGroup = null, visualScene = null, lastVisualAt = -Infinity;
+  let visualPlots = null, visualTiles = [];
+  let highlightRoots = [];
   let drag = null; // World pointer drag: { pointerId, plotId, adding, changed } to commit exactly once.
   let confirmDeleteId = null; // Two-press remove guard usable with controller A, without a native browser confirm modal.
   const pane = () => document.getElementById('farmworkPanel'); // Existing markup registers with ControllerUiNav via data-ctrl-panel.
   const manager = () => window.FarmPlotEditor; // All edits route through the single persisted family-plot owner.
   const context = () => window.FarmEditor?.farmworkTileAccess?.(); // Farm bounds, house collision and world-pointer projection remain in FarmEditor.
   const esc = value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-  const clamp = (v, max) => Math.max(0, Math.min(Math.max(0, max - SIZE), v)); // Prevent panning the tile window off-map.
-  const plot = () => manager()?.activeFamilyPlot?.(); // Currently selected field or trench, shared with the developer editor.
-  const canOpen = () => !!(window.RomanceSystem?.getSpouse?.()?.npcId && context()?.editable); // Only an existing spouse, on the player's farm.
+  const plot = () => manager()?.activeFamilyPlot?.();
+  const canOpen = () => !!(window.RomanceSystem?.getSpouse?.()?.npcId && context()?.editable);
 
-  function focusTile(c, r) {
-    pane()?.querySelectorAll('[data-fwtile]')?.forEach(button => {
-      if (button.dataset.fwtile === `${c},${r}`) button.focus({ preventScroll: true }); // Retain A-button focus after the grid refresh.
-    });
+  function bounds(p) {
+    if (!p?.tiles?.length) return null;
+    return { c: Math.min(...p.tiles.map(t => t[0])), r: Math.min(...p.tiles.map(t => t[1])),
+      maxC: Math.max(...p.tiles.map(t => t[0])), maxR: Math.max(...p.tiles.map(t => t[1])) };
   }
-  function setOrigin(c, r) {
-    const ctx = context();
-    if (!ctx) return;
-    originC = clamp(Math.floor(c), ctx.cols);
-    originR = clamp(Math.floor(r), ctx.rows);
+  function fits(p, c, r) {
+    const b = bounds(p);
+    return !b || (Math.max(b.maxC, c) - Math.min(b.c, c) < SIZE && Math.max(b.maxR, r) - Math.min(b.r, r) < SIZE);
   }
-  function center(c, r) { setOrigin(c - Math.floor(SIZE / 2), r - Math.floor(SIZE / 2)); }
+  function setPlanning(next) {
+    endDrag();
+    planning = !!next && open && canOpen() && !!plot();
+    if (pane()) pane().style.display = open && !planning ? 'flex' : 'none';
+    const hud = document.getElementById('farmworkToolHud');
+    if (hud) hud.style.display = planning ? 'flex' : 'none';
+    window.WorldActionInputClaims?.clearClaims?.('farmwork-planning');
+    if (planning) {
+      // A menu can consume the release after Done opens it. Retire only our stale presses before re-equipping.
+      for (const press of window.WorldActionInputClaims?.snapshot?.().pressed || []) {
+        if (press.ownerId === 'farmwork-planning') window.WorldActionInputClaims.dispatch(press.actionId, 'cancel');
+      }
+      window.WorldActionInputClaims?.setClaims?.('farmwork-planning', [
+        { actionId: 'action1', label: 'Add tile', priority: 200, onPress: () => applyAimedTile(true) },
+        { actionId: 'action2', label: 'Remove tile', priority: 200, onPress: () => applyAimedTile(false) },
+        { actionId: 'action3', label: 'Done planning', priority: 200, onPress: () => setPlanning(false) },
+      ]);
+      context()?.resumeMouseCameraAfterUi?.();
+      context()?.showToast?.('Planning tool: Action 1 adds · Action 2 removes · Action 3 finishes.', true);
+    } else if (open) {
+      context()?.suspendMouseCameraForUi?.();
+      render();
+      Array.from(pane()?.querySelectorAll('[data-fwplan]') || []).find(button => button.dataset.fwplan === plot()?.id)?.focus?.({ preventScroll: true });
+    }
+    context()?.refreshActions?.();
+    lastVisualAt = -Infinity;
+    return planning;
+  }
+  function editTile(c, r, present, deferSave = false) {
+    const p = plot(), ctx = context();
+    if (!open || !canOpen() || !p) return false;
+    if (present && (!ctx?.canDesignate?.(c, r, p.kind) || !fits(p, c, r))) {
+      ctx?.showToast?.(!fits(p, c, r) ? 'A plot can be at most 7 tiles wide and 7 tiles deep.' : 'Choose an unobstructed farm tile.', false);
+      return false;
+    }
+    const changed = !!manager()?.setFamilyTile?.(p.id, c, r, present, { deferSave });
+    if (changed) lastVisualAt = -Infinity;
+    return changed;
+  }
+  function canAddTile(c, r) {
+    const p = plot();
+    return !!p && !!context()?.canDesignate?.(c, r, p.kind) && fits(p, c, r);
+  }
+  function applyAimedTile(present) {
+    if (!planning) return false;
+    if (!canOpen()) { close(); return false; }
+    const t = context()?.aimTile?.();
+    const changed = !!t && editTile(t.col, t.row, present);
+    if (changed) render();
+    return changed;
+  }
+  function actionButtons() {
+    if (!planning) return null;
+    return [
+      { icon: '+', label: 'Add tile', action: 'farmwork_add', inputAction: 'action1', style: 'primary', allowed: true },
+      { icon: '−', label: 'Remove tile', action: 'farmwork_remove', inputAction: 'action2', style: 'secondary', allowed: true },
+      { icon: '✓', label: 'Done planning', action: 'farmwork_done', inputAction: 'action3', style: 'secondary', allowed: true },
+    ];
+  }
   function enter() {
     if (!canOpen()) return false;
     window.FurniturePlacer?.close?.(); // Disarm any pending furniture placement, even if its picker was already dismissed.
     const first = manager()?.plots?.()[0];
     if (!plot() && first) manager()?.selectFamilyPlot?.(first.id);
-    const current = plot();
-    const middle = context()?.centerTile?.();
-    const anchor = current?.tiles?.[0] || (middle ? [middle.col, middle.row] : [Math.floor(context().cols / 2), Math.floor(context().rows / 2)]);
-    center(anchor[0], anchor[1]);
+    window.PerceptionMode?.setActive?.(false);
     open = true;
-    if (pane()) pane().style.display = 'flex';
-    context()?.suspendMouseCameraForUi?.();
-    render();
+    setPlanning(false);
     return true;
   }
   function endDrag() {
@@ -51,19 +104,22 @@
     if (open) render();
   }
   function close() {
+    if (!open) return true;
     confirmDeleteId = null;
     endDrag();
     open = false;
+    setPlanning(false);
+    clearVisuals();
     if (pane()) pane().style.display = 'none';
     context()?.resumeMouseCameraAfterUi?.();
     return true;
   }
   function toggle() { return open ? close() : enter(); }
   function changePlot(id) {
+    endDrag();
     confirmDeleteId = null;
     manager()?.selectFamilyPlot?.(id);
-    const first = plot()?.tiles?.[0];
-    if (first) center(first[0], first[1]);
+    lastVisualAt = -Infinity;
     render();
   }
   function create(kind) {
@@ -107,26 +163,19 @@
     render();
   }
   function toggleTile(c, r) {
-    const p = plot(), ctx = context();
-    if (!canOpen() || !p) return false;
-    const present = !p.tiles.some(t => t[0] === c && t[1] === r); // Removal stays legal even if an old assignment later became blocked.
-    if (present && !ctx?.canDesignate?.(c, r, p.kind)) return false;
-    if (!manager()?.setFamilyTile?.(p.id, c, r, present)) return false;
-    render(); focusTile(c, r);
-    return true;
+    const p = plot();
+    if (!p) return false;
+    const changed = editTile(c, r, !p.tiles.some(t => t[0] === c && t[1] === r));
+    if (changed) render();
+    return changed;
   }
-  function startWorldPointer(pointerId, x, y) {
+  function startWorldPointer(pointerId, x, y, action = 'action1') {
     if (!open) return false;
     endDrag();
-    const p = plot(), ctx = context();
-    const t = ctx?.screenTile?.(x, y);
-    if (!p || !t || (!ctx.canDesignate(t.col, t.row, p.kind) && !p.tiles.some(v => v[0] === t?.col && v[1] === t?.row))) {
-      drag = { pointerId, plotId: null, adding: false, changed: false }; // Own the matching release too; an invalid touch must not become a world Action 1.
-      ctx?.showToast?.('Choose a plot and an unobstructed farm tile.', false);
-      return true; // Farmwork mode owns world clicks even when invalid; never perform an unrelated game action.
-    }
-    const adding = !p.tiles.some(v => v[0] === t.col && v[1] === t.row);
-    drag = { pointerId, plotId: p.id, adding, changed: false }; // First tile selects add vs erase for the whole touch/mouse stroke.
+    // Settings mode also owns viewport clicks so they cannot perform an unrelated action.
+    if (!planning) { drag = { pointerId, plotId: null, adding: false, changed: false }; return true; }
+    const p = plot();
+    drag = { pointerId, plotId: p?.id, adding: action !== 'action2', changed: false };
     dragTile(pointerId, x, y);
     return true;
   }
@@ -134,9 +183,8 @@
     if (!drag || drag.pointerId !== pointerId) return false;
     const ctx = context(), t = ctx?.screenTile?.(x, y);
     const current = plot(); // Ownership for the entire stroke is locked at pointerdown.
-    const removable = !drag.adding && current?.tiles.some(v => v[0] === t?.col && v[1] === t?.row); // Blocked old tiles may still be cleared.
-    if (t && current?.id === drag.plotId && (removable || ctx?.canDesignate?.(t.col, t.row, current.kind))) {
-      if (manager()?.setFamilyTile?.(drag.plotId, t.col, t.row, drag.adding, { deferSave: true })) drag.changed = true;
+    if (planning && t && current?.id === drag.plotId) {
+      if (editTile(t.col, t.row, drag.adding, true)) drag.changed = true;
     }
     return true;
   }
@@ -149,13 +197,11 @@
     if (!el || !ctx) return;
     const people = manager()?.family?.() || []; // Same spouse/child eligibility list as the developer plot editor.
     const cropOptions = manager()?.cropOptions?.() || [];
-    const selection = el.querySelector('[data-fwgrid]'); // Preserve the last controller tile focus across redraws.
-    const priorFocus = document.activeElement?.dataset?.fwtile || (selection?.contains?.(document.activeElement) ? document.activeElement?.dataset?.fwtile : '');
     const view = el.querySelector('#farmworkContents');
     if (!view) return;
-    let html = `<p class="fw-note">Designate tiles for your family to work; this does not create crops or soil for free. A = select tile, B = close.</p>
+    let html = `<p class="fw-note">White grid: farm tiles. Cyan: selected plot. Violet: other plots and assignable vats. Choose a plot to set workers, or equip its planning tool.</p>
       <div class="fw-actions"><button data-fwnew="till" ${!farmPlots.length ? 'data-ctrl-default' : ''}>🌱 New Field</button><button data-fwnew="dig">🕳️ New Trench</button></div>
-      <div class="fw-plots" data-ctrl-transparent>${farmPlots.map(p => `<button data-fwplot="${esc(p.id)}" ${p.id === chosen?.id ? 'data-ctrl-default' : ''} aria-pressed="${p.id === chosen?.id}">${esc(p.label)} (${p.tiles.length})</button>`).join('')}</div>`;
+      <div class="fw-plots" data-ctrl-transparent>${farmPlots.map(p => `<div class="fw-plot-row"><button data-fwplot="${esc(p.id)}" ${p.id === chosen?.id ? 'data-ctrl-default' : ''} aria-pressed="${p.id === chosen?.id}">${esc(p.label)} (${p.tiles.length})</button><button data-fwplan="${esc(p.id)}" aria-label="Add/remove tiles for ${esc(p.label)}" aria-pressed="${planning && p.id === chosen?.id}">Add/remove tiles</button></div>`).join('')}</div>`;
     if (chosen) {
       html += `<div class="fw-settings" data-ctrl-transparent>
         <label>Plot name<input name="fw-label" data-fwfield="label" value="${esc(chosen.label)}" maxlength="48"></label>
@@ -163,36 +209,114 @@
         ${[0, 1, 2].map(i => `<label>${i ? 'Backup ' + i : 'Primary worker'}<select name="fw-worker${i}" data-fwfield="worker${i}"><option value="">None</option>${people.map(person => `<option value="${esc(person.id)}" ${chosen.workers[i] === person.id ? 'selected' : ''}>${esc(person.name)}</option>`).join('')}</select></label>`).join('')}
         <div class="fw-hours"><label>From<select name="fw-from" data-fwfield="from">${hourOptions(chosen.hours[0])}</select></label><label>Until<select name="fw-to" data-fwfield="to">${hourOptions(chosen.hours[1])}</select></label></div>
       </div>
-      <div class="fw-nav"><button data-fwpage="left" aria-label="Map left 7 tiles">◀</button><button data-fwpage="up" aria-label="Map up 7 tiles">▲</button><span>Tiles C${originC + 1}–${Math.min(ctx.cols, originC + SIZE)} / R${originR + 1}–${Math.min(ctx.rows, originR + SIZE)}</span><button data-fwpage="down" aria-label="Map down 7 tiles">▼</button><button data-fwpage="right" aria-label="Map right 7 tiles">▶</button></div>
-      <div class="fw-grid" data-fwgrid data-ctrl-transparent>${Array.from({ length: SIZE * SIZE }, (_, i) => {
-        const c = originC + (i % SIZE), r = originR + Math.floor(i / SIZE);
-        if (c >= ctx.cols || r >= ctx.rows) return '<span></span>';
-        const selected = chosen.tiles.some(t => t[0] === c && t[1] === r);
-        const usable = selected || ctx.canDesignate(c, r, chosen.kind); // Always permit clearing stale blocked assignments.
-        const other = farmPlots.some(p => p.id !== chosen.id && p.tiles.some(t => t[0] === c && t[1] === r));
-        return `<button data-fwtile="${c},${r}" aria-label="Tile ${c + 1}, ${r + 1}${selected ? ', assigned' : other ? ', other plot' : ''}" aria-pressed="${selected}" ${usable ? '' : 'disabled'} title="Column ${c + 1}, row ${r + 1}">${selected ? '✓' : other ? '•' : '·'}</button>`;
-      }).join('')}</div>
-      <p class="fw-note">Controller: stick or D-pad moves between tiles; A adds/removes them. Page arrows move the map. Touch/mouse can also paint directly on the farm behind this panel. Workers use Farm Storage seeds and follow their schedules.</p>
+      ${footprintHTML(chosen)}
+      <p class="fw-note">Plots start empty. Add/remove tiles equips the planning tool: Action 1 adds, Action 2 removes. Each plot fits within 7 × 7 tiles. Workers use Farm Storage seeds and follow their schedules.</p>
       <button class="fw-delete" data-fwdelete>${confirmDeleteId === chosen.id ? 'Confirm Remove (keeps soil/crops)' : 'Stop Assigning This Plot'}</button>`;
     }
     view.innerHTML = html;
+    if (visualPlots !== farmPlots || visualTiles.length !== farmPlots.length || visualTiles.some((tiles, i) => tiles !== farmPlots[i].tiles)) lastVisualAt = -Infinity;
     view.querySelectorAll('[data-fwnew]').forEach(button => button.addEventListener('click', () => create(button.dataset.fwnew)));
     view.querySelectorAll('[data-fwplot]').forEach(button => button.addEventListener('click', () => changePlot(button.dataset.fwplot)));
     view.querySelectorAll('[data-fwfield]').forEach(select => select.addEventListener('change', () => updateField(select.dataset.fwfield, select.value)));
-    view.querySelectorAll('[data-fwpage]').forEach(button => button.addEventListener('click', () => {
-      const side = button.dataset.fwpage;
-      setOrigin(originC + (side === 'left' ? -SIZE : side === 'right' ? SIZE : 0), originR + (side === 'up' ? -SIZE : side === 'down' ? SIZE : 0));
-      render();
-    }));
-    view.querySelectorAll('[data-fwtile]').forEach(button => button.addEventListener('click', () => {
-      const [c, r] = button.dataset.fwtile.split(',').map(Number);
-      toggleTile(c, r);
+    view.querySelectorAll('[data-fwplan]').forEach(button => button.addEventListener('click', () => {
+      changePlot(button.dataset.fwplan); setPlanning(true);
     }));
     view.querySelector('[data-fwdelete]')?.addEventListener('click', removeCurrent);
-    if (priorFocus) {
-      const target = Array.from(view.querySelectorAll('[data-fwtile]')).find(b => b.dataset.fwtile === priorFocus);
-      target?.focus({ preventScroll: true });
+  }
+  function footprintHTML(chosen) {
+    const b = bounds(chosen);
+    if (!b) return '<p class="fw-empty">No tiles yet — equip Add/remove tiles to draw this plot on the farm.</p>';
+    const width = b.maxC - b.c + 1, height = b.maxR - b.r + 1;
+    // Explicit CSS grid positions preserve empty holes without rendering any excluded tile containers.
+    return `<div class="fw-grid" data-fwgrid role="img" aria-label="${esc(chosen.label)} footprint, ${chosen.tiles.length} tiles, ${width} by ${height}" style="grid-template-columns:repeat(${width},32px);grid-template-rows:repeat(${height},32px)">${chosen.tiles.map(([c, r]) =>
+      `<span class="fw-footprint-tile" data-fwtile="${c},${r}" style="grid-column:${c - b.c + 1};grid-row:${r - b.r + 1}" title="Column ${c + 1}, row ${r + 1}"></span>`).join('')}</div>`;
+  }
+  function clearVisuals() {
+    if (visualGroup) {
+      visualGroup.parent?.remove(visualGroup);
+      visualGroup.traverse(node => { node.geometry?.dispose(); node.material?.dispose(); });
     }
+    visualGroup = visualScene = null;
+    highlightRoots = [];
+    visualPlots = null; visualTiles = [];
+  }
+  function updateVisuals(now) {
+    if (!open) return;
+    if (!canOpen()) { close(); return; }
+    const ctx = context(), T = window.THREE, scene = ctx?.scene;
+    const farmPlots = manager()?.plots?.() || [];
+    const changed = visualPlots !== farmPlots || visualTiles.length !== farmPlots.length || visualTiles.some((tiles, i) => tiles !== farmPlots[i].tiles);
+    if (!T || !scene) return;
+    const sample = (x, z) => (window.FarmSurfaceSample?.farmSurfaceYAtWorld?.(Math.min(ctx.cols - 0.001, Math.max(0.001, x)), Math.min(ctx.rows - 0.001, Math.max(0.001, z))) || 0) + 0.035;
+    if (scene === visualScene && !changed && lastVisualAt !== -Infinity) {
+      if (now - lastVisualAt >= 350) {
+        // Ground work can change soil/trench height. Update existing buffers, never rebuild GPU resources on a timer.
+        visualGroup.traverse(node => {
+          const attr = node.geometry?.attributes?.position;
+          if (!attr) return;
+          for (let i = 0; i < attr.count; i++) attr.setY(i, sample(attr.getX(i) + node.position.x, attr.getZ(i) + node.position.z));
+          attr.needsUpdate = true;
+          node.geometry.computeBoundingSphere();
+        });
+        lastVisualAt = now;
+      }
+      return;
+    }
+    clearVisuals();
+    lastVisualAt = now;
+    visualScene = scene;
+    visualPlots = farmPlots; visualTiles = farmPlots.map(p => p.tiles);
+    visualGroup = new T.Group();
+    visualGroup.name = 'farmwork-ground-planning';
+    scene.add(visualGroup);
+    const positions = [];
+    const vertex = (x, z) => positions.push(x, sample(x, z), z);
+    // A fine ground-following mesh carries a white line core plus a soft halo.
+    // This intentionally uses an untextured shader, rather than the authored PNG-plane pipeline.
+    for (let r = 0; r < ctx.rows; r += 0.5) for (let c = 0; c < ctx.cols; c += 0.5) {
+      vertex(c, r); vertex(c, r + 0.5); vertex(c + 0.5, r);
+      vertex(c + 0.5, r); vertex(c, r + 0.5); vertex(c + 0.5, r + 0.5);
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    const grid = new T.Mesh(geo, new T.ShaderMaterial({
+      vertexShader: 'varying vec2 vGround; void main(){ vGround = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec2 vGround; void main(){
+        vec2 edge = abs(fract(vGround + 0.5) - 0.5);
+        float dist = min(edge.x, edge.y);
+        float core = 1.0 - smoothstep(0.008, 0.022, dist);
+        float halo = exp(-dist * 45.0) * 0.28;
+        float alpha = max(core * 0.85, halo);
+        if(alpha < 0.01) discard;
+        gl_FragColor = vec4(1.0,1.0,1.0,alpha);
+      }`,
+      transparent: true, depthWrite: false, side: T.DoubleSide, toneMapped: false,
+    }));
+    grid.name = 'farmwork-white-grid';
+    grid.renderOrder = 2;
+    visualGroup.add(grid);
+    for (const p of manager()?.plots?.() || []) {
+      const root = new T.Group(); root.name = `farmwork-plot-${p.id}`;
+      visualGroup.add(root);
+      for (const [c, r] of p.tiles) {
+        const geometry = new T.PlaneGeometry(0.92, 0.92, 2, 2);
+        geometry.rotateX(-Math.PI / 2);
+        const attr = geometry.attributes.position;
+        for (let i = 0; i < attr.count; i++) attr.setY(i, sample(c + 0.5 + attr.getX(i), r + 0.5 + attr.getZ(i)));
+        const tile = new T.Mesh(geometry, new T.MeshBasicMaterial({ color: p.id === plot()?.id ? 0x35dcff : 0xb58aff, transparent: true, opacity: 0.16, depthWrite: false, side: T.DoubleSide, toneMapped: false }));
+        tile.position.set(c + 0.5, 0.005, r + 0.5);
+        root.add(tile);
+      }
+      if (p.tiles.length) highlightRoots.push({ root, category: p.id === plot()?.id ? 'farmSelected' : 'farmAssignable' });
+    }
+  }
+  function glowTargets() {
+    const hasChild = window.RomanceFamily?.snapshot?.()?.children?.some(child => child.phase === 'child');
+    const vats = hasChild ? (window.DewVats?.listSqueezingVats?.() || []).filter(vat => {
+      const worker = window.DewVats?.assignedWorkerForVat?.(vat.id);
+      return !worker || worker.external; // Occupied livestock vats cannot receive a family member.
+    }) : [];
+    return [...highlightRoots, ...vats.map(vat => ({ root: vat.promptRoot || vat.root || vat.group || vat.mesh, category: 'farmAssignable' }))];
   }
   function hourOptions(selected) {
     return Array.from({ length: 49 }, (_, i) => {
@@ -200,5 +324,7 @@
       return `<option value="${hour}" ${Number(selected) === hour ? 'selected' : ''}>${String(Math.floor(hour)).padStart(2, '0')}:${i % 2 ? '30' : '00'}</option>`;
     }).join('');
   }
-  window.FarmworkUI = { canOpen, open: enter, close, toggle, isOpen: () => open, render, create, changePlot, toggleTile, startWorldPointer, dragTile, endWorldPointer, _test: { setOrigin, getOrigin: () => [originC, originR] } };
+  window.FarmworkUI = { canOpen, open: enter, close, toggle, isOpen: () => open, isPanelOpen: () => open && !planning, isPlanning: () => planning,
+    render, create, changePlot, toggleTile, setPlanning, applyAimedTile, canAddTile, actionButtons, updateVisuals, glowTargets,
+    startWorldPointer, dragTile, endWorldPointer, _test: { bounds, fits, footprintHTML } };
 })();

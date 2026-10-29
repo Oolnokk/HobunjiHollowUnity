@@ -17353,6 +17353,10 @@
       // backing variables are initialized, so the forward closure reference
       // is safe).
       window.FarmEditor.init({
+        getReticleTile, refreshActionBar,
+        suspendMouseCameraForUi: releaseShoulderSurfPointerLock,
+        resumeMouseCameraAfterUi: requestShoulderSurfPointerLock,
+        getMouseAction: button => getActionForButton('desktop', 'Mouse' + button),
         getGrid: () => grid,
         getCurrentArea: () => currentArea,
         getFarmEditMode: () => farmEditMode,
@@ -19332,6 +19336,11 @@
           else if (activeAction === 'fish_cancel') window.Fishing?.close();
           return;
         }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (activeAction === 'farmwork_done') window.FarmworkUI.setPlanning(false);
+          else window.FarmworkUI.applyAimedTile(activeAction === 'farmwork_add');
+          return;
+        }
         if (window.DevMapFurniture?.isActive?.() && window.DevMapFurniture.handleArchAction(activeAction)) {
           refreshActionBar();
           return;
@@ -19439,10 +19448,6 @@
         if (activeAction === 'npc_offer_gift') {
           window.NpcGifting?.offerGift?.(nearbyNpcWalker);
           refreshActionBar();
-          return;
-        }
-        if (activeAction === 'npc_open_wardrobe') {
-          window.NpcWardrobe?.openWardrobePanel?.(nearbyNpcWalker?.rec?.id);
           return;
         }
         if (activeAction === 'npc_slagothim_trade') {
@@ -19590,7 +19595,7 @@
           const _o = resolveObjActionTarget(activeAction);
           const _res = _o ? _o.onAction(activeAction) : { ok: false, message: 'No object here.' };
           lastActionMessage = _res.message;
-          showToast(_res.message, _res.ok !== false);
+          if (_res.message) showToast(_res.message, _res.ok !== false); // Opening an overlay is not a blank toast notification.
           if (_res.ok !== false && !_res.deferMemberSave) saveMemberWorldData(); // Cave Duskcaps queue their large world save for idle time instead of freezing pickup.
           return;
         }
@@ -24523,6 +24528,15 @@
           clearTargetHighlights();
           return;
         }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          reticleCircleMesh.visible = reticleRingMesh.visible = reticleWavyGroup.visible = false;
+          clearTargetHighlights();
+          reticleMesh.visible = true;
+          reticleMesh.position.set(reticle.col + 0.5, window.FarmSurfaceSample.farmSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.05, reticle.row + 0.5);
+          reticleMesh.material = window.FarmworkUI.canAddTile(reticle.col, reticle.row) ? reticleIntenseMat : reticleBlockedMat;
+          reticleMesh.scale.set(1, 1, 1);
+          return;
+        }
         const surfY   = tileSurfaceYInArea(tile, currentArea) + 0.01
                       + (tile.water > 0.02 ? tile.water * WATER_UNIT + 0.04 : 0);
         const allowed = canUseAction(activeTool, activeAction, reticle.col, reticle.row);
@@ -25154,7 +25168,7 @@
         isShoulderSurfEnabled: () => s_shoulderSurf,
         getActiveCameraMode: () => activeCameraMode,
         shoulderSurfMode: SHOULDER_SURF_MODE,
-        isUiBlockingPointerLock: () => !!(menuOpen || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
+        isUiBlockingPointerLock: () => !!(menuOpen || window.FarmworkUI?.isPanelOpen?.() || window.__mapEditorPanelOpen || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window._desktopSelectionArc?.entryMenuOpen?.()),
       });
       function cursorlessMouseAimRequested() { return window.ShoulderCamPointerLock.cursorlessMouseAimRequested(); }
       function requestShoulderSurfPointerLock() { window.ShoulderCamPointerLock.request(); }
@@ -26044,6 +26058,8 @@
         }
       }
       function computeActionButtonsImpl() {
+        const farmworkActions = window.FarmworkUI?.actionButtons?.();
+        if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
         if (window.SocialActionWheel?.isDancing?.()) return [
           { icon: '♫', label: 'Dancing', action: 'dance_active', style: 'primary', allowed: false },
@@ -26144,21 +26160,6 @@
           const giftOffer = window.NpcGifting?.getNpcGiftOfferAction?.(nearbyNpcWalker);
           if (giftOffer) btns.push(giftOffer);
           if (festivalButton) btns.push(festivalButton);
-          // Wardrobe: only reachable while actually standing in that NPC's
-          // own home interior (currentArea === 'map_i_' + homeId — the same
-          // area-id convention loadBuildingScene/_isBuildingArea use), so
-          // it reads as "go through their things at home" rather than a
-          // button that follows them everywhere.
-          if (nearbyNpcWalker.rec?.homeId && currentArea === 'map_i_' + nearbyNpcWalker.rec.homeId && window.NpcWardrobe) {
-            btns.push({
-              icon: '👗',
-              label: `${nearbyNpcWalker.rec.name || 'Their'}'s Wardrobe`,
-              action: 'npc_open_wardrobe',
-              style: 'secondary',
-              allowed: true,
-              worldInteraction: true,
-            });
-          }
           return btns;
         }
 
@@ -27019,6 +27020,7 @@
           `Voice render timing: ${JSON.stringify(window.AnimalVoiceIndependentPlayback?.debugSnapshot?.().chargeRendering || null)}`,
           `Mobile combat arch aim: ${JSON.stringify(window.__mobileArchCombatAimDebug?.snapshot?.() || { active: false })}`,
           `Mobile autotarget: ${JSON.stringify(window.__hobunjiFurnitureDebug?.meleeAttackAlignmentSnapshot?.() || { ready: false })}`,
+          `Wardrobe furniture: ${JSON.stringify(window.NpcFurnitureWardrobes?.debugSnapshot?.() || { ready: false })}`, // Copied from the in-game Debug Log on mobile; no console required.
           `Arena spawn: ${JSON.stringify(window.DevSpawner?.spawnSnapshot?.() || { ready: false })}`,
           `Player: x${player.x.toFixed(0)} y${player.y.toFixed(0)}`,
           `Player movement/status: ${JSON.stringify(playerMovementDebugSnapshot())}`,
@@ -27513,6 +27515,13 @@
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
+        }
+        if (window.FarmworkUI?.isPlanning?.()) {
+          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork-tool'); return; }
+          if (actionId === 'dodge' || actionId === 'toolSelect') {
+            if (phase === 'press') window.FarmworkUI.setPlanning(false);
+            return;
+          }
         }
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
@@ -28319,7 +28328,7 @@
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
-        return !menuOpen && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.() && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
@@ -28582,7 +28591,7 @@
           // from this handler) as well as ones opened by a held key like
           // 'c' below (which doesn't drag a mouse button, so nothing else
           // stops this handler from firing while it's up).
-          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen) return;
+          if (menuOpen || window._desktopSelectionArc?.entryMenuOpen?.() || window.FurniturePlacer?.isOpen?.() || window.__furniturePlacerPanelOpen || window.FarmworkUI?.isPanelOpen?.()) return;
           if (e.shiftKey) _shiftDragged = true; // disqualifies a subsequent Shift-release from reading as an auto-target tap
           if (rangedAmmoAction2Press.held) window._desktopSelectionArc?.movePointer(e.clientX, e.clientY);
           // While the Pixel Probe is armed, mouse movement should only ever
@@ -28713,6 +28722,7 @@
         worldObjectAt: getWorldObjectAt,
         farmWorldObjectAt: (col, row) => worldObjects.get(col + ',' + row),
         actionButtons: () => computeActionButtons(),
+        wardrobeSnapshot: () => window.NpcFurnitureWardrobes?.debugSnapshot?.() || null, // Existing in-game furniture debugging can inspect which real wardrobe bound the last interaction.
         npcStation: (id) => npcStationsById.get(id),
         npcStationCount: () => npcStationsById.size,
         npcTileWalkable: (area, c, r) => isNpcTileWalkable(area, c, r),
@@ -30239,7 +30249,7 @@
       });
 
       window.NpcWardrobe?.init({
-        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || null, // Canonical record access lets wardrobe restore reach offscreen/deferred NPCs before a walker exists.
+        getNpcRecordById: npcId => scheduledNpcRecords.get(npcId) || npcWalkers.find(walker => walker.rec?.id === npcId)?.rec || window.RomanceFamily?.wardrobeRecordFor?.(npcId) || null, // Child wardrobe remains accessible while their live walker is away.
         getGearInventory: () => gearInventory,
         saveGearInventory,
         showToast,
@@ -30549,6 +30559,21 @@
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
         ],
+        assignWardrobeOwner: (id, npcId) => {
+          const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === 'interior' && currentArea === 'interior'); // Modify the live instance, not the UI's display copy.
+          if (!obj || (obj.key !== 'wardrobe' && obj.key !== 'chest')) return { ok: false, message: 'Select a wardrobe or storage chest inside your house.' };
+          if (npcId && !window.NpcFurnitureWardrobes?.isFamilyOwner?.(npcId)) return { ok: false, message: 'That person is not currently in your family.' };
+          const priorOwner = obj.npcWardrobeFor; // Restores the original binding if persistent layout writing fails.
+          if (npcId) obj.npcWardrobeFor = String(npcId); else delete obj.npcWardrobeFor; // Every linked piece opens the same NPC-keyed wardrobe.
+          const saved = window.FarmEditor.saveFarmLayout(); // The existing farm layout serializes the metadata beside the furniture ID.
+          if (saved === false) {
+            if (priorOwner) obj.npcWardrobeFor = priorOwner; else delete obj.npcWardrobeFor;
+            return { ok: false, message: 'Wardrobe assignment could not be saved.' };
+          }
+          window.FurnitureTableSystem?.invalidateFocus?.();
+          refreshActionBar();
+          return { ok: true, message: npcId ? 'Assigned this furniture to ' + (window.NpcFurnitureWardrobes?.nameForOwner?.(npcId) || npcId) + '.' : 'Wardrobe assignment cleared.' };
+        },
         editFurniturePattern: id => {
           const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea); // Edits the authoritative placed record, including persistent per-instance scale.
           if (obj) window.FurniturePatternSurfaces?.editInstance?.(obj, overrides => {

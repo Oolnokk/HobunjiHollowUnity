@@ -216,4 +216,48 @@ assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
 assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');
 assertRestored('failed mask pass');
 
+// Farmwork uses the exact same mask/composite while keeping Perception speed/info semantics off.
+PM.setActive(false);
+let farmworkOpen = true, visualUpdates = 0;
+const farmPlot = entity({ x: 30, z: 30 }); // Full farm footprints are not limited to Perception's nearby radius.
+const farmVat = entity({ x: 3, z: 2 });
+sandbox.window.FarmworkUI = {
+  isOpen: () => farmworkOpen,
+  close: () => { farmworkOpen = false; },
+  updateVisuals: () => { visualUpdates++; },
+  glowTargets: () => [
+    { root: farmPlot, category: 'farmSelected' },
+    { root: farmVat, category: 'farmAssignable' },
+    { root: offSceneWolf.avatarRef.group, category: 'farmAssignable' },
+  ],
+};
+PM.update(10000);
+assert.equal(visualUpdates, 1);
+assert.equal(PM.isActive(), false);
+assert.equal(PM.speedMultiplier(), 1, 'Farmwork does not inherit Perception movement penalty');
+assert.equal(synced.at(-1), 'cleared', 'Farmwork does not add Perception information lists');
+assert.deepEqual(JSON.parse(JSON.stringify(PM.debugSnapshot().byCategory)), { farmSelected: 1, farmAssignable: 1 });
+assert.notEqual(PM.COLORS.farmSelected, PM.COLORS.friendly);
+assert.notEqual(PM.COLORS.farmAssignable, PM.COLORS.interact);
+renderer.failMask = false;
+renderer.passes = [];
+const farmMaterial = farmPlot.children[0].material;
+renderer.render = function(renderScene) {
+  if (renderScene === scene) {
+    assert.equal(farmPlot.children[0].material.args[0].color, PM.COLORS.farmSelected);
+    assert.equal(farmVat.children[0].material.args[0].color, PM.COLORS.farmAssignable);
+  }
+  this.passes.push(renderScene === scene ? 'mask' : 'composite');
+};
+PM.renderOverlay(renderer, scene, camera);
+assert.deepEqual(renderer.passes, ['mask', 'composite'], 'Farmwork renders through the existing glow pipeline');
+assert.equal(farmPlot.children[0].material, farmMaterial);
+PM.setActive(true);
+assert.equal(farmworkOpen, false, 'turning Perception on closes Farmwork first');
+PM.setActive(false);
+PM.update(11000);
+renderer.passes = [];
+PM.renderOverlay(renderer, scene, camera);
+assert.equal(renderer.passes.length, 0, 'closed modes leave no stale highlight pass');
+
 console.log('perception mode: ok');
