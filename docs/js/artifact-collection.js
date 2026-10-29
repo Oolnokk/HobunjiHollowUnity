@@ -85,11 +85,12 @@
     refreshDisplays();
     deps.showToast?.(`Donated ${ARTIFACTS[key].label}. Artifact Collection: ${value()}${newlyUnlocked.length ? ' · ' + newlyUnlocked.map(u => u.label).join(', ') + ' unlocked!' : ''}`, true);
     window.HarlyaoRelics?.render?.();
-    if (newlyUnlocked.some(entry => entry.id === 'base') && !window.DelversGuild?.canEnchant?.()) {
-      deps.showToast?.('Garanki wishes to discuss a private matter in his tent. Visit him to learn more.', true); // Enchanting consent now belongs to the trust cutscene.
-    } else if (newlyUnlocked.length) {
-      window.DialogueContent?.queueConversationTree?.('garanki_gabu', unlockDialogue());
+    if (newlyUnlocked.length) {
+      window.DialogueContent?.queueConversationTree?.('garanki_gabu', unlockDialogue()); // Preserve every existing milestone explanation; the fourth now invites a private trust meeting.
       deps.showUnlockDialogue?.();
+      if (newlyUnlocked.some(entry => entry.id === 'base') && !window.DelversGuild?.canEnchant?.()) {
+        deps.showToast?.('Garanki wants to discuss a private matter in his tent before offering enchanting.', true);
+      }
     }
     return { ok: true, value: value(), unlocked: newlyUnlocked.map(u => u.id) };
   }
