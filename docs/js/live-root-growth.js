@@ -262,7 +262,8 @@
     return { nodes: chosen, derivedFromWrap: !!candidates.length, candidateCount: candidates.length };
   }
 
-  function sampledTargetPoints(THREE, target, growth, count, random, parent, interior = false, selectedGrowths = null) {
+  function sampledTargetPoints(THREE, target, growth, count, random, parent,
+    interior = false, selectedGrowths = null, selectedSourceMeshes = null) {
     const endpoints = Array.isArray(growth.userData?.surfaceGrowthEndpoints) ? growth.userData.surfaceGrowthEndpoints : [];
     const points = []; // Inward-shrinkwrapped geometry replaces the old exterior boundary endpoints.
     target.updateWorldMatrix(true, true);
@@ -281,22 +282,26 @@
         points.push(toParent(mesh.localToWorld(center)));
       }
     }
-    if (!points.length) for (const entry of endpoints) for (const key of ['start', 'end']) {
+    if (!points.length && !selectedGrowths) for (const entry of endpoints) for (const key of ['start', 'end']) {
       const coords = entry?.[key];
       if (!Array.isArray(coords) || coords.length < 3 || !coords.slice(0, 3).every(Number.isFinite)) continue;
       points.push(toParent(target.localToWorld(new THREE.Vector3(...coords))));
     }
     const candidates = []; // Fallback mesh vertices support imported GLBs without recognized perimeter loops.
-    if (!points.length) target.traverse(mesh => {
-      if (!mesh.isMesh || mesh.userData?.surfaceFoliage || mesh.userData?.surfaceFoliageGuide) return;
-      const attr = mesh.geometry?.getAttribute?.('position');
-      if (!attr) return;
-      const stride = Math.max(1, Math.ceil(attr.count / 180));
-      for (let i = 0; i < attr.count; i += stride) {
-        const v = new THREE.Vector3().fromBufferAttribute(attr, i);
-        if (Number.isFinite(v.x + v.y + v.z)) candidates.push(toParent(mesh.localToWorld(v)));
-      }
-    });
+    if (!points.length) {
+      const appendCandidates=mesh=>{
+        if (!mesh.isMesh || mesh.userData?.surfaceFoliage || mesh.userData?.surfaceFoliageGuide) return;
+        const attr = mesh.geometry?.getAttribute?.('position');
+        if (!attr) return;
+        const stride = Math.max(1, Math.ceil(attr.count / 180));
+        for (let i = 0; i < attr.count; i += stride) {
+          const v = new THREE.Vector3().fromBufferAttribute(attr, i);
+          if (Number.isFinite(v.x + v.y + v.z)) candidates.push(toParent(mesh.localToWorld(v)));
+        }
+      };
+      if (selectedSourceMeshes) selectedSourceMeshes.forEach(appendCandidates);
+      else target.traverse(appendCandidates);
+    } // Never fall back to a floating tabletop just because grounded wraps produced no strands.
     const source = points.length ? points : candidates;
     if (!source.length) throw new Error('Imported furniture has no usable triangles or surface endpoints.');
     const chosen = []; // Round-robin with seeded jitter spreads branches across the hidden target.
@@ -411,9 +416,12 @@
     // A per-mesh plan keeps elevated tabletop/overhang triangles out of the
     // initial roots. Each part retains the same six inward shrinkwrap passes.
     const partGrowths=partPlan.map(part=>{
+      const extent=part.bounds.max.clone().sub(part.bounds.min);
+      const minimumThickness=Math.max(.01,Math.min(extent.x,extent.y,extent.z));
+      const partRadius=Math.max(.005,Math.min(recipe.radius,minimumThickness*.42));
       const wrapped=buildDenseWrap(THREE, foliage, target, {
         ...growthOptions, seed:recipe.seed+':part-'+part.index,
-        strandLimit:partWrapLimit,count:partWrapLimit,
+        radius:partRadius, strandLimit:partWrapLimit,count:partWrapLimit,
         target:'all', targetMeshId:part.mesh.uuid, length:recipe.targetLength,
         shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
       },recipe.targetDensity,(pass,passes)=>({
@@ -431,8 +439,10 @@
     targetGrowth.userData.densityPasses=partGrowths[0]?.userData?.densityPasses||1;
     target.add(targetGrowth);
     const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
-    const groundGrowth=partPlan.filter(part=>part.grounded).map(part=>partGrowths[part.index]);
-    const targets=sampledTargetPoints(THREE,target,targetGrowth,recipe.branchCount,random,group,true,groundGrowth);
+    const groundedPartPlan=partPlan.filter(part=>part.grounded);
+    const groundGrowth=groundedPartPlan.map(part=>partGrowths[part.index]);
+    const targets=sampledTargetPoints(THREE,target,targetGrowth,recipe.branchCount,random,group,
+      true,groundGrowth,groundedPartPlan.map(part=>part.mesh));
     const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random);
     const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
     const branchMaterial = branchSourceMaterial?.clone?.() ||
