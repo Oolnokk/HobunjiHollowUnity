@@ -63,13 +63,10 @@
   }
   function bindInventoryDeps(deps) {
     inventoryDeps = deps; // Used for physical Stone/Key-Stone definitions and canonical save calls.
-    registerItems();
-    restoreMembershipItem();
-    syncQuest();
+    registerItems(); // Do not write the player's save while game.js may still be restoring their inventory.
   }
   function bindQuestDeps(deps) {
-    questDeps = deps; // Used to mutate the exact live questProgress object TasksPanel renders.
-    syncQuest();
+    questDeps = deps; // Used to mutate the exact live questProgress object TasksPanel renders; TasksPanel.render/PlayerReady refresh the quest later.
   }
   function questStore() {
     const live = questDeps?.getQuestProgress?.();
@@ -130,7 +127,7 @@
   }
   function onInvitationComplete() {
     if (!invitationReady()) return !!story().invited;
-    setStory({ invited: true }); // A completed doorstep conversation is never replayed.
+    if (!setStory({ invited: true })) return false; // Keep the visitor pending if portable save persistence failed.
     log("Garanki invited the player to his camp.");
     return true;
   }
