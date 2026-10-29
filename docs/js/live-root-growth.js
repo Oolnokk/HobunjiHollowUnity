@@ -157,7 +157,7 @@
 
   // Find an actual rooted strand near each piece-to-piece connection. A
   // connecting shoot is animated BEFORE the newly reached part can fill in.
-  function nearestStrandPoint(THREE, growth, destination) {
+  function nearestStrandPoint(THREE, growth, destination, worldParent) {
     let nearest=null,dist=Infinity;
     for(const mesh of growthMeshes(growth)){
       const attr=mesh.geometry.getAttribute('position'),step=Math.max(6,Math.floor(attr.count/1800/6)*6);
@@ -165,6 +165,8 @@
         const p=new THREE.Vector3();
         for(let j=0;j<5;j++)p.add(new THREE.Vector3().fromBufferAttribute(attr,i+j));
         p.multiplyScalar(.2);
+        mesh.localToWorld(p); // Wrapped meshes are in target-local coordinates; bridge controls live in root-group space.
+        worldParent.worldToLocal(p);
         const d=p.distanceToSquared(destination);
         if(d<dist){dist=d;nearest=p;}
       }
@@ -421,6 +423,7 @@
       targetGrowth.userData.surfaceGrowthEndpoints.push(...(wrapped.userData.surfaceGrowthEndpoints||[]));
       return wrapped;
     });
+    targetGrowth.userData.densityPasses=partGrowths[0]?.userData?.densityPasses||1;
     target.add(targetGrowth);
     const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
     const groundGrowth=partPlan.filter(part=>part.grounded).map(part=>partGrowths[part.index]);
@@ -448,13 +451,14 @@
       mesh.userData.fullDrawCount=mesh.geometry.index?
         mesh.geometry.index.count:mesh.geometry.attributes.position.count;
     }
+    group.updateWorldMatrix(true,true);
     const connectors=[]; // Only from an already rooted part; never directly to a tabletop or arch beam.
     for(const part of partPlan){
       if(part.parent===null)continue;
       const parentPart=partPlan[part.parent];
       const targetCenter=part.bounds.getCenter(new THREE.Vector3());
-      const from=nearestStrandPoint(THREE,partGrowths[parentPart.index],targetCenter);
-      const end=nearestStrandPoint(THREE,partGrowths[part.index],from);
+      const from=nearestStrandPoint(THREE,partGrowths[parentPart.index],targetCenter,group);
+      const end=nearestStrandPoint(THREE,partGrowths[part.index],from,group);
       const connector=makeBranch(THREE,from,end,branches.length+connectors.length,
         recipe,random,branchMaterial);
       connector.name='Root transfer: '+parentPart.label+' → '+part.label;
