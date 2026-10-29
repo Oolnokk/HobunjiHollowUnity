@@ -52,14 +52,14 @@ close(Math.hypot(fitVector(pAcross).x, fitVector(pAcross).y), 50, 'Diagonal tang
 close(diagonalFit.a * diagonalHead.end.x + diagonalFit.c * diagonalHead.end.y + diagonalFit.e, diagonalShaft.end.x, 'Diagonal arrowhead endpoint x');
 close(diagonalFit.b * diagonalHead.end.x + diagonalFit.d * diagonalHead.end.y + diagonalFit.f, diagonalShaft.end.y, 'Diagonal arrowhead endpoint y');
 assert.equal(cfg.heads['pickshovel-scoop'].mount.type, 'blade', 'Shovel bowl must take a tang, not a pole through its bowl.');
-assert.equal(cfg.heads['pick-shovel-pick'].mount.type, 'weight', 'Transverse pickaxe head retains its eye.');
+assert.equal(cfg.heads['pick-shovel-pick'].mount.type, 'blade', 'Pick head was re-authored as a tanged blade in the editor.');
 assert.equal(cfg.heads.hoe.mount.type, 'weight', 'Transverse hoe retains the existing eye fitting.');
 assert(!api.isDisallowed('warhammer', 'pickshovel-scoop'), 'Warhammer accepts tang-mounted scoop via the new perpendicular companion.');
 assert(!api.isDisallowed('dagger', 'pickshovel-scoop'), 'Tang haft can accept the shovel scoop.');
 const shovelHaft = cfg.shafts['pick-shovel']; // Original double-ended tool has different attachment hardware on each end.
 assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'eye').length, 1);
 assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'tang').length, 2, 'Mixed haft keeps original scoop tang and gains companion at the pick eye.');
-assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pick-shovel-pick']).length, 1, 'Pick mounts on eye end only.');
+assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pick-shovel-pick']).length, 2, 'Pick head is a tanged blade now, so it mounts on both tang ends.');
 assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pickshovel-scoop']).length, 2, 'Both original and companion tang locations accept tang heads.');
 assert.equal(api.isDisallowed('pick-shovel', 'pickshovel-scoop'), true, 'Existing original-pair restrictions remain explicit.');
 

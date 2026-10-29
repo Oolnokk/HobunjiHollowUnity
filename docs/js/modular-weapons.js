@@ -20,6 +20,150 @@
   function point(raw) {
     return { x: finite(raw?.x, 225, 0, 450), y: finite(raw?.y, 602, 0, 1204) };
   }
+  // Junction pieces: small metal sprites (assets/toolsprites/modular_pieces/weaponjunction_<name>.png) placed between a
+  // head and haft to bridge them at any angle. Placed centred on (x, y) in composed-frame source pixels.
+  const JUNCTIONS = ['band', 'block', 'sphere']; // Bundled pieces; the editor can discover later uploads.
+  const junctionPath = name => 'assets/toolsprites/modular_pieces/weaponjunction_' + name + '.png';
+  function cleanJunction(raw) {
+    if (!/^[a-z0-9_-]{1,40}$/i.test(raw.junction)) return null;
+    return { junction: raw.junction, x: finite(raw.x, 225, -2400, 2850), y: finite(raw.y, 602, -2400, 3604),
+      rotation: finite(raw.rotation, 0, -360, 360), scale: finite(raw.scale, 1, 0.1, 8),
+      ...(raw.behind === true ? { behind: true } : {}) };
+  }
+  function drawJunction(ctx, image, piece) { // ctx already maps source pixels; draws the piece centred and rotated.
+    ctx.save();
+    if (piece.behind) ctx.globalCompositeOperation = 'destination-over'; // Slips under existing pixels.
+    ctx.translate(piece.x, piece.y); ctx.rotate(piece.rotation * Math.PI / 180); ctx.scale(piece.scale, piece.scale);
+    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+    ctx.restore();
+  }
+  function cleanBox(raw) {
+    const box = { x0: finite(raw?.x0, 0, -2400, 2850), y0: finite(raw?.y0, 0, -2400, 3604), x1: finite(raw?.x1, 0, -2400, 2850), y1: finite(raw?.y1, 0, -2400, 3604) };
+    return raw && box.x1 - box.x0 >= 4 && box.y1 - box.y0 >= 4 ? box : null;
+  }
+  // One validated bridge-brush step. A recipe step ({recipe, box}) places a saved recipe into a box; recipes
+  // themselves hold plain steps only (allowRecipe false), so they can never nest.
+  function cleanOp(stroke, allowRecipe = true) {
+    return typeof stroke?.recipe === 'string' ? (allowRecipe && /^[a-z0-9_-]{1,40}$/i.test(stroke.recipe) && cleanBox(stroke.box)
+        ? { recipe: stroke.recipe, box: cleanBox(stroke.box), ...(stroke.uniform === true ? { uniform: true } : {}), ...(stroke.flipX === true ? { flipX: true } : {}) } : null)
+      : typeof stroke?.junction === 'string' ? cleanJunction(stroke)
+      : stroke?.revertPoint === true ? { revertPoint: true } // Marks what the revert brush eases back to.
+      : stroke?.even === true ? { even: true, amount: finite(stroke.amount, 0.6, 0, 1) } // Whole-weapon outline wobble averaging.
+      : stroke?.style === true ? { style: true, amount: finite(stroke.amount, 0.6, 0, 1), pool: finite(stroke.pool, 0, 0, 2000) } // Clean up to style.
+      : stroke?.clean === true ? { clean: true, smoothing: finite(stroke.smoothing, 2, 0, 12), speck: finite(stroke.speck, 40, 0, 2000) } // Whole-weapon clean-up.
+      : stroke?.shading === true ? { shading: true, tolerance: finite(stroke.tolerance, 0.2, 0, 0.5), pool: Math.round(finite(stroke.pool, 5, 1, 32)) }
+      : stroke?.tool !== undefined && !['revert', 'plow', 'puff', 'clean'].includes(stroke.tool) ? null // Unknown tools are dropped.
+      : ({
+      r: finite(stroke?.r, 16, 1, 160),
+      ...(stroke?.closed === true ? { closed: true } : {}), // Auto-bridge polygons.
+      ...(stroke?.smudge === true ? { smudge: true } : {}), // Metal smudge strokes, replayed in order.
+      ...(['revert', 'plow', 'puff', 'clean'].includes(stroke?.tool) ? { tool: stroke.tool, strength: finite(stroke.strength, 0.5, 0, 1),
+        seed: Math.round(finite(stroke.seed, 1, 0, 2147483647)) } : {}), // Other smudge-family tools.
+      ...(stroke?.tool === 'clean' ? { smoothing: finite(stroke.smoothing, 2, 0, 12), speck: finite(stroke.speck, 40, 0, 2000) } : {}),
+      points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
+        .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
+        .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
+    });
+  }
+  const validOp = stroke => stroke && (stroke.recipe || stroke.junction || stroke.shading || stroke.revertPoint || stroke.clean || stroke.even || stroke.style || stroke.points?.length);
+  // Saved recipes: named lists of plain bridge-brush steps made inside a box, plus (optionally) the haft mount the
+  // box was made around (anchor) so it can be placed at the same spot on other pairs automatically.
+  function cleanRecipes(raw) {
+    const out = {};
+    for (const [name, recipe] of Object.entries(raw && typeof raw === 'object' ? raw : {}).slice(0, 64)) {
+      const box = cleanBox(recipe?.box);
+      if (!/^[a-z0-9_-]{1,40}$/i.test(name) || !box) continue;
+      const ops = (Array.isArray(recipe.ops) ? recipe.ops : []).slice(0, 512).map(op => cleanOp(op, false)).filter(validOp);
+      if (!ops.length) continue;
+      const m = recipe.anchor?.mount, mount = m && [m.x, m.y, m.ax, m.ay, m.len].every(Number.isFinite) && m.len > 0
+        ? { x: finite(m.x, 0, -2400, 2850), y: finite(m.y, 0, -2400, 3604), ax: finite(m.ax, 1, -1, 1), ay: finite(m.ay, 0, -1, 1), len: finite(m.len, 1, 1, 4000) } : null;
+      out[name] = { ...(typeof recipe.label === 'string' ? { label: recipe.label.slice(0, 60) } : {}), box, ops,
+        ...(mount ? { anchor: { rank: Math.round(finite(recipe.anchor.rank, 0, 0, 16)), count: Math.round(finite(recipe.anchor.count, 1, 1, 16)), mount } } : {}) };
+    }
+    return out;
+  }
+  // The pair's steps with recipe boxes expanded in place: each is the recipe's steps re-mapped into the box.
+  function expandOps(strokes) {
+    const fill = global.ModularWeaponBridgeFill;
+    return strokes.flatMap(op => {
+      if (!op.recipe) return [op];
+      const recipe = config.recipes?.[op.recipe];
+      return recipe && fill?.mapOps ? fill.mapOps(recipe.ops, recipe.box, op.box, { uniform: op.uniform, flipX: op.flipX }) : [];
+    });
+  }
+  function cleanBridges(raw) {
+    // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
+    if (!raw || !Array.isArray(raw.strokes)) return null;
+    const strokes = raw.strokes.slice(0, 512).map(stroke => cleanOp(stroke)).filter(validOp);
+    if (!strokes.length) return null;
+    const light = raw.light === null ? null : Array.isArray(raw.light) && raw.light.length === 2
+      ? [finite(raw.light[0], 0, -1, 1), finite(raw.light[1], -1, -1, 1)] : [0, -1];
+    return { strokes, outline: Math.round(finite(raw.outline, 10, 0, 32)), light,
+      shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
+  }
+  function applyBridges(canvas, frame, bridges, junctionImages = {}) {
+    // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
+    const fill = global.ModularWeaponBridgeFill;
+    if (!fill || !bridges?.strokes?.length) return;
+    const ops = expandOps(bridges.strokes); // Recipe boxes become their re-mapped steps.
+    if (!ops.length) return;
+    const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
+    // Strokes replay in the order they were made: each run of bridge strokes fills together, each smudge stroke
+    // moves metal and rebuilds the outline on its own.
+    let pending = [];
+    const flush = () => {
+      if (!pending.length) return;
+      const mask = new Uint8Array(canvas.width * canvas.height);
+      for (const stroke of pending) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+      pending = [];
+      try {
+        const result = fill.fillBridge(image.data, mask, canvas.width, canvas.height, {
+          outlineThickness: Math.round(bridges.outline * sx), lightDirection: bridges.light,
+          shadeWidth: bridges.shade, seed: bridges.seed });
+        image.data.set(result.pixels);
+      } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
+    };
+    let reference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
+    const base = ops.some(op => op.clean || op.even || op.style) ? new Uint8ClampedArray(image.data) : null; // Before any brush work.
+    for (const stroke of ops) {
+      if (stroke.shading) { flush(); fill.separateShading(image.data, canvas.width, canvas.height, stroke); continue; }
+      if (stroke.revertPoint) { flush(); reference = new Uint8ClampedArray(image.data); continue; }
+      if (stroke.even || stroke.style) { // Whole-weapon operations on everything brush work has changed.
+        flush();
+        const worked = fill.changedRegion(image.data, base);
+        if (!worked) continue;
+        if (stroke.even) fill.evenOutline(image.data, canvas.width, canvas.height, worked, { amount: stroke.amount });
+        else fill.styleCleanup(image.data, canvas.width, canvas.height, worked, { amount: stroke.amount, pool: stroke.pool * sx * sx });
+        continue;
+      }
+      if (stroke.clean) {
+        flush();
+        const worked = fill.changedRegion(image.data, base); // Only where brush work changed the weapon.
+        if (worked) fill.cleanOutline(image.data, canvas.width, canvas.height, worked, { smoothing: stroke.smoothing * sx, speck: stroke.speck * sx * sx });
+        continue;
+      }
+      if (stroke.junction) {
+        flush();
+        const piece = junctionImages[stroke.junction];
+        if (!piece) continue; // Missing upload: skip this piece, keep everything else.
+        ctx.putImageData(image, 0, 0);
+        ctx.save(); ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+        drawJunction(ctx, piece, stroke); ctx.restore();
+        image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        continue;
+      }
+      if (!stroke.smudge && !stroke.tool) { pending.push(stroke); continue; }
+      flush();
+      if (!reference) reference = new Uint8ClampedArray(image.data);
+      fill.toolStroke(image.data, canvas.width, canvas.height, stroke, toPixel, sx, { reference });
+    }
+    flush();
+    if (global.ModularWeaponsKeepReference) canvas.modularReference = reference; // Editor only: live revert previews.
+    ctx.putImageData(image, 0, 0);
+  }
   function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
     const result = {}; // Sparse overrides preserve unchecked inheritance.
     for (const key of transforms) {
@@ -30,6 +174,9 @@
     if (raw?.layerOrder === 'haft-over-head' || raw?.layerOrder === 'head-over-haft') result.layerOrder = raw.layerOrder; // Pair-specific painter order, validated against the two supported options.
     if (raw?.animation === 'thrust' || raw?.animation === 'sweep') result.animation = raw.animation;
     else if (!partial) result.animation = fallbackAnimation;
+    const bridges = cleanBridges(raw?.bridges); // Optional pair-specific bridge brush strokes.
+    if (bridges) result.bridges = bridges;
+    else if (raw?.bridges === null) result.bridges = null; // Explicit removal, so committed strokes aren't re-inherited.
     return result;
   }
   function line(raw, kind, fallback) {
@@ -140,8 +287,13 @@
           if (!shaft.overrides[head]) shaft.overrides[head] = {};
           shaft.overrides[head].layerOrder = pair.layerOrder; // Missing values from old exports inherit each explicitly authored layer choice.
         }
+        if (pair.bridges && !Object.hasOwn(raw.overrides?.[head] || {}, 'bridges') && !shaft.overrides[head]?.bridges) {
+          const bridges = cleanBridges(pair.bridges); // Imports predating bridge strokes keep the committed ones.
+          if (bridges) (shaft.overrides[head] ||= {}).bridges = bridges;
+        }
       }
     }
+    next.recipes = cleanRecipes(Object.hasOwn(incoming, 'recipes') ? incoming.recipes : reference.recipes);
     config = next;
     revision++;
     canvases.clear();
@@ -252,7 +404,10 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
-    const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base)]).then(([shaftImage, headImage]) => {
+    const pieces = [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
+      () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
+    const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
       const frame = compositionFrame(shaft, head, visibleBounds(headImage), values); // Expand to contain every rotated, scaled and translated head.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
@@ -282,6 +437,7 @@
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
+      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList)); // Pair-specific brush work, cached with this canvas.
       return canvas;
     });
     canvases.set(cacheKey, task);
@@ -328,5 +484,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
+    JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

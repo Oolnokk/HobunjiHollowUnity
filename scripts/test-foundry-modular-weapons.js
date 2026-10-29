@@ -64,7 +64,8 @@ for (const head of ['hatchet', 'warhammer', 'work-hammer']) {
   assert.equal(api.settings('fishing-spear', head).animation, 'sweep', 'Older pair animation survives even when newly incompatible.');
 }
 assert.equal(api.isDisallowed('fishing-spear', 'war-cleaver'), false, 'A tang on the haft accepts another blade.');
-for (const head of ['dagger', 'dagger-sword', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) assert.equal(api.isDisallowed('bshuakauitl', head), true);
+for (const head of ['dagger', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) assert.equal(api.isDisallowed('bshuakauitl', head), true);
+assert.equal(api.isDisallowed('bshuakauitl', 'dagger-sword'), false, 'Its authored tang mounts accept the dagger-sword (dressed by recipe boxes).');
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 const spearHammer = api.itemKey('fishing-spear', 'warhammer', 'nativeCopper'); // A sweeping head exception retains the spear's two-hand grip authority.
 assert.equal(defs[spearHammer].animStyle, 'sweep');

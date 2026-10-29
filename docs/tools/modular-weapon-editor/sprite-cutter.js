@@ -92,12 +92,24 @@
   let pixels = null; // Current editable RGBA frame, exported without the selection outline.
   let original = null; // Unmodified loaded frame used by Reset.
   let history = []; // RGBA snapshots used by Undo.
+  let future = []; // RGBA snapshots used by Redo; cleared by any new edit.
   let path = []; // Lasso vertices in original 450 x 1204 coordinates.
   let activePointer = null; // The one touch/mouse pointer currently drawing a lasso.
   let source = null; // Path/filename shown by mobile diagnostics.
   let sourceSize = null; // Native dimensions, to warn when game-frame normalization is needed.
   let renderPending = false; // RequestAnimationFrame coalesces move events while dragging.
   let loadSerial = 0; // Discard results of earlier asynchronous sprite loads.
+  let brushMask = new Uint8Array(FRAME.width * FRAME.height); // Bridge brush paint, one byte per pixel; never exported directly.
+  let brushPainted = false; // Skip mask compositing when nothing is painted.
+  let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
+  let hoverPoint = null; // Brush-size cursor preview position.
+  let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
+  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill), 'junction', or a smudge-family tool.
+  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff', 'clean']; // Rework metal; the outline is rebuilt on release.
+  const cleanSettings = () => ({ smoothing: Number(byId('cut-clean-smoothing').value), speck: Number(byId('cut-clean-speck').value) });
+  let smudge = null; // Active smudge-family drag: { stepper, last, tool }.
+  let smudgeReference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
+  const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
   function status(text) { byId('cut-status').textContent = text; }
   function updateOutputName() {
@@ -121,7 +133,7 @@
   function diagnostics() {
     byId('cut-debug').textContent = JSON.stringify({
       source, sourceSize, workingFrame: FRAME, selectedPoints: path.length,
-      remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length,
+      remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length, redoDepth: future.length,
       outlineThickness: Number(byId('cut-outline-thickness').value), // Last requested black-border radius.
       alphaThreshold: Number(byId('cut-min-alpha').value), // Same cutoff for outline and exported PNG.
       uploadedPart: byId('cut-uploaded').value, uploadedPartCount: byId('cut-uploaded').querySelectorAll('option').length, // Mobile diagnostics for current repo-asset browsing.
@@ -131,7 +143,24 @@
   function renderNow() {
     renderPending = false;
     ctx.clearRect(0, 0, FRAME.width, FRAME.height);
-    if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
+    if (pixels && brushPainted) {
+      if (!viewBuffer) viewBuffer = new Uint8ClampedArray(pixels.length);
+      viewBuffer.set(pixels);
+      for (let p = 0; p < brushMask.length; p++) if (brushMask[p]) {
+        const o = p * 4; viewBuffer[o] = viewBuffer[o + 1] = viewBuffer[o + 2] = 0; viewBuffer[o + 3] = 255;
+      }
+      ctx.putImageData(new ImageData(viewBuffer, FRAME.width, FRAME.height), 0, 0);
+    } else if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
+    if (hoverPoint && tool() === 'junction') global.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(hoverPoint.x, hoverPoint.y));
+    else if (hoverPoint && tool() !== 'lasso') {
+      ctx.save();
+      ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
+      if (tool() === 'plow') { // The blade: 2r long across the drag direction.
+        const r = brushRadius(), depth = Math.max(2, Math.round(r / 4));
+        ctx.translate(hoverPoint.x, hoverPoint.y); ctx.rotate(plowAngle); ctx.strokeRect(-depth / 2, -r, depth, 2 * r);
+      } else { ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke(); }
+      ctx.restore();
+    }
     if (path.length) {
       ctx.save();
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 3;
@@ -148,9 +177,12 @@
     renderPending = true;
     requestAnimationFrame(renderNow);
   }
-  function pushUndo() {
+  function historyButtons() { byId('cut-undo').disabled = !history.length; byId('cut-redo').disabled = !future.length; }
+  function pushUndo(kind = '') {
+    if (kind !== 'smudge') smudgeReference = null; // Any other edit starts a new "before smudging" point.
     history.push(new Uint8ClampedArray(pixels)); // Snapshot before destructive edits and resets.
     if (history.length > MAX_UNDO) history.shift();
+    future = []; historyButtons();
   }
   async function acceptImage(img, description, suggestedName) {
     const work = document.createElement('canvas'); // Rasterize once into the same frame the gameplay compositor uses.
@@ -162,7 +194,7 @@
     if (!opaqueCount(next)) throw new Error('The source image has no visible pixels.');
     original = new Uint8ClampedArray(next); pixels = new Uint8ClampedArray(next);
     source = description; sourceSize = { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
-    history = []; path = []; activePointer = null;
+    history = []; future = []; path = []; activePointer = null; smudgeReference = null; clearBrush(); historyButtons();
     const inputName = String(suggestedName || ''); // Keep head/shaft export type when reloading an existing part PNG.
     if (/^weaponhead[_-]/i.test(inputName)) byId('cut-kind').value = 'head';
     if (/^weaponshaft[_-]/i.test(inputName)) byId('cut-kind').value = 'shaft';
@@ -188,10 +220,12 @@
     return value;
   }
   function pointFor(event) {
-    const rect = canvas.getBoundingClientRect(); // Canvas CSS retains its native aspect ratio, including on phones.
+    const rect = canvas.getBoundingClientRect(); // The pinned canvas letterboxes (object-fit: contain) to fit the screen.
+    const scale = Math.min(rect.width / FRAME.width, rect.height / FRAME.height);
+    const left = rect.left + (rect.width - FRAME.width * scale) / 2, top = rect.top + (rect.height - FRAME.height * scale) / 2;
     return {
-      x: Math.max(0, Math.min(FRAME.width, (event.clientX - rect.left) * FRAME.width / rect.width)),
-      y: Math.max(0, Math.min(FRAME.height, (event.clientY - rect.top) * FRAME.height / rect.height))
+      x: Math.max(0, Math.min(FRAME.width, (event.clientX - left) / scale)),
+      y: Math.max(0, Math.min(FRAME.height, (event.clientY - top) / scale))
     };
   }
   function extend(event) {
@@ -201,20 +235,78 @@
       path.push(point); scheduleRender();
     }
   }
+  function clearBrush() { brushMask.fill(0); brushPainted = false; lastBrushPoint = null; }
+  function paint(event) {
+    const point = pointFor(event); // Bridge brush stamps discs in source-pixel space.
+    global.ModularWeaponBridgeFill.stampLine(brushMask, FRAME.width, FRAME.height, lastBrushPoint, point, brushRadius());
+    lastBrushPoint = point; hoverPoint = point; brushPainted = true;
+    scheduleRender();
+  }
   canvas.addEventListener('pointerdown', event => {
     if (!pixels || activePointer !== null) return;
     event.preventDefault();
-    activePointer = event.pointerId; path = [];
+    activePointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
+    if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); return; } // Placed on release.
+    if (SMUDGE_TOOLS.includes(tool())) { // Snapshot for Undo (also the "before" the outline is measured on), then work.
+      if (!smudgeReference) smudgeReference = new Uint8ClampedArray(pixels);
+      pushUndo('smudge');
+      const op = { tool: tool(), r: brushRadius(), strength: Number(byId('cut-tool-strength').value) / 100, seed: (Math.random() * 2147483647) | 0,
+        ...(tool() === 'clean' ? cleanSettings() : {}) };
+      smudge = { tool: op.tool, last: pointFor(event), stepper: global.ModularWeaponBridgeFill.toolStepper(pixels, FRAME.width, FRAME.height, op,
+        { minAlpha: minAlpha(), reference: smudgeReference }) };
+      return;
+    }
+    if (tool() !== 'lasso') { lastBrushPoint = null; paint(event); return; }
+    path = [];
     extend(event);
   });
+  let plowAngle = 0; // Drag direction, which the plow blade faces across.
   canvas.addEventListener('pointermove', event => {
+    if (tool() !== 'lasso' && pixels) {
+      const point = pointFor(event);
+      if (hoverPoint && Math.hypot(point.x - hoverPoint.x, point.y - hoverPoint.y) >= 2) plowAngle = Math.atan2(point.y - hoverPoint.y, point.x - hoverPoint.x);
+      hoverPoint = point; if (activePointer === null) scheduleRender();
+    }
     if (activePointer !== event.pointerId) return;
-    event.preventDefault(); extend(event);
+    event.preventDefault();
+    if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); }
+    else if (smudge) {
+      const point = pointFor(event);
+      if (smudge.tool === 'plow' && Math.hypot(point.x - smudge.last.x, point.y - smudge.last.y) < Math.max(2, brushRadius() / 4)) return; // Steady blade angle.
+      smudge.stepper.step(smudge.last, point);
+      smudge.last = point; hoverPoint = point; scheduleRender();
+    } else if (tool() !== 'lasso') paint(event); else extend(event);
   });
+  canvas.addEventListener('pointerleave', () => { if (hoverPoint) { hoverPoint = null; scheduleRender(); } });
   function finish(event, cancel) {
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
+    if (tool() === 'junction') {
+      activePointer = null;
+      if (!cancel) placeJunction(pointFor(event)); else renderNow();
+      return;
+    }
+    if (smudge) {
+      const done = smudge; smudge = null; activePointer = null;
+      if (cancel) { byId('cut-undo').click(); return; }
+      const end = pointFor(event); // Finish the last partial step (the plow only steps every few pixels).
+      if (end.x !== done.last.x || end.y !== done.last.y) done.stepper.step(done.last, end);
+      else if (done.tool === 'puff' || done.tool === 'clean') done.stepper.step(done.last, done.last); // A tap works too.
+      const result = done.stepper.finish();
+      renderNow();
+      const verb = { smudge: 'Smudged', revert: 'Reverted', plow: 'Plowed', puff: 'Puffed out', clean: 'Cleaned (' + (result.specks || 0) + ' black pixels pulled out)' }[done.tool];
+      const puffReach = Math.min(24, Math.max(1, Math.round(brushRadius() * Number(byId('cut-tool-strength').value) / 100 * 0.8))) * 2;
+      status(!result.changed && done.tool === 'puff' ? 'Nothing to puff: no dent in the edge under the brush is narrower than ' + puffReach + ' px. Raise the strength or the brush size (bumps are shaved by Even out outline wobble instead).'
+        : result.changed ? verb + '; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
+        result.drawn + ' drawn). Undo reverts the whole stroke.' : done.tool === 'revert' ? 'Nothing to revert here: it already matches the image before smudging.' : 'No metal changed under the stroke.');
+      return;
+    }
+    if (tool() !== 'lasso') {
+      activePointer = null; lastBrushPoint = null;
+      if (cancel) { clearBrush(); renderNow(); } else fillBrush(); // Each stroke fills as soon as it's released.
+      return;
+    }
     if (!cancel) extend(event); else path = [];
     activePointer = null; renderNow();
     if (!cancel) status(path.length >= 3
@@ -267,12 +359,123 @@
         ' Undo restores the previous image.');
     } catch (error) { status('Outline failed: ' + error.message); }
   };
+  function lightDirection() {
+    const value = byId('cut-bridge-light').value; // "x,y" toward the light in screen space, or "none".
+    return value === 'none' ? null : value.split(',').map(Number);
+  }
+  function fillBrush(prefix = '') {
+    try {
+      const thickness = Number(byId('cut-bridge-outline').value); // Black rim width where the bridge meets empty space.
+      if (!Number.isInteger(thickness) || thickness < 0 || thickness > 32) throw new Error('Bridge outline thickness must be 0–32.');
+      const outcome = global.ModularWeaponBridgeFill.fillBridge(pixels, brushMask, FRAME.width, FRAME.height,
+        { outlineThickness: thickness, minAlpha: minAlpha(), seed: 1, lightDirection: lightDirection(),
+          shadeWidth: Math.max(0, Math.min(100, Number(byId('cut-bridge-shade').value) || 0)) / 100 });
+      pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
+      status(prefix + 'Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
+        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.edgeShaded + ' shaded along outlines), ' + outcome.rim + ' black rim pixels; kept ' + outcome.preserved + ' painted-over metal pixels' +
+        (outcome.pools > 1 ? '; linked ' + outcome.poolsLinked + ' of ' + (outcome.pools - 1) + ' unshaded-pool gaps' : '') +
+        '. Undo restores the previous image.');
+    } catch (error) { clearBrush(); renderNow(); status('Bridge fill failed: ' + error.message); }
+  }
+  const junctionPicker = global.ModularJunctionPicker.bind('cut', () => scheduleRender());
+  async function placeJunction(point) {
+    const piece = junctionPicker.placement(point.x, point.y);
+    try {
+      const img = await junctionPicker.image(piece.junction);
+      const work = document.createElement('canvas'); // Stamp through a 2D canvas so rotation/scale resample cleanly.
+      work.width = FRAME.width; work.height = FRAME.height;
+      const workCtx = work.getContext('2d', { willReadFrequently: true });
+      workCtx.putImageData(new ImageData(new Uint8ClampedArray(pixels), FRAME.width, FRAME.height), 0, 0);
+      global.ModularWeapons.drawJunction(workCtx, img, piece);
+      pushUndo(); pixels = workCtx.getImageData(0, 0, FRAME.width, FRAME.height).data; renderNow();
+      status('Placed a ' + piece.junction + ' junction. Bridge, smudge or Auto-bridge it to the parts; Undo removes it.');
+    } catch (error) { status('Junction piece unavailable: ' + error.message); }
+  }
+  byId('cut-set-revert-point').onclick = () => {
+    if (!pixels) { status('Load a sprite first.'); return; }
+    smudgeReference = new Uint8ClampedArray(pixels);
+    status('Revert point set: the revert brush now eases back to the image as it is now.');
+  };
+  function workedRegion(action) { // Brush work since the sprite was loaded; null (with a message) when there is none.
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return null; }
+    const worked = global.ModularWeaponBridgeFill.changedRegion(pixels, original);
+    if (!worked) status('Nothing to ' + action + ': the sprite is unchanged since it was loaded. Use brush tools first (the Clean outline brush works on original artwork).');
+    return worked;
+  }
+  byId('cut-even-outline').onclick = () => {
+    const worked = workedRegion('even out'); if (!worked) return;
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.evenOutline(next, FRAME.width, FRAME.height, worked,
+      { minAlpha: minAlpha(), amount: Number(byId('cut-even-amount').value) / 100 });
+    pushUndo('smudge'); pixels = next; renderNow();
+    const wobble = result.wobble;
+    status('Evened out the outline at ' + result.thickness + ' px' + (wobble ? ': edges averaged over ' + wobble.sigma + ' px (' + wobble.moved + ' pixels moved to the local mean line)' : '') + '. Undo restores it.');
+  };
+  byId('cut-style-cleanup').onclick = () => {
+    const worked = workedRegion('clean'); if (!worked) return;
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.styleCleanup(next, FRAME.width, FRAME.height, worked,
+      { minAlpha: minAlpha(), amount: Number(byId('cut-even-amount').value) / 100, pool: Number(byId('cut-style-pool').value) });
+    pushUndo('smudge'); pixels = next; renderNow();
+    const tones = result.style.tones.map(c => 'rgb(' + c.slice(0, 3).join(',') + ')').join(' / ');
+    status('Cleaned up to your style (' + (result.style.fromUntouched ? 'read from your untouched art' : 'defaults: little untouched art') + '): flat tones ' + tones +
+      '; pulled ' + result.specks + ' black pixels out, flattened ' + result.snapped + ' pixels, merged ' + result.merged + ' pixels of patches under ' + result.minPool +
+      ' px; outline evened at ' + result.thickness + ' px' + (result.wobble ? ', edges averaged over ' + result.wobble.sigma + ' px (' + result.wobble.moved + ' pixels moved)' : '') + '. Undo restores it.');
+  };
+  byId('cut-clean-outline').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const worked = global.ModularWeaponBridgeFill.changedRegion(pixels, original); // Only what you've changed since loading.
+    if (!worked) { status('Nothing to clean: the sprite is unchanged since it was loaded (use the Clean outline brush to clean original artwork).'); return; }
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.cleanOutline(next, FRAME.width, FRAME.height, worked, { minAlpha: minAlpha(), ...cleanSettings() });
+    pushUndo('smudge'); pixels = next; renderNow();
+    status('Cleaned up the outline: pulled ' + result.specks + ' black pixels out of the metal, regenerated the outline at an even ' +
+      result.thickness + ' px. Undo restores it.');
+  };
+  byId('cut-separate-shading').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.separateShading(next, FRAME.width, FRAME.height, { minAlpha: minAlpha(),
+      tolerance: Number(byId('cut-shading-tolerance').value) / 100, pool: Number(byId('cut-shading-pool').value) });
+    if (!result.swapped) { status('No mixed shading found at this tolerance.'); return; }
+    pushUndo('smudge'); pixels = next; renderNow(); // Keeps the revert brush's "before smudging" point.
+    status('Separated shading: swapped ' + result.swapped + ' pixels across ' + result.patches + ' mixed patches. Undo restores it.');
+  };
+  byId('cut-regenerate-outline').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const before = new Uint8ClampedArray(pixels), next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.rebuildOutline(before, next, FRAME.width, FRAME.height,
+      new Uint8Array(FRAME.width * FRAME.height).fill(1), { minAlpha: minAlpha() }); // The whole sprite.
+    if (!result.erased && !result.drawn) { status('No metal outline to regenerate.'); return; }
+    pushUndo(); pixels = next; renderNow();
+    status('Regenerated the metal outline at ' + result.thickness + ' px: removed ' + result.erased + ' old outline pixels, drew ' + result.drawn + '. Undo restores it.');
+  };
+  byId('cut-bridge-auto').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    try {
+      const strokes = global.ModularWeaponBridgeFill.autoBridgeStrokes(pixels, FRAME.width, FRAME.height,
+        { radius: brushRadius(), minAlpha: minAlpha() }); // One straight stroke per gap between separate pieces.
+      if (!strokes.length) { status('No gaps found: every visible piece already touches the rest.'); return; }
+      clearBrush();
+      for (const stroke of strokes) global.ModularWeaponBridgeFill.stampStroke(brushMask, FRAME.width, FRAME.height, stroke);
+      brushPainted = true;
+      fillBrush('Auto-bridged ' + strokes.length + ' gap(s). ');
+    } catch (error) { clearBrush(); renderNow(); status('Auto-bridge failed: ' + error.message); }
+  };
+  byId('cut-brush-radius').oninput = () => {
+    byId('cut-brush-radius-value').textContent = byId('cut-brush-radius').value; scheduleRender();
+  };
+  byId('cut-tool').onchange = () => { hoverPoint = null; byId('cut-junction-controls').hidden = tool() !== 'junction'; scheduleRender(); };
   byId('cut-remove').onclick = () => commitSelection('remove');
   byId('cut-isolate').onclick = () => commitSelection('isolate');
   byId('cut-clear-selection').onclick = () => { path = []; activePointer = null; renderNow(); status('Selection cleared.'); };
   byId('cut-undo').onclick = () => {
     if (!history.length) { status('Nothing to undo.'); return; }
-    pixels = history.pop(); path = []; renderNow(); status('Restored the previous pixel edit.');
+    future.push(pixels); pixels = history.pop(); path = []; historyButtons(); renderNow(); status('Restored the previous pixel edit.');
+  };
+  byId('cut-redo').onclick = () => {
+    if (!future.length) { status('Nothing to redo.'); return; }
+    history.push(pixels); pixels = future.pop(); path = []; historyButtons(); renderNow(); status('Reapplied the pixel edit.');
   };
   byId('cut-reset').onclick = () => {
     if (!original) { status('Load a sprite first.'); return; }
