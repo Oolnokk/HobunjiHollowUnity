@@ -131,7 +131,7 @@ assert.match(gameSource,
   /function makeDecorativeFurnitureMesh\(col, row, furnitureKey[\s\S]{0,900}furnitureSurfaceYAtWorld\(area, centerX, centerZ\)/,
   'decorative furniture, including benches, samples its rendered footprint center');
 assert.match(gameSource,
-  /function moveDecorativeFurniture\(id, col, row\)[\s\S]{0,1300}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
+  /function moveDecorativeFurniture\(id, col, row(?:, options = \{\})?\)[\s\S]{0,1300}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
   'moving decorative furniture recomputes its surface Y');
 assert.match(gameSource,
   /function rotateDecorativeFurniture\(id, degrees = 45\)[\s\S]{0,1500}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
