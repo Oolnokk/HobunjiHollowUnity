@@ -2167,30 +2167,33 @@ function targetQuaternionForRoofTarget(target, config=ensureRoofConfig()){
   if(Math.abs(peakRad)>1e-8) q.multiply(qLocal.setFromAxisAngle(new THREE.Vector3(0,0,1), peakRad));
   return q;
 }
-const roofPreviewTextures=new Map(),roofPreviewFinishMaterials=new WeakMap();
+const roofPreviewFinishMaterials=new WeakMap(); // Cache finished materials per original GLB material and author-selected finish.
 function applyPreviewRoofFinish(scene,config){
   const finish=config.shingleMaterial;
   if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
-  const path=String(finish.texture||''),url=path.startsWith('assets/')?new URL('../../'+path,location.href).href:path;
-  let texture=roofPreviewTextures.get(url);
-  if(url&&!texture){
-    texture=new THREE.TextureLoader().load(url);
-    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
-    if('colorSpace' in texture&&THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
-    roofPreviewTextures.set(url,texture);
-  }
+  const texture=typeof finish.texture==='string'&&
+    (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||
+     /^https:\/\/[^\s]+$/i.test(finish.texture)||
+     /^data:image\/png;base64,[a-z0-9+/=]+$/i.test(finish.texture))
+    ?finish.texture:'';
+  const painter=window.NaturalSurfaceMaterials?.forThree?.(THREE);
+  if(!painter?.naturalizeMesh){log('Shared sprite-tint painter unavailable for roof finish.','warn');return;}
   scene.traverse(mesh=>{
-    if(!mesh.isMesh||!mesh.material)return;
-    const use=src=>{
-      if(!src)return src;
-      let variants=roofPreviewFinishMaterials.get(src);
-      if(!variants){variants=new Map();roofPreviewFinishMaterials.set(src,variants);}
-      const key=path+'|'+finish.color;
+    if(!mesh.isMesh||!mesh.material||/shinglebone/i.test(mesh.name||''))return;
+    const use=source=>{
+      if(!source)return source;
+      let variants=roofPreviewFinishMaterials.get(source);
+      if(!variants){variants=new Map();roofPreviewFinishMaterials.set(source,variants);}
+      const key=texture+'|'+finish.color;
       if(!variants.has(key)){
-        const mat=src.clone();
-        mat.map=texture||null;mat.color?.set(finish.color);mat.vertexColors=false;
-        if('metalness' in mat)mat.metalness=0;if('roughness' in mat)mat.roughness=1;
-        mat.needsUpdate=true;variants.set(key,mat);
+        const proxy=new THREE.Mesh(mesh.geometry,source); // Keep loaded GLB's surface-mapped UVs.
+        painter.naturalizeMesh(proxy,'trunks','strand-stretch',{
+          texture,tint:finish.color,tintTreatment:'body-sprite-tint'
+        });
+        const mat=proxy.material.clone(); // Isolate author preview without rewriting the GLB template.
+        mat.vertexColors=false;
+        mat.userData=Object.assign({},mat.userData,{authoredShingleSpriteTint:true});
+        variants.set(key,mat);
       }
       return variants.get(key);
     };
