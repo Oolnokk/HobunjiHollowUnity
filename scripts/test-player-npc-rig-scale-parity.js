@@ -119,4 +119,12 @@ assert.match(bandit, /heightReady \? weaponKey : null/, 'unmeasured weapon place
 assert.match(read('docs/js/hand-tool-grips.js'), /function characterHeightReady\(/, 'grips expose whether species heights are measured');
 assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/character-dimensions\.js/, 'the Workshop loads the species height measurements');
 
+// Dual wield mirrors the offhand across the character's midline using bodyRoot's local X. A hostile's root is yawed
+// aimAngleOffset away from the pose frame, so without this offset the offhand dagger landed beside the main one
+// (the Workshop showed both daggers bunched on one side while the editor showed them mirrored).
+assert.match(bandit, /poseFrameYawOffsetRad = Number\(def\.aimAngleOffset\) \|\| 0/, 'hostile hand-driver root publishes its pose-frame yaw offset');
+const dual = read('docs/js/dual-wield-weapon-visuals.js');
+assert.match(dual, /userData\?\.poseFrameYawOffsetRad/, 'dual-wield reads the pose-frame yaw offset');
+assert.match(dual, /bodyQuaternion\.multiply\(s\.poseFrameYawQuaternion\.setFromAxisAngle\(s\.axisY, poseFrameYaw\)\)/, 'the offhand mirror axis is rotated into the pose frame');
+
 console.log('Player/NPC/hostile rig scale parity: one species scale on the owning rig node, hands never double-scaled, editor previews troop bodies');

@@ -218,7 +218,7 @@
       posePitch: q(), poseRoll: q(), mainQ: q(), offQ: q(),
       holderWorld: m(), holderPosition: v(), holderQuaternion: q(), ignoredScale: v(),
       baseQuaternion: q(), mainPoseOffset: v(), basePosition: v(),
-      bodyPosition: v(), bodyQuaternion: q(), bodyRight: v(), mirroredBasePosition: v(), offPoseOffset: v(),
+      bodyPosition: v(), bodyQuaternion: q(), poseFrameYawQuaternion: q(), bodyRight: v(), mirroredBasePosition: v(), offPoseOffset: v(),
       targetHolderQuaternion: q(), targetHolderWorld: m(), inverseHolderWorld: m(), planeRelative: m(), inversePlaneWorld: m(),
       idleResult: { position: v(), quaternion: q() },
       offTargetPosition: v(), offTargetQuaternion: q(),
@@ -323,6 +323,8 @@
     current.bodyRoot.updateWorldMatrix?.(true, false);
     const bodyPosition = current.bodyRoot.getWorldPosition?.(s.bodyPosition) || s.bodyPosition.setFromMatrixPosition(current.bodyRoot.matrixWorld);
     const bodyQuaternion = hierarchyWorldQuaternion(current.bodyRoot, s.bodyQuaternion);
+    const poseFrameYaw = Number(current.bodyRoot.userData?.poseFrameYawOffsetRad) || 0; // Hostile roots are yawed away from the pose frame whose +X is the character's lateral axis.
+    if (poseFrameYaw) bodyQuaternion.multiply(s.poseFrameYawQuaternion.setFromAxisAngle(s.axisY, poseFrameYaw));
     const bodyRight = s.bodyRight.set(1, 0, 0).applyQuaternion(bodyQuaternion).normalize();
     const sideDistance = basePosition.clone().sub(bodyPosition).dot(bodyRight);
     const mirroredBasePosition = s.mirroredBasePosition.copy(basePosition).addScaledVector(bodyRight, -2 * sideDistance);

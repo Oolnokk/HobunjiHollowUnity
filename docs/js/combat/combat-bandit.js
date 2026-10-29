@@ -2797,6 +2797,7 @@
       handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
       handDriverRoot.userData.proceduralHandToolKey = def.weaponKey || null;
       handDriverRoot.userData.proceduralHandGripContext = 'melee';
+      handDriverRoot.userData.poseFrameYawOffsetRad = Number(def.aimAngleOffset) || 0; // The hostile group is turned aimAngleOffset away from the pose frame (+X lateral); dual-wield mirrors the offhand across THAT frame's midline.
     }
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
