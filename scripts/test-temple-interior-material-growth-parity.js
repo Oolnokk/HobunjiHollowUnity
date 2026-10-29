@@ -22,17 +22,47 @@ const interiorWalls=templeInterior.surfaceGrowth.filter(recipe=>recipe.target===
 assert.equal(templeExterior.surfaceGrowth.length,4,'Latest Temple exterior has three wall layers plus the shingle layer');
 assert.deepEqual(interiorWalls,exteriorWalls,'Temple interior must mirror every exterior wall root/vine layer in order');
 assert.deepEqual(interiorWalls.map(recipe=>[recipe.kind,recipe.style,recipe.density,recipe.strandLimit]),[
-  ['roots','cornerFill',.45,80],['vines','wrap',.1,40],['roots','wrap',.2,12]
+  ['roots','cornerFill',.45,80],['vines','wrap',.1,40],['roots','wrap',.4,12]
 ], 'Temple foliage matches the newest authored wall roots and edge-to-edge vines');
 assert(interiorWalls.every(recipe=>recipe.perSurface&&recipe.length>=12&&recipe.radius>=.075),
   'Temple interior layers must preserve independent surface budgets and current tube sizes');
 assert.equal(templeExterior.base.faces.length,67,'Supplied temple layout must retain its authored cross-gable, entry and wall sections');
 assert.equal(templeExterior.wallFixtures.length,4,'All four stained-glass windows must survive the growth updates');
-const shingleVines = templeExterior.surfaceGrowth.find(recipe => recipe.target === 'shingles'); // Keeps fine vines distinct from thick roots.
+assert.equal(templeExterior.roof.flipY,true,'Latest temple flips the first shingle layer on Y');
+assert.equal(templeExterior.roof.shingleScaleY,1,'Latest first shingle layer has authored Y scale');
+assert.equal(templeExterior.roof.secondLayerWallOriginReach,true,'Latest second-layer shingles reach wall origin');
+assert.equal(templeExterior.roof.secondLayerShingleScaleY,1.5,'Latest second shingle layer has authored Y scale');
+assert.equal(interiorWalls[0].seed,'surface-2','Latest Corner Fill root seed must survive');
+assert.equal(interiorWalls[0].count,48,'Latest Corner Fill root count must survive');
+assert.equal(interiorWalls[0].radius,.2,'Latest Corner Fill root thickness must survive');
+assert.equal(interiorWalls[0].curl,1.4,'Latest Corner Fill root curl must survive');
+assert.equal(interiorWalls[0].inset,-.25,'Latest Corner Fill root inset must survive');
+assert.equal(interiorWalls[2].radius,.175,'Latest Wrap root thickness must survive');
+assert.equal(interiorWalls[2].inset,-.1,'Latest Wrap root inset must survive');
+assert(interiorWalls.every(recipe => recipe.shrinkwrapFinal && recipe.tunnelAsOpening),
+  'Both Temple wall vegetation contexts must retain shrinkwrap and entrance-opening settings');
+assert.deepEqual(templeExterior.roof.shingleMaterial,{
+  texture:interiorWalls[0].texture,color:interiorWalls[0].color
+},'Temples shingles and roots must share the exact bark PNG and authored tint');
+assert(shingleBuilder.includes("painter.naturalizeMesh(proxy,'trunks','strand-stretch'"),
+  'Gameplay roof finishes must use the same unlit body-sprite-tint material path as roots');
+assert(shingleBuilder.includes("tintTreatment:'body-sprite-tint'"),
+  'Gameplay roof finishes must recolor PNG pixels rather than multiplying GLB material colors');
+assert(houseEditor.includes("painter.naturalizeMesh(proxy,'trunks','strand-stretch'"),
+  'House Editor must preview the same roots/shingles tint method as gameplay');
+const shingleVines = templeExterior.surfaceGrowth.find(recipe => recipe.seed === 'temple-highland-shingle-weave'); // The author's newest shingle weave intentionally includes all house surfaces.
+assert.equal(shingleVines?.target, 'all','The latest weave targets all architectural surfaces, including shingles');
 assert.equal(shingleVines?.kind, 'vines');
-assert(shingleVines.count > 0 && shingleVines.radius < 0.15);
-assert(foliage.includes("'shingles', 'selected'"), 'growth normalization must accept shingle targets');
-assert(foliage.includes("settings.target === 'shingles'"), 'shingle growth must follow only eligible roof triangles');
+assert.equal(shingleVines?.style,'wrap');
+assert.equal(shingleVines?.density,.35);
+assert.equal(shingleVines?.strandLimit,20);
+assert.equal(shingleVines?.radius,.1);
+assert.equal(shingleVines?.shrinkwrapFinal,true);
+assert.equal(shingleVines?.perSurface,true);
+assert(!interiorWalls.some(recipe => recipe.seed === shingleVines.seed),
+  'The all-surface exterior shingle weave must not be duplicated inside the temple');
+assert(foliage.includes("'shingles', 'selected'"), 'growth normalization must retain dedicated roof-target support');
+assert(foliage.includes("settings.target === 'shingles'"), 'dedicated shingle growth must still follow only eligible roof triangles');
 assert.equal(shingleBuilder.split("shingleLayer.userData.surfaceFoliageRole = 'shingles'").length - 1, 2,
   'both house-generation paths must tag their real roof geometry');
 assert(houseEditor.includes("['shingles','Highland roof shingles']"), 'the House Editor must expose the new growth target');
