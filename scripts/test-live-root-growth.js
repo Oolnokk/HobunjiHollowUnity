@@ -298,6 +298,10 @@ function verifyGroundFirst(label,parts,lowNames,highNames){
     label+': each raised part must have an animated transfer shoot');
   const shapeCalls=calls.slice(beforeCalls+6);
   assert.equal(shapeCalls.length,parts.length*6,label+': six scoped wraps per piece');
+  const budget=Math.max(4,Math.ceil(80/parts.length));
+  assert.equal(grown.getDiagnostics().perPartStrandLimit,budget,label+': shared strand budget');
+  assert(shapeCalls.every(call=>call.recipe.strandLimit===budget),
+    label+': shape wraps must distribute density over parts rather than multiply the global 80-strand cap');
   for(const part of plan){
     assert(shapeCalls.slice(part.index*6,(part.index+1)*6)
       .every(call=>call.recipe.targetMeshId===part.mesh.uuid),
