@@ -194,7 +194,7 @@ const emitterInput=new Group(), emitterPart=new Mesh(new Geometry(),new Material
 emitterPart.position=new Vector3(1,2,3);
 emitterPart.userData.authoredPartId='glowing-top';
 emitterInput.add(emitterPart);
-emitterInput.userData.authoredParticleEmitters=[{id:'sparks',name:'Sparks',attachedPartId:'glowing-top',rate:24}];
+emitterInput.userData.authoredParticleEmitters=[{id:'sparks',name:'Sparks',attachedPartId:'glowing-top',rate:24,enabled:false}]; // Growth must override an initially disabled authored emitter.
 const emitted=[],disposables=[];
 const emitterRuntime={createEmitterVisual(host,record){
   const anchor=host.userData.meshById.get(record.attachedPartId);
@@ -202,7 +202,7 @@ const emitterRuntime={createEmitterVisual(host,record){
   assert(!anchor.isMesh && anchor.visible!==false,'particle anchors cannot be hidden furniture meshes');
   assert.equal(anchor.position.y,2,'authored part offset is retained');
   assert.equal(host.parent?.name,'Live root growth','particle host is not inside the hidden furniture');
-  const visual={record,update(delta,active){emitted.push({delta,active});},dispose(){disposables.push(record.id);}};
+  const visual={record,update(delta,active,override){emitted.push({delta,active,enabled:override?.enabled});},dispose(){disposables.push(record.id);}};
   return visual;
 }};
 const emission=feature.create({...options,target:emitterInput,emitterRuntime});
@@ -216,6 +216,7 @@ assert.equal(emitted.at(-1).active,false,'particles cannot emit during incomplet
 emission.update(.25);
 assert.equal(emission.getProgress(),1);
 assert.equal(emitted.at(-1).active,true,'emitters must activate precisely when the growth finishes');
+assert.equal(emitted.at(-1).enabled,true,'growth completion must override originally disabled emitter flags');
 const before=emitted.length;
 emission.update(.1);
 assert.equal(emitted.length,before+1,'completed emitters must continue updating with animation paused');
