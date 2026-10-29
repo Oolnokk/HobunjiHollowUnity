@@ -171,7 +171,7 @@ assert.match(gameSource,
   'farm NPC surface queries share the corrected farmhouse/barn height');
 
 assert.match(gameSource,
-  /kind: 'processing'[\s\S]{0,1400}canPlaceFurnitureAt\(anchorCol, anchorRow, spec\.ignoreObject\)/,
+  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,1600}const isProcessing = spec\.kind === 'processing';[\s\S]{0,220}canPlaceFurnitureAt\(anchorCol, anchorRow, spec\.ignoreObject\)/,
   'processing furniture previews use the existing farm placement validation');
 assert.match(gameSource,
   /function commitFurniturePlacementAt\(col, row\)[\s\S]{0,3200}placeDecorativeFurniture\(rugRect\?\.col \?\? col, rugRect\?\.row \?\? row, decorKey, furniturePlacementSource, rugRect\)/,
