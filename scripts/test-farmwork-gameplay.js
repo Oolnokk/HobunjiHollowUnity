@@ -52,7 +52,7 @@ assert.match(view.innerHTML, /New Field/);
 assert.match(view.innerHTML, /New Trench/);
 assert.match(view.innerHTML, /data-ctrl-default/, 'controller starts on a create action without any plots');
 const id = plots.createFamilyPlot('till'); // Same API used by the new panel, with spouse assigned automatically.
-const p = plots.plots().find(x => x.id === id);
+let p = plots.plots().find(x => x.id === id);
 assert.equal(p.workers[0], spouseId);
 assert.equal(plots.setFamilyTile(id, 3, 4, true), true);
 assert.equal(plots.setFamilyTile(id, 3, 4, true), false, 'repeating the same gesture does not toggle');
@@ -119,13 +119,13 @@ const snap = JSON.parse(JSON.stringify(plots.serialize()));
 plots.restore(snap);
 assert.deepEqual(Array.from(plots.plots().find(q => q.id === id).seedBlocks[0].seeds), ['heftroot', 'needlegrain'], 'priority list survives save and restore');
 assert.equal(plots.plots().find(q => q.id === id).seedBlocks[0].tiles.length, 2, 'seed block membership survives save and restore');
-assert.equal(plots.setFamilyTile(id, 1, 1, false), true);
-assert.equal(plots.plots().find(q => q.id === id).seedBlocks[0].tiles.some(([c, r]) => c === 1 && r === 1), false, 'removing a plot tile removes its seed-block membership');
-const restoredBlock = plots.plots().find(q => q.id === id).seedBlocks[0];
+assert.equal(plots.setFamilyTile(id, 2, 1, false), true);
+assert.equal(plots.plots().find(q => q.id === id).seedBlocks[0].tiles.some(([c, r]) => c === 2 && r === 1), false, 'removing a plot tile removes its seed-block membership');
 assert.equal(plots.deleteSeedBlock(id, blockId), true);
 assert.equal(plots.plots().find(q => q.id === id).tiles.length, 1, 'deleting a seed block keeps parent field tiles');
 ui.changePlot(id);
 ui.setPlanning(false);
+p = plots.plots().find(q => q.id === id); // Restore replaces the plot object; subsequent transfer assertions use the live one.
 
 const trench = ui.create('dig'); // UI creates and selects a second managed kind, preserving the first group.
 assert.ok(plots.plots().some(item => item.kind === 'dig'));
