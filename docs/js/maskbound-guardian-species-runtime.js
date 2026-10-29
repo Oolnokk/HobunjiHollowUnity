@@ -14,7 +14,7 @@
     genders: ['male'], // Current Mao'ao skeleton body art is male-only.
     variableBodyColors: true, // Unlike ordinary bones, wooden puppets use troop-authored A/B/C color values.
     scaleMultiplier: 1,
-    allowedClothingIds: [MASK_ID, 'ragged_hood'],
+    allowedClothingIds: [MASK_ID, 'ragged_hood', 'fine_hood', 'facewrap', 'rugged_poncho', 'tankan_bodywrap', 'bandolier1'],
     behindHeads: null,
     expectedAssets: {
       maleHead: 'fightersprites/mao-ao-m/head_maoskel_m.png',

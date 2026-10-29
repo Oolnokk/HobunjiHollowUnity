@@ -16,26 +16,27 @@
     pain: Object.freeze([[-8, 0.78], [-3, 0.96], [4, 1.28]]),
     dodge: Object.freeze([[0, 1.18], [4, 1.38], [8, 1.60]]),
   }); // Reusable pitch/tempo pairs preserve variety while hitting the mobile WSOLA audio-render cache.
+  const SMOKY_YELLOW_ORANGE = '#59533E'; // dye:CLOTH:smoky_yellow_orange (HSL 46.67 / 17.88% / 29.61%): the shared wood body colour and mask colour 1.
   const TROOPS = Object.freeze({
     sentinel: Object.freeze({
       label: 'Maskbound Sentinel',
       anatomy: Object.freeze({ rigScaleX: 1.0, rigScaleY: 1.34, headScale: 1, headOffsetY: -0.07 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.82, stance: 0.65, dragLift: 0.13, lurchDegrees: 13 }), // Per-troop asymmetric foot timing, drag and torso lean.
-      wood: '#443126',
+      wood: SMOKY_YELLOW_ORANGE,
       weapons: Object.freeze(['fishingspear', 'harlyaoLongsword']),
     }),
     bulwark: Object.freeze({
       label: 'Maskbound Bulwark',
       anatomy: Object.freeze({ rigScaleX: 1.62, rigScaleY: 1.02, headScale: 1, headOffsetY: -0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }), // Per-troop asymmetric foot timing, drag and torso lean.
-      wood: '#352419',
+      wood: SMOKY_YELLOW_ORANGE,
       weapons: Object.freeze(['warhammer', 'hatchet']),
     }),
     reacher: Object.freeze({
       label: 'Maskbound Reacher',
       anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.82, headScale: 1, headOffsetY: 0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.92, stance: 0.62, dragLift: 0.22, lurchDegrees: 16 }), // Per-troop asymmetric foot timing, drag and torso lean.
-      wood: '#503929',
+      wood: SMOKY_YELLOW_ORANGE,
       weapons: Object.freeze(['fishingspear', 'daggerSword']),
     }),
   }); // Distinct shapes and heights used by spawn, portrait tint, world collisions and in-game debugging.
@@ -49,7 +50,7 @@
       A: { hex: shade(1), tintMode: 'hexShadeFill' },
       B: { hex: shade(0.79), tintMode: 'hexShadeFill' },
       C: { hex: shade(0.59), tintMode: 'hexShadeFill' },
-      MASK: { hex: '#9b8063', tintMode: 'hexShadeFill' },
+      MASK: { hex: shade(1), tintMode: 'hexShadeFill' }, // Mask colour 1 matches body colour 1.
       HOOD: { hex: '#50483f', tintMode: 'hexShadeFill' },
     };
   }

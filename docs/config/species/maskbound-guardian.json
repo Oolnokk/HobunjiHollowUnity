@@ -31,7 +31,12 @@
     },
     "allowedCosmetics": [
       "hachutu_binding_mask_ii",
-      "ragged_hood"
+      "ragged_hood",
+      "fine_hood",
+      "facewrap",
+      "rugged_poncho",
+      "tankan_bodywrap",
+      "bandolier1"
     ],
     "cosmeticWeights": {
       "mask": {

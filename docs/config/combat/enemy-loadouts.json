@@ -1,4 +1,518 @@
 {
   "schema": "hobunji_enemy_loadouts.v1",
-  "rules": {}
+  "rules": {
+    "maskbound:sentinel": {
+      "clothing": {
+        "hood": {
+          "chance": 1,
+          "items": {
+            "facewrap": 40,
+            "ragged_hood": 35,
+            "fine_hood": 25
+          }
+        },
+        "overwear": {
+          "chance": 0.12,
+          "items": {
+            "rugged_poncho": 1,
+            "tankan_bodywrap": 1
+          }
+        },
+        "torso": {
+          "chance": 1,
+          "items": {
+            "bandolier1": 1
+          }
+        }
+      },
+      "dyes": {
+        "HOOD": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "HOOD_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        }
+      }
+    },
+    "maskbound:bulwark": {
+      "clothing": {
+        "hood": {
+          "chance": 1,
+          "items": {
+            "facewrap": 40,
+            "ragged_hood": 35,
+            "fine_hood": 25
+          }
+        },
+        "overwear": {
+          "chance": 0.12,
+          "items": {
+            "rugged_poncho": 1,
+            "tankan_bodywrap": 1
+          }
+        },
+        "torso": {
+          "chance": 1,
+          "items": {
+            "bandolier1": 1
+          }
+        }
+      },
+      "dyes": {
+        "HOOD": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "HOOD_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        }
+      }
+    },
+    "maskbound:reacher": {
+      "clothing": {
+        "hood": {
+          "chance": 1,
+          "items": {
+            "facewrap": 40,
+            "ragged_hood": 35,
+            "fine_hood": 25
+          }
+        },
+        "overwear": {
+          "chance": 0.12,
+          "items": {
+            "rugged_poncho": 1,
+            "tankan_bodywrap": 1
+          }
+        },
+        "torso": {
+          "chance": 1,
+          "items": {
+            "bandolier1": 1
+          }
+        }
+      },
+      "dyes": {
+        "HOOD": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "HOOD_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "CLOTH_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "TORSO_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        },
+        "PANTS_B": {
+          "dye:CLOTH:dusty_red": 1,
+          "dye:CLOTH:dusty_red_orange": 1,
+          "dye:CLOTH:dusty_orange": 1,
+          "dye:CLOTH:dusty_yellow_orange": 1,
+          "dye:CLOTH:dusty_yellow": 1,
+          "dye:CLOTH:dusty_yellow_green": 1,
+          "dye:CLOTH:dusty_green": 1,
+          "dye:CLOTH:dusty_green_blue": 1,
+          "dye:CLOTH:dusty_blue": 1,
+          "dye:CLOTH:dusty_blue_indigo": 1,
+          "dye:CLOTH:dusty_indigo": 1,
+          "dye:CLOTH:dusty_indigo_violet": 1,
+          "dye:CLOTH:dusty_violet": 1,
+          "dye:CLOTH:gray": 1,
+          "dye:CLOTH:charcoal": 1,
+          "dye:CLOTH:cream": 1
+        }
+      }
+    }
+  }
 }
