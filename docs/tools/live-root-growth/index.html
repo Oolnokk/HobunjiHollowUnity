@@ -9,11 +9,11 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="js/foliage-generator.js?v=20261029h5037abe"></script>
+<script src="js/foliage-generator.js?v=20261029h12f5e2b"></script>
 <script src="js/GLTFLoader.js"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
-<script src="js/live-root-growth.js?v=20261029hc1053b2"></script>
+<script src="js/live-root-growth.js?v=20261029h36ac26c"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -68,7 +68,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <label>Volume fill depth <input id="volumeFillDepth" type="number" min="0" max=".5" step=".01" value=".24"></label>
 <label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".05" value=".5"></label>
 </div><p>Arc concavity: 0 = straight vertical rise; 1 = branches hug the root-covered floor longer before sweeping upward toward the furniture. Seeded variation keeps the curves organic.</p>
-<p>Density 6 layers six separately seeded Wrap passes on the floor and furniture (rather than capping at density 1). For furniture, roots are ray-shrinkwrapped <strong>inside</strong> its hidden physical surfaces: inset controls the near-surface clearance; volume fill depth spreads successive layers farther into the object's interior (clamped at thin walls). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
+<p>Growth starts at actual floor-adjacent furniture parts, then travels through their connections: table legs before tabletop, arch posts before the overhang. Higher pieces retract first. Density 6 layers six separately seeded Wrap passes on the floor and furniture (rather than capping at density 1). For furniture, roots are ray-shrinkwrapped <strong>inside</strong> its hidden physical surfaces: inset controls the near-surface clearance; volume fill depth spreads successive layers farther into the object's interior (clamped at thin walls). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
 <div class="controls" style="margin-top:10px"><button id="rebuild">Rebuild</button><button id="randomSeed">New seed</button></div>
 </section>
 <section><h2>3 · Animate</h2>
