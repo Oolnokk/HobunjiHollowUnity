@@ -37,7 +37,11 @@
     planning = !!next && open && canOpen() && !!plot();
     if (pane()) pane().style.display = open && !planning ? 'flex' : 'none';
     const hud = document.getElementById('farmworkToolHud');
-    if (hud) hud.style.display = planning ? 'flex' : 'none';
+    if (hud) {
+      hud.style.display = planning ? 'flex' : 'none';
+      const status = hud.querySelector('span');
+      if (status) status.textContent = planningMode === 'block' ? 'Seed block selection · Action 1: add included tile · Action 2: remove' : 'Plot planning · Action 1: add · Action 2: remove';
+    }
     window.WorldActionInputClaims?.clearClaims?.('farmwork-planning');
     if (planning) {
       // A menu can consume the release after Done opens it. Retire only our stale presses before re-equipping.
@@ -277,6 +281,11 @@
     }));
     view.querySelector('[data-fwblocknew]')?.addEventListener('click', createBlock);
     view.querySelectorAll('[data-fwblock]').forEach(button => button.addEventListener('click', () => chooseBlock(button.dataset.fwblock)));
+    view.querySelector('[data-fwblocklabel]')?.addEventListener('change', event => {
+      const p = plot(), b = block();
+      if (p && b) manager()?.updateSeedBlock?.(p.id, b.id, { label: event.target.value });
+      render();
+    });
     view.querySelector('[data-fwblockplan]')?.addEventListener('click', () => setPlanning(true, 'block'));
     view.querySelector('[data-fwblockdel]')?.addEventListener('click', deleteBlock);
     view.querySelectorAll('[data-fwseed]').forEach(select => select.addEventListener('change', () => editBlockPriority('set', Number(select.dataset.fwseed), select.value)));
@@ -294,6 +303,7 @@
       ${blocks.map(b => `<div class="fw-plot-row"><button data-fwblock="${esc(b.id)}" aria-pressed="${b.id === selectedBlockId}">${esc(b.label)} (${b.tiles.length} tiles)</button></div>`).join('')}
       ${active ? `<div class="fw-settings" data-ctrl-transparent>
         <strong>${esc(active.label)} · ${active.tiles.length} tiles</strong>
+        <label>Block name<input data-fwblocklabel maxlength="48" value="${esc(active.label)}"></label>
         <button data-fwblockplan>Choose tiles for this seed block</button>
         <p class="fw-note">Only tiles already assigned to this field can join. Action 1 adds, Action 2 removes.</p>
         ${active.seeds.map((seed, index) => `<div class="fw-plot-row" data-ctrl-transparent>
