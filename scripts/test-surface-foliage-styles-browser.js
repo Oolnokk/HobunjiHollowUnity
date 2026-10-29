@@ -18,7 +18,7 @@ const server=http.createServer((request,response)=>{
   const route=(request.url||'/').split('?')[0];
   if(route==='/test-page'){
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
+    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/config/natural-surface-materials.js"></script><script src="/docs/js/natural-surface-materials.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
     return;
   }
   if(route==='/vendor-three.js'){
@@ -46,6 +46,29 @@ const server=http.createServer((request,response)=>{
     await page.waitForFunction(()=>!!(window.THREE?.BoxGeometry&&window.FoliageGenerator?.buildSurfaceGrowth&&window.SurfaceFoliageAuthoring?.mount&&window.HousePieceGen?.buildGroupFromPiece),null,{timeout:30000});
     const data=await page.evaluate(async()=>{
       const T=window.THREE,growth=window.FoliageGenerator; // Actual production THREE and generator.
+      const roofTintGroup=new T.Group(),originalRoofMaterial=new T.MeshStandardMaterial({
+        color:0x333333,metalness:1,roughness:.3,vertexColors:true
+      }); // The GLB arrives with a dark PBR/vertex-colored material, unlike the unlit roots.
+      const roofLeft=new T.Mesh(new T.BoxGeometry(1,1,1),originalRoofMaterial);
+      const roofRight=new T.Mesh(new T.BoxGeometry(1,1,1),originalRoofMaterial);
+      roofTintGroup.add(roofLeft,roofRight);
+      const matchingBark={texture:'assets/textures/wibbly_surface.png',color:'#504030'};
+      window.HousePieceGen.applyAuthoredShingleFinish(T,roofTintGroup,matchingBark);
+      const rootForTint=new T.Mesh(new T.BoxGeometry(1,1,1),new T.MeshBasicMaterial({color:0xffffff}));
+      window.NaturalSurfaceMaterials.naturalizeMesh(rootForTint,'trunks','strand-stretch',{
+        texture:matchingBark.texture,tint:matchingBark.color,tintTreatment:'body-sprite-tint'
+      });
+      const roofTintParity={
+        roofUnlit:roofLeft.material.isMeshBasicMaterial===true,
+        rootUnlit:rootForTint.material.isMeshBasicMaterial===true,
+        identicalTexture:roofLeft.material.map===rootForTint.material.map,
+        tintColor:roofLeft.material.map?.userData?.naturalSurfaceBodySpriteTintTarget,
+        roofColor:roofLeft.material.color.getHexString(),
+        roofMaterialShared:roofLeft.material===roofRight.material,
+        independentFromSource:roofLeft.material!==originalRoofMaterial,
+        sourcePreserved:originalRoofMaterial.metalness===1&&originalRoofMaterial.vertexColors===true,
+        labeled:roofLeft.material.userData.authoredShingleSpriteTint===true
+      };
       function build(geometry,style,density,count=12){ // Consistent authored wall test with no helper meshes.
         const root=new T.Group(),mesh=new T.Mesh(geometry,new T.MeshBasicMaterial({color:0xffffff}));
         mesh.userData.surfaceFoliageRole='walls';root.add(mesh);
@@ -397,7 +420,7 @@ const server=http.createServer((request,response)=>{
       field('length').value='4.3'; // Only Length changes; the hidden advanced options must remain intact.
       document.querySelector('[data-action="apply"]').click();
       return {
-        flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
+        roofTintParity,flatTubes:count(flat),cornerTubes:count(corners),splitCornerTubes:count(split),
         lowTubes:count(low),highTubes:count(high),sameDensityTubes:count(sameDensityDifferentCount),partialCover:cover(partial).length,
         fullCover:cover(full).length,fullTriangles:full.userData.surfaceGrowthStats.coverTriangles||0,
         edgePairs:edgePairs.length,edgeCapacity:edgeBound.userData.surfaceGrowthStats.edgeCapacity,
@@ -513,6 +536,11 @@ const server=http.createServer((request,response)=>{
     assert(data.countHidden,'Wrap must hide the now-redundant strand-count input');
     assert(data.paletteChoices>=6,'The shared vegetation palette must expose wilderness materials');
     assert(data.signInsetField&&data.shrinkwrapField&&data.entranceField,'Layer controls must expose inset, final shrinkwrap and tunnel opening');
+    assert.deepEqual(data.roofTintParity,{
+      roofUnlit:true,rootUnlit:true,identicalTexture:true,tintColor:'#504030',
+      roofColor:'ffffff',roofMaterialShared:true,independentFromSource:true,
+      sourcePreserved:true,labeled:true
+    },'Authored shingles must be the exact same unlit, recolored PNG as roots while keeping source GLB materials untouched');
     assert.equal(data.savedRecipe?.style,'wrap');
     assert.equal(data.savedRecipe?.density,.75);
     assert.equal(data.savedRecipe?.count,9);
