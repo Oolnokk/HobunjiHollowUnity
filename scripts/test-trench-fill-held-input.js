@@ -114,5 +114,8 @@ assert.match(game, /startChargeAction\(_chargeReticle, activeAction === 'fill' \
 assert.match(game, /action: activeAction,\s*tool: activeTool,/, 'charge must commit the same resolved action it animates');
 assert.match(game, /cancelChargeAction\('input released'\)/, 'held-action release should report a useful mobile debug reason');
 assert.match(game, /cancelChargeAction\('reticle moved'\)/, 'reticle movement should report its cancellation reason');
+assert.match(game, /\? 'Hold to Fill'/, 'an available trench Fill action must be visibly labeled as held');
+assert.match(game, /\? 'Hold to Dig'/, 'new trench excavation must also be visibly labeled as held');
+assert.match(game, /action === 'dig' && tile\.type !== TileType\.TRENCH/, 'already dug shallow trenches keep single-tap Redig wording');
 
 console.log('shovel trench fill controller/keyboard hold: ok');
