@@ -43,8 +43,13 @@ const scene = vm.createContext({
     object.col = col; object.row = row;
     return { ok: true };
   },
-  _loadWorldStorage: () => storage,
-  _saveWorldStorage: () => { changes.saved++; return allowStorage; },
+  _loadWorldStorage: () => ({ ...storage }), // Mirrors the parsed snapshot returned by the real world-meta store.
+  _saveWorldStorage: updated => {
+    changes.saved++;
+    if (!allowStorage) return false;
+    Object.assign(storage, updated);
+    return true;
+  },
   disposeDecorativeFurniture(object) {
     changes.removals.push(object.id);
     const index = furniture.indexOf(object);
@@ -81,6 +86,7 @@ result = reconcile();
 assert.equal(result[0].action, 'unresolved');
 assert.equal(furniture.length, 1);
 assert.equal(changes.removals.length, 1, 'no second disposal on failed storage write');
+assert.equal(storage.chairFurniture, 1, 'a failed storage transaction never creates an extra stored copy');
 
 // Derived windows belong to their wall bindings and must not be treated as ordinary floor furniture.
 furniture.length = 0;
