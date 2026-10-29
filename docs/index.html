@@ -96,7 +96,7 @@
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
   <script src="js/farm-editor.js?v=20261028h06b160c&window=20260926rebase1"></script>
-  <script src="js/farm-plot-editor.js?v=20261028farmworkreview2"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farm-plot-editor.js?v=20261029intermesh1"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261028farmworkreview2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
@@ -2744,7 +2744,7 @@
        resolveNpcScheduleTarget itself now bridges into
        window.NpcActivityPlanner (loaded just above) when present. -->
   <script src="js/npc-scheduling.js?v=20261020h16be353"></script>
-  <script src="js/npc-farm-plots.js?v=20261027h7f693c9"></script> <!-- Town and family field/trench worker schedules. -->
+  <script src="js/npc-farm-plots.js?v=20261029intermesh1"></script> <!-- Town and family field/trench worker schedules. -->
   <!-- Authored NPC relationship tags (partner/family/friend) + social
        seating policy (window.SCRATCHBONES_CONFIG.game.socialRelationships) —
        read lazily at call time by npc-social-seating-bridge.js below, so
@@ -2849,7 +2849,7 @@
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
-  <script src="game.js?v=20261028hfurygame2"></script>
+  <script src="game.js?v=20261029intermesh1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
