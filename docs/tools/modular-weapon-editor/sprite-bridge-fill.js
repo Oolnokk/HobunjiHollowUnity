@@ -3,6 +3,13 @@
   'use strict';
 
   function luma(px, o) { return 0.299 * px[o] + 0.587 * px[o + 1] + 0.114 * px[o + 2]; }
+  function hueSat(r, g, b) { // HSV hue (degrees) and saturation, matching tool-metal-recolor.js's metal detection.
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let hue = 0;
+    if (d) hue = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+    return [(hue + 360) % 360, max ? d / max : 0];
+  }
+  function hexRgb(hex) { const v = parseInt(String(hex).replace('#', ''), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; }
   function mulberry32(seed) {
     let a = seed >>> 0; // Deterministic jitter so the same stroke always regrows the same way.
     return function () {
@@ -78,12 +85,22 @@
     const jitter = options.jitter ?? 0.9; // Random step cost so competing seeds scramble instead of forming straight Voronoi borders.
     const random = mulberry32(options.seed ?? 1);
 
-    const EMPTY = 0, INK = 1, METAL = 2;
+    // Every weapon's metal is authored in one base color (the same SOURCE_HEX the game's metal recolor keys on);
+    // shading only changes its brightness. Pixels of other hues (grip wraps, wood) are kept but never spread.
+    const [metalHue, metalSat] = hueSat(...hexRgb(options.metalHex || '#5A8480'));
+    const hueTol = options.metalHueTolerance ?? 22, satTol = options.metalSaturationTolerance ?? 0.22;
+    const EMPTY = 0, INK = 1, METAL = 2, OTHER = 3;
     const kind = new Uint8Array(n); // Classification of the original source pixels.
     let painted = 0;
     for (let p = 0; p < n; p++) {
       const o = p * 4;
-      kind[p] = source[o + 3] < minAlpha ? EMPTY : luma(source, o) < darkLuma ? INK : METAL;
+      if (source[o + 3] < minAlpha) kind[p] = EMPTY;
+      else if (luma(source, o) < darkLuma) kind[p] = INK;
+      else {
+        const [hue, sat] = hueSat(source[o], source[o + 1], source[o + 2]);
+        const hueGap = Math.min(Math.abs(hue - metalHue), 360 - Math.abs(hue - metalHue));
+        kind[p] = hueGap <= hueTol && Math.abs(sat - metalSat) <= satTol ? METAL : OTHER;
+      }
       if (mask[p]) painted++;
     }
     if (!painted) throw new Error('Paint over the gap with the bridge brush first.');
@@ -114,13 +131,13 @@
         if (mask[q] && rimDist[q] < 0) { rimDist[q] = d + 1; queue[tail++] = q; }
       }
     }
-    // Metal the stroke painted over is never overwritten: it stays as-is and joins the seeds below.
-    const isRim = p => kind[p] !== METAL && rimDist[p] > 0 && rimDist[p] <= thickness;
+    // Metal (and other-colored material) the stroke painted over is never overwritten; painted metal joins the seeds.
+    const isRim = p => kind[p] <= INK && rimDist[p] > 0 && rimDist[p] <= thickness;
     const fillable = new Uint8Array(n); // The hollowed interior (empty space and outline ink) that metal regrows into.
     let fillCount = 0, preserved = 0;
     for (let p = 0; p < n; p++) {
       if (!mask[p]) continue;
-      if (kind[p] === METAL) preserved++;
+      if (kind[p] >= METAL) preserved++;
       else if (!isRim(p)) { fillable[p] = 1; fillCount++; }
     }
 
@@ -216,7 +233,7 @@
       const inset = new Int32Array(n).fill(-1); // Steps from the stroke's non-metal boundary (rim or empty space).
       queue = new Int32Array(n); head = tail = 0;
       for (let p = 0; p < n; p++) {
-        if (lane(p) && neighbors4(p).some(q => q < 0 || (!lane(q) && kind[q] !== METAL))) { inset[p] = 0; queue[tail++] = p; }
+        if (lane(p) && neighbors4(p).some(q => q < 0 || (!lane(q) && kind[q] <= INK))) { inset[p] = 0; queue[tail++] = p; }
       }
       while (head < tail) {
         const p = queue[head++];
@@ -271,47 +288,63 @@
       queue = null;
     }
 
-    // 5. Rim highlight: along the bridge's own new edges (where it meets its black rim or empty space), the band
-    //    facing the light gets the unshaded tone, like the lit edge on cel-shaded parts. The parts are untouched.
-    const light = options.lightDirection; // [x, y] screen-space vector toward the light, or null for no highlight.
-    const highlightWidth = Math.max(0, Math.min(32, Math.round(options.highlightWidth ?? 3)));
-    let highlighted = 0;
-    if (light && highlightWidth && palette[LIT] !== palette[SHADED]) {
-      const ll = Math.hypot(light[0], light[1]) || 1, lx = light[0] / ll, ly = light[1] / ll;
-      const nearest = new Int32Array(n).fill(-1); // Closest new-edge pixel, propagated through the hollow.
-      const normX = new Float32Array(n), normY = new Float32Array(n);
-      queue = new Int32Array(n); head = tail = 0;
-      for (let p = 0; p < n; p++) {
-        if (!fillable[p]) continue;
-        const x = p % w, y = (p / w) | 0;
-        let ox = 0, oy = 0, edge = false;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx, ny = y + dy;
-          const out = nx < 0 || ny < 0 || nx >= w || ny >= h;
-          const q = out ? -1 : ny * w + nx;
-          if (out || isRim(q) || (!mask[q] && kind[q] === EMPTY)) { edge = true; ox += dx; oy += dy; }
-        }
-        if (!edge) continue;
-        const len = Math.hypot(ox, oy) || 1;
-        normX[p] = ox / len; normY[p] = oy / len; nearest[p] = p; queue[tail++] = p;
+    // 5. Outline shading: a shaded band runs alongside every black outline the hollow touches (its rim, the parts'
+    //    outlines, or empty space). Its width is a share of the room the bridge has there (its local width): the full
+    //    `shadeWidth` share on the side facing away from the light, tapering to a thin line (never under 1 pixel)
+    //    on the side facing it, so every outline keeps at least a sliver of shade.
+    const shadeShare = Math.max(0, Math.min(1, options.shadeWidth ?? 0.3));
+    const litSideShare = Math.max(0, Math.min(1, options.litSideShare ?? 0.15)); // Fraction of the full band kept on the lit side.
+    const light = options.lightDirection; // [x, y] screen-space vector toward the light, or null for even shading.
+    const ll = light ? Math.hypot(light[0], light[1]) || 1 : 1, lx = light ? light[0] / ll : 0, ly = light ? light[1] / ll : 0;
+    const region = p => fillable[p] === 1 || (mask[p] && kind[p] === METAL); // Room is measured across the whole stroke.
+    const nearest = new Int32Array(n).fill(-1); // Closest outline-touching pixel, propagated through the stroke.
+    const normX = new Float32Array(n), normY = new Float32Array(n);
+    const order = [];
+    queue = new Int32Array(n); head = tail = 0;
+    for (let p = 0; p < n; p++) {
+      if (!region(p)) continue;
+      const x = p % w, y = (p / w) | 0;
+      let ox = 0, oy = 0, edge = false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) { edge = true; ox += dx; oy += dy; continue; }
+        const q = ny * w + nx;
+        if (!region(q) && kind[q] <= INK) { edge = true; ox += dx; oy += dy; }
       }
-      while (head < tail) {
-        const p = queue[head++], x = p % w, y = (p / w) | 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx, ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const q = ny * w + nx, e = nearest[p];
-          if (!fillable[q] || nearest[q] >= 0) continue;
-          if (Math.hypot(e % w - nx, ((e / w) | 0) - ny) > highlightWidth) continue;
-          nearest[q] = e; queue[tail++] = q;
-        }
+      if (!edge) continue;
+      const len = Math.hypot(ox, oy) || 1;
+      normX[p] = ox / len; normY[p] = oy / len; nearest[p] = p; queue[tail++] = p;
+    }
+    while (head < tail) {
+      const p = queue[head++], x = p % w, y = (p / w) | 0;
+      order.push(p);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const q = ny * w + nx;
+        if (region(q) && nearest[q] < 0) { nearest[q] = nearest[p]; queue[tail++] = q; }
       }
-      for (let p = 0; p < n; p++) {
-        const e = nearest[p];
-        if (e < 0 || normX[e] * lx + normY[e] * ly < 0.5) continue; // Only edges within ~60° of the light.
-        if (tone[p] !== LIT) { tone[p] = LIT; highlighted++; }
+    }
+    queue = null;
+    const depth = new Float32Array(n), ridge = new Float32Array(n); // Distance to the outline, and the deepest point inward of it.
+    for (const p of order) { const e = nearest[p]; depth[p] = ridge[p] = Math.hypot(e % w - p % w, ((e / w) | 0) - ((p / w) | 0)); }
+    order.sort((u, v) => depth[v] - depth[u]);
+    for (const p of order) { // Carry each ridge depth outward so every pixel knows the half-width of the bridge it sits in.
+      const x = p % w, y = (p / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const q = ny * w + nx;
+        if (nearest[q] >= 0 && depth[q] < depth[p] && ridge[q] < ridge[p]) ridge[q] = ridge[p];
       }
-      queue = null;
+    }
+    let edgeShaded = 0;
+    for (let p = 0; p < n; p++) {
+      if (!fillable[p] || nearest[p] < 0) continue;
+      const e = nearest[p];
+      const away = light ? (1 - (normX[e] * lx + normY[e] * ly)) / 2 : 0.5; // 0 facing the light, 1 facing away.
+      const band = Math.max(1, 2 * ridge[p] * shadeShare * (litSideShare + (1 - litSideShare) * away));
+      if (depth[p] < band && tone[p] !== SHADED) { tone[p] = SHADED; edgeShaded++; }
     }
 
     // 6. Write the result: rim → opaque black, hollow → sampled metal tones (unreached islands take the shaded tone),
@@ -320,7 +353,7 @@
     let rimCount = 0, shadedCount = 0, litCount = 0;
     for (let p = 0; p < n; p++) {
       if (relit[p]) { pixels.set(palette[LIT], p * 4); continue; }
-      if (!mask[p] || kind[p] === METAL) continue;
+      if (!mask[p] || kind[p] >= METAL) continue;
       const o = p * 4;
       if (!fillable[p]) { pixels[o] = pixels[o + 1] = pixels[o + 2] = 0; pixels[o + 3] = 255; rimCount++; continue; }
       const t = tone[p] >= 0 ? tone[p] : SHADED;
@@ -329,7 +362,7 @@
     }
     return { pixels, painted, rim: rimCount, filled: fillCount, grown, shaded: shadedCount, unshaded: litCount,
       seeds: seeds.length, sampled: samples.length, threshold, palette,
-      highlighted, preserved, pools, poolsLinked, channelled };
+      edgeShaded, preserved, pools, poolsLinked, channelled };
   }
 
   // Stamps a filled disc into a brush mask, interpolating from the previous point so fast strokes stay solid.

@@ -54,16 +54,34 @@ const tall = new Uint8Array(W * H);
 stampLine(tall, W, H, { x: 12, y: 13 }, { x: 48, y: 13 }, 7);
 const banded = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: null });
 assert(banded.shaded > 0 && banded.unshaded > 0, 'Bridge keeps both shaded and unshaded tones.');
-assert.equal(banded.highlighted, 0);
-assert.deepEqual(get(banded.pixels, 30, 18).slice(0, 3), SHADE.slice(0, 3), 'Lower bridge continues the shaded body.');
-assert.deepEqual(get(banded.pixels, 30, 8).slice(0, 3), LIT.slice(0, 3), 'Upper bridge continues the lit band.');
-// Edge highlight lights only the light-facing new edge.
-const lowMask = new Uint8Array(W * H);
-stampLine(lowMask, W, H, { x: 12, y: 18 }, { x: 48, y: 18 }, 4);
-const lit = fillBridge(src, lowMask, W, H, { outlineThickness: 1, seed: 2, lightDirection: [0, -1], highlightWidth: 2 });
-assert(lit.highlighted > 0);
-assert.deepEqual(get(lit.pixels, 30, 16).slice(0, 3), LIT.slice(0, 3), 'Top edge of the bridge is highlighted.');
-assert.deepEqual(get(lit.pixels, 30, 20).slice(0, 3), SHADE.slice(0, 3), 'Bottom edge stays shaded.');
+assert.deepEqual(get(banded.pixels, 30, 17).slice(0, 3), SHADE.slice(0, 3), 'Lower bridge continues the shaded body.');
+assert.deepEqual(get(banded.pixels, 30, 10).slice(0, 3), LIT.slice(0, 3), 'Upper bridge continues the lit band.');
+// Outline shading: every hollow pixel touching the black rim is shaded, whatever the light direction.
+const isShade = (px, x, y) => get(px, x, y).slice(0, 3).join() === SHADE.slice(0, 3).join();
+for (const light of [[0, -1], [0, 1], null]) {
+  const r = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: light });
+  assert(r.edgeShaded > 0);
+  for (let x = 24; x <= 36; x++) {
+    assert(isShade(r.pixels, x, 7) && isShade(r.pixels, x, 18), 'Thin shade line along both rims.');
+  }
+}
+// The band is thicker on the side facing away from the light (light from the top → thick bottom band).
+const bandDepth = (px, fromY, step) => { let d = 0; for (let y = fromY; isShade(px, 30, y) && d < 12; y += step) d++; return d; };
+const topLit = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: [0, -1], shadeWidth: 0.4 });
+const bottomLit = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: [0, 1], shadeWidth: 0.4 });
+const lightUpper = fillBridge(src, tall, W, H, { outlineThickness: 1, seed: 2, lightDirection: [0, -1], shadeWidth: 0 });
+assert(bandDepth(bottomLit.pixels, 7, 1) > bandDepth(topLit.pixels, 7, 1), 'Top band thickens when the light is below.');
+assert(bandDepth(lightUpper.pixels, 7, 1) >= 1, 'Even at 0% a one-pixel shade line remains.');
+// Colors that aren't the base metal hue (a red grip wrap) are kept under the stroke and never spread into it.
+const wrapped = new Uint8ClampedArray(src);
+const WRAP = [150, 40, 30, 255];
+for (let y = 12; y < 18; y++) for (let x = 3; x < 19; x++) wrapped.set(WRAP, (y * W + x) * 4);
+const wrapOut = fillBridge(wrapped, mask, W, H, { outlineThickness: 1, seed: 7, lightDirection: null });
+for (let p = 0; p < W * H; p++) {
+  const c = Array.from(wrapOut.pixels.slice(p * 4, p * 4 + 4)).join();
+  if (Array.from(wrapped.slice(p * 4, p * 4 + 4)).join() === WRAP.join()) assert.equal(c, WRAP.join(), 'Wrap kept.');
+  else if (mask[p]) assert.notEqual(c, WRAP.join(), 'Wrap color never spreads into the bridge.');
+}
 // Painted-over metal is kept; only empty space and outline ink under the stroke are regrown. The one exception is
 // shaded metal on a channel linking the two blocks' lit bands, which becomes unshaded.
 let relitCount = 0;

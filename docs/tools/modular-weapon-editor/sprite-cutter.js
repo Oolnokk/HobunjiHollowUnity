@@ -317,10 +317,10 @@
       if (!Number.isInteger(thickness) || thickness < 0 || thickness > 32) throw new Error('Bridge outline thickness must be 0–32.');
       const outcome = global.ModularWeaponBridgeFill.fillBridge(pixels, brushMask, FRAME.width, FRAME.height,
         { outlineThickness: thickness, minAlpha: minAlpha(), seed: Date.now(), lightDirection: lightDirection(),
-          highlightWidth: Number(byId('cut-bridge-highlight').value) || 0 });
+          shadeWidth: Math.max(0, Math.min(100, Number(byId('cut-bridge-shade').value) || 0)) / 100 });
       pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
       status('Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
-        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.highlighted + ' edge-highlighted), ' + outcome.rim + ' black rim pixels; kept ' + outcome.preserved + ' painted-over metal pixels' +
+        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.edgeShaded + ' shaded along outlines), ' + outcome.rim + ' black rim pixels; kept ' + outcome.preserved + ' painted-over metal pixels' +
         (outcome.pools > 1 ? '; linked ' + outcome.poolsLinked + ' of ' + (outcome.pools - 1) + ' unshaded-pool gaps' : '') +
         '. Undo restores the previous image.');
     } catch (error) { status('Bridge fill failed: ' + error.message); }
