@@ -37,6 +37,10 @@ vm.runInContext(read('docs/js/farmwork-ui.js'), env, { filename: 'farmwork-ui.js
 const plots = win.FarmPlotEditor; // Save-owning family plot manager.
 const ui = win.FarmworkUI; // New ordinary-play view over those plot records.
 plots.init({ save: () => { saved++; }, cropLabel: c => c.toUpperCase() });
+const supportedCrops = plots.cropOptions().map(option => option.value); // Assert every known berry seed is available to priority blocks.
+for (const crop of ['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']) {
+  assert.ok(supportedCrops.includes(crop), crop + ' must be selectable in Farmwork seed blocks');
+}
 
 assert.equal(ui.canOpen(), false, 'utility entry stays absent before marriage');
 spouseId = 'aliri_ginju';
