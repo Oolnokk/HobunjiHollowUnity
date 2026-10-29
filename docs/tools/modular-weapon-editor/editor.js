@@ -13,7 +13,7 @@
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
   const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
   let bridgeView = null; // Last composed preview bitmap and its logical frame, for painting bridge strokes over it.
-  let pendingStrokes = []; // Unapplied bridge strokes, in composed-frame source-pixel coordinates.
+  let pendingStrokes = []; // Bridge stroke being drawn (applied on release), in composed-frame source-pixel coordinates.
   let pendingKey = ''; // Pair the pending strokes belong to.
   let bridgePaint = null; // Active bridge brush drag.
   let bridgeHover = null; // Brush-size cursor over the preview.
@@ -457,8 +457,26 @@
     if (bridgePaint?.pointer !== event.pointerId) return;
     const points = bridgePaint.stroke.points, end = logicalPoint(event), last = points[points.length - 1];
     if (end[0] !== last[0] || end[1] !== last[1]) points.push(end);
-    bridgePaint = null; drawBridgeOverlay();
-    bridgeStatus(pendingStrokes.length + ' unapplied stroke(s). Apply bridge to fill them.');
+    bridgePaint = null;
+    if (event.type === 'pointercancel') { pendingStrokes = []; drawBridgeOverlay(); return; }
+    applyStrokes(pendingStrokes);
+  }
+  function applyStrokes(strokes, label = '') {
+    // Try the fill on the current bitmap first: a stroke touching no metal would otherwise make compose() skip
+    // every bridge on this pair.
+    const canvas = bridgeView.composed, frame = bridgeView.frame, fill = window.ModularWeaponBridgeFill;
+    const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
+    const mask = new Uint8Array(canvas.width * canvas.height);
+    const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
+    for (const stroke of strokes) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+    try {
+      fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
+        { outlineThickness: 0, shadeWidth: 0 });
+    } catch (error) { pendingStrokes = []; drawBridgeOverlay(); bridgeStatus('Not applied: ' + error.message); return; }
+    const pair = pairOverride(), previous = pair.bridges?.strokes || [];
+    pair.bridges = { ...bridgeSettings(), strokes: previous.concat(strokes) }; // All strokes fill together in one pass.
+    pendingStrokes = []; save(); syncBridgeControls();
+    if (label) bridgeStatus(label + ' ' + byId('pair-bridge-status').textContent);
   }
   previewCanvas.addEventListener('pointerup', endBridgePaint);
   previewCanvas.addEventListener('pointercancel', endBridgePaint);
@@ -468,13 +486,16 @@
     bridgeHover = null; drawBridgeOverlay();
   };
   byId('pair-bridge-radius').oninput = () => { byId('pair-bridge-radius-value').textContent = byId('pair-bridge-radius').value; drawBridgeOverlay(); };
-  byId('pair-bridge-apply').onclick = () => {
-    if (!pendingStrokes.length) { bridgeStatus('Paint at least one stroke on the assembled weapon first.'); return; }
-    const pair = pairOverride(), previous = pair.bridges?.strokes || [];
-    pair.bridges = { ...bridgeSettings(), strokes: previous.concat(pendingStrokes) }; // All strokes fill together in one pass.
-    pendingStrokes = []; save(); syncBridgeControls();
+  byId('pair-bridge-auto').onclick = () => {
+    if (!bridgeView) { bridgeStatus('This head and haft are not compatible, so there is nothing assembled to bridge.'); return; }
+    const canvas = bridgeView.composed, frame = bridgeView.frame, sx = canvas.width / frame.width;
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    const found = window.ModularWeaponBridgeFill.autoBridgeStrokes(pixels, canvas.width, canvas.height, { radius: bridgeRadius() * sx });
+    if (!found.length) { bridgeStatus('No gaps found: the head and haft already touch.'); return; }
+    applyStrokes(found.map(stroke => ({ ...stroke, r: Math.round(stroke.r / sx * 2) / 2, points: stroke.points.map(([x, y]) =>
+      [Math.round((frame.left + x / sx) * 2) / 2, Math.round((frame.top + y * frame.height / canvas.height) * 2) / 2]) })),
+      'Auto-bridged ' + found.length + ' gap(s).');
   };
-  byId('pair-bridge-discard').onclick = () => { pendingStrokes = []; drawBridgeOverlay(); syncBridgeControls(); };
   byId('pair-bridge-undo').onclick = () => {
     const pair = pairOverride();
     if (!pair.bridges?.strokes?.length) { bridgeStatus('No applied strokes to remove.'); return; }

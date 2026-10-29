@@ -25,6 +25,7 @@
     if (!raw || !Array.isArray(raw.strokes)) return null;
     const strokes = raw.strokes.slice(0, 64).map(stroke => ({
       r: finite(stroke?.r, 16, 1, 160),
+      ...(stroke?.closed === true ? { closed: true } : {}), // Auto-bridge polygons.
       points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
         .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
         .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
@@ -43,14 +44,8 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const mask = new Uint8Array(canvas.width * canvas.height);
-    for (const stroke of bridges.strokes) {
-      let previous = null;
-      for (const [x, y] of stroke.points) {
-        const point = { x: (x - frame.left) * sx, y: (y - frame.top) * sy };
-        fill.stampLine(mask, canvas.width, canvas.height, previous, point, stroke.r * sx);
-        previous = point;
-      }
-    }
+    const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
+    for (const stroke of bridges.strokes) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
     try {
       const result = fill.fillBridge(image.data, mask, canvas.width, canvas.height, {
         outlineThickness: Math.round(bridges.outline * sx), lightDirection: bridges.light,

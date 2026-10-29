@@ -44,13 +44,13 @@
 <table><thead><tr><th>Pair correction</th><th>Setting</th></tr></thead><tbody id="fields"></tbody></table>
 <button id="reset-pair" type="button">Reset this pair's manual corrections</button>
 <h2>Bridge brush for this pair</h2>
-<p>Paint fat strokes on the assembled weapon to join this head and haft, then Apply. The game re-runs the same hollow-and-fill once when it builds this exact combination (cached, never per frame). Metal under strokes is kept; only empty space and outlines are regrown.</p>
+<p>Click Auto-bridge gaps to join a head that floats off its haft automatically, or paint fat strokes on the assembled weapon yourself; each stroke applies as soon as you let go. The game re-runs the same hollow-and-fill once when it builds this exact combination (cached, never per frame). Metal under strokes is kept; only empty space and outlines are regrown.</p>
 <label><input id="pair-bridge-on" type="checkbox"> Paint on the assembled weapon preview</label>
 <label>Brush radius: <span id="pair-bridge-radius-value">16</span> px <input id="pair-bridge-radius" type="range" min="1" max="160" step="1" value="16"></label>
 <label>Bridge outline thickness (pixels) <input id="pair-bridge-outline" type="number" min="0" max="32" step="1" value="10"></label>
 <label>Light comes from (outline shading is thickest on the far side) <select id="pair-bridge-light"><option value="0,-1">Top</option><option value="-1,-1">Top-left</option><option value="1,-1">Top-right</option><option value="-1,0">Left</option><option value="1,0">Right</option><option value="0,1">Bottom</option><option value="none">No direction (even shading)</option></select></label>
 <label>Shade width (% of the bridge&rsquo;s width, on the dark side) <input id="pair-bridge-shade" type="number" min="0" max="100" step="1" value="30"></label>
-<div class="toolbar"><button id="pair-bridge-apply" type="button">Apply bridge</button><button id="pair-bridge-discard" type="button">Discard unapplied strokes</button></div>
+<div class="toolbar"><button id="pair-bridge-auto" type="button">Auto-bridge gaps</button></div>
 <div class="toolbar"><button id="pair-bridge-undo" type="button">Remove last applied stroke</button><button id="pair-bridge-clear" type="button">Remove all bridges</button></div>
 <p id="pair-bridge-status" aria-live="polite"></p>
 <details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
@@ -68,13 +68,13 @@
 <label>Uploaded modular heads and shafts on main <select id="cut-uploaded"></select></label>
 <div class="toolbar"><button id="cut-load-uploaded" type="button">Load uploaded part</button><button id="cut-refresh-uploaded" type="button">Refresh main uploads</button></div>
 <label>Or choose a PNG from this device <input id="cut-file" type="file" accept="image/png,.png"></label>
-<label>Canvas tool <select id="cut-tool"><option value="lasso">Lasso selection</option><option value="brush">Bridge brush (paint)</option><option value="erase">Bridge brush (erase)</option></select></label>
+<label>Canvas tool <select id="cut-tool"><option value="lasso">Lasso selection</option><option value="brush">Bridge brush</option></select></label>
 <label>Bridge brush radius: <span id="cut-brush-radius-value">16</span> px <input id="cut-brush-radius" type="range" min="1" max="160" step="1" value="16"></label>
 <label>Bridge outline thickness (pixels) <input id="cut-bridge-outline" type="number" min="0" max="32" step="1" value="10"></label>
 <label>Light comes from (outline shading is thickest on the far side) <select id="cut-bridge-light"><option value="0,-1">Top</option><option value="-1,-1">Top-left</option><option value="1,-1">Top-right</option><option value="-1,0">Left</option><option value="1,0">Right</option><option value="0,1">Bottom</option><option value="none">No direction (even shading)</option></select></label>
 <label>Shade width (% of the bridge&rsquo;s width, on the dark side) <input id="cut-bridge-shade" type="number" min="0" max="100" step="1" value="30"></label>
-<div class="toolbar"><button id="cut-bridge-fill" type="button">Hollow &amp; fill bridge</button><button id="cut-bridge-clear" type="button">Clear brush</button></div>
-<p>Paint a fat black stroke from one metal piece to another, then Hollow &amp; fill: metal under the stroke is kept, the rest keeps a black rim wherever it meets empty space, separate unshaded pools touching it get joined by an unshaded channel, and every metal pixel touching it races to grow its shaded or unshaded tone inward, carrying the parts&rsquo; shading bands into the bridge. A shaded band runs alongside every black outline: the set percentage of the bridge&rsquo;s width on the side facing away from the light, thinning to a sliver on the lit side. Only pixels in the base metal color seed the fill; other colors under the stroke are kept as-is. Undo works here too.</p>
+<div class="toolbar"><button id="cut-bridge-auto" type="button">Auto-bridge gaps</button></div>
+<p>Bridge brush: paint a fat stroke from one metal piece to another and it fills as soon as you let go (Undo reverts it). Auto-bridge gaps does this for you, joining every separate piece with the shortest strokes (brush radius sets their width). Metal under the stroke is kept, the rest keeps a black rim wherever it meets empty space, separate unshaded pools touching it get joined by an unshaded channel, and every metal pixel touching it races to grow its shaded or unshaded tone inward, carrying the parts&rsquo; shading bands into the bridge. A shaded band runs alongside every black outline: the set percentage of the bridge&rsquo;s width on the side facing away from the light, thinning to a sliver on the lit side. Only pixels in the base metal color seed the fill; other colors under the stroke are kept as-is. Undo works here too.</p>
 <div class="toolbar"><button id="cut-remove" type="button">Remove inside lasso</button><button id="cut-isolate" type="button">Keep inside lasso</button><button id="cut-clear-selection" type="button">Clear selection</button></div>
 <div class="toolbar"><button id="cut-undo" type="button">Undo</button><button id="cut-reset" type="button">Reset source</button></div>
 <label>Minimum alpha to keep (0–255) <input id="cut-min-alpha" type="number" min="0" max="255" step="1" value="32"></label>
@@ -92,5 +92,5 @@
 </div><figure class="cut-stage"><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
 <p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
 </section></main>
-<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029pair001"></script><script src="../../js/modular-weapons.js?v=20261029pair001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261029pair001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261028bridge004"></script>
+<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029auto001"></script><script src="../../js/modular-weapons.js?v=20261029auto001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261029auto001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029auto001"></script>
 </body></html>

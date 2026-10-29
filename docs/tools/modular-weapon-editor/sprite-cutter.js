@@ -103,7 +103,7 @@
   let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
   let hoverPoint = null; // Brush-size cursor preview position.
   let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
-  const tool = () => byId('cut-tool').value; // 'lasso', 'brush', or 'erase'.
+  const tool = () => byId('cut-tool').value; // 'lasso' or 'brush'.
   const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
   function status(text) { byId('cut-status').textContent = text; }
@@ -148,7 +148,7 @@
     } else if (pixels) ctx.putImageData(new ImageData(pixels, FRAME.width, FRAME.height), 0, 0);
     if (hoverPoint && tool() !== 'lasso') {
       ctx.save();
-      ctx.strokeStyle = tool() === 'erase' ? '#ff7a7a' : '#ffce64'; ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
@@ -224,10 +224,8 @@
   function clearBrush() { brushMask.fill(0); brushPainted = false; lastBrushPoint = null; }
   function paint(event) {
     const point = pointFor(event); // Bridge brush stamps discs in source-pixel space.
-    global.ModularWeaponBridgeFill.stampLine(brushMask, FRAME.width, FRAME.height, lastBrushPoint, point,
-      brushRadius(), tool() === 'erase' ? 0 : 1);
-    lastBrushPoint = point; hoverPoint = point;
-    brushPainted = tool() === 'erase' ? brushMask.includes(1) : true;
+    global.ModularWeaponBridgeFill.stampLine(brushMask, FRAME.width, FRAME.height, lastBrushPoint, point, brushRadius());
+    lastBrushPoint = point; hoverPoint = point; brushPainted = true;
     scheduleRender();
   }
   canvas.addEventListener('pointerdown', event => {
@@ -250,8 +248,8 @@
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
     if (tool() !== 'lasso') {
-      activePointer = null; lastBrushPoint = null; renderNow();
-      status('Brush stroke painted. Hollow & fill bridge turns it into metal; Clear brush discards it.');
+      activePointer = null; lastBrushPoint = null;
+      if (cancel) { clearBrush(); renderNow(); } else fillBrush(); // Each stroke fills as soon as it's released.
       return;
     }
     if (!cancel) extend(event); else path = [];
@@ -310,22 +308,32 @@
     const value = byId('cut-bridge-light').value; // "x,y" toward the light in screen space, or "none".
     return value === 'none' ? null : value.split(',').map(Number);
   }
-  byId('cut-bridge-fill').onclick = () => {
-    if (!pixels || activePointer !== null) { status('Load a sprite and finish the brush stroke first.'); return; }
+  function fillBrush(prefix = '') {
     try {
       const thickness = Number(byId('cut-bridge-outline').value); // Black rim width where the bridge meets empty space.
       if (!Number.isInteger(thickness) || thickness < 0 || thickness > 32) throw new Error('Bridge outline thickness must be 0–32.');
       const outcome = global.ModularWeaponBridgeFill.fillBridge(pixels, brushMask, FRAME.width, FRAME.height,
-        { outlineThickness: thickness, minAlpha: minAlpha(), seed: Date.now(), lightDirection: lightDirection(),
+        { outlineThickness: thickness, minAlpha: minAlpha(), seed: 1, lightDirection: lightDirection(),
           shadeWidth: Math.max(0, Math.min(100, Number(byId('cut-bridge-shade').value) || 0)) / 100 });
       pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
-      status('Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
+      status(prefix + 'Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
         outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.edgeShaded + ' shaded along outlines), ' + outcome.rim + ' black rim pixels; kept ' + outcome.preserved + ' painted-over metal pixels' +
         (outcome.pools > 1 ? '; linked ' + outcome.poolsLinked + ' of ' + (outcome.pools - 1) + ' unshaded-pool gaps' : '') +
         '. Undo restores the previous image.');
-    } catch (error) { status('Bridge fill failed: ' + error.message); }
+    } catch (error) { clearBrush(); renderNow(); status('Bridge fill failed: ' + error.message); }
+  }
+  byId('cut-bridge-auto').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    try {
+      const strokes = global.ModularWeaponBridgeFill.autoBridgeStrokes(pixels, FRAME.width, FRAME.height,
+        { radius: brushRadius(), minAlpha: minAlpha() }); // One straight stroke per gap between separate pieces.
+      if (!strokes.length) { status('No gaps found: every visible piece already touches the rest.'); return; }
+      clearBrush();
+      for (const stroke of strokes) global.ModularWeaponBridgeFill.stampStroke(brushMask, FRAME.width, FRAME.height, stroke);
+      brushPainted = true;
+      fillBrush('Auto-bridged ' + strokes.length + ' gap(s). ');
+    } catch (error) { clearBrush(); renderNow(); status('Auto-bridge failed: ' + error.message); }
   };
-  byId('cut-bridge-clear').onclick = () => { clearBrush(); renderNow(); status('Brush cleared.'); };
   byId('cut-brush-radius').oninput = () => {
     byId('cut-brush-radius-value').textContent = byId('cut-brush-radius').value; scheduleRender();
   };

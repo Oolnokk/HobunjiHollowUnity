@@ -126,6 +126,28 @@ const lonely = new Uint8Array(W * H);
 stampLine(lonely, W, H, null, { x: 30, y: 2 }, 1);
 assert.throws(() => fillBridge(src, lonely, W, H), /touch metal/);
 assert.throws(() => fillBridge(src, new Uint8Array(W * H), W, H), /Paint over/);
+// Auto-bridge: the two separate blocks get one stroke across the gap, overlapping both; touching pieces get none.
+const { autoBridgeStrokes } = window.ModularWeaponBridgeFill;
+const auto = autoBridgeStrokes(src, W, H, { radius: 5 });
+assert.equal(auto.length, 1, 'One stroke joins two pieces.');
+const xs = auto[0].points.map(([x]) => x);
+assert(auto[0].closed && Math.min(...xs) <= 20 && Math.max(...xs) >= 40, 'The bridge polygon spans the gap between the blocks.');
+const autoMask = new Uint8Array(W * H);
+window.ModularWeaponBridgeFill.stampStroke(autoMask, W, H, auto[0]);
+for (let x = 21; x < 40; x++) assert(autoMask[15 * W + x], 'Gap middle is covered.');
+assert(!autoMask[1 * W + 30], 'Bridge stays the height of the facing edges, not the whole frame.');
+assert(fillBridge(src, autoMask, W, H, { outlineThickness: 1 }).grown > 0, 'The proposed stroke fills.');
+const joined = new Uint8ClampedArray(src);
+for (let y = 12; y < 18; y++) for (let x = 19; x < 41; x++) joined.set(SHADE, (y * W + x) * 4);
+assert.equal(autoBridgeStrokes(joined, W, H, { radius: 5 }).length, 0, 'Touching pieces need no bridge.');
+// Outline ink belonging to another material (wood) stays black under the stroke; ink outlining metal opens up.
+const WOOD = [120, 100, 40, 255];
+const woody = new Uint8ClampedArray(W * H * 4);
+for (let y = 5; y < 25; y++) for (let x = 2; x < 20; x++) woody.set(x === 2 || y === 5 || x === 19 || y === 24 ? INK : SHADE, (y * W + x) * 4);
+for (let y = 5; y < 25; y++) for (let x = 40; x < 58; x++) woody.set(x === 40 || y === 5 || x === 57 || y === 24 ? INK : WOOD, (y * W + x) * 4);
+const woodOut = fillBridge(woody, mask, W, H, { outlineThickness: 1, seed: 1 });
+assert.deepEqual(get(woodOut.pixels, 40, 15), INK, 'Wood outline under the stroke stays black.');
+assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the stroke opens up.');
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.

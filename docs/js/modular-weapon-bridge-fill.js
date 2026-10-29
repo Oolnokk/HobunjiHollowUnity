@@ -73,12 +73,36 @@
     return out;
   };
 
-  // source: RGBA frame; mask: one byte per pixel (nonzero = painted by the bridge brush).
+  // source: RGBA frame; mask: one byte per pixel (nonzero = painted by the bridge brush). Only the stroke's bounding
+  // box plus a margin (room for seeds, sampling, and the parts' unshaded pools) is processed, then pasted back, so
+  // cost follows the stroke size rather than the frame size.
   function fillBridge(source, mask, width, height, options = {}) {
     const w = Number(width), h = Number(height), n = w * h;
     if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 ||
         !source || source.length !== n * 4 || !mask || mask.length !== n)
       throw new Error('Bridge fill needs a valid RGBA frame and matching brush mask.');
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0, row = y * w; x < w; x++) if (mask[row + x]) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 < 0) throw new Error('Paint over the gap with the bridge brush first.');
+    const margin = 48;
+    const cx = Math.max(0, x0 - margin), cy = Math.max(0, y0 - margin);
+    const cw = Math.min(w - 1, x1 + margin) - cx + 1, ch = Math.min(h - 1, y1 + margin) - cy + 1;
+    const cropSource = new Uint8ClampedArray(cw * ch * 4), cropMask = new Uint8Array(cw * ch);
+    for (let y = 0; y < ch; y++) {
+      const from = (cy + y) * w + cx;
+      cropSource.set(source.subarray(from * 4, (from + cw) * 4), y * cw * 4);
+      cropMask.set(mask.subarray(from, from + cw), y * cw);
+    }
+    const result = fillRegion(cropSource, cropMask, cw, ch, options); // Crop edges never touch the stroke except at real frame edges.
+    const pixels = new Uint8ClampedArray(source);
+    for (let y = 0; y < ch; y++) pixels.set(result.pixels.subarray(y * cw * 4, (y + 1) * cw * 4), ((cy + y) * w + cx) * 4);
+    return { ...result, pixels };
+  }
+
+  function fillRegion(source, mask, w, h, options) {
+    const n = w * h;
     const thickness = Math.max(0, Math.min(32, Math.round(options.outlineThickness ?? 10))); // Black rim kept where the bridge meets empty space.
     const minAlpha = Math.max(1, Math.min(255, Math.round(options.minAlpha ?? 32))); // Fainter pixels count as empty.
     const darkLuma = options.darkLuma ?? 48; // Darker opaque pixels are outline ink, never metal.
@@ -104,6 +128,30 @@
       if (mask[p]) painted++;
     }
     if (!painted) throw new Error('Paint over the gap with the bridge brush first.');
+
+    // Outline ink belongs to whichever material it is closest to. Ink under the stroke that outlines another
+    // material (a wooden haft, a grip wrap) stays black; only ink outlining metal opens up for the bridge to join.
+    const inkOwner = new Int8Array(n).fill(-1);
+    {
+      const q0 = new Int32Array(n); let qh = 0, qt = 0;
+      for (let p = 0; p < n; p++) {
+        if (kind[p] !== INK) continue;
+        const x = p % w, y = (p / w) | 0;
+        let owner = -1;
+        for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+          if (q >= 0 && kind[q] === OTHER) { owner = OTHER; break; }
+          if (q >= 0 && kind[q] === METAL) owner = METAL;
+        }
+        if (owner >= 0) { inkOwner[p] = owner; q0[qt++] = p; }
+      }
+      while (qh < qt) {
+        const p = q0[qh++], x = p % w, y = (p / w) | 0;
+        for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]) {
+          if (q >= 0 && kind[q] === INK && inkOwner[q] < 0) { inkOwner[q] = inkOwner[p]; q0[qt++] = q; }
+        }
+      }
+    }
+    const keptInk = p => kind[p] === INK && inkOwner[p] === OTHER;
 
     // 1. Black rim: painted pixels within `thickness` (straight-line distance, so diagonal strokes get the same rim as
     //    straight ones) of empty space outside the stroke or the frame edge.
@@ -132,12 +180,12 @@
       }
     }
     // Metal (and other-colored material) the stroke painted over is never overwritten; painted metal joins the seeds.
-    const isRim = p => kind[p] <= INK && rimSource[p] >= 0;
+    const isRim = p => kind[p] <= INK && !keptInk(p) && rimSource[p] >= 0;
     const fillable = new Uint8Array(n); // The hollowed interior (empty space and outline ink) that metal regrows into.
     let fillCount = 0, preserved = 0;
     for (let p = 0; p < n; p++) {
       if (!mask[p]) continue;
-      if (kind[p] >= METAL) preserved++;
+      if (kind[p] >= METAL || keptInk(p)) preserved++;
       else if (!isRim(p)) { fillable[p] = 1; fillCount++; }
     }
 
@@ -165,9 +213,11 @@
       }
     }
     if (!seeds.length) throw new Error('The stroke must touch metal pixels at both ends so they can grow into it.');
-    if (!samples.length) samples.push(...seeds);
+    if (!samples.length) for (const p of seeds) samples.push(p);
     const lumas = samples.map(p => luma(source, p * 4));
-    const spread = Math.max(...lumas) - Math.min(...lumas);
+    let low = Infinity, high = -Infinity; // No Math.max(...array): huge strokes would exceed engine argument limits.
+    for (const v of lumas) { if (v < low) low = v; if (v > high) high = v; }
+    const spread = high - low;
     const threshold = spread < 12 ? -1 : otsu(lumas); // Near-uniform metal has a single tone.
     const SHADED = 0, LIT = 1;
     const toneOf = p => luma(source, p * 4) < threshold ? SHADED : LIT;
@@ -353,7 +403,7 @@
     let rimCount = 0, shadedCount = 0, litCount = 0;
     for (let p = 0; p < n; p++) {
       if (relit[p]) { pixels.set(palette[LIT], p * 4); continue; }
-      if (!mask[p] || kind[p] >= METAL) continue;
+      if (!mask[p] || kind[p] >= METAL || keptInk(p)) continue;
       const o = p * 4;
       if (!fillable[p]) { pixels[o] = pixels[o + 1] = pixels[o + 2] = 0; pixels[o + 3] = 255; rimCount++; continue; }
       const t = tone[p] >= 0 ? tone[p] : SHADED;
@@ -384,5 +434,119 @@
     }
   }
 
-  global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine });
+  function convexHull(points) { // Monotone chain; points as [x, y].
+    const pts = points.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    if (pts.length < 3) return pts;
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (const p of pts.reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+  // Stamps one saved stroke: an open polyline of discs, or (closed) a filled polygon with a disc-wide border.
+  // `toPixel` maps stored coordinates into the mask and `scale` converts the radius the same way.
+  function stampStroke(mask, width, height, stroke, toPixel = (x, y) => ({ x, y }), scale = 1) {
+    const pts = stroke.points.map(([x, y]) => toPixel(x, y)), r = stroke.r * scale;
+    if (stroke.closed && pts.length >= 3) {
+      const top = Math.max(0, Math.floor(Math.min(...pts.map(p => p.y)))), bottom = Math.min(height - 1, Math.ceil(Math.max(...pts.map(p => p.y))));
+      for (let y = top; y <= bottom; y++) { // Even-odd scanline fill at pixel centres.
+        const cy = y + 0.5, xs = [];
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          if ((a.y <= cy) !== (b.y <= cy)) xs.push(a.x + (cy - a.y) * (b.x - a.x) / (b.y - a.y));
+        }
+        xs.sort((u, v) => u - v);
+        for (let i = 0; i + 1 < xs.length; i += 2) {
+          const x0 = Math.max(0, Math.ceil(xs[i] - 0.5)), x1 = Math.min(width - 1, Math.floor(xs[i + 1] - 0.5));
+          if (x1 >= x0) mask.fill(1, y * width + x0, y * width + x1 + 1);
+        }
+      }
+      for (let i = 0; i < pts.length; i++) stampLine(mask, width, height, pts[i], pts[(i + 1) % pts.length], r);
+      return;
+    }
+    let previous = null;
+    for (const point of pts) { stampLine(mask, width, height, previous, point, r); previous = point; }
+  }
+
+  // Finds visible pieces of the sprite that don't touch (a head floating off its haft) and proposes one straight
+  // bridge stroke per gap: the shortest set of links joining every piece (minimum spanning tree over where the
+  // pieces' distance fronts meet). Each bridge is a closed polygon around the edges facing each other across the
+  // gap, widened so it is at least 2 × `radius` across.
+  function autoBridgeStrokes(pixels, width, height, options = {}) {
+    const w = width, h = height, n = w * h;
+    const radius = Math.max(1, options.radius ?? 16);
+    const minAlpha = options.minAlpha ?? 32, minPiece = options.minPiece ?? 64, maxGap = options.maxGap ?? 240;
+    const piece = new Int32Array(n).fill(-1), sizes = [];
+    const stack = [];
+    for (let s0 = 0; s0 < n; s0++) {
+      if (piece[s0] >= 0 || pixels[s0 * 4 + 3] < minAlpha) continue;
+      const id = sizes.length; let size = 0;
+      piece[s0] = id; stack.push(s0);
+      while (stack.length) {
+        const p = stack.pop(), x = p % w, y = (p / w) | 0; size++;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const q = ny * w + nx;
+          if (piece[q] < 0 && pixels[q * 4 + 3] >= minAlpha) { piece[q] = id; stack.push(q); }
+        }
+      }
+      sizes.push(size);
+    }
+    const big = sizes.map(size => size >= minPiece); // Specks and stray pixels are never bridged to.
+    if (big.filter(Boolean).length < 2) return [];
+    // Grow every piece across empty space at once, remembering each empty pixel's nearest piece pixel.
+    const origin = new Int32Array(n).fill(-1), owner = new Int32Array(n).fill(-1);
+    const queue = new Int32Array(n); let head = 0, tail = 0;
+    for (let p = 0; p < n; p++) if (piece[p] >= 0 && big[piece[p]]) { origin[p] = p; owner[p] = piece[p]; queue[tail++] = p; }
+    const gapOf = (p, o) => Math.hypot(p % w - o % w, ((p / w) | 0) - ((o / w) | 0));
+    while (head < tail) {
+      const p = queue[head++], x = p % w, y = (p / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const q = ny * w + nx;
+        if (owner[q] >= 0 || piece[q] >= 0 || gapOf(q, origin[p]) > maxGap / 2 + 1) continue;
+        origin[q] = origin[p]; owner[q] = owner[p]; queue[tail++] = q;
+      }
+    }
+    const links = new Map(); // "a,b" → [[gap length, origin in a, origin in b], ...] for every meeting point.
+    for (let p = 0; p < n; p++) {
+      if (owner[p] < 0) continue;
+      const x = p % w, y = (p / w) | 0;
+      for (const q of [x < w - 1 ? p + 1 : -1, y < h - 1 ? p + w : -1]) {
+        if (q < 0 || owner[q] < 0 || owner[q] === owner[p]) continue;
+        const [a, b, oa, ob] = owner[p] < owner[q] ? [owner[p], owner[q], origin[p], origin[q]] : [owner[q], owner[p], origin[q], origin[p]];
+        const gap = gapOf(oa, ob), key = a + ',' + b;
+        if (gap > maxGap) continue;
+        if (!links.has(key)) links.set(key, { a, b, best: Infinity, meets: [] });
+        const link = links.get(key);
+        link.best = Math.min(link.best, gap); link.meets.push([gap, oa, ob]);
+      }
+    }
+    const root = sizes.map((_, i) => i);
+    const find = i => root[i] === i ? i : (root[i] = find(root[i]));
+    const strokes = [];
+    for (const { a, b, best, meets } of [...links.values()].sort((u, v) => u.best - v.best)) {
+      if (find(a) === find(b)) continue;
+      root[find(a)] = find(b);
+      const near = meets.filter(([gap]) => gap <= best + Math.max(2, best * 0.15)); // The facing stretch of the gap.
+      // Each distinct edge pixel counts once: empty space beside the parts traces back to the same corner pixels
+      // many times and would otherwise drag the stroke off-centre.
+      const edgeA = [...new Set(near.map(m => m[1]))], edgeB = [...new Set(near.map(m => m[2]))];
+      const mean = list => list.reduce((acc, p) => [acc[0] + p % w + 0.5, acc[1] + ((p / w) | 0) + 0.5], [0, 0]).map(v => v / list.length);
+      const [ax, ay] = mean(edgeA), [bx, by] = mean(edgeB);
+      const length = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / length, uy = (by - ay) / length;
+      const span = list => { let lo = Infinity, hi = -Infinity; for (const p of list) { const c = (p % w) * -uy + ((p / w) | 0) * ux; lo = Math.min(lo, c); hi = Math.max(hi, c); } return hi - lo + 1; };
+      // The bridge is the outline around both facing edges (a closed polygon), widened only as far as needed to
+      // reach the minimum width, so a straight cut is rebuilt at exactly its own width.
+      const facing = Math.min(span(edgeA), span(edgeB));
+      const r = Math.max(2, radius - facing / 2);
+      const hull = convexHull(edgeA.concat(edgeB).map(p => [p % w + 0.5, ((p / w) | 0) + 0.5]));
+      strokes.push(hull.length >= 3 ? { r, closed: true, points: hull } : { r: Math.max(radius, 2), points: [[ax, ay], [bx, by]] });
+    }
+    return strokes;
+  }
+
+  global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes });
 })(typeof window === 'object' ? window : globalThis);
