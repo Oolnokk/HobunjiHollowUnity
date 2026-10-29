@@ -17513,6 +17513,7 @@
         normalizeNpcArea,
         transformFurnitureWithHousePiece,
         rebuildInteriorGeometry,
+        reconcileInteriorFurniture: reconcileFurnitureWithFarmhousePartitions, // FarmEditor runs this once after all saved rooms and decor are loaded.
         createDayOneTile,
         _screenToFarmTile,
         debugLog,
@@ -20346,7 +20347,9 @@
             interiorGrid[r][c].type = floorSet.has(c + ',' + r) ? TileType.GRASS : TileType.ROCK;
           }
         }
-        reconcileFurnitureWithFarmhousePartitions(); // Migrates old saves before partition walls render over existing furniture.
+        if (!window.FarmEditor?.isRestoringLayout?.()) {
+          reconcileFurnitureWithFarmhousePartitions(); // Intermediate room builds during a save restore must not displace saved furniture.
+        }
 
         if (interiorFloorGroup) { interiorScene.remove(interiorFloorGroup); interiorFloorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
         if (interiorWallGroup)  { WallBuilder.disposeGroup(interiorWallGroup); interiorScene.remove(interiorWallGroup); }
