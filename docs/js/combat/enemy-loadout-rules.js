@@ -55,6 +55,8 @@
         throw Error('Invalid enemy rule');
       if (rule.enabled != null && typeof rule.enabled !== 'boolean')
         throw Error('Enemy rule enabled must be true/false');
+      if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
+        throw Error(kind + '.maskPatterns must be true/false');
       if (rule.rigScale != null) {
         // Same four values (and units: scale multipliers / fraction of model height) as the Animation Author's Character Rig Scale section.
         if (typeof rule.rigScale !== 'object' || Array.isArray(rule.rigScale))
@@ -259,6 +261,7 @@
     roster.equippedCosmetics ||= [];
     roster.cosmeticSlots ||= {};
     roster.appliedDyes ||= {};
+    if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
       if (roster.metalArmorItems)
         roster.metalArmorItems = roster.metalArmorItems.filter(

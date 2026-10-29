@@ -29,6 +29,7 @@ const files = [
   'js/weather-fx.js?v=20261029enemyParity1',
   'js/emissive-light-orbs.js?v=20261029orbs1',
   'js/sprite-recolor.js?v=20261028hspriterecoloraudit2', // Garment tint (pants/clothing dye) needs SpriteRecolor.recolorImageData.
+  'js/procedural-mask-patterns.js?v=20261029maskpat1', // Per-wearer procedural glyph patterns for masks.
   'js/clothing-weaving-system.js?v=20261029orbs1', // Garment dye/weave renderer: without it every garment falls back to its plain undyed art (pants never showed their dye).
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',

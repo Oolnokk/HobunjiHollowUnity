@@ -374,6 +374,7 @@
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
     characterBuildStatus.garmentId = ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
     characterBuildStatus.stage = 'profile';
+    await window.ProceduralMaskPatterns?.ready; // Mask pattern library (config/patterns) must be loaded before the profile is built.
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');

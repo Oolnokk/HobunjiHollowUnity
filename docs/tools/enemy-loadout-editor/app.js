@@ -540,6 +540,21 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
+  const patterns = el('label', 'chance', 'Procedural mask patterns');
+  const patternsCheck = el('input');
+  patternsCheck.type = 'checkbox';
+  patternsCheck.checked = rule().maskPatterns !== false;
+  patternsCheck.onchange = () => {
+    mutate((r) => {
+      if (patternsCheck.checked) delete r.maskPatterns;
+      else r.maskPatterns = false;
+    });
+  };
+  patterns.prepend(patternsCheck);
+  patterns.append(
+    el('span', 'muted', ' random Hachutu glyph + overpass, each in its own iridescent colour'),
+  );
+  box.append(patterns);
   const apply = el('button', null, 'Roll with these proportions');
   apply.onclick = () => roll(false);
   box.append(apply);

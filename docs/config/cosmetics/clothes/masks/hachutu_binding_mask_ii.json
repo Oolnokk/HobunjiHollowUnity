@@ -44,7 +44,16 @@
                 "sourceHex": "#7F00FF",
                 "paletteColorKey": "C",
                 "defaultHex": "#7F00FF",
-                "defaultHexPool": ["#8A2BFF", "#5B5BFF", "#1FB7FF", "#19E6C3", "#3DFF6B", "#C8FF2B", "#FFC531", "#FF5FA8"],
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
                 "glow": {
                   "blur": 3,
                   "radius": 0.65,
@@ -82,7 +91,16 @@
                 "sourceHex": "#7F00FF",
                 "paletteColorKey": "C",
                 "defaultHex": "#7F00FF",
-                "defaultHexPool": ["#8A2BFF", "#5B5BFF", "#1FB7FF", "#19E6C3", "#3DFF6B", "#C8FF2B", "#FFC531", "#FF5FA8"],
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
                 "glow": {
                   "blur": 3,
                   "radius": 0.65,
@@ -120,7 +138,16 @@
                 "sourceHex": "#7F00FF",
                 "paletteColorKey": "C",
                 "defaultHex": "#7F00FF",
-                "defaultHexPool": ["#8A2BFF", "#5B5BFF", "#1FB7FF", "#19E6C3", "#3DFF6B", "#C8FF2B", "#FFC531", "#FF5FA8"],
+                "defaultHexPool": [
+                  "#8A2BFF",
+                  "#5B5BFF",
+                  "#1FB7FF",
+                  "#19E6C3",
+                  "#3DFF6B",
+                  "#C8FF2B",
+                  "#FFC531",
+                  "#FF5FA8"
+                ],
                 "glow": {
                   "blur": 3,
                   "radius": 0.65,
@@ -132,5 +159,23 @@
         }
       }
     }
+  },
+  "proceduralPatterns": {
+    "enabled": true,
+    "patternIdPrefix": "hachutu_glyph",
+    "layers": 2,
+    "frameScaleMin": 0.25,
+    "frameScaleMax": 1,
+    "frameTranslateFraction": 0.08,
+    "inkColors": [
+      "#8A2BFF",
+      "#5B5BFF",
+      "#1FB7FF",
+      "#19E6C3",
+      "#3DFF6B",
+      "#C8FF2B",
+      "#FFC531",
+      "#FF5FA8"
+    ]
   }
 }

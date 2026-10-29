@@ -2643,9 +2643,12 @@
       patternCanvases.push(buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
     }
     await window.PixelWorkYield?.maybeYield();
-    const [r, g, b] = hexRgb(colorHex);
+    // The primary pattern may carry its own ink colour too (procedural mask glyphs paint every pattern in its own hue); otherwise it
+    // uses the item's pattern dye as before. The overpass is compared against the primary's actual ink.
+    const primaryInkHex = /^#[0-9a-f]{6}$/i.test(String(active[0].pattern.inkColorHex || '')) ? active[0].pattern.inkColorHex : colorHex;
+    const [r, g, b] = hexRgb(primaryInkHex);
     const overpassInkHex = active.length > 1 && /^#[0-9a-f]{6}$/i.test(String(active[1].pattern.inkColorHex || ''))
-      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(colorHex).toLowerCase()
+      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(primaryInkHex).toLowerCase()
       ? active[1].pattern.inkColorHex : null; // Same-color overpasses take the old single-pass fast path. // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
@@ -2784,7 +2787,9 @@
   }
 
   function patternImageForTint(patternMap, baseTintResolver, onPatternPending, img, sourceKey, tint) {
-    const descriptor = patternMap?.get(normalizeAssetPath(sourceKey));
+    // Pixel-dye layers (the mask) extend their tint key with '|pixelDye|<glowOnly>|<rgb>'. The cloth/wood partition (glowOnly=false) is
+    // patterned like any layer; the luminous partition (the eyes) is never patterned.
+    const descriptor = patternMap?.get(normalizeAssetPath(String(sourceKey).replace(/\|pixelDye\|false\|[^|]*$/, '')));
     const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
     const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
     if (!patterns.length && !trimPattern) return baseTintResolver(img, sourceKey, tint);
