@@ -20852,6 +20852,24 @@
       // piece of furniture right behind it) — so those are gathered fresh
       // each call instead. Cheap in practice: a handful of structures/
       // furniture pieces at most, and this only runs once a frame.
+      // An occupied authored seat appears in the building scene's cached camera
+      // obstacle list. Keep its other pews and walls solid, but never let the
+      // camera collide with the chair containing its own look-at target.
+      function cameraObstacleIsCurrentSeat(candidate) {
+        if (!sitInteraction) return false;
+        const seatItemKey = DECORATIVE_FURNITURE_DEFS[sitInteraction.furnitureKey]?.itemKey
+          || PROCESSING_FURNITURE_DEFS[sitInteraction.furnitureKey]?.itemKey
+          || sitInteraction.furnitureKey; // Resolve runtime key (bench) to map itemKey (benchFurniture).
+        // Chunked camera proxy meshes retain the original source node; children
+        // inherit the authored placement metadata from their furniture root.
+        for (let node = candidate?.userData?.cameraObstacleSource || candidate; node; node = node.parent) {
+          const placement = node.userData?.mapEditorRef;
+          if (placement?.kind === 'furniture' && placement.mapId === currentArea
+            && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
+            && placement.row === sitInteraction.row) return true;
+        }
+        return false;
+      }
       function currentAreaOcclusionMeshes() {
         if (_isZoneArea(currentArea)) {
           const meshes = (_zoneScenes.get(currentArea)?.occlusionMeshes || []).slice();
@@ -20866,7 +20884,9 @@
         // pulled the camera in when it got between the camera and the
         // player, unlike the outdoor case just above.
         if (_isBuildingArea(currentArea)) {
-          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) meshes.push(m);
+          for (const m of (_buildingScenes.get(currentArea)?.occlusionMeshes || [])) {
+            if (!cameraObstacleIsCurrentSeat(m)) meshes.push(m); // Seated camera must not hit its own pew, including tagged child meshes and chunk proxies.
+          }
         }
         if (currentArea === 'farm') {
           for (const entry of housePieces) if (entry._mesh) meshes.push(entry._mesh);
