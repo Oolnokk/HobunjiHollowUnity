@@ -10,7 +10,7 @@
 
   const DEFAULTS = Object.freeze({
     seed: 'ruin-root-growth-1', floorWidth: 8, floorDepth: 8, floorY: 0,
-    branchCount: 9, duration: 3.5, branchRadius: 0.065, bend: 0.42,
+    branchCount: 9, duration: 3.5, branchRadius: 0.065, bend: 0.42, arcConcavity: 0.72,
     floorDensity: 1, targetDensity: 1, strandLimit: 80,
     targetLength: 12, floorLength: 12,
     radius: 0.045, curl: 0.6, showGuide: false
@@ -30,6 +30,7 @@
     result.duration = number(data.duration, DEFAULTS.duration, 0.15, 60);
     result.branchRadius = number(data.branchRadius, DEFAULTS.branchRadius, 0.008, 0.3);
     result.bend = number(data.bend, DEFAULTS.bend, 0, 3);
+    result.arcConcavity = number(data.arcConcavity, DEFAULTS.arcConcavity, 0, 1); // Controls how long rising branches hug the floor before curving toward their destination.
     for (const key of ['floorDensity', 'targetDensity']) result[key] = number(data[key], DEFAULTS[key], 0.05, 1);
     result.strandLimit = Math.round(number(data.strandLimit, DEFAULTS.strandLimit, 1, 80));
     for (const key of ['floorLength', 'targetLength']) result[key] = number(data[key], DEFAULTS[key], 0.5, 30);
@@ -122,10 +123,14 @@
   }
 
   function makeBranch(THREE, a, b, index, recipe, random, material) {
-    const dist = a.distanceTo(b), lift = Math.max(.25, dist * .24); // Raised middle control points make growth branch organically away from the floor.
+    const dist = a.distanceTo(b); // Sets a bounded tube resolution without changing the growth timing.
     const side = new THREE.Vector3(random() - .5, 0, random() - .5).multiplyScalar(recipe.bend);
-    const p1 = a.clone().lerp(b, .28).add(new THREE.Vector3(side.x, lift, side.z));
-    const p2 = a.clone().lerp(b, .7).add(new THREE.Vector3(-side.z * .5, lift * .75, side.x * .5));
+    const p1 = a.clone().lerp(b, .28).add(new THREE.Vector3(side.x, 0, side.z));
+    const p2 = a.clone().lerp(b, .7).add(new THREE.Vector3(-side.z * .5, 0, side.x * .5));
+    const rise = Math.max(0, b.y - a.y); // Only rising branches need upward concavity; flat/lower targets keep their direct path.
+    const concavity = clamp(recipe.arcConcavity * (.85 + random() * .3), 0, 1); // Small seeded variation avoids mechanically identical arches.
+    p1.y = Math.max(a.y, p1.y - rise * concavity * .38); // Stay rooted at floor height instead of arching upward immediately.
+    p2.y = Math.max(p1.y, p2.y - rise * concavity * .60); // Accelerate upward near the object: concave, rather than convex, vertical profile.
     const curve = new THREE.CatmullRomCurve3([a, p1, p2, b], false, 'centripetal');
     const segments = Math.min(80, Math.max(16, Math.ceil(dist * 12))); // Static, bounded tube resolution; only draw ranges change per frame.
     const geometry = new THREE.TubeGeometry(curve, segments, recipe.branchRadius, 6, false);
