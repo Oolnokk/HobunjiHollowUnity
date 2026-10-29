@@ -471,7 +471,10 @@
     // blend can still reach the shoulders, but scale fades only BELOW the
     // skull, with a grid-cell margin so its last painted row is fully rigid.
     const fullBelow = modelHeight / 36;
-    const blendBelow = modelHeight * 0.08;
+    // The fade band must be taller than any plausible Head Y offset (hunch). With the old 0.08 band a head lowered by 9.5-12% of the
+    // model height (Mashtzarr, Maskbound troops) moved further than the band is tall, so the mesh folded over itself under the chin
+    // and showed hard-edged shoulder/neck strips; 0.2 leaves room for offsets up to ~17% before any fold.
+    const blendBelow = modelHeight * 0.2;
     return smoothstep01((y - (neckY - blendBelow)) / (blendBelow - fullBelow)) * headScaleGateAtPixel(pixelX, bounds);
   }
 
