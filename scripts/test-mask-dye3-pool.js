@@ -38,3 +38,25 @@ assert.equal(pick('a', pool), pick('a', pool), 'stable for one wearer');
 assert.ok(new Set(Array.from({ length: 64 }, (_, i) => pick('seed' + i, pool))).size >= 6, 'varied across wearers');
 
 console.log('Mask dye 3: oil-slick pool, stable per wearer, applied dye still wins');
+
+// ── Both eyes: the marker is a colour family, each glowing mass gets its own light and circle ──
+{
+  const portrait = read('docs/js/portrait-utils.js');
+  assert.match(portrait, /Math\.abs\(data\[i\] - source\.r \* k\) <= tolerance/, 'marker pixels match the source hue at any brightness, not only the exact value');
+  assert.match(portrait, /Math\.round\(dye\[0\] \* k\)/, 'the dye colour is scaled by each pixel\'s brightness so darker eye pixels follow the dye');
+  assert.match(portrait, /canvas\.pixelDyeCentroids = masses\.map/, 'one centroid per connected glowing mass');
+  assert.match(portrait, /canvas\.hobunjiPortraitGlows = img\.pixelDyeCentroids\.map/, 'one glow per mass');
+  const avatar = read('docs/js/png-plane-avatar.js');
+  assert.match(avatar, /root\.userData\.portraitGlowLights/, 'one fake light per glowing eye');
+  assert.match(avatar, /light\.userData\.emissiveOrb = \{ radius: 0\.085 \* \(glow\.orbScale \|\| 1\) \}/, 'smaller eyes get proportionally smaller glow circles');
+  assert.match(read('docs/js/combat/combat-bandit.js'), /portraitGlowLights \|\| \[\]\) window\.FurnitureLightRegistry\?\.register/, 'hostiles register every eye light');
+  assert.doesNotMatch(read('docs/js/emissive-light-orbs.js'), /SATELLITES|orbiting/, 'the orbiting motes are gone; the central circle stays');
+}
+
+// ── Workshop garment dye: the dye renderer and its tint dependency must load ──
+{
+  const preview = read('docs/tools/enemy-loadout-editor/preview.js');
+  const order = ['js/sprite-recolor.js', 'js/clothing-weaving-system.js', 'js/pants-garment-renderer.js'].map(file => preview.indexOf(file));
+  assert.ok(order.every(i => i > 0) && order[0] < order[1] && order[1] < order[2], 'SpriteRecolor, then the weaving/dye renderer, then the pants renderer, so pants show their dye instead of the plain art');
+}
+console.log('Mask eyes and Workshop garment dye wired');

@@ -47,12 +47,12 @@ const elsewhere = makeLight([2, 0, 0], [0, 0, 1]); elsewhere.scene = {};
 lights.push(eye, plain, elsewhere);
 assert.deepEqual(api.collect(scene), [eye], 'only emissive lights in the active scene are collected');
 
-// Facing the camera: a core, a halo and orbiting motes are drawn additively.
+// Facing the camera: a core circle and its halo are drawn additively (no orbiting motes).
 {
   const { ctx, calls } = recorder();
   assert.equal(api.drawOrbs(ctx, projection, [eye], 1000), 1, 'a front-facing eye is drawn');
   assert.ok(calls.composite.includes('lighter'), 'additive composite so it brightens rather than being tinted by the darkness');
-  assert.ok(calls.arcs >= 5, 'core + halo + three motes, got ' + calls.arcs);
+  assert.equal(calls.arcs, 2, 'just the core circle and its halo, got ' + calls.arcs);
 }
 // Facing away (seen through the back of the skull): nothing.
 {
@@ -73,7 +73,7 @@ assert.deepEqual(api.collect(scene), [eye], 'only emissive lights in the active 
 }
 
 // Wiring.
-assert.match(read('docs/js/png-plane-avatar.js'), /light\.userData\.emissiveOrb = \{\}/, 'the mask glow light is flagged emissive (its fake-light aura is unchanged)');
+assert.match(read('docs/js/png-plane-avatar.js'), /light\.userData\.emissiveOrb = \{ radius:/, 'the mask glow light is flagged emissive (its fake-light aura is unchanged)');
 assert.match(read('docs/js/weather-fx.js'), /getProjection: \(\) => deps/, 'WeatherFX exposes its projection to layers above the lighting canvas');
 assert.match(read('docs/game.js'), /EmissiveLightOrbs\?\.installGameOverlay\(/, 'the game installs the overlay');
 const html = read('docs/index.html');

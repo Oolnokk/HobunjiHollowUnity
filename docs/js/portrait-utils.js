@@ -704,6 +704,12 @@ function pixelDyeLayerImage(img, layer, rgb) {
   if (cached) return cached;
   const source = parseHexColor(layer.pixelDye.sourceHex);
   if (!source) return img;
+  // The marker is a COLOUR FAMILY, not one exact value: artists shade it, so a second glowing mass may only contain darker versions of
+  // the same hue (e.g. (74,0,148) next to (127,0,255)). A pixel belongs when it is the source scaled by some brightness k, within a small
+  // tolerance; its dye colour is scaled by the same k, so the whole eye (core, gradient and ring) follows the dye instead of only the
+  // few exactly-#7F00FF pixels.
+  const peak = Math.max(source.r, source.g, source.b, 1);
+  const tolerance = 10;
   const canvas = Object.assign(document.createElement('canvas'), {
     width: img.naturalWidth || img.width, height: img.naturalHeight || img.height,
   });
@@ -712,22 +718,45 @@ function pixelDyeLayerImage(img, layer, rgb) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0);
   const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let weight = 0, sumX = 0, sumY = 0;
-  for (let i = 0; i < pixels.data.length; i += 4) {
-    const data = pixels.data;
-    const matches = data[i] === source.r && data[i + 1] === source.g && data[i + 2] === source.b;
+  const W = canvas.width, H = canvas.height, data = pixels.data;
+  const brightness = new Float32Array(W * H); // k for marker-family pixels, 0 elsewhere.
+  for (let p = 0; p < W * H; p++) {
+    const i = p * 4;
+    if (!data[i + 3]) continue;
+    const k = Math.max(data[i], data[i + 1], data[i + 2]) / peak;
+    if (k >= 0.28 && k <= 1.04
+      && Math.abs(data[i] - source.r * k) <= tolerance && Math.abs(data[i + 1] - source.g * k) <= tolerance && Math.abs(data[i + 2] - source.b * k) <= tolerance) brightness[p] = Math.min(1, k);
+  }
+  for (let p = 0; p < W * H; p++) {
+    const i = p * 4, k = brightness[p], matches = k > 0;
     if (matches !== !!layer.pixelDyeOnly) { data[i + 3] = 0; continue; }
     if (layer.pixelDyeOnly && data[i + 3]) {
-      const alpha = data[i + 3];
-      const pixel = i / 4;
-      sumX += (pixel % canvas.width + 0.5) * alpha;
-      sumY += (Math.floor(pixel / canvas.width) + 0.5) * alpha;
-      weight += alpha;
-      [data[i], data[i + 1], data[i + 2]] = rgb || [source.r, source.g, source.b];
+      const dye = rgb || [source.r, source.g, source.b];
+      data[i] = Math.round(dye[0] * k); data[i + 1] = Math.round(dye[1] * k); data[i + 2] = Math.round(dye[2] * k);
     }
   }
   ctx.putImageData(pixels, 0, 0);
-  canvas.pixelDyeCentroid = weight ? { x: sumX / weight / canvas.width, y: sumY / weight / canvas.height } : null;
+  // One centroid per connected glowing mass (each eye), weighted toward the bright core.
+  const seen = new Uint8Array(W * H), masses = [];
+  for (let start = 0; start < W * H && layer.pixelDyeOnly; start++) {
+    if (!brightness[start] || seen[start]) continue;
+    const stack = [start]; seen[start] = 1;
+    let weight = 0, sumX = 0, sumY = 0, count = 0;
+    while (stack.length) {
+      const p = stack.pop(), x = p % W, y = (p - x) / W, w = brightness[p] * brightness[p] * data[p * 4 + 3];
+      sumX += (x + 0.5) * w; sumY += (y + 0.5) * w; weight += w; count++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const q = ny * W + nx;
+        if (brightness[q] && !seen[q]) { seen[q] = 1; stack.push(q); }
+      }
+    }
+    if (count >= 4 && weight > 0) masses.push({ x: sumX / weight / W, y: sumY / weight / H, weight });
+  }
+  const strongest = Math.max(1, ...masses.map(m => m.weight));
+  canvas.pixelDyeCentroids = masses.map(m => ({ x: m.x, y: m.y, scale: Math.max(0.6, Math.min(1, Math.sqrt(m.weight / strongest))) })); // Smaller eyes get a proportionally smaller glow.
+  canvas.pixelDyeCentroid = canvas.pixelDyeCentroids[0] || null; // First mass, kept for callers that expect one.
   _PIXEL_DYE_CACHE.set(key, canvas);
   return canvas;
 }
@@ -1430,6 +1459,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (_needsScale) { ctx.save(); ctx.scale(_scaleX, _scaleY); }
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
   canvas.hobunjiPortraitGlow = null; // Rebuild/removal must clear stale mask lighting.
+  canvas.hobunjiPortraitGlows = null;
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
   const tintFor = (slot) => {
@@ -1811,7 +1841,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       if (layer.pixelDyeOnly) {
         tint = { mode: 'none' }; // Literal dye RGB is the luminous core color.
         const glow = layer.pixelDye.glow;
-        if (glow && img.pixelDyeCentroid) {
+        if (glow && img.pixelDyeCentroids?.length) {
           const color = '#' + rgb.map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
           ctx.save();
           ctx.shadowColor = color;
@@ -1821,12 +1851,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           const xf = resolveXform(layer);
           const h = PORTRAIT_L * xf.sy;
           const w = img.width / img.height * PORTRAIT_L * Math.abs(xf.sx);
-          const center = img.pixelDyeCentroid;
-          canvas.hobunjiPortraitGlow = {
-            color, radius: glow.radius, intensity: glow.intensity,
+          canvas.hobunjiPortraitGlows = img.pixelDyeCentroids.map(center => ({ // One fake light + glow circle per glowing mass (each eye).
+            color, radius: glow.radius * center.scale, intensity: glow.intensity * center.scale, orbScale: center.scale,
             x: (PORTRAIT_CW / 2 + xf.ay * PORTRAIT_L + (xf.sx < 0 ? 0.5 - center.x : center.x - 0.5) * w) / PORTRAIT_CW,
             y: (PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L + (center.y - 0.5) * h) / PORTRAIT_CH,
-          };
+          }));
+          canvas.hobunjiPortraitGlow = canvas.hobunjiPortraitGlows[0]; // First mass, kept for older readers.
           return;
         }
       }

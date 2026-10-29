@@ -19,9 +19,17 @@ vm.runInContext(slice(portrait, 'class PortraitPixelCache', 'const IMG_CACHE') +
   slice(portrait, 'const _PIXEL_DYE_CACHE', '// Behind-view layers') +
   slice(portrait, 'function _extractLayersFromParts(', '/**\n * Return the correct layer list') +
   '\nthis.api = { pixelDyeLayerImage, _extractLayersFromParts };', context);
-const source = { width: 3, height: 1, data: new Uint8ClampedArray([
-  127, 0, 255, 128, 126, 0, 255, 255, 127, 0, 255, 0,
+// Marker pixels are a hue FAMILY (the artist shades the second eye darker): exact and same-hue shaded pixels are dyed, scaled by
+// brightness; a different hue next to them is untouched.
+const source = { width: 4, height: 1, data: new Uint8ClampedArray([
+  127, 0, 255, 128,   // exact marker, half alpha
+  100, 60, 255, 255,  // different hue: untouched
+  64, 0, 128, 255,    // same hue at ~half brightness: dyed at half brightness
+  127, 0, 255, 0,     // fully transparent
 ]) };
+// Two glowing masses of four pixels each (two eyes): one centroid per mass.
+const eyes = { width: 6, height: 2, data: new Uint8ClampedArray(6 * 2 * 4) };
+for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1], [4, 0], [5, 0], [4, 1], [5, 1]]) eyes.data.set([x < 3 ? 127 : 70, 0, x < 3 ? 255 : 140, 255], (y * 6 + x) * 4);
 for (const variant of Object.values(mask.speciesVariants)) {
   const layers = context.api._extractLayersFromParts(variant.parts, mask.palette.layers);
   assert.equal(layers.length, 2);
@@ -29,12 +37,16 @@ for (const variant of Object.values(mask.speciesVariants)) {
   assert.equal(glow.paletteColorKey, 'C', 'third dye is an ordinary discoverable portrait palette slot');
   const plain = context.api.pixelDyeLayerImage(source, base);
   assert.equal(plain.data[3], 0, 'base tint must exclude the keyed pixel');
-  assert.equal(plain.data[7], 255, 'nearby purple is untouched');
+  assert.equal(plain.data[7], 255, 'a different hue next to the marker is untouched');
+  assert.equal(plain.data[11], 0, 'a darker shade of the marker hue is also moved to the dye layer');
   const dyed = context.api.pixelDyeLayerImage(source, glow, [24, 200, 70]);
-  assert.deepEqual(Array.from(dyed.data), [24, 200, 70, 128, 126, 0, 255, 0, 127, 0, 255, 0]);
-  assert.equal(dyed.pixelDyeCentroid.x, 1 / 6);
+  assert.deepEqual(Array.from(dyed.data), [24, 200, 70, 128, 100, 60, 255, 0, 12, 100, 35, 255, 127, 0, 255, 0]);
   assert.strictEqual(context.api.pixelDyeLayerImage(source, glow, [24, 200, 70]), dyed, 'composition is cached');
   assert.notStrictEqual(context.api.pixelDyeLayerImage(source, glow, [200, 20, 90]), dyed, 'dye changes invalidate the pixel result');
+  const two = context.api.pixelDyeLayerImage(eyes, glow, [30, 190, 60]); // A distinct dye colour: the cache is keyed by layer URL + dye, and one URL is one image in the game.
+  assert.equal(two.pixelDyeCentroids.length, 2, 'each glowing eye is its own mass');
+  assert.ok(Math.abs(two.pixelDyeCentroids[0].x - 1 / 6) < 1e-9 && Math.abs(two.pixelDyeCentroids[1].x - 5 / 6) < 1e-9 && two.pixelDyeCentroids[0].y === 0.5);
+  assert.ok(two.pixelDyeCentroids[1].scale <= two.pixelDyeCentroids[0].scale, 'the dimmer, smaller mass gets the smaller glow');
 }
 class Node {
   constructor() { this.userData = {}; this.position = { set(x,y,z) { Object.assign(this, {x,y,z}); } }; }

@@ -1108,47 +1108,50 @@
   const portraitGlowModels = new Set();
   const portraitGlowAttachments = new WeakMap();
   function syncPortraitGlow(THREE, root, sourceCanvas) {
-    const glow = sourceCanvas?.hobunjiPortraitGlow;
-    let light = root.userData.portraitGlowLight;
-    if (!glow) {
-      if (light) { light.parent?.remove(light); light.dispose?.(); }
+    const glows = sourceCanvas?.hobunjiPortraitGlows || (sourceCanvas?.hobunjiPortraitGlow ? [sourceCanvas.hobunjiPortraitGlow] : []); // One per glowing mass (each eye).
+    let lights = root.userData.portraitGlowLights || (root.userData.portraitGlowLights = []);
+    while (lights.length > glows.length) { const extra = lights.pop(); extra.parent?.remove(extra); extra.dispose?.(); }
+    if (!glows.length) {
       root.userData.portraitGlowLight = null;
       portraitGlowModels.delete(root);
       return;
     }
-    if (!light) {
-      light = new THREE.PointLight(glow.color, glow.intensity || 3.5, glow.radius || 0.65);
-      light.name = 'Portrait_Dye3_Mote_Light';
-      light.userData.furnitureLightMask = true;
-      light.userData.intentionalFakeLightSource = true;
-      light.userData.emissiveOrb = {}; // Also drawn as Blizzard-style glowing circles above darkness and fog (js/emissive-light-orbs.js); the fake-light aura around it is unchanged.
-      light.layers.set(31); // Also stays overlay-only in editors without the registry bridge.
-      light.castShadow = false;
-      root.userData.portraitGlowLight = light;
-    }
-    light.color.set(glow.color);
-    light.intensity = glow.intensity || 3.5;
-    light.distance = glow.radius || 0.65;
     const width = root.userData.portraitModelWidth;
     const height = root.userData.portraitModelHeight;
     const assemblyY = root.userData.visualCentroidLocalY || 0;
     const anchorZ = root.userData.visualCentroidLocalZ || 0;
     const rig = root.userData.neckRig;
-    const x = ((portraitsFlipped ? 1 - glow.x : glow.x) - 0.5) * width;
+    const attachment = portraitGlowAttachments.get(root);
     portraitGlowModels.add(root);
-    const attachment=portraitGlowAttachments.get(root);
-    if(attachment){
-      attachment.parent.add(light);
-      light.position.set(x-attachment.offset.x,assemblyY+(0.5-glow.y)*height-attachment.offset.y,anchorZ-attachment.offset.z);
-    } else if (rig?.available) {
-      rig.headScaleJoint.add(light);
-      light.position.set(x - rig.neckLocal.x,
-        (0.5 - glow.y) * height - rig.neckLocal.y, anchorZ - rig.neckLocal.z);
-    } else {
-      root.add(light);
-      light.position.set(x, assemblyY + (0.5 - glow.y) * height, anchorZ);
-    }
-    window.FurnitureLightRegistry?.register(light);
+    glows.forEach((glow, index) => {
+      let light = lights[index];
+      if (!light) {
+        light = new THREE.PointLight(glow.color, glow.intensity || 3.5, glow.radius || 0.65);
+        light.name = index ? `Portrait_Dye3_Mote_Light_${index + 1}` : 'Portrait_Dye3_Mote_Light';
+        light.userData.furnitureLightMask = true;
+        light.userData.intentionalFakeLightSource = true;
+        light.layers.set(31); // Also stays overlay-only in editors without the registry bridge.
+        light.castShadow = false;
+        lights[index] = light;
+      }
+      light.userData.emissiveOrb = { radius: 0.085 * (glow.orbScale || 1) }; // Also drawn as a glowing circle above darkness and fog (js/emissive-light-orbs.js); the fake-light aura around it is unchanged.
+      light.color.set(glow.color);
+      light.intensity = glow.intensity || 3.5;
+      light.distance = glow.radius || 0.65;
+      const x = ((portraitsFlipped ? 1 - glow.x : glow.x) - 0.5) * width;
+      if (attachment) {
+        attachment.parent.add(light);
+        light.position.set(x - attachment.offset.x, assemblyY + (0.5 - glow.y) * height - attachment.offset.y, anchorZ - attachment.offset.z);
+      } else if (rig?.available) {
+        rig.headScaleJoint.add(light);
+        light.position.set(x - rig.neckLocal.x, (0.5 - glow.y) * height - rig.neckLocal.y, anchorZ - rig.neckLocal.z);
+      } else {
+        root.add(light);
+        light.position.set(x, assemblyY + (0.5 - glow.y) * height, anchorZ);
+      }
+      window.FurnitureLightRegistry?.register(light);
+    });
+    root.userData.portraitGlowLight = lights[0] || null; // First mass, kept for callers that expect one light.
   }
 
   function setPortraitGlowAttachment(root, parent, offset = {x:0,y:0,z:0}) {
@@ -1317,8 +1320,8 @@
   function disposeAvatarModel(root) {
     if (!root) return;
     portraitGlowModels.delete(root);
-    const glowLight = root.userData?.portraitGlowLight;
-    if (glowLight) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); root.userData.portraitGlowLight = null; }
+    for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
+    if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
     root.traverse(child => {
       if (child.geometry) child.geometry.dispose();
       const materials = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];

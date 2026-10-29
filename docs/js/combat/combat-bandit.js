@@ -2795,8 +2795,7 @@
     targetScene.add(avatarRef.group);
     // A lighting pass can prune a still-building avatar's off-scene light
     // while async portrait/limb work yields. Register again at scene adoption.
-    const portraitGlowLight = avatarRef.handRigAvatarRoot?.userData?.portraitGlowLight;
-    if (portraitGlowLight) window.FurnitureLightRegistry?.register(portraitGlowLight);
+    for (const portraitGlowLight of avatarRef.handRigAvatarRoot?.userData?.portraitGlowLights || []) window.FurnitureLightRegistry?.register(portraitGlowLight); // One per glowing eye.
     const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;

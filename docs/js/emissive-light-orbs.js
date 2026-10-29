@@ -10,7 +10,6 @@
 
   const SCHEDULER_ID = 'emissive-light-orbs';
   const ORB_WORLD_RADIUS = 0.085; // Core orb radius in world units; the halo reaches about 2x this.
-  const SATELLITES = 3; // Slow swirling motes around the core, like the blizzard orbs' swirl motion.
 
   const smoothstep = (edge0, edge1, value) => {
     const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
@@ -100,11 +99,6 @@
       drawGlowCircle(ctx, centre.x, centre.y, radius * 2.0 * pulse, rgb, 0.55 * visibility); // Soft outer halo.
       drawGlowCircle(ctx, centre.x, centre.y, radius * pulse, rgb, 0.95 * visibility); // Bright core orb.
       drawSparkle(ctx, centre.x, centre.y, radius * 1.15, rgb, 0.22 * visibility, seconds * 0.6); // Faint crossing strokes only; the glowing circles carry the look.
-      for (let i = 0; i < SATELLITES; i++) { // Slow orbiting motes.
-        const angle = seconds * 0.9 + (i * Math.PI * 2) / SATELLITES + px * 3;
-        const orbit = radius * (1.5 + 0.25 * Math.sin(seconds * 1.4 + i * 2.1));
-        drawGlowCircle(ctx, centre.x + Math.cos(angle) * orbit, centre.y + Math.sin(angle) * orbit * 0.8, radius * 0.38, rgb, 0.7 * visibility);
-      }
       drawn++;
     }
     ctx.restore();
