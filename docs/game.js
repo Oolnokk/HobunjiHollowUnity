@@ -3912,6 +3912,7 @@
       });
 
       function transformFurnitureWithHousePiece(pieceId, oldRect, newRect, rotateClockwise) {
+        window.FarmhouseRoomPlanner?.transformWithPiece?.(pieceId, oldRect, newRect, rotateClockwise); // House walls follow their owner before a scene rebuild.
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
           const insideOld = obj.col >= oldRect.col * 2 && obj.col < (oldRect.col + oldRect.w) * 2
             && obj.row >= oldRect.row * 2 && obj.row < (oldRect.row + oldRect.h) * 2;
