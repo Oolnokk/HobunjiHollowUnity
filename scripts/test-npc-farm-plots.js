@@ -234,8 +234,8 @@ api.registerFarmPlots([
 ]);
 const trenchGroup = api.plots().find(p => p.id === 'intermesh_dig');
 const fieldGroup = api.plots().find(p => p.id === 'intermesh_field');
-assert.deepEqual(api._test.jobsFor(trenchGroup, 'spouse1').map(j => key(j.c, j.r)).sort(), trenchRows.map(([c, r]) => key(c, r)).sort());
-assert.deepEqual(api._test.jobsFor(fieldGroup, 'spouse1').map(j => key(j.c, j.r)).sort(), fieldRows.map(([c, r]) => key(c, r)).sort());
+assert.deepEqual(Array.from(api._test.jobsFor(trenchGroup, 'spouse1'), j => key(j.c, j.r)).sort(), trenchRows.map(([c, r]) => key(c, r)).sort());
+assert.deepEqual(Array.from(api._test.jobsFor(fieldGroup, 'spouse1'), j => key(j.c, j.r)).sort(), fieldRows.map(([c, r]) => key(c, r)).sort());
 for (const job of api._test.jobsFor(trenchGroup, 'spouse1')) api._test.applyJob(trenchGroup, job);
 assert.ok(fieldRows.every(([c, r]) => farmTile(c, r).type === 'grass'), 'digging both trench rows leaves the interleaved planting row untouched');
 for (const job of api._test.jobsFor(fieldGroup, 'spouse1')) api._test.applyJob(fieldGroup, job);
