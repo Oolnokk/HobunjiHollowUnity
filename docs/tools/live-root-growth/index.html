@@ -17,7 +17,7 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
-input[type=number],input[type=text]{width:100%;background:#091925;color:#e7f5ff;border:1px solid #476578;border-radius:7px;padding:8px}
+input[type=number],input[type=text],input[type=search],select{width:100%;background:#091925;color:#e7f5ff;border:1px solid #476578;border-radius:7px;padding:8px}
 input[type=range]{width:100%;accent-color:#8dcaff}
 #app{display:grid;grid-template-columns:minmax(280px,345px) 1fr;height:100%;overflow:hidden}
 aside{overflow-y:auto;padding:12px;background:#121f2c;border-right:1px solid #395267;-webkit-overflow-scrolling:touch}
@@ -39,7 +39,13 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <h1>🌳 Live Root Growth Author</h1>
 <p>Prototype living root structures around an invisible imported furniture shape. Roots originate at concealed nodes on the dense wrapped floor; the same controller extends and retracts.</p>
 <section><h2>1 · Shape to grow</h2>
-<label for="modelFile">Import authored furniture JSON or GLB</label><input id="modelFile" type="file" accept=".json,.glb">
+<label for="repoFurnitureSearch">Browse furniture in repository</label>
+<div class="controls"><input id="repoFurnitureSearch" type="search" placeholder="Search name or path" aria-label="Search repository furniture"><button id="refreshRepoFurniture" type="button">↻ Refresh</button></div>
+<label for="repoFurnitureList">Available furniture</label>
+<select id="repoFurnitureList" size="5" aria-label="Repository furniture pieces"><option>Loading repository catalog…</option></select>
+<button id="importRepoFurniture" type="button" style="width:100%;margin-top:7px" disabled>Use selected furniture as shape</button>
+<p id="repoFurnitureStatus" role="status">Loading authored index and procedural furniture…</p>
+<label for="modelFile">Or import authored furniture JSON / GLB from device</label><input id="modelFile" type="file" accept=".json,.glb">
 <p id="sourceName">Demo: raised rectangular platform. Replace with any furniture export or GLB.</p>
 <div class="controls"><label>Shape X <input id="targetX" type="number" step=".25" value="0"></label><label>Shape Y <input id="targetY" type="number" step=".25" value="1.5"></label><label>Shape Z <input id="targetZ" type="number" step=".25" value="0"></label><label>Show guide <input id="showGuide" type="checkbox"></label></div>
 </section>
@@ -68,12 +74,12 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </section>
 <section><h2>4 · Recipe</h2><div class="controls"><button id="download">Export JSON</button><button id="copy">Copy recipe</button></div>
 <label for="recipeFile">Import saved recipe</label><input id="recipeFile" type="file" accept=".json">
-<p>Furniture JSON is saved with the recipe. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
+<p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261029rootgrowth1"></script>
+<script src="tools/live-root-growth/tool.js?v=20261029reporootshell1"></script>
 </body></html>
