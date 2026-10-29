@@ -9,11 +9,19 @@
 .line-length-field button{min-width:42px}
 .line-length-field .line-length-label{font-weight:600;min-width:115px}
 #gizmo-draw.active,#gizmo-move.active,#gizmo-rotate.active{background:#3c6572;border-color:#a4ead8;box-shadow:inset 0 0 0 1px #a4ead8}
-#shaft-canvas,#head-canvas{max-height:none;object-fit:fill}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
-#sprite-cutter{grid-column:1/-1}.cut-grid{display:grid;grid-template-columns:minmax(240px,340px) minmax(250px,1fr);gap:16px}.cut-controls{display:flex;flex-direction:column;gap:6px}.cut-controls label{margin:4px 0}.cut-controls input:not([type=file]),.cut-controls select{width:100%}.cut-stage{width:100%;max-width:470px;justify-self:center}.cut-stage canvas{width:100%;max-height:none;height:auto;object-fit:fill;image-rendering:pixelated}.cut-stage figcaption{word-break:break-word}#cut-status{min-height:3em}#cut-output{font-family:monospace;overflow-wrap:anywhere;color:#7de0cb}#cut-debug{font-size:12px}@media(max-width:760px){.cut-grid{grid-template-columns:1fr}.cut-stage{max-width:min(100%,450px)}}
+#shaft-canvas,#head-canvas{max-height:none;object-fit:contain}@media(max-width:760px){main{grid-template-columns:1fr}.sprites{grid-template-columns:repeat(3,1fr)}canvas{max-height:none}header{position:static}}
+#sprite-cutter{grid-column:1/-1}.cut-grid{display:grid;grid-template-columns:minmax(240px,340px) minmax(250px,1fr);gap:16px}.cut-controls{display:flex;flex-direction:column;gap:6px}.cut-controls label{margin:4px 0}.cut-controls input:not([type=file]),.cut-controls select{width:100%}.cut-stage{width:100%;max-width:470px;justify-self:center}.cut-stage canvas{width:100%;max-height:none;object-fit:contain;image-rendering:pixelated}.cut-stage figcaption{word-break:break-word}#cut-status{min-height:3em}#cut-output{font-family:monospace;overflow-wrap:anywhere;color:#7de0cb}#cut-debug{font-size:12px}@media(max-width:760px){.cut-grid{grid-template-columns:1fr}.cut-stage{max-width:min(100%,450px)}}
+/* Pinned previews: each stays in view while its settings scroll (header height comes from editor.js). */
+.pair-area{grid-column:1/-1;display:grid;gap:12px;grid-template-columns:minmax(270px,390px) minmax(300px,1fr)}
+.float-panel{position:sticky;top:var(--header-h,0px);align-self:start;z-index:1;background:#142431;border-radius:8px}
+.float-bar{display:flex;gap:8px;flex-wrap:wrap;padding:0 0 8px}
+.float-panel .sprites canvas,.cut-stage.float-panel canvas{height:calc(100vh - var(--header-h,0px) - 120px);min-height:220px;max-height:none}
+.cut-stage.float-panel{padding:8px}
+@media(max-width:760px){.pair-area{grid-template-columns:1fr}.pair-area>.float-panel,.cut-stage.float-panel{order:-1;top:0;box-shadow:0 6px 12px #0008}
+.float-panel .sprites canvas,.cut-stage.float-panel canvas{height:36vh;min-height:160px}}
 </style></head><body>
 <header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: companion tangs at every eye mount, explicit per-pair layer order, and automatic migration of earlier editor drafts.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
-<main><section><h2>Directed head and haft mounts</h2>
+<main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
 <label><input id="allow-shaft" type="checkbox"> Allow selected haft in Foundry after calibration</label>
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
@@ -53,14 +61,14 @@
 <div class="toolbar"><button id="pair-bridge-auto" type="button">Auto-bridge gaps</button></div>
 <div class="toolbar"><button id="pair-bridge-undo" type="button">Remove last applied stroke</button><button id="pair-bridge-clear" type="button">Remove all bridges</button></div>
 <p id="pair-bridge-status" aria-live="polite"></p>
+<p>White-highlighted arrow is the selected haft line. Move and Rotate gizmos act on the whole selected line, while leaving other lines untouched. The first arrow point is the mounting base, and the arrow tip is the forward direction. Matching directed lines determine position and orientation. Multi-ended hafts may have multiple lines of either kind.</p>
+<p>Drafts save in this browser; gameplay uses the validated draft on reload. Export the config to update docs/config/modular-weapons.js for everyone.</p>
 <details><summary>Mobile diagnostics</summary><pre id="debug"></pre></details></section>
-<section><div class="sprites">
+<section class="float-panel" aria-label="Pinned preview"><div class="float-bar" role="toolbar" aria-label="History"><button id="pair-undo" type="button" disabled>↶ Undo</button><button id="pair-redo" type="button" disabled>↷ Redo</button></div><div class="sprites">
 <figure><canvas id="shaft-canvas" width="450" height="1204"></canvas><figcaption>Haft lines</figcaption></figure>
 <figure><canvas id="head-canvas" width="450" height="1204"></canvas><figcaption>Head line</figcaption></figure>
 <figure><canvas id="preview" width="450" height="1204"></canvas><figcaption>Assembled weapon</figcaption></figure></div>
-<p>White-highlighted arrow is the selected haft line. Move and Rotate gizmos act on the whole selected line, while leaving other lines untouched. The first arrow point is the mounting base, and the arrow tip is the forward direction. Matching directed lines determine position and orientation. Multi-ended hafts may have multiple lines of either kind.</p>
-<p>Drafts save in this browser; gameplay uses the validated draft on reload. Export the config to update docs/config/modular-weapons.js for everyone.</p>
-</section><section id="sprite-cutter"><h2>Make a modular head or shaft from a full weapon</h2>
+</section></div><section id="sprite-cutter"><h2>Make a modular head or shaft from a full weapon</h2>
 <p>Load a complete PNG, draw around any pixels with a finger, stylus, or mouse, then remove the selected region or keep only the selection. Repeat on the remaining image; Undo and Reset protect the original artwork. Export retains the game’s 450 × 1204 coordinates and all surviving RGBA colors/transparency.</p>
 <div class="cut-grid"><div class="cut-controls">
 <label>Existing weapon sprite <select id="cut-existing"></select></label><button id="cut-load-existing" type="button">Load selected weapon</button>
@@ -76,7 +84,7 @@
 <div class="toolbar"><button id="cut-bridge-auto" type="button">Auto-bridge gaps</button></div>
 <p>Bridge brush: paint a fat stroke from one metal piece to another and it fills as soon as you let go (Undo reverts it). Auto-bridge gaps does this for you, joining every separate piece with the shortest strokes (brush radius sets their width). Metal under the stroke is kept, the rest keeps a black rim wherever it meets empty space, separate unshaded pools touching it get joined by an unshaded channel, and every metal pixel touching it races to grow its shaded or unshaded tone inward, carrying the parts&rsquo; shading bands into the bridge. A shaded band runs alongside every black outline: the set percentage of the bridge&rsquo;s width on the side facing away from the light, thinning to a sliver on the lit side. Only pixels in the base metal color seed the fill; other colors under the stroke are kept as-is. Undo works here too.</p>
 <div class="toolbar"><button id="cut-remove" type="button">Remove inside lasso</button><button id="cut-isolate" type="button">Keep inside lasso</button><button id="cut-clear-selection" type="button">Clear selection</button></div>
-<div class="toolbar"><button id="cut-undo" type="button">Undo</button><button id="cut-reset" type="button">Reset source</button></div>
+<div class="toolbar"><button id="cut-reset" type="button">Reset source</button></div>
 <label>Minimum alpha to keep (0–255) <input id="cut-min-alpha" type="number" min="0" max="255" step="1" value="32"></label>
 <button id="cut-cull-alpha" type="button">Cull faint pixels now</button>
 <p>Pixels with alpha below this number are fully cleared, including hidden RGB. Black outlines ignore them, and PNG export always culls them again.</p>
@@ -89,8 +97,8 @@
 <button id="cut-export" type="button">Export transparent PNG</button>
 <p id="cut-status" role="status" aria-live="polite"></p>
 <details><summary>Sprite cutter diagnostics</summary><pre id="cut-debug"></pre></details>
-</div><figure class="cut-stage"><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
+</div><figure class="cut-stage float-panel"><div class="float-bar" role="toolbar" aria-label="Sprite cutter history"><button id="cut-undo" type="button" disabled>↶ Undo</button><button id="cut-redo" type="button" disabled>↷ Redo</button></div><canvas id="cut-canvas" width="450" height="1204" aria-label="Draw a lasso around pixels in this weapon sprite"></canvas><figcaption>Lasso editor — drag a loop; releasing closes it. Only PNG pixels, not the yellow selection outline, are exported.</figcaption></figure></div>
 <p>Place the downloaded file in <code>docs/assets/toolsprites/modular_pieces/</code>. To make the new part selectable in the Foundry, add its entry and attachment pivot/socket coordinates to <code>docs/config/modular-weapons.js</code>. Exporting a PNG does not automatically modify the game catalog.</p>
 </section></main>
-<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029auto001"></script><script src="../../js/modular-weapons.js?v=20261029auto001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261029auto001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029auto001"></script>
+<script src="../../config/modular-weapons.js?v=20261027kyliehead001"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261029auto001"></script><script src="../../js/modular-weapons.js?v=20261029auto001"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="editor.js?v=20261029float001"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029float001"></script>
 </body></html>

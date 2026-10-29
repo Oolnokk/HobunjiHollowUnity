@@ -92,6 +92,7 @@
   let pixels = null; // Current editable RGBA frame, exported without the selection outline.
   let original = null; // Unmodified loaded frame used by Reset.
   let history = []; // RGBA snapshots used by Undo.
+  let future = []; // RGBA snapshots used by Redo; cleared by any new edit.
   let path = []; // Lasso vertices in original 450 x 1204 coordinates.
   let activePointer = null; // The one touch/mouse pointer currently drawing a lasso.
   let source = null; // Path/filename shown by mobile diagnostics.
@@ -128,7 +129,7 @@
   function diagnostics() {
     byId('cut-debug').textContent = JSON.stringify({
       source, sourceSize, workingFrame: FRAME, selectedPoints: path.length,
-      remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length,
+      remainingOpaquePixels: opaqueCount(pixels), undoDepth: history.length, redoDepth: future.length,
       outlineThickness: Number(byId('cut-outline-thickness').value), // Last requested black-border radius.
       alphaThreshold: Number(byId('cut-min-alpha').value), // Same cutoff for outline and exported PNG.
       uploadedPart: byId('cut-uploaded').value, uploadedPartCount: byId('cut-uploaded').querySelectorAll('option').length, // Mobile diagnostics for current repo-asset browsing.
@@ -168,9 +169,11 @@
     renderPending = true;
     requestAnimationFrame(renderNow);
   }
+  function historyButtons() { byId('cut-undo').disabled = !history.length; byId('cut-redo').disabled = !future.length; }
   function pushUndo() {
     history.push(new Uint8ClampedArray(pixels)); // Snapshot before destructive edits and resets.
     if (history.length > MAX_UNDO) history.shift();
+    future = []; historyButtons();
   }
   async function acceptImage(img, description, suggestedName) {
     const work = document.createElement('canvas'); // Rasterize once into the same frame the gameplay compositor uses.
@@ -182,7 +185,7 @@
     if (!opaqueCount(next)) throw new Error('The source image has no visible pixels.');
     original = new Uint8ClampedArray(next); pixels = new Uint8ClampedArray(next);
     source = description; sourceSize = { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
-    history = []; path = []; activePointer = null; clearBrush();
+    history = []; future = []; path = []; activePointer = null; clearBrush(); historyButtons();
     const inputName = String(suggestedName || ''); // Keep head/shaft export type when reloading an existing part PNG.
     if (/^weaponhead[_-]/i.test(inputName)) byId('cut-kind').value = 'head';
     if (/^weaponshaft[_-]/i.test(inputName)) byId('cut-kind').value = 'shaft';
@@ -208,10 +211,12 @@
     return value;
   }
   function pointFor(event) {
-    const rect = canvas.getBoundingClientRect(); // Canvas CSS retains its native aspect ratio, including on phones.
+    const rect = canvas.getBoundingClientRect(); // The pinned canvas letterboxes (object-fit: contain) to fit the screen.
+    const scale = Math.min(rect.width / FRAME.width, rect.height / FRAME.height);
+    const left = rect.left + (rect.width - FRAME.width * scale) / 2, top = rect.top + (rect.height - FRAME.height * scale) / 2;
     return {
-      x: Math.max(0, Math.min(FRAME.width, (event.clientX - rect.left) * FRAME.width / rect.width)),
-      y: Math.max(0, Math.min(FRAME.height, (event.clientY - rect.top) * FRAME.height / rect.height))
+      x: Math.max(0, Math.min(FRAME.width, (event.clientX - left) / scale)),
+      y: Math.max(0, Math.min(FRAME.height, (event.clientY - top) / scale))
     };
   }
   function extend(event) {
@@ -343,7 +348,11 @@
   byId('cut-clear-selection').onclick = () => { path = []; activePointer = null; renderNow(); status('Selection cleared.'); };
   byId('cut-undo').onclick = () => {
     if (!history.length) { status('Nothing to undo.'); return; }
-    pixels = history.pop(); path = []; renderNow(); status('Restored the previous pixel edit.');
+    future.push(pixels); pixels = history.pop(); path = []; historyButtons(); renderNow(); status('Restored the previous pixel edit.');
+  };
+  byId('cut-redo').onclick = () => {
+    if (!future.length) { status('Nothing to redo.'); return; }
+    history.push(pixels); pixels = future.pop(); path = []; historyButtons(); renderNow(); status('Reapplied the pixel edit.');
   };
   byId('cut-reset').onclick = () => {
     if (!original) { status('Load a sprite first.'); return; }

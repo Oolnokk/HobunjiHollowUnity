@@ -24,9 +24,27 @@
       option.value = key; option.textContent = record.label; byId(id).appendChild(option);
     }
   }
+  // Undo/redo: every committed draft state (lines, corrections, layering, bridges, imports, resets) is a step.
+  const undoStack = [], redoStack = [], MAX_HISTORY = 100;
+  let savedState = JSON.stringify(data); // Draft as last committed, the state Undo returns from.
+  function record() {
+    const next = JSON.stringify(data);
+    if (next === savedState) return;
+    undoStack.push(savedState); if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    redoStack.length = 0; savedState = next; historyButtons();
+  }
+  function historyButtons() {
+    byId('pair-undo').disabled = !undoStack.length; byId('pair-redo').disabled = !redoStack.length;
+  }
+  function restore(state) {
+    data = JSON.parse(JSON.stringify(api.replace(JSON.parse(state), true)));
+    savedState = JSON.stringify(data); pendingStrokes = [];
+    render(); syncBridgeControls(); historyButtons();
+  }
   function save() {
     try {
       data = JSON.parse(JSON.stringify(api.replace(data, true))); // Persist validated line and pair data to browser draft.
+      record();
       msg('Draft saved. Matching tang/eye arrows drive head rotation and size.');
       render();
     } catch (error) { msg('Save failed: ' + error.message); }
@@ -235,14 +253,13 @@
     preview();
   }
   function pointFor(canvas, event) {
-    const rect = canvas.getBoundingClientRect(); // Pointer coordinates mapped into original source frame.
-    return { x: Math.max(0, Math.min(450, Math.round((event.clientX - rect.left) / rect.width * 450))),
-      y: Math.max(0, Math.min(1204, Math.round((event.clientY - rect.top) / rect.height * 1204))) };
+    const box = contentRect(canvas); // Pointer coordinates mapped into original source frame, past any letterboxing.
+    return { x: Math.max(0, Math.min(450, Math.round((event.clientX - box.left) / box.scale))),
+      y: Math.max(0, Math.min(1204, Math.round((event.clientY - box.top) / box.scale))) };
   }
   function nearHandle(canvas, event, point, radiusPx = 32) {
-    const rect = canvas.getBoundingClientRect(); // Gizmo hit target remains a comfortable CSS-pixel radius on phones.
-    const x = rect.left + point.x / canvas.width * rect.width;
-    const y = rect.top + point.y / canvas.height * rect.height;
+    const box = contentRect(canvas); // Gizmo hit target remains a comfortable CSS-pixel radius on phones.
+    const x = box.left + point.x * box.scale, y = box.top + point.y * box.scale;
     return Math.hypot(event.clientX - x, event.clientY - y) <= radiusPx;
   }
   function setGizmoMode(next) {
@@ -377,13 +394,13 @@
       const raw = await file.text(); // JSON or JS assignment exported by this tool; never eval.
       const json = raw.trim().startsWith('{') ? raw : raw.slice(raw.indexOf('=') + 1).trim().replace(/;\s*$/, '');
       data = JSON.parse(JSON.stringify(api.replace(JSON.parse(json), true)));
-      mountIndex = 0; render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
+      record(); mountIndex = 0; render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
     } catch (error) { msg('Import failed: ' + error.message); }
     finally { byId('file').value = ''; }
   };
   byId('reset').onclick = () => {
     data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); // Restores shipped lines and pair corrections.
-    mountIndex = 0; render(); msg('Restored committed directed mount data.');
+    record(); mountIndex = 0; render(); msg('Restored committed directed mount data.');
   };
   // Pair bridge brush: strokes painted on the assembled preview are stored on this pair and re-filled by
   // ModularWeapons.compose() (which the game also uses), so the preview shows exactly what gameplay renders.
@@ -508,6 +525,28 @@
     const pair = pairOverride(); // Settings changes re-fill an already applied bridge immediately.
     if (pair.bridges?.strokes?.length) { Object.assign(pair.bridges, bridgeSettings()); save(); }
   };
+  byId('pair-undo').onclick = () => { if (undoStack.length) { redoStack.push(savedState); restore(undoStack.pop()); msg('Undid the last change.'); } };
+  byId('pair-redo').onclick = () => { if (redoStack.length) { undoStack.push(savedState); restore(redoStack.pop()); msg('Redid the change.'); } };
+  // Keyboard: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo, for whichever editor (this one or the PNG cutter)
+  // was used last. Text fields keep their own native undo.
+  let lastPanel = 'pair';
+  document.querySelector('.pair-area').addEventListener('pointerdown', () => { lastPanel = 'pair'; }, true);
+  byId('sprite-cutter')?.addEventListener('pointerdown', () => { lastPanel = 'cutter'; }, true);
+  document.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.target.closest?.('input,select,textarea')) return;
+    const key = event.key.toLowerCase(), redo = key === 'y' || (key === 'z' && event.shiftKey);
+    if (key !== 'z' && key !== 'y') return;
+    const button = byId((lastPanel === 'cutter' ? 'cut-' : 'pair-') + (redo ? 'redo' : 'undo'));
+    if (button && !button.disabled) { event.preventDefault(); button.click(); }
+  });
+  // Pinned previews sit just below the sticky header (desktop); on phones the header scrolls away.
+  const header = document.querySelector('header');
+  function measureHeader() {
+    const sticky = getComputedStyle(header).position === 'sticky';
+    document.documentElement.style.setProperty('--header-h', (sticky ? header.offsetHeight : 0) + 'px');
+  }
+  measureHeader(); window.addEventListener('resize', measureHeader);
+  if (window.ResizeObserver) new ResizeObserver(measureHeader).observe(header);
   msg('Ready. Drag arrows over head and shaft images to define matching mounting lines.');
   render();
 })();
