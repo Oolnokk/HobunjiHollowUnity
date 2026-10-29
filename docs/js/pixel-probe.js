@@ -1003,6 +1003,8 @@
     if (cutsceneDebug) lines.push('Cutscene: ' + JSON.stringify(cutsceneDebug));
     const openingDebug = window.OpeningStoryCutscene?.debugSnapshot?.(); // Story phase and wilderness-gate status remain visible without a console.
     if (openingDebug) lines.push('Opening: ' + JSON.stringify(openingDebug));
+    const guildDebug = window.DelversGuild?.debugSnapshot?.(); // Mobile Pixel Probe exposes the membership gate, cutscene phase and key quest without DevTools.
+    if (guildDebug) lines.push('Delver\'s Guild: ' + JSON.stringify(guildDebug));
     const harlyaoSkeletonDebugLine = window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.(); // Keeps the NPC-only skeleton bridge's rig/extremity/cosmetic status copyable from the mobile Pixel Probe without DevTools.
     if (harlyaoSkeletonDebugLine) lines.push(harlyaoSkeletonDebugLine);
     const maoAoSkeletonDebugLine = window.HobunjiMaoAoSkeletonSpecies?.formatDebug?.(); // Same diagnostics for the catacomb Mao'ao Skeleton bridge.

@@ -399,6 +399,7 @@
     const completedAt = raw === null || raw === '' || raw === undefined ? NaN : Number(raw);
     return {
       completed: saved ? saved.jubmirFeyComplete === true : legacyValue(stateKey(profile) + ':jubmir-fey') === 'complete',
+      completedAtHours: Number.isFinite(saved?.jubmirFeyCompletedAtHours) ? saved.jubmirFeyCompletedAtHours : null,
       farmTourCompletedAtHours: Number.isFinite(completedAt) ? completedAt : null,
       hoursUntilVisit: now !== null && Number.isFinite(completedAt) ? Math.max(0, completedAt + FEY_VISIT_DELAY_HOURS - now) : null,
       latestChange: 'Six inn rooms; Jubmir visits 12 game hours after the farm tour and discusses trade and the Great Fey in his room.',
@@ -503,7 +504,7 @@
         onDialogueContinue(stage) { if (stage.id === 'fey_final') finalContinued = true; },
       });
       if (!finalContinued) { status.phase = 'jubmir-fey-interrupted'; return false; }
-      changeStory(profile, { jubmirFeyComplete: true });
+      changeStory(profile, { jubmirFeyComplete: true, jubmirFeyCompletedAtHours: gameHours() }); // Used by Garanki's following-day Guild invitation.
       window.DoorstepVisits?.markDone(FEY_VISIT_KEY);
       window.DoorstepVisits?.dismissVisit(FEY_VISIT_KEY);
       status.phase = 'jubmir-fey-complete';
@@ -741,6 +742,8 @@
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
     debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState() }),
     stateKey, readProgress,
+    getStory: (profile = window.__hobunjiPlayerProfile) => storedStory(profile) || {}, // The Guild reads the same portable story record as Jubmir.
+    updateStory: changeStory, // Reuses the single world-meta writer for additional story phases.
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
   });
   function storyVisitPanel() {

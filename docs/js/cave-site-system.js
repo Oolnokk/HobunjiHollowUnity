@@ -78,6 +78,7 @@
   const banditSpawnPromises = new Map(); // map id -> in-flight BanditCombat creation promise, preventing duplicate async spawns.
   const banditPopulatedMaps = new Set(); // Session-only map ids that actually spawned a hideout; used to distinguish kills from a fresh page reload.
   const ruinTransitionMaps = new Set(); // Map ids currently transitioning into a ruin; prevents repeated proximity triggers during the fade/generation handoff.
+  let ruinLicensePromptAtMs = 0; // Throttles the missing-Stone warning while the player stands inside the automatic cave threshold.
   const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
   const propMeshesByMapId = new Map(); // Map id -> scene and built authored props; the live chest/ruin threshold can be sensed without scanning the cave shell.
   const mushroomScenesByMapId = new Map(); // Retains the cave scene for visual regrowth after the in-game day changes.
@@ -1200,6 +1201,13 @@
 
   function maybeEnterRuin(profile, plan, state) {
     if (!plan.ruinEntrance || ruinTransitionMaps.has(profile.mapId) || caveDistanceTiles(plan.ruinEntrance) > RUIN_TRIGGER_RADIUS_TILES) return;
+    if (!window.DelversGuild?.hasStone?.()) {
+      if (Date.now() - ruinLicensePromptAtMs > 8000) {
+        ruinLicensePromptAtMs = Date.now();
+        wildlifeDeps?.showToast?.("A Delver's Stone is required to unlock the Harlyao ruin beyond this cave.", false);
+      }
+      return;
+    }
     const ruin = window.DevRandomRuin;
     if (!ruin?.generate) {
       wildlifeDeps?.showToast?.('An ancient worked passage continues beyond the cave.', false);
