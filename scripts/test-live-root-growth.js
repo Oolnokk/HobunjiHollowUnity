@@ -99,6 +99,9 @@ assert.equal(feature.version,2);
 const normalized=feature.normalizeRecipe({branchCount:Infinity,floorWidth:-2,targetDensity:5,duration:'NaN'});
 assert.equal(normalized.branchCount,9);assert.equal(normalized.floorWidth,1);
 assert.equal(normalized.targetDensity,1);assert.equal(normalized.duration,3.5);
+assert.equal(normalized.arcConcavity,.72,'old recipes inherit the concave default');
+assert.equal(feature.normalizeRecipe({arcConcavity:10}).arcConcavity,1);
+assert.equal(feature.normalizeRecipe({arcConcavity:-10}).arcConcavity,0);
 const input=new Group();input.add(new Mesh(new Geometry(),new Material())); // Caller must retain its original visible source.
 const options={target:input,recipe:{seed:'fixed',branchCount:4,duration:2},THREE:three,foliage};
 const first=feature.create(options);
@@ -131,8 +134,29 @@ assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.style),['wrap','wrap']);
 assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.kind),['roots','roots']);
 assert.equal(first.branches[0].geometry.drawRange.count,0);
 const second=feature.create(options);
-assert.deepEqual(first.branches.map(x=>x.geometry.parameters?.path?.points?.[0]?.toArray()||x.position.toArray()),
-  second.branches.map(x=>x.geometry.parameters?.path?.points?.[0]?.toArray()||x.position.toArray()));
+const spine = branch => branch.geometry.parameters.path.points; // Authored control points, before the animation draw-range is applied.
+assert.deepEqual(first.branches.map(branch=>spine(branch).map(point=>point.toArray())),
+  second.branches.map(branch=>spine(branch).map(point=>point.toArray())),
+  'identical seeds must reproduce every part of the new concave arc');
+let checkedRising = 0; // Verifies that rising branches do not bow above their direct source-to-target chord.
+for (const branch of first.branches) {
+  const [start,p1,p2,end] = spine(branch);
+  const rise = end.y - start.y;
+  if (rise <= .01) continue; // Non-rising targets intentionally retain straight-height interpolation.
+  checkedRising++;
+  assert(p1.y < start.y + rise * .28, 'first control point must stay below its straight-line height');
+  assert(p2.y < start.y + rise * .7, 'second control point must stay below its straight-line height');
+  assert(p1.y >= start.y && p2.y >= p1.y && p2.y <= end.y,
+    'concave path must rise monotonically and not plunge through the floor');
+}
+assert(checkedRising>0, 'the fixture must exercise branches rising toward furniture');
+const straight = feature.create({...options,recipe:{...options.recipe,arcConcavity:0}}); // Zero concavity is the original chord-height control.
+for (const branch of straight.branches) {
+  const [start,p1,p2,end] = spine(branch),rise=end.y-start.y;
+  assert(Math.abs(p1.y - (start.y + rise * .28)) < 1e-8, 'zero concavity restores linear early height');
+  assert(Math.abs(p2.y - (start.y + rise * .7)) < 1e-8, 'zero concavity restores linear late height');
+}
+straight.dispose();
 first.extend();
 first.update(.25);assert(first.getProgress()>0);
 first.setProgress(1);
@@ -149,6 +173,8 @@ assert.equal(first.group.parent,null);
 assert.throws(()=>feature.create({target:null,THREE:three,foliage}),/furniture group/);
 assert.match(fs.readFileSync('docs/tools/index.html','utf8'),/live-root-growth\/index\.html/);
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/js\/live-root-growth\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/id="arcConcavity"/);
+assert(fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8').includes("'arcConcavity'"), 'the UI must save and restore arc concavity');
 const authoredIndex=JSON.parse(fs.readFileSync('docs/config/furniture-authored/index.json','utf8'));
 assert(authoredIndex.furniture.some(entry=>entry.key==='woodenDoor'));
 const editor=fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8');
