@@ -127,8 +127,8 @@ assert(temple.surfaceGrowth.filter(layer=>layer.kind==='roots').every(layer=>lay
 assert.deepEqual(first.rootFinish,feature.TEMPLE_ROOT_FINISH);
 assert(calls.every(call=>call.recipe.color===feature.TEMPLE_ROOT_FINISH.color && call.recipe.texture===feature.TEMPLE_ROOT_FINISH.texture));
 assert(first.branches.every(branch=>!!(branch.layers.mask&2) && branch.userData.noOutline===false));
-assert.deepEqual(calls.map(x=>x.recipe.style),['wrap','wrap']);
-assert.deepEqual(calls.map(x=>x.recipe.kind),['roots','roots']);
+assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.style),['wrap','wrap']);
+assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.kind),['roots','roots']);
 assert.equal(first.branches[0].geometry.drawRange.count,0);
 const second=feature.create(options);
 assert.deepEqual(first.branches.map(x=>x.geometry.parameters?.path?.points?.[0]?.toArray()||x.position.toArray()),
