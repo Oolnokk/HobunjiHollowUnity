@@ -98,12 +98,17 @@ const feature=windowMock.LiveRootGrowth;
 assert.equal(feature.version,2);
 const normalized=feature.normalizeRecipe({branchCount:Infinity,floorWidth:-2,targetDensity:5,duration:'NaN'});
 assert.equal(normalized.branchCount,9);assert.equal(normalized.floorWidth,1);
-assert.equal(normalized.targetDensity,1);assert.equal(normalized.duration,3.5);
+assert.equal(normalized.targetDensity,5);assert.equal(normalized.duration,0.5);
+assert.equal(feature.DEFAULTS.floorDensity,6);
+assert.equal(feature.DEFAULTS.targetDensity,6);
+assert.equal(feature.normalizeRecipe({targetDensity:100,floorDensity:100}).targetDensity,6);
+assert.equal(feature.normalizeRecipe({targetDensity:100,floorDensity:100}).floorDensity,6);
+assert.equal(feature.normalizeRecipe({targetDensity:0.1}).targetDensity,0.1);
 assert.equal(normalized.arcConcavity,.72,'old recipes inherit the concave default');
 assert.equal(feature.normalizeRecipe({arcConcavity:10}).arcConcavity,1);
 assert.equal(feature.normalizeRecipe({arcConcavity:-10}).arcConcavity,0);
 const input=new Group();input.add(new Mesh(new Geometry(),new Material())); // Caller must retain its original visible source.
-const options={target:input,recipe:{seed:'fixed',branchCount:4,duration:2},THREE:three,foliage};
+const options={target:input,recipe:{seed:'fixed',branchCount:4},THREE:three,foliage};
 const first=feature.create(options);
 assert.equal(first.branches.length,4);
 assert.equal(first.group.children.length,3);
@@ -111,7 +116,14 @@ assert.equal(input.children[0].visible,true,'hidden geometry must be cloned');
 assert.equal(first.target.children[0].visible,false,'the imported furniture must be hidden');
 assert.equal(first.getProgress(),0);
 assert.equal(first.getDiagnostics().floorNodesFromWrap,true);
-assert.equal(first.getDiagnostics().shapeWrapEndpointPairs,1);
+assert.equal(first.getDiagnostics().shapeWrapEndpointPairs,6);
+assert.equal(first.getDiagnostics().floorDensityPasses,6);
+assert.equal(first.getDiagnostics().shapeDensityPasses,6);
+assert.equal(first.getDiagnostics().floorStrands,78);
+assert.equal(first.getDiagnostics().shapeStrands,78);
+assert.equal(calls.length,12,'six seeded floor Wraps and six seeded furniture Wraps must actually be generated');
+assert(calls.every(call=>call.recipe.density===1),'each Wrap pass respects the shared generator density cap');
+assert.equal(first.targetGrowth.children.length,6,'all furniture density layers must be retained');
 const glbInput=new Group(), glbDriver=new Mesh(new Geometry(),new Material()); // Async GLB owner keeps a non-renderable placeholder geometry.
 glbDriver.userData.furnitureGlbPart=true;glbDriver.userData.glbReady=true;
 glbDriver.position=new Vector3(0,1,0);glbDriver.add(new Mesh(new Geometry(),new Material()));
@@ -133,6 +145,12 @@ assert(first.branches.every(branch=>!!(branch.layers.mask&2) && branch.userData.
 assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.style),['wrap','wrap']);
 assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.kind),['roots','roots']);
 assert.equal(first.branches[0].geometry.drawRange.count,0);
+assert(first.targetGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count===0),
+  'all target Wrap layers must be hidden at growth start');
+const compatibility=feature.create({...options,recipe:{...options.recipe,floorDensity:1,targetDensity:.4}});
+assert.equal(compatibility.getDiagnostics().floorDensityPasses,1);
+assert.equal(compatibility.getDiagnostics().shapeDensityPasses,1);
+compatibility.dispose();
 const second=feature.create(options);
 const spine = branch => branch.geometry.parameters.path.points; // Authored control points, before the animation draw-range is applied.
 assert.deepEqual(first.branches.map(branch=>spine(branch).map(point=>point.toArray())),
@@ -158,14 +176,56 @@ for (const branch of straight.branches) {
 }
 straight.dispose();
 first.extend();
-first.update(.25);assert(first.getProgress()>0);
+first.update(.25);assert.equal(first.getProgress(),.5,'default growth duration is half a second');
 first.setProgress(1);
 assert.equal(first.getProgress(),1);
 assert(first.branches.every(x=>x.geometry.drawRange.count===x.userData.fullDrawCount));
+assert(first.targetGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count===
+  layer.children[0].geometry.index.count),'all shape Wrap layers must be revealed on completion');
 first.retract();
 for(let i=0;i<16;i++)first.update(.25);
 assert.equal(first.getProgress(),0);
 assert(first.branches.every(x=>x.geometry.drawRange.count===0));
+// The authored runtime owns particle simulation; the root controller only gates it
+// and duplicates attachment transforms without making the source mesh visible.
+const emitterInput=new Group(), emitterPart=new Mesh(new Geometry(),new Material());
+emitterPart.position=new Vector3(1,2,3);
+emitterPart.userData.authoredPartId='glowing-top';
+emitterInput.add(emitterPart);
+emitterInput.userData.authoredParticleEmitters=[{id:'sparks',name:'Sparks',attachedPartId:'glowing-top',rate:24}];
+const emitted=[],disposables=[];
+const emitterRuntime={createEmitterVisual(host,record){
+  const anchor=host.userData.meshById.get(record.attachedPartId);
+  assert(anchor,'particle attachment must resolve against the cloned furniture');
+  assert(!anchor.isMesh && anchor.visible!==false,'particle anchors cannot be hidden furniture meshes');
+  assert.equal(anchor.position.y,2,'authored part offset is retained');
+  assert.equal(host.parent?.name,'Live root growth','particle host is not inside the hidden furniture');
+  const visual={record,update(delta,active){emitted.push({delta,active});},dispose(){disposables.push(record.id);}};
+  return visual;
+}};
+const emission=feature.create({...options,target:emitterInput,emitterRuntime});
+assert.equal(emission.getDiagnostics().furnitureEmitterCount,1);
+assert.equal(emission.getDiagnostics().furnitureEmittersActive,false);
+assert.equal(emitterInput.children[0].visible,true,'source furniture remains untouched');
+assert.equal(emission.target.children[0].visible,false,'the cloned furniture remains hidden');
+emission.extend();
+emission.update(.25);
+assert.equal(emitted.at(-1).active,false,'particles cannot emit during incomplete growth');
+emission.update(.25);
+assert.equal(emission.getProgress(),1);
+assert.equal(emitted.at(-1).active,true,'emitters must activate precisely when the growth finishes');
+const before=emitted.length;
+emission.update(.1);
+assert.equal(emitted.length,before+1,'completed emitters must continue updating with animation paused');
+assert.equal(emitted.at(-1).active,true);
+emission.retract();emission.update(.1);
+assert.equal(emitted.at(-1).active,false,'retracting immediately disables new emission');
+emission.setProgress(1);emission.update(.1);
+assert.equal(emitted.at(-1).active,true,'scrubbing to completion also starts effects');
+emission.setProgress(0);emission.update(.1);
+assert.equal(emitted.at(-1).active,false,'scrubbing below completion stops effects');
+emission.dispose();emission.dispose();
+assert.deepEqual(disposables,['sparks'],'particle resources are disposed only once');
 const scene=new Group();scene.add(first.group); // Disposal must detach from a real scene parent.
 const owned=first.branches[0].geometry;first.dispose();first.dispose();
 assert.equal(owned.disposed,true);
@@ -175,6 +235,10 @@ assert.match(fs.readFileSync('docs/tools/index.html','utf8'),/live-root-growth\/
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/js\/live-root-growth\.js\?v=[A-Za-z0-9_-]+/);
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/id="arcConcavity"/);
 assert(fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8').includes("'arcConcavity'"), 'the UI must save and restore arc concavity');
+const authorHtml=fs.readFileSync('docs/tools/live-root-growth/index.html','utf8');
+assert.match(authorHtml,/id="floorDensity"[^>]*value="6"/);
+assert.match(authorHtml,/id="targetDensity"[^>]*value="6"/);
+assert.match(authorHtml,/id="duration"[^>]*value="\.5"/);
 const authoredIndex=JSON.parse(fs.readFileSync('docs/config/furniture-authored/index.json','utf8'));
 assert(authoredIndex.furniture.some(entry=>entry.key==='woodenDoor'));
 const editor=fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8');
