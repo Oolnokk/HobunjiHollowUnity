@@ -22428,18 +22428,15 @@
         return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
       }
 
-      // Collapses the shovel's separate Dig/Fill action slots into one
-      // contextual input: whichever of the two the player has selected,
-      // resolve to whichever is actually valid for the targeted tile. Dig
-      // (including redigging a shallow trench) takes priority; fall back to
-      // fill only when dig isn't valid, i.e. an already-full trench — so the
-      // same input digs or fills depending on what's targeted, on desktop
-      // and mobile alike.
+      // Prefer the selected shovel action when it is valid: explicitly
+      // choosing Fill must fill even a partly silted trench (where Redig is
+      // also legal). Otherwise the other action is a contextual fallback,
+      // so Dig can fill a full-depth trench and Fill can dig untouched soil.
       function resolveDigFillAction(tool, action, reticle) {
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return action;
-        if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
-        if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
-        return action;
+        if (canUseAction(tool, action, reticle.col, reticle.row)) return action;
+        const fallbackAction = action === 'dig' ? 'fill' : 'dig'; // Only used when the chosen shovel operation is unavailable on this tile.
+        return canUseAction(tool, fallbackAction, reticle.col, reticle.row) ? fallbackAction : action;
       }
 
       // Whether starting this tool/action right now would kick off a multi-stage
@@ -22725,8 +22722,9 @@
         toolSwingT = 0;
       }
 
-      function cancelChargeAction() {
+      function cancelChargeAction(reason = 'interrupted') {
         if (!chargeAction) return;
+        debugLog(`[tool-charge] ${chargeAction.action} canceled (${reason}) @ c${chargeAction.col},r${chargeAction.row}`);
         chargeAction = null;
         toolSwingT = 0;
         chargeAnimOverride = null;
@@ -22773,9 +22771,9 @@
       function updateChargeAction() {
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
-          if (!actionHeldDown) { cancelChargeAction(); return; }
+          if (!actionHeldDown) { cancelChargeAction('input released'); return; }
           const reticle = getReticleTile();
-          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
