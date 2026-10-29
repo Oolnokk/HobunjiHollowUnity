@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const source = file => fs.readFileSync(path.join(__dirname, '../docs/js/', file), 'utf8'); // Test checked-in modules, not parallel reimplementations.
-const context = vm.createContext({ window: {} });
+const context = vm.createContext({ window: { THREE: {} }, console }); // Wall-panel generation requires only the existing Three.js presence guard.
 for (const file of ['farmhouse-room-planner.js', 'house-pieces-core.js', 'interior-scene-builder.js', 'interior-door-tiles.js', 'house-window-linkage.js']) {
   vm.runInContext(source(file), context, { filename: file });
 }
@@ -48,10 +48,7 @@ assert.equal(doorGroups.length, 2, 'one entrance door and one inter-room door');
 assert.equal(doorGroups.filter(d => d.exitId).length, 1);
 assert.equal(doorGroups.filter(d => !d.exitId).length, 1);
 
-const binding = { pieceId:'house_starter_annex', side:'north', localStart:0, localEnd:3, u01:0.5, v01:0.5 };
-const run = windows.__test.resolveRun(binding);
-// run needs the farm editor's live piece adapter, so test the reversible room
-// mapping with the same resolved piece used by placementForArea.
+// Reversible wall projection uses a resolved room record, without requiring a live farm-editor adapter.
 const directRun = { pieceId:pieces[1].id, piece:pieces[1], side:'north' };
 const interiorPoint = windows.__test.toIndoorPoint(directRun, 7, 2, 0.875);
 assert.equal(interiorPoint[0], annex.col + 2);
