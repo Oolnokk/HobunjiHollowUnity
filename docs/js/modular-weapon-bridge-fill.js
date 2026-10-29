@@ -42,6 +42,23 @@
     }
     return color;
   }
+  // Pixel classifier shared by the bridge fill and the smudge brush. Every weapon's metal is authored in one base
+  // color (the same SOURCE_HEX the game's metal recolor keys on); shading only changes its brightness.
+  const EMPTY = 0, INK = 1, METAL = 2, OTHER = 3;
+  function makeClassifier(options = {}) {
+    const minAlpha = Math.max(1, Math.min(255, Math.round(options.minAlpha ?? 32))); // Fainter pixels count as empty.
+    const darkLuma = options.darkLuma ?? 48; // Darker opaque pixels are outline ink, never metal.
+    const [metalHue, metalSat] = hueSat(...hexRgb(options.metalHex || '#5A8480'));
+    const hueTol = options.metalHueTolerance ?? 22, satTol = options.metalSaturationTolerance ?? 0.22;
+    return (px, o) => {
+      if (px[o + 3] < minAlpha) return EMPTY;
+      if (luma(px, o) < darkLuma) return INK;
+      const [hue, sat] = hueSat(px[o], px[o + 1], px[o + 2]);
+      const hueGap = Math.min(Math.abs(hue - metalHue), 360 - Math.abs(hue - metalHue));
+      return hueGap <= hueTol && Math.abs(sat - metalSat) <= satTol ? METAL : OTHER;
+    };
+  }
+
   // Minimal binary min-heap of (cost, pixel, tone) used by the competing-seed growth.
   function Heap() { this.cost = []; this.pixel = []; this.tone = []; }
   Heap.prototype.push = function (cost, pixel, tone) {
@@ -104,27 +121,15 @@
   function fillRegion(source, mask, w, h, options) {
     const n = w * h;
     const thickness = Math.max(0, Math.min(32, Math.round(options.outlineThickness ?? 10))); // Black rim kept where the bridge meets empty space.
-    const minAlpha = Math.max(1, Math.min(255, Math.round(options.minAlpha ?? 32))); // Fainter pixels count as empty.
-    const darkLuma = options.darkLuma ?? 48; // Darker opaque pixels are outline ink, never metal.
     const jitter = options.jitter ?? 0.9; // Random step cost so competing seeds scramble instead of forming straight Voronoi borders.
     const random = mulberry32(options.seed ?? 1);
 
-    // Every weapon's metal is authored in one base color (the same SOURCE_HEX the game's metal recolor keys on);
-    // shading only changes its brightness. Pixels of other hues (grip wraps, wood) are kept but never spread.
-    const [metalHue, metalSat] = hueSat(...hexRgb(options.metalHex || '#5A8480'));
-    const hueTol = options.metalHueTolerance ?? 22, satTol = options.metalSaturationTolerance ?? 0.22;
-    const EMPTY = 0, INK = 1, METAL = 2, OTHER = 3;
+    // Pixels of other hues than the base metal (grip wraps, wood) are kept but never spread.
+    const classify = makeClassifier(options);
     const kind = new Uint8Array(n); // Classification of the original source pixels.
     let painted = 0;
     for (let p = 0; p < n; p++) {
-      const o = p * 4;
-      if (source[o + 3] < minAlpha) kind[p] = EMPTY;
-      else if (luma(source, o) < darkLuma) kind[p] = INK;
-      else {
-        const [hue, sat] = hueSat(source[o], source[o + 1], source[o + 2]);
-        const hueGap = Math.min(Math.abs(hue - metalHue), 360 - Math.abs(hue - metalHue));
-        kind[p] = hueGap <= hueTol && Math.abs(sat - metalSat) <= satTol ? METAL : OTHER;
-      }
+      kind[p] = classify(source, p * 4);
       if (mask[p]) painted++;
     }
     if (!painted) throw new Error('Paint over the gap with the bridge brush first.');
@@ -548,5 +553,237 @@
     return strokes;
   }
 
-  global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes });
+  // Smudge brush, metal only. One step pushes the metal under a disc along the pointer's movement (full strength at
+  // the centre, fading to nothing at the rim). Metal that moves covers empty space and outline ink; where it leaves
+  // becomes empty. Other materials never move and are never covered. Colors move as whole pixels, so shading bands
+  // travel with the metal instead of blurring. `options.region` (one byte per pixel) marks every changed pixel.
+  function smudgeStep(pixels, width, height, from, to, radius, options = {}) {
+    const w = width, h = height, classify = options.classify || makeClassifier(options), region = options.region;
+    const r = Math.max(1, radius), dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy);
+    if (!len) return 0;
+    const steps = Math.max(1, Math.ceil(len / Math.max(1, r / 4))), sx = dx / steps, sy = dy / steps;
+    let changed = 0;
+    for (let i = 1; i <= steps; i++) {
+      const cx = from.x + sx * i, cy = from.y + sy * i;
+      const pad = Math.ceil(Math.hypot(sx, sy)) + 1; // Sources lie at most one substep behind.
+      const bx0 = Math.max(0, Math.floor(cx - r) - pad), by0 = Math.max(0, Math.floor(cy - r) - pad);
+      const bx1 = Math.min(w - 1, Math.ceil(cx + r) + pad), by1 = Math.min(h - 1, Math.ceil(cy + r) + pad);
+      if (bx1 < bx0 || by1 < by0) continue;
+      const bw = bx1 - bx0 + 1, old = new Uint8ClampedArray(bw * (by1 - by0 + 1) * 4); // Pre-step copy to read from.
+      for (let y = by0; y <= by1; y++) old.set(pixels.subarray((y * w + bx0) * 4, (y * w + bx1 + 1) * 4), (y - by0) * bw * 4);
+      const at = (x, y) => ((y - by0) * bw + (x - bx0)) * 4;
+      for (let y = Math.max(by0, Math.floor(cy - r)); y <= Math.min(by1, Math.ceil(cy + r)); y++) {
+        for (let x = Math.max(bx0, Math.floor(cx - r)); x <= Math.min(bx1, Math.ceil(cx + r)); x++) {
+          const d2 = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) / (r * r);
+          if (d2 >= 1) continue;
+          const weight = (1 - d2) * (1 - d2);
+          const fx = Math.round(x - sx * weight), fy = Math.round(y - sy * weight);
+          if (fx === x && fy === y) continue;
+          const o = at(x, y), dst = classify(old, o);
+          if (dst === OTHER) continue;
+          const inside = fx >= bx0 && fy >= by0 && fx <= bx1 && fy <= by1;
+          const src = inside ? classify(old, at(fx, fy)) : EMPTY;
+          const out = (y * w + x) * 4;
+          if (src === METAL) { const so = at(fx, fy); pixels[out] = old[so]; pixels[out + 1] = old[so + 1]; pixels[out + 2] = old[so + 2]; pixels[out + 3] = old[so + 3]; }
+          else if (dst === METAL) pixels[out] = pixels[out + 1] = pixels[out + 2] = pixels[out + 3] = 0;
+          else continue;
+          changed++;
+          if (region) region[y * w + x] = 1;
+        }
+      }
+    }
+    return changed;
+  }
+
+  // Removes the black outline around the metal in the changed area and regenerates it. The sprite's own outline
+  // near the change (before it) is measured: its typical width becomes the new thickness, and its widest common
+  // width sets how deep the old outline is erased, so none of it is left behind. New outline is drawn around metal
+  // that borders empty space. Outline belonging to other materials (wood, grip wraps) and interior detail far from
+  // empty space (a blade's groove) are kept. Pass a region of all ones to regenerate the whole sprite's outline.
+  function rebuildOutline(before, pixels, width, height, region, options = {}) {
+    const w = width, h = height, classify = options.classify || makeClassifier(options);
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0, row = y * w; x < w; x++) if (region[row + x]) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    if (x1 < 0) return { thickness: 0, erased: 0, drawn: 0 };
+    const windowOf = margin => {
+      const wx = Math.max(0, x0 - margin), wy = Math.max(0, y0 - margin);
+      return { wx, wy, ww: Math.min(w - 1, x1 + margin) - wx + 1, wh: Math.min(h - 1, y1 + margin) - wy + 1 };
+    };
+    // 1. Outline widths, measured on the sprite before the change: for every outline pixel touching metal, the
+    //    straight-line distance to the nearest empty pixel. The most common width is the outline's thickness
+    //    (interior detail joined to the outline, like a blade's groove, only adds a long thin tail of large widths).
+    let thickness = options.outlineThickness, eraseDepth = 0;
+    let widthFor = () => thickness; // Local outline width near a frame pixel (filled in below when measurable).
+    {
+      const { wx, wy, ww, wh } = windowOf(48), m = ww * wh;
+      const kinds = new Uint8Array(m), nearestEmpty = new Int32Array(m).fill(-1), queue = []; // Grows: pixels may improve.
+      let head = 0;
+      for (let i = 0; i < m; i++) kinds[i] = classify(before, (((i / ww) | 0) + wy) * w * 4 + ((i % ww) + wx) * 4);
+      for (let i = 0; i < m; i++) if (kinds[i] === EMPTY) { nearestEmpty[i] = i; queue.push(i); }
+      while (head < queue.length) {
+        const i = queue[head++], x = i % ww, y = (i / ww) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy, j = ny * ww + nx;
+          if (nx < 0 || ny < 0 || nx >= ww || ny >= wh || kinds[j] !== INK) continue;
+          // Keep the closer of the two candidate empty pixels (plain first-come propagation skews diagonally).
+          const e = nearestEmpty[i], c = nearestEmpty[j];
+          if (c >= 0 && (c % ww - nx) ** 2 + (((c / ww) | 0) - ny) ** 2 <= (e % ww - nx) ** 2 + (((e / ww) | 0) - ny) ** 2) continue;
+          nearestEmpty[j] = e; queue.push(j);
+        }
+      }
+      const counts = new Uint32Array(130), sample = new Float32Array(m).fill(-1);
+      for (let i = 0; i < m; i++) {
+        if (kinds[i] !== INK || nearestEmpty[i] < 0) continue;
+        const x = i % ww, y = (i / ww) | 0;
+        if (!((x > 0 && kinds[i - 1] === METAL) || (x < ww - 1 && kinds[i + 1] === METAL) ||
+            (y > 0 && kinds[i - ww] === METAL) || (y < wh - 1 && kinds[i + ww] === METAL))) continue;
+        const e = nearestEmpty[i];
+        sample[i] = Math.hypot(e % ww - x, ((e / ww) | 0) - y);
+        counts[Math.min(129, Math.round(sample[i]))]++;
+      }
+      let mode = 0, best = 0, total = 0;
+      for (let d = 1; d < 129; d++) {
+        const smoothed = counts[d - 1] + 2 * counts[d] + counts[d + 1];
+        if (smoothed > best) { best = smoothed; mode = d; }
+      }
+      for (let d = 1; d <= 2 * mode + 2 && d < 130; d++) total += counts[d];
+      if (mode && !thickness) thickness = mode;
+      for (let d = 1, seen = 0; mode && d <= 2 * mode + 2 && d < 130; d++) { // 90th percentile of the main body.
+        seen += counts[d];
+        if (seen >= total * 0.9) { eraseDepth = d; break; }
+      }
+      if (!thickness) thickness = 3;
+      // Local width: the upper-quartile width in each 24 px cell (so cut-off outline ends and stray samples are
+      // outvoted), blended smoothly between cells, so new outline matches the original outline nearest to it
+      // (a guard's thin outline next to a blade's thick one) without steps. Outliers (interior detail) are left out.
+      if (mode && !options.outlineThickness) {
+        const C = 24, gx = Math.ceil(ww / C), gy = Math.ceil(wh / C), buckets = Array.from({ length: gx * gy }, () => []);
+        for (let i = 0; i < m; i++) if (sample[i] > 0 && sample[i] <= 2 * mode + 2) buckets[((i / ww / C) | 0) * gx + ((i % ww) / C | 0)].push(sample[i]);
+        const cell = new Float32Array(gx * gy).fill(-1), fillOrder = [];
+        buckets.forEach((list, c) => { if (list.length >= 3) { list.sort((u, v) => u - v); cell[c] = list[Math.floor((list.length - 1) * 0.75)]; fillOrder.push(c); } });
+        for (let k = 0; k < fillOrder.length; k++) { // Cells without outline borrow from the nearest that has some.
+          const c = fillOrder[k], cx = c % gx, cy = (c / gx) | 0;
+          for (const d of [cx > 0 ? c - 1 : -1, cx < gx - 1 ? c + 1 : -1, cy > 0 ? c - gx : -1, cy < gy - 1 ? c + gx : -1]) {
+            if (d >= 0 && cell[d] < 0) { cell[d] = cell[c]; fillOrder.push(d); }
+          }
+        }
+        if (fillOrder.length) widthFor = (fx, fy) => {
+          const u = Math.max(0, Math.min(gx - 1, (fx - wx) / C - 0.5)), v = Math.max(0, Math.min(gy - 1, (fy - wy) / C - 0.5));
+          const x0 = Math.floor(u), y0 = Math.floor(v), x1 = Math.min(gx - 1, x0 + 1), y1 = Math.min(gy - 1, y0 + 1), tx = u - x0, ty = v - y0;
+          const at = (x, y) => cell[y * gx + x];
+          const value = (at(x0, y0) * (1 - tx) + at(x1, y0) * tx) * (1 - ty) + (at(x0, y1) * (1 - tx) + at(x1, y1) * tx) * ty;
+          return Math.max(1, Math.min(32, value));
+        };
+      }
+    }
+    thickness = Math.max(1, Math.min(32, Math.round(thickness)));
+    eraseDepth = Math.max(thickness, Math.min(48, eraseDepth)) + 1;
+    // 2. Work zone: the changed pixels grown by the outline thickness, inside a window around them.
+    const { wx, wy, ww, wh } = windowOf(eraseDepth + 2), m = ww * wh;
+    const idx = i => (((i / ww) | 0) + wy) * w + (i % ww) + wx; // Window index → frame pixel.
+    const kinds = new Uint8Array(m);
+    for (let i = 0; i < m; i++) kinds[i] = classify(pixels, idx(i) * 4);
+    const near4 = (i, x, y) => [x > 0 ? i - 1 : -1, x < ww - 1 ? i + 1 : -1, y > 0 ? i - ww : -1, y < wh - 1 ? i + ww : -1];
+    // Zone = every pixel within reach of a changed one (round, not square, so the regenerated outline has no
+    // straight cut-offs where it meets the untouched outline).
+    const zone = new Int32Array(m).fill(-1), queue = new Int32Array(m), reach = eraseDepth + 1;
+    let head = 0, tail = 0;
+    for (let i = 0; i < m; i++) if (region[idx(i)]) { zone[i] = i; queue[tail++] = i; }
+    while (head < tail) {
+      const i = queue[head++], x = i % ww, y = (i / ww) | 0, e = zone[i], ex = e % ww, ey = (e / ww) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * ww + nx;
+        if (nx >= 0 && ny >= 0 && nx < ww && ny < wh && zone[j] < 0 && Math.hypot(nx - ex, ny - ey) <= reach) { zone[j] = e; queue[tail++] = j; }
+      }
+    }
+    // Which material each outline pixel outlines (other materials win ties), and how far it is from empty space.
+    const owner = new Int8Array(m).fill(-1); head = tail = 0;
+    for (let i = 0; i < m; i++) {
+      if (kinds[i] !== INK) continue;
+      const x = i % ww, y = (i / ww) | 0;
+      for (const j of near4(i, x, y)) {
+        if (j >= 0 && kinds[j] === OTHER) { owner[i] = OTHER; break; }
+        if (j >= 0 && kinds[j] === METAL) owner[i] = METAL;
+      }
+      if (owner[i] >= 0) queue[tail++] = i;
+    }
+    while (head < tail) {
+      const i = queue[head++], x = i % ww, y = (i / ww) | 0;
+      for (const j of near4(i, x, y)) if (j >= 0 && kinds[j] === INK && owner[j] < 0) { owner[j] = owner[i]; queue[tail++] = j; }
+    }
+    const fromEmpty = new Int32Array(m).fill(-1); head = tail = 0;
+    for (let i = 0; i < m; i++) if (kinds[i] === EMPTY) { fromEmpty[i] = 0; queue[tail++] = i; }
+    while (head < tail) {
+      const i = queue[head++], x = i % ww, y = (i / ww) | 0;
+      if (fromEmpty[i] >= eraseDepth) continue;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * ww + nx;
+        if (nx >= 0 && ny >= 0 && nx < ww && ny < wh && kinds[j] === INK && fromEmpty[j] < 0) { fromEmpty[j] = fromEmpty[i] + 1; queue[tail++] = j; }
+      }
+    }
+    // 3. Erase outer outline in the zone (not other materials' outline, and not interior detail far from empty space).
+    let erased = 0, drawn = 0;
+    for (let i = 0; i < m; i++) {
+      if (zone[i] < 0 || kinds[i] !== INK || owner[i] === OTHER || fromEmpty[i] < 0) continue;
+      const o = idx(i) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0; kinds[i] = EMPTY; erased++;
+    }
+    // Seams: hairline outline or empty cracks (up to 3 px) between two masses of metal, left where smudges meet,
+    // become metal, taking a neighbouring metal pixel's color. Anything wider is real detail and stays.
+    const maxSeam = 3;
+    const metalWithin = (i, x, y, dx, dy) => {
+      for (let k = 1; k <= maxSeam; k++) {
+        const nx = x + dx * k, ny = y + dy * k;
+        if (nx < 0 || ny < 0 || nx >= ww || ny >= wh) return -1;
+        const j = ny * ww + nx;
+        if (kinds[j] === METAL) return j;
+        if (kinds[j] !== kinds[i]) return -1; // Seams are all outline or all empty, never a mix.
+      }
+      return -1;
+    };
+    for (let i = 0; i < m; i++) {
+      if (zone[i] < 0 || (kinds[i] !== INK && kinds[i] !== EMPTY) || owner[i] === OTHER) continue;
+      const x = i % ww, y = (i / ww) | 0;
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+        const a = metalWithin(i, x, y, dx, dy), b = metalWithin(i, x, y, -dx, -dy);
+        if (a < 0 || b < 0) continue;
+        const o = idx(i) * 4, so = idx(a) * 4;
+        pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
+        erased++; break;
+      }
+    }
+    for (let i = 0; i < m; i++) if (zone[i] >= 0 && kinds[i] <= INK) kinds[i] = classify(pixels, idx(i) * 4);
+    // 4. Draw new outline: empty pixels in the zone within `thickness` of metal.
+    const source = new Int32Array(m).fill(-1); head = tail = 0;
+    for (let i = 0; i < m; i++) {
+      if (kinds[i] !== METAL) continue;
+      const x = i % ww, y = (i / ww) | 0;
+      if (near4(i, x, y).some(j => j >= 0 && kinds[j] === EMPTY)) { source[i] = i; queue[tail++] = i; }
+    }
+    while (head < tail) {
+      const i = queue[head++], x = i % ww, y = (i / ww) | 0, e = source[i], ex = e % ww, ey = (e / ww) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * ww + nx;
+        if (nx < 0 || ny < 0 || nx >= ww || ny >= wh || source[j] >= 0 || kinds[j] !== EMPTY) continue;
+        if (Math.hypot(nx - ex, ny - ey) > widthFor(ex + wx, ey + wy) + 0.5) continue; // Local width; half-pixel slack.
+        source[j] = e; queue[tail++] = j;
+        if (zone[j] < 0) continue;
+        const o = idx(j) * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = 0; pixels[o + 3] = 255; drawn++;
+      }
+    }
+    return { thickness, erased, drawn };
+  }
+
+  // Replays one saved smudge stroke (points in stored coordinates) and rebuilds the outline, in place.
+  function smudgeStroke(pixels, width, height, stroke, toPixel = (x, y) => ({ x, y }), scale = 1, options = {}) {
+    const before = new Uint8ClampedArray(pixels), region = new Uint8Array(width * height);
+    const classify = makeClassifier(options), pts = stroke.points.map(([x, y]) => toPixel(x, y));
+    let changed = 0;
+    for (let i = 1; i < pts.length; i++) changed += smudgeStep(pixels, width, height, pts[i - 1], pts[i], stroke.r * scale, { classify, region });
+    return { changed, ...rebuildOutline(before, pixels, width, height, region, { ...options, classify }) };
+  }
+
+  global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
+    smudgeStep, rebuildOutline, smudgeStroke, makeClassifier });
 })(typeof window === 'object' ? window : globalThis);

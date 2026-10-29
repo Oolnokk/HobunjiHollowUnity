@@ -23,9 +23,10 @@
   function cleanBridges(raw) {
     // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
     if (!raw || !Array.isArray(raw.strokes)) return null;
-    const strokes = raw.strokes.slice(0, 64).map(stroke => ({
+    const strokes = raw.strokes.slice(0, 256).map(stroke => ({
       r: finite(stroke?.r, 16, 1, 160),
       ...(stroke?.closed === true ? { closed: true } : {}), // Auto-bridge polygons.
+      ...(stroke?.smudge === true ? { smudge: true } : {}), // Metal smudge strokes, replayed in order.
       points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
         .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
         .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
@@ -43,16 +44,29 @@
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const mask = new Uint8Array(canvas.width * canvas.height);
     const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
-    for (const stroke of bridges.strokes) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
-    try {
-      const result = fill.fillBridge(image.data, mask, canvas.width, canvas.height, {
-        outlineThickness: Math.round(bridges.outline * sx), lightDirection: bridges.light,
-        shadeWidth: bridges.shade, seed: bridges.seed });
-      image.data.set(result.pixels);
-      ctx.putImageData(image, 0, 0);
-    } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
+    // Strokes replay in the order they were made: each run of bridge strokes fills together, each smudge stroke
+    // moves metal and rebuilds the outline on its own.
+    let pending = [];
+    const flush = () => {
+      if (!pending.length) return;
+      const mask = new Uint8Array(canvas.width * canvas.height);
+      for (const stroke of pending) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+      pending = [];
+      try {
+        const result = fill.fillBridge(image.data, mask, canvas.width, canvas.height, {
+          outlineThickness: Math.round(bridges.outline * sx), lightDirection: bridges.light,
+          shadeWidth: bridges.shade, seed: bridges.seed });
+        image.data.set(result.pixels);
+      } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
+    };
+    for (const stroke of bridges.strokes) {
+      if (!stroke.smudge) { pending.push(stroke); continue; }
+      flush();
+      fill.smudgeStroke(image.data, canvas.width, canvas.height, stroke, toPixel, sx);
+    }
+    flush();
+    ctx.putImageData(image, 0, 0);
   }
   function cleanTransform(raw, partial = false, fallbackAnimation = 'sweep') {
     const result = {}; // Sparse overrides preserve unchecked inheritance.

@@ -148,6 +148,25 @@ for (let y = 5; y < 25; y++) for (let x = 40; x < 58; x++) woody.set(x === 40 ||
 const woodOut = fillBridge(woody, mask, W, H, { outlineThickness: 1, seed: 1 });
 assert.deepEqual(get(woodOut.pixels, 40, 15), INK, 'Wood outline under the stroke stays black.');
 assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the stroke opens up.');
+// Smudge: metal is pushed out into the gap and gets a fresh outline at the sprite's measured thickness; wood never moves.
+{
+  const T = window.ModularWeaponBridgeFill, sm = new Uint8ClampedArray(W * H * 4);
+  for (let y = 5; y < 25; y++) for (let x = 2; x < 22; x++) sm.set(x < 4 || y < 7 || x > 19 || y > 22 ? INK : SHADE, (y * W + x) * 4);
+  for (let y = 5; y < 25; y++) for (let x = 40; x < 58; x++) sm.set(x < 42 || y < 7 || x > 55 || y > 22 ? INK : WOOD, (y * W + x) * 4);
+  const before = new Uint8ClampedArray(sm);
+  const res = T.smudgeStroke(sm, W, H, { r: 5, points: [[17, 15], [22, 15], [27, 15], [31, 15]] });
+  assert.equal(res.thickness, 2, 'Outline thickness measured from the sprite (2 px).');
+  assert.deepEqual(get(sm, 26, 15).slice(0, 3), SHADE.slice(0, 3), 'Metal pushed into the gap.');
+  let tip = 22; while (get(sm, tip, 15).join() === SHADE.join()) tip++;
+  assert(tip > 26 && get(sm, tip, 15).join() === INK.join() && get(sm, tip + 1, 15).join() === INK.join(), 'Pushed metal ends in a fresh 2px outline.');
+  for (let y = 5; y < 25; y++) for (let x = 40; x < 58; x++) assert.deepEqual(get(sm, x, y), get(before, x, y), 'Wood and its outline untouched.');
+  // Regenerating the whole sprite's outline at an explicit thickness replaces the metal outline, not the wood's.
+  const regen = new Uint8ClampedArray(before);
+  T.rebuildOutline(before, regen, W, H, new Uint8Array(W * H).fill(1), { outlineThickness: 1 });
+  assert.deepEqual(get(regen, 2, 15).slice(3), [0], 'Outer layer of the old 2px metal outline removed.');
+  assert.deepEqual(get(regen, 3, 15), INK, 'New 1px outline drawn against the metal.');
+  assert.deepEqual(get(regen, 40, 15), INK, 'Wood outline kept.');
+}
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.

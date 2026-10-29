@@ -437,7 +437,9 @@
     if (!bridgeView) return;
     const canvas = byId('preview'), ctx = canvas.getContext('2d'), frame = bridgeView.frame;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
-    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(bridgeView.composed, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (bridgePaint?.smudge) ctx.putImageData(bridgePaint.smudge.image, 0, 0); // Live smudge on a working copy.
+    else ctx.drawImage(bridgeView.composed, 0, 0);
     ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = '#000';
     for (const stroke of pendingStrokes) {
       const pts = stroke.points.map(([x, y]) => [(x - frame.left) * sx, (y - frame.top) * sy]);
@@ -456,8 +458,15 @@
   previewCanvas.addEventListener('pointerdown', event => {
     if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
     event.preventDefault();
-    const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
-    pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
+    if (byId('pair-brush-mode').value === 'smudge') {
+      const canvas = bridgeView.composed; // Smudge a copy live; the saved stroke is replayed by compose() on release.
+      bridgePaint = { pointer: event.pointerId, stroke: { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] },
+        smudge: { image: canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height),
+          classify: window.ModularWeaponBridgeFill.makeClassifier() } };
+    } else {
+      const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
+      pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
+    }
     previewCanvas.setPointerCapture(event.pointerId); drawBridgeOverlay();
   });
   previewCanvas.addEventListener('pointermove', event => {
@@ -466,17 +475,29 @@
     if (bridgePaint?.pointer === event.pointerId) {
       event.preventDefault();
       const points = bridgePaint.stroke.points, last = points[points.length - 1]; // Thin stored points; the fill interpolates.
-      if (Math.hypot(bridgeHover[0] - last[0], bridgeHover[1] - last[1]) >= Math.max(1, bridgePaint.stroke.r / 3)) points.push(bridgeHover);
+      const spacing = bridgePaint.smudge ? 1 : Math.max(1, bridgePaint.stroke.r / 3); // Smudges replay every stored step.
+      if (Math.hypot(bridgeHover[0] - last[0], bridgeHover[1] - last[1]) >= spacing) {
+        points.push(bridgeHover);
+        if (bridgePaint.smudge) smudgeLive(last, bridgeHover);
+      }
     }
     drawBridgeOverlay();
   });
   function endBridgePaint(event) {
     if (bridgePaint?.pointer !== event.pointerId) return;
     const points = bridgePaint.stroke.points, end = logicalPoint(event), last = points[points.length - 1];
-    if (end[0] !== last[0] || end[1] !== last[1]) points.push(end);
+    if (end[0] !== last[0] || end[1] !== last[1]) { points.push(end); if (bridgePaint.smudge) smudgeLive(last, end); }
+    const finished = bridgePaint;
     bridgePaint = null;
     if (event.type === 'pointercancel') { pendingStrokes = []; drawBridgeOverlay(); return; }
+    if (finished.smudge) { if (points.length > 1) applyStrokes([finished.stroke]); else drawBridgeOverlay(); return; }
     applyStrokes(pendingStrokes);
+  }
+  function smudgeLive(from, to) {
+    const { image, classify } = bridgePaint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
+    const toPixel = ([x, y]) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height });
+    window.ModularWeaponBridgeFill.smudgeStep(image.data, image.width, image.height, toPixel(from), toPixel(to),
+      bridgePaint.stroke.r * sx, { classify });
   }
   function applyStrokes(strokes, label = '') {
     // Try the fill on the current bitmap first: a stroke touching no metal would otherwise make compose() skip
@@ -485,13 +506,14 @@
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
     const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
-    for (const stroke of strokes) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
-    try {
+    const fills = strokes.filter(stroke => !stroke.smudge); // Smudges can't fail; only bridge fills need a check.
+    for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+    if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
         { outlineThickness: 0, shadeWidth: 0 });
     } catch (error) { pendingStrokes = []; drawBridgeOverlay(); bridgeStatus('Not applied: ' + error.message); return; }
     const pair = pairOverride(), previous = pair.bridges?.strokes || [];
-    pair.bridges = { ...bridgeSettings(), strokes: previous.concat(strokes) }; // All strokes fill together in one pass.
+    pair.bridges = { ...bridgeSettings(), strokes: previous.concat(strokes) }; // Replayed in order by compose().
     pendingStrokes = []; save(); syncBridgeControls();
     if (label) bridgeStatus(label + ' ' + byId('pair-bridge-status').textContent);
   }

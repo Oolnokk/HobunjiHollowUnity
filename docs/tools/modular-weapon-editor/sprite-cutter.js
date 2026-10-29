@@ -104,7 +104,8 @@
   let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
   let hoverPoint = null; // Brush-size cursor preview position.
   let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
-  const tool = () => byId('cut-tool').value; // 'lasso' or 'brush'.
+  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill) or 'smudge'.
+  let smudge = null; // Active smudge drag: { region, classify, last }.
   const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
   function status(text) { byId('cut-status').textContent = text; }
@@ -238,6 +239,12 @@
     event.preventDefault();
     activePointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
+    if (tool() === 'smudge') { // Snapshot for Undo (and as the "before" the outline is measured on), then push metal.
+      pushUndo();
+      smudge = { region: new Uint8Array(FRAME.width * FRAME.height), last: pointFor(event),
+        classify: global.ModularWeaponBridgeFill.makeClassifier({ minAlpha: minAlpha() }) };
+      return;
+    }
     if (tool() !== 'lasso') { lastBrushPoint = null; paint(event); return; }
     path = [];
     extend(event);
@@ -246,12 +253,27 @@
     if (tool() !== 'lasso' && pixels) { hoverPoint = pointFor(event); if (activePointer === null) scheduleRender(); }
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
-    if (tool() !== 'lasso') paint(event); else extend(event);
+    if (smudge) {
+      const point = pointFor(event);
+      global.ModularWeaponBridgeFill.smudgeStep(pixels, FRAME.width, FRAME.height, smudge.last, point, brushRadius(),
+        { classify: smudge.classify, region: smudge.region });
+      smudge.last = point; hoverPoint = point; scheduleRender();
+    } else if (tool() !== 'lasso') paint(event); else extend(event);
   });
   canvas.addEventListener('pointerleave', () => { if (hoverPoint) { hoverPoint = null; scheduleRender(); } });
   function finish(event, cancel) {
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
+    if (smudge) {
+      const done = smudge; smudge = null; activePointer = null;
+      if (cancel) { byId('cut-undo').click(); return; }
+      const result = global.ModularWeaponBridgeFill.rebuildOutline(history[history.length - 1], pixels, FRAME.width, FRAME.height,
+        done.region, { classify: done.classify });
+      renderNow();
+      status(result.thickness ? 'Smudged; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
+        result.drawn + ' drawn). Undo reverts the whole stroke.' : 'No metal under the smudge.');
+      return;
+    }
     if (tool() !== 'lasso') {
       activePointer = null; lastBrushPoint = null;
       if (cancel) { clearBrush(); renderNow(); } else fillBrush(); // Each stroke fills as soon as it's released.
@@ -327,6 +349,15 @@
         '. Undo restores the previous image.');
     } catch (error) { clearBrush(); renderNow(); status('Bridge fill failed: ' + error.message); }
   }
+  byId('cut-regenerate-outline').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const before = new Uint8ClampedArray(pixels), next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.rebuildOutline(before, next, FRAME.width, FRAME.height,
+      new Uint8Array(FRAME.width * FRAME.height).fill(1), { minAlpha: minAlpha() }); // The whole sprite.
+    if (!result.erased && !result.drawn) { status('No metal outline to regenerate.'); return; }
+    pushUndo(); pixels = next; renderNow();
+    status('Regenerated the metal outline at ' + result.thickness + ' px: removed ' + result.erased + ' old outline pixels, drew ' + result.drawn + '. Undo restores it.');
+  };
   byId('cut-bridge-auto').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
     try {
