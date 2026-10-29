@@ -267,6 +267,10 @@
       hoursAfterJubmir: opening()?.getStory?.(profile())?.jubmirFeyCompletedAtHours ?? null,
       physicalStoneCount: Number(inventoryDeps?.inventory?.delversStone) || 0,
       artifactCount: window.ArtifactCollection?.value?.() || 0,
+      doorstep: { // Enables mobile diagnosis if a shifted-camp Garanki walker cannot be cloned to the farm.
+        source: window.DoorstepVisits?.sourceDiagnostics?.('garanki_gabu') || null,
+        registered: window.DoorstepVisits?.debugSnapshot?.()?.providers?.includes(INVITATION_KEY) === true,
+      },
       quest: questStore()?.[QUEST_ID] || null,
     }),
   });
