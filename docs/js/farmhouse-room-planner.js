@@ -10,6 +10,8 @@
   let firstCorner = null; // First selected wall endpoint, used for the second Action 1.
   let deps = null; // Game adapters for rebuilding, permission and persistence.
   let latest = null; // Most recent base-floor / entrance / generated-seam snapshot.
+  let roomOrigins = new Map(); // Stable per-piece interior origins, with inter-room gaps only in the indoor scene.
+  let legacyWallSpace = false; // Old branch saves used exterior×2 absolute wall coordinates.
 
   function init(adapters) { deps = adapters; }
   function clone(w) { return JSON.parse(JSON.stringify(w)); }
@@ -20,24 +22,70 @@
     if (n < 2 || n > 100) return [];
     return Array.from({ length: n + 1 }, (_, i) => cell(a.c + Math.sign(b.c - a.c) * i, a.r + Math.sign(b.r - a.r) * i));
   }
+  function layoutBuiltRooms(pieces) {
+    const built = pieces.filter(p => p.stage === 'built');
+    const offsets = new Map(built.map(p => [p.id, { x: 0, z: 0 }])); // Room-local offsets separate physically joined exterior pieces.
+    // Adjacent sections impose a one-cell gap on the axis of their shared
+    // exterior wall. Longest-path relaxation is deterministic (positive,
+    // monotonic constraints), unlike dependence on house-piece array order.
+    for (let pass = 0; pass < built.length; pass++) {
+      let changed = false;
+      for (const left of built) for (const right of built) {
+        if (left === right) continue;
+        const xOverlap = Math.min(left.col + left.w, right.col + right.w) - Math.max(left.col, right.col);
+        const zOverlap = Math.min(left.row + left.h, right.row + right.h) - Math.max(left.row, right.row);
+        if (left.col + left.w === right.col && zOverlap > 0) {
+          const dest = offsets.get(right.id), candidate = offsets.get(left.id).x + 1;
+          if (candidate > dest.x) { dest.x = candidate; changed = true; }
+        }
+        if (left.row + left.h === right.row && xOverlap > 0) {
+          const dest = offsets.get(right.id), candidate = offsets.get(left.id).z + 1;
+          if (candidate > dest.z) { dest.z = candidate; changed = true; }
+        }
+      }
+      if (!changed) break;
+    }
+    roomOrigins = new Map(built.map(piece => [piece.id, {
+      col: piece.col * 2 + offsets.get(piece.id).x,
+      row: piece.row * 2 + offsets.get(piece.id).z,
+      w: piece.w * 2, h: piece.h * 2,
+    }])); // Exterior coordinates and footprints remain untouched.
+    return roomOrigins;
+  }
+  function roomRect(pieceOrId) {
+    const id = typeof pieceOrId === 'string' ? pieceOrId : pieceOrId?.id;
+    const rect = roomOrigins.get(id);
+    if (rect) return { ...rect };
+    const piece = typeof pieceOrId === 'object' ? pieceOrId : null;
+    return piece ? { col: piece.col * 2, row: piece.row * 2, w: piece.w * 2, h: piece.h * 2 } : null;
+  }
   function seamRecords(pieces) {
     const built = pieces.filter(p => p.stage === 'built');
     const result = [];
     for (let i = 0; i < built.length; i++) for (let j = i + 1; j < built.length; j++) {
       const a = built[i], b = built[j];
-      let strip = [];
-      if (a.col + a.w === b.col || b.col + b.w === a.col) {
-        const right = a.col > b.col ? a : b;
-        const start = Math.max(a.row, b.row) * 2, end = Math.min(a.row + a.h, b.row + b.h) * 2;
-        for (let r = start; r < end; r++) strip.push(cell(right.col * 2, r));
-      } else if (a.row + a.h === b.row || b.row + b.h === a.row) {
-        const bottom = a.row > b.row ? a : b;
-        const start = Math.max(a.col, b.col) * 2, end = Math.min(a.col + a.w, b.col + b.w) * 2;
-        for (let c = start; c < end; c++) strip.push(cell(c, bottom.row * 2));
+      const ar = roomRect(a), br = roomRect(b);
+      let strip = [], bridge = [];
+      const zOverlap = Math.min(a.row + a.h, b.row + b.h) - Math.max(a.row, b.row);
+      const xOverlap = Math.min(a.col + a.w, b.col + b.w) - Math.max(a.col, b.col);
+      if ((a.col + a.w === b.col || b.col + b.w === a.col) && zOverlap > 0) {
+        const left = a.col < b.col ? ar : br, right = a.col < b.col ? br : ar;
+        const start = Math.max(left.row, right.row), end = Math.min(left.row + left.h, right.row + right.h);
+        const gapStart = left.col + left.w, gapEnd = right.col - 1;
+        if (gapStart > gapEnd) continue;
+        for (let r = start; r < end; r++) strip.push(cell(gapStart, r));
+        for (let c = gapStart; c <= gapEnd; c++) bridge.push(cell(c, start + Math.floor((end - start) / 2)));
+      } else if ((a.row + a.h === b.row || b.row + b.h === a.row) && xOverlap > 0) {
+        const top = a.row < b.row ? ar : br, bottom = a.row < b.row ? br : ar;
+        const start = Math.max(top.col, bottom.col), end = Math.min(top.col + top.w, bottom.col + bottom.w);
+        const gapStart = top.row + top.h, gapEnd = bottom.row - 1;
+        if (gapStart > gapEnd) continue;
+        for (let c = start; c < end; c++) strip.push(cell(c, gapStart));
+        for (let r = gapStart; r <= gapEnd; r++) bridge.push(cell(start + Math.floor((end - start) / 2), r));
       }
-      if (strip.length < 2) continue; // A one-exterior-tile wing still has two interior cells: one wall cell and one doorway.
+      if (!strip.length) continue;
       const id = 'join:' + [a.id, b.id].sort().join(':');
-      result.push({ id, strip, builtIn: true });
+      result.push({ id, strip, bridge, builtIn: true });
     }
     return result;
   }
@@ -60,46 +108,74 @@
     return { entrances, hearths };
   }
   function apply(base, pieces) {
+    const built = pieces.filter(p => p.stage === 'built');
+    layoutBuiltRooms(built); // Fresh room coordinates supersede the old exterior×2 floor union.
+    if (legacyWallSpace) {
+      customWalls.forEach(w => {
+        const owner = built.find(p => p.id === w.ownerPieceId)
+          || built.find(p => points(w.a, w.b).every(q => q.c >= p.col * 2 && q.c < (p.col + p.w) * 2 && q.r >= p.row * 2 && q.r < (p.row + p.h) * 2));
+        if (!owner) return;
+        w.ownerPieceId = owner.id;
+        w.a = cell(w.a.c - owner.col * 2, w.a.r - owner.row * 2);
+        w.b = cell(w.b.c - owner.col * 2, w.b.r - owner.row * 2);
+        if (isCell(w.door)) w.door = cell(w.door.c - owner.col * 2, w.door.r - owner.row * 2);
+      });
+      legacyWallSpace = false; // Migration happens once; future saves use room-local wall coordinates.
+    }
     const floorSet = new Set(base.floorSet);
     const exitSet = new Set(base.exitSet);
-    const { entrances, hearths: protectedHearths } = protectedInteriorCells(base); // Derived from the same entry/hearth records used by the game scene.
-    const joins = seamRecords(pieces);
-    const segments = [...joins, ...customWalls.map(w => ({ ...w, strip: points(w.a, w.b), builtIn: false }))];
+    const { entrances, hearths: protectedHearths } = protectedInteriorCells(base);
+    const joins = seamRecords(built);
+    const manual = customWalls.map(w => {
+      const rect = roomRect(w.ownerPieceId);
+      return { ...w, builtIn: false, strip: rect ? points(
+        cell(rect.col + w.a.c, rect.row + w.a.r),
+        cell(rect.col + w.b.c, rect.row + w.b.r)) : [] };
+    });
     const blocked = new Set();
-    const doorTiles = [];
-    const resolved = [];
-    const skipped = []; // Explain unusual blocked seams in the in-game wall diagnostics.
-    for (const segment of segments) {
-      const allowed = segment.strip.filter(p => floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
-      if (allowed.length < (segment.builtIn ? 2 : 3) || allowed.length !== segment.strip.length) {
-        skipped.push({ id: segment.id, reason: 'Not a continuous interior floor strip' });
+    const doorTiles = [], resolved = [], skipped = [];
+    for (const segment of [...joins, ...manual]) {
+      const inGap = segment.builtIn; // Join walls occupy NEW space; manual subdivisions intentionally split existing rooms.
+      const allowed = segment.strip.filter(p => inGap ? !floorSet.has(key(p.c, p.r)) : floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
+      if (allowed.length < (inGap ? 1 : 3) || allowed.length !== segment.strip.length) {
+        skipped.push({ id: segment.id, reason: inGap ? 'Joined room boundaries overlap or do not align' : 'Not a continuous interior floor strip' });
         continue;
       }
-      const forcedDoorways = allowed.filter(p => entrances.has(key(p.c, p.r))); // Entering from outside must land on walkable floor.
-      if (forcedDoorways.length > 1 || allowed.some(p => protectedHearths.has(key(p.c, p.r)))) {
+      const forcedDoorways = inGap ? [] : allowed.filter(p => entrances.has(key(p.c, p.r)));
+      if (forcedDoorways.length > 1 || (!inGap && allowed.some(p => protectedHearths.has(key(p.c, p.r))))) {
         skipped.push({ id: segment.id, reason: forcedDoorways.length > 1 ? 'Multiple exterior entrances' : 'Chimney hearth overlaps the wall' });
-        continue; // Keep both access paths / the hearth intact rather than creating an impassable partition.
+        continue;
       }
-      const savedDoor = segment.builtIn ? joinDoors[segment.id] : segment.door;
-      const savedSlot = Number.isInteger(savedDoor?.slot) ? savedDoor.slot : -1; // Section doors retain their offset when either entire room moves.
+      const savedDoor = inGap ? joinDoors[segment.id] : segment.door;
+      const savedSlot = Number.isInteger(savedDoor?.slot) ? savedDoor.slot : -1;
+      const rect = inGap ? null : roomRect(segment.ownerPieceId);
       const door = forcedDoorways[0]
         || (savedSlot >= 0 && savedSlot < allowed.length ? allowed[savedSlot] : null)
-        || allowed.find(p => isCell(savedDoor) && p.c === savedDoor.c && p.r === savedDoor.r)
+        || allowed.find(p => isCell(savedDoor) && p.c === savedDoor.c + (rect?.col || 0) && p.r === savedDoor.r + (rect?.row || 0))
         || allowed[Math.floor(allowed.length / 2)];
-      // A single floor cell is retained as the doorway. The rest of the
-      // one-tile strip becomes a genuine wall gap in the walkability grid.
-      for (const p of allowed) if (p !== door) blocked.add(key(p.c, p.r));
+      if (inGap) {
+        const doorSlot = allowed.findIndex(p => p === door);
+        // The only floor in the one-tile separation is the door threshold.
+        // A wider fallback gap receives a single-tile-wide corridor, never
+        // a duplicate doorway or a reduced room footprint.
+        for (const p of segment.bridge || []) {
+          const bridgePoint = segment.strip[0].c === segment.strip[segment.strip.length - 1].c
+            ? cell(p.c, door.r) : cell(door.c, p.r);
+          floorSet.add(key(bridgePoint.c, bridgePoint.r));
+        }
+        floorSet.add(key(door.c, door.r));
+      } else for (const p of allowed) if (p !== door) blocked.add(key(p.c, p.r));
       doorTiles.push([door.c, door.r]);
-      resolved.push({ id: segment.id, builtIn: segment.builtIn, strip: allowed, door });
+      resolved.push({ id: segment.id, builtIn: inGap, strip: allowed, door });
     }
     for (const k of blocked) floorSet.delete(k);
     latest = { originalFloor: new Set(base.floorSet), exitSet, segments: resolved, floorSet, blocked, skipped, entrances, protectedHearths,
-      pieces: pieces.filter(p => p.stage === 'built').map(p => ({ id:p.id, col:p.col, row:p.row, w:p.w, h:p.h })) }; // Room bounds link added walls to the correct movable house section.
-    return { ...base, floorSet, exitSet, doorTiles, wallCells: blocked, partitions: resolved };
+      pieces: built.map(p => ({ id:p.id, ...roomRect(p) })) }; // Every owner's bounds now use its indoor offset.
+    return { ...base, floorSet, exitSet, doorTiles, wallCells: blocked, partitions: resolved, roomRects: [...roomOrigins.entries()].map(([id, rect]) => ({ id, ...rect })) };
   }
   function ownerForCell(p) {
-    return latest?.pieces?.find(piece => p.c >= piece.col * 2 && p.c < (piece.col + piece.w) * 2
-      && p.r >= piece.row * 2 && p.r < (piece.row + piece.h) * 2) || null;
+    return latest?.pieces?.find(piece => p.c >= piece.col && p.c < piece.col + piece.w
+      && p.r >= piece.row && p.r < piece.row + piece.h) || null;
   }
   function canWall(a, b) {
     if (!deps?.canEdit?.() || !latest) return false;
@@ -139,14 +215,17 @@
     }
     if (mode.type === 'wall') {
       const a = firstCorner, b = cell(col, row);
-      customWalls.push({ id: 'wall_' + Math.random().toString(36).slice(2, 11), a, b, ownerPieceId: ownerForCell(a)?.id,
-        door: points(a, b)[Math.floor(points(a, b).length / 2)] });
+      const owner = ownerForCell(a), origin = roomRect(owner?.id);
+      customWalls.push({ id: 'wall_' + Math.random().toString(36).slice(2, 11),
+        a: cell(a.c - origin.col, a.r - origin.row), b: cell(b.c - origin.col, b.r - origin.row), ownerPieceId: owner.id,
+        door: cell(a.c + Math.sign(b.c - a.c) * Math.floor(points(a, b).length / 2) - origin.col,
+          a.r + Math.sign(b.r - a.r) * Math.floor(points(a, b).length / 2) - origin.row) });
     } else {
       const segment = latest.segments.find(s => s.id === mode.id);
       if (segment.builtIn) joinDoors[segment.id] = { slot: segment.strip.findIndex(p => p.c === col && p.r === row) }; // Saved index, not a world coordinate.
       else {
         const wall = customWalls.find(w => w.id === segment.id);
-        if (wall) wall.door = cell(col, row);
+        if (wall) { const origin = roomRect(wall.ownerPieceId); wall.door = cell(col - origin.col, row - origin.row); }
       }
     }
     mode = null; firstCorner = null;
@@ -164,26 +243,20 @@
     return { ok: true, message: 'Partition removed.' };
   }
   function transformWithPiece(pieceId, oldRect, newRect, clockwise = false) {
-    const insideOld = p => isCell(p) && p.c >= oldRect.col * 2 && p.c < (oldRect.col + oldRect.w) * 2
-      && p.r >= oldRect.row * 2 && p.r < (oldRect.row + oldRect.h) * 2;
-    const moved = p => {
-      if (!isCell(p)) return p;
-      const localC = p.c - oldRect.col * 2, localR = p.r - oldRect.row * 2;
-      return clockwise ? cell(newRect.col * 2 + oldRect.h * 2 - 1 - localR, newRect.row * 2 + localC)
-        : cell(newRect.col * 2 + localC, newRect.row * 2 + localR);
-    }; // Same 2x cell transform as the room's furniture, without changing wall length.
+    if (!clockwise) return; // Local coordinates follow translation automatically; only rotation rewrites them.
     customWalls.forEach(w => {
-      if (w.ownerPieceId !== pieceId && !(w.ownerPieceId == null && insideOld(w.a) && insideOld(w.b))) return;
-      w.ownerPieceId = pieceId;
-      w.a = moved(w.a); w.b = moved(w.b); w.door = moved(w.door);
+      if (w.ownerPieceId !== pieceId) return;
+      const rotated = p => isCell(p) ? cell(oldRect.h * 2 - 1 - p.r, p.c) : p;
+      w.a = rotated(w.a); w.b = rotated(w.b); w.door = rotated(w.door);
     });
   }
   function onPieceRemoved(pieceId) {
     customWalls = customWalls.filter(w => w.ownerPieceId !== pieceId); // Demolishing a wing also removes its custom partitions.
     for (const id of Object.keys(joinDoors)) if (id.split(':').includes(pieceId)) delete joinDoors[id];
   }
-  function serialize() { return { walls: clone(customWalls), joinDoors: clone(joinDoors) }; }
+  function serialize() { return { roomSpaceVersion: 2, walls: clone(customWalls), joinDoors: clone(joinDoors) }; }
   function restore(saved) {
+    legacyWallSpace = !!saved && saved.roomSpaceVersion !== 2; // One-time migration for walls authored before separate indoor room origins.
     customWalls = Array.isArray(saved?.walls) ? saved.walls.filter(w => typeof w.id === 'string' && points(w.a, w.b).length >= 3).slice(0, 100).map(clone) : [];
     joinDoors = saved?.joinDoors && typeof saved.joinDoors === 'object' && !Array.isArray(saved.joinDoors) ? clone(saved.joinDoors) : {};
     cancel();
@@ -192,10 +265,10 @@
     return { mode: clone(mode), firstCorner: clone(firstCorner), walls: clone(customWalls), joins: clone(joinDoors),
       segments: latest?.segments.map(s => ({ id: s.id, builtIn: s.builtIn, length: s.strip.length, door: s.door })) || [],
       skipped: latest?.skipped || [], protectedEntries: latest?.entrances?.size || 0, protectedHearthTiles: latest?.protectedHearths?.size || 0,
-      wallTiles: latest?.blocked.size || 0 };
+      wallTiles: latest?.blocked.size || 0, roomRects: [...roomOrigins.entries()].map(([id, rect]) => ({ id, ...rect })) };
   }
   window.FarmhouseRoomPlanner = { init, apply, seamRecords, points, armWall, armDoor, cancel, canTarget, confirm, removeWall,
-    transformWithPiece, onPieceRemoved, serialize, restore, debug,
+    transformWithPiece, onPieceRemoved, serialize, restore, debug, layoutBuiltRooms, roomRect,
     isArmed: () => !!mode, stage: () => firstCorner ? 'second corner' : mode?.type || '',
     segments: () => latest?.segments || [] };
 })();
