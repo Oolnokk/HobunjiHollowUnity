@@ -33,14 +33,11 @@
   // unenterable — placing any manual entrance makes that auto one disappear.
   // See _refreshArchitecturalFeatures/placeFeature/removeFeatureAt below.
   //
-  // All built pieces share ONE continuous interior (see game.js's
-  // rebuildInteriorGeometry()): every piece contributes a 2x2-interior-cell
-  // block per exterior farm tile, anchored directly at (farmCol*2, farmRow*2)
-  // — the interior grid is just the farm grid at 2x resolution, so no
-  // separate per-house coordinate origin bookkeeping is needed. Each door
-  // punches a 3-interior-cell-wide exit threshold through the boundary wall
-  // on whichever farm-tile side it faces — the same convention proven by the
-  // reference demo's entranceNubCells().
+  // Each built piece keeps its complete 2x interior floor footprint. The
+  // farmhouse planner offsets only indoor origins to create one-cell gaps
+  // between connected rooms; the exterior remains physically joined.
+  // Single floorless exit markers and generated join corridors use the same
+  // authored wooden doors as other building interiors.
   //
   // Interior furniture records the room piece and piece-local cell offset,
   // so moving or rotating a room carries its contents with it. demolish()
@@ -766,8 +763,10 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be demolished." };
+    const interiorRoom = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Recover only this full-size section's actual indoor furniture, not a neighbor's offset floor.
     const recovered = entry.stage === 'built'
-      ? deps.recoverFurnitureInInteriorRect(entry.col * 2, entry.row * 2, entry.w * 2, entry.h * 2)
+      ? deps.recoverFurnitureInInteriorRect(interiorRoom?.col ?? entry.col * 2, interiorRoom?.row ?? entry.row * 2,
+          interiorRoom?.w ?? entry.w * 2, interiorRoom?.h ?? entry.h * 2)
       : 0;
     _unregisterFeatureDoors(entry);
     _unregisterFootprint(entry);
