@@ -16,7 +16,7 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 for (const [name, content] of Object.entries({ source, opening, artifact, sites, cave, relics, tasks })) {
   new vm.Script(content, { filename: name }); // Every modified JavaScript entrypoint must remain syntactically valid.
 }
-assert(index.indexOf('js/delvers-guild-story.js') > -1 && index.indexOf('js/delvers-guild-story.js') < index.indexOf('game.js?v='));
+assert(index.indexOf('js/delvers-guild-story.js') > -1 && index.indexOf('js/delvers-guild-story.js') < index.indexOf('<script src="game.js?v='));
 assert(opening.includes('jubmirFeyCompletedAtHours: gameHours()'));
 assert(artifact.includes('window.DelversGuild?.dialogueTree?.() || unlockDialogue()'));
 assert(artifact.includes('window.DelversGuild?.onDialogueNode?.(node)'));
