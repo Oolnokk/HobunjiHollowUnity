@@ -95,4 +95,28 @@ assert.equal(presets.regular.bodyScale, undefined, 'ordinary presets keep the NP
 assert(editor.includes('procedural.settings?.bodyScale || null, age'), 'editor bind applies the active troop body on the floor root');
 assert(/syncPreviewBodyScale\(\);\s*resetProceduralMovement/.test(editor), 'preset/import changes re-apply the body scale');
 
+// updateCreatureMesh rewrites a hostile's group scale every frame from visualScaleX/Y(/Z); the species body scale
+// must be carried there or it is wiped on the first tick (it only existed for the spawn frame before).
+{
+  const source = read('docs/js/creature-genetics.js');
+  const start = source.indexOf('function applyCreatureBillboardScale(');
+  let depth = 0, end = source.indexOf('{', start);
+  for (let i = end; i < source.length; i++) { if (source[i] === '{') depth++; if (source[i] === '}' && --depth === 0) { end = i + 1; break; } }
+  const fn = vm.runInNewContext(`(${source.slice(start, end)})`);
+  assert.equal(typeof fn, 'function', 'applyCreatureBillboardScale is reachable');
+  const group = { scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } } };
+  fn(group, { x: 0.955, y: 1.255, z: 0.955 }, 1);
+  assert.deepEqual([group.scale.x, group.scale.y, group.scale.z], [0.955, 1.255, 0.955], 'hostile body scale survives the per-frame billboard update, depth tracking width');
+  fn(group, { x: 1.2, y: 0.8 }, 1);
+  assert.deepEqual([group.scale.x, group.scale.y, group.scale.z], [1, 0.8, 1.2], 'animals (no depth axis) are unchanged');
+}
+assert.match(bandit, /visualScaleX: avatarRef\.rigScale\?\.x \?\? 1, visualScaleY: avatarRef\.rigScale\?\.y \?\? 1, visualScaleZ: avatarRef\.rigScale\?\.x \?\? 1/, 'hostile entities carry the species body scale as their visual scale');
+assert.match(game, /applyCreatureBillboardScale\(grp, \{ x: c\.visualScaleX, y: c\.visualScaleY, z: c\.visualScaleZ \}/, 'the per-frame update passes the depth axis');
+
+// The hostile weapon's height-scaled size/grip offset depends on asynchronously measured species heights; it must
+// not cache the unmeasured fallback (0.55, no offset), which the player and editor never show.
+assert.match(bandit, /heightReady \? weaponKey : null/, 'unmeasured weapon placement is retried, not cached');
+assert.match(read('docs/js/hand-tool-grips.js'), /function characterHeightReady\(/, 'grips expose whether species heights are measured');
+assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/character-dimensions\.js/, 'the Workshop loads the species height measurements');
+
 console.log('Player/NPC/hostile rig scale parity: one species scale on the owning rig node, hands never double-scaled, editor previews troop bodies');

@@ -5973,7 +5973,7 @@
           }
         }
         const breathScaleY = kickPoseHeld ? 1 : window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now()); // Keep the whole held kick silhouette truly still, without idle breathing.
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY, z: c.visualScaleZ }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -28772,6 +28772,30 @@
       // mirroring window._devSpawner/_farmEditor above — no in-game UI path
       // to grant furniture items directly, so this exists for headless/
       // console testing rather than as a player-facing cheat.
+      window.HobunjiRigDump?.setGameSources({ // Full rig transform dump (js/rig-transform-dump.js): player body + tool holder and nearby hostiles, diffable against the Attack Animation Editor.
+        playerMesh: () => playerMesh,
+        toolHolder: () => toolHolder,
+        activeTool: () => activeTool,
+        equippedWeapon: () => equipmentSlots.weapon,
+        heldMode: () => heldMode,
+        hostiles: () => hostileObjects,
+        playerIdentity: () => ({ speciesId: _playerData?.appearance?.speciesId || _playerData?.appearance?.species || null, gender: _playerData?.appearance?.gender || null }),
+        // Debug-only: put the live player in another body / weapon so a rig dump can be compared against other previews. Not persisted unless the game saves afterwards.
+        async debugPlayerLoadout({ speciesId, gender, weaponKey } = {}) {
+          const appearance = _playerData?.appearance;
+          if (appearance && (speciesId || gender)) {
+            if (speciesId) appearance.speciesId = speciesId;
+            if (gender) appearance.gender = gender;
+            await refreshPlayerAvatar();
+          }
+          if (weaponKey) {
+            gearInventory.tools[weaponKey] = true;
+            window.EquipmentPanel.equipItem(weaponKey, 'weapon');
+            setActiveTool('weapon', { silent: true });
+          }
+          return { speciesId: appearance?.speciesId, gender: appearance?.gender, activeTool };
+        },
+      });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
         place: placeDecorativeFurniture,

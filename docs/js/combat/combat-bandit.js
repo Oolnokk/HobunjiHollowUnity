@@ -2226,6 +2226,7 @@
   // lands on the visible weapon. Recomputed only when grip/height data changes.
   let banditWeaponScaleRevision = 0;
   let banditWeaponScaleSubscribed = false;
+  let banditWeaponDimensionsSubscribed = false;
   function syncBanditWeaponScale(c, holder, weaponKey, gripContext = 'melee') {
     const visual = holder?.children?.[0]; // makeToolPlaneMesh group; pose/spin transforms live on the holder and toolPlane instead.
     const grips = window.HobunjiHandToolGrips;
@@ -2234,16 +2235,22 @@
       grips.subscribe(() => { banditWeaponScaleRevision += 1; });
       banditWeaponScaleSubscribed = true;
     }
+    const dimensions = window.HobunjiCharacterDimensions; // Species heights are measured once, asynchronously; edits and late measurements bump the same revision.
+    if (!banditWeaponDimensionsSubscribed && dimensions?.subscribe) {
+      dimensions.subscribe(() => { banditWeaponScaleRevision += 1; });
+      banditWeaponDimensionsSubscribed = true;
+    }
     const data = visual.userData;
     if (data.banditWeaponScaleKey === weaponKey && data.banditWeaponScaleRevision === banditWeaponScaleRevision) return;
     const group = c?.avatarRef?.group;
     const speciesId = c?.avatarRef?.speciesId || group?.userData?.speciesId || '';
     const gender = c?.avatarRef?.gender || group?.userData?.gender || 'male';
     const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender }); // Base size about the origin, height about the grip.
+    const heightReady = grips.characterHeightReady?.(speciesId, gender) !== false; // Until measured the height factor is a fallback 1, which the player and editor never show; retry instead of caching it.
     const scale = Number(placement?.scale ?? grips.effectiveToolScaleForTool(weaponKey, speciesId, gender));
     visual.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1);
     if (placement?.offset) visual.position.set(placement.offset.x, placement.offset.y, placement.offset.z); // Grip stays fixed under the hand.
-    data.banditWeaponScaleKey = weaponKey;
+    data.banditWeaponScaleKey = heightReady ? weaponKey : null;
     data.banditWeaponScaleRevision = banditWeaponScaleRevision;
     data.banditWeaponScale = visual.scale.x; // Mobile/debug readout of the applied effective scale.
   }
@@ -2808,6 +2815,12 @@
       stamina: def.maxStamina, maxStamina: def.maxStamina,
       facing: 0, groupRot: 0, pngRot: 0, perpState: {},
       scaleY: 1,
+      // updateCreatureMesh rewrites the group's scale from these every frame
+      // (CreatureGenetics.applyCreatureBillboardScale), so the species/troop
+      // body scale applied by applyAuthoredHostileRigScale only survives
+      // gameplay if it is also the entity's visual scale. Depth tracks width,
+      // like the player's parent scale.
+      visualScaleX: avatarRef.rigScale?.x ?? 1, visualScaleY: avatarRef.rigScale?.y ?? 1, visualScaleZ: avatarRef.rigScale?.x ?? 1,
       attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
       knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       runFrame: 0, runFrameDistPx: 0, currentFrameUrl: null,

@@ -214,7 +214,7 @@
     c.deathRestRotX = 0;
     c.deathRestRotY = Number(c.groupRot) || 0;
     c.scaleY = 1;
-    c.avatarRef.group.scale.y = 1;
+    c.avatarRef.group.scale.y = c.isBandit && Number(c.visualScaleY) > 0 ? c.visualScaleY : 1; // Humanoid hostiles keep their species body height on the corpse; animals keep the existing reset.
     // Snap the cutout's two planes back to the exact pose they were
     // built with, undoing any camera-relative deadzone drift
     // (updateCreatureMesh's pngRot/perpState smoothing) frozen in at the

@@ -268,6 +268,17 @@ canvas{display:block;width:100%;height:100%}
       <textarea id="transformDumpView" readonly style="margin-top:6px"></textarea>
       <button id="copyTransformDumpBtn" class="secondary" style="margin-top:6px">Copy transforms</button>
     </details>
+    <details class="advancedDetails">
+      <summary>Full rig dump (root-relative) + game compare</summary>
+      <div class="help" style="margin-bottom:6px">Every node (body, hands, feet, tool holder) as local, root-relative and world values, in a floor-anchored unscaled frame that matches the game's pose frame. Paste the JSON from the game's "Dump full rig (root-relative)" button to diff the hands and weapon anchor-by-anchor.</div>
+      <button id="fullRigDumpBtn" class="secondary">🦴 Dump full rig</button>
+      <button id="copyFullRigDumpBtn" class="secondary">Copy</button>
+      <textarea id="fullRigDumpView" readonly style="margin-top:6px"></textarea>
+      <label for="gameRigDumpInput" style="margin-top:6px;display:block">Compare with game dump (paste text or JSON)</label>
+      <textarea id="gameRigDumpInput" placeholder="Paste the game rig dump here"></textarea>
+      <button id="compareRigDumpBtn" class="secondary" style="margin-top:6px">Compare</button>
+      <textarea id="rigDumpDiffView" readonly style="margin-top:6px"></textarea>
+    </details>
   </div>
 </aside>
 <div id="viewport">
@@ -300,7 +311,8 @@ canvas{display:block;width:100%;height:100%}
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/held-action-animations.js?v=20261027maskbound1"></script>
+<script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
+<script src="../../js/held-action-animations.js?v=20261029maskSlots2"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
@@ -2109,6 +2121,39 @@ $('dumpTransformsBtn').onclick = () => {
 $('copyTransformDumpBtn').onclick = async () => {
   try { await navigator.clipboard.writeText($('transformDumpView').value); logDebug('Copied preview transform dump'); }
   catch { logDebug('Clipboard copy failed'); }
+};
+// Full rig dump: one capture in the pose frame (floor origin, rig yaw), reporting the body subtree and weapon holder root-relative.
+function captureEditorRig() {
+  const api = window.HobunjiRigDump;
+  if (!api) return null;
+  const frame = api.makeFrame(rig, { x: 0, y: 0, z: 0 }, rig.rotation.y);
+  const firstToolMesh = api.firstMesh(toolHolder); // The weapon plane, not the grip-marker sphere.
+  return api.capture({
+    label: 'editor preview', species: currentSpeciesId, gender: currentGender,
+    context: { tool: currentToolKey, phase: editPhase, bodyRigScale: { x: characterBodyScaleRoot.scale.x, y: characterBodyScaleRoot.scale.y }, toolMirrored },
+    frame, trees: [{ label: 'rig', root: rig }],
+    anchors: { 'tool.holder': toolHolder, 'tool.visual': firstToolMesh, portrait: avatarModel },
+  });
+}
+$('fullRigDumpBtn').onclick = () => {
+  const dump = captureEditorRig();
+  if (!dump) { logDebug('Full rig dump unavailable (HobunjiRigDump not loaded)'); return; }
+  $('fullRigDumpView').value = `${window.HobunjiRigDump.formatText(dump)}\n\n--- JSON ---\n${JSON.stringify([dump])}`;
+  logDebug(`Dumped full rig (${dump.trees[0].entries.length} nodes, ${Object.keys(dump.anchors).length} anchors)`);
+};
+$('copyFullRigDumpBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('fullRigDumpView').value); logDebug('Copied full rig dump'); }
+  catch { logDebug('Clipboard copy failed'); }
+};
+$('compareRigDumpBtn').onclick = () => {
+  const api = window.HobunjiRigDump, text = $('gameRigDumpInput').value;
+  const jsonStart = text.search(/\[\s*\{\s*"schema"/);
+  if (!api || jsonStart < 0) { $('rigDumpDiffView').value = 'Paste the game dump including its JSON block.'; return; }
+  try {
+    const games = JSON.parse(text.slice(jsonStart));
+    const mine = captureEditorRig();
+    $('rigDumpDiffView').value = games.map(game => api.formatDiff(api.diff(mine, game))).join('\n\n');
+  } catch (error) { $('rigDumpDiffView').value = `Could not parse the game dump JSON: ${error.message}`; }
 };
 $('loadBtn').onclick = () => $('loadFile').click();
 $('loadFile').onchange = async () => {

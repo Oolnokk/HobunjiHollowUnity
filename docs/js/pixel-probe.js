@@ -1551,6 +1551,19 @@
 
   document.getElementById('debugProbeArmBtn')?.addEventListener('click', () => armPixelProbe());
   document.getElementById('debugRigTransformDumpBtn')?.addEventListener('click', () => dumpRuntimeRigTransforms());
+  // Full root-relative rig dump (js/rig-transform-dump.js): text for reading plus a JSON block the Attack Animation Editor's diff box accepts.
+  document.getElementById('debugFullRigDumpBtn')?.addEventListener('click', async () => {
+    const api = window.HobunjiRigDump;
+    if (!api) { deps.showToast?.('Rig dump module not loaded.', false); return; }
+    const { dumps, text } = await api.dumpGame(2);
+    const report = `${text}\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n${JSON.stringify(dumps)}`;
+    const resultEl = document.getElementById('debugProbeResult');
+    if (resultEl) resultEl.textContent = report;
+    const screenshotEl = document.getElementById('debugProbeScreenshot');
+    if (screenshotEl) screenshotEl.style.display = 'none';
+    _setDebugView('probe');
+    deps.showToast?.(`Full rig dumped for ${dumps.length} character(s) — Copy exports it.`, true);
+  });
   document.getElementById('pixelProbeCancelBtn')?.addEventListener('click', () => disarmPixelProbe());
   document.getElementById('debugViewLogBtn')?.addEventListener('click', () => _setDebugView('log'));
   document.getElementById('debugViewProbeBtn')?.addEventListener('click', () => _setDebugView('probe'));

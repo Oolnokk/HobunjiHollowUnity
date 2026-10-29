@@ -13,6 +13,9 @@ const files = [
   'js/npc-avatar-preview-utils.js?v=20261029maskSlots2',
   'js/png-plane-avatar.js?v=20261029maskSlots2',
   'js/species-pose-scaling.js?v=20261029maskSlots2',
+  'js/character-dimensions.js?v=20261007he86e7d1', // Species heights drive the held weapon's height factor and grip offset, exactly as in the game and Attack Animation Editor.
+  'js/transform-dump-utils.js?v=20261017h3ce7f8d',
+  'js/rig-transform-dump.js?v=20261029rigdump1',
   'config/portrait-mouth-points.js?v=20261029a',
   'js/furniture-light-registry.js?v=20261028a',
   'js/tool-metal-recolor.js?v=20261028a',
@@ -106,6 +109,7 @@ export class EnemyPreview {
     }
     await window.HobunjiHandRuntimeReady;
     await window.HobunjiSpeciesPoseScale?.ready;
+    await window.HobunjiCharacterDimensions?.ready; // Without measured species heights the weapon falls back to the unscaled 0.55 and no grip offset.
     await window.EnemyLoadoutRules.ready;
     if (window.EnemyLoadoutRules.status().error)
       throw Error(window.EnemyLoadoutRules.status().error);

@@ -1078,6 +1078,21 @@ $('copyRollBtn').onclick = async () => {
     toast('Clipboard unavailable. Use Export this enemy.');
   }
 };
+$('dumpRigBtn').onclick = async () => {
+  // Same capture the game's "Dump full rig" button uses, so this preview can be diffed against the Attack Animation Editor.
+  const api = window.HobunjiRigDump;
+  const actor = preview.actor;
+  const dump = api && actor ? api.captureHostile(actor) : null;
+  if (!dump) return toast('No enemy to dump yet.');
+  const report = api.formatText(dump) + '\n\n--- JSON (paste into the Attack Animation Editor "Compare with game dump" box) ---\n' + JSON.stringify([dump]);
+  $('log').textContent = report;
+  try {
+    await navigator.clipboard.writeText(report);
+    toast('Rig transforms dumped and copied');
+  } catch (_) {
+    toast('Rig transforms dumped below — select and copy them.');
+  }
+};
 $('copyLogBtn').onclick = async () => {
   try {
     await navigator.clipboard.writeText($('log').textContent);

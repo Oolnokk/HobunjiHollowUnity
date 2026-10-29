@@ -521,6 +521,15 @@
     return currentHeight / referenceHeight;
   }
 
+  // False until HobunjiCharacterDimensions has measured this species and the
+  // height reference: characterHeightRatio then silently returns 1, so a
+  // placement computed now is a fallback and must not be cached by callers.
+  function characterHeightReady(speciesId, gender) {
+    const dimensions = global.HobunjiCharacterDimensions;
+    if (!dimensions?.isMeasured || !speciesId) return true; // No module / no identity: nothing to wait for.
+    return dimensions.isMeasured(speciesId, gender || 'male') && dimensions.isMeasured(HEIGHT_REFERENCE_SPECIES, HEIGHT_REFERENCE_GENDER);
+  }
+
   function heightFactorForTool(value, speciesId, gender) {
     const heightMultiplier = heightMultiplierForTool(value);
     const heightRatio = characterHeightRatio(speciesId, gender);
@@ -1354,7 +1363,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
