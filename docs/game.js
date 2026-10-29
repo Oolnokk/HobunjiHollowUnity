@@ -29836,6 +29836,11 @@
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
       });
 
+      window.EmissiveLightOrbs?.installGameOverlay({ // Mask-eye glow circles drawn above the darkness/fog canvas every frame.
+        getProjection: () => window.WeatherFX.getProjection(),
+        getScene: () => window.GridTileAccessors.getActiveScene(),
+      });
+
       window.CloudForestFog?.init({
         THREE,
         player,

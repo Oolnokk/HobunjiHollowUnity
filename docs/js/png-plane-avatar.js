@@ -1121,6 +1121,7 @@
       light.name = 'Portrait_Dye3_Mote_Light';
       light.userData.furnitureLightMask = true;
       light.userData.intentionalFakeLightSource = true;
+      light.userData.emissiveOrb = {}; // Also drawn as Blizzard-style glowing circles above darkness and fog (js/emissive-light-orbs.js); the fake-light aura around it is unchanged.
       light.layers.set(31); // Also stays overlay-only in editors without the registry bridge.
       light.castShadow = false;
       root.userData.portraitGlowLight = light;

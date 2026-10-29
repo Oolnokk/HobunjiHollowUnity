@@ -874,6 +874,7 @@
     getDebugWeather,
     getDebugWeatherOwner,
     ensurePresentationSurface,
+    getProjection: () => deps, // Camera/worldToOverlay/rect provider for layers drawn above the lighting canvas (js/emissive-light-orbs.js).
     getRenderRecoveryState,
     // Debug/QA only — the player lantern's current on-screen shine radius,
     // to verify it stays roughly constant across camera azimuths instead of

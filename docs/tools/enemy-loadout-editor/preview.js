@@ -27,6 +27,7 @@ const files = [
   'js/procedural-feet-outline-parity.js?v=20261029a',
   'js/png-plane-outline-occluder.js?v=20261029enemyParity1',
   'js/weather-fx.js?v=20261029enemyParity1',
+  'js/emissive-light-orbs.js?v=20261029orbs1',
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',
   'js/pants-garment-renderer.js?v=20261028a',
@@ -484,6 +485,11 @@ export class EnemyPreview {
       this.lightingState,
     );
     window.WeatherFX.drawFurnitureLightMasks(this.lightProjection);
+    window.EmissiveLightOrbs?.drawOrbs(
+      ctx,
+      this.lightProjection,
+      window.EmissiveLightOrbs.collect(this.scene),
+    ); // Glow circles over this viewport's darkness, as in the game.
   }
   async roll(kind, tier, seed) {
     this.random = window.EnemyLoadoutRules.seedRandom(
