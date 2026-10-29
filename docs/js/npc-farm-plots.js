@@ -267,7 +267,17 @@
   // ── Doing the work ────────────────────────────────────────────────────
   function applyJob(plot, claim) {
     if (plot.grid) {
-      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, plot.crop)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() }; }
+      // A claim may have been issued before a layout restore or edit; never let a stale
+      // dig claim overwrite a tile now assigned to a planting field.
+      const inPlot = plot.tiles.some(tile => tile.c === claim.c && tile.r === claim.r);
+      const allowedJob = plot.kind === 'dig' ? claim.job === 'dig' : claim.job === 'till' || claim.job === 'seed';
+      const authoritative = window.FarmPlotEditor?.plots?.().find(owner => owner.tiles?.some(tile => tile[0] === claim.c && tile[1] === claim.r));
+      if (!inPlot || !allowedJob || (authoritative && (authoritative.id !== plot.id || authoritative.kind !== plot.kind))) {
+        debug.rejectedJobs = (debug.rejectedJobs || 0) + 1;
+        debug.lastRejected = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() };
+        return;
+      }
+      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, plot.crop, plot.id)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() }; }
       return;
     }
     const s = stateOf(plot, claim.c, claim.r, true);
