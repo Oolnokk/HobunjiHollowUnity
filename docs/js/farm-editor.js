@@ -412,7 +412,11 @@
   }
 
   function applyFarmLayoutObjects(layout) {
-    if (!layout || layout.version !== 3) return;
+    if (!layout || layout.version !== 3) {
+      window.FarmhouseRoomPlanner?.restore?.(null); // Fresh worlds must not inherit the previous world's custom partitions.
+      deps.rebuildInteriorGeometry?.(); // initWorldObjects may have rendered the prior world's walls during a scene switch.
+      return;
+    }
     // Repair extension-owned furniture definitions before saved decor is
     // filtered. This keeps cloud/local farm-layout restores independent of
     // whichever init wrapper happened to register daylight windows first.
