@@ -119,7 +119,7 @@ assert.match(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'),
   /function farmSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,2200}tileSurface \+ exactLift - centerLift/,
   'farm surface resolver replaces the baked tile-center house sample with the exact rendered X/Z sample');
 assert.match(gameSource,
-  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,2600}farmSurfaceYAtWorld\(previewX, previewZ\)/,
+  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,4800}farmSurfaceYAtWorld\(previewX, previewZ\)/,
   'placement ghost previews the same farm surface used by committed furniture');
 assert.match(gameSource,
   /function makeProcessingFurniture\(col, row, furnitureKey[\s\S]{0,500}farmSurfaceYAtWorld\(col \+ 0\.5, row \+ 0\.5\)/,
