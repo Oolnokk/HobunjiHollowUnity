@@ -22278,10 +22278,10 @@
       let strikeFired   = false;
       let chargeStageSfxFired = false; // Prevents duplicate contact audio within one held-action animation stage.
 
-      // True while the primary action input (key/click/button) is physically held
-      // down. Drives the multi-stage dig/fill charge below — releasing it, or
-      // retargeting a different tile, mid-charge cancels the whole thing.
+      // True while the active action input is physically held, whether it is
+      // Action 1, 2 or 3. Multi-stage trench charges cancel on release or retarget.
       let actionHeldDown = false;
+      let heldChargeInputId = null; // Physical action input that must release a multi-stage shovel/axe/pick charge.
       // Multi-stage charge in progress: digging a brand-new trench or filling an
       // existing one in. Each stage plays one tool swing (sized by digSpeed); the
       // action only actually happens once every stage completes uninterrupted.
@@ -22428,18 +22428,15 @@
         return Math.max(0.01, player.digSpeed || 1) * (window.SkillSystem?.actionSpeedMultiplier?.('farming') || 1);
       }
 
-      // Collapses the shovel's separate Dig/Fill action slots into one
-      // contextual input: whichever of the two the player has selected,
-      // resolve to whichever is actually valid for the targeted tile. Dig
-      // (including redigging a shallow trench) takes priority; fall back to
-      // fill only when dig isn't valid, i.e. an already-full trench — so the
-      // same input digs or fills depending on what's targeted, on desktop
-      // and mobile alike.
+      // Prefer the selected shovel action when it is valid: explicitly
+      // choosing Fill must fill even a partly silted trench (where Redig is
+      // also legal). Otherwise the other action is a contextual fallback,
+      // so Dig can fill a full-depth trench and Fill can dig untouched soil.
       function resolveDigFillAction(tool, action, reticle) {
         if (tool !== 'shovel' || (action !== 'dig' && action !== 'fill')) return action;
-        if (canUseAction(tool, 'dig', reticle.col, reticle.row)) return 'dig';
-        if (canUseAction(tool, 'fill', reticle.col, reticle.row)) return 'fill';
-        return action;
+        if (canUseAction(tool, action, reticle.col, reticle.row)) return action;
+        const fallbackAction = action === 'dig' ? 'fill' : 'dig'; // Only used when the chosen shovel operation is unavailable on this tile.
+        return canUseAction(tool, fallbackAction, reticle.col, reticle.row) ? fallbackAction : action;
       }
 
       // Whether starting this tool/action right now would kick off a multi-stage
@@ -22725,8 +22722,9 @@
         toolSwingT = 0;
       }
 
-      function cancelChargeAction() {
+      function cancelChargeAction(reason = 'interrupted') {
         if (!chargeAction) return;
+        debugLog(`[tool-charge] ${chargeAction.action} canceled (${reason}) @ c${chargeAction.col},r${chargeAction.row}`);
         chargeAction = null;
         toolSwingT = 0;
         chargeAnimOverride = null;
@@ -22773,9 +22771,9 @@
       function updateChargeAction() {
         if (!chargeAction) return;
         if (!chargeAction.finalStrikeCommitted) {
-          if (!actionHeldDown) { cancelChargeAction(); return; }
+          if (!actionHeldDown) { cancelChargeAction('input released'); return; }
           const reticle = getReticleTile();
-          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction(); return; }
+          if (reticle.col !== chargeAction.col || reticle.row !== chargeAction.row) { cancelChargeAction('reticle moved'); return; }
         }
         if (toolSwingT > 0) return;
         chargeAction.stage++;
@@ -26442,8 +26440,13 @@
             const [fallbackIcon] = actionLabels[action];
             const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            const label = activeTool === 'shovel' && allowed && action === 'fill'
+              ? 'Hold to Fill'
+              : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
+                ? 'Hold to Dig'
+                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
-              icon, label: window.HudUpdate.contextualActionLabel(action, tile),
+              icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
             });
           });
@@ -27460,11 +27463,13 @@
         const buttons = computeActionButtons();
         return (action && buttons.find(b => b.action === action)) || buttons[slotIndex - 1] || null;
       }
-      function runActionButtonAtSlot(slotIndex) {
+      function runActionButtonAtSlot(slotIndex, inputActionId = `action${slotIndex}`) {
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
-        actionHeldDown = slotIndex === 1;
+        const startsCharge = wouldStartCharge(activeTool, activeAction); // Every physical action slot can own its displayed tool's held charge.
+        if (startsCharge) heldChargeInputId = inputActionId;
+        actionHeldDown = slotIndex === 1 || startsCharge;
         useActiveAction();
       }
       function runInteractAction() {
@@ -27665,7 +27670,12 @@
         }
         if (phase === 'release') {
           if (flaskActionPresses.delete(actionId)) { window.AlchemyFlasks?.confirmThrow(); return; }
-          if (actionId === 'action1') actionHeldDown = false;
+          if (heldChargeInputId === actionId) {
+            heldChargeInputId = null;
+            actionHeldDown = false;
+          } else if (actionId === 'action1' && !heldChargeInputId) {
+            actionHeldDown = false;
+          }
           if (visibleWeaponContextPresses.delete(actionId)) return;
           const releaseSlot = weaponActionSlot(actionId);
           if (releaseSlot) { window.Combat.input.pressEnd(releaseSlot); return; }
@@ -27694,7 +27704,7 @@
         const visibleOverride = visibleActionOverrideForWeaponSlot(actionId); // Used so Loot/Harvest/other displayed context actions outrank the weapon normally bound to this slot.
         if (visibleOverride) {
           visibleWeaponContextPresses.add(actionId);
-          runActionButtonAtSlot(visibleOverride.slot);
+          runActionButtonAtSlot(visibleOverride.slot, actionId);
           return;
         }
         const weaponSlot = weaponActionSlot(actionId);
