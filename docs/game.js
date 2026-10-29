@@ -3629,6 +3629,11 @@
       }
 
       function getInteriorInteractableAt(col, row) {
+        const houseDoor = _farmhouseDoorInteractables.get(col + ',' + row); // A partition's opening uses the same wooden-door interaction as a town interior.
+        if (houseDoor?.getButtons?.().length) {
+          const button = houseDoor.getButtons()[0]; // Live Open/Close name follows its animation state.
+          return { interactIcon: button.icon, interactLabel: button.label, onAction: () => houseDoor.onAction('obj_door_toggle') };
+        }
         const derivedHearth = _derivedHearthMeshes.find(hearth => {
           const dx = col + 0.5 - hearth.cx, dz = row + 0.5 - hearth.cz;
           const localX = dx * Math.cos(-hearth.yaw) - dz * Math.sin(-hearth.yaw); // Used to test the authored two-by-one hearth footprint in its local rotation.
@@ -20193,6 +20198,9 @@
       // it doesn't wall off the opening. Rebuilt by rebuildInteriorGeometry()
       // whenever a piece is built/demolished.
       let _interiorExitTiles = new Set();
+      let _farmhouseDoorRoot = null; // Replaced on each rebuild to keep door meshes attached exactly once.
+      let _farmhouseDoorVersion = 0; // Guards asynchronous authored-door asset loading after house edits.
+      const _farmhouseDoorInteractables = new Map(); // Room-door tile -> shared wooden-door runtime interaction.
 
       // Rebuilds the merged house interior — floor tiles, walls, the
       // interiorGrid walkability data, and the exit-trigger tile set — from
@@ -20207,7 +20215,7 @@
       function rebuildInteriorGeometry() {
         _interiorGeometryBuilt = true;
         window.FarmWorldSettings.tintMaterial(interiorFloorMaterial, 'wood'); // Existing shared floor material follows the current world even after a world switch.
-        const { floorSet, exitSet, hearths } = window.HousePieces.computeInteriorLayout();
+        const { floorSet, exitSet, doors, doorTiles = [], hearths } = window.HousePieces.computeInteriorLayout();
         _interiorExitTiles = exitSet;
 
         _derivedHearthMeshes.forEach(h => {
@@ -20249,6 +20257,39 @@
           interiorFloorGroup.add(fl);
         });
         interiorScene.add(interiorFloorGroup);
+
+        // Use the same authored Wooden Door furniture as church/map interiors,
+        // with a single floorless exit marker at each exterior entrance and
+        // a movable door at every generated or player-built partition.
+        const doorVersion = ++_farmhouseDoorVersion; // Only the newest asynchronous build may populate the farmhouse scene.
+        if (_farmhouseDoorRoot) {
+          interiorScene.remove(_farmhouseDoorRoot);
+          _farmhouseDoorRoot.traverse(node => { node.geometry?.dispose?.(); });
+        }
+        _farmhouseDoorInteractables.clear();
+        const doorRoot = new THREE.Group(); // Group is the sole ownership root for all rebuilt farmhouse door visuals.
+        _farmhouseDoorRoot = doorRoot;
+        interiorScene.add(doorRoot);
+        const directions = { north: 'south', south: 'north', east: 'west', west: 'east' }; // Interior exit directions point INTO the floor.
+        const mapExits = doors.flatMap(d => d.exitCells.map((tile, index) => ({
+          id: 'farmhouse_' + d.featureId + '_' + index,
+          tiles: [tile.split(',').map(Number)],
+          direction: directions[d.side] || 'north',
+          generateDoor: true,
+        }))); // One authored door record per independently attached exterior door.
+        Promise.resolve(window.InteriorDoorTiles?.build?.({
+          THREE, scene: doorRoot, mapId: 'interior',
+          mapData: { doorTiles, exits: mapExits }, floorSet,
+          surfaceYAt: () => 0, decorate: _markOutline,
+          registerInteractable: (c, r, object) => {
+            if (doorVersion === _farmhouseDoorVersion) _farmhouseDoorInteractables.set(c + ',' + r, object);
+          },
+        })).then(() => {
+          if (doorVersion !== _farmhouseDoorVersion) {
+            interiorScene.remove(doorRoot);
+            doorRoot.traverse(node => { node.geometry?.dispose?.(); });
+          }
+        }).catch(error => debugLog('Farmhouse door build failed: ' + (error?.message || error), 'error'));
 
         const panels = InteriorSceneBuilder.buildWallPanels(floorSet, exitSet, INTERIOR_WALL_HEIGHT);
         const houseWindowOpenings = window.HouseWindowLinkage?.getInteriorWallOpenings?.() || []; // Farmhouse openings must be applied even when this rebuild is triggered while the player is still outside.
@@ -26127,11 +26168,14 @@
         if (furniturePlacementModeArmed()) {
           const placementReticle = getReticleTile(); // Shared tile used by preview, mobile Place, and physical Action 1.
           const placementSpec = furniturePlacementSpec();
-          const placementValid = !!placementSpec && (placementSpec.kind === 'processing'
-            ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
-            : canPlaceDecorativeFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg));
+          const wallMode = window.FarmhouseRoomPlanner?.isArmed?.(); // A wall edit shares Action 1/2 and the reticle with ordinary furniture.
+          const placementValid = wallMode
+            ? window.FarmhouseRoomPlanner.canTarget(placementReticle.col, placementReticle.row)
+            : !!placementSpec && (placementSpec.kind === 'processing'
+              ? canPlaceFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreObject)
+              : canPlaceDecorativeFurnitureAt(placementReticle.col, placementReticle.row, placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg));
           return [
-            { icon: '✓', label: furnitureMoveArmedId ? 'Move Here' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
+            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : furnitureMoveArmedId ? 'Move Here' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
             { icon: '✕', label: 'Cancel', action: 'furniture_place_cancel', style: 'secondary', allowed: true },
           ];
         }
@@ -28660,13 +28704,14 @@
       // share the same target and mouse-look is never replaced by a captured
       // screen-position placement pointer.
       function furniturePlacementModeArmed() {
-        return !!(furniturePlacementArmedKey || furnitureMoveArmedId)
+        return !!(furniturePlacementArmedKey || furnitureMoveArmedId || window.FarmhouseRoomPlanner?.isArmed?.())
           && (currentArea === 'farm' || currentArea === 'interior');
       }
       function cancelFurniturePlacementMode(showMessage = false) {
         const wasArmed = furniturePlacementModeArmed(); // Used to avoid a misleading cancel toast when no placement session exists.
         furniturePlacementArmedKey = null;
         furnitureMoveArmedId = null;
+        window.FarmhouseRoomPlanner?.cancel?.(); // Cancel wall/corner/door editing alongside normal furniture placement.
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
         if (showMessage && wasArmed) showToast('Furniture placement cancelled.', true);
@@ -28675,6 +28720,11 @@
       }
       function commitFurniturePlacementAt(col, row) {
         if (!furniturePlacementModeArmed()) return false;
+        if (window.FarmhouseRoomPlanner?.isArmed?.()) {
+          const result = window.FarmhouseRoomPlanner.confirm(col, row); // First corner stays armed; second corner commits the full wall.
+          showToast(result.message, result.ok);
+          return result.ok;
+        }
         showFurniturePlacementGhost(col, row);
         if (!furniturePlacementGhost) return false;
 
@@ -30549,6 +30599,13 @@
         putAwayHeldEquipment,
         cycleActiveInventoryItem,
       });
+
+      window.FarmhouseRoomPlanner?.init({
+        canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
+        rebuild: () => rebuildInteriorGeometry(),
+        save: () => { window.FarmEditor.saveFarmLayout(); saveMemberWorldData(); },
+        refresh: () => { window.FurniturePlacer?.render?.(); refreshActionBar(); },
+      }); // Uses the furniture editor's own controller-ready reticle and Action 1/2 ownership.
 
       window.FurniturePlacer?.init({
         furnitureStock, consumeFurnitureStock, disposeDecorativeFurniture, closeMenu,
