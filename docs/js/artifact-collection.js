@@ -137,7 +137,10 @@
       const donated = state.donated.includes(key), qty = Number(deps?.inventory?.[key]) || 0; // Display quantity never assumes an inventory key exists.
       list.appendChild(ui.row(def.icon, def.label, `${donated ? 'Collected' : 'Not collected'} · Owned: ${qty} · Sell: ${def.sellPrice}g`, [ui.button(donated ? 'Collected' : 'Donate 1', () => donate(key), donated || qty < 1)]));
     }
-    list.appendChild(ui.note(UNLOCKS.map(u => `${unlocked(u.id) ? '✓' : '🔒'} ${u.count}: ${u.label}`).join(' · ')));
+    list.appendChild(ui.note(UNLOCKS.map(u => {
+      const legalGate = (u.id === 'base' || u.id === 'flourish') && window.DelversGuild && !window.DelversGuild.canEnchant(); // Collection progress does not independently authorize illegal new enchantments.
+      return `${unlocked(u.id) && !legalGate ? '✓' : '🔒'} ${u.count}: ${u.label}${legalGate && unlocked(u.id) ? ' (private trust meeting required)' : ''}`;
+    }).join(' · ')));
     const details = document.createElement('details'); // Mobile-readable diagnostics need no console or developer mode.
     const summary = document.createElement('summary'); // Collapsed by default to keep the donation flow compact.
     summary.textContent = 'Collection diagnostics';
