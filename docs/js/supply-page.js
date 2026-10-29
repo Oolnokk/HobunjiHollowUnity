@@ -53,7 +53,7 @@
         <div class="sh-icon">${item.icon}</div>
         <div class="sh-info">
           <div class="sh-name">${item.name}</div>
-          <div class="sh-desc">${item.desc}</div>
+          <div class="sh-desc">${item.desc}${/Seed$|Seeds$/.test(item.key) ? ' Ordered seeds are delivered directly to Farm Storage.' : ''}</div>
           <div class="sh-price">${item.comingSoon ? 'Livestock system not active yet' : item.price + 'g per order'}</div>
         </div>
         <div class="shop-qty-ctrl">
