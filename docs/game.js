@@ -3742,6 +3742,22 @@
         const isOnFarm = currentArea === 'farm';
         if (def.area === 'interior' && !isInInterior && !isOnFarm) return { ok: false, message: `${def.name} can only be placed inside the house or on your farm.` };
         if (def.area === 'farm' && !isOnFarm) return { ok: false, message: `${def.name} must be placed on the farm.` };
+        if (furnitureKey === 'rug' && !dimensions) {
+          // Held-item placement uses the same compulsory two-click rug
+          // workflow as Furniture Placer, rather than creating a default rug
+          // immediately on the very first Action 1.
+          if (rugFirstCorner && furniturePlacementArmedKey === def.itemKey) {
+            commitFurniturePlacementAt(col, row);
+            return { ok: true, message: 'Rug corner confirmed.' };
+          }
+          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug', 0, currentArea, { widthTiles: 1, heightTiles: 1 })) {
+            return { ok: false, message: 'Choose a clear first corner for the woven rug.' };
+          }
+          if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) return { ok: false, message: 'No available rug or furniture permission.' };
+          armFurniturePlacement(def.itemKey, source);
+          rugFirstCorner = { col, row }; // The original held-item tile becomes the first corner; no inventory consumed yet.
+          return { ok: true, message: 'First rug corner set. Aim at the opposite corner and press Action 1.' };
+        }
         if (!canPlaceDecorativeFurnitureAt(col, row, null, furnitureKey, 0, currentArea, dimensions)) return { ok: false, message: 'Cannot place furniture here.' };
         const itemKey = def.itemKey;
         if (!hasFarmPermission('placeFurniture') || furnitureStock(itemKey, source) < 1) return { ok: false, message: `No available ${def.name} or furniture permission.` };
@@ -26205,7 +26221,7 @@
                     placementSpec.ignoreId, placementSpec.key, placementSpec.rotYDeg, currentArea, dims);
               })());
           return [
-            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : rugFirstCorner ? 'Set Opposite Rug Corner' : furnitureMoveArmedId ? 'Move Here' : 'Place / First Corner', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
+            { icon: '✓', label: wallMode ? (window.FarmhouseRoomPlanner.stage() === 'second corner' ? 'Second Corner' : 'Set Wall / Door') : rugFirstCorner ? 'Set Opposite Rug Corner' : furnitureMoveArmedId ? 'Move Here' : placementSpec?.key === 'rug' ? 'First Rug Corner' : 'Place', action: 'furniture_place_confirm', style: 'primary', allowed: placementValid },
             { icon: '✕', label: 'Cancel', action: 'furniture_place_cancel', style: 'secondary', allowed: true },
           ];
         }
@@ -28758,7 +28774,7 @@
         }
         const rugKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
         if (rugKey === 'rug' && !rugFirstCorner) {
-          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug')) {
+          if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug', 0, currentArea, { widthTiles: 1, heightTiles: 1 })) {
             showToast('Choose a clear first rug corner.', false);
             return false;
           }
