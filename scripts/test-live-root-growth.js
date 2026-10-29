@@ -18,7 +18,7 @@ class Vector3 {
   fromBufferAttribute(attr,i){this.x=attr.getX(i);this.y=attr.getY(i);this.z=attr.getZ(i);return this;}
 }
 class Group {
-  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.rotation={x:0,y:0,z:0};this.visible=true;}
+  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.rotation={x:0,y:0,z:0};this.visible=true;this.layers={mask:1,enable(n){this.mask|=(1<<n);},disable(n){this.mask&=~(1<<n);}};}
   add(...children){children.forEach(child=>{child.parent=this;this.children.push(child);});}
   remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
   traverse(fn){fn(this);this.children.forEach(child=>child.traverse(fn));}
@@ -95,7 +95,7 @@ const foliage={
 const windowMock={THREE:three,FoliageGenerator:foliage};
 vm.runInNewContext(fs.readFileSync('docs/js/live-root-growth.js','utf8'),{window:windowMock,console});
 const feature=windowMock.LiveRootGrowth;
-assert.equal(feature.version,1);
+assert.equal(feature.version,2);
 const normalized=feature.normalizeRecipe({branchCount:Infinity,floorWidth:-2,targetDensity:5,duration:'NaN'});
 assert.equal(normalized.branchCount,9);assert.equal(normalized.floorWidth,1);
 assert.equal(normalized.targetDensity,1);assert.equal(normalized.duration,3.5);
@@ -109,6 +109,11 @@ assert.equal(first.target.children[0].visible,false,'the imported furniture must
 assert.equal(first.getProgress(),0);
 assert.equal(first.getDiagnostics().floorNodesFromWrap,true);
 assert.equal(first.getDiagnostics().shapeWrapEndpointPairs,1);
+const temple=JSON.parse(fs.readFileSync('docs/config/pieces/temple.json','utf8'));
+assert(temple.surfaceGrowth.filter(layer=>layer.kind==='roots').every(layer=>layer.color===feature.TEMPLE_ROOT_FINISH.color && layer.texture===feature.TEMPLE_ROOT_FINISH.texture));
+assert.deepEqual(first.rootFinish,feature.TEMPLE_ROOT_FINISH);
+assert(calls.every(call=>call.recipe.color===feature.TEMPLE_ROOT_FINISH.color && call.recipe.texture===feature.TEMPLE_ROOT_FINISH.texture));
+assert(first.branches.every(branch=>!!(branch.layers.mask&2) && branch.userData.noOutline===false));
 assert.deepEqual(calls.map(x=>x.recipe.style),['wrap','wrap']);
 assert.deepEqual(calls.map(x=>x.recipe.kind),['roots','roots']);
 assert.equal(first.branches[0].geometry.drawRange.count,0);
@@ -131,4 +136,12 @@ assert.equal(first.group.parent,null);
 assert.throws(()=>feature.create({target:null,THREE:three,foliage}),/furniture group/);
 assert.match(fs.readFileSync('docs/tools/index.html','utf8'),/live-root-growth\/index\.html/);
 assert.match(fs.readFileSync('docs/tools/live-root-growth/index.html','utf8'),/js\/live-root-growth\.js\?v=[A-Za-z0-9_-]+/);
+const authoredIndex=JSON.parse(fs.readFileSync('docs/config/furniture-authored/index.json','utf8'));
+assert(authoredIndex.furniture.some(entry=>entry.key==='woodenDoor'));
+const editor=fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8');
+assert(editor.includes('config/furniture-authored/index.json'));
+assert(editor.includes('git/trees/'));
+assert(editor.includes('function importRepoFurniture('));
+assert(editor.includes('scene.overrideMaterial = shellOutlineMaterial'));
+assert(editor.includes('camera.layers.set(1)'));
 console.log('Live root growth: wrap reuse, source preservation, deterministic nodes, controls, retraction, disposal and Tools Hub wiring passed.');
