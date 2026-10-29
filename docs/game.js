@@ -3666,7 +3666,7 @@
         }
         const def = DECORATIVE_FURNITURE_DEFS[o.key];
         if (def?.sit) {
-          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return makeSitInteractable(o.key, o.col, o.row, fw, fd, o.rotYDeg || 0);
         }
         return null;
@@ -3971,7 +3971,7 @@
         const c1 = c0 + w, r1 = r0 + h;
         const toRemove = interiorFurnitureObjects.filter(o => {
           if (o.area !== 'interior') return false;
-          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0);
+          const { fw, fd } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return o.col < c1 && o.col + fw > c0 && o.row < r1 && o.row + fd > r0;
         });
         if (!toRemove.length) return 0;
@@ -27213,19 +27213,21 @@
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
-            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow }) => {
+            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, widthTiles, heightTiles, patternOverrides }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const decorArea = area || 'farm';
               const tgt = decorArea === 'interior' ? interiorScene : scene;
-              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0);
+              const dimensions = key === 'rug' && Number.isInteger(widthTiles) && Number.isInteger(heightTiles) && widthTiles > 0 && heightTiles > 0 && widthTiles <= 16 && heightTiles <= 16 ? { widthTiles, heightTiles } : null; // Prototype reset honors existing rug dimensions.
+              const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0, dimensions);
               const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
               if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
                 mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
                 ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-                localRow: Number.isFinite(localRow) ? localRow : owner.localRow });
+                localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null });
+              if (r && patternOverrides) window.FurniturePatternSurfaces?.applyOverrides?.(r.mesh, patternOverrides); // Do not discard the player's color choices on prototype reset.
               if (r && decorArea === 'farm') {
-                const size = decorativeFurnitureSize(key, rotYDeg || 0);
+                const size = decorativeFurnitureSize(key, rotYDeg || 0, dimensions);
                 registerFarmDecorativeInteractable(key, col, row, size.fw, size.fd, rotYDeg || 0);
               }
               if (r) registerChairNpcStation(key, col, row, rotYDeg || 0, normalizeNpcArea(decorArea));
