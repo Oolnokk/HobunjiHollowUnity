@@ -21,7 +21,8 @@ assert(iRugs.length > 0 && iRugs.some(piece => Object.keys(piece.patternOverride
 const exteriorWalls=templeExterior.surfaceGrowth.filter(recipe=>recipe.target==='walls');
 const interiorWalls=templeInterior.surfaceGrowth.filter(recipe=>recipe.target==='walls');
 assert.equal(templeExterior.surfaceGrowth.length,4,'Latest Temple exterior has three wall layers plus the shingle layer');
-assert.deepEqual(interiorWalls,exteriorWalls,'Temple interior must mirror every exterior wall root/vine layer in order');
+assert.deepEqual(interiorWalls,exteriorWalls.map(recipe=>({...recipe,inset:recipe.inset === 0 ? 0 : -recipe.inset})),
+  'Temple interior mirrors exterior wall layers except for their inverted signed insets');
 assert.deepEqual(interiorWalls.map(recipe=>[recipe.kind,recipe.style,recipe.density,recipe.strandLimit]),[
   ['roots','cornerFill',.45,80],['vines','wrap',.1,40],['roots','wrap',.4,12]
 ], 'Temple foliage matches the newest authored wall roots and edge-to-edge vines');
@@ -37,9 +38,9 @@ assert.equal(interiorWalls[0].seed,'surface-2','Latest Corner Fill root seed mus
 assert.equal(interiorWalls[0].count,48,'Latest Corner Fill root count must survive');
 assert.equal(interiorWalls[0].radius,.2,'Latest Corner Fill root thickness must survive');
 assert.equal(interiorWalls[0].curl,1.4,'Latest Corner Fill root curl must survive');
-assert.equal(interiorWalls[0].inset,-.25,'Latest Corner Fill root inset must survive');
+assert.equal(interiorWalls[0].inset,.25,'Temple interior Corner Fill roots must invert the exterior inset');
 assert.equal(interiorWalls[2].radius,.175,'Latest Wrap root thickness must survive');
-assert.equal(interiorWalls[2].inset,-.1,'Latest Wrap root inset must survive');
+assert.equal(interiorWalls[2].inset,.1,'Temple interior Wrap roots must invert the exterior inset');
 assert(interiorWalls.every(recipe => recipe.shrinkwrapFinal && recipe.tunnelAsOpening),
   'Both Temple wall vegetation contexts must retain shrinkwrap and entrance-opening settings');
 const townShingleFill=townBuildingRuntime.match(/const TOWN_SHINGLE_FILL = '(#[0-9a-f]{6})'/i)?.[1];
