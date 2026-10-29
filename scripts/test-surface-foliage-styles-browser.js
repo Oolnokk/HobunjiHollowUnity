@@ -444,6 +444,40 @@ const server=http.createServer((request,response)=>{
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
     });
+    const inward=await page.evaluate(()=>{
+      const T=window.THREE,foliage=window.FoliageGenerator;
+      const furniture=new T.Group(),box=new T.Mesh(new T.BoxGeometry(2,1,2),new T.MeshBasicMaterial({color:0x888888}));
+      box.visible=false; // Matches the root editor's hidden import, not a visible roof or wall.
+      furniture.add(box);
+      const recipe={kind:'roots',style:'wrap',target:'all',seed:'real-inside-root-browser',
+        density:.65,strandLimit:42,reference:'furniture-volume',length:6,radius:.035,
+        offset:.008,curl:.3,texture:'',shrinkwrapFinal:true,shrinkwrapHidden:true,
+        shrinkwrapInside:true,inset:.05};
+      const generated=foliage.buildSurfaceGrowth(furniture,recipe);
+      furniture.add(generated);
+      const measures={count:generated.userData.generatedStrands||0,
+        hits:generated.userData.surfaceGrowthStats?.shrinkwrapHits||0,
+        rays:generated.userData.surfaceGrowthStats?.shrinkwrapRays||0,
+        originalHidden:box.visible===false,
+        centerCount:0,insideCenters:0,outerCenters:0};
+      const mesh=generated.children.find(m=>m.isMesh);
+      const positions=mesh?.geometry?.getAttribute('position');
+      if(positions)for(let i=0;i+5<positions.count;i+=6){
+        const center=new T.Vector3();
+        for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(positions,i+j));
+        center.multiplyScalar(.2);measures.centerCount++;
+        if(Math.abs(center.x)<1&&Math.abs(center.y)<.5&&Math.abs(center.z)<1)measures.insideCenters++;
+        if(Math.abs(center.x)>1.04||Math.abs(center.y)>.54||Math.abs(center.z)>1.04)measures.outerCenters++;
+      }
+      return measures;
+    });
+    assert(inward.count>0,'A closed hidden furniture box must produce real Wrap strands');
+    assert(inward.rays>0&&inward.hits>0,'Inward shrinkwrap must raycast hidden furniture, rather than skipping it');
+    assert(inward.originalHidden,'Guide furniture must remain invisible even while casting its rays');
+    assert(inward.centerCount>0&&inward.insideCenters/inward.centerCount>.75,
+      'Most strand centerlines must be inside the furniture box, not floating around its exterior');
+    assert(inward.outerCenters/inward.centerCount<.1,
+      'Inside shrinkwrap must not protrude far outside the hidden furniture volume');
     assert(data.rawEdgeSpline.rings>=10,'Corner Fill should have intermediate spline rings along long straight architectural edges');
     assert(data.rawEdgeSpline.maxDeviation<.001,'With zero curl and zero clearance the spline must run on the actual corner, not float a radius off it');
     assert(data.curledEdgeSpline.maxDeviation>.008&&data.curledEdgeSpline.maxDeviation<.055,'Curl should be visible but bounded to roughly the strand radius');
