@@ -89,6 +89,23 @@
       id: String(p.id), label: p.label || 'Family plot', kind: p.kind === 'dig' ? 'dig' : 'till', tiles: p.tiles.map(t => [Number(t[0]), Number(t[1])]),
       crop: p.crop || '', workers: Array.isArray(p.workers) ? p.workers.filter(Boolean) : [], hours: Array.isArray(p.hours) && p.hours.length === 2 ? p.hours.map(Number) : [8, 17],
     })) : [];
+    // Older layouts may contain duplicated tile designations. Resolve them before
+    // registering workers: a planting field wins over a trench to avoid crop loss.
+    const owners = new Map(); // Tile key -> the one plot allowed to change this soil.
+    for (const p of plots) for (const [c, r] of p.tiles) {
+      if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0) continue;
+      const key = c + ',' + r;
+      if (!owners.has(key) || (owners.get(key).kind === 'dig' && p.kind === 'till')) owners.set(key, p);
+    }
+    for (const p of plots) {
+      const seen = new Set(); // Ignore repeated coordinates within a legacy plot.
+      p.tiles = p.tiles.filter(([c, r]) => {
+        const key = c + ',' + r;
+        if (owners.get(key) !== p || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
     if (!plots.some(p => p.id === activeId)) activeId = null;
     window.NpcFarmPlots?.registerFarmPlots?.(plots);
     render();
