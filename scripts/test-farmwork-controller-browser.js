@@ -113,6 +113,26 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
       };
     });
     assert.deepEqual(silhouette, { tiles: 3, excluded: false, last: '2', pages: 0 }, 'single-plot preview preserves an L silhouette without extra containers or pages');
+    const blockFocus = await page.evaluate(() => {
+      const field = window.FarmPlotEditor.activeFamilyPlot();
+      const blockId = window.FarmPlotEditor.createSeedBlock(field.id);
+      window.FarmworkUI.chooseBlock(blockId);
+      document.querySelector('[data-fwseedappend]').focus();
+      window.ControllerUI.press('confirm'); // Real controller adds the first prioritized crop.
+      const seed = window.FarmPlotEditor.activeFamilyPlot().seedBlocks[0].seeds[0];
+      document.querySelector('[data-fwblockplan]').focus();
+      window.ControllerUI.press('confirm'); // Equip seed-block tile painting, not plot painting.
+      const press = action => { window.WorldActionInputClaims.dispatch(action, 'press'); window.WorldActionInputClaims.dispatch(action, 'release'); };
+      press('action1'); // Aim tile is (5,5), already in the planting plot.
+      const assigned = window.FarmPlotEditor.activeFamilyPlot().seedBlocks[0].tiles.length === 1;
+      press('action3');
+      const focused = document.activeElement?.dataset?.fwblock === blockId;
+      const plotPreserved = window.FarmPlotEditor.activeFamilyPlot().tiles.length === 3;
+      window.FarmPlotEditor.deleteSeedBlock(field.id, blockId);
+      window.FarmworkUI.chooseBlock(null);
+      return { seed, assigned, focused, plotPreserved };
+    });
+    assert.deepEqual(blockFocus, { seed: 'needlegrain', assigned: true, focused: true, plotPreserved: true }, 'controller can prioritize a seed, choose block tiles and return to the selected block');
     const returnFocus = await page.evaluate(() => {
       const firstId = window.FarmPlotEditor.activeFamilyPlot().id;
       const secondId = window.FarmPlotEditor.createFamilyPlot('dig');
