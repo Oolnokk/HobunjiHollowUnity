@@ -320,7 +320,9 @@
           highlightWidth: Number(byId('cut-bridge-highlight').value) || 0 });
       pushUndo(); pixels = outcome.pixels; clearBrush(); path = []; renderNow();
       status('Bridge filled: ' + outcome.grown + ' pixels grown from ' + outcome.seeds + ' bordering metal seeds (' +
-        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.highlighted + ' edge-highlighted), ' + outcome.rim + ' black rim pixels. Undo restores the previous image.');
+        outcome.shaded + ' shaded, ' + outcome.unshaded + ' unshaded, ' + outcome.highlighted + ' edge-highlighted), ' + outcome.rim + ' black rim pixels; kept ' + outcome.preserved + ' painted-over metal pixels' +
+        (outcome.pools > 1 ? '; linked ' + outcome.poolsLinked + ' of ' + (outcome.pools - 1) + ' unshaded-pool gaps' : '') +
+        '. Undo restores the previous image.');
     } catch (error) { status('Bridge fill failed: ' + error.message); }
   };
   byId('cut-bridge-clear').onclick = () => { clearBrush(); renderNow(); status('Brush cleared.'); };

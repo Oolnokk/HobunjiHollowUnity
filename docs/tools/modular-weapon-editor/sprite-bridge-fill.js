@@ -72,7 +72,7 @@
     if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 ||
         !source || source.length !== n * 4 || !mask || mask.length !== n)
       throw new Error('Bridge fill needs a valid RGBA frame and matching brush mask.');
-    const thickness = Math.max(0, Math.min(32, Math.round(options.outlineThickness ?? 2))); // Black rim kept where the bridge meets empty space.
+    const thickness = Math.max(0, Math.min(32, Math.round(options.outlineThickness ?? 10))); // Black rim kept where the bridge meets empty space.
     const minAlpha = Math.max(1, Math.min(255, Math.round(options.minAlpha ?? 32))); // Fainter pixels count as empty.
     const darkLuma = options.darkLuma ?? 48; // Darker opaque pixels are outline ink, never metal.
     const jitter = options.jitter ?? 0.9; // Random step cost so competing seeds scramble instead of forming straight Voronoi borders.
@@ -114,10 +114,15 @@
         if (mask[q] && rimDist[q] < 0) { rimDist[q] = d + 1; queue[tail++] = q; }
       }
     }
-    const isRim = p => rimDist[p] > 0 && rimDist[p] <= thickness;
-    const fillable = new Uint8Array(n); // The hollowed interior that metal regrows into.
-    let fillCount = 0;
-    for (let p = 0; p < n; p++) if (mask[p] && !isRim(p)) { fillable[p] = 1; fillCount++; }
+    // Metal the stroke painted over is never overwritten: it stays as-is and joins the seeds below.
+    const isRim = p => kind[p] !== METAL && rimDist[p] > 0 && rimDist[p] <= thickness;
+    const fillable = new Uint8Array(n); // The hollowed interior (empty space and outline ink) that metal regrows into.
+    let fillCount = 0, preserved = 0;
+    for (let p = 0; p < n; p++) {
+      if (!mask[p]) continue;
+      if (kind[p] === METAL) preserved++;
+      else if (!isRim(p)) { fillable[p] = 1; fillCount++; }
+    }
 
     // 2. Sample the metal the stroke overlapped and the parts just around it (skipping the anti-aliased fringe
     //    that touches outline ink), split brightness into shaded/unshaded, and seed from metal bordering the hollow.
@@ -138,7 +143,7 @@
           if (nx < 0 || ny < 0 || nx >= w || ny >= h || kind[ny * w + nx] !== METAL) { fringe = true; break; }
         }
         if (!fringe) samples.push(p);
-        if (!mask[p] && ((x > 0 && fillable[p - 1]) || (x < w - 1 && fillable[p + 1]) ||
+        if (((x > 0 && fillable[p - 1]) || (x < w - 1 && fillable[p + 1]) ||
             (y > 0 && fillable[p - w]) || (y < h - 1 && fillable[p + w]))) seeds.push(p);
       }
     }
@@ -185,7 +190,88 @@
       }
     }
 
-    // 4. Rim highlight: along the bridge's own new edges (where it meets its black rim or empty space), the band
+    // 4. Unshaded pools: every connected pool of unshaded metal touching the stroke is joined to the others by an
+    //    unshaded channel through the stroke (hollow or painted-over metal). All pools grow at once; where two
+    //    pools' fronts meet is a candidate link, the cheapest links joining every pool are kept (minimum spanning
+    //    tree), and each is traced back to both pools and widened with the stroke's local width. Steps near the
+    //    stroke's outer edges cost more, so channels run down its middle. Painted-over shaded metal on a channel is
+    //    the only painted-over metal that changes (it becomes unshaded).
+    const neighbors4 = p => { const x = p % w, y = (p / w) | 0; return [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1]; };
+    const lane = p => fillable[p] === 1 || (mask[p] && kind[p] === METAL); // Where channels may run.
+    const isLit = p => kind[p] === METAL && toneOf(p) === LIT;
+    const pool = new Int32Array(n).fill(-1);
+    let pools = 0, poolsLinked = 0, channelled = 0;
+    const relit = new Uint8Array(n); // Painted-over shaded metal turned unshaded by a channel.
+    for (let s0 = 0; s0 < n; s0++) {
+      if (pool[s0] >= 0 || !isLit(s0) || !(mask[s0] || neighbors4(s0).some(q => q >= 0 && lane(q)))) continue;
+      const stack = [s0];
+      pool[s0] = pools;
+      while (stack.length) {
+        const p = stack.pop();
+        for (const q of neighbors4(p)) if (q >= 0 && pool[q] < 0 && isLit(q)) { pool[q] = pools; stack.push(q); }
+      }
+      pools++;
+    }
+    if (pools > 1) {
+      const inset = new Int32Array(n).fill(-1); // Steps from the stroke's non-metal boundary (rim or empty space).
+      queue = new Int32Array(n); head = tail = 0;
+      for (let p = 0; p < n; p++) {
+        if (lane(p) && neighbors4(p).some(q => q < 0 || (!lane(q) && kind[q] !== METAL))) { inset[p] = 0; queue[tail++] = p; }
+      }
+      while (head < tail) {
+        const p = queue[head++];
+        for (const q of neighbors4(p)) if (q >= 0 && lane(q) && inset[q] < 0) { inset[q] = inset[p] + 1; queue[tail++] = q; }
+      }
+      for (let p = 0; p < n; p++) if (lane(p) && inset[p] < 0) inset[p] = 64; // Lane fully enclosed by metal.
+      const owner = new Int32Array(n).fill(-1), dist = new Float64Array(n).fill(Infinity), from = new Int32Array(n).fill(-1);
+      const reach = new Heap();
+      for (let p = 0; p < n; p++) if (pool[p] >= 0 && (lane(p) || neighbors4(p).some(q => q >= 0 && lane(q)))) {
+        dist[p] = 0; owner[p] = pool[p]; reach.push(0, p, 0);
+      }
+      const it = {};
+      while (reach.cost.length) {
+        reach.pop(it);
+        const p = it.pixel;
+        if (it.cost > dist[p]) continue;
+        for (const q of neighbors4(p)) {
+          if (q < 0 || !lane(q) || pool[q] >= 0) continue;
+          const c = it.cost + 1 + 4 / (1 + inset[q]);
+          if (c < dist[q]) { dist[q] = c; owner[q] = owner[p]; from[q] = p; reach.push(c, q, 0); }
+        }
+      }
+      const links = new Map(); // "a,b" → cheapest meeting [cost, p, q, a, b].
+      for (let p = 0; p < n; p++) {
+        if (owner[p] < 0) continue;
+        for (const q of neighbors4(p)) {
+          if (q < 0 || owner[q] < 0 || owner[q] === owner[p]) continue;
+          const a = Math.min(owner[p], owner[q]), b = Math.max(owner[p], owner[q]), key = a + ',' + b;
+          const cost = dist[p] + dist[q] + 1;
+          if (!links.has(key) || links.get(key)[0] > cost) links.set(key, [cost, p, q, a, b]);
+        }
+      }
+      const root = Array.from({ length: pools }, (_, i) => i);
+      const find = i => root[i] === i ? i : (root[i] = find(root[i]));
+      const path = new Uint8Array(n);
+      for (const [, p, q, a, b] of [...links.values()].sort((u, v) => u[0] - v[0])) {
+        if (find(a) === find(b)) continue;
+        root[find(a)] = find(b); poolsLinked++;
+        for (let t of [p, q]) while (t >= 0 && pool[t] < 0) { path[t] = 1; t = from[t]; }
+      }
+      // Widen each channel to about a third of the stroke's local half-width (1–6 pixels either side).
+      for (let p = 0; p < n; p++) {
+        if (!path[p]) continue;
+        const r = Math.max(1, Math.min(6, Math.round(inset[p] * 0.35))), px = p % w, py = (p / w) | 0;
+        for (let y = Math.max(0, py - r); y <= Math.min(h - 1, py + r); y++) for (let x = Math.max(0, px - r); x <= Math.min(w - 1, px + r); x++) {
+          const q = y * w + x;
+          if ((x - px) ** 2 + (y - py) ** 2 > r * r) continue;
+          if (fillable[q] && tone[q] !== LIT) { tone[q] = LIT; channelled++; }
+          else if (mask[q] && kind[q] === METAL && !isLit(q) && !relit[q]) { relit[q] = 1; channelled++; }
+        }
+      }
+      queue = null;
+    }
+
+    // 5. Rim highlight: along the bridge's own new edges (where it meets its black rim or empty space), the band
     //    facing the light gets the unshaded tone, like the lit edge on cel-shaded parts. The parts are untouched.
     const light = options.lightDirection; // [x, y] screen-space vector toward the light, or null for no highlight.
     const highlightWidth = Math.max(0, Math.min(32, Math.round(options.highlightWidth ?? 3)));
@@ -203,7 +289,7 @@
           const nx = x + dx, ny = y + dy;
           const out = nx < 0 || ny < 0 || nx >= w || ny >= h;
           const q = out ? -1 : ny * w + nx;
-          if (out || (mask[q] && !fillable[q]) || (!mask[q] && kind[q] === EMPTY)) { edge = true; ox += dx; oy += dy; }
+          if (out || isRim(q) || (!mask[q] && kind[q] === EMPTY)) { edge = true; ox += dx; oy += dy; }
         }
         if (!edge) continue;
         const len = Math.hypot(ox, oy) || 1;
@@ -228,11 +314,13 @@
       queue = null;
     }
 
-    // 5. Write the result: rim → opaque black, hollow → sampled metal tones (unreached islands take the shaded tone).
+    // 6. Write the result: rim → opaque black, hollow → sampled metal tones (unreached islands take the shaded tone),
+    //    painted-over metal → unchanged.
     const pixels = new Uint8ClampedArray(source);
     let rimCount = 0, shadedCount = 0, litCount = 0;
     for (let p = 0; p < n; p++) {
-      if (!mask[p]) continue;
+      if (relit[p]) { pixels.set(palette[LIT], p * 4); continue; }
+      if (!mask[p] || kind[p] === METAL) continue;
       const o = p * 4;
       if (!fillable[p]) { pixels[o] = pixels[o + 1] = pixels[o + 2] = 0; pixels[o + 3] = 255; rimCount++; continue; }
       const t = tone[p] >= 0 ? tone[p] : SHADED;
@@ -241,7 +329,7 @@
     }
     return { pixels, painted, rim: rimCount, filled: fillCount, grown, shaded: shadedCount, unshaded: litCount,
       seeds: seeds.length, sampled: samples.length, threshold, palette,
-      highlighted };
+      highlighted, preserved, pools, poolsLinked, channelled };
   }
 
   // Stamps a filled disc into a brush mask, interpolating from the previous point so fast strokes stay solid.
