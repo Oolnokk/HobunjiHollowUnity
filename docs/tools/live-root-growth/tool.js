@@ -134,9 +134,13 @@
       scene.add(active.group); rebuildMarkers();
       $('sourceName').textContent = source.name + ' · hidden geometry; growth-only preview';
       updateStatus(true);
-      if (active.getDiagnostics().shapeStrands === 0) {
+      const metrics = active.getDiagnostics();
+      if (metrics.shapeStrands === 0) {
         errorBox.style.display = 'block';
         errorBox.textContent = 'The imported shape produced no final Wrap strands. Branches will grow, but the shape will remain sparse. Try a simple watertight furniture mesh, increase Shape path length or check its recognized surfaces.';
+      } else if (metrics.shrinkwrapRays > 0 && metrics.shrinkwrapHits < metrics.shrinkwrapRays * .25) {
+        errorBox.style.display = 'block';
+        errorBox.textContent = 'Inward shrinkwrap found only '+metrics.shrinkwrapHits+'/'+metrics.shrinkwrapRays+' hits on the hidden furniture. Some roots may not lie inside its volume. Check that the imported furniture has real surfaces and closed geometry.';
       }
     } catch (error) { reportError(error); }
   }
