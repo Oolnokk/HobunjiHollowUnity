@@ -102,9 +102,10 @@
     btn.classList.toggle('fp-shifted', devSlotOccupied);
     if (!show && _open) close();
     if (!show) {
-      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId()) {
+      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || window.FarmhouseRoomPlanner?.isArmed?.()) {
         deps.armFurniturePlacement(null);
         deps.armFurnitureMove(null);
+        window.FarmhouseRoomPlanner?.cancel?.(); // Leaving the farmhouse disarms its wall editor too.
       }
       window.WallOrnamentPlacement?.finishPlayerAdjustment?.(); // Reticle-only wall placement also cancels if the player leaves a valid furniture area.
     }
@@ -137,6 +138,7 @@
     if (!keepArmed) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
+      window.FarmhouseRoomPlanner?.cancel?.(); // Explicitly closing the menu cancels an unfinished wall.
     }
     deps.resumeMouseCameraAfterUi?.();
     return true;
