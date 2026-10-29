@@ -64,6 +64,16 @@ assert(shingleBuilder.includes("tintTreatment:'body-sprite-tint'"),
   'Gameplay roof finishes must recolor PNG pixels rather than multiplying GLB material colors');
 assert(houseEditor.includes("painter.naturalizeMesh(proxy,'trunks','strand-stretch'"),
   'House Editor must preview the same roots/shingles tint method as gameplay');
+assert(houseEditor.includes("const TOWN_ROOF_DEFAULT={texture:'assets/textures/carved_smooth.png',color:'#0e0d06'}"),
+  'House Editor must have the same town roof PNG and tint as the runtime');
+assert(houseEditor.includes("townDefault=!config.shingleMaterial&&state.piece?.id===TEMPLE_ROOF_PIECE_ID"),
+  'Temple must preview town shingles without saving an override');
+assert(houseEditor.includes("mode:'shadeFill',rgb:[rgb.r,rgb.g,rgb.b],options:window.getPortraitTintingConfig()"),
+  'Temple town-roof preview must use the actual town adaptive shade-fill recoloring');
+assert(houseEditor.includes("shingleVariant:'town'"),
+  'The Temple Game Preview must use the production town variant');
+assert(houseEditor.includes("const templeUsesTownShingles=piece.id===TEMPLE_ROOF_PIECE_ID&&!piece.roof?.shingleMaterial"),
+  'Per-piece custom roofs must still take precedence in the Temple Game Preview');
 const shingleVines = templeExterior.surfaceGrowth.find(recipe => recipe.seed === 'temple-highland-shingle-weave'); // The author's newest shingle weave intentionally includes all house surfaces.
 assert.equal(shingleVines?.target, 'all','The latest weave targets all architectural surfaces, including shingles');
 assert.equal(shingleVines?.kind, 'vines');
