@@ -3379,23 +3379,26 @@
   "surfaceGrowth": [
     {
       "kind": "roots",
-      "seed": "surface-1",
+      "seed": "surface-2",
       "style": "cornerFill",
       "density": 0.45,
-      "count": 40,
+      "count": 48,
       "strandLimit": 80,
       "perSurface": true,
       "length": 12,
-      "radius": 0.15,
+      "radius": 0.2,
       "offset": 0.008,
-      "curl": 0.4,
+      "curl": 1.4,
       "color": "#504030",
       "texture": "assets/textures/wibbly_surface.png",
       "target": "walls",
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.25
     },
     {
       "kind": "vines",
@@ -3415,18 +3418,21 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": 0
     },
     {
       "kind": "roots",
       "seed": "surface-9",
       "style": "wrap",
-      "density": 0.2,
+      "density": 0.4,
       "count": 12,
       "strandLimit": 12,
       "perSurface": true,
       "length": 30,
-      "radius": 0.15,
+      "radius": 0.175,
       "offset": 0.008,
       "curl": 2,
       "color": "#504030",
@@ -3435,7 +3441,10 @@
       "targetIds": [],
       "wallOnly": false,
       "hangChance": 0,
-      "hangLength": 0
+      "hangLength": 0,
+      "tunnelAsOpening": true,
+      "shrinkwrapFinal": true,
+      "inset": -0.1
     }
   ],
   "doorTiles": []
