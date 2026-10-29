@@ -154,10 +154,13 @@
   function cropDef(crop) { return deps?.cropData?.[crop] || null; }
 
   // ── Job picking ───────────────────────────────────────────────────────
-  function seedForTile(plot, c, r) {
+  function seedForTile(plot, c, r, storage = deps?.farmSeedStock?.()) {
     const block = plot.seedBlocks?.find(b => b.tiles.some(t => t.c === c && t.r === r));
     const options = block ? block.seeds : (plot.crop ? [plot.crop] : []);
-    return options.find(crop => deps?.seedAvailable?.(crop)) || null; // Ordered fallback uses Farm Storage, never the worker's bag.
+    return options.find(crop => {
+      const key = deps?.cropData?.[crop]?.seedKey;
+      return storage && key ? (Number(storage[key]) || 0) > 0 : !!deps?.seedAvailable?.(crop);
+    }) || null; // Ordered fallback uses Farm Storage, never the worker's bag.
   }
   function jobsFor(plot, npcId) {
     const jobs = []; // { c, r, job }
@@ -169,9 +172,10 @@
       }
       const tiller = activeWorker(plot, 'tillers') === npcId;
       const seeder = activeWorker(plot, 'seeders') === npcId;
+      const seedStock = seeder ? deps?.farmSeedStock?.() : null; // One storage read per job scan, not per tile/crop.
       for (const t of plot.tiles) {
         const i = tileOf(plot, t.c, t.r);
-        const crop = seeder && i.tilled && !i.crop ? seedForTile(plot, t.c, t.r) : null;
+        const crop = seeder && i.tilled && !i.crop ? seedForTile(plot, t.c, t.r, seedStock) : null;
         if (crop) jobs.push({ c: t.c, r: t.r, job: 'seed', crop });
         else if (tiller && i.canTill) jobs.push({ c: t.c, r: t.r, job: 'till' });
       }
