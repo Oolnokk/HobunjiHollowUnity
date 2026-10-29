@@ -33,6 +33,7 @@
   }
   function setPlanning(next, mode = 'plot') {
     endDrag();
+    const previouslyEditingBlock = planning && planningMode === 'block'; // Remember where controller focus should return after planning.
     planningMode = next && mode === 'block' && block() ? 'block' : 'plot';
     planning = !!next && open && canOpen() && !!plot();
     if (pane()) pane().style.display = open && !planning ? 'flex' : 'none';
@@ -58,8 +59,10 @@
     } else if (open) {
       context()?.suspendMouseCameraForUi?.();
       render();
-      const selector = planningMode === 'block' ? '[data-fwblockplan]' : '[data-fwplan]';
-      pane()?.querySelector(selector)?.focus?.({ preventScroll: true });
+      const target = previouslyEditingBlock
+        ? Array.from(pane()?.querySelectorAll('[data-fwblock]') || []).find(button => button.dataset.fwblock === selectedBlockId)
+        : Array.from(pane()?.querySelectorAll('[data-fwplan]') || []).find(button => button.dataset.fwplan === plot()?.id);
+      target?.focus?.({ preventScroll: true }); // Never jump controller focus to an unrelated first plot. 
     }
     context()?.refreshActions?.();
     lastVisualAt = -Infinity;
