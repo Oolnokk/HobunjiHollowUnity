@@ -37,10 +37,16 @@
     ctx.drawImage(image, -image.width / 2, -image.height / 2);
     ctx.restore();
   }
-  function cleanBridges(raw) {
-    // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
-    if (!raw || !Array.isArray(raw.strokes)) return null;
-    const strokes = raw.strokes.slice(0, 512).map(stroke => typeof stroke?.junction === 'string' ? cleanJunction(stroke)
+  function cleanBox(raw) {
+    const box = { x0: finite(raw?.x0, 0, -2400, 2850), y0: finite(raw?.y0, 0, -2400, 3604), x1: finite(raw?.x1, 0, -2400, 2850), y1: finite(raw?.y1, 0, -2400, 3604) };
+    return raw && box.x1 - box.x0 >= 4 && box.y1 - box.y0 >= 4 ? box : null;
+  }
+  // One validated bridge-brush step. A recipe step ({recipe, box}) places a saved recipe into a box; recipes
+  // themselves hold plain steps only (allowRecipe false), so they can never nest.
+  function cleanOp(stroke, allowRecipe = true) {
+    return typeof stroke?.recipe === 'string' ? (allowRecipe && /^[a-z0-9_-]{1,40}$/i.test(stroke.recipe) && cleanBox(stroke.box)
+        ? { recipe: stroke.recipe, box: cleanBox(stroke.box), ...(stroke.uniform === true ? { uniform: true } : {}), ...(stroke.flipX === true ? { flipX: true } : {}) } : null)
+      : typeof stroke?.junction === 'string' ? cleanJunction(stroke)
       : stroke?.revertPoint === true ? { revertPoint: true } // Marks what the revert brush eases back to.
       : stroke?.even === true ? { even: true, amount: finite(stroke.amount, 0.6, 0, 1) } // Whole-weapon outline wobble averaging.
       : stroke?.style === true ? { style: true, amount: finite(stroke.amount, 0.6, 0, 1), pool: finite(stroke.pool, 0, 0, 2000) } // Clean up to style.
@@ -57,7 +63,38 @@
       points: (Array.isArray(stroke?.points) ? stroke.points : []).slice(0, 2000)
         .filter(pt => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite))
         .map(([x, y]) => [finite(x, 0, -2400, 2850), finite(y, 0, -2400, 3604)])
-    })).filter(stroke => stroke && (stroke.junction || stroke.shading || stroke.revertPoint || stroke.clean || stroke.even || stroke.style || stroke.points.length));
+    });
+  }
+  const validOp = stroke => stroke && (stroke.recipe || stroke.junction || stroke.shading || stroke.revertPoint || stroke.clean || stroke.even || stroke.style || stroke.points?.length);
+  // Saved recipes: named lists of plain bridge-brush steps made inside a box, plus (optionally) the haft mount the
+  // box was made around (anchor) so it can be placed at the same spot on other pairs automatically.
+  function cleanRecipes(raw) {
+    const out = {};
+    for (const [name, recipe] of Object.entries(raw && typeof raw === 'object' ? raw : {}).slice(0, 64)) {
+      const box = cleanBox(recipe?.box);
+      if (!/^[a-z0-9_-]{1,40}$/i.test(name) || !box) continue;
+      const ops = (Array.isArray(recipe.ops) ? recipe.ops : []).slice(0, 512).map(op => cleanOp(op, false)).filter(validOp);
+      if (!ops.length) continue;
+      const m = recipe.anchor?.mount, mount = m && [m.x, m.y, m.ax, m.ay, m.len].every(Number.isFinite) && m.len > 0
+        ? { x: finite(m.x, 0, -2400, 2850), y: finite(m.y, 0, -2400, 3604), ax: finite(m.ax, 1, -1, 1), ay: finite(m.ay, 0, -1, 1), len: finite(m.len, 1, 1, 4000) } : null;
+      out[name] = { ...(typeof recipe.label === 'string' ? { label: recipe.label.slice(0, 60) } : {}), box, ops,
+        ...(mount ? { anchor: { rank: Math.round(finite(recipe.anchor.rank, 0, 0, 16)), count: Math.round(finite(recipe.anchor.count, 1, 1, 16)), mount } } : {}) };
+    }
+    return out;
+  }
+  // The pair's steps with recipe boxes expanded in place: each is the recipe's steps re-mapped into the box.
+  function expandOps(strokes) {
+    const fill = global.ModularWeaponBridgeFill;
+    return strokes.flatMap(op => {
+      if (!op.recipe) return [op];
+      const recipe = config.recipes?.[op.recipe];
+      return recipe && fill?.mapOps ? fill.mapOps(recipe.ops, recipe.box, op.box, { uniform: op.uniform, flipX: op.flipX }) : [];
+    });
+  }
+  function cleanBridges(raw) {
+    // Pair-specific bridge brush strokes, in source-pixel coordinates of the composed frame (see compose()).
+    if (!raw || !Array.isArray(raw.strokes)) return null;
+    const strokes = raw.strokes.slice(0, 512).map(stroke => cleanOp(stroke)).filter(validOp);
     if (!strokes.length) return null;
     const light = raw.light === null ? null : Array.isArray(raw.light) && raw.light.length === 2
       ? [finite(raw.light[0], 0, -1, 1), finite(raw.light[1], -1, -1, 1)] : [0, -1];
@@ -68,6 +105,8 @@
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
+    const ops = expandOps(bridges.strokes); // Recipe boxes become their re-mapped steps.
+    if (!ops.length) return;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     let image = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -88,8 +127,8 @@
       } catch (error) { global.console?.warn?.('Modular weapon bridge skipped:', error.message); }
     };
     let reference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
-    const base = bridges.strokes.some(op => op.clean || op.even || op.style) ? new Uint8ClampedArray(image.data) : null; // Before any brush work.
-    for (const stroke of bridges.strokes) {
+    const base = ops.some(op => op.clean || op.even || op.style) ? new Uint8ClampedArray(image.data) : null; // Before any brush work.
+    for (const stroke of ops) {
       if (stroke.shading) { flush(); fill.separateShading(image.data, canvas.width, canvas.height, stroke); continue; }
       if (stroke.revertPoint) { flush(); reference = new Uint8ClampedArray(image.data); continue; }
       if (stroke.even || stroke.style) { // Whole-weapon operations on everything brush work has changed.
@@ -254,6 +293,7 @@
         }
       }
     }
+    next.recipes = cleanRecipes(Object.hasOwn(incoming, 'recipes') ? incoming.recipes : reference.recipes);
     config = next;
     revision++;
     canvases.clear();
@@ -364,7 +404,7 @@
     if (canvases.has(cacheKey)) return canvases.get(cacheKey);
     const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Validated manifest entries.
     if (!shaft || !head) throw new Error('Unknown weapon parts.');
-    const pieces = [...new Set((settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
+    const pieces = [...new Set(expandOps(settings(shaftKey, headKey).bridges?.strokes || []).filter(op => op.junction).map(op => op.junction))];
     const junctionsReady = Promise.all(pieces.map(name => loadImage(junctionPath(name), base).then(image => [name, image],
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
@@ -444,6 +484,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    JUNCTIONS, junctionPath, drawJunction,
+    JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

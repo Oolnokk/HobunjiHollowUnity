@@ -1380,8 +1380,60 @@
     return { swapped, patches };
   }
 
+  // Recipes: a manual process (junction pieces, smudges, cleans...) copied into a scaled box. Boxes are
+  // {x0, y0, x1, y1} in the coordinates the steps are stored in.
+  // The steps (of `ops`) that mostly lie inside `box`: junction pieces by their centre, strokes when at least half
+  // of their points are inside. Whole-weapon steps (shading, clean-up of everything...) belong to no box.
+  function opsInBox(ops, box) {
+    return ops.filter(op => {
+      const pts = op.junction ? [[op.x, op.y]] : op.points;
+      if (!pts || !pts.length) return false;
+      let inside = 0;
+      for (const [x, y] of pts) if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) inside++;
+      return inside >= pts.length * 0.5;
+    });
+  }
+  // Maps a box (e.g. a recipe's box) through the box-to-box mapping from → to.
+  function mapBox(box, from, to) {
+    const kx = (to.x1 - to.x0) / Math.max(1e-6, from.x1 - from.x0), ky = (to.y1 - to.y0) / Math.max(1e-6, from.y1 - from.y0);
+    return { x0: to.x0 + (box.x0 - from.x0) * kx, x1: to.x0 + (box.x1 - from.x0) * kx, y0: to.y0 + (box.y0 - from.y0) * ky, y1: to.y0 + (box.y1 - from.y0) * ky };
+  }
+  // Carries a box made around one haft mount to another mount: the same offset from the mount's midpoint and the
+  // same size, scaled by the ratio of the mount lines' lengths. A mount is { x, y, ax, ay, len }: its midpoint,
+  // the unit direction of its line and its length. Lines have no direction, so only a quarter turn between the two
+  // matters: it rotates the offset and swaps the box's width and height.
+  function mapMountBox(box, from, to) {
+    const ratio = to.len / Math.max(1e-6, from.len), cx = (box.x0 + box.x1) / 2 - from.x, cy = (box.y0 + box.y1) / 2 - from.y;
+    let d = Math.atan2(to.ay, to.ax) - Math.atan2(from.ay, from.ax);
+    d = ((d + Math.PI / 2) % Math.PI + Math.PI) % Math.PI - Math.PI / 2; // Fold to (-90°, 90°]: lines have no direction.
+    let ox = cx, oy = cy, w = box.x1 - box.x0, h = box.y1 - box.y0;
+    if (Math.abs(d) > Math.PI / 4) { const sign = d > 0 ? 1 : -1; ox = -sign * cy; oy = sign * cx; [w, h] = [h, w]; }
+    const nx = to.x + ox * ratio, ny = to.y + oy * ratio;
+    return { x0: nx - w * ratio / 2, x1: nx + w * ratio / 2, y0: ny - h * ratio / 2, y1: ny + h * ratio / 2 };
+  }
+  // Re-maps recipe steps from the box they were made in (`src`) into another box (`dst`): positions scale with the
+  // box (each axis on its own, or both by the geometric mean with `uniform`, about the box centres), and sizes
+  // (brush radii, junction piece scale, clean-up sizes) scale by the geometric mean of both axes. `flipX` mirrors
+  // the recipe left to right. Returns new steps; the inputs are not changed.
+  function mapOps(ops, src, dst, options = {}) {
+    const sw = Math.max(1e-6, src.x1 - src.x0), sh = Math.max(1e-6, src.y1 - src.y0);
+    let kx = (dst.x1 - dst.x0) / sw, ky = (dst.y1 - dst.y0) / sh;
+    if (options.uniform) kx = ky = Math.sqrt(Math.abs(kx * ky));
+    const k = Math.sqrt(Math.abs(kx * ky)), flip = options.flipX ? -1 : 1;
+    const scx = (src.x0 + src.x1) / 2, scy = (src.y0 + src.y1) / 2, dcx = (dst.x0 + dst.x1) / 2, dcy = (dst.y0 + dst.y1) / 2;
+    const mx = x => dcx + flip * (x - scx) * kx, my = y => dcy + (y - scy) * ky;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    return ops.map(op => {
+      if (op.junction) return { ...op, x: mx(op.x), y: my(op.y), scale: clamp(op.scale * k, 0.1, 8), rotation: flip * op.rotation };
+      if (!op.points) return { ...op };
+      const out = { ...op, r: clamp(op.r * k, 1, 160), points: op.points.map(([x, y]) => [mx(x), my(y)]) };
+      if (op.tool === 'clean') { out.smoothing = clamp(op.smoothing * k, 0, 12); out.speck = clamp(op.speck * k * k, 0, 2000); }
+      return out;
+    });
+  }
+
   global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
     smudgeStep, rebuildOutline, smudgeStroke, makeClassifier, revertStep, plowStep, puffStep, toolStepper, toolStroke,
     separateShading, removeSpecks, cleanOutline, changedRegion, gaussBlur, maskWobble, measureOutline,
-    learnStyle, evenOutline, styleCleanup });
+    learnStyle, evenOutline, styleCleanup, opsInBox, mapBox, mapMountBox, mapOps });
 })(typeof window === 'object' ? window : globalThis);

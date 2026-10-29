@@ -21,6 +21,9 @@
   let pendingStrokes = []; // Bridge stroke being drawn (applied on release), in composed-frame source-pixel coordinates.
   let pendingKey = ''; // Pair the pending strokes belong to.
   let bridgePaint = null; // Active bridge brush drag.
+  let recipeDraft = null; // Box drawn on the preview for saving a recipe: {x0, y0, x1, y1} in composed-frame source pixels.
+  let recipeSel = -1; // Index (in this pair's steps) of the selected placed recipe box, or -1.
+  let recipeDrag = null; // Active box drag: { pointer, target: 'draft'|'op', mode: 'new'|'move'|'resize', handle, start, orig }.
   let bridgeHover = null; // Brush-size cursor over the preview.
   let plowAngle = 0; // Drag direction, which the plow blade cursor faces across.
   const neutral = { scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep' }; // No global transform fields.
@@ -256,6 +259,7 @@
       };
       cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
     }
+    syncRecipeControls();
     preview();
   }
   function pointFor(canvas, event) {
@@ -454,6 +458,7 @@
       for (const pt of pts.slice(1)) ctx.lineTo(...pt);
       if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], stroke.r * sx, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
     }
+    drawRecipeBoxes(ctx, sx, sy, frame);
     if (bridgeHover && byId('pair-bridge-on').checked && byId('pair-brush-mode').value === 'junction') {
       ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy); // Ghost of the piece, in source pixels.
       window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
@@ -471,6 +476,7 @@
   previewCanvas.addEventListener('pointerdown', event => {
     if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
     event.preventDefault();
+    if (byId('pair-brush-mode').value === 'recipe') { recipePointerDown(event); return; }
     if (byId('pair-brush-mode').value === 'junction') { // Position with a ghost; placed on release.
       bridgePaint = { pointer: event.pointerId, junction: true, stroke: { points: [] } };
       bridgeHover = logicalPoint(event);
@@ -491,6 +497,7 @@
     previewCanvas.setPointerCapture(event.pointerId); drawBridgeOverlay();
   });
   previewCanvas.addEventListener('pointermove', event => {
+    if (recipeDrag?.pointer === event.pointerId) { event.preventDefault(); recipePointerMove(event); return; }
     if (!byId('pair-bridge-on').checked || !bridgeView) return;
     const previousHover = bridgeHover;
     bridgeHover = logicalPoint(event);
@@ -510,6 +517,7 @@
     drawBridgeOverlay();
   });
   function endBridgePaint(event) {
+    if (recipeDrag?.pointer === event.pointerId) { recipePointerUp(event); return; }
     if (bridgePaint?.pointer !== event.pointerId) return;
     if (bridgePaint.junction) {
       const [x, y] = logicalPoint(event);
@@ -556,6 +564,184 @@
   previewCanvas.addEventListener('pointerup', endBridgePaint);
   previewCanvas.addEventListener('pointercancel', endBridgePaint);
   previewCanvas.addEventListener('pointerleave', () => { if (bridgeHover) { bridgeHover = null; drawBridgeOverlay(); } });
+  // ---- Recipe boxes: copy a manual process into a scaled box ------------------------------------------------------
+  // A recipe is a named list of bridge-brush steps made inside a box. A placed recipe box is one step on a pair,
+  // { recipe, box }, that the game expands by re-mapping the recipe's steps from its box into the placed box, so
+  // moving or resizing the box re-runs the whole process (live here, debounced so replays never pile up).
+  const recipeStatus = text => { byId('recipe-status').textContent = text; };
+  const recipeFill = () => window.ModularWeaponBridgeFill;
+  const placedBoxes = () => (chosenShaft().overrides[byId('head').value]?.bridges?.strokes || []).map((op, index) => ({ op, index })).filter(entry => entry.op.recipe);
+  const selectedOp = () => { const op = chosenShaft().overrides[byId('head').value]?.bridges?.strokes?.[recipeSel]; return op?.recipe ? op : null; };
+  function syncRecipeControls() {
+    const list = byId('recipe-list'), last = list.value, names = Object.keys(data.recipes || {});
+    list.replaceChildren(...names.map(name => { const o = document.createElement('option'); o.value = name; o.textContent = name + ' (' + data.recipes[name].ops.length + ' steps)'; return o; }));
+    if (names.includes(last)) list.value = last;
+    const placed = byId('recipe-placed');
+    placed.replaceChildren(...placedBoxes().map(({ op, index }) => { const o = document.createElement('option'); o.value = String(index);
+      o.textContent = op.recipe + ' — ' + Math.round(op.box.x1 - op.box.x0) + '×' + Math.round(op.box.y1 - op.box.y0); return o; }));
+    if (selectedOp()) placed.value = String(recipeSel); else if (placed.options.length && recipeSel >= 0) recipeSel = -1;
+    const op = selectedOp();
+    byId('recipe-uniform').checked = !!op?.uniform; byId('recipe-flip').checked = !!op?.flipX;
+  }
+  const boxHandles = box => { const mx = (box.x0 + box.x1) / 2, my = (box.y0 + box.y1) / 2;
+    return [[-1, -1, box.x0, box.y0], [0, -1, mx, box.y0], [1, -1, box.x1, box.y0], [-1, 0, box.x0, my], [1, 0, box.x1, my], [-1, 1, box.x0, box.y1], [0, 1, mx, box.y1], [1, 1, box.x1, box.y1]]; };
+  function drawRecipeBoxes(ctx, sx, sy, frame) {
+    if (byId('pair-brush-mode').value !== 'recipe' && !recipeDraft && !placedBoxes().length) return;
+    const showing = byId('pair-brush-mode').value === 'recipe', scale = contentRect(byId('preview')).scale || 1, hs = 5 / scale; // Handle half-size in bitmap px.
+    const rect = box => [(box.x0 - frame.left) * sx, (box.y0 - frame.top) * sy, (box.x1 - box.x0) * sx, (box.y1 - box.y0) * sy];
+    ctx.save(); ctx.lineWidth = 1.5 / scale; ctx.font = (11 / scale) + 'px system-ui'; ctx.textBaseline = 'top';
+    const boxes = placedBoxes().map(({ op, index }) => ({ box: op.box, label: op.recipe, selected: index === recipeSel, color: '#75e9ed' }));
+    if (recipeDraft) boxes.push({ box: recipeDraft, label: 'new box', selected: recipeSel < 0, color: '#ffce64' });
+    for (const entry of boxes) {
+      if (!showing && !entry.selected && entry.color !== '#ffce64') continue;
+      ctx.strokeStyle = entry.selected ? '#fff' : entry.color; ctx.fillStyle = entry.color; ctx.setLineDash(entry.selected ? [] : [6 / scale, 4 / scale]);
+      const [x, y, w, h] = rect(entry.box); ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
+      if (entry.selected && showing) { ctx.setLineDash([]); ctx.fillStyle = '#fff'; for (const [, , hx, hy] of boxHandles(entry.box)) ctx.fillRect((hx - frame.left) * sx - hs, (hy - frame.top) * sy - hs, 2 * hs, 2 * hs); }
+    }
+    ctx.restore();
+  }
+  function recipeHit(point) {
+    const frame = bridgeView.frame, canvas = byId('preview'), tol = 9 / ((contentRect(canvas).scale || 1) * (canvas.width / frame.width));
+    const candidates = [];
+    const op = selectedOp(); if (op) candidates.push({ target: 'op', index: recipeSel, box: op.box });
+    if (recipeDraft && recipeSel < 0) candidates.push({ target: 'draft', box: recipeDraft });
+    for (const c of candidates) for (const [hx, hy, x, y] of boxHandles(c.box)) if (Math.hypot(point[0] - x, point[1] - y) <= tol) return { ...c, mode: 'resize', handle: [hx, hy] };
+    const inside = box => point[0] >= box.x0 && point[0] <= box.x1 && point[1] >= box.y0 && point[1] <= box.y1;
+    for (const c of candidates) if (inside(c.box)) return { ...c, mode: 'move' };
+    const placed = placedBoxes().reverse().find(({ op: o }) => inside(o.box)); // A click inside another placed box selects it.
+    if (placed) return { target: 'op', index: placed.index, box: placed.op.box, mode: 'move' };
+    if (recipeDraft && inside(recipeDraft)) return { target: 'draft', box: recipeDraft, mode: 'move' };
+    return null;
+  }
+  function recipePointerDown(event) {
+    if (!bridgeView || recipeDrag) return;
+    const point = logicalPoint(event), hit = recipeHit(point);
+    if (hit) { recipeSel = hit.target === 'op' ? hit.index : -1; recipeDrag = { pointer: event.pointerId, target: hit.target, mode: hit.mode, handle: hit.handle, start: point, orig: { ...hit.box } }; }
+    else { recipeSel = -1; recipeDraft = { x0: point[0], y0: point[1], x1: point[0] + 1, y1: point[1] + 1 }; recipeDrag = { pointer: event.pointerId, target: 'draft', mode: 'new', start: point, orig: { ...recipeDraft } }; }
+    previewCanvas.setPointerCapture(event.pointerId); syncRecipeControls(); drawBridgeOverlay();
+  }
+  function recipePointerMove(event) {
+    const point = logicalPoint(event), d = recipeDrag, dx = point[0] - d.start[0], dy = point[1] - d.start[1], MIN = 8;
+    let box;
+    if (d.mode === 'new') box = { x0: Math.min(d.start[0], point[0]), y0: Math.min(d.start[1], point[1]), x1: Math.max(d.start[0], point[0]), y1: Math.max(d.start[1], point[1]) };
+    else if (d.mode === 'move') box = { x0: d.orig.x0 + dx, x1: d.orig.x1 + dx, y0: d.orig.y0 + dy, y1: d.orig.y1 + dy };
+    else {
+      box = { ...d.orig };
+      if (d.handle[0] < 0) box.x0 = Math.min(d.orig.x0 + dx, d.orig.x1 - MIN); else if (d.handle[0] > 0) box.x1 = Math.max(d.orig.x1 + dx, d.orig.x0 + MIN);
+      if (d.handle[1] < 0) box.y0 = Math.min(d.orig.y0 + dy, d.orig.y1 - MIN); else if (d.handle[1] > 0) box.y1 = Math.max(d.orig.y1 + dy, d.orig.y0 + MIN);
+    }
+    if (d.target === 'draft') { recipeDraft = box; drawBridgeOverlay(); return; }
+    const op = selectedOp(); if (!op) return;
+    op.box = box; drawBridgeOverlay(); recipeLiveRedo(); // The recipe re-runs in the new box.
+  }
+  function recipePointerUp(event) {
+    const d = recipeDrag; recipeDrag = null;
+    if (event.type === 'pointercancel') { if (d.target === 'draft' && d.mode === 'new') recipeDraft = null; drawBridgeOverlay(); return; }
+    if (d.target === 'draft') {
+      if (recipeDraft && (recipeDraft.x1 - recipeDraft.x0 < 8 || recipeDraft.y1 - recipeDraft.y0 < 8)) recipeDraft = null; // A click, not a box.
+      else recipeStatus('Box drawn (' + Math.round(recipeDraft.x1 - recipeDraft.x0) + '×' + Math.round(recipeDraft.y1 - recipeDraft.y0) + '). Name it and Save recipe, or drag its edges to adjust.');
+      drawBridgeOverlay(); return;
+    }
+    clearTimeout(redoTimer); save(); syncRecipeControls(); // Commit the box: persists, records one undo step, re-renders.
+    recipeStatus('Recipe re-run in the resized box.');
+  }
+  let redoTimer = null, redoBusy = false, redoAgain = false;
+  function recipeLiveRedo() { // Debounced: replays only when the drag pauses, and never two at once.
+    clearTimeout(redoTimer);
+    redoTimer = setTimeout(async () => {
+      if (redoBusy) { redoAgain = true; return; }
+      redoBusy = true;
+      try { data = JSON.parse(JSON.stringify(api.replace(data, false))); await preview(); }
+      catch (error) { recipeStatus('Re-run failed: ' + error.message); }
+      finally { redoBusy = false; if (redoAgain) { redoAgain = false; recipeLiveRedo(); } }
+    }, 140);
+  }
+  // The haft's mounts that a head attaches to, as frames { x, y, ax, ay, len } (midpoint, unit direction, length),
+  // ordered along the haft (rank 0 = the topmost). A recipe's box is anchored to one of these.
+  function mountFrames(shaftKey, headKey) {
+    const list = api.matchingMounts(data.shafts[shaftKey], data.heads[headKey]).map(mount => {
+      const dx = mount.end.x - mount.start.x, dy = mount.end.y - mount.start.y, len = Math.hypot(dx, dy) || 1;
+      return { x: (mount.start.x + mount.end.x) / 2, y: (mount.start.y + mount.end.y) / 2, ax: dx / len, ay: dy / len, len };
+    }).sort((u, v) => u.y - v.y);
+    list.forEach((frame, i) => { frame.rank = i; frame.count = list.length; });
+    return list;
+  }
+  const slug = text => String(text || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  // The box a recipe gets on a pair: its saved box carried to the same offset from the matching haft mount (ends to
+  // ends: first to first, last to last), at the same size; with no mount to go by, its own size centred on the preview.
+  function defaultRecipeBox(recipe, mounts) {
+    const a = recipe.anchor;
+    if (a && mounts.length) {
+      const to = mounts[Math.min(mounts.length - 1, a.count > 1 ? Math.round(a.rank * (mounts.length - 1) / (a.count - 1)) : 0)];
+      return recipeFill().mapMountBox(recipe.box, a.mount, to);
+    }
+    const w = recipe.box.x1 - recipe.box.x0, h = recipe.box.y1 - recipe.box.y0, f = bridgeView?.frame || { left: 0, top: 0, width: 450, height: 1204 };
+    const cx = f.left + f.width / 2, cy = f.top + f.height / 2; return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 };
+  }
+  function addPlacedOp(shaftKey, headKey, op) {
+    const pair = data.shafts[shaftKey].overrides[headKey] ||= {};
+    if (!pair.bridges?.strokes) pair.bridges = { ...bridgeSettings(), strokes: [] };
+    pair.bridges.strokes.push(op); return pair.bridges.strokes.length - 1;
+  }
+  const newPlacedOp = (name, box) => ({ recipe: name, box, ...(byId('recipe-uniform').checked ? { uniform: true } : {}), ...(byId('recipe-flip').checked ? { flipX: true } : {}) });
+  function saveRecipe() {
+    if (!recipeDraft) { recipeStatus('Draw a box on the preview around the work first (drag in an empty spot).'); return; }
+    const name = slug(byId('recipe-name').value) || 'recipe-' + (Object.keys(data.recipes || {}).length + 1);
+    const pair = pairOverride(), ops = recipeFill().opsInBox(api.expandOps(pair.bridges?.strokes || []), recipeDraft);
+    if (!ops.length) { recipeStatus('No bridge-brush work inside that box on this pair. Draw the box around the work you did.'); return; }
+    const mounts = mountFrames(byId('shaft').value, byId('head').value), cx = (recipeDraft.x0 + recipeDraft.x1) / 2, cy = (recipeDraft.y0 + recipeDraft.y1) / 2;
+    const near = mounts.slice().sort((u, v) => Math.hypot(u.x - cx, u.y - cy) - Math.hypot(v.x - cx, v.y - cy))[0];
+    (data.recipes ||= {})[name] = { box: { ...recipeDraft }, ops: JSON.parse(JSON.stringify(ops)),
+      ...(near ? { anchor: { rank: near.rank, count: near.count, mount: { x: near.x, y: near.y, ax: near.ax, ay: near.ay, len: near.len } } } : {}) };
+    recipeDraft = null; save(); syncRecipeControls(); byId('recipe-list').value = name;
+    recipeStatus('Saved recipe "' + name + '": ' + ops.length + ' steps' + (near ? ', anchored to haft mount ' + (near.rank + 1) + ' of ' + near.count : '') + '.');
+  }
+  function placeRecipeHere() {
+    const name = byId('recipe-list').value, recipe = data.recipes?.[name];
+    if (!recipe) { recipeStatus('Save a recipe first (draw a box around work, name it, Save).'); return; }
+    if (!bridgeView) { recipeStatus('Choose a compatible head and haft first.'); return; }
+    const mounts = mountFrames(byId('shaft').value, byId('head').value), index = addPlacedOp(byId('shaft').value, byId('head').value, newPlacedOp(name, defaultRecipeBox(recipe, mounts)));
+    recipeSel = index; save(); syncRecipeControls(); recipeStatus('Placed "' + name + '". Drag its edges and corners: the recipe re-runs in the box each time.');
+  }
+  function placeOnAllEligible() {
+    const name = byId('recipe-list').value, recipe = data.recipes?.[name];
+    if (!recipe) { recipeStatus('Save a recipe first.'); return; }
+    const skip = byId('recipe-skip-existing').checked; let placed = 0, skipped = 0, noEnd = 0; const done = [];
+    recipeStatus('Placing "' + name + '"…');
+    for (const [shaftKey, shaft] of Object.entries(data.shafts)) {
+      if (!shaft.mounts.some(m => m.type === 'eye')) continue; // Only hafts authored for eye-type heads.
+      for (const [headKey, head] of Object.entries(data.heads)) {
+        if (head.mount.type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue; // Tang heads this haft allows.
+        const pair = shaft.overrides[headKey];
+        // Skipped: this recipe is already there, or (when asked) the pair has hand-made bridge work. Other recipes' boxes don't count.
+        if (pair?.bridges?.strokes?.some(op => op.recipe === name) || (skip && pair?.bridges?.strokes?.some(op => !op.recipe))) { skipped++; continue; }
+        const mounts = mountFrames(shaftKey, headKey);
+        if (!mounts.length) { noEnd++; continue; }
+        addPlacedOp(shaftKey, headKey, newPlacedOp(name, defaultRecipeBox(recipe, mounts))); placed++; done.push(shaftKey + ' + ' + headKey);
+      }
+    }
+    save(); syncRecipeControls();
+    recipeStatus('Placed "' + name + '" on ' + placed + ' pair(s)' + (skipped ? ', skipped ' + skipped + ' that already have it or have hand-made bridge work' : '') + (noEnd ? ', ' + noEnd + ' had no mount to attach to' : '') +
+      '. Open any pair to rescale its box. ' + (done.length ? 'First few: ' + done.slice(0, 4).join('; ') + '.' : ''));
+  }
+  function deleteRecipe() {
+    const name = byId('recipe-list').value; if (!data.recipes?.[name]) return;
+    delete data.recipes[name];
+    for (const shaft of Object.values(data.shafts)) for (const pair of Object.values(shaft.overrides || {})) if (pair.bridges?.strokes) pair.bridges.strokes = pair.bridges.strokes.filter(op => op.recipe !== name);
+    recipeSel = -1; save(); syncRecipeControls(); recipeStatus('Deleted recipe "' + name + '" and every box placed from it.');
+  }
+  byId('recipe-save').onclick = saveRecipe;
+  byId('recipe-place').onclick = placeRecipeHere;
+  byId('recipe-place-all').onclick = placeOnAllEligible;
+  byId('recipe-delete').onclick = deleteRecipe;
+  byId('recipe-remove').onclick = () => {
+    const pair = pairOverride(); if (!selectedOp()) { recipeStatus('Select a placed box first (click its edge on the preview or pick it in the list).'); return; }
+    pair.bridges.strokes.splice(recipeSel, 1); if (!pair.bridges.strokes.length) pair.bridges = null; recipeSel = -1; save(); syncRecipeControls();
+  };
+  byId('recipe-placed').onchange = () => { recipeSel = Number(byId('recipe-placed').value); syncRecipeControls(); drawBridgeOverlay(); };
+  for (const [id, key] of [['recipe-uniform', 'uniform'], ['recipe-flip', 'flipX']]) byId(id).onchange = () => {
+    const op = selectedOp(); if (!op) return; if (byId(id).checked) op[key] = true; else delete op[key]; save(); syncRecipeControls();
+  };
   const junctionPicker = window.ModularJunctionPicker.bind('pair', () => drawBridgeOverlay());
   byId('pair-set-revert-point').onclick = () => {
     if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
@@ -583,6 +769,7 @@
   };
   byId('pair-brush-mode').onchange = () => {
     byId('pair-junction-controls').hidden = byId('pair-brush-mode').value !== 'junction';
+    byId('recipe-controls').hidden = byId('pair-brush-mode').value !== 'recipe'; syncRecipeControls();
     drawBridgeOverlay();
   };
   byId('pair-bridge-on').onchange = () => {

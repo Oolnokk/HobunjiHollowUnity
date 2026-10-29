@@ -305,6 +305,58 @@ assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the s
   assert(sr.style.fromUntouched && sr.style.tones.length === 2, 'Style is read from the untouched art.');
   for (let y = 0; y < PH; y++) for (let x = 0; x < 20; x++) assert.equal(get2(flat, x, y), get2(speck, x, y), 'Untouched art is exactly as it was.');
 }
+// Recipes: steps are selected by box, re-mapped into another box (position, sizes, mirror), and survive the config.
+{
+  const T = window.ModularWeaponBridgeFill, box = (x0, y0, x1, y1) => ({ x0, y0, x1, y1 });
+  const ops = [
+    { junction: 'band', x: 50, y: 50, rotation: 10, scale: 1 },
+    { r: 10, smudge: true, points: [[40, 40], [60, 60]] },
+    { r: 6, tool: 'clean', smoothing: 2, speck: 40, points: [[55, 45]] },
+    { r: 8, smudge: true, points: [[300, 300], [310, 300]] }, // Outside the box.
+    { shading: true, tolerance: 0.2, pool: 5 } // Whole-weapon: belongs to no box.
+  ];
+  const inBox = T.opsInBox(ops, box(0, 0, 100, 100));
+  assert.equal(inBox.length, 3, 'Only steps inside the box are selected.');
+  const half = T.mapOps(inBox, box(0, 0, 100, 100), box(0, 0, 50, 50));
+  assert.equal(half[0].x, 25); assert.equal(half[0].y, 25); assert.equal(half[0].scale, 0.5, 'Junction pieces scale with the box.');
+  assert.equal(half[1].r, 5, 'Brush radii scale with the box.'); assert.equal(JSON.stringify(half[1].points), '[[20,20],[30,30]]');
+  assert.equal(half[2].smoothing, 1); assert.equal(half[2].speck, 10, 'Clean-up sizes scale (speck by area).');
+  assert.equal(inBox[0].x, 50, 'The saved recipe is not changed by mapping.');
+  const wide = T.mapOps(inBox, box(0, 0, 100, 100), box(100, 0, 300, 100));
+  assert.equal(JSON.stringify(wide[1].points), '[[180,40],[220,60]]', 'Each axis scales on its own by default.');
+  assert.equal(Math.round(wide[1].r * 100) / 100, Math.round(10 * Math.sqrt(2) * 100) / 100);
+  const uniform = T.mapOps(inBox, box(0, 0, 100, 100), box(100, 0, 300, 100), { uniform: true });
+  assert(Math.abs(uniform[1].points[1][0] - uniform[1].points[0][0]) < 20 * 1.5 && Math.abs(uniform[1].points[1][0] - uniform[1].points[0][0]) > 20 * 1.3, 'Uniform scale keeps proportions.');
+  const mirrored = T.mapOps(inBox, box(0, 0, 100, 100), box(0, 0, 100, 100), { flipX: true });
+  assert.equal(JSON.stringify(mirrored[1].points), '[[60,40],[40,60]]'); assert.equal(mirrored[0].rotation, -10);
+  assert.equal(JSON.stringify(T.mapBox(box(25, 25, 75, 75), box(0, 0, 100, 100), box(0, 0, 200, 50))), JSON.stringify({ x0: 50, x1: 150, y0: 12.5, y1: 37.5 }));
+  // Carrying a box from one mount to another: same offset and size; a quarter turn rotates the offset and swaps w/h.
+  const sameDir = T.mapMountBox(box(100, 40, 160, 80), { x: 120, y: 100, ax: 1, ay: 0, len: 40 }, { x: 320, y: 500, ax: -1, ay: 0, len: 40 });
+  assert.equal(JSON.stringify(sameDir), JSON.stringify({ x0: 300, x1: 360, y0: 440, y1: 480 }), 'Mount lines have no direction: a flipped line changes nothing.');
+  const scaled = T.mapMountBox(box(100, 40, 160, 80), { x: 120, y: 100, ax: 1, ay: 0, len: 40 }, { x: 320, y: 500, ax: 1, ay: 0, len: 80 });
+  assert.equal(JSON.stringify(scaled), JSON.stringify({ x0: 280, x1: 400, y0: 380, y1: 460 }), 'A longer mount line scales the box and its offset.');
+  const turned = T.mapMountBox(box(100, 40, 160, 80), { x: 120, y: 100, ax: 1, ay: 0, len: 40 }, { x: 0, y: 0, ax: 0, ay: 1, len: 40 });
+  assert.equal(Math.round(turned.x1 - turned.x0), 40); assert.equal(Math.round(turned.y1 - turned.y0), 60, 'A quarter turn swaps width and height.');
+  // Config: recipes and recipe boxes are validated, expanded in place, and never nest.
+  const win = { console }, ctx2 = vm.createContext({ window: win, JSON, Object, Array, Number, Math, String, Map, WeakMap, Promise, Error });
+  for (const path of ['docs/config/modular-weapons.js', 'docs/js/modular-weapon-bridge-fill.js', 'docs/js/modular-weapons.js']) vm.runInContext(fs.readFileSync(path, 'utf8'), ctx2, { filename: path });
+  const api = win.ModularWeapons, cfg = JSON.parse(JSON.stringify(api.getConfig()));
+  const shaftKey = Object.keys(cfg.shafts)[0], headKey = Object.keys(cfg.heads)[0];
+  cfg.recipes = { 'top end': { box: box(0, 0, 100, 100), ops: [] }, collar: { box: box(0, 0, 100, 100), label: 'Collar', ops: [
+    { junction: 'band', x: 50, y: 50, rotation: 0, scale: 1 }, { recipe: 'collar', box: box(0, 0, 9, 9) }, { r: 8, smudge: true, points: [[40, 40], [60, 60]] } ],
+    anchor: { rank: 1, count: 2, mount: { x: 50, y: 50, ax: 1, ay: 0, len: 40 } } }, '../x': { box: box(0, 0, 9, 9), ops: [{ r: 3, points: [[1, 1]] }] } };
+  cfg.shafts[shaftKey].overrides[headKey] = { bridges: { strokes: [{ recipe: 'collar', box: box(0, 0, 200, 50), uniform: true }, { recipe: 'collar', box: box(0, 0, 2, 2) }, { recipe: 'bad name!', box: box(0, 0, 50, 50) }] } };
+  const next = api.replace(cfg);
+  assert.equal(Object.keys(next.recipes).join(), 'collar', 'Invalid recipe names and empty recipes are dropped.');
+  assert.equal(next.recipes.collar.ops.length, 2, 'A recipe cannot contain recipe steps.');
+  assert.equal(next.recipes.collar.anchor.rank, 1); assert.equal(next.recipes.collar.anchor.mount.len, 40, 'The mount anchor is kept.');
+  const placed = next.shafts[shaftKey].overrides[headKey].bridges.strokes;
+  assert.equal(placed.length, 1, 'Tiny or badly named recipe boxes are dropped.'); assert.equal(placed[0].uniform, true);
+  const expanded = api.expandOps(placed);
+  assert.equal(expanded.length, 2, 'The recipe box expands into its steps.');
+  assert(Math.abs(expanded[0].x - 100) < 1e-9 && expanded[0].junction === 'band', 'The collar lands in the middle of the box.');
+  const kept = api.replace(JSON.parse(JSON.stringify(next))); assert.equal(Object.keys(kept.recipes).join(), 'collar', 'Recipes survive a round trip.');
+}
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.
