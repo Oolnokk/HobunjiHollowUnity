@@ -4131,8 +4131,36 @@
           widthTiles: Math.abs(col - rugFirstCorner.col) + 1, heightTiles: Math.abs(row - rugFirstCorner.row) + 1,
         }; // Inclusive opposite corners match the Interior Editor's broad tile-dimension resizing.
       }
+      function showFarmhousePartitionGhost(col, row) {
+        const planner = window.FarmhouseRoomPlanner; // The same Action 1 target is previewed for every input device.
+        const valid = planner.canTarget(col, row); // Invalid diagonal, occupied or off-room targets display red.
+        if (!furniturePlacementGhost || furniturePlacementGhost.kind !== 'farmhouse-partition') {
+          clearFurniturePlacementGhost();
+          const material = new THREE.MeshBasicMaterial({ color: 0xefffff, transparent: true, opacity: 0.5, depthWrite: false }); // Disposable preview, never saved as furniture.
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 1), material); // Stretchable tile-space wall strip, also used as a door-slot marker.
+          mesh.raycast = () => {}; // Preview must not steal touch/controller reticle hits from the ground.
+          mesh.renderOrder = 1000;
+          const group = new THREE.Group(); // Standard furniture ghost cleanup owns the preview's mesh and material.
+          group.add(mesh);
+          interiorScene.add(group);
+          furniturePlacementGhost = { kind: 'farmhouse-partition', group, mesh, area: 'interior' };
+        }
+        const first = planner.debug()?.firstCorner; // A two-corner wall previews the inclusive rectangle between both ground targets.
+        const aligned = first && (first.c === col || first.r === row);
+        const c0 = aligned ? Math.min(first.c, col) : col;
+        const r0 = aligned ? Math.min(first.r, row) : row;
+        const w = aligned ? Math.abs(first.c - col) + 1 : 1;
+        const h = aligned ? Math.abs(first.r - row) + 1 : 1;
+        furniturePlacementGhost.mesh.scale.set(w, 1, h);
+        furniturePlacementGhost.group.position.set(c0 + w * 0.5, 0.09, r0 + h * 0.5);
+        furniturePlacementGhost.mesh.material.color.set(valid ? 0xd9f9ff : 0xff6666);
+        furniturePlacementGhost.col = col;
+        furniturePlacementGhost.row = row;
+        furniturePlacementGhost.valid = valid; // Exposed through the existing mobile furniture-placement debug snapshot.
+      }
+
       function showFurniturePlacementGhost(col, row) {
-        if (window.FarmhouseRoomPlanner?.isArmed?.()) { clearFurniturePlacementGhost(); return; }
+        if (window.FarmhouseRoomPlanner?.isArmed?.()) { showFarmhousePartitionGhost(col, row); return; }
         const spec = furniturePlacementSpec();
         if (!spec) { clearFurniturePlacementGhost(); return; }
         const rect = spec.key === 'rug' && !spec.ignoreId ? rugRectangleAt(col, row) : null;
