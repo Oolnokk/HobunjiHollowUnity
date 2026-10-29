@@ -102,6 +102,10 @@
         startWorked: false,
         hours: Array.isArray(raw.hours) && raw.hours.length === 2 ? [num(raw.hours[0], DEFAULT_HOURS[0]), num(raw.hours[1], 17)] : [8, 17],
         tiles: raw.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })),
+        seedBlocks: kind === 'till' && Array.isArray(raw.seedBlocks) ? raw.seedBlocks.map(b => ({
+          id: b.id, seeds: Array.isArray(b.seeds) ? b.seeds.filter(Boolean) : [],
+          tiles: Array.isArray(b.tiles) ? b.tiles.map(t => ({ c: Math.floor(num(t[0], 0)), r: Math.floor(num(t[1], 0)) })) : [],
+        })) : [], // A tile's seed priority overrides only that tile, not the rest of its field.
       };
       plot.managed = workers.length > 0;
       plotsById.set(plot.id, plot);
@@ -150,6 +154,14 @@
   function cropDef(crop) { return deps?.cropData?.[crop] || null; }
 
   // ── Job picking ───────────────────────────────────────────────────────
+  function seedForTile(plot, c, r, storage = deps?.farmSeedStock?.()) {
+    const block = plot.seedBlocks?.find(b => b.tiles.some(t => t.c === c && t.r === r));
+    const options = block ? block.seeds : (plot.crop ? [plot.crop] : []);
+    return options.find(crop => {
+      const key = deps?.cropData?.[crop]?.seedKey;
+      return storage && key ? (Number(storage[key]) || 0) > 0 : !!deps?.seedAvailable?.(crop);
+    }) || null; // Ordered fallback uses Farm Storage, never the worker's bag.
+  }
   function jobsFor(plot, npcId) {
     const jobs = []; // { c, r, job }
     if (plot.grid) {
@@ -159,10 +171,12 @@
         return jobs;
       }
       const tiller = activeWorker(plot, 'tillers') === npcId;
-      const seeder = plot.crop && activeWorker(plot, 'seeders') === npcId && deps?.seedAvailable?.(plot.crop);
+      const seeder = activeWorker(plot, 'seeders') === npcId;
+      const seedStock = seeder ? deps?.farmSeedStock?.() : null; // One storage read per job scan, not per tile/crop.
       for (const t of plot.tiles) {
         const i = tileOf(plot, t.c, t.r);
-        if (seeder && i.tilled && !i.crop) jobs.push({ c: t.c, r: t.r, job: 'seed' });
+        const crop = seeder && i.tilled && !i.crop ? seedForTile(plot, t.c, t.r, seedStock) : null;
+        if (crop) jobs.push({ c: t.c, r: t.r, job: 'seed', crop });
         else if (tiller && i.canTill) jobs.push({ c: t.c, r: t.r, job: 'till' });
       }
       return jobs;
@@ -221,14 +235,14 @@
     if (claim) {
       const plot = plotsById.get(claim.plotId);
       // Drop claims whose plot/hours/worker changed (e.g. the NPC just started following you).
-      const stale = !plot || !plot.managed || !!plot.family !== familyOnly || !inHours(plot) || !jobsFor(plot, npcId).some(j => j.c === claim.c && j.r === claim.r && j.job === claim.job);
+      const stale = !plot || !plot.managed || !!plot.family !== familyOnly || !inHours(plot) || !jobsFor(plot, npcId).some(j => j.c === claim.c && j.r === claim.r && j.job === claim.job && j.crop === claim.crop);
       if (!stale) return claim;
       releaseClaim(npcId);
     }
     const picked = pickJob(npcId, walker, { familyOnly });
     if (!picked) return null;
     const spot = standSpot(picked.plot, picked, walker);
-    claim = { plotId: picked.plot.id, area: picked.plot.area, c: picked.c, r: picked.r, job: picked.job, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 };
+    claim = { plotId: picked.plot.id, area: picked.plot.area, c: picked.c, r: picked.r, job: picked.job, crop: picked.crop, standC: spot.c, standR: spot.r, workedS: 0, ageS: 0 };
     claims.set(npcId, claim);
     claimedKeys.add(`${claim.plotId}:${keyOf(claim.c, claim.r)}`);
     return claim;
@@ -267,7 +281,18 @@
   // ── Doing the work ────────────────────────────────────────────────────
   function applyJob(plot, claim) {
     if (plot.grid) {
-      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, plot.crop)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() }; }
+      // A claim may have been issued before a layout restore or edit; never let a stale
+      // dig claim overwrite a tile now assigned to a planting field.
+      const inPlot = plot.tiles.some(tile => tile.c === claim.c && tile.r === claim.r);
+      const allowedJob = plot.kind === 'dig' ? claim.job === 'dig' : claim.job === 'till' || claim.job === 'seed';
+      const authoritative = window.FarmPlotEditor?.plots?.().find(owner => owner.tiles?.some(tile => tile[0] === claim.c && tile[1] === claim.r));
+      const crop = claim.job === 'seed' ? seedForTile(plot, claim.c, claim.r) : null;
+      if (!inPlot || !allowedJob || (claim.job === 'seed' && !crop) || (authoritative && (authoritative.id !== plot.id || authoritative.kind !== plot.kind))) {
+        debug.rejectedJobs = (debug.rejectedJobs || 0) + 1;
+        debug.lastRejected = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() };
+        return;
+      }
+      if (deps?.applyFarmJob?.(claim.job, claim.c, claim.r, crop || plot.crop, plot.id)) { debug.jobsDone += 1; debug.lastJob = { plot: plot.id, job: claim.job, crop: crop || null, c: claim.c, r: claim.r, at: Date.now() }; }
       return;
     }
     const s = stateOf(plot, claim.c, claim.r, true);
@@ -463,7 +488,7 @@
       drawn: Object.fromEntries([...visuals].map(([areaId, v]) => [areaId, { tiles: v.tiles.size, meshes: v.group.children.length, attached: !!v.group.parent }])),
       debug: { ...debug },
     }),
-    _test: { states: () => states, applyJob, jobsFor, pickJob, onNewDay, tick, rainShower },
+    _test: { states: () => states, applyJob, jobsFor, pickJob, seedForTile, onNewDay, tick, rainShower },
   };
   window.NpcFarmPlots = api;
 })();

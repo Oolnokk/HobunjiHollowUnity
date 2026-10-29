@@ -76,6 +76,41 @@
     try { return readWorld(worldId).world?.storage ?? {}; } catch { return {}; }
   }
 
+  function loadPendingSupplyOrders(worldId) {
+    if (!worldId) return [];
+    try {
+      const orders = readWorld(worldId).world?.pendingSupplyOrders;
+      return Array.isArray(orders) ? orders.map(order => ({ ...order })) : [];
+    } catch { return []; }
+  }
+
+  function completeSeedSupplyOrder(worldId, order, seedGives) {
+    // Storage credit and removal of the paid order must commit in the SAME world
+    // metadata write. A crash/reload between two independent saves would duplicate seeds.
+    if (!worldId || !order || !seedGives || typeof seedGives !== 'object') return false;
+    try {
+      const { meta, world } = readWorld(worldId);
+      if (!world || !Array.isArray(world.pendingSupplyOrders)) return false;
+      const idx = world.pendingSupplyOrders.findIndex(saved => order.id
+        ? saved.id === order.id
+        : !saved.id && saved.key === order.key && saved.qty === order.qty && saved.arrivalDay === order.arrivalDay);
+      if (idx < 0) return false; // Never credit an unknown/already completed delivery.
+      const qty = Number(order.qty);
+      if (!Number.isInteger(qty) || qty < 1) return false;
+      const storage = { ...(world.storage || {}) }; // Copy-on-write: do not mutate a live inventory until persistence succeeds.
+      for (const [key, count] of Object.entries(seedGives)) {
+        if (!/^[A-Za-z0-9_]+$/.test(key) || !Number.isInteger(count) || count < 1) return false;
+        const existing = Number(storage[key]) || 0;
+        if (!Number.isSafeInteger(existing) || existing < 0 || !Number.isSafeInteger(existing + count * qty)) return false;
+        storage[key] = existing + count * qty;
+      }
+      world.storage = storage;
+      world.pendingSupplyOrders.splice(idx, 1);
+      localStorage.setItem(META_KEY, JSON.stringify(meta));
+      return true;
+    } catch { return false; }
+  }
+
   window.WorldMetaStore = Object.freeze({
     loadLivestock,
     saveLivestock: (worldId, list) => writeField(worldId, 'livestock', list),
@@ -105,5 +140,7 @@
     },
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
+    loadPendingSupplyOrders,
+    completeSeedSupplyOrder,
   });
 })();
