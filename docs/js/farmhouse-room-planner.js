@@ -69,7 +69,7 @@
     const run = points(a, b);
     if (run.length < 3 || run.some(p => !latest.originalFloor.has(key(p.c, p.r)) || latest.exitSet.has(key(p.c, p.r)))) return false;
     const occupied = new Set(latest.segments.flatMap(s => s.strip.map(p => key(p.c, p.r))));
-    return run.every(p => !occupied.has(key(p.c, p.r)));
+    return run.every(p => !occupied.has(key(p.c, p.r)) && deps.canBlockCell?.(p.c, p.r) !== false);
   }
   function canMoveDoor(id, col, row) {
     if (!deps?.canEdit?.() || !latest) return false;
@@ -84,7 +84,8 @@
     if (!mode) return false;
     if (mode.type === 'door') return canMoveDoor(mode.id, col, row);
     const p = cell(col, row);
-    return firstCorner ? canWall(firstCorner, p) : !!latest?.originalFloor.has(key(col, row)) && !latest?.exitSet.has(key(col, row));
+    return firstCorner ? canWall(firstCorner, p) : !!latest?.originalFloor.has(key(col, row))
+      && !latest?.exitSet.has(key(col, row)) && deps.canBlockCell?.(col, row) !== false;
   }
   function confirm(col, row) {
     if (!mode || !canTarget(col, row)) return { ok: false, message: 'Choose a clear floor tile on the selected wall.' };
