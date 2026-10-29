@@ -1078,29 +1078,34 @@
   // auto-derived entrances, but reflects where the player actually tapped
   // for a manually placed one (see placeFeature).
   function _entranceNubCells(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = (f.edgeSlot === 0 ? 0 : 1);
     // Exactly one floorless exit marker per entrance; the door is rendered
     // at the floor boundary using InteriorDoorTiles, like an authored church.
-    if (f.side === 'north') return [{ c: gx * 2 + slot, r: gy * 2 - 1 }];
-    if (f.side === 'south') return [{ c: gx * 2 + slot, r: (gy + 1) * 2 }];
-    if (f.side === 'west') return [{ c: gx * 2 - 1, r: gy * 2 + slot }];
-    return [{ c: (gx + 1) * 2, r: gy * 2 + slot }];
+    if (f.side === 'north') return [{ c: gx + slot, r: gy - 1 }];
+    if (f.side === 'south') return [{ c: gx + slot, r: gy + 2 }];
+    if (f.side === 'west') return [{ c: gx - 1, r: gy + slot }];
+    return [{ c: gx + 2, r: gy + slot }];
   }
   // One interior cell inward from the nub's center — where the player
   // spawns when entering through this feature's door.
   function _entranceEnterCell(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') return { c: gx * 2 + slot, r: gy * 2 };
-    if (f.side === 'south') return { c: gx * 2 + slot, r: gy * 2 + 1 };
-    if (f.side === 'west')  return { c: gx * 2, r: gy * 2 + slot };
-    return { c: gx * 2 + 1, r: gy * 2 + slot };
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = (f.edgeSlot === 0 ? 0 : 1);
+    if (f.side === 'north') return { c: gx + slot, r: gy };
+    if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
+    if (f.side === 'west')  return { c: gx, r: gy + slot };
+    return { c: gx + 1, r: gy + slot };
   }
   const HEARTH_YAW = { north: 0, east: -Math.PI / 2, south: Math.PI, west: Math.PI / 2 };
   // World-space (interior-grid-unit) center + facing for a chimney's
   // derived hearth, glued to the same wall the chimney backs onto — exact
   // port of the reference demo's derivedHearthGroup positioning.
   function _chimneyHearthPlacement(entry, f) {
-    const gx = (entry.col + f.lx) * 2, gy = (entry.row + f.ly) * 2;
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Hearth follows its room without modifying its exterior chimney.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
     let cx = gx + 1, cz = gy + 0.5;
     if (f.side === 'south') { cx = gx + 1; cz = gy + 1.5; }
     else if (f.side === 'west') { cx = gx + 0.5; cz = gy + 1; }
@@ -1117,9 +1122,12 @@
   // entrance feature (a piece can have more than one), for enterInterior(pieceId).
   function computeInteriorLayout() {
     const floorSet = new Set(), exitSet = new Set(), doors = [], hearths = [];
+    window.FarmhouseRoomPlanner?.layoutBuiltRooms?.(deps.getHousePieces()); // Resolve all indoor room origins before supplying floor/door positions.
     for (const entry of deps.getHousePieces()) {
       if (entry.stage !== 'built') continue;
-      const bx = entry.col * 2, by = entry.row * 2, w = entry.w * 2, h = entry.h * 2;
+      const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Preserve the complete doubled footprint for each individual section.
+      const bx = room?.col ?? entry.col * 2, by = room?.row ?? entry.row * 2;
+      const w = room?.w ?? entry.w * 2, h = room?.h ?? entry.h * 2;
       for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) floorSet.add((bx + c) + ',' + (by + r));
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
