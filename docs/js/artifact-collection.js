@@ -28,7 +28,7 @@
   const UNLOCKS = Object.freeze([ // Collection milestones used by both dialogue and service guards.
     { id: 'unbind', count: 1, label: 'Weapon unbinding', text: 'Our first artifact! This gives me a reference for the old Harlyao binding rites. Bring me a bound weapon and I can release its dead owner’s claim for a fee. The weapon keeps its enchantments, and studying it teaches me how they work.' },
     { id: 'remove', count: 2, label: 'Enchantment removal', text: 'Two distinct pieces, and a useful discovery: these bindings can be unwoven separately. I can now remove a Base enchantment or a Flourish from a weapon for a small fee. Removing one leaves the other enchantments intact.' },
-    { id: 'base', count: 4, label: 'Base enchanting', text: 'Four artifacts! The recurring inscriptions finally make sense. I can now apply the Base enchantments I have learned from unbinding relics to your weapons. A weapon holds up to two different Base enchantments; their effects apply to qualifying hits.' },
+    { id: 'base', count: 4, label: 'Base enchanting', text: 'Four artifacts! The recurring inscriptions finally make sense. There is a private and rather serious matter we must discuss before I can offer you the ability to enchant new weapons.' },
     { id: 'flourish', count: 6, label: 'Flourish enchanting', text: 'Six artifacts reveal something more subtle: a binding can answer a particular combat action. I can now apply learned Flourishes to your weapons’ action slots. Each slot holds one Flourish, and I must have studied that enchantment in that particular slot on a relic first.' },
   ]);
   let deps = null; // Injected inventory/save/UI dependencies, never used per frame.
@@ -59,9 +59,11 @@
       if (!deps.inventoryItems.some(item => item.key === key)) deps.inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 999 });
     }
     syncWorld();
-    window.DialogueContent?.registerTreeProvider?.('garanki_gabu', unlockDialogue);
+    window.DelversGuild?.bindInventoryDeps?.(injected); // Reuses these authoritative inventory and save adapters for the Stone and key-stones.
+    window.DialogueContent?.registerTreeProvider?.('garanki_gabu', () => window.DelversGuild?.dialogueTree?.() || unlockDialogue());
     window.DialogueContent?.registerNodeEnterHandler?.('garanki_gabu', node => {
       if (node?.id === 'artifact_explanation') acknowledgeUnlocks();
+      window.DelversGuild?.onDialogueNode?.(node); // End-node handoff launches the private tent cutscenes after dialogue closes.
     });
   }
   function donate(key) {
@@ -83,7 +85,9 @@
     refreshDisplays();
     deps.showToast?.(`Donated ${ARTIFACTS[key].label}. Artifact Collection: ${value()}${newlyUnlocked.length ? ' · ' + newlyUnlocked.map(u => u.label).join(', ') + ' unlocked!' : ''}`, true);
     window.HarlyaoRelics?.render?.();
-    if (newlyUnlocked.length) {
+    if (newlyUnlocked.some(entry => entry.id === 'base') && !window.DelversGuild?.canEnchant?.()) {
+      deps.showToast?.('Garanki wishes to discuss a private matter in his tent. Visit him to learn more.', true); // Enchanting consent now belongs to the trust cutscene.
+    } else if (newlyUnlocked.length) {
       window.DialogueContent?.queueConversationTree?.('garanki_gabu', unlockDialogue());
       deps.showUnlockDialogue?.();
     }
