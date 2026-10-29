@@ -26440,8 +26440,13 @@
             const [fallbackIcon] = actionLabels[action];
             const icon = attackActionIconHTML(activeTool, action, fallbackIcon);
             const allowed = canUseAction(activeTool, action, reticle.col, reticle.row);
+            const label = activeTool === 'shovel' && allowed && action === 'fill'
+              ? 'Hold to Fill'
+              : activeTool === 'shovel' && allowed && action === 'dig' && tile.type !== TileType.TRENCH
+                ? 'Hold to Dig'
+                : window.HudUpdate.contextualActionLabel(action, tile); // Action-bar label distinguishes held excavation from single-tap trench redigging.
             btns.push({
-              icon, label: window.HudUpdate.contextualActionLabel(action, tile),
+              icon, label,
               action, style: i === 0 ? 'primary' : 'secondary', allowed,
             });
           });
