@@ -17,8 +17,30 @@ class Vector3 {
   toArray(){return [this.x,this.y,this.z];}
   fromBufferAttribute(attr,i){this.x=attr.getX(i);this.y=attr.getY(i);this.z=attr.getZ(i);return this;}
 }
+let nextMockUuid=1;
+class Box3 {
+  constructor(){this.min=new Vector3(Infinity,Infinity,Infinity);this.max=new Vector3(-Infinity,-Infinity,-Infinity);}
+  setFromObject(object){
+    const attr=object.geometry?.getAttribute?.('position');
+    if(attr)for(let i=0;i<attr.count;i++){
+      const v=object.localToWorld(new Vector3().fromBufferAttribute(attr,i));
+      this.min.x=Math.min(this.min.x,v.x);this.min.y=Math.min(this.min.y,v.y);this.min.z=Math.min(this.min.z,v.z);
+      this.max.x=Math.max(this.max.x,v.x);this.max.y=Math.max(this.max.y,v.y);this.max.z=Math.max(this.max.z,v.z);
+    }
+    for(const child of object.children||[]){
+      const box=new Box3().setFromObject(child);
+      if(!box.isEmpty()){
+        this.min.x=Math.min(this.min.x,box.min.x);this.min.y=Math.min(this.min.y,box.min.y);this.min.z=Math.min(this.min.z,box.min.z);
+        this.max.x=Math.max(this.max.x,box.max.x);this.max.y=Math.max(this.max.y,box.max.y);this.max.z=Math.max(this.max.z,box.max.z);
+      }
+    }
+    return this;
+  }
+  isEmpty(){return this.min.x>this.max.x;}
+  getCenter(result){return result.copy(this.min).add(this.max).multiplyScalar(.5);}
+}
 class Group {
-  constructor(){this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.scale=new Vector3(1,1,1);this.quaternion={copy() {return this;}};this.rotation={x:0,y:0,z:0};this.visible=true;this.layers={mask:1,enable(n){this.mask|=(1<<n);},disable(n){this.mask&=~(1<<n);}};}
+  constructor(){this.uuid='mock-mesh-'+(nextMockUuid++);this.isObject3D=true;this.children=[];this.userData={};this.position=new Vector3();this.scale=new Vector3(1,1,1);this.quaternion={copy() {return this;}};this.rotation={x:0,y:0,z:0};this.visible=true;this.layers={mask:1,enable(n){this.mask|=(1<<n);},disable(n){this.mask&=~(1<<n);}};}
   add(...children){children.forEach(child=>{child.parent=this;this.children.push(child);});}
   remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
   traverse(fn){fn(this);this.children.forEach(child=>child.traverse(fn));}
@@ -74,7 +96,7 @@ class Curve {
     return this.points[i].clone().lerp(this.points[i+1],x-i);
   }
 }
-const three={Group,Mesh,Vector3,PlaneGeometry,TubeGeometry,MeshBasicMaterial:Material,CatmullRomCurve3:Curve};
+const three={Group,Mesh,Vector3,Box3,PlaneGeometry,TubeGeometry,MeshBasicMaterial:Material,CatmullRomCurve3:Curve};
 function fakeGrowth(parent,recipe){
   const output=new Group();
   const points=recipe.target==='floors'
@@ -137,7 +159,10 @@ assert(calls.slice(0,6).every(call=>!call.recipe.shrinkwrapInside),
   'floor roots must remain ordinary exterior floor-wraps');
 assert.equal(first.getDiagnostics().insideShrinkwrap,true);
 assert(calls.every(call=>call.recipe.density===1),'each Wrap pass respects the shared generator density cap');
-assert.equal(first.targetGrowth.children.length,6,'all furniture density layers must be retained');
+assert.equal(first.partGrowths.length,1,'one geometry part has one staged root target');
+assert.equal(first.partGrowths[0].children.length,6,'each furniture part retains all six density layers');
+assert.equal(first.getDiagnostics().partCount,1);
+assert.equal(first.getDiagnostics().groundedParts.length,1);
 const glbInput=new Group(), glbDriver=new Mesh(new Geometry(),new Material()); // Async GLB owner keeps a non-renderable placeholder geometry.
 glbDriver.userData.furnitureGlbPart=true;glbDriver.userData.glbReady=true;glbDriver.userData.authoredPartId='glb-attachment';
 glbDriver.position=new Vector3(0,1,0);glbDriver.add(new Mesh(new Geometry(),new Material()));
@@ -161,7 +186,7 @@ assert(first.branches.every(branch=>!!(branch.layers.mask&2) && branch.userData.
 assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.style),['wrap','wrap']);
 assert.deepEqual(calls.slice(0,2).map(x=>x.recipe.kind),['roots','roots']);
 assert.equal(first.branches[0].geometry.drawRange.count,0);
-assert(first.targetGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count===0),
+assert(first.partGrowths[0].children.every(layer=>layer.children[0].geometry.drawRange.count===0),
   'all target Wrap layers must be hidden at growth start');
 const compatibility=feature.create({...options,recipe:{...options.recipe,floorDensity:1,targetDensity:.4}});
 assert.equal(compatibility.getDiagnostics().floorDensityPasses,1);
@@ -199,7 +224,7 @@ first.update(.25);assert.equal(first.getProgress(),.5,'default growth duration i
 first.setProgress(1);
 assert.equal(first.getProgress(),1);
 assert(first.branches.every(x=>x.geometry.drawRange.count===x.userData.fullDrawCount));
-assert(first.targetGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count===
+assert(first.partGrowths[0].children.every(layer=>layer.children[0].geometry.drawRange.count===
   layer.children[0].geometry.index.count),'all shape Wrap layers must be revealed on completion');
 first.retract();
 for(let i=0;i<16;i++)first.update(.25);
@@ -246,6 +271,70 @@ emission.setProgress(0);emission.update(.1);
 assert.equal(emitted.at(-1).active,false,'scrubbing below completion stops effects');
 emission.dispose();emission.dispose();
 assert.deepEqual(disposables,['sparks'],'particle resources are disposed only once');
+// Only floor-adjacent posts/legs may receive floor branches. The upper
+// tabletop and festival arch beam are reached through connected lower parts.
+const makePart=(name,min,max)=>{
+  const mesh=new Mesh(new Geometry([new Vector3(...min),new Vector3(...max),
+    new Vector3(max[0],min[1],max[2])]),new Material());
+  mesh.name=name;mesh.userData.authoredPartId=name;return mesh;
+};
+function verifyGroundFirst(label,parts,lowNames,highNames){
+  const furniture=new Group();parts.forEach(p=>furniture.add(p));
+  const beforeCalls=calls.length;
+  const grown=feature.create({...options,target:furniture,recipe:{...options.recipe,branchCount:4}});
+  const plan=grown.partPlan;
+  assert.equal(plan.length,parts.length,label+': must plan each authored part separately');
+  const grounded=plan.filter(p=>p.grounded);
+  assert.deepEqual(grounded.map(p=>p.label).sort(),lowNames.slice().sort(),
+    label+': only floor-adjacent parts may be initial targets');
+  for(const p of plan.filter(p=>highNames.includes(p.label))){
+    assert(!p.grounded && p.parent!==null && p.depth>0,
+      label+': each raised piece must have a grounded ancestor');
+    let cursor=p;
+    while(cursor.parent!==null)cursor=plan[cursor.parent];
+    assert(cursor.grounded,label+': every raised part must lead back to a floor-connected part');
+  }
+  assert.equal(grown.connectors.length,parts.length-grounded.length,
+    label+': each raised part must have an animated transfer shoot');
+  const shapeCalls=calls.slice(beforeCalls+6);
+  assert.equal(shapeCalls.length,parts.length*6,label+': six scoped wraps per piece');
+  for(const part of plan){
+    assert(shapeCalls.slice(part.index*6,(part.index+1)*6)
+      .every(call=>call.recipe.targetMeshId===part.mesh.uuid),
+      label+': each wrap only scans one actual source mesh');
+  }
+  grown.setProgress(.40);
+  assert(grown.partGrowths.some((part,i)=>plan[i].grounded &&
+    part.children[0].children[0].geometry.drawRange.count>0),
+    label+': grounded posts/legs must start filling first');
+  assert(plan.every((part,i)=>part.grounded ||
+    grown.partGrowths[i].children[0].children[0].geometry.drawRange.count===0),
+    label+': raised tabletop/overhang cannot appear while the posts are still growing');
+  grown.setProgress(1);
+  assert(grown.partGrowths.every(part=>part.children.every(layer=>
+    layer.children[0].geometry.drawRange.count===layer.children[0].geometry.index.count)),
+    label+': growth completion fills every piece');
+  assert(grown.connectors.every(conn=>conn.geometry.drawRange.count===conn.userData.fullDrawCount),
+    label+': transfer shoots must fully extend');
+  grown.retract();grown.update(.2);
+  assert(plan.some((p,i)=>!p.grounded &&
+    grown.partGrowths[i].children[0].children[0].geometry.drawRange.count===0),
+    label+': upper structures retract before their supporting posts');
+  assert(plan.some((p,i)=>p.grounded &&
+    grown.partGrowths[i].children[0].children[0].geometry.drawRange.count>0),
+    label+': supporting posts remain until the end of retraction');
+  grown.dispose();return plan;
+}
+verifyGroundFirst('table',[
+  makePart('left leg',[-.85,0,-.7],[-.65,1,-.5]),
+  makePart('right leg',[.65,0,-.7],[.85,1,-.5]),
+  makePart('tabletop',[-1,1,-.9],[1,1.2,.9])
+],['left leg','right leg'],['tabletop']);
+verifyGroundFirst('festival arch',[
+  makePart('west post',[-2,0,-.2],[-1.7,3,.2]),
+  makePart('east post',[1.7,0,-.2],[2,3,.2]),
+  makePart('arch overhang',[-2.1,3,-.35],[2.1,3.4,.35])
+],['west post','east post'],['arch overhang']);
 const scene=new Group();scene.add(first.group); // Disposal must detach from a real scene parent.
 const owned=first.branches[0].geometry;first.dispose();first.dispose();
 assert.equal(owned.disposed,true);
