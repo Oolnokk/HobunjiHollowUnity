@@ -31,7 +31,7 @@
     return Number.isFinite(hours) ? hours : null;
   }
   function isMember() { return story().member === true; }
-  function hasStone() { return isMember(); } // Licensed, permanent membership is authoritative if an old save dropped the physical token.
+  function hasStone() { return isMember() && (Number(inventoryDeps?.inventory?.delversStone) || 0) > 0; } // Both a live licensed membership and possession of its Stone are required at every ruin-entry gate.
   function canEnchant() { return isMember() && story().trusted === true; }
 
   function log(message, level = 'npc') {
