@@ -1,6 +1,9 @@
 (function () {
   'use strict';
   const api = window.ModularWeapons; // Runtime compositor, line transform and import validator.
+  window.ModularWeaponsKeepReference = true; // compose() keeps the pre-smudge image so the revert brush can preview live.
+  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff']; // Brushes that move/restore metal and rebuild the outline.
+  const toolStrength = prefix => Number(document.getElementById(prefix + '-tool-strength').value) / 100;
   const byId = id => document.getElementById(id); // Shared authoring UI lookup.
   let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable copy of validated config.
   let mountIndex = 0; // Active mounting line for edits on the selected haft.
@@ -17,6 +20,7 @@
   let pendingKey = ''; // Pair the pending strokes belong to.
   let bridgePaint = null; // Active bridge brush drag.
   let bridgeHover = null; // Brush-size cursor over the preview.
+  let plowAngle = 0; // Drag direction, which the plow blade cursor faces across.
   const neutral = { scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep' }; // No global transform fields.
   function options(id, entries) {
     for (const [key, record] of Object.entries(entries)) {
@@ -453,7 +457,11 @@
       window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
     } else if (bridgeHover && byId('pair-bridge-on').checked) {
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc((bridgeHover[0] - frame.left) * sx, (bridgeHover[1] - frame.top) * sy, bridgeRadius() * sx, 0, Math.PI * 2); ctx.stroke();
+      const hx = (bridgeHover[0] - frame.left) * sx, hy = (bridgeHover[1] - frame.top) * sy, r = bridgeRadius() * sx;
+      if (byId('pair-brush-mode').value === 'plow') { // The blade: 2r long across the drag direction.
+        const depth = Math.max(2, Math.round(bridgeRadius() / 4)) * sx;
+        ctx.translate(hx, hy); ctx.rotate(plowAngle); ctx.strokeRect(-depth / 2, -r, depth, 2 * r);
+      } else { ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke(); }
     }
     ctx.restore();
   }
@@ -464,11 +472,15 @@
     if (byId('pair-brush-mode').value === 'junction') { // Position with a ghost; placed on release.
       bridgePaint = { pointer: event.pointerId, junction: true, stroke: { points: [] } };
       bridgeHover = logicalPoint(event);
-    } else if (byId('pair-brush-mode').value === 'smudge') {
-      const canvas = bridgeView.composed; // Smudge a copy live; the saved stroke is replayed by compose() on release.
-      bridgePaint = { pointer: event.pointerId, stroke: { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] },
-        smudge: { image: canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height),
-          classify: window.ModularWeaponBridgeFill.makeClassifier() } };
+    } else if (SMUDGE_TOOLS.includes(byId('pair-brush-mode').value)) {
+      // Smudge-family tools work on a copy live; the saved stroke is replayed by compose() on release, through the
+      // same stepper, so the result matches what was previewed.
+      const mode = byId('pair-brush-mode').value, canvas = bridgeView.composed, frame = bridgeView.frame;
+      const image = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+      const stroke = mode === 'smudge' ? { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] }
+        : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0 };
+      bridgePaint = { pointer: event.pointerId, stroke, smudge: { image, stepper: window.ModularWeaponBridgeFill.toolStepper(
+        image.data, image.width, image.height, stroke, { scale: image.width / frame.width, reference: canvas.modularReference || null }) } };
     } else {
       const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
       pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
@@ -477,12 +489,16 @@
   });
   previewCanvas.addEventListener('pointermove', event => {
     if (!byId('pair-bridge-on').checked || !bridgeView) return;
+    const previousHover = bridgeHover;
     bridgeHover = logicalPoint(event);
+    if (previousHover && Math.hypot(bridgeHover[0] - previousHover[0], bridgeHover[1] - previousHover[1]) >= 2)
+      plowAngle = Math.atan2(bridgeHover[1] - previousHover[1], bridgeHover[0] - previousHover[0]);
     if (bridgePaint?.pointer === event.pointerId && bridgePaint.junction) event.preventDefault();
     else if (bridgePaint?.pointer === event.pointerId) {
       event.preventDefault();
       const points = bridgePaint.stroke.points, last = points[points.length - 1]; // Thin stored points; the fill interpolates.
-      const spacing = bridgePaint.smudge ? 1 : Math.max(1, bridgePaint.stroke.r / 3); // Smudges replay every stored step.
+      const spacing = bridgePaint.stroke.tool === 'plow' ? Math.max(2, bridgePaint.stroke.r / 4) // Steady blade angle.
+        : bridgePaint.smudge ? 1 : Math.max(1, bridgePaint.stroke.r / 3); // Smudges replay every stored step.
       if (Math.hypot(bridgeHover[0] - last[0], bridgeHover[1] - last[1]) >= spacing) {
         points.push(bridgeHover);
         if (bridgePaint.smudge) smudgeLive(last, bridgeHover);
@@ -504,14 +520,17 @@
     const finished = bridgePaint;
     bridgePaint = null;
     if (event.type === 'pointercancel') { pendingStrokes = []; drawBridgeOverlay(); return; }
-    if (finished.smudge) { if (points.length > 1) applyStrokes([finished.stroke]); else drawBridgeOverlay(); return; }
+    if (finished.smudge) {
+      if (points.length === 1 && finished.stroke.tool === 'puff') smudgeLive(points[0], points[0], finished); // A tap puffs too.
+      if (points.length > 1 || finished.stroke.tool === 'puff') applyStrokes([finished.stroke]); else drawBridgeOverlay();
+      return;
+    }
     applyStrokes(pendingStrokes);
   }
-  function smudgeLive(from, to) {
-    const { image, classify } = bridgePaint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
+  function smudgeLive(from, to, paint = bridgePaint) {
+    const { image, stepper } = paint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
     const toPixel = ([x, y]) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height });
-    window.ModularWeaponBridgeFill.smudgeStep(image.data, image.width, image.height, toPixel(from), toPixel(to),
-      bridgePaint.stroke.r * sx, { classify });
+    stepper.step(toPixel(from), toPixel(to));
   }
   function applyStrokes(strokes, label = '') {
     // Try the fill on the current bitmap first: a stroke touching no metal would otherwise make compose() skip
@@ -520,7 +539,7 @@
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
     const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
-    const fills = strokes.filter(stroke => !stroke.smudge && !stroke.junction); // Only bridge fills can fail.
+    const fills = strokes.filter(stroke => stroke.points && !stroke.smudge && !stroke.tool && !stroke.junction); // Only bridge fills can fail.
     for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
     if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
@@ -535,6 +554,15 @@
   previewCanvas.addEventListener('pointercancel', endBridgePaint);
   previewCanvas.addEventListener('pointerleave', () => { if (bridgeHover) { bridgeHover = null; drawBridgeOverlay(); } });
   const junctionPicker = window.ModularJunctionPicker.bind('pair', () => drawBridgeOverlay());
+  byId('pair-set-revert-point').onclick = () => {
+    if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
+    applyStrokes([{ revertPoint: true }], 'Revert point set: the revert brush now eases back to this.');
+  };
+  byId('pair-separate-shading').onclick = () => {
+    if (!bridgeView) { bridgeStatus('Choose a compatible head and haft first.'); return; }
+    applyStrokes([{ shading: true, tolerance: Number(byId('pair-shading-tolerance').value) / 100, pool: Number(byId('pair-shading-pool').value) }],
+      'Separated shading.');
+  };
   byId('pair-brush-mode').onchange = () => {
     byId('pair-junction-controls').hidden = byId('pair-brush-mode').value !== 'junction';
     drawBridgeOverlay();
@@ -580,6 +608,11 @@
     const button = byId((lastPanel === 'cutter' ? 'cut-' : 'pair-') + (redo ? 'redo' : 'undo'));
     if (button && !button.disabled) { event.preventDefault(); button.click(); }
   });
+  // Slider readouts for both editors' tool settings.
+  for (const id of ['pair-tool-strength', 'pair-shading-tolerance', 'pair-shading-pool', 'cut-tool-strength', 'cut-shading-tolerance', 'cut-shading-pool']) {
+    const input = byId(id), readout = byId(id + '-value');
+    if (input && readout) input.addEventListener('input', () => { readout.textContent = input.value; });
+  }
   // Maximize: one preview fills its floating panel (the others hide); pressing again restores them.
   for (const button of document.querySelectorAll('[data-max]')) button.addEventListener('click', () => {
     const figure = button.closest('figure'), panel = button.closest('.float-panel');

@@ -104,8 +104,10 @@
   let lastBrushPoint = null; // Previous stroke point, so fast drags stay continuous.
   let hoverPoint = null; // Brush-size cursor preview position.
   let viewBuffer = null; // Reused RGBA buffer for showing the brush mask over the sprite.
-  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill), 'smudge' or 'junction'.
-  let smudge = null; // Active smudge drag: { region, classify, last }.
+  const tool = () => byId('cut-tool').value; // 'lasso', 'brush' (bridge fill), 'junction', or a smudge-family tool.
+  const SMUDGE_TOOLS = ['smudge', 'revert', 'plow', 'puff']; // Move/restore metal; the outline is rebuilt on release.
+  let smudge = null; // Active smudge-family drag: { stepper, last, tool }.
+  let smudgeReference = null; // The image before the first smudge-family stroke: what the revert brush eases back to.
   const brushRadius = () => Number(byId('cut-brush-radius').value) || 1;
 
   function status(text) { byId('cut-status').textContent = text; }
@@ -152,7 +154,10 @@
     else if (hoverPoint && tool() !== 'lasso') {
       ctx.save();
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke();
+      if (tool() === 'plow') { // The blade: 2r long across the drag direction.
+        const r = brushRadius(), depth = Math.max(2, Math.round(r / 4));
+        ctx.translate(hoverPoint.x, hoverPoint.y); ctx.rotate(plowAngle); ctx.strokeRect(-depth / 2, -r, depth, 2 * r);
+      } else { ctx.beginPath(); ctx.arc(hoverPoint.x, hoverPoint.y, brushRadius(), 0, Math.PI * 2); ctx.stroke(); }
       ctx.restore();
     }
     if (path.length) {
@@ -172,7 +177,8 @@
     requestAnimationFrame(renderNow);
   }
   function historyButtons() { byId('cut-undo').disabled = !history.length; byId('cut-redo').disabled = !future.length; }
-  function pushUndo() {
+  function pushUndo(kind = '') {
+    if (kind !== 'smudge') smudgeReference = null; // Any other edit starts a new "before smudging" point.
     history.push(new Uint8ClampedArray(pixels)); // Snapshot before destructive edits and resets.
     if (history.length > MAX_UNDO) history.shift();
     future = []; historyButtons();
@@ -187,7 +193,7 @@
     if (!opaqueCount(next)) throw new Error('The source image has no visible pixels.');
     original = new Uint8ClampedArray(next); pixels = new Uint8ClampedArray(next);
     source = description; sourceSize = { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
-    history = []; future = []; path = []; activePointer = null; clearBrush(); historyButtons();
+    history = []; future = []; path = []; activePointer = null; smudgeReference = null; clearBrush(); historyButtons();
     const inputName = String(suggestedName || ''); // Keep head/shaft export type when reloading an existing part PNG.
     if (/^weaponhead[_-]/i.test(inputName)) byId('cut-kind').value = 'head';
     if (/^weaponshaft[_-]/i.test(inputName)) byId('cut-kind').value = 'shaft';
@@ -241,25 +247,32 @@
     activePointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
     if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); return; } // Placed on release.
-    if (tool() === 'smudge') { // Snapshot for Undo (and as the "before" the outline is measured on), then push metal.
-      pushUndo();
-      smudge = { region: new Uint8Array(FRAME.width * FRAME.height), last: pointFor(event),
-        classify: global.ModularWeaponBridgeFill.makeClassifier({ minAlpha: minAlpha() }) };
+    if (SMUDGE_TOOLS.includes(tool())) { // Snapshot for Undo (also the "before" the outline is measured on), then work.
+      if (!smudgeReference) smudgeReference = new Uint8ClampedArray(pixels);
+      pushUndo('smudge');
+      const op = { tool: tool(), r: brushRadius(), strength: Number(byId('cut-tool-strength').value) / 100, seed: (Math.random() * 2147483647) | 0 };
+      smudge = { tool: op.tool, last: pointFor(event), stepper: global.ModularWeaponBridgeFill.toolStepper(pixels, FRAME.width, FRAME.height, op,
+        { minAlpha: minAlpha(), reference: smudgeReference }) };
       return;
     }
     if (tool() !== 'lasso') { lastBrushPoint = null; paint(event); return; }
     path = [];
     extend(event);
   });
+  let plowAngle = 0; // Drag direction, which the plow blade faces across.
   canvas.addEventListener('pointermove', event => {
-    if (tool() !== 'lasso' && pixels) { hoverPoint = pointFor(event); if (activePointer === null) scheduleRender(); }
+    if (tool() !== 'lasso' && pixels) {
+      const point = pointFor(event);
+      if (hoverPoint && Math.hypot(point.x - hoverPoint.x, point.y - hoverPoint.y) >= 2) plowAngle = Math.atan2(point.y - hoverPoint.y, point.x - hoverPoint.x);
+      hoverPoint = point; if (activePointer === null) scheduleRender();
+    }
     if (activePointer !== event.pointerId) return;
     event.preventDefault();
     if (tool() === 'junction') { hoverPoint = pointFor(event); scheduleRender(); }
     else if (smudge) {
       const point = pointFor(event);
-      global.ModularWeaponBridgeFill.smudgeStep(pixels, FRAME.width, FRAME.height, smudge.last, point, brushRadius(),
-        { classify: smudge.classify, region: smudge.region });
+      if (smudge.tool === 'plow' && Math.hypot(point.x - smudge.last.x, point.y - smudge.last.y) < Math.max(2, brushRadius() / 4)) return; // Steady blade angle.
+      smudge.stepper.step(smudge.last, point);
       smudge.last = point; hoverPoint = point; scheduleRender();
     } else if (tool() !== 'lasso') paint(event); else extend(event);
   });
@@ -275,11 +288,14 @@
     if (smudge) {
       const done = smudge; smudge = null; activePointer = null;
       if (cancel) { byId('cut-undo').click(); return; }
-      const result = global.ModularWeaponBridgeFill.rebuildOutline(history[history.length - 1], pixels, FRAME.width, FRAME.height,
-        done.region, { classify: done.classify });
+      const end = pointFor(event); // Finish the last partial step (the plow only steps every few pixels).
+      if (end.x !== done.last.x || end.y !== done.last.y) done.stepper.step(done.last, end);
+      else if (done.tool === 'puff') done.stepper.step(done.last, done.last); // A tap puffs too.
+      const result = done.stepper.finish();
       renderNow();
-      status(result.thickness ? 'Smudged; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
-        result.drawn + ' drawn). Undo reverts the whole stroke.' : 'No metal under the smudge.');
+      const verb = { smudge: 'Smudged', revert: 'Reverted', plow: 'Plowed', puff: 'Puffed out' }[done.tool];
+      status(result.changed ? verb + '; outline regenerated at ' + result.thickness + ' px (' + result.erased + ' old outline pixels removed, ' +
+        result.drawn + ' drawn). Undo reverts the whole stroke.' : done.tool === 'revert' ? 'Nothing to revert here: it already matches the image before smudging.' : 'No metal changed under the stroke.');
       return;
     }
     if (tool() !== 'lasso') {
@@ -371,6 +387,20 @@
       status('Placed a ' + piece.junction + ' junction. Bridge, smudge or Auto-bridge it to the parts; Undo removes it.');
     } catch (error) { status('Junction piece unavailable: ' + error.message); }
   }
+  byId('cut-set-revert-point').onclick = () => {
+    if (!pixels) { status('Load a sprite first.'); return; }
+    smudgeReference = new Uint8ClampedArray(pixels);
+    status('Revert point set: the revert brush now eases back to the image as it is now.');
+  };
+  byId('cut-separate-shading').onclick = () => {
+    if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
+    const next = new Uint8ClampedArray(pixels);
+    const result = global.ModularWeaponBridgeFill.separateShading(next, FRAME.width, FRAME.height, { minAlpha: minAlpha(),
+      tolerance: Number(byId('cut-shading-tolerance').value) / 100, pool: Number(byId('cut-shading-pool').value) });
+    if (!result.swapped) { status('No mixed shading found at this tolerance.'); return; }
+    pushUndo('smudge'); pixels = next; renderNow(); // Keeps the revert brush's "before smudging" point.
+    status('Separated shading: swapped ' + result.swapped + ' pixels across ' + result.patches + ' mixed patches. Undo restores it.');
+  };
   byId('cut-regenerate-outline').onclick = () => {
     if (!pixels || activePointer !== null) { status('Load a sprite first.'); return; }
     const before = new Uint8ClampedArray(pixels), next = new Uint8ClampedArray(pixels);

@@ -167,6 +167,54 @@ assert.notDeepEqual(get(woodOut.pixels, 19, 15), INK, 'Metal outline under the s
   assert.deepEqual(get(regen, 3, 15), INK, 'New 1px outline drawn against the metal.');
   assert.deepEqual(get(regen, 40, 15), INK, 'Wood outline kept.');
 }
+// Smudge-family tools and separate shading, on a 2px-outlined block (W×H frame).
+{
+  const T = window.ModularWeaponBridgeFill, BW = 48, BH = 24;
+  const at = (a, x, y) => Array.from(a.slice((y * BW + x) * 4, (y * BW + x) * 4 + 4)).join();
+  const block = () => { const a = new Uint8ClampedArray(BW * BH * 4);
+    for (let y = 4; y < 20; y++) for (let x = 4; x < 30; x++) a.set(x < 6 || y < 6 || x > 27 || y > 17 ? INK : SHADE, (y * BW + x) * 4); return a; };
+  const tally = (a, c) => { let k = 0; for (let p = 0; p < BW * BH; p++) if (at(a, p % BW, (p / BW) | 0) === c.join()) k++; return k; };
+  // Plow: metal swept by the blade piles up flat against its front and travels with it; the swept path is empty.
+  const plowed = block(), plow = T.toolStepper(plowed, BW, BH, { tool: 'plow', r: 4, points: [] });
+  for (let x = 20; x <= 34; x += 2) plow.step({ x, y: 12 }, { x: x + 2, y: 12 });
+  plow.finish();
+  assert.equal(at(plowed, 24, 12).split(',')[3], '0', 'The plowed path is empty.');
+  const fronts = [9, 10, 11, 12, 13, 14, 15].map(y => { let x = 47; while (x > 30 && at(plowed, x, y) !== SHADE.join()) x--; return x; });
+  assert(fronts.every(f => f === fronts[0]) && fronts[0] > 32, 'Pushed metal ends in a flat face against the blade: ' + fronts);
+  // Puff: a dent in the edge is filled and the outline runs straight across it again.
+  const dented = block();
+  for (let y = 4; y < 9; y++) for (let x = 12; x < 16; x++) dented.set(y < 7 ? [0, 0, 0, 0] : INK, (y * BW + x) * 4);
+  const puff = T.toolStepper(dented, BW, BH, { tool: 'puff', r: 7, strength: 0.8, points: [] });
+  puff.step({ x: 9, y: 6 }, { x: 19, y: 6 }); puff.finish();
+  for (let x = 6; x < 28; x++) assert.equal(at(dented, x, 6), SHADE.join(), 'Dent filled at x=' + x);
+  for (let x = 6; x < 28; x++) assert.equal(at(dented, x, 5), INK.join(), 'Outline straight across the dent at x=' + x);
+  // Puffing a straight edge again changes nothing (no ballooning).
+  const flat = block(), again = T.toolStepper(flat, BW, BH, { tool: 'puff', r: 7, strength: 1, points: [] });
+  for (let i = 0; i < 5; i++) again.step({ x: 9, y: 6 }, { x: 19, y: 6 });
+  assert.equal(again.finish().changed, 0, 'A smooth edge does not grow.');
+  // Revert: repeated passes ease a smudge back toward the reference.
+  const original = block(), work = new Uint8ClampedArray(original);
+  const smudge = T.toolStepper(work, BW, BH, { tool: 'smudge', r: 5, points: [] }); smudge.step({ x: 22, y: 12 }, { x: 36, y: 12 }); smudge.finish();
+  const diff = a => { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== original[i]) d++; return d; };
+  const smudged = diff(work);
+  for (let pass = 0; pass < 6; pass++) {
+    const revert = T.toolStepper(work, BW, BH, { tool: 'revert', r: 10, strength: 0.6, seed: pass, points: [] }, { reference: original });
+    revert.step({ x: 28, y: 12 }, { x: 34, y: 12 }); revert.finish();
+  }
+  assert(smudged > 100 && diff(work) < smudged / 5, 'Revert eased the smudge back: ' + smudged + ' → ' + diff(work));
+  // Same seed, same steps → same result (live preview matches the saved replay).
+  const r1 = block(), r2 = block(), ref = block(); r1.set(LIT, (12 * BW + 12) * 4); r2.set(LIT, (12 * BW + 12) * 4);
+  for (const img of [r1, r2]) { const st = T.toolStepper(img, BW, BH, { tool: 'revert', r: 6, strength: 0.5, seed: 9, points: [] }, { reference: ref }); st.step({ x: 10, y: 12 }, { x: 14, y: 12 }); st.finish(); }
+  assert.equal(Array.from(r1).join(), Array.from(r2).join(), 'Seeded revert is deterministic.');
+  // Separate shading: mixed tones consolidate into pools; each tone keeps its count.
+  const mixed = block(); let seed = 5; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let y = 6; y < 18; y++) for (let x = 6; x < 28; x++) if (rnd() < (x < 17 ? 0.75 : 0.25)) mixed.set(LIT, (y * BW + x) * 4);
+  const borders = a => { let e = 0; for (let y = 0; y < BH; y++) for (let x = 0; x < BW - 1; x++) { const u = at(a, x, y), v = at(a, x + 1, y); if (u !== v && [u, v].every(c => c === SHADE.join() || c === LIT.join())) e++; } return e; };
+  const litBefore = tally(mixed, LIT), bordersBefore = borders(mixed);
+  const sep = T.separateShading(mixed, BW, BH, { tolerance: 0.2, pool: 4 });
+  assert(sep.swapped > 0 && tally(mixed, LIT) === litBefore, 'Tone counts preserved.');
+  assert(borders(mixed) < bordersBefore / 3, 'Tones consolidated: ' + bordersBefore + ' → ' + borders(mixed));
+}
 console.log('modular weapon bridge fill OK');
 
 // Pair-specific bridges survive config validation; explicit removal is kept; junk is rejected.
@@ -204,6 +252,14 @@ console.log('modular weapon bridge fill OK');
   const scriptAt = name => editorHtml.indexOf('src="' + name);
   assert(scriptAt('junction-picker.js') > 0 && scriptAt('junction-picker.js') < scriptAt('editor.js') &&
     scriptAt('junction-picker.js') < scriptAt('sprite-cutter.js'), 'Junction picker loads before its users.');
+  cfg.shafts[shaftKey].overrides[headKey] = { bridges: { strokes: [
+    { tool: 'plow', r: 9, points: [[1, 2], [5, 2]], seed: 4 }, { tool: 'revert', r: 6, strength: 3, points: [[1, 1]] },
+    { shading: true, tolerance: 0.9, pool: 7 }, { tool: 'erase-everything', r: 3, points: [[0, 0]] }, { revertPoint: true } ] } };
+  const toolOps = api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges.strokes;
+  assert.equal(toolOps[0].tool, 'plow'); assert.equal(toolOps[1].strength, 1, 'Strength clamped.');
+  assert.equal(JSON.stringify(toolOps[2]), '{"shading":true,"tolerance":0.5,"pool":7}');
+  assert.equal(toolOps.length, 4, 'Unknown tools are dropped, never replayed as something else.');
+  assert.equal(JSON.stringify(toolOps[3]), '{"revertPoint":true}', 'Revert points are kept in order.');
   cfg.shafts[shaftKey].overrides[headKey] = { bridges: null };
   assert.equal(api.replace(cfg).shafts[shaftKey].overrides[headKey].bridges, null, 'Explicit removal is kept.');
 }

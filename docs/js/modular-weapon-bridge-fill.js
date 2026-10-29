@@ -775,15 +775,221 @@
     return { thickness, erased, drawn };
   }
 
-  // Replays one saved smudge stroke (points in stored coordinates) and rebuilds the outline, in place.
-  function smudgeStroke(pixels, width, height, stroke, toPixel = (x, y) => ({ x, y }), scale = 1, options = {}) {
-    const before = new Uint8ClampedArray(pixels), region = new Uint8Array(width * height);
-    const classify = makeClassifier(options), pts = stroke.points.map(([x, y]) => toPixel(x, y));
+  // Weighted revert: within the brush, each pass flips a weighted random share of pixels back to `reference` (the
+  // image before smudging): strongest at the centre, scaled by strength. Whole pixels, so no new in-between colors;
+  // repeated passes converge on the reference.
+  function revertStep(pixels, reference, width, height, from, to, radius, options = {}) {
+    const w = width, h = height, r = Math.max(1, radius), strength = Math.max(0, Math.min(1, options.strength ?? 0.35));
+    const random = options.random || Math.random, region = options.region;
+    const len = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(len / Math.max(1, r / 2)));
     let changed = 0;
-    for (let i = 1; i < pts.length; i++) changed += smudgeStep(pixels, width, height, pts[i - 1], pts[i], stroke.r * scale, { classify, region });
-    return { changed, ...rebuildOutline(before, pixels, width, height, region, { ...options, classify }) };
+    for (let i = 1; i <= steps; i++) {
+      const cx = from.x + (to.x - from.x) * i / steps, cy = from.y + (to.y - from.y) * i / steps;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++) {
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++) {
+          const d2 = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) / (r * r);
+          if (d2 >= 1) continue;
+          const roll = random(), o = (y * w + x) * 4;
+          if (roll >= strength * (1 - d2) * (1 - d2)) continue;
+          if (pixels[o] === reference[o] && pixels[o + 1] === reference[o + 1] && pixels[o + 2] === reference[o + 2] && pixels[o + 3] === reference[o + 3]) continue;
+          pixels[o] = reference[o]; pixels[o + 1] = reference[o + 1]; pixels[o + 2] = reference[o + 2]; pixels[o + 3] = reference[o + 3];
+          changed++; if (region) region[y * w + x] = 1;
+        }
+      }
+    }
+    return changed;
+  }
+
+  // Pixel plow: a rectangular blade (2 × radius long, across the drag direction) moved from `from` to `to`. In each
+  // lane across the blade, metal it sweeps over piles up flat against its front edge and shoves the metal already
+  // in front of it along as one, like a bulldozer; the blade leaves empty space behind. Other materials block a
+  // lane (nothing in it moves). Returns the blade's direction so the next step can keep it.
+  function plowStep(pixels, width, height, from, to, radius, options = {}) {
+    const w = width, h = height, classify = options.classify || makeClassifier(options), region = options.region;
+    const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy);
+    if (len < 0.5) return 0;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux; // Drag direction and the blade's long axis.
+    const half = Math.max(1, radius), depth = Math.max(2, Math.round(radius / 4)), front = depth / 2;
+    const reach = Math.ceil(half * 2 + len + 8); // How far ahead a pushed chain may extend.
+    const claimed = new Uint8Array(w * h); // Each pixel belongs to one lane per step.
+    const pix = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? -1 : y * w + x;
+    let changed = 0;
+    for (let v = -half; v <= half; v += 0.5) {
+      const lane = [], seen = new Set();
+      for (let u = -front - len - 1; u <= front + reach; u += 0.5) {
+        const p = pix(Math.round(to.x + ux * u + nx * v - 0.5), Math.round(to.y + uy * u + ny * v - 0.5));
+        if (p < 0) { lane.push({ p: -1, u }); break; }
+        if (seen.has(p) || claimed[p]) continue;
+        seen.add(p); lane.push({ p, u });
+      }
+      const swept = lane.filter(c => c.p >= 0 && c.u <= front), ahead = lane.filter(c => c.u > front);
+      const load = swept.filter(c => classify(pixels, c.p * 4) === METAL);
+      if (!load.length) { for (const c of lane) if (c.p >= 0) claimed[c.p] = 1; continue; }
+      let chain = 0; // Metal already against the blade's front, which gets shoved along.
+      while (chain < ahead.length && ahead[chain].p >= 0 && classify(pixels, ahead[chain].p * 4) === METAL) chain++;
+      const need = load.length + chain;
+      let room = need <= ahead.length;
+      for (let k = chain; room && k < need; k++) { const c = ahead[k]; room = c.p >= 0 && classify(pixels, c.p * 4) <= INK; }
+      if (!room) continue; // Blocked by another material or the frame edge.
+      const colors = load.concat(ahead.slice(0, chain)).map(c => pixels.slice(c.p * 4, c.p * 4 + 4));
+      for (const c of load) { const o = c.p * 4; pixels[o] = pixels[o + 1] = pixels[o + 2] = pixels[o + 3] = 0; if (region) region[c.p] = 1; }
+      for (let k = 0; k < need; k++) { pixels.set(colors[k], ahead[k].p * 4); if (region) region[ahead[k].p] = 1; }
+      for (const c of lane) if (c.p >= 0) claimed[c.p] = 1;
+      changed += load.length;
+    }
+    return changed;
+  }
+
+  // Puff-out: inside the brush, dents in the metal's edge are filled outward (a morphological closing of radius
+  // strength × radius / 2), each new pixel taking the color of the nearest metal, so a wrinkled edge becomes smooth
+  // and continuous like an inflated bag. Never covers other materials.
+  function puffStep(pixels, width, height, at, radius, options = {}) {
+    const w = width, h = height, classify = options.classify || makeClassifier(options), region = options.region;
+    const r = Math.max(1, radius), k = Math.max(1, Math.round(r * Math.max(0.05, Math.min(1, options.strength ?? 0.5)) / 2));
+    const x0 = Math.max(0, Math.floor(at.x - r - k - 2)), y0 = Math.max(0, Math.floor(at.y - r - k - 2));
+    const x1 = Math.min(w - 1, Math.ceil(at.x + r + k + 2)), y1 = Math.min(h - 1, Math.ceil(at.y + r + k + 2));
+    const ww = x1 - x0 + 1, wh = y1 - y0 + 1, m = ww * wh;
+    if (ww < 1 || wh < 1) return 0;
+    const kinds = new Uint8Array(m);
+    for (let i = 0; i < m; i++) kinds[i] = classify(pixels, (((i / ww) | 0) + y0) * w * 4 + ((i % ww) + x0) * 4);
+    // Nearest-source propagation with improvement, in square (chessboard) distance: a square closing fills square
+    // dents completely and leaves flat and diagonal edges exactly where they are, so repeated steps never grow.
+    const nearestOf = isSource => {
+      const near = new Int32Array(m).fill(-1), queue = [];
+      for (let i = 0; i < m; i++) if (isSource(i)) { near[i] = i; queue.push(i); }
+      for (let head = 0; head < queue.length; head++) {
+        const i = queue[head], x = i % ww, y = (i / ww) | 0, e = near[i], ex = e % ww, ey = (e / ww) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const qx = x + dx, qy = y + dy;
+          if (qx < 0 || qy < 0 || qx >= ww || qy >= wh) continue;
+          const j = qy * ww + qx, c = near[j];
+          if (c >= 0 && Math.max(Math.abs(c % ww - qx), Math.abs(((c / ww) | 0) - qy)) <= Math.max(Math.abs(ex - qx), Math.abs(ey - qy))) continue;
+          near[j] = e; queue.push(j);
+        }
+      }
+      return near;
+    };
+    const dist = (i, e) => e < 0 ? Infinity : Math.max(Math.abs(e % ww - i % ww), Math.abs(((e / ww) | 0) - ((i / ww) | 0)));
+    const nearMetal = nearestOf(i => kinds[i] === METAL);
+    const dilated = new Uint8Array(m);
+    for (let i = 0; i < m; i++) dilated[i] = kinds[i] !== OTHER && dist(i, nearMetal[i]) <= k ? 1 : 0;
+    const nearOutside = nearestOf(i => !dilated[i]);
+    let changed = 0;
+    for (let i = 0; i < m; i++) {
+      if (!dilated[i] || kinds[i] === METAL || kinds[i] === OTHER || dist(i, nearOutside[i]) <= k) continue;
+      const fx = (i % ww) + x0, fy = ((i / ww) | 0) + y0;
+      if ((fx + 0.5 - at.x) ** 2 + (fy + 0.5 - at.y) ** 2 >= r * r) continue;
+      const e = nearMetal[i], so = (((e / ww) | 0) + y0) * w * 4 + ((e % ww) + x0) * 4, o = (fy * w + fx) * 4;
+      pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
+      kinds[i] = METAL; changed++; if (region) region[fy * w + fx] = 1;
+    }
+    // Pinholes the closing leaves at a dent's mouth: a gap pixel in the brush with metal on two opposite sides.
+    for (let i = 0; i < m; i++) {
+      if (kinds[i] === METAL || kinds[i] === OTHER) continue;
+      const x = i % ww, y = (i / ww) | 0, fx = x + x0, fy = y + y0;
+      if ((fx + 0.5 - at.x) ** 2 + (fy + 0.5 - at.y) ** 2 >= r * r || x < 1 || y < 1 || x >= ww - 1 || y >= wh - 1) continue;
+      const from = kinds[i - 1] === METAL && kinds[i + 1] === METAL ? i - 1 : kinds[i - ww] === METAL && kinds[i + ww] === METAL ? i - ww : -1;
+      if (from < 0) continue;
+      const so = (((from / ww) | 0) + y0) * w * 4 + ((from % ww) + x0) * 4, o = (fy * w + fx) * 4;
+      pixels[o] = pixels[so]; pixels[o + 1] = pixels[so + 1]; pixels[o + 2] = pixels[so + 2]; pixels[o + 3] = pixels[so + 3];
+      kinds[i] = METAL; changed++; if (region) region[fy * w + fx] = 1;
+    }
+    return changed;
+  }
+
+  // One brush stroke of the smudge-family tools (smudge, revert, plow, puff), stepped point by point so the editor's
+  // live preview and the saved replay run the exact same steps. finish() rebuilds the outline around what changed.
+  function toolStepper(pixels, width, height, op, options = {}) {
+    const tool = op.tool || (op.smudge ? 'smudge' : '');
+    const classify = options.classify || makeClassifier(options), region = new Uint8Array(width * height);
+    const before = new Uint8ClampedArray(pixels), random = mulberry32(op.seed ?? 1), scale = options.scale ?? 1;
+    const r = op.r * scale, strength = op.strength;
+    let changed = 0;
+    return {
+      region,
+      step(from, to) {
+        if (tool === 'smudge') changed += smudgeStep(pixels, width, height, from, to, r, { classify, region });
+        else if (tool === 'revert' && options.reference) changed += revertStep(pixels, options.reference, width, height, from, to, r, { strength, random, region });
+        else if (tool === 'plow') changed += plowStep(pixels, width, height, from, to, r, { classify, region });
+        else if (tool === 'puff') {
+          const len = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(len / Math.max(1, r / 3)));
+          for (let i = 1; i <= steps; i++) changed += puffStep(pixels, width, height,
+            { x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps }, r, { classify, region, strength });
+        }
+        return changed;
+      },
+      finish() { return { changed, ...rebuildOutline(before, pixels, width, height, region, { ...options, classify }) }; }
+    };
+  }
+  // Replays one saved smudge-family stroke (points in stored coordinates) and rebuilds the outline, in place.
+  function toolStroke(pixels, width, height, op, toPixel = (x, y) => ({ x, y }), scale = 1, options = {}) {
+    const stepper = toolStepper(pixels, width, height, op, { ...options, scale });
+    const pts = op.points.map(([x, y]) => toPixel(x, y));
+    if (pts.length === 1) stepper.step(pts[0], pts[0]);
+    for (let i = 1; i < pts.length; i++) stepper.step(pts[i - 1], pts[i]);
+    return stepper.finish();
+  }
+  const smudgeStroke = (pixels, width, height, stroke, toPixel, scale, options) =>
+    toolStroke(pixels, width, height, { ...stroke, tool: 'smudge' }, toPixel, scale, options);
+
+  // Separate shading: where shaded and unshaded metal are mixed together (a pixel's 5×5 neighbourhood is more than
+  // `tolerance` the other tone), the pixels swap colors so each tone gathers into larger pools: within each mixed
+  // patch, the pixels with the most unshaded metal around them (within `pool` pixels) become the unshaded ones.
+  // Each patch keeps its count of each tone and its exact colors, so nothing new is painted.
+  function separateShading(pixels, width, height, options = {}) {
+    const w = width, h = height, n = w * h, classify = options.classify || makeClassifier(options);
+    const tolerance = Math.max(0, Math.min(0.5, options.tolerance ?? 0.2)), pool = Math.max(1, Math.round(options.pool ?? 5));
+    const metal = new Uint8Array(n), lumas = [];
+    for (let p = 0; p < n; p++) if (classify(pixels, p * 4) === METAL) { metal[p] = 1; lumas.push(luma(pixels, p * 4)); }
+    if (lumas.length < 4) return { swapped: 0, patches: 0 };
+    const threshold = otsu(lumas), lit = new Uint8Array(n);
+    for (let p = 0; p < n; p++) if (metal[p] && luma(pixels, p * 4) >= threshold) lit[p] = 1;
+    const stride = w + 1, sumM = new Float64Array(stride * (h + 1)), sumL = new Float64Array(stride * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let rm = 0, rl = 0;
+      for (let x = 0; x < w; x++) {
+        rm += metal[y * w + x]; rl += lit[y * w + x];
+        sumM[(y + 1) * stride + x + 1] = sumM[y * stride + x + 1] + rm; sumL[(y + 1) * stride + x + 1] = sumL[y * stride + x + 1] + rl;
+      }
+    }
+    const litShare = (x, y, rad) => {
+      const l = Math.max(0, x - rad), t = Math.max(0, y - rad), r = Math.min(w, x + rad + 1), b = Math.min(h, y + rad + 1);
+      const mm = sumM[b * stride + r] - sumM[t * stride + r] - sumM[b * stride + l] + sumM[t * stride + l];
+      const ll = sumL[b * stride + r] - sumL[t * stride + r] - sumL[b * stride + l] + sumL[t * stride + l];
+      return mm ? ll / mm : 0;
+    };
+    const mixed = new Uint8Array(n);
+    for (let p = 0; p < n; p++) if (metal[p]) {
+      const share = litShare(p % w, (p / w) | 0, 2);
+      if ((lit[p] ? 1 - share : share) > tolerance) mixed[p] = 1;
+    }
+    const seen = new Uint8Array(n);
+    let swapped = 0, patches = 0;
+    for (let s0 = 0; s0 < n; s0++) {
+      if (!mixed[s0] || seen[s0]) continue;
+      const patch = [s0]; seen[s0] = 1;
+      for (let k = 0; k < patch.length; k++) {
+        const p = patch[k], x = p % w, y = (p / w) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const qx = x + dx, qy = y + dy, q = qy * w + qx;
+          if (qx >= 0 && qy >= 0 && qx < w && qy < h && mixed[q] && !seen[q]) { seen[q] = 1; patch.push(q); }
+        }
+      }
+      patches++;
+      const want = patch.reduce((count, p) => count + lit[p], 0);
+      const ranked = patch.map(p => [litShare(p % w, (p / w) | 0, pool), p]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+      const toLit = [], toShade = [];
+      ranked.forEach(([, p], i) => { const becomesLit = i < want; if (becomesLit && !lit[p]) toLit.push(p); if (!becomesLit && lit[p]) toShade.push(p); });
+      for (let i = 0; i < toLit.length; i++) { // Equal lengths: each swap trades one pixel's color for the other's.
+        const a = toLit[i] * 4, b = toShade[i] * 4;
+        for (let c = 0; c < 4; c++) { const t = pixels[a + c]; pixels[a + c] = pixels[b + c]; pixels[b + c] = t; }
+        swapped += 2;
+      }
+    }
+    return { swapped, patches };
   }
 
   global.ModularWeaponBridgeFill = Object.freeze({ fillBridge, stampLine, stampStroke, autoBridgeStrokes,
-    smudgeStep, rebuildOutline, smudgeStroke, makeClassifier });
+    smudgeStep, rebuildOutline, smudgeStroke, makeClassifier, revertStep, plowStep, puffStep, toolStepper, toolStroke,
+    separateShading });
 })(typeof window === 'object' ? window : globalThis);
