@@ -1078,10 +1078,12 @@
   // for a manually placed one (see placeFeature).
   function _entranceNubCells(entry, f) {
     const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') { const c = gx * 2 + slot, r = gy * 2 - 1; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'south') { const c = gx * 2 + slot, r = (gy + 1) * 2; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'west')  { const r = gy * 2 + slot, c = gx * 2 - 1; return [-1, 0, 1].map(d => ({ c, r: r + d })); }
-    const r = gy * 2 + slot, c = (gx + 1) * 2; return [-1, 0, 1].map(d => ({ c, r: r + d }));
+    // Exactly one floorless exit marker per entrance; the door is rendered
+    // at the floor boundary using InteriorDoorTiles, like an authored church.
+    if (f.side === 'north') return [{ c: gx * 2 + slot, r: gy * 2 - 1 }];
+    if (f.side === 'south') return [{ c: gx * 2 + slot, r: (gy + 1) * 2 }];
+    if (f.side === 'west') return [{ c: gx * 2 - 1, r: gy * 2 + slot }];
+    return [{ c: (gx + 1) * 2, r: gy * 2 + slot }];
   }
   // One interior cell inward from the nub's center — where the player
   // spawns when entering through this feature's door.
@@ -1124,14 +1126,14 @@
           if (!f._doorObj) return; // no farm-side entrance registered for this feature
           const nub = _entranceNubCells(entry, f);
           const enter = _entranceEnterCell(entry, f);
-          nub.forEach(q => { floorSet.add(q.c + ',' + q.r); exitSet.add(q.c + ',' + q.r); });
-          doors.push({ pieceId: entry.id, featureId: f.id, enter, exitCells: nub.map(q => q.c + ',' + q.r) });
+          nub.forEach(q => exitSet.add(q.c + ',' + q.r)); // Outside floor; one exit per door.
+           doors.push({ pieceId: entry.id, featureId: f.id, enter, side: f.side, exitCells: nub.map(q => q.c + ',' + q.r) });
         } else if (f.type === 'chimney') {
           hearths.push(_chimneyHearthPlacement(entry, f));
         }
       });
     }
-    return { floorSet, exitSet, doors, hearths };
+    return window.FarmhouseRoomPlanner?.apply?.({ floorSet, exitSet, doors, hearths }, deps.getHousePieces()) || { floorSet, exitSet, doors, hearths };
   }
 
   // Which entrance the player last went in by. Leaving the interior returns
