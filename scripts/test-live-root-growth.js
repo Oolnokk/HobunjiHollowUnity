@@ -100,7 +100,7 @@ const three={Group,Mesh,Vector3,Box3,PlaneGeometry,TubeGeometry,MeshBasicMateria
 function fakeGrowth(parent,recipe){
   const output=new Group();
   const points=recipe.target==='floors'
-    ? Array.from({length:40},(_,i)=>new Vector3((i%10-5)*.2,.045,Math.floor(i/10)*.3))
+    ? Array.from({length:40},(_,i)=>new Vector3((i%10-5)*.2,(recipe.floorY||0)+.045,Math.floor(i/10)*.3))
     : Array.from({length:12},(_,i)=>new Vector3(i%3-.8,.6+Math.floor(i/3)*.2,Math.floor(i/3)-1));
   output.add(new Mesh(new Geometry(points),new Material()));
   output.userData.generatedStrands=13;
@@ -134,7 +134,7 @@ assert.equal(normalized.arcConcavity,.72,'old recipes inherit the concave defaul
 assert.equal(feature.normalizeRecipe({arcConcavity:10}).arcConcavity,1);
 assert.equal(feature.normalizeRecipe({arcConcavity:-10}).arcConcavity,0);
 const input=new Group();input.add(new Mesh(new Geometry(),new Material())); // Caller must retain its original visible source.
-const options={target:input,recipe:{seed:'fixed',branchCount:4},THREE:three,foliage};
+const options={target:input,recipe:{seed:'fixed',branchCount:4,floorY:-.4},THREE:three,foliage}; // Floor node below the target exercises a genuine rising concave arc.
 const first=feature.create(options);
 assert.equal(first.branches.length,4);
 assert.equal(first.group.children.length,3);
@@ -296,6 +296,10 @@ function verifyGroundFirst(label,parts,lowNames,highNames){
   }
   assert.equal(grown.connectors.length,parts.length-grounded.length,
     label+': each raised part must have an animated transfer shoot');
+  const allowedEntryY=Math.max(...grounded.map(part=>
+    part.bounds.min.y+Math.max(.12,(part.bounds.max.y-part.bounds.min.y)*.25)));
+  assert(grown.branches.every(branch=>branch.geometry.parameters.path.points.at(-1).y<=allowedEntryY+.0001),
+    label+': floor shoots must make first contact near the feet of each post/leg');
   const shapeCalls=calls.slice(beforeCalls+6);
   assert.equal(shapeCalls.length,parts.length*6,label+': six scoped wraps per piece');
   const budget=Math.max(4,Math.ceil(80/parts.length));
