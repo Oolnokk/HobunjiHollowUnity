@@ -15921,15 +15921,28 @@
         // Deliver pending orders
         const today = calendar.day;
         const arriving = pendingOrders.filter(o => o.arrivalDay <= today);
-        pendingOrders   = pendingOrders.filter(o => o.arrivalDay >  today);
+        pendingOrders = pendingOrders.filter(o => o.arrivalDay > today);
         for (const o of arriving) {
-          const item = o.item;
-          Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[k] || 0) + v * o.qty);
-          });
-          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + ' delivered';
+          const item = o.item || SUPPLY_CATALOG.find(entry => entry.key === o.key); // Recover older orders whose catalog snapshot was omitted.
+          if (!item?.gives) continue;
+          const entries = Object.entries(item.gives);
+          const seeds = entries.filter(([key]) => ITEM_DEFS[key]?.cat === 'seed'); // Ordered plantable seeds belong to shared Farm Storage, not the player's pack.
+          if (seeds.length) {
+            const storage = _loadWorldStorage(); // Fresh world-scoped stock avoids overwriting another character's inventory changes.
+            for (const [key, count] of seeds) storage[key] = Math.max(0, Number(storage[key]) || 0) + count * o.qty;
+            if (!_saveWorldStorage(storage)) {
+              pendingOrders.push(o); // Never lose a paid order if the world storage write fails; retry next morning.
+              showToast('Could not deliver ' + item.name + ' to Farm Storage; order retained.', false);
+              continue;
+            }
+          }
+          for (const [key, count] of entries) {
+            if (ITEM_DEFS[key]?.cat === 'seed') continue;
+            inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(inventory[key]) || 0) + count * o.qty);
+          }
+          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage' : ' delivered');
           deliveryLog.unshift({ type: 'delivery', text: line });
-          showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
+          showToast('📦 ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage!' : ' delivered!'), true);
         }
         deliveryLog = deliveryLog.slice(0, 12);
         if (menuOpen) window.SupplyPage.render();
