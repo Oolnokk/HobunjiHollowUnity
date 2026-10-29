@@ -25,7 +25,7 @@ const localStorage = {
   setItem: (key, value) => {
     assert.equal(key, 'hobunjiSaveMeta');
     const next = JSON.parse(value);
-    if (failSeedCommit && next.worlds[0].storage.needlegrainSeeds !== meta.worlds[0].storage.needlegrainSeeds) throw new Error('quota exceeded');
+    if (failSeedCommit && JSON.stringify(next.worlds[0].storage) !== JSON.stringify(meta.worlds[0].storage)) throw new Error('quota exceeded');
     meta = next;
   },
 };
