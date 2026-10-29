@@ -399,6 +399,10 @@
     }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
     floorHost.add(floorGrowth);
     const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
+    // One per-part generator per density pass would multiply an authored 30-part
+    // festival arch's 80-strand budget by 30. Divide the shared pass budget
+    // across pieces, with a small minimum for narrow posts and pennants.
+    const partWrapLimit=Math.max(4,Math.ceil(recipe.strandLimit/partPlan.length));
     const targetGrowth=new THREE.Group();
     targetGrowth.name='Staged furniture interior roots';
     targetGrowth.userData.surfaceFoliage=true;
@@ -409,6 +413,7 @@
     const partGrowths=partPlan.map(part=>{
       const wrapped=buildDenseWrap(THREE, foliage, target, {
         ...growthOptions, seed:recipe.seed+':part-'+part.index,
+        strandLimit:partWrapLimit,count:partWrapLimit,
         target:'all', targetMeshId:part.mesh.uuid, length:recipe.targetLength,
         shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
       },recipe.targetDensity,(pass,passes)=>({
@@ -527,7 +532,7 @@
           shapeStrands:targetGrowth.userData?.generatedStrands || 0,
           groundedParts:partPlan.filter(part=>part.grounded).map(part=>part.label),
           partCount:partPlan.length, rootTransferCount:connectors.length,
-          maxPartDepth:maxDepth,
+          maxPartDepth:maxDepth, perPartStrandLimit:partWrapLimit,
           partGrowth:partPlan.map(part=>({label:part.label,grounded:part.grounded,
             parent:part.parent,depth:part.depth,progress:clamp((progress-
               partWindows[part.index].start)/stageLength,0,1),gap:part.linkGap})),
