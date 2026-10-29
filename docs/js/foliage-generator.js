@@ -1877,6 +1877,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       tunnelAsOpening: value.tunnelAsOpening === true, shrinkwrapFinal: value.shrinkwrapFinal === true,
       shrinkwrapHidden: value.shrinkwrapHidden === true, // Only purpose-built invisible geometry opts into final-surface ray targets.
       shrinkwrapInside: value.shrinkwrapInside === true, // Move tube centerlines INTO the source volume, never outward from its skin.
+      targetMeshId: typeof value.targetMeshId === 'string' ? value.targetMeshId.slice(0,128) : '', // Transient per-piece root staging scope.
       inset: finite('inset',0,-.5,.5), // Signed placement relative to the simplified surface, independent of positive clearance.
       length: finite('length', 3, .05, 30),
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
@@ -2229,7 +2230,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   function surfaceTargets(parent, settings) {
     const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
     parent.traverse(object => {
-      if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      if (!object.isMesh || !object.geometry?.attributes?.position ||
+          (settings.targetMeshId && object.uuid !== settings.targetMeshId)) return;
       if (settings.target === 'shingles' && /shinglebone/i.test(object.name || '')) return; // Hidden length-control bones are not roof surfaces and must never collect vines.
       let node = object, role = '', selected = false, excluded = false; // Ancestor tags keep grouped brick/log gables and multi-mesh furniture selectable.
       while (node) {
@@ -2582,7 +2584,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     parent.updateWorldMatrix(true,true);
     const visible=[],wallCladding=[];
     parent.traverse(mesh=>{
-      if(!mesh.isMesh||(!mesh.visible&&!settings.shrinkwrapHidden)||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage) return;
+      if(!mesh.isMesh||(!mesh.visible&&!settings.shrinkwrapHidden)||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage ||
+          (settings.targetMeshId && mesh.uuid !== settings.targetMeshId)) return;
       let node=mesh,role='',clad=false,excluded=false;
       while(node){
         if(node.userData?.surfaceFoliage || node.userData?.surfaceFoliageExclude)excluded=true;
