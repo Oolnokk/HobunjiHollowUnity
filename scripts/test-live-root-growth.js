@@ -339,6 +339,42 @@ verifyGroundFirst('festival arch',[
   makePart('east post',[1.7,0,-.2],[2,3,.2]),
   makePart('arch overhang',[-2.1,3,-.35],[2.1,3.4,.35])
 ],['west post','east post'],['arch overhang']);
+// A pennant is thinner than the normal .045 root radius. Its generated
+// strands need to be narrowed to live inside the fabric volume.
+const narrow=new Group();
+narrow.add(makePart('ground post',[0,0,0],[.2,2,.2]));
+narrow.add(makePart('thin hanging pennant',[0,2,0],[.3,2.45,.015]));
+const priorCalls=calls.length;
+const narrowGrowth=feature.create({...options,target:narrow});
+const narrowRecipes=calls.slice(priorCalls+6).filter(call=>
+  call.recipe.targetMeshId===narrowGrowth.partPlan[1].mesh.uuid);
+assert(narrowRecipes.length===6 && narrowRecipes.every(call=>call.recipe.radius<.01),
+  'slender fabric/beam geometry needs appropriately thin interior roots');
+narrowGrowth.dispose();
+// A sparse/invalid grounded Wrap may have no actual root strands.
+// Falling back to a floating tabletop would violate the floor-only rule.
+const fallbackInput=new Group();
+fallbackInput.add(makePart('support',[-.8,0,0],[-.6,1,.2]));
+fallbackInput.add(makePart('raised surface',[-1,1,0],[1,1.2,1]));
+const emptyGroundId=fallbackInput.children[0].uuid;
+const fallbackFoliage={
+  ...foliage,
+  buildSurfaceGrowth(parent,recipe){
+    const output=fakeGrowth(parent,recipe);
+    // The clone gets a new UUID, so find the selection by the source part label.
+    const groundMesh=parent.children.find(child=>child.isMesh&&child.name==='support');
+    if(recipe.targetMeshId===groundMesh?.uuid) {
+      output.children=[];output.userData.surfaceGrowthEndpoints=[];output.userData.generatedStrands=0;
+    }
+    return output;
+  }
+};
+const fallback=feature.create({...options,target:fallbackInput,foliage:fallbackFoliage});
+assert(fallback.getDiagnostics().shapeEndpointFallback,
+  'the no-wrap grounded fixture must actually exercise the geometric fallback');
+assert(fallback.branches.every(branch=>branch.geometry.parameters.path.points.at(-1).y<=1),
+  'when grounded wraps are empty, floor roots still must not target the raised tabletop');
+fallback.dispose();
 const scene=new Group();scene.add(first.group); // Disposal must detach from a real scene parent.
 const owned=first.branches[0].geometry;first.dispose();first.dispose();
 assert.equal(owned.disposed,true);
