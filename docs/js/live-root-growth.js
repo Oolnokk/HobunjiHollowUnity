@@ -246,7 +246,10 @@
     for (const driver of glbDrivers) {
       if (!driver.userData.glbReady) throw new Error('Furniture GLB has not finished loading: ' + driver.name);
       const holder = new THREE.Group(); // Preserves authored transforms and the real GLB child hierarchy.
-      holder.name = driver.name; holder.position.copy(driver.position);
+      holder.name = driver.name;
+      holder.userData = {...driver.userData}; // Preserve authoredPartId for emitter attachment after GLB driver replacement.
+      delete holder.userData.furnitureGlbPart;
+      holder.position.copy(driver.position);
       holder.quaternion.copy(driver.quaternion); holder.scale.copy(driver.scale);
       for (const child of [...driver.children]) holder.add(child);
       driver.parent.add(holder); driver.parent.remove(driver);
