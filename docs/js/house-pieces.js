@@ -79,7 +79,7 @@
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20261020h8829922'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
-    ['HousePieces', 'house-pieces-core.js?v=20261029farmhouse1'],
+    ['HousePieces', 'house-pieces-core.js?v=20261029roomspace3'],
     [null, 'house-pieces-registry-stability.js?v=20261022he201668'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];
