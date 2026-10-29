@@ -100,7 +100,7 @@ const three={Group,Mesh,Vector3,Box3,PlaneGeometry,TubeGeometry,MeshBasicMateria
 function fakeGrowth(parent,recipe){
   const output=new Group();
   const points=recipe.target==='floors'
-    ? Array.from({length:40},(_,i)=>new Vector3((i%10-5)*.2,(recipe.floorY||0)+.045,Math.floor(i/10)*.3))
+    ? Array.from({length:40},(_,i)=>new Vector3((i%10-5)*.2,(parent.children.find(child=>child.userData.surfaceFoliageRole==='floors')?.position.y||0)+.045,Math.floor(i/10)*.3))
     : Array.from({length:12},(_,i)=>new Vector3(i%3-.8,.6+Math.floor(i/3)*.2,Math.floor(i/3)-1));
   output.add(new Mesh(new Geometry(points),new Material()));
   output.userData.generatedStrands=13;
