@@ -10,6 +10,7 @@
   let lastAudioEvent = 'idle'; // Exposed through __rangedDebug so mobile testing can confirm cue type and chorus layer count.
   const SCATTERBOW_LOAD_CHORUS_MS = [0, 55, 110]; // Used by playRangedActionSfx() to layer the scatterbow's multiple loading mechanisms.
   const SCATTERBOW_FIRE_CHORUS_MS = [0, 28, 56, 84, 112, 140]; // Used by playRangedActionSfx() to stagger one shot sound per scatterbow projectile.
+  const MAX_FIRE_TRIGGER_TO_PROJECTILE_S = 0.012; // Bounds the release-to-spawn lag for loaded shots and post-charge throws, without changing reload/charge/recovery.
   const PROJECTILE_PERP_DEAD_DEG = 15; // Used only by projectile PNG facing so arrows turn within tighter windows than animals.
   const PROJECTILE_PERP_DEAD_RAD = THREE.MathUtils.degToRad(PROJECTILE_PERP_DEAD_DEG); // Passed to the shared animal deadzone helpers.
   const DEFAULT_PROJECTILE_SPEED_MULTIPLIER = 1.15; // Backward-compatible default for ranged definitions that have not authored their own per-weapon flight-speed multiplier.
@@ -326,6 +327,17 @@
 
   function defFor(itemKey) { return CONFIG[itemKey] || null; }
   function poseForAction(def, kind) { return kind === 'load' ? def.loadPose : def.firePose; }
+  function fireReleaseFrac(def) {
+    const durationS = Number(def?.fireDurationS); // Used to convert the absolute post-trigger spawn cap into this weapon's authored animation fraction.
+    if (!Number.isFinite(durationS) || durationS <= 0) return 0;
+    const authoredFrac = Number(def?.fireAtFrac); // Used to retain any shorter authored release rather than imposing an extra delay.
+    return Math.min(Number.isFinite(authoredFrac) ? Math.max(0, authoredFrac) : 0.08,
+      MAX_FIRE_TRIGGER_TO_PROJECTILE_S / durationS);
+  }
+  function fireWindupFrac(def) {
+    const authoredWindup = Number(def?.fireWindupFrac); // Keeps the authored pre-strike gesture only when it fits inside the new fire-to-projectile window.
+    return Math.min(Number.isFinite(authoredWindup) ? Math.max(0, authoredWindup) : 0.02, fireReleaseFrac(def) * 0.5);
+  }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
     if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
@@ -359,8 +371,9 @@
     const poses = poseForAction(def, kind);
     const t = Math.max(0, Math.min(1, progress));
     const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
-    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02);
-    const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : (def.fireAtFrac ?? 0.18);
+    const fireStrikeFrac = fireReleaseFrac(def); // Keeps the visible firing strike aligned with the accelerated projectile release.
+    const wf = kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : fireWindupFrac(def);
+    const sf = kind === 'load' ? (def.reloadStrikeFrac ?? 0.56) : fireStrikeFrac;
     const hf = kind === 'load' ? (def.reloadHoldFrac ?? sf) : (def.fireHoldFrac ?? sf);
     if (sequence === 'attack') {
       if (t <= wf) return lerpPose(poses.neutral, poses.windup, t / Math.max(0.0001, wf));
@@ -396,7 +409,10 @@
       else audio?.playWeaponSlashSfx?.(2, swingIndex);
       return;
     }
-    const cfgEntry = audio?.combatSfxConfig?.()[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
+    const cues = audio?.combatSfxConfig?.(); // Shared cue table, with a dedicated dart-load asset for blowguns.
+    const cfgEntry = kind === 'load' && def?.rangedType === 'blowgun'
+      ? (cues?.blowgunLoad || cues?.rangedLoad)
+      : cues?.[kind === 'load' ? 'rangedLoad' : 'rangedFire'];
     if (!cfgEntry) return;
     const delays = itemKey === 'scatterbow'
       ? (kind === 'load' ? SCATTERBOW_LOAD_CHORUS_MS : SCATTERBOW_FIRE_CHORUS_MS)
@@ -405,7 +421,7 @@
     lastAudioEvent = `${owner?.id || 'player'}:${itemKey}:${kind}:${delays.length}-layer`;
     delays.forEach((delayMs, index) => {
       const playLayer = () => {
-        const pitch = itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1;
+        const pitch = kind === 'fire' && def?.rangedType === 'blowgun' ? 2 : (itemKey === 'scatterbow' ? 0.96 + index * 0.018 : 1); // Doubles only blowgun shot pitch for both player and NPC.
         if (owner) {
           const spatialCfg = { ...cfgEntry, volume: (Number(cfgEntry.volume) || 0.8) * layerVolumeScale };
           audio.playCreatureSfxAt?.(owner, spatialCfg, pitch);
@@ -441,7 +457,7 @@
     const action = playerAction;
     if (action?.kind !== 'fire' || action.def?.rangedType !== 'thrown' || !(Number(action.durationS) > 0)) return false;
     const progress = Math.max(0, Math.min(1, Number(action.t) / Number(action.durationS)));
-    const strikeBoundary = Math.max(0, Math.min(1, Number(action.def.fireAtFrac ?? action.def.fireStrikeFrac ?? 0.18)));
+    const strikeBoundary = fireReleaseFrac(action.def); // Hand targeting ends when the projectile actually leaves, not at the old delayed authored strike.
     return progress <= strikeBoundary;
   }
 
@@ -470,8 +486,8 @@
         gripMode: def.gripMode || null,
         toolEndFlip: def.toolEndFlip === true,
         alignToReticle: kind === 'fire',
-        windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : (def.fireWindupFrac ?? 0.02),
-        strikeFrac: kind === 'fire' ? def.fireAtFrac : (def.reloadStrikeFrac ?? 0.56),
+        windupFrac: kind === 'load' ? (def.reloadWindupFrac ?? 0.55) : fireWindupFrac(def),
+        strikeFrac: kind === 'fire' ? fireReleaseFrac(def) : (def.reloadStrikeFrac ?? 0.56),
         holdFrac: kind === 'fire' ? (def.fireHoldFrac ?? Math.min(0.99, def.fireAtFrac + 0.12)) : (def.reloadHoldFrac ?? 0.57),
       });
     }
@@ -502,7 +518,7 @@
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) { cancelPlayerAction(); return; }
     const action = playerAction;
     action.t += dt;
-    if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * action.def.fireAtFrac) {
+    if (action.kind === 'fire' && !action.fired && action.t >= action.durationS * fireReleaseFrac(action.def)) {
       action.fired = true;
       setLoaded(action.itemKey, false);
       playRangedActionSfx(action.itemKey, 'fire');
@@ -1281,7 +1297,7 @@
       window.AudioSystem?.playWeaponHitSfx?.(p.def.dmgType, x, y, p.areaId, undefined, 'medium');
       return;
     }
-    window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId);
+    window.AudioSystem?.playRangedImpactSfx?.(x, y, p.areaId, p.def?.rangedType === 'blowgun' ? 2 : 1); // Same arrow hit, twice the pitch for darts only.
   }
 
   function projectileHit(p, maxSegmentT = 1) {
@@ -1497,7 +1513,7 @@
     const chargeDurationS = isThrownFire ? Math.max(0, Number(def.chargeWindupS) || 0) : 0; // Used by release timing and the held spear/hatchet/dagger/kylie pose.
     const fireDurationS = Math.max(0.01, Number(def.fireDurationS) || 0.01); // Remaining release/recovery time after a thrown charge.
     const durationS = kind === 'fire' ? chargeDurationS + fireDurationS : def.reloadDurationS; // Crossbow, scatterbow and blowgun loading remains independent.
-    const releaseAtS = kind === 'fire' ? chargeDurationS + fireDurationS * def.fireAtFrac : null; // Absolute release timestamp shared by loaded and thrown NPC shots.
+    const releaseAtS = kind === 'fire' ? chargeDurationS + fireDurationS * fireReleaseFrac(def) : null; // NPCs preserve their charge windup, then release on the first firing tick.
     c._rangedAction = { kind, t: 0, durationS, chargeDurationS, releaseAtS, fired: false };
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c._rangedAimPitch = banditAimPitch(c, targetPlayer);
@@ -1589,7 +1605,7 @@
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
       c._rangedAimPitch = banditAimPitch(c, targetPlayer);
-      if (action.kind === 'fire' && !action.fired && action.t >= (action.releaseAtS ?? action.durationS * def.fireAtFrac)) {
+      if (action.kind === 'fire' && !action.fired && action.t >= (action.releaseAtS ?? action.durationS * fireReleaseFrac(def))) {
         action.fired = true;
         if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c); // A thrown weapon never enters the reload state; a fresh throwable is available after recovery.
         playRangedActionSfx(itemKey, 'fire', c);
@@ -1783,7 +1799,7 @@
     init, applyConfig, startPlayerAction, cancelPlayerAction, playerActionLabel,
     triggerPlayerVisual, playerWindupPoseProgress, releasePlayerHold, cancelPlayerHold,
     playerActionState: () => playerAction, // Borrowed read-only live state for animation consumers; unlike __rangedDebug this does not allocate/copy every frame.
-    isPlayerThrownFireThroughStrike,
+    isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
@@ -1804,7 +1820,7 @@
   };
   window.__rangedDebug = {
     get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
-    get playerAction() { return playerAction ? { ...playerAction, def: undefined } : null; },
+    get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
     get heldVisualState() { return deps?.getHeldRangedVisualState?.() || null; },
@@ -1836,7 +1852,7 @@
       return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.def?.rangedWeaponKey).slice(0, 24).map(c => ({
         id: c.id || c.name, weapon: c.def.rangedWeaponKey, type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
         action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
-        chargedForS: c._rangedAction?.chargeDurationS || 0, loaded: c._rangedLoaded !== false,
+        chargedForS: c._rangedAction?.chargeDurationS || 0, releaseAtS: c._rangedAction?.releaseAtS ?? null, loaded: c._rangedLoaded !== false,
       })); // Mobile debug: inspect up to 24 active humanoids without holding references to unloaded actors.
     },
     get lastMeleeHeightBlock() { return deps?.getLastMeleeHeightBlock?.() || null; },
@@ -1845,8 +1861,8 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'NPC thrown weapons now perform one continuous held windup and release without a separate reload. Crossbows, scatterbows and blowguns retain load/fire; npcRangedActions lists live phases.',
-      lastEvent, lastAudioEvent, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
+      latestChange: 'Near-instant ranged release synchronized across projectiles, player/NPC weapon poses, and hand/shoulder targets; held throw charge and reload remain separate.',
+      lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },

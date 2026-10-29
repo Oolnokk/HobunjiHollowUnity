@@ -217,6 +217,20 @@ elementMap.get('iiName').textContent = 'Test Mastery Tablet ×1';
 api.refreshInventoryUseButton();
 assert.equal(elementMap.get('inventoryDirectUseBtn')?.dataset.itemKey, 'masteryTablet', 'switching from food to a mastery tablet resolves its exact item');
 assert.equal(api.getDebug().lastDirectUseUi.reason, 'selected-slot');
+const decoratedTabletButton = elementMap.get('inventoryDirectUseBtn');
+decoratedTabletButton.textContent = '🔘 Read'; // GenericHudIcons replaces unsupported stone emoji on some devices.
+api.refreshInventoryUseButton();
+assert.equal(decoratedTabletButton.textContent, '🔘 Read', 'controller refresh preserves the decorated icon instead of recreating its authored emoji');
+const hasEffectUnlock = windowStub.CombatProgression.hasEffectUnlock;
+windowStub.CombatProgression.hasEffectUnlock = () => true;
+api.refreshInventoryUseButton();
+assert.match(decoratedTabletButton.textContent, /Already learned/, 'a real action-label change still updates the button');
+assert.equal(decoratedTabletButton.disabled, true);
+windowStub.CombatProgression.hasEffectUnlock = hasEffectUnlock;
+api.refreshInventoryUseButton();
+assert.match(decoratedTabletButton.textContent, /Read/);
+assert.equal(decoratedTabletButton.disabled, false);
+
 assert.match(elementMap.get('inventoryDirectUseBtn')?.textContent || '', /Read/);
 selectedPackKey = 'apple';
 api.refreshInventoryUseButton();

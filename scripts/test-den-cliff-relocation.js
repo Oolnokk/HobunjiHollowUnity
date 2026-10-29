@@ -55,13 +55,20 @@ for (const other of ws.animalDens.slice(1)) {
   assert(apart, `new site keeps clear of ${other.id}`);
 }
 
-// The stamped footprint keeps the entry column walkable.
-W.__test.setDenFootprintOverlay(layout, { ...den, x: site.x, y: site.y, mouthAnchor: site.mouthAnchor }, true);
-for (let row = site.mouthAnchor.y; row < site.y + den.h; row++) {
-  const tile = tileMap.get(`${site.mouthAnchor.x},${row}`);
-  assert(tile.type !== 'rock' && !tile.incline, `entry column ${site.mouthAnchor.x},${row} stays walkable`);
+// The stamped footprint respects the Locale Editor collider: rear half is rock,
+// and the entrance's entire front half is walkable, including both outer flanks.
+const relocated = { ...den, x: site.x, y: site.y, mouthAnchor: site.mouthAnchor }; // Effective den record used for relocation overlays and collider agreement.
+W.__test.setDenFootprintOverlay(layout, relocated, true);
+const open = Cliff.authoredWalkableTiles(relocated, templateFor(den)); // The authored opening replaces the old fixed three-column swathe.
+for (let row = site.y; row < site.y + den.h; row++) {
+  for (let col = site.x; col < site.x + den.w; col++) {
+    const tile = tileMap.get(`${col},${row}`); // Real relocated wilderness tile, checked against its authored collision mask.
+    const key = `${col},${row}`;
+    assert(tile, `relocated cave tile exists at ${key}`);
+    assert.equal(tile.type === 'rock', !open.has(key), `relocated cave rock must match the Locale Editor at ${key}`);
+    if (open.has(key)) assert(!tile.incline, `open cave cell ${key} must not retain terrain incline`);
+  }
 }
-assert.equal(tileMap.get(`${site.x},${site.y + den.h - 1}`).type, 'rock', 'the rest of the footprint is den rock');
 
 // Free-standing dens keep the legacy open-ground search.
 assert.equal(W.__test.findCliffDenRelocationSite(zone, { ...den, cliffBacked: false }, oldDen, layout, tileMap, null, [], null), null, 'non-cliff dens skip the cliff search');

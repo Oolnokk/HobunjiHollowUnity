@@ -665,6 +665,7 @@
     shingleVariantScene: function (name) { var v = _shingleVariant(name); return v ? v.scene : null; }, // Diagnostics/tests: the material-owning template clone behind 'farm' or 'town' roofs.
     makeShingleModel: makeShingleModel,
     cutDoorPortal: cutDoorPortal, buildEntryTunnelGroup: buildEntryTunnelGroup,
+    buildEntryTunnelPiece: buildEntryTunnelPiece, // Supplies the same generated frame faces to the shared entrance finish; never duplicates tunnel geometry.
     buildChimneyGroup: buildChimneyGroup,
   };
 
@@ -1499,7 +1500,9 @@
       // Wall and entry-tunnel faces → WallBuilder panels (hidden from base mesh).
       // Entryway walls use the gable brick recipe (smaller/denser) regardless of
       // gableEnd, since they're framing a doorway rather than a full wall face.
-      if (hideWalls && (tag === 'wall' || tag === 'entryTunnel')) {
+      // Doorway jamb/lintel boxes use entrance wood rather than wall cladding.
+      // Keep their authored faces as meshes for the shared finish UV mapping.
+      if (hideWalls && (tag === 'wall' || (tag === 'entryTunnel' && !f.doorwayFrame))) {
         var panel = _faceToPanel(fOff);
         if (f.gableEnd || tag === 'entryTunnel') gablePanels.push(panel);
         else bodyPanels.push(panel);
@@ -1518,6 +1521,7 @@
       if (tag === 'roof')          mat = matRoof;
       else if (tag === 'canvas')      mat = matCanvas;
       else if (tag === 'doorOpening') mat = matDoorOpening;
+      else if (f.doorwayFrame === true) mat = matBoards;
       else if (BOARD_TAGS[tag])    mat = matBoards;
       else if (STONE_TAGS[tag])    mat = matStone;
       else                         mat = matFloor;
@@ -1558,7 +1562,8 @@
       var mesh = new THREE.Mesh(geom, mat);
       mesh.castShadow = mesh.receiveShadow = true;
       if (tag === 'wall' || tag === 'entryTunnel') mesh.userData.surfaceFoliageRole = 'walls';
-      mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag]) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
+      if (f.doorwayFrame === true) mesh.userData.housePieceDoorwayFrame = true; // Shared-finish identity for mobile mesh inspection.
+      mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag] || f.doorwayFrame === true) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
       group.add(mesh);
     }
 

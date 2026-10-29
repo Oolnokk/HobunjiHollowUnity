@@ -23,8 +23,9 @@
     entries.set(id, entry);
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
     focusStamp = null; // Placement changes invalidate any cached interaction target.
+    window.NpcFurnitureWardrobes?.primeArea?.(area); // Authored map storage receives its real furniture-to-NPC binding asynchronously.
     surfaceProbe.valid=false; // New/replaced furniture must be visible to camera proximity immediately.
-    entry.height = def.sit ? 1 : .8;
+    entry.height = record.key === 'wardrobe' || record.itemKey === 'wardrobeFurniture' ? 2.2 : def.sit ? 1 : .8; // Tall wardrobes remain focusable before their authored geometry finishes loading.
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
@@ -127,6 +128,23 @@
     return { getButtons: () => (target.provider.buttons?.(target) || []).map(button => ({ ...button, worldInteraction:true, promptRoot:target.holder })),
       onAction: action => target.provider.onAction?.(action,target) || {ok:false} };
   }
+  function wardrobeObject(area, entry) {
+    const binding = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // The placement's own ID/metadata selects the NPC, never proximity to the NPC.
+    if (!binding || !entry.root?.parent) return null;
+    return {
+      id: 'wardrobe:' + entry.id, promptRoot: entry.root, // WorldPopupText floats over the actual rendered wardrobe or chest.
+      getButtons: () => [{ icon: '👗', label: window.NpcFurnitureWardrobes?.nameForOwner?.(binding.npcId) + "'s Wardrobe",
+        action: 'obj_open_wardrobe', style: 'primary', allowed: true, worldInteraction: true,
+        promptRoot: entry.root }],
+      onAction: action => {
+        if (action !== 'obj_open_wardrobe') return { ok: false, message: 'Unknown wardrobe action.' };
+        const current = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Validate the same furniture assignment again on button press.
+        if (current?.npcId !== binding.npcId) return { ok: false, message: 'Wardrobe assignment changed.' };
+        return window.NpcFurnitureWardrobes?.openWardrobe?.(binding.npcId, area, entry.id)
+          ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Wardrobe unavailable.' };
+      },
+    };
+  }
   function chairObject(area, entry) {
     const interactable=deps?.makeSitInteractable?.(entry.record.key,entry.record.col,entry.record.row,entry.def.fw||1,entry.def.fd||1,entry.record.rotY ?? entry.record.rotYDeg ?? 0);
     if(!interactable)return null;
@@ -136,9 +154,12 @@
       onAction:action=>occupied()?{ok:false,message:'Someone has already taken this seat.'}:interactable.onAction(action)};
   }
   function objectAt(area, col, row) {
+    window.NpcFurnitureWardrobes?.primeArea?.(area); // Idempotent warm-up for authored rooms whose furniture registered before the wardrobe module loaded.
     if(deps?.focusCandidates) {
       const target=focusedTarget(area); // Directional selection replaces the ground-tile fallback whenever the game's ray owner is available.
-      return target?.kind==='chair' ? chairObject(area,target.entry) : target?.kind==='service' ? serviceObject(target) : null;
+      return target?.kind==='wardrobe' ? wardrobeObject(area,target.entry)
+        : target?.kind==='chair' ? chairObject(area,target.entry)
+        : target?.kind==='service' ? serviceObject(target) : null;
     }
     const target = aimedService(area); // Service objects use the same obj_* dispatch as every other world interaction.
     if (target && Math.floor(deps.getAim().c) === col && Math.floor(deps.getAim().r) === row) {
@@ -146,14 +167,15 @@
         onAction: action => target.provider.onAction?.(action, target) || { ok: false } };
     }
     for (const entry of entries(area).values()) {
-      if (!entry.def.sit || !entry.root?.parent) continue;
-      const x = entry.record.col, z = entry.record.row; // Preserve actual rotation, scale and offsets for exterior benches as well as single chairs.
+      const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record);
+      if ((!entry.def.sit && !wardrobe) || !entry.root?.parent) continue;
+      const x = entry.record.col, z = entry.record.row; // Preserve actual rotation, scale and offsets for exterior benches and storage furniture.
       entry.root.updateWorldMatrix?.(true, false);
       const matrix = entry.root.matrixWorld?.elements;
       const yaw = matrix ? Math.atan2(matrix[8], matrix[10]) : (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180, dx = col + .5 - entry.root.position.x, dz = row + .5 - entry.root.position.z;
       const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw), lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
       if (Math.abs(lx) > (entry.def.fw || 1) * (entry.root.scale?.x || 1) / 2 || Math.abs(lz) > (entry.def.fd || 1) * (entry.root.scale?.z || 1) / 2) continue;
-      return chairObject(area, entry);
+      return wardrobe ? wardrobeObject(area, entry) : chairObject(area, entry);
     }
     return null;
   }
@@ -313,11 +335,12 @@
       if(!entry.root?.parent)continue;
       const f=placementFrame(entry);
       if(Math.hypot(f.x-player.x,f.z-player.z)>3+Math.max(f.w,f.d))continue;
-      if(entry.def.sit || solid(entry)) {
+      const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Camera-targeted storage, whether authored or player-assigned.
+      if(entry.def.sit || solid(entry) || wardrobe) {
         const ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d;
         const box=entry.focusBox ||= {min:{},max:{}}; // Plain cached bounds avoid constructing Three.js objects during frame work.
         Object.assign(box.min,{x:f.x-ex,y:f.y,z:f.z-ez});Object.assign(box.max,{x:f.x+ex,y:f.y+(entry.height||1)*Math.abs(entry.root.scale?.y||1),z:f.z+ez});
-        focusCandidates.push({kind:entry.def.sit?'chair':'blocker',entry,box});
+        focusCandidates.push({kind:wardrobe?'wardrobe':entry.def.sit?'chair':'blocker',entry,box});
       }
       const provider=services.get(entry.record.serviceId);
       if(!provider || provider.enabled?.()===false)continue;
@@ -340,9 +363,14 @@
     addNpc(deps.extraWalker?.());
     // Aim uses the actual (possibly raised) camera ray. Nearby NPCs keep their
     // priority; a broad table blocker must not hide a pot that its ray hits.
-    const socialFocus = deps.focusCandidates(socialCandidates, 40)?.candidate || null; // Keeps the existing unobstructed NPC targeting precedence.
+    const socialHit = deps.focusCandidates(socialCandidates, 40) || null; // NPC priority remains unless the physical wardrobe is visibly nearer to the camera.
+    const furnitureHit = deps.focusCandidates(focusCandidates, 40) || null; // Same actual camera-ray intersections as every other world object.
+    if (furnitureHit?.candidate?.kind === 'wardrobe' && (!socialHit || furnitureHit.distanceWorld < socialHit.distanceWorld)) {
+      focused = furnitureHit.candidate; return focused; // Standing in front of a wardrobe cannot be overridden by an NPC farther behind it.
+    }
+    const socialFocus = socialHit?.candidate || null;
     if (socialFocus) { focused = socialFocus; return focused; }
-    const furnitureFocus = deps.focusCandidates(focusCandidates, 40)?.candidate || null; // Still respects unrelated furniture blockers.
+    const furnitureFocus = furnitureHit?.candidate || null; // Still respects unrelated furniture blockers.
     if (furnitureFocus?.kind === 'blocker' && furnitureFocus.entry.record.serviceId) {
       unobstructedCandidates.length = 0;
       for (const candidate of focusCandidates) {
@@ -400,10 +428,12 @@
     return surfaceView;
   }
 
+  function invalidateFocus() { focusStamp = null; } // Public invalidation for async wardrobe registry loads and changed house assignments.
+
   function snapshot(area = deps?.getArea?.()) {
     return { latestChange: 'Camera lift depends only on an authored upward surface occupying the player tile or any of eight neighboring tiles; looking direction and camera pitch do not affect it.',
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
-      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null })) };
+      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();

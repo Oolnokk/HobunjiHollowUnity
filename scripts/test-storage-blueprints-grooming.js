@@ -34,7 +34,8 @@ const context = vm.createContext({
   registerChairNpcStation: noop, registerSitWorldObject: noop,
   window: { HudUpdate: { refreshItemScroll: noop }, FarmEditor: { saveFarmLayout: noop } },
 });
-for (const name of ['furnitureStock', 'consumeFurnitureStock', 'placeDecorativeFurniture', 'placeProcessingFurniture']) {
+// Include the farm-world interaction helper used by placement, not just the caller's source.
+for (const name of ['furnitureStock', 'consumeFurnitureStock', 'registerFarmDecorativeInteractable', 'placeDecorativeFurniture', 'placeProcessingFurniture']) {
   vm.runInContext(functionSource(game, name), context);
 }
 assert.equal(context.placeDecorativeFurniture(2, 3, 'groomingKit', 'storage').ok, true);

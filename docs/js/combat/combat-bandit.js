@@ -1345,13 +1345,11 @@
     const tech = window.Combat.buildQuickAttack(techDef, cond);
     const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Quick-attack timing follows the equipped bandit shape.
     const base = banditAttackBaseline(def);
-    const damage = Math.max(1, Math.round(base.damage * tech.damageMul));
     // combat-quickattacks.js's own RANGE_SCALE (0.6) shrinks the raw
     // rangeMul-scaled cone -- see the matching comment in
     // fireBanditComboStep, same "read as oversized" fix applies here.
     const rangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
     const halfConeRad = Math.min(Math.PI, tech.halfConeDeg * Math.PI / 180 * shapeStats.range);
-    const knockbackPxS = base.knockbackPxS * tech.knockbackMul * shapeStats.power;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
@@ -1375,8 +1373,15 @@
         // 'sharp' regardless of the equipped weapon either.
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 })) {
           techHit = true;
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), def.weaponShapeStats?.power || 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
-          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, tech.sourceText === 'no condition bonus' ? 'small' : 'huge');
+          const impactTech = window.Combat.buildQuickAttack(techDef, banditQuickAttackConditions(c, targetPlayer), qa.isBonusEffectReady?.(targetPlayer) ?? true); // Target conditions and the shared per-victim bonus cooldown are resolved at actual contact.
+          const impactDamage = Math.max(1, Math.round(base.damage * impactTech.damageMul));
+          const impactKnockback = base.knockbackPxS * impactTech.knockbackMul * shapeStats.power;
+          damageBanditCombatTarget(c, targetPlayer, impactDamage, c.x, c.y, impactKnockback, { tag: def.attackTag, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), def.weaponShapeStats?.power || 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, impactTech.bonusActive ? 'huge' : 'small');
+          if (impactTech.bonusActive) {
+            qa.beginBonusEffectCooldown?.(targetPlayer, techDef); // NPC versus player, NPC or animal shares the same target-owned bonus gate.
+            window.AudioSystem?.playQuickAttackBonusSfx?.(targetPlayer.x, targetPlayer.y, targetPlayer.areaId || c.areaId);
+          }
         }
       },
       onComplete: () => {

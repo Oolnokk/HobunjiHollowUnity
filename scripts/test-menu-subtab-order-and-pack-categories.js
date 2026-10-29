@@ -144,6 +144,24 @@ assert.equal(clothingGrid.tiles[0].style.display, '', 'Clothing search uses acce
 clothingSearch = 'not-present';
 syncClothingTiles();
 assert.equal(clothingGrid.tiles[0].style.display, 'none', 'Unmatched clothing search hides tile');
+clothingSearch = ''; // Restore the default Pack view before checking stack projection.
+sourceButtons = [new ClothingButton('jacket-1', 'Émbroidered Jacket ×3')];
+sourceButtons[0].children.push({
+  className: 'iib-count ipc-stack-count', textContent: '×3',
+  cloneNode() { return { className: this.className, textContent: this.textContent }; },
+});
+syncClothingTiles();
+assert.equal(clothingGrid.tiles.length, 1, 'three identical garments project as one visible Pack tile');
+assert.equal(clothingGrid.tiles[0].children[0]?.textContent, '×3', 'stack count badge survives source-to-grid DOM cloning');
+sourceButtons = [new ClothingButton('jacket-1', 'Émbroidered Jacket ×2')];
+sourceButtons[0].children.push({
+  className: 'iib-count ipc-stack-count', textContent: '×2',
+  cloneNode() { return { className: this.className, textContent: this.textContent }; },
+});
+syncClothingTiles();
+assert.equal(clothingGrid.tiles[0].children[0]?.textContent, '×2', 'selling one garment updates the projected grid badge');
+clothingGrid.tiles[0].click();
+assert.equal(sourceButtons[0].clicks, 1, 'the re-rendered stacked tile still forwards selection to its live action');
 assert(gameSource.includes('const packClothingVisible'), 'Empty-state messaging handles searches containing only clothing');
 
 console.log('Pack categories, live clothing actions/search, and frequency-first menu navigation passed');

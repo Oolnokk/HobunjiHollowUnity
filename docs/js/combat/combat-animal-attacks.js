@@ -25,6 +25,54 @@
 
   function register(id, def) { ATTACKS[id] = def; }
 
+  function mostExpensiveCompanionSpecial(c, ctx) {
+    const deps = window.Combat.deps; // Shared combat context owns the local player and species attack costs.
+    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || c.master !== deps?.player) return null;
+    const enabledIds = window.StableAnimalTrainingRefinements?.enabledSpecialAttackIds?.(c) || c.def?.attacks || []; // Stable tactics exclude deliberately disabled special attacks.
+    const tempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Matches the ordinary companion attack's tempo-adjusted base cost.
+    const costTax = Math.max(0, Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1)); // Includes Taxed just as spendStamina does.
+    const genericCost = Math.max(0, Number(c.def?.attackStaminaCost) || 0) * (tempo?.stamina || 1);
+    let best = null; // The most expensive registered special is the automatic Furious attack.
+    for (const id of enabledIds) {
+      const def = ATTACKS[id];
+      if (!def || id === 'guardCharge') continue;
+      const extra = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
+      const cost = Math.round((genericCost + extra) * costTax * 10) / 10;
+      if (cost > 0 && (!best || cost > best.cost)) best = { id, cost };
+    }
+    return best;
+  }
+
+  function startFuriousSpecial(c, ctx) {
+    if (!ctx?.target || c?._animalAttack || !window.ResourceSystem?.removeAffliction) return false;
+    const special = mostExpensiveCompanionSpecial(c, ctx); // No species special means Furious Stamina waits rather than forcing Guard Charge.
+    if (!special) return false;
+    const available = window.ResourceSystem.getAffliction?.(c, 'furiousStamina') ?? c.afflictions?.furiousStamina ?? 0;
+    if (available + 0.0001 < special.cost) return false;
+    const now = performance.now(); // Snapshots a real-time signature cooldown that normally uses performance.now rather than attackCooldownT.
+    const cooldownBefore = Math.max(0, Number(c.attackCooldownT) || 0);
+    const hadRearKickCooldown = Object.hasOwn(c, '_voorgRearKickCooldownUntil');
+    const rearKickRemainingMs = Math.max(0, (Number(c._voorgRearKickCooldownUntil) || 0) - now);
+    if (!start(c, special.id, { ...ctx, furiousSpecial: true })) return false;
+    window.StableAnimalTrainingRefinements?.prepareFuriousSpecial?.(c, special.id); // The forced move uses its existing Stable damage/affliction focus.
+    const paid = window.ResourceSystem.removeAffliction(c, 'furiousStamina', special.cost); // Consume ONLY Furious; ordinary/black Stamina and Moralized are untouched.
+    if (paid + 0.0001 < special.cost) { cancel(c); return false; }
+    c._furiousSpecial = { id: special.id, cost: paid, cooldownBefore, hadRearKickCooldown, rearKickRemainingMs };
+    c._lastFuriousSpecial = { id: special.id, cost: paid, speedMultiplier: 2, state: 'active' }; // Mobile-readable combat diagnostic survives after the move ends.
+    window.__farmLog?.('[furious-companion] ' + (c.id || c.creatureKey || 'animal') + ' triggered ' + special.id + ' at 2x for ' + paid + ' Furious Stamina', 'combat');
+    return true;
+  }
+
+  function finishFuriousSpecial(c) {
+    const special = c?._furiousSpecial;
+    if (!special) return;
+    c.attackCooldownT = special.cooldownBefore; // Resume the exact ordinary cooldown remaining before the interrupt.
+    if (special.hadRearKickCooldown) c._voorgRearKickCooldownUntil = performance.now() + special.rearKickRemainingMs; // Pause the independently timestamped Rear Kick cooldown too.
+    else delete c._voorgRearKickCooldownUntil; // An auto-triggered Rear Kick must not silently start a new ordinary special cooldown.
+    c._lastFuriousSpecial = { ...c._lastFuriousSpecial, state: 'finished', remainingCooldownS: c.attackCooldownT };
+    c._furiousSpecial = null;
+  }
+
   // ctx: { target } — the creature/player object this attack was aimed at
   // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
@@ -35,7 +83,7 @@
     // calling start(). Named attacks can top that payment up here without
     // making the generic bite/Guard Charge share their larger specialty cost.
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
-    if (additionalStaminaCost > 0) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id);
+    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // A Furious interrupt has already paid its full cost from the enhanced pool.
     const state = {};
     const target = ctx?.target; // Original companion decision remains locked during the opening charge.
     const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
@@ -61,6 +109,7 @@
   function update(c, dt) {
     const aa = c._animalAttack;
     if (!aa) return false;
+    dt *= c._furiousSpecial ? 2 : 1; // All stages, including opening lunges and recovery, run at double speed during the funded special.
     if (aa.approach) {
       const reason = advanceConeLunge(c, aa.approach, dt, window.Combat.deps); // Uses the same collision substeps as every other animal attack lunge.
       if (!reason) return true;
@@ -78,6 +127,7 @@
   // on the ground at full height. A leap that lands its hit mid-arc otherwise
   // left the creature drawn (and colliding) in mid-air until its next leap.
   function endAttackPresentation(c) {
+    finishFuriousSpecial(c); // Complete and cancel both restore the pre-interrupt cooldown clocks.
     c._animalAttack = null;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0;
@@ -167,6 +217,8 @@
 
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
+    mostExpensiveCompanionSpecial, startFuriousSpecial,
+    furiousDebug: c => ({ active: !!c?._furiousSpecial, threshold: mostExpensiveCompanionSpecial(c, { target: c })?.cost ?? null, last: c?._lastFuriousSpecial || null }),
     beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
     companionEngagementRangePx,
     companionLungeTuning: Object.freeze({ maxTiles: COMPANION_LUNGE_MAX_TILES, durationS: COMPANION_LUNGE_DURATION_S }), // Mobile-accessible inspection of shared engagement timing.

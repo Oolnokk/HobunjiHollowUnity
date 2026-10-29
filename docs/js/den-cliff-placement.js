@@ -205,6 +205,35 @@
     return cells;
   }
 
+  // The Locale Editor's cave collider is authoritative for which grid tiles
+  // may be walked on. Return null for legacy/automatic cave collision so old
+  // den templates retain their original doorway exception.
+  function authoredWalkableTiles(den, locale) {
+    const cave = caveObject(locale); // The cave's authored footprint anchors every collider in this template.
+    if (!cave || !['custom', 'footprint', 'none'].includes(cave.collision?.mode)) return null;
+    const width = Math.max(1, Number(den?.w) || 1), height = Math.max(1, Number(den?.h) || 1); // Generated den footprint dimensions in final-grid tiles.
+    const scaleX = width / Math.max(.1, Number(cave.w) || 1), scaleY = height / Math.max(.1, Number(cave.h) || 1); // Converts Locale Editor source tile offsets to actual den-grid coordinates.
+    const originX = Number(den?.x) || 0, originY = Number(den?.y) || 0; // Top-left world-grid tile, shared with ZoneDenTotemFeatures collision.
+    const rects = []; // Authored blocking rectangles, including additional cave-entrance furniture colliders.
+    for (const object of locale.objects || []) {
+      const collision = object?.collision;
+      if (!collision || !['custom', 'footprint'].includes(collision.mode)) continue;
+      const custom = collision.mode === 'custom'; // Selects the editor's offset/size overrides instead of the visual footprint.
+      const x = originX + ((Number(object.col) || 0) - (Number(cave.col) || 0) + (custom ? Number(collision.colOffset) || 0 : 0)) * scaleX; // Collider's generated left edge.
+      const y = originY + ((Number(object.row) || 0) - (Number(cave.row) || 0) + (custom ? Number(collision.rowOffset) || 0 : 0)) * scaleY; // Collider's generated back edge.
+      const w = Math.max(.1, custom ? Number(collision.w) || Number(object.w) || 1 : Number(object.w) || 1) * scaleX; // Collider width on the generated grid.
+      const h = Math.max(.1, custom ? Number(collision.h) || Number(object.h) || 1 : Number(object.h) || 1) * scaleY; // Collider depth on the generated grid.
+      rects.push({ x, y, w, h });
+    }
+    const clear = new Set(); // Open cells consumed by initial wilderness rock overlays and subsequent den relocations.
+    for (let row = originY; row < originY + height; row++) {
+      for (let col = originX; col < originX + width; col++) {
+        if (!rects.some(rect => col >= rect.x && col < rect.x + rect.w && row >= rect.y && row < rect.y + rect.h)) clear.add(`${col},${row}`);
+      }
+    }
+    return clear;
+  }
+
   // Every valid site for every template over a width×height grid. When two
   // templates fit the same spot the larger one wins, so small caves only
   // appear where the cliff is too short or too thin for the full-size one.
@@ -227,5 +256,5 @@
     return sites;
   }
 
-  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, explain, findSites, entryPath };
+  return { TEMPLATE_CATEGORY, isTemplate, caveObject, compileTemplate, evaluate, explain, findSites, entryPath, authoredWalkableTiles };
 });

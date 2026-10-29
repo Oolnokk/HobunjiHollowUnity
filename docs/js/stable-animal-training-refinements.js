@@ -294,6 +294,21 @@
     return { id: selected, waiting: false };
   }
 
+  function enabledSpecialAttackIds(actor) {
+    const entry = entryForActor(actor); // Only the owner's fighting companion receives tactical Furious interrupts.
+    const tactics = entry && tacticsForEntry(entry, actor);
+    return Object.entries(tactics?.abilities || {}).filter(([id, setup]) => id !== 'guardCharge' && setup.frequency > 0).map(([id]) => id);
+  }
+
+  function prepareFuriousSpecial(actor, id) {
+    const entry = entryForActor(actor); // Keeps the forced attack's configured focus without consuming the normal weighted rotation.
+    const setup = entry && tacticsForEntry(entry, actor)?.abilities[id];
+    if (!setup?.frequency) return false;
+    actor._companionTacticEffect = EFFECTS[setup.effect] || EFFECTS.balanced;
+    actor._companionTacticLastMove = id;
+    return true;
+  }
+
   function hitModifiers(actor) {
     return entryForActor(actor) ? actor._companionTacticEffect || EFFECTS.balanced : EFFECTS.balanced;
   }
@@ -563,6 +578,8 @@
     tacticsForEntry,
     setTactics,
     chooseAttack,
+    enabledSpecialAttackIds,
+    prepareFuriousSpecial,
     combatTempo,
     hitModifiers,
     appendTacticalLoadout,

@@ -897,7 +897,28 @@
   }
 
   function teleport(point) {
-    window.DevRandomRuin?.setPlayerWorldPoint?.({ x:point.x, z:point.z }, { snapCamera:true, grounded:true });
+    if (!window.DevRandomRuin?.setPlayerWorldPoint?.({ x:point.x, z:point.z }, { snapCamera:true, grounded:true })) return;
+    // The Great Door connects disconnected floor islands in the same area.
+    // Ordinary following cannot cross it, so carry only the player's living animal.
+    for (const animal of deps?.companionObjects || []) {
+      if ((animal.master || deps.player) !== deps.player || animal.banditCompanion ||
+          animal.stableRole !== 'companion' || animal.areaId !== MAP_ID ||
+          animal.health <= 0 || animal._downed) continue;
+      window.Combat?.animalAttacks?.cancel?.(animal);
+      window.Combat?.telegraph?.cancel?.(animal);
+      window.Combat?.cancelStagedForAttacker?.(animal);
+      animal.x = deps.player.x;
+      animal.y = deps.player.y;
+      animal.vx = 0; animal.vy = 0;
+      animal.surfaceYOverride = () => animal.areaId === MAP_ID
+        ? window.DevRandomRuin?.getGroundSupportYAt?.(animal.x / deps.TILE, animal.y / deps.TILE) ?? undefined : undefined;
+      // Snap presentation under the fade; normal companion AI resumes next tick.
+      const group = animal.avatarRef?.group;
+      if (group) {
+        group.position.x = point.x; group.position.z = point.z;
+        group.position.y = (animal.surfaceYOverride() || 0) + (animal.groundLift ?? animal.halfHeight ?? 0);
+      }
+    }
     deps?._snapCameraTarget?.();
   }
 
@@ -1076,6 +1097,7 @@
     planLayout,
     igniteAll:() => { for (const brazier of s?.braziers || []) igniteBrazier(brazier); return !!s; }, // Diagnostics.
     enter:() => enterSanctum(),
+    isGreatDoorUnlocked:() => !!s?.door && s.door.state !== 'sealed', // The unlocked Great Door's positional music replaces the ruin soundtrack until this ruin is cleared.
     debugShove:(entity, dirX, dirZ, speedPxS = 900) => { const t = deps?.TILE || 64; if (!entity) return false; deps?.damageCreature?.(entity, 1, entity.x - dirX * t, entity.y - dirZ * t, speedPxS, {}); return true; }, // Headless tests: a 1-damage hit from the opposite side.
     debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),

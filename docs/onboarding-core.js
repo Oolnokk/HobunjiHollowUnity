@@ -1472,6 +1472,7 @@
       alcoholBottleSwigs: { ...(memberState.alcoholBottleSwigs || {}) },
       npcAlcoholState: { ...(memberState.npcAlcoholState || {}) },
       npcWardrobeState: { ...(memberState.npcWardrobeState || {}) },
+      festivals:         { ...(memberState.festivals || {}) },
       npcDiscoveredGiftTraits: { ...(memberState.npcDiscoveredGiftTraits || {}) },
       alchemyKnownEffects: { ...(memberState.alchemyKnownEffects || {}) },
       alchemyKnownRecipes: [...(memberState.alchemyKnownRecipes || [])],
@@ -1853,6 +1854,7 @@
       playerData.alcoholBottleSwigs = { ...(memberState.alcoholBottleSwigs || {}) };
       playerData.npcAlcoholState = { ...(memberState.npcAlcoholState || {}) };
       playerData.npcWardrobeState = { ...(memberState.npcWardrobeState || {}) };
+      playerData.festivals = { ...(memberState.festivals || {}) };
       playerData.npcDiscoveredGiftTraits = { ...(memberState.npcDiscoveredGiftTraits || {}) };
       playerData.alchemyKnownEffects = { ...(memberState.alchemyKnownEffects || {}) };
       playerData.alchemyKnownRecipes = [...(memberState.alchemyKnownRecipes || [])];

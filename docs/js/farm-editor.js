@@ -277,6 +277,7 @@
       if (obj.derivedLinkedWindow) return; // Opposite-side farmhouse windows are runtime derivatives; only the inventory-backed primary belongs in the authoritative decor save.
       layout.decor.push({ id: obj.id, key: obj.key, col: obj.col, row: obj.row, area: obj.area,
         tableId: obj.tableId || null, surfaceItems: obj.surfaceItems || null, serviceId: obj.serviceId || null,
+        npcWardrobeFor: obj.npcWardrobeFor || null, // Shared NPC inventory owner of this exact placed chest/wardrobe; duplicates intentionally use one character ID.
         patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
         localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
         localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
@@ -444,7 +445,7 @@
         console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
     });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId }) => {
+    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor }) => {
       try {
         if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
         const def = deps.DECORATIVE_FURNITURE_DEFS[key];
@@ -460,6 +461,7 @@
             ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
             localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
           restoredObject.tableId = tableId || ''; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
+          if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
           window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
           restoredObject.patternOverrides = patternOverrides || null;
           window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
@@ -559,9 +561,66 @@
     window.DewVats.rebuildMeshesFromGrid();
   }
 
+  // Normal-play Farmwork works on plot designations, never on the dev Farm Editor's terrain brush.
+  // Keep the geometry/permission adapters here where the grid and screen-ray mapping already exist.
+  function farmworkTileAccess() {
+    if (!deps) return null;
+    const editable = deps.getCurrentArea() === 'farm' && deps.isFarmOwner() && !deps.getFarmEditMode(); // Gameplay workers may modify only their owned farm.
+    const valid = (c, r) => Number.isInteger(c) && Number.isInteger(r) && c >= 0 && r >= 0 && c < deps.COLS && r < deps.ROWS;
+    const blockedTiles = new Set([deps.TileType.ROCK, deps.TileType.SHRUB, deps.TileType.WATER]); // Shared for all map buttons within this Farmwork render, avoiding per-tile allocations.
+    return {
+      editable, cols: deps.COLS, rows: deps.ROWS, scene: deps.getScene(),
+      aimTile: () => deps.getReticleTile?.(),
+      refreshActions: () => deps.refreshActionBar?.(),
+      canDesignate: (c, r, kind) => {
+        if (!editable || (kind !== 'till' && kind !== 'dig') || !valid(c, r) || deps.isHouseFootprint(c, r)) return false;
+        const tile = deps.getGrid()?.[r]?.[c]; // Reject permanent obstructions instead of promising an NPC impossible work.
+        return !!tile && !blockedTiles.has(tile.type);
+      },
+      screenTile: (x, y) => {
+        const tile = deps._screenToFarmTile(x, y); // Same world-pointer projection as the developer editor, not a second raycaster.
+        return tile && valid(tile.col, tile.row) ? tile : null;
+      },
+      centerTile: () => {
+        const rect = deps.threeContainer.getBoundingClientRect(); // Screen-visible center supplies an intuitive initial controller grid view.
+        return deps._screenToFarmTile(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      },
+      showToast: (message, good) => deps.showToast(message, good),
+      suspendMouseCameraForUi: () => deps.suspendMouseCameraForUi?.(),
+      resumeMouseCameraAfterUi: () => deps.resumeMouseCameraAfterUi?.(),
+    };
+  }
+
   // ── Farm editor pointer handlers ──────────────────────────────
   let _editorPainting = false;
   function _bindListeners() {
+    // Capture before ordinary world-action handlers so Farmwork paint never plants, attacks, or selects a tile for free.
+    deps.threeContainer.addEventListener('pointerdown', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      // Touch keeps the native look joystick; locked mouse actions use the same gameplay reticle as the arch/controller.
+      if (window.FarmworkUI.isPlanning?.() && (e.pointerType === 'touch' || document.pointerLockElement === deps.threeContainer)) return;
+      if (e.pointerType === 'mouse' && !['action1', 'action2'].includes(deps.getMouseAction?.(e.button))) return;
+      if (window.FarmworkUI.startWorldPointer(e.pointerId, e.clientX, e.clientY, e.pointerType === 'mouse' ? deps.getMouseAction?.(e.button) : 'action1')) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    deps.threeContainer.addEventListener('pointermove', e => {
+      if (!window.FarmworkUI?.isOpen?.()) return;
+      if (window.FarmworkUI.dragTile(e.pointerId, e.clientX, e.clientY)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+      }
+    }, true);
+    const finishFarmworkGesture = e => {
+      if (window.FarmworkUI?.endWorldPointer?.(e.pointerId)) {
+        e.preventDefault(); e.stopImmediatePropagation(); // Avoid normal Action 1 on release after a designation stroke.
+      }
+    }; // Shared pointerup/cancel owner for touch, stylus and mouse.
+    window.addEventListener('pointerup', finishFarmworkGesture, true);
+    window.addEventListener('pointercancel', finishFarmworkGesture, true);
+    deps.threeContainer.addEventListener('click', e => {
+      if (!window.FarmworkUI?.isPanelOpen?.()) return;
+      e.preventDefault(); e.stopImmediatePropagation(); // Block click fallthrough on a plot tile gesture, including invalid destinations.
+    }, true);
     deps.threeContainer.addEventListener('pointerdown', (e) => {
       if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || !deps.getFarmEditMode() || deps.getCurrentArea() !== 'farm') return;
       e.stopPropagation();
@@ -592,7 +651,7 @@
 
   window.FarmEditor = {
     init,
-    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush,
+    toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
     farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
   };

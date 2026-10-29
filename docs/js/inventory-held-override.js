@@ -316,13 +316,14 @@
     const actionsEl = document.getElementById('iiActions');
     const detailEl = document.getElementById('iiDetail');
     if (!nameEl || !actionsEl || !detailEl || detailEl.style?.display === 'none') return null;
+    if (detailEl.dataset?.itemKind === 'clothing' || document.getElementById('mpInventory')?.classList?.contains?.('inv-mode-gear')) return null; // Direct bag-use never appears on clothing or permanent gear.
     const detailName = normalizeDetailLabel(nameEl.textContent).replace(/\s+×\s*\d+$/, ''); // Pack displays "Tablet ×2" while metadata stores "Tablet".
     if (!detailName) return null;
 
     // The selected Pack slot is the item identity. Looking it up by name through
     // every owned stack on each observed DOM change can stall large inventories.
     const selected = document.querySelector?.('#invGrid .inv-item-box.selected[data-key]:not(.pack-clothing-tile)');
-    const selectedKey = selected?.dataset?.key || clickedDetailKey;
+    const selectedKey = detailEl.dataset?.itemKey || selected?.dataset?.key || clickedDetailKey; // Bind direct use to displayed preview, never a stale selected stack.
     if (selectedKey) {
       const action = inventoryUseAction(selectedKey); // Exactly one canonical metadata lookup for the selected item.
       const def = canonicalDef(selectedKey);
@@ -371,7 +372,13 @@
     if (changedKey) button.dataset.itemKey = key;
     if (button.disabled !== (action.allowed === false)) button.disabled = action.allowed === false;
     const buttonLabel = `${action.icon || '✦'} ${action.verb}`; // Used to skip redundant child mutations that would schedule another render.
-    if (button.textContent !== buttonLabel) button.textContent = buttonLabel;
+    // GenericHudIcons may replace the authored emoji with a fallback/image.
+    // Compare the requested label, not that decorated text: controller section
+    // reconciliation otherwise restores the emoji and starts a microtask loop.
+    if (button.dataset.directUseLabel !== buttonLabel) {
+      button.textContent = buttonLabel;
+      button.dataset.directUseLabel = buttonLabel;
+    }
     const tooltip = `${action.verb} ${action.itemLabel} directly from Inventory`; // Used only when the readable action text changes.
     if (button.title !== tooltip) button.title = tooltip;
     if (!existing || changedKey) button.onclick = () => useInventoryItem(key);

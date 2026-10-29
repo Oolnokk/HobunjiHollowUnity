@@ -33,6 +33,8 @@
     neutral: '#ffd43a',
     interact: '#3dff6e',
     friendly: '#ffffff',
+    farmSelected: '#35dcff', // Farmwork uses the same mask/glow with its own color language.
+    farmAssignable: '#b58aff',
   });
   const INFO_COLORS = Object.freeze({
     title: '#FFB86C', // Matches WorldPopupText's interaction object color.
@@ -172,6 +174,12 @@
     const player = deps.getPlayerTile?.();
     if (!scene || !player) return [];
     const out = [];
+    if (window.FarmworkUI?.isOpen?.()) {
+      for (const { root, category } of window.FarmworkUI.glowTargets()) {
+        if (root && sceneOf(root) === scene) out.push({ root, category, meshes: meshesOf(root, now) });
+      }
+      return out;
+    }
     const seenRoots = new Set();
     const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
     const consider = (root, category, extra) => {
@@ -346,7 +354,7 @@
   // outlines off), so post-processing never smears the highlight.
   function renderOverlay(renderer, scene, camera) {
     lastStats.rendered = 0;
-    if (!active || !targets.length || !renderer || !scene || !camera) return;
+    if ((!active && !window.FarmworkUI?.isOpen?.()) || !targets.length || !renderer || !scene || !camera) return;
     lastRenderer = renderer;
     ensurePost();
     const T = THREE();
@@ -446,6 +454,7 @@
 
   function setActive(next) {
     next = !!next;
+    if (next && window.FarmworkUI?.isOpen?.()) window.FarmworkUI.close(); // The two world overlays are mutually exclusive.
     if (next === active) return active;
     active = next;
     ensureOverlayEl()?.classList.toggle('active', active);
@@ -467,14 +476,16 @@
   function toggle() { return setActive(!active); }
 
   function update(now = performance.now()) {
-    if (!active || !deps) return;
+    const farmwork = window.FarmworkUI?.isOpen?.();
+    if (farmwork) window.FarmworkUI.updateVisuals(now);
+    if ((!active && !farmwork) || !deps) { if (targets.length) targets = []; return; }
     if (now - lastRefreshAt >= REFRESH_MS) {
       lastRefreshAt = now;
       targets = collectTargets(now);
       lastStats.targets = targets.length;
       lastStats.meshes = targets.reduce((n, t) => n + (t.meshes?.length || 0), 0);
     }
-    if (now - lastInfoAt >= INFO_REFRESH_MS) {
+    if (!farmwork && now - lastInfoAt >= INFO_REFRESH_MS) {
       lastInfoAt = now;
       refreshInfoLists();
     }

@@ -356,7 +356,12 @@
   function brew() {
     const brewOptions = campfireBrewing ? { targetAlchemyLevel: alchemyLevel() * herbalistPrecisionFraction() } : {};
     const result = brewFrom(selectedReagents, brewOptions);
-    if (result.ok) selectedReagents = [];
+    if (result.ok) {
+      // Keep the same three reagents ready for another batch, dropping only exhausted stacks.
+      selectedReagents = selectedReagents.filter(key => (deps?.inventory?.[key] || 0) > 0);
+      // A missing reagent invalidates the previous target until a complete reaction is selected again.
+      if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null;
+    }
     deps?.refreshItemScroll?.();
     return result;
   } // Existing table adapter; also used by the campfire Herbalist flow via setCampfireBrewing.
@@ -507,6 +512,7 @@
     const preview = document.getElementById('alchemyEffectPreview'); // Existing reaction preview.
     if (!list) return;
     selectedReagents = selectedReagents.filter(key => (deps?.inventory?.[key] || 0) > 0);
+    if (targetedRecipeId && !enumerateRecipes(selectedReagents).some(outcome => outcome.recipeId === targetedRecipeId)) targetedRecipeId = null; // Inventory may change while this panel is open.
     const held = Object.keys(REAGENT_DEFS).filter(key => (deps?.inventory?.[key] || 0) > 0); // Owned rows.
     list.innerHTML = '';
     held.forEach(key => { const definition = REAGENT_DEFS[key]; const selected = selectedReagents.includes(key); const compatible = selected || !selectedReagents.length || canAddReagent(selectedReagents, key); const row = document.createElement('div'); row.className = `shop-row alch-reagent-row${selected?' selected':''}${compatible?'':' incompatible'}`; row.innerHTML = `<div class="sh-icon">${definition.icon}</div><div class="sh-info"><div class="sh-name">${definition.label} <span class="alch-count">×${deps.inventory[key]}</span></div><div class="alch-effects"><span class="alch-effect humour">${definition.traits.humour}</span><span class="alch-effect drive">${definition.traits.drive}</span><span class="alch-effect magnetism">${definition.traits.magnetism}</span></div></div><button class="shop-buy-btn" data-act="toggle" ${compatible?'':'disabled'}>${selected?'Selected':compatible?'Select':'Incompatible'}</button>`; row.querySelector('[data-act="toggle"]')?.addEventListener('click', () => toggleReagent(key)); list.appendChild(row); });
@@ -527,7 +533,7 @@
     const selectedKey = deps?.getSelectedItemKey?.() || null; // Current held/selected item.
     const flaskPayload = parseBrewedItemKey(selectedKey); // Current alchemy payload.
     const flaskDefinition = flaskPayload && RECIPE_DEFS[flaskPayload.recipeId]; // Current flask recipe.
-    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
+    return { alchemy:{level:alchemyLevel(),xp:skillSnapshot?.experience?.alchemy||0}, selectedReagents:selectedReagents.map(key=>({key,traits:REAGENT_DEFS[key]?.traits})), repeatBrewReady:selectedReagents.length===MAX_REAGENTS&&selectedReagents.every(key=>(deps?.inventory?.[key]||0)>0)&&outcomes.length>0, outcomes:outcomes.map(outcome=>({recipeId:outcome.recipeId,assignments:outcome.assignments})), everyIngredientContributes:outcomes.every(outcome=>outcome.assignments.every(a=>Object.values(a.contributes).every(list=>list.length))), targetedRecipeId, targetingProbability:targetedRecipeId?targetingProbability(alchemyLevel(),outcomes,targetedRecipeId):null, outcomeWeights:Object.fromEntries(outcomes.map(outcome=>[outcome.recipeId,outcomeWeight(outcome)])), discoveredRecipeCount:discoveredRecipes.size, activeEffects:serializeActiveEffects(), afflictions:afflictionTotals(entity), contextualRecommendation:contextualRestoratives(entity)[0]?.recipeId||null, selectedFlask:flaskDefinition?.useMode==='throw'?{recipeId:flaskDefinition.id,basePotency:flaskDefinition.amount,splashRadius:flaskDefinition.splashRadius}:null, projectile:window.AlchemyFlasks?.diagnostics?.()||null, lastBrew:lastBrewDiagnostics };
   }
   function diagnosticsText() { return JSON.stringify(diagnosticsSnapshot(), null, 2); }
   window._doBrewPotion = () => { const result = brew(); deps?.showToast?.(result.message, result.ok !== false); renderPanel(); if (result.ok) deps?.saveMemberWorldData?.(); };

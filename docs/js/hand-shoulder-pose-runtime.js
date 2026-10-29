@@ -207,8 +207,8 @@
       strikeFrac: def.reloadStrikeFrac ?? 0.56,
       holdFrac: def.reloadHoldFrac ?? 0.57,
     } : {
-      windupFrac: def.fireWindupFrac ?? 0.02,
-      strikeFrac: def.fireAtFrac ?? 0.18,
+      windupFrac: global.RangedWeapons?.fireWindupFrac?.(def) ?? def.fireWindupFrac ?? 0.02,
+      strikeFrac: global.RangedWeapons?.fireReleaseFrac?.(def) ?? def.fireAtFrac ?? 0.18,
       holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18),
     };
     const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
@@ -294,7 +294,7 @@
         const progress = clamp01(Number(action.t) / Number(action.durationS));
         const timing = kind === 'load'
           ? { windupFrac: def.reloadWindupFrac ?? 0.55, strikeFrac: def.reloadStrikeFrac ?? 0.56, holdFrac: def.reloadHoldFrac ?? 0.57 }
-          : { windupFrac: def.fireWindupFrac ?? 0.02, strikeFrac: def.fireAtFrac ?? 0.18, holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18) };
+          : { windupFrac: global.RangedWeapons?.fireWindupFrac?.(def) ?? def.fireWindupFrac ?? 0.02, strikeFrac: global.RangedWeapons?.fireReleaseFrac?.(def) ?? def.fireAtFrac ?? 0.18, holdFrac: def.fireHoldFrac ?? (def.fireAtFrac ?? 0.18) };
         const sequence = kind === 'load' ? (def.reloadSequence || 'attack') : (def.fireSequence || 'fire');
         const configuredPose = kind === 'load' ? def.loadPose : def.firePose;
         const key = `ranged:${action.itemKey}:${kind}`;

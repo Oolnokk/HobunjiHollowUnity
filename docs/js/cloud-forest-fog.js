@@ -44,6 +44,7 @@
   // night stop for the overlay, plus near-black fog and mist that swallow the
   // distance while nearby things stay readable.
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
+  const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
@@ -530,16 +531,11 @@
   function drawLanternMasksCompat(activation = 1, preserveOutdoorWeatherTint = false) {
     const lanternStrength = clamp01(activation); // Scales all player/watch mask alphas while the ambient-light threshold fades lanterns on or off.
     if (lanternStrength <= 0) return;
-    const currentArea = lightingDeps.getCurrentArea(); // Cache once for Tothal's disabled lantern and Kanthic's half-radius lantern.
+    const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
-    const ruinLanternScale = ruinTradition === 'kanthic' ? .375 : 1; // +50% versus Kanthic's prior quarter-radius lantern.
+    const ruinLanternScale = 1; // Kanthic uses the ordinary full-radius, soft-edged lantern rather than a separate circular vignette.
     const ctx = lightingDeps.lctx;
-    if(ruinTradition==='kanthic'){
-      const rect=lightingDeps.getThreeRect(); // Screen projection of the same camera-origin 60-degree repelling cone.
-      const radius=rect.height*.5*Math.tan(Math.PI/6)/Math.tan((lightingDeps.camera.fov||50)*Math.PI/360);
-      ctx.save();ctx.beginPath();ctx.arc(rect.width*.5,rect.height*.5,radius,0,Math.PI*2);ctx.clip();
-    }
     const carriers = [{
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
@@ -574,8 +570,6 @@
       ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    if(ruinTradition==='kanthic')ctx.restore(); // Cone clipping is local to this lantern pass.
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
     if (weatherTint) {
@@ -847,8 +841,9 @@
     }
 
     const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();
-    ctx.globalCompositeOperation = a < 0.09 ? 'screen' : 'multiply';
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+    const darknessAlpha = undergroundFog && activeRuinTradition() === 'kanthic' ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
+    ctx.globalCompositeOperation = darknessAlpha < 0.09 ? 'screen' : 'multiply';
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${darknessAlpha})`;
     ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.globalCompositeOperation = 'source-over';
 
@@ -893,7 +888,7 @@
     update,
     setLayerRadius,
     setLayerOpacity,
-    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*.375, // Same expanded falloff boundary consumed by Kanthic plasm sight checks.
+    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
