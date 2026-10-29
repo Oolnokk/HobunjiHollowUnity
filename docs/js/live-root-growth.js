@@ -10,8 +10,8 @@
 
   const DEFAULTS = Object.freeze({
     seed: 'ruin-root-growth-1', floorWidth: 8, floorDepth: 8, floorY: 0,
-    branchCount: 9, duration: 3.5, branchRadius: 0.065, bend: 0.42, arcConcavity: 0.72,
-    floorDensity: 1, targetDensity: 1, strandLimit: 80,
+    branchCount: 9, duration: 0.5, branchRadius: 0.065, bend: 0.42, arcConcavity: 0.72,
+    floorDensity: 6, targetDensity: 6, strandLimit: 80,
     targetLength: 12, floorLength: 12,
     radius: 0.045, curl: 0.6, showGuide: false
   }); // Every instance gets its own normalized, serializable configuration.
@@ -31,7 +31,7 @@
     result.branchRadius = number(data.branchRadius, DEFAULTS.branchRadius, 0.008, 0.3);
     result.bend = number(data.bend, DEFAULTS.bend, 0, 3);
     result.arcConcavity = number(data.arcConcavity, DEFAULTS.arcConcavity, 0, 1); // Controls how long rising branches hug the floor before curving toward their destination.
-    for (const key of ['floorDensity', 'targetDensity']) result[key] = number(data[key], DEFAULTS[key], 0.05, 1);
+    for (const key of ['floorDensity', 'targetDensity']) result[key] = number(data[key], DEFAULTS[key], 0.05, 6);
     result.strandLimit = Math.round(number(data.strandLimit, DEFAULTS.strandLimit, 1, 80));
     for (const key of ['floorLength', 'targetLength']) result[key] = number(data[key], DEFAULTS[key], 0.5, 30);
     result.radius = number(data.radius, DEFAULTS.radius, 0.005, 0.3);
@@ -56,8 +56,73 @@
   }
   const smooth = t => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x); }; // Ease used by both extend and retract.
 
-  function findGrowthMesh(group) {
-    return group?.children?.find(child => child.isMesh && child.geometry?.getAttribute('position')) || null;
+  function growthMeshes(group) {
+    const meshes = [];
+    group?.traverse?.(node => { if (node.isMesh && node.geometry?.getAttribute('position')) meshes.push(node); });
+    return meshes;
+  }
+  function findGrowthMesh(group) { return growthMeshes(group)[0] || null; }
+
+  // The shared FoliageGenerator deliberately caps each Wrap pass at density 1.
+  // Higher values here mean layered independent seeded Wrap passes, rather
+  // than modifying the generator's global semantics or silently clamping to 1.
+  function buildDenseWrap(THREE, foliage, parent, options, density) {
+    if (density <= 1) return foliage.buildSurfaceGrowth(parent, {...options,density});
+    const layers = new THREE.Group();
+    layers.name = 'Layered surface roots';
+    layers.userData.surfaceFoliage = true; // Other layers must ignore all already-generated growth.
+    layers.userData.surfaceGrowthEndpoints = [];
+    layers.userData.generatedStrands = 0;
+    let remaining = density, pass = 0;
+    while (remaining > 0.00001) {
+      const layer = foliage.buildSurfaceGrowth(parent, {
+        ...options, density:Math.min(1,remaining), seed:options.seed+':layer-'+pass
+      });
+      layers.add(layer); // Only generated geometry; the floor/furniture remains the source.
+      layers.userData.generatedStrands += layer.userData?.generatedStrands || 0;
+      for (const endpoint of layer.userData?.surfaceGrowthEndpoints || []) {
+        layers.userData.surfaceGrowthEndpoints.push(endpoint);
+      }
+      remaining -= 1; pass++;
+    }
+    layers.userData.diagnostics = pass + ' independent Wrap layers; ' +
+      layers.userData.generatedStrands + ' total root strands';
+    layers.userData.densityPasses = pass;
+    return layers;
+  }
+
+  // Particle emitters need real world positions but must NOT become descendants
+  // of hidden furniture meshes. Rebuild the source part's transform-only ancestry
+  // in a visible host, retaining nested part offsets/rotation/scale exactly.
+  function buildParticleAnchors(THREE, group, target) {
+    const host = new THREE.Group();
+    host.name = 'Furniture particle effects (visible anchors, hidden source geometry)';
+    host.position.copy(target.position);
+    host.quaternion.copy(target.quaternion);
+    host.scale.copy(target.scale);
+    const sourceNodes = new Map(), anchors = new Map(), cloned = new Map();
+    target.traverse(node => {
+      if (node.userData?.authoredPartId) sourceNodes.set(node.userData.authoredPartId,node);
+    });
+    for (const [id,part] of sourceNodes) {
+      const lineage = []; let current = part;
+      while (current && current !== target) { lineage.unshift(current); current = current.parent; }
+      if (current !== target) continue;
+      let parent = host;
+      for (const original of lineage) {
+        let proxy = cloned.get(original);
+        if (!proxy) {
+          proxy = new THREE.Group(); proxy.name = 'Particle anchor ' + (original.name || id);
+          proxy.position.copy(original.position); proxy.quaternion.copy(original.quaternion);
+          proxy.scale.copy(original.scale); parent.add(proxy); cloned.set(original,proxy);
+        }
+        parent = proxy;
+      }
+      anchors.set(id,parent);
+    }
+    host.userData.meshById = anchors; // Uses AuthoredFurniture.createEmitterVisual's normal attachedPartId API.
+    group.add(host);
+    return host;
   }
 
   // Choose branch origins FROM the generated floor strands, not arbitrary tiles.
@@ -209,14 +274,14 @@
     const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
       offset:0.012, density:recipe.floorDensity, color:rootFinish.color, texture:rootFinish.texture};
-    const floorGrowth = foliage.buildSurfaceGrowth(floorHost, {
+    const floorGrowth = buildDenseWrap(THREE, foliage, floorHost, {
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
-    }); // Dense permanent cover uses precisely the temple Wrap solver.
+    }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
     floorHost.add(floorGrowth);
-    const targetGrowth = foliage.buildSurfaceGrowth(target, {
+    const targetGrowth = buildDenseWrap(THREE, foliage, target, {
       ...growthOptions, seed:recipe.seed+':shape', target:'all',
-      length:recipe.targetLength, density:recipe.targetDensity
-    }); // The final keyframe follows the imported furniture's actual surface triangles.
+      length:recipe.targetLength
+    }, recipe.targetDensity); // The final keyframe follows the imported furniture's actual surface triangles.
     target.add(targetGrowth);
     const shapeMesh = findGrowthMesh(targetGrowth), floorMesh = findGrowthMesh(floorGrowth);
     const targets = sampledTargetPoints(THREE, target, targetGrowth, recipe.branchCount, random, group);
@@ -231,9 +296,18 @@
       branchGroup.add(branch); return branch;
     });
     group.add(branchGroup);
-    if (shapeMesh) {
-      shapeMesh.userData.fullDrawCount = shapeMesh.geometry.index ? shapeMesh.geometry.index.count : shapeMesh.geometry.attributes.position.count;
+    const shapeMeshes = growthMeshes(targetGrowth); // Every seeded density layer must grow/retract, not only its first mesh.
+    for (const mesh of shapeMeshes) mesh.userData.fullDrawCount =
+      mesh.geometry.index ? mesh.geometry.index.count : mesh.geometry.attributes.position.count;
+    const emitterRecords = Array.isArray(options.particleEmitters) ? options.particleEmitters :
+      (Array.isArray(target.userData?.authoredParticleEmitters) ? target.userData.authoredParticleEmitters : []);
+    const emitterRuntime = options.emitterRuntime || root.AuthoredFurniture;
+    if (emitterRecords.length && typeof emitterRuntime?.createEmitterVisual !== 'function') {
+      throw new Error('Furniture particle emitters require AuthoredFurniture.createEmitterVisual.');
     }
+    const effectHost = emitterRecords.length ? buildParticleAnchors(THREE,group,target) : null;
+    const emitterVisuals = emitterRecords.filter(record=>record && typeof record === 'object')
+      .map(record=>emitterRuntime.createEmitterVisual(effectHost,record)); // Reuses the authored-furniture particle renderer.
     let progress = 0, direction = 0, disposed = false; // Per-instance animation state, independent of purpose/trigger.
     const apply = () => {
       const extent = smooth(progress / .68), wrap = smooth((progress - .45) / .55);
@@ -244,29 +318,37 @@
         branches[i].geometry.setDrawRange(0, count);
         branches[i].visible = count > 0;
       }
-      if (shapeMesh) {
-        const count = Math.floor(shapeMesh.userData.fullDrawCount * wrap / 3) * 3;
-        shapeMesh.geometry.setDrawRange(0, count);
+      for (const mesh of shapeMeshes) {
+        const count = Math.floor(mesh.userData.fullDrawCount * wrap / 3) * 3;
+        mesh.geometry.setDrawRange(0, count);
       }
     };
     const api = {
-      group, target, floorGrowth, targetGrowth, branches, recipe, rootFinish,
+      group, target, floorGrowth, targetGrowth, branches, recipe, rootFinish, emitterVisuals,
       setProgress(value) { if (!disposed) { progress = number(value, progress, 0, 1); apply(); } return progress; },
       getProgress() { return progress; },
       extend() { if (!disposed) direction = 1; },
       retract() { if (!disposed) direction = -1; },
       pause() { direction = 0; },
       update(deltaSeconds) {
-        if (disposed || direction === 0) return progress;
-        const delta = number(deltaSeconds, 0, 0, .25); // Clamp background-tab spikes; no sudden door/platform jumps.
-        progress = clamp(progress + direction * delta / recipe.duration, 0, 1);
-        if ((progress === 1 && direction > 0) || (progress === 0 && direction < 0)) direction = 0;
-        apply(); return progress;
+        if (disposed) return progress;
+        const delta = number(deltaSeconds, 0, 0, .25); // Also ticks particles while growth is idle.
+        if (direction !== 0) {
+          progress = clamp(progress + direction * delta / recipe.duration, 0, 1);
+          if ((progress === 1 && direction > 0) || (progress === 0 && direction < 0)) direction = 0;
+          apply();
+        }
+        const complete = progress >= 1; // Emitters activate on completion, never during partial growth.
+        for (const visual of emitterVisuals) visual.update(delta,complete);
+        return progress;
       },
       getDiagnostics() {
         return {progress, direction, branchCount:branches.length, rootFinish, outlinedBranches:branches.length,
           floorStrands:floorGrowth.userData?.generatedStrands || 0,
           shapeStrands:targetGrowth.userData?.generatedStrands || 0,
+          floorDensityPasses:floorGrowth.userData?.densityPasses || 1,
+          shapeDensityPasses:targetGrowth.userData?.densityPasses || 1,
+          furnitureEmitterCount:emitterVisuals.length, furnitureEmittersActive:progress >= 1,
           floorNodesFromWrap:source.derivedFromWrap, sampledFloorNodes:source.candidateCount,
           shapeWrapEndpointPairs:targets.wrapEndpointCount, shapeEndpointFallback:targets.usedFallback,
           floor:floorGrowth.userData?.diagnostics, shape:targetGrowth.userData?.diagnostics};
@@ -275,6 +357,7 @@
         if (disposed) return; disposed = true; direction = 0;
         group.parent?.remove(group);
         // Only dispose generated assets; source clone materials/geometries can be shared with the importer.
+        for (const visual of emitterVisuals) visual.dispose(); // Stops spawning and frees particles without touching the furniture.
         for (const mesh of branches) mesh.geometry.dispose();
         branchMaterial.dispose();
         for (const growth of [floorGrowth, targetGrowth]) growth.traverse(node => {
