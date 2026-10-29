@@ -98,7 +98,7 @@
   }
 
   function rigScaleFor(troop) {
-    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(SPECIES_ID, 'male', { anatomy: {...troop.anatomy,headScale:1} });
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(SPECIES_ID, 'male', { anatomy: { ...troop.anatomy } });
     if (!scale) throw new Error('CharacterRigScale is required for maskbound guardian proportions.');
     return scale; // Canonical x/y/head/offsetY validation is shared with species/gender defaults.
   }
@@ -107,7 +107,7 @@
     const troop = troopFor(options.troopType || options.roster?.maskboundTroop);
     const roster = options.roster ? JSON.parse(JSON.stringify(options.roster)) : rollRoster(troop.key); // Rehydrated enemies can supply their existing loot/equipment record.
     roster.appearance ||= {speciesId:SPECIES_ID,gender:'male'};
-    roster.appearance.anatomy = {...troop.anatomy,...roster.appearance.anatomy,headScale:1};
+    roster.appearance.anatomy = { ...troop.anatomy, ...roster.appearance.anatomy }; // The troop's own x/y/head/offsetY (head defaults to 1); Workshop rig-scale overrides are merged later by BanditCombat.
     roster.cosmeticSlots ||= {};
     const rigScale = rigScaleFor({ anatomy: roster.appearance.anatomy });
     const entity = await window.MinionCombat?.makeEntity?.({

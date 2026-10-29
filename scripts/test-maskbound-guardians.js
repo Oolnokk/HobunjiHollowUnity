@@ -95,7 +95,7 @@ vm.runInContext(read('docs/js/combat/combat-maskbound-guardian.js'), spawnContex
   spawnContext.GameRandom = {random:()=>0.99};
   assert(!combat.rollRoster('sentinel').equippedCosmetics.includes('ragged_hood'));
   for (const troop of Object.values(combat.troopTypes)) assert.equal(troop.anatomy.headScale,1);
-  assert.equal(combat.rigScaleFor({anatomy:{rigScaleX:2,rigScaleY:2,headScale:0.1}}).head,1,'old/custom troop anatomy cannot resize the skull');
+  assert.equal(combat.rigScaleFor({anatomy:{rigScaleX:2,rigScaleY:2,headScale:0.8}}).head,0.8,'authored troop head scale is honored (Character Rig Scale values are the author\'s to control); the shipped troops default to 1');
   const sentinel = combat.troopTypes.sentinel.anatomy;
   const bulwark = combat.troopTypes.bulwark.anatomy;
   const reacher = combat.troopTypes.reacher.anatomy;

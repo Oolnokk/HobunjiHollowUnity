@@ -1969,8 +1969,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  drawEmoteLayers(maskLayers);
   drawBreathingLayers(hoodLayers);
+  drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;

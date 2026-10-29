@@ -643,7 +643,11 @@
       return import(`https://esm.sh/three@${version}/examples/jsm/loaders/GLTFLoader.js?deps=three@${version}`)
         .then(module => new module.GLTFLoader());
     }
-    return Promise.reject(new Error('THREE.GLTFLoader is not available.'));
+    // Pages that load THREE as an ES module (Enemy Loadout Workshop, editors) expose the loader through their import map, exactly as the
+    // hand attachments already resolve it; without this every such preview kept the primitive sphere feet instead of the species GLBs.
+    return import('three/addons/loaders/GLTFLoader.js')
+      .then(module => new module.GLTFLoader())
+      .catch(() => { throw new Error('THREE.GLTFLoader is not available.'); });
   }
 
   function loadGlbScene(THREE, path) {

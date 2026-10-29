@@ -462,6 +462,89 @@ function scalar(title, key, fallback) {
   box.append(label);
   $('poolPanel').append(box);
 }
+// Optional per-enemy body proportions, in the Animation Author's Character Rig Scale units (width / height / head as % of the
+// authored size, head Y offset as % of model height). Only checked fields are written to the rules; they are applied in game at spawn.
+function bodyDefaults(species, gender) {
+  const troop = state.kind.startsWith('maskbound:')
+    ? window.MaskboundGuardianCombat?.troopTypes?.[state.kind.split(':')[1]]
+    : null;
+  if (troop)
+    return {
+      x: troop.anatomy.rigScaleX,
+      y: troop.anatomy.rigScaleY,
+      head: troop.anatomy.headScale,
+      offsetY: troop.anatomy.headOffsetY,
+    };
+  const base = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender);
+  return base
+    ? { x: base.x, y: base.y, head: base.head, offsetY: base.offsetY }
+    : { x: 1, y: 1, head: 1, offsetY: 0 };
+}
+function renderBodyProportions(species, gender) {
+  const defaults = bodyDefaults(species, gender);
+  const ranges = window.EnemyLoadoutRules.rigScaleRanges;
+  const fields = [
+    ['x', 'Body width (%)', 2.5],
+    ['y', 'Body height (%)', 2.5],
+    ['head', 'Head scale (%)', 2.5],
+    ['offsetY', 'Head Y offset (%)', 0.5],
+  ];
+  const box = el('section', 'pool');
+  box.append(
+    el(
+      'p',
+      'help',
+      'Same four values as Character Rig Scale in the Multi-Avatar Animation Author. Tick a value to override ' +
+        (state.kind.startsWith('maskbound:') ? 'this troop’s' : 'the species') +
+        ' default for this enemy; unticked values keep the default. Overrides are saved with the spawn rules and used in game.',
+    ),
+  );
+  for (const [key, title, step] of fields) {
+    const label = el('label', 'chance', title);
+    const check = el('input');
+    check.type = 'checkbox';
+    check.checked = rule().rigScale?.[key] != null;
+    const input = el('input');
+    input.type = 'number';
+    input.step = String(step);
+    input.min = String(ranges[key][0] * 100);
+    input.max = String(ranges[key][1] * 100);
+    input.value = (
+      (rule().rigScale?.[key] ?? defaults[key]) * 100
+    ).toFixed(1);
+    input.disabled = !check.checked;
+    const hint = el('span', 'muted', ' default ' + (defaults[key] * 100).toFixed(1));
+    const write = () =>
+      mutate((r) => {
+        if (check.checked) {
+          const [lo, hi] = ranges[key];
+          r.rigScale ||= {};
+          r.rigScale[key] = Math.min(hi, Math.max(lo, Number(input.value) / 100));
+        } else if (r.rigScale) {
+          delete r.rigScale[key];
+          if (!Object.keys(r.rigScale).length) delete r.rigScale;
+        }
+      });
+    check.onchange = () => {
+      write();
+      renderPools();
+    };
+    input.onchange = () => {
+      try {
+        write();
+      } catch (_) {
+        renderPools();
+      }
+    };
+    label.prepend(check);
+    label.append(input, hint);
+    box.append(label);
+  }
+  const apply = el('button', null, 'Roll with these proportions');
+  apply.onclick = () => roll(false);
+  box.append(apply);
+  $('poolPanel').append(box);
+}
 function renderPools() {
   if (!state.ready) return;
   $('poolPanel').replaceChildren();
@@ -489,6 +572,11 @@ function renderPools() {
         d.mount +
         '. The preview uses the compound rider/body renderer.'
       : 'Native clothing rolls retain species restrictions, forced headwear, armor and pants rules. Overriding a slot deliberately replaces that slot’s native roll.';
+  if (state.tab === 'body') {
+    renderBodyProportions(species, gender);
+    updateRuleJson();
+    return;
+  }
   if (state.tab === 'weapons') {
     if (d.lich) {
       $('poolPanel').append(

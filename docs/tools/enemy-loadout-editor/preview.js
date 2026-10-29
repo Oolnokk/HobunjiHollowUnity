@@ -520,7 +520,7 @@ export class EnemyPreview {
     a.group.rotation.y = 0;
     if (a.frontPlane) a.frontPlane.rotation.y = Math.PI / 2;
     if (a.backPlane) a.backPlane.rotation.y = -Math.PI / 2;
-    if (a.legsPivot) a.legsPivot.rotation.y = 0;
+    if (a.legsPivot) { a.legsPivot.rotation.y = 0; a.syncHandFrame?.(); }
     this.dependencies.hostileObjects = [next];
     window.PngPlaneOutlineOccluder.prune();
   }
@@ -872,7 +872,8 @@ export class EnemyPreview {
       }
     }
     window.BanditCombat.updateToolMesh(c);
-    window.BanditCombat.updateMovementHeadLook(c, dt, move > 0, c.facing);
+    const travelGaze = window.BanditCombat.updateMovementHeadLook(c, dt, move > 0, c.facing);
+    if (!travelGaze) window.BanditCombat.restNeckLook(c, dt); // Same idle neck update the game's hostile loop runs; applies the body-yaw counter-turn.
   }
   discard(actor) {
     // Gameplay caches these maps globally; the workshop owns per-roll textures.

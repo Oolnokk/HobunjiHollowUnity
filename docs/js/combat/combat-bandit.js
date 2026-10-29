@@ -548,6 +548,7 @@
     const handsPivot = new THREE.Group(); // Floor-relative parent for procedural hands, matching the leg rig's center-anchored-hostile correction.
     handsPivot.name = 'bandit_hands_pivot';
     handsPivot.position.y = -(modelHeight / 2);
+    handsPivot.rotation.y = Math.PI / 2; // Same portrait-local -> enemy side-facing correction as legsFrame: free (ungripping) hands rest at the shoulders' lateral X, not the hostile's forward axis. Gripped hands follow the weapon in world space and are unaffected.
     group.add(handsPivot);
     portrait.position.set(0, -(modelHeight / 2), 0); // The original PNGPlaneAvatar root is now a metadata/hand-driver sentinel at the hostile's true floor origin.
     handsPivot.userData.hobunjiCharacterRigScaleInherited = true; // The whole hostile group carries the species body scale (applyAuthoredHostileRigScale); hands inherit it rather than being scaled again by the hand-attach hook.
@@ -583,7 +584,8 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
-      handsPivot, handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
+      handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
+      handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
       combatExpressionActive: false,
       modelWidth, modelHeight,
@@ -1952,8 +1954,12 @@
     // vertical axis reads the same real-world direction on both cards
     // regardless of that baseline difference, so mirroring the sign here
     // would turn the two cards away from each other instead of in tandem.
-    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
-    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
+    // The pose's body yaw (idle weapon stance, swing wind-up) turns the whole group; the head must keep looking where the
+    // glance/forward target says, exactly like the player's neck (target world yaw minus body yaw) and the Attack Editor's
+    // automatic counter-turn. Recorded each frame by updateBanditToolMesh from the same sampled pose that yaws the group.
+    const counterYawRad = -(Number(c._banditBodyYawRad) || 0);
+    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
+    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
   }
 
   // Eases the neck glance back to center — called from game.js's hostile
@@ -2245,7 +2251,8 @@
     const group = c?.avatarRef?.group;
     const speciesId = c?.avatarRef?.speciesId || group?.userData?.speciesId || '';
     const gender = c?.avatarRef?.gender || group?.userData?.gender || 'male';
-    const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender }); // Base size about the origin, height about the grip.
+    const rigScaleY = Number(c?.avatarRef?.rigScale?.y) || null; // Authored per-enemy body height (Maskbound troops) sizes the weapon, not just the species default.
+    const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender, rigScaleY }); // Base size about the origin, height about the grip.
     const heightReady = grips.characterHeightReady?.(speciesId, gender) !== false; // Until measured the height factor is a fallback 1, which the player and editor never show; retry instead of caching it.
     const scale = Number(placement?.scale ?? grips.effectiveToolScaleForTool(weaponKey, speciesId, gender));
     visual.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1);
@@ -2549,6 +2556,7 @@
     const yawRad = sampled.yawRad;
     const rollRad = sampled.rollRad;
     const bodyYawRad = sampled.bodyYawRad;
+    c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
     // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
     // the player's hand anchor.
     const handBaseX = base.x * sampled.mirrorBlend;
@@ -2733,7 +2741,9 @@
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
-    const characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
+    let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
+    const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
+    if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
     if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
@@ -2797,6 +2807,7 @@
       handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
       handDriverRoot.userData.proceduralHandToolKey = def.weaponKey || null;
       handDriverRoot.userData.proceduralHandGripContext = 'melee';
+      handDriverRoot.userData.proceduralHandRigScaleY = Number(avatarRef.rigScale?.y) || null; // Hand grip targets size the weapon from the same body height the visual does.
       handDriverRoot.userData.poseFrameYawOffsetRad = Number(def.aimAngleOffset) || 0; // The hostile group is turned aimAngleOffset away from the pose frame (+X lateral); dual-wield mirrors the offhand across THAT frame's midline.
     }
 

@@ -15,6 +15,7 @@
     hold1: ['none', 'chargedBreaker'],
     hold2: ['none', 'counterShield'],
   });
+  const rigScaleRanges = Object.freeze({ x: [0.1, 4], y: [0.1, 4], head: [0.1, 4], offsetY: [-0.5, 0.5] }); // Mirrors HobunjiCharacterRigScale's clamps.
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
@@ -54,6 +55,18 @@
         throw Error('Invalid enemy rule');
       if (rule.enabled != null && typeof rule.enabled !== 'boolean')
         throw Error('Enemy rule enabled must be true/false');
+      if (rule.rigScale != null) {
+        // Same four values (and units: scale multipliers / fraction of model height) as the Animation Author's Character Rig Scale section.
+        if (typeof rule.rigScale !== 'object' || Array.isArray(rule.rigScale))
+          throw Error(kind + '.rigScale: expected { x, y, head, offsetY }');
+        for (const [field, value] of Object.entries(rule.rigScale)) {
+          const range = rigScaleRanges[field];
+          if (!range) throw Error(kind + '.rigScale: unknown field ' + field);
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < range[0] || value > range[1])
+            throw Error(kind + '.rigScale.' + field + ' must be between ' + range[0] + ' and ' + range[1]);
+        }
+        if (!Object.keys(rule.rigScale).length) delete rule.rigScale;
+      }
       for (const [ability, allowed] of Object.entries(
         rule.specialAttacks || {},
       ))
@@ -187,6 +200,11 @@
       return species;
     return 'bandit:' + rank;
   }
+  // Optional authored body proportions for one enemy kind: only the fields the rule sets, null when none.
+  function rigScaleFor(kind) {
+    const scale = documentData.rules[kind]?.enabled === false ? null : documentData.rules[kind]?.rigScale;
+    return scale && Object.keys(scale).length ? { ...scale } : null;
+  }
   const ruleFor = (kind) =>
     documentData.rules[kind]?.enabled === false
       ? {}
@@ -319,6 +337,8 @@
     applyDefinition,
     seedRandom,
     ruleFor,
+    rigScaleFor,
+    rigScaleRanges,
     status: () => ({ error }),
   });
 })();
