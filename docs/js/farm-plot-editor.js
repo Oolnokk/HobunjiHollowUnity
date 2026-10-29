@@ -11,7 +11,7 @@
   if (window.FarmPlotEditor) return;
 
   const KIND_FOR_BRUSH = { tilled: 'till', trench: 'dig' };
-  const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'blackMustard', 'greenMustard'];
+  const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard'];
   const SLOTS = 3;
   let deps = null;
   let plots = []; // { id, label, kind, tiles: [[c, r]], crop, workers: [npcId], hours: [from, to] }
@@ -21,6 +21,36 @@
 
   const uid = () => `fplot_${Math.random().toString(36).slice(2, 8)}`;
   const pane = () => document.getElementById('farmPlotsPane');
+  function trimSeedBlocks(plot) {
+    const owned = new Set(plot.tiles.map(([c, r]) => c + ',' + r)); // Seed-block memberships must always stay inside the parent field.
+    const claimed = new Set(); // Prevent two seed priorities from claiming the same planting tile.
+    for (const block of plot.seedBlocks || []) {
+      block.tiles = block.tiles.filter(([c, r]) => {
+        const key = c + ',' + r;
+        if (!owned.has(key) || claimed.has(key)) return false;
+        claimed.add(key);
+        return true;
+      });
+    }
+  }
+  function normalizedSeedBlocks(raw, tiles) {
+    const plot = { tiles, seedBlocks: [] }; // Temporary plot lets restore reuse the same membership validator as live edits.
+    for (const block of Array.isArray(raw) ? raw : []) {
+      if (!block || !block.id) continue;
+      const seen = new Set(); // Duplicate seed identifiers have no extra planting priority.
+      plot.seedBlocks.push({
+        id: String(block.id),
+        label: String(block.label || 'Seed block').slice(0, 48),
+        tiles: Array.isArray(block.tiles) ? block.tiles.filter(t => Array.isArray(t) && t.length >= 2 && Number.isInteger(Number(t[0])) && Number.isInteger(Number(t[1]))).map(t => [Number(t[0]), Number(t[1])]) : [],
+        seeds: (Array.isArray(block.seeds) ? block.seeds : []).filter(crop => {
+          if (!CROPS.includes(crop) || seen.has(crop)) return false;
+          seen.add(crop); return true;
+        }),
+      });
+    }
+    trimSeedBlocks(plot);
+    return plot.seedBlocks;
+  }
 
   function init(injected) { deps = injected || {}; render(); }
 
@@ -30,7 +60,7 @@
     for (const p of plots) {
       const n = p.tiles.length;
       p.tiles = p.tiles.filter(t => !(t[0] === c && t[1] === r));
-      if (p.tiles.length !== n) changed = true;
+      if (p.tiles.length !== n) { trimSeedBlocks(p); changed = true; }
     }
     if (changed) { plots = plots.filter(p => p.tiles.length); if (!plots.some(p => p.id === activeId)) activeId = null; }
     return changed;
@@ -58,7 +88,7 @@
       stroke = plotAt(c, r, kind);
       if (!stroke) {
         const n = plots.filter(p => p.kind === kind).length + 1;
-        stroke = { id: uid(), label: `${kind === 'till' ? 'Family field' : 'Family trench'} ${n}`, kind, tiles: [], crop: '', workers: [], hours: [8, 17] };
+        stroke = { id: uid(), label: `${kind === 'till' ? 'Family field' : 'Family trench'} ${n}`, kind, tiles: [], crop: '', seedBlocks: [], workers: [], hours: [8, 17] };
         plots.push(stroke);
       }
       activeId = stroke.id;
@@ -82,13 +112,31 @@
     deps?.save?.();
   }
 
-  function serialize() { return !loaded ? null : plots.map(p => ({ ...p, tiles: p.tiles.map(t => [...t]), workers: [...p.workers], hours: [...p.hours] })); }
+  function serialize() { return !loaded ? null : plots.map(p => ({ ...p, tiles: p.tiles.map(t => [...t]), seedBlocks: (p.seedBlocks || []).map(b => ({ ...b, tiles: b.tiles.map(t => [...t]), seeds: [...b.seeds] })), workers: [...p.workers], hours: [...p.hours] })); }
   function restore(saved) {
     loaded = true;
     plots = Array.isArray(saved) ? saved.filter(p => p?.id && Array.isArray(p.tiles)).map(p => ({
       id: String(p.id), label: p.label || 'Family plot', kind: p.kind === 'dig' ? 'dig' : 'till', tiles: p.tiles.map(t => [Number(t[0]), Number(t[1])]),
-      crop: p.crop || '', workers: Array.isArray(p.workers) ? p.workers.filter(Boolean) : [], hours: Array.isArray(p.hours) && p.hours.length === 2 ? p.hours.map(Number) : [8, 17],
+      crop: p.crop || '', seedBlocks: normalizedSeedBlocks(p.kind === 'dig' ? [] : p.seedBlocks, p.tiles.map(t => [Number(t[0]), Number(t[1])])), workers: Array.isArray(p.workers) ? p.workers.filter(Boolean) : [], hours: Array.isArray(p.hours) && p.hours.length === 2 ? p.hours.map(Number) : [8, 17],
     })) : [];
+    // Older layouts may contain duplicated tile designations. Resolve them before
+    // registering workers: a planting field wins over a trench to avoid crop loss.
+    const owners = new Map(); // Tile key -> the one plot allowed to change this soil.
+    for (const p of plots) for (const [c, r] of p.tiles) {
+      if (!Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0) continue;
+      const key = c + ',' + r;
+      if (!owners.has(key) || (owners.get(key).kind === 'dig' && p.kind === 'till')) owners.set(key, p);
+    }
+    for (const p of plots) {
+      const seen = new Set(); // Ignore repeated coordinates within a legacy plot.
+      p.tiles = p.tiles.filter(([c, r]) => {
+        const key = c + ',' + r;
+        if (owners.get(key) !== p || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    for (const p of plots) trimSeedBlocks(p); // Overlap recovery may have transferred a seed block's tiles.
     if (!plots.some(p => p.id === activeId)) activeId = null;
     window.NpcFarmPlots?.registerFarmPlots?.(plots);
     render();
@@ -102,7 +150,7 @@
     loaded = true;
     const n = plots.filter(p => p.kind === kind).length + 1; // Display sequence, not a persistent identity.
     const spouseId = window.RomanceSystem?.getSpouse?.()?.npcId; // New groups are actionable as soon as the marriage exists.
-    const plot = { id: uid(), label: `Family ${kind === 'till' ? 'field' : 'trench'} ${n}`, kind, tiles: [], crop: '', workers: spouseId ? [spouseId] : [], hours: [8, 17] };
+    const plot = { id: uid(), label: `Family ${kind === 'till' ? 'field' : 'trench'} ${n}`, kind, tiles: [], crop: '', seedBlocks: [], workers: spouseId ? [spouseId] : [], hours: [8, 17] };
     plots.push(plot);
     activeId = plot.id;
     sync(); render();
@@ -156,12 +204,54 @@
     if (present) {
       // Remove overlapping designations without filtering out the NEW empty plot being painted.
       // removeTile() is for dev brush erasing and would discard this empty target before its first tile.
-      for (const other of plots) if (other !== plot) other.tiles = other.tiles.filter(t => t[0] !== c || t[1] !== r);
+      for (const other of plots) if (other !== plot) {
+        other.tiles = other.tiles.filter(t => t[0] !== c || t[1] !== r);
+        trimSeedBlocks(other); // Transferring a farm tile also unassigns any former seed-block membership.
+      }
       // Retain emptied source plots and their crop, hours and worker lineup. The player can reuse or explicitly delete them.
       plot.tiles.push([c, r]);
     } else {
       plot.tiles = plot.tiles.filter(t => t[0] !== c || t[1] !== r);
     }
+    trimSeedBlocks(plot); // Removing an included tile may also remove it from a seed block.
+    if (!deferSave) { sync(); render(); }
+    return true;
+  }
+  function createSeedBlock(plotId) {
+    const p = plots.find(entry => entry.id === plotId && entry.kind === 'till');
+    if (!p) return null;
+    const id = uid(); // Used by FarmworkUI to select the newly created block and by storage serialization.
+    p.seedBlocks ||= [];
+    p.seedBlocks.push({ id, label: 'Seed block ' + (p.seedBlocks.length + 1), tiles: [], seeds: [] });
+    loaded = true; sync(); render();
+    return id;
+  }
+  function deleteSeedBlock(plotId, blockId) {
+    const p = plots.find(entry => entry.id === plotId && entry.kind === 'till');
+    if (!p?.seedBlocks?.some(b => b.id === blockId)) return false;
+    p.seedBlocks = p.seedBlocks.filter(b => b.id !== blockId);
+    loaded = true; sync(); render(); return true;
+  }
+  function updateSeedBlock(plotId, blockId, patch) {
+    const p = plots.find(entry => entry.id === plotId && entry.kind === 'till');
+    const b = p?.seedBlocks?.find(entry => entry.id === blockId);
+    if (!b || !patch || typeof patch !== 'object') return false;
+    if (patch.seeds !== undefined && (!Array.isArray(patch.seeds) || patch.seeds.some(crop => !CROPS.includes(crop)) || new Set(patch.seeds).size !== patch.seeds.length)) return false;
+    if (patch.label !== undefined) b.label = String(patch.label).trim().slice(0, 48) || b.label;
+    if (patch.seeds !== undefined) b.seeds = [...patch.seeds]; // Ordered crop keys are the worker's seed preference, from Farm Storage.
+    loaded = true; sync(); render(); return true;
+  }
+  function setSeedBlockTile(plotId, blockId, c, r, present, { deferSave = false } = {}) {
+    const p = plots.find(entry => entry.id === plotId && entry.kind === 'till');
+    const b = p?.seedBlocks?.find(entry => entry.id === blockId);
+    if (!b || !Number.isInteger(c) || !Number.isInteger(r) || !p.tiles.some(t => t[0] === c && t[1] === r)) return false;
+    const exists = b.tiles.some(t => t[0] === c && t[1] === r);
+    if (exists === !!present) return false;
+    if (present) {
+      for (const other of p.seedBlocks) if (other !== b) other.tiles = other.tiles.filter(t => t[0] !== c || t[1] !== r);
+      b.tiles.push([c, r]);
+    } else b.tiles = b.tiles.filter(t => t[0] !== c || t[1] !== r);
+    loaded = true;
     if (!deferSave) { sync(); render(); }
     return true;
   }
@@ -219,5 +309,5 @@
     }));
   }
 
-  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, cropOptions: () => CROPS.map(c => ({ value: c, label: deps?.cropLabel?.(c) || c })), createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, commitFamilyEdits, activeFamilyPlot };
+  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, cropOptions: () => CROPS.map(c => ({ value: c, label: deps?.cropLabel?.(c) || c })), createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, createSeedBlock, deleteSeedBlock, updateSeedBlock, setSeedBlockTile, commitFamilyEdits, activeFamilyPlot };
 })();

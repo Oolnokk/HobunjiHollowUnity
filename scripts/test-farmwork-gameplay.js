@@ -37,6 +37,10 @@ vm.runInContext(read('docs/js/farmwork-ui.js'), env, { filename: 'farmwork-ui.js
 const plots = win.FarmPlotEditor; // Save-owning family plot manager.
 const ui = win.FarmworkUI; // New ordinary-play view over those plot records.
 plots.init({ save: () => { saved++; }, cropLabel: c => c.toUpperCase() });
+const supportedCrops = plots.cropOptions().map(option => option.value); // Assert every known berry seed is available to priority blocks.
+for (const crop of ['redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries']) {
+  assert.ok(supportedCrops.includes(crop), crop + ' must be selectable in Farmwork seed blocks');
+}
 
 assert.equal(ui.canOpen(), false, 'utility entry stays absent before marriage');
 spouseId = 'aliri_ginju';
@@ -52,7 +56,7 @@ assert.match(view.innerHTML, /New Field/);
 assert.match(view.innerHTML, /New Trench/);
 assert.match(view.innerHTML, /data-ctrl-default/, 'controller starts on a create action without any plots');
 const id = plots.createFamilyPlot('till'); // Same API used by the new panel, with spouse assigned automatically.
-const p = plots.plots().find(x => x.id === id);
+let p = plots.plots().find(x => x.id === id);
 assert.equal(p.workers[0], spouseId);
 assert.equal(plots.setFamilyTile(id, 3, 4, true), true);
 assert.equal(plots.setFamilyTile(id, 3, 4, true), false, 'repeating the same gesture does not toggle');
@@ -65,7 +69,8 @@ assert.equal(p.workers.length, 1, 'duplicate worker slots removed');
 ui.render();
 assert.match(view.innerHTML, /data-fwtile="3,4"/);
 assert.match(view.innerHTML, /Primary worker/);
-assert.match(view.innerHTML, /Seed crop/);
+assert.match(view.innerHTML, /Default seed for unassigned field tiles/);
+assert.match(view.innerHTML, /Add seed block/, 'planting fields expose per-tile seed priority blocks');
 assert.doesNotMatch(view.innerHTML, /data-fwpage/, 'plot preview has no arbitrary farm pages');
 assert.match(view.innerHTML, /data-fwplan/, 'planning tool is next to plot name');
 assert.equal((view.innerHTML.match(/data-fwtile=/g) || []).length, 1, 'preview renders included tiles only');
@@ -86,6 +91,46 @@ ui.endWorldPointer(7);
 assert.equal(saved, savedBeforeDrag + 1, 'touch paint batches multiple tiles into one persisted save');
 assert.equal(p.tiles.length, 2);
 ui.setPlanning(false);
+
+// Seed blocks belong to included field tiles, preserve priority order, and support controller tile selection.
+const blockId = plots.createSeedBlock(id);
+assert.ok(blockId, 'a seed block can be created within a planting field');
+assert.equal(plots.setSeedBlockTile(id, blockId, 1, 1, true), true);
+assert.equal(plots.setSeedBlockTile(id, blockId, 5, 5, true), false, 'cannot assign seed block outside its parent field');
+assert.equal(plots.updateSeedBlock(id, blockId, { seeds: ['heftroot', 'needlegrain'] }), true);
+assert.equal(plots.updateSeedBlock(id, blockId, { seeds: ['needlegrain', 'needlegrain'] }), false, 'duplicate seed priorities rejected');
+assert.equal(plots.updateSeedBlock(id, blockId, { seeds: ['fictionalCrop'] }), false, 'unknown seed priorities rejected');
+const block2 = plots.createSeedBlock(id);
+assert.equal(plots.setSeedBlockTile(id, block2, 1, 1, true), true);
+assert.equal(p.seedBlocks[0].tiles.length, 0, 'transferring a tile between seed blocks does not double-assign it');
+assert.equal(plots.setSeedBlockTile(id, blockId, 2, 1, true), true);
+ui.chooseBlock(blockId);
+assert.match(view.innerHTML, /Priority 1/, 'seed blocks show ordering in the normal controller panel');
+assert.match(view.innerHTML, /Choose tiles for this seed block/);
+ui.setPlanning(true, 'block');
+assert.equal(ui.isPlanning(), true);
+pointerTile = { col: 1, row: 1 };
+win.WorldActionInputClaims.dispatch('action1', 'press');
+win.WorldActionInputClaims.dispatch('action1', 'release');
+assert.equal(p.seedBlocks[0].tiles.length, 2, 'controller Action 1 adds an existing plot tile to selected seed block');
+assert.equal(p.seedBlocks[1].tiles.length, 0, 'seed block transfer removes it from the previous block');
+pointerTile = { col: 4, row: 4 };
+win.WorldActionInputClaims.dispatch('action1', 'press');
+win.WorldActionInputClaims.dispatch('action1', 'release');
+assert.equal(p.seedBlocks[0].tiles.length, 2, 'controller cannot expand a seed block outside its field');
+ui.setPlanning(false);
+const snap = JSON.parse(JSON.stringify(plots.serialize()));
+plots.restore(snap);
+assert.deepEqual(Array.from(plots.plots().find(q => q.id === id).seedBlocks[0].seeds), ['heftroot', 'needlegrain'], 'priority list survives save and restore');
+assert.equal(plots.plots().find(q => q.id === id).seedBlocks[0].tiles.length, 2, 'seed block membership survives save and restore');
+assert.equal(plots.setFamilyTile(id, 2, 1, false), true);
+assert.equal(plots.plots().find(q => q.id === id).seedBlocks[0].tiles.some(([c, r]) => c === 2 && r === 1), false, 'removing a plot tile removes its seed-block membership');
+assert.equal(plots.deleteSeedBlock(id, blockId), true);
+assert.equal(plots.plots().find(q => q.id === id).tiles.length, 1, 'deleting a seed block keeps parent field tiles');
+ui.changePlot(id);
+ui.setPlanning(false);
+p = plots.plots().find(q => q.id === id); // Restore replaces the plot object; subsequent transfer assertions use the live one.
+
 const trench = ui.create('dig'); // UI creates and selects a second managed kind, preserving the first group.
 assert.ok(plots.plots().some(item => item.kind === 'dig'));
 const trenchId = plots.activeFamilyPlot().id;

@@ -565,7 +565,8 @@
           const cost = item.price * qty;
           if ((Number(deps.inventory.gold) || 0) < cost) return { ok: false, message: 'Not enough gold. Need ' + cost + 'g.' };
           deps.inventory.gold -= cost;
-          deps.getPendingOrders().push({ key, qty, arrivalDay: deps.calendar.day + 1, item });
+          const orderId = 'supply_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); // Durable receipt identity prevents duplicate deliveries after reload.
+          deps.getPendingOrders().push({ id: orderId, key, qty, arrivalDay: deps.calendar.day + 1, item });
           qtys[key] = 0;
           return { ok: true, message: 'Ordered ' + qty + '× ' + item.name + ' for ' + cost + 'g. Arrives tomorrow.' };
         }

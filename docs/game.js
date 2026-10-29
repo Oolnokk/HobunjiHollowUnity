@@ -2750,6 +2750,7 @@
 
       // Pending orders: [{catalogKey, qty, arrivalDay, name}]
       let pendingOrders  = [];
+      let pendingOrdersWorldId = null; // Only save this world's orders after spawnPlayerAvatar has hydrated its receipts.
       let deliveryLog    = [];
       const SELL_INTERVAL_HOURS = 4;  // sell crate empties every N game-hours
 
@@ -8778,6 +8779,7 @@
         const world = (meta?.worlds || []).find(w => w.id === worldId);
         if (!world) throw new Error('The active world is missing from the save snapshot.');
         if (!world.members) world.members = {};
+        if (typeof pendingOrdersWorldId !== 'undefined' && pendingOrdersWorldId === worldId) world.pendingSupplyOrders = pendingOrders.map(order => ({ ...order })); // World-scoped paid receipts survive reload and changes of player character.
         const member = world.members[charId] || (world.members[charId] = defaultWorldMemberState());
         member.nonGearInventory = { ...inventory };
         member.packClothing    = [...packClothing];
@@ -15920,18 +15922,30 @@
       function worldObjectMorningTick() {
         // Deliver pending orders
         const today = calendar.day;
-        const arriving = pendingOrders.filter(o => o.arrivalDay <= today);
-        pendingOrders   = pendingOrders.filter(o => o.arrivalDay >  today);
-        for (const o of arriving) {
-          const item = o.item;
-          Object.entries(item.gives).forEach(([k, v]) => {
-            inventory[k] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[k] || 0) + v * o.qty);
-          });
-          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + ' delivered';
+        let deliveredAny = false; // Persist successful non-seed deliveries and retryable receipts after the morning batch.
+        for (const o of [...pendingOrders]) {
+          if (o.arrivalDay > today) continue;
+          const item = o.item || SUPPLY_CATALOG.find(entry => entry.key === o.key);
+          if (!item?.gives) continue; // An unknown item stays pending until its catalog is available.
+          const entries = Object.entries(item.gives);
+          const seeds = entries.filter(([key]) => ITEM_DEFS[key]?.cat === 'seed'); // Ordered plantable seeds belong to shared Farm Storage, not the player's pack.
+          if (seeds.length && !window.WorldMetaStore?.completeSeedSupplyOrder?.(_tothalWorldId(), o, Object.fromEntries(seeds))) {
+            showToast('Could not deliver ' + item.name + ' to Farm Storage; order retained.', false);
+            continue; // A failed atomic transaction cannot consume a paid receipt.
+          }
+          // Once the seed credit and receipt removal have committed together, local state can follow.
+          for (const [key, count] of entries) {
+            if (ITEM_DEFS[key]?.cat === 'seed') continue;
+            inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(inventory[key]) || 0) + count * o.qty);
+          }
+          pendingOrders.splice(pendingOrders.indexOf(o), 1);
+          deliveredAny = true;
+          const line = 'Day ' + today + ' — ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage' : ' delivered');
           deliveryLog.unshift({ type: 'delivery', text: line });
-          showToast('📦 ' + o.qty + '× ' + item.name + ' delivered!', true);
+          showToast('📦 ' + o.qty + '× ' + item.name + (seeds.length ? ' delivered to Farm Storage!' : ' delivered!'), true);
         }
         deliveryLog = deliveryLog.slice(0, 12);
+        if (deliveredAny) saveMemberWorldData(); // Non-seed orders and the updated inventory must also survive a reload.
         if (menuOpen) window.SupplyPage.render();
         // Tick sell crate clock
         tickWorldObjects();
@@ -29919,20 +29933,28 @@
           return {
             tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
             dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
-            canTill: free && (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) && !tile.crop, // Weeds are cleared as they till.
+            canTill: free && [TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) && !tile.crop, // A field worker also repairs trenches mistakenly left on planting tiles.
             canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
           };
         },
+        farmSeedStock: () => _loadWorldStorage(), // One world-storage snapshot per NPC plot scan; seed order is checked at work completion.
         seedAvailable: crop => {
           const seedKey = cropData[crop]?.seedKey;
           return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
         },
-        applyFarmJob: (job, c, r, crop) => {
+        applyFarmJob: (job, c, r, crop, plotId) => {
           const tile = grid[r]?.[c];
           if (!tile) return false;
+          // The persisted editor is authoritative, even when a worker has an older claim.
+          // In particular, a dig action may never excavate a tile assigned to a planting plot.
+          if (plotId) {
+            const assigned = window.FarmPlotEditor?.plots?.().find(p => p.tiles?.some(t => t[0] === c && t[1] === r));
+            if (!assigned || assigned.id !== plotId || assigned.kind !== (job === 'dig' ? 'dig' : 'till')) return false;
+          }
           if (job === 'till') {
-            if ((tile.type !== TileType.GRASS && tile.type !== TileType.WEEDS) || tile.crop) return false;
+            if (![TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) || tile.crop) return false;
             tile.type = TileType.TILLED;
+            tile.depth = 0; tile.water = 0; // Clear residual trench depth and water when reclaiming a field.
           } else if (job === 'dig') {
             if (tile.crop || tile.type === TileType.ROCK) return false;
             tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
@@ -29942,7 +29964,7 @@
             if (!data || tile.crop || !(Number(store[data.seedKey]) > 0) || ![TileType.TILLED, TileType.RAISED].includes(tile.type)) return false;
             store[data.seedKey] -= 1;
             if (store[data.seedKey] <= 0) delete store[data.seedKey];
-            _saveWorldStorage(store); // Seeds come out of Farm Storage, not your pockets.
+            if (!_saveWorldStorage(store)) return false; // Never sow a seed that failed to debit Farm Storage.
             tile.crop = crop; tile.cropAge = 0; tile.cropReady = false; tile.stress = '';
           } else return false;
           markTileDirty(c, r);
@@ -31639,6 +31661,8 @@
         // the world actually left off.
         const _savedCalendar = _loadWorldCalendar();
         if (_savedCalendar) Object.assign(calendar, _savedCalendar);
+        pendingOrders = window.WorldMetaStore?.loadPendingSupplyOrders?.(_tothalWorldId()) || []; // Load paid Supply Box orders before any normal-play save can replace them.
+        pendingOrdersWorldId = _tothalWorldId();
 
         // Fire-and-forget: the Tothal Shift at world start (or on any missed
         // year since last played) can take a few seconds across all four
