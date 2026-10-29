@@ -124,6 +124,7 @@ first.retract();
 for(let i=0;i<16;i++)first.update(.25);
 assert.equal(first.getProgress(),0);
 assert(first.branches.every(x=>x.geometry.drawRange.count===0));
+const scene=new Group();scene.add(first.group); // Disposal must detach from a real scene parent.
 const owned=first.branches[0].geometry;first.dispose();first.dispose();
 assert.equal(owned.disposed,true);
 assert.equal(first.group.parent,null);
