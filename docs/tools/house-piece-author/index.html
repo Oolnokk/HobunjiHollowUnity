@@ -2168,9 +2168,41 @@ function targetQuaternionForRoofTarget(target, config=ensureRoofConfig()){
   return q;
 }
 const roofPreviewFinishMaterials=new WeakMap(); // Cache finished materials per original GLB material and author-selected finish.
+// The Temple lives in town: with no per-piece roof override it inherits the
+// exact PNG + shade-fill tint used by TownZoneBuildings' 'town' shingle variant.
+// This is preview-only; it never writes a custom finish into the Temple JSON.
+const TEMPLE_ROOF_PIECE_ID='d8ad2ed8-353d-4b6b-8bf2-a6caba486f3d';
+const TOWN_ROOF_DEFAULT={texture:'assets/textures/carved_smooth.png',color:'#0e0d06'};
+const townPreviewRoofMaterials=new Set();
+let townPreviewRoofTexture=null,townPreviewRoofRequested=false;
+function ensureTownPreviewRoofTexture(){
+  if(townPreviewRoofRequested)return;
+  townPreviewRoofRequested=true;
+  const url=new URL('../../'+TOWN_ROOF_DEFAULT.texture,location.href).href;
+  new THREE.TextureLoader().load(url,tex=>{
+    const rgb=window.parseHexColor?.(TOWN_ROOF_DEFAULT.color);
+    if(!rgb||!window.getShadeFillCanvas||!window.getPortraitTintingConfig){
+      log('Town shingle shade-fill unavailable in preview; using untinted PNG.','warn');
+      townPreviewRoofTexture=tex;
+    }else{
+      const canvas=window.getShadeFillCanvas(tex.image,url+'|'+TOWN_ROOF_DEFAULT.color,{
+        mode:'shadeFill',rgb:[rgb.r,rgb.g,rgb.b],options:window.getPortraitTintingConfig()
+      });
+      townPreviewRoofTexture=new THREE.CanvasTexture(canvas);
+    }
+    townPreviewRoofTexture.wrapS=townPreviewRoofTexture.wrapT=THREE.RepeatWrapping;
+    townPreviewRoofTexture.needsUpdate=true;
+    for(const material of townPreviewRoofMaterials){
+      material.map=townPreviewRoofTexture;material.needsUpdate=true;
+    }
+  },undefined,()=>{townPreviewRoofRequested=false;log('Could not load standard town shingles for Temple preview.','warn');});
+}
+
 function applyPreviewRoofFinish(scene,config){
-  const finish=config.shingleMaterial;
+  const townDefault=!config.shingleMaterial&&state.piece?.id===TEMPLE_ROOF_PIECE_ID;
+  const finish=config.shingleMaterial||(townDefault?TOWN_ROOF_DEFAULT:null);
   if(!finish||!/^#[0-9a-f]{6}$/i.test(finish.color||''))return;
+  if(townDefault)ensureTownPreviewRoofTexture();
   const texture=typeof finish.texture==='string'&&
     (/^assets\/[^?#]*\.png(?:[?#].*)?$/i.test(finish.texture)||
      /^https:\/\/[^\s]+$/i.test(finish.texture)||
@@ -2184,7 +2216,17 @@ function applyPreviewRoofFinish(scene,config){
       if(!source)return source;
       let variants=roofPreviewFinishMaterials.get(source);
       if(!variants){variants=new Map();roofPreviewFinishMaterials.set(source,variants);}
-      const key=texture+'|'+finish.color;
+      const key=(townDefault?'town-default:':'custom:')+texture+'|'+finish.color;
+      if(!variants.has(key)&&townDefault){
+        const mat=source.clone();
+        mat.map=townPreviewRoofTexture;
+        mat.color?.set(0xffffff);mat.vertexColors=false;
+        if('metalness' in mat)mat.metalness=0;
+        if('roughness' in mat)mat.roughness=1;
+        mat.needsUpdate=true;
+        townPreviewRoofMaterials.add(mat);
+        variants.set(key,mat);
+      }
       if(!variants.has(key)){
         const proxy=new THREE.Mesh(mesh.geometry,source); // Keep loaded GLB's surface-mapped UVs.
         painter.naturalizeMesh(proxy,'trunks','strand-stretch',{
@@ -2523,7 +2565,11 @@ function rebuildGamePreview() {
   try { piece = JSON.parse(JSON.stringify(state.piece)); }
   catch (e) { log('Game Preview: could not snapshot piece — ' + e.message, 'error'); return; }
   try {
+    const templeUsesTownShingles=piece.id===TEMPLE_ROOF_PIECE_ID&&!piece.roof?.shingleMaterial;
+    if(templeUsesTownShingles)window.HousePieceGen.tintShingleMaterial?.(
+      '../../assets/textures/carved_smooth.png',TOWN_ROOF_DEFAULT.color,'town');
     const built = window.HousePieceGen.buildGroupFromPiece(RTHREE, piece, 0, 0, {
+      ...(templeUsesTownShingles?{shingleVariant:'town'}:{}),
       wallBuilder: gp.wallBuilder, wbUsePlaceholder: true,
     });
     gp.group.add(built);
