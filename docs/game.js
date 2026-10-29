@@ -29919,7 +29919,7 @@
           return {
             tilled: tile.type === TileType.TILLED || tile.type === TileType.RAISED, crop: tile.crop || '', ready: !!tile.cropReady,
             dug: trench && (tile.depth ?? 1) >= 0.6, // Rain silts a trench shallower; below this it needs redigging.
-            canTill: free && (tile.type === TileType.GRASS || tile.type === TileType.WEEDS) && !tile.crop, // Weeds are cleared as they till.
+            canTill: free && [TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) && !tile.crop, // A field worker also repairs trenches mistakenly left on planting tiles.
             canDig: free && !tile.crop && (trench ? (tile.depth ?? 1) < 1 : [TileType.GRASS, TileType.WEEDS, TileType.TILLED, TileType.RAISED].includes(tile.type)),
           };
         },
@@ -29927,12 +29927,19 @@
           const seedKey = cropData[crop]?.seedKey;
           return !!seedKey && (Number(_loadWorldStorage()?.[seedKey]) || 0) > 0;
         },
-        applyFarmJob: (job, c, r, crop) => {
+        applyFarmJob: (job, c, r, crop, plotId) => {
           const tile = grid[r]?.[c];
           if (!tile) return false;
+          // The persisted editor is authoritative, even when a worker has an older claim.
+          // In particular, a dig action may never excavate a tile assigned to a planting plot.
+          if (plotId) {
+            const assigned = window.FarmPlotEditor?.plots?.().find(p => p.tiles?.some(t => t[0] === c && t[1] === r));
+            if (!assigned || assigned.id !== plotId || assigned.kind !== (job === 'dig' ? 'dig' : 'till')) return false;
+          }
           if (job === 'till') {
-            if ((tile.type !== TileType.GRASS && tile.type !== TileType.WEEDS) || tile.crop) return false;
+            if (![TileType.GRASS, TileType.WEEDS, TileType.TRENCH].includes(tile.type) || tile.crop) return false;
             tile.type = TileType.TILLED;
+            tile.depth = 0; tile.water = 0; // Clear residual trench depth and water when reclaiming a field.
           } else if (job === 'dig') {
             if (tile.crop || tile.type === TileType.ROCK) return false;
             tile.type = TileType.TRENCH; tile.depth = 1; tile.water = 0; tile.crop = CropType.NONE; tile.cropAge = 0; tile.cropReady = false;
