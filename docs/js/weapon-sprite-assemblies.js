@@ -158,9 +158,10 @@
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
       metalOptions: options.metalOptions || null, resolveAsset: imageUrl, // Uses game's live plating/mastery resolver and the same canonical asset URL for every layer.
       headRoot: null, headAnchorImage: null, chainImage: null,
-      direction: new THREE.Vector3(0, -1, 0), windupStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Holds the initial chain direction while its windup smoothly straightens toward the animated shaft.
+      direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
+      lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
-      strikeTurnRad: 0, wasAttacking: false, lastFrameProgress: 0, // Keeps overshoot state isolated to the current swing.
+      strikeTurnRad: 0, hasStrikeStart: false, wasAttacking: false, lastFrameProgress: 0, // The strike begins from the most recent gravity-and-lag position, never the shaft pose in windup.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
       scratch: {
         pivotLocal: new THREE.Vector3(), pivot: new THREE.Vector3(), velocity: new THREE.Vector3(),
@@ -266,6 +267,7 @@
     state.sf = Number.isFinite(options.strikeFrac) ? Math.max(state.wf, Math.min(1, options.strikeFrac)) : 0.28;
     state.hf = Number.isFinite(options.holdFrac) ? Math.max(state.sf, Math.min(1, options.holdFrac)) : 0.68;
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
+    state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
   function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
@@ -302,9 +304,11 @@
     return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
   }
 
-  function flailWindupStraightening(progress, windupFrac) {
-    const normalized = Math.max(0, Math.min(1, progress / Math.max(0.0001, windupFrac * 0.8))); // Completes straightening by 80% of windup.
-    return normalized * normalized * (3 - 2 * normalized); // Continuous arrival at exact shaft alignment without an angular snap.
+  function flailStrikeStraightening(progress, windupFrac, strikeFrac) {
+    if (progress <= windupFrac) return 0; // Neutral → Windup is gravity-only (plus locomotion lag).
+    const strikeSpan = Math.max(0.0001, strikeFrac - windupFrac);
+    const t = Math.max(0, Math.min(1, (progress - windupFrac) / (strikeSpan * 0.35))); // Straighten in the first 35% of Windup → Strike.
+    return t * t * (3 - 2 * t); // Gradual contact with the animated shaft; exactly aligned for the rest of strike.
   }
 
   function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad) {
@@ -370,15 +374,26 @@
       state.lastPivot.copy(pivot);
       state.hasPivot = true;
     }
-    const velocity = q.velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt));
+    const actorPosition = state.movementPosition; // World-space locomotion supplied by game/preview, independent of the animated haft.
+    const velocity = q.velocity;
+    if (actorPosition && Number.isFinite(actorPosition.x) && Number.isFinite(actorPosition.z)) {
+      if (!state.hasMovementPosition || state.lastMovementPosition.distanceToSquared(actorPosition) > 9) {
+        state.lastMovementPosition.copy(actorPosition); // Teleports / first observation must not whip the chain.
+        state.hasMovementPosition = true;
+      }
+      velocity.copy(actorPosition).sub(state.lastMovementPosition).divideScalar(Math.max(0.001, dt));
+      state.lastMovementPosition.copy(actorPosition);
+    } else {
+      state.hasMovementPosition = false;
+      velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // Fallback for third-party holders lacking an actor position.
+    }
     state.lastPivot.copy(pivot);
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const shaftUp = q.shaftUp.set(0, 1, 0).applyQuaternion(baseQ).normalize(); // Real, fully-posed tool direction; no hardcoded attack-up target.
     const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(baseQ).normalize(); // Tool pitch rotates around local X, including its parent/body rotations.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
-      state.strikeTurnRad = 0; state.hasShaftUp = false;
-      state.windupStartDirection.copy(state.direction); // Capture the hanging chain once: an exact progress-based ease will straighten it early without popping.
+      state.strikeTurnRad = 0; state.hasShaftUp = false; state.hasStrikeStart = false; // Reset the cached strike entry after a new attack or timeline seek.
     }
     if (state.attacking && state.hasShaftUp && state.progress > state.wf && state.progress <= state.sf) {
       const sine = q.pitchCross.crossVectors(state.lastShaftUp, shaftUp).dot(pitchAxis);
@@ -387,18 +402,8 @@
     }
     state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
     state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
-    const followShaft = state.attacking && state.progress >= state.wf * 0.8; // The chain is exactly collinear BEFORE the windup-to-strike transition.
-    if (followShaft) {
-      const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
-      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel);
-      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Follow the shaft's actual pitch, then go beyond it during hold.
-    } else if (state.attacking) {
-      const t = flailWindupStraightening(state.progress, state.wf); // Early, deterministic easing rather than a one-frame snap at 80% windup.
-      if (state.windupStartDirection.dot(shaftUp) < -0.9999) q.deltaQ.setFromAxisAngle(pitchAxis, Math.PI);
-      else q.deltaQ.setFromUnitVectors(state.windupStartDirection, shaftUp);
-      state.direction.copy(state.windupStartDirection).applyQuaternion(q.stepQ.identity().slerp(q.deltaQ, t)).normalize();
-    } else {
-      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Idle movement still produces hanging/inertial lag.
+    if (!state.attacking || state.progress <= state.wf) {
+      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Neutral and ALL of Neutral → Windup hang downward, disturbed only by actor movement.
       const turnAngle = state.direction.angleTo(target);
       if (turnAngle > 1e-6) {
         const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
@@ -407,6 +412,20 @@
         q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
         state.direction.applyQuaternion(q.stepQ).normalize();
       }
+      if (!state.attacking) state.hasStrikeStart = false; // Next attack must recapture its own gravitational strike-entry direction.
+    } else if (state.progress < state.sf) {
+      if (!state.hasStrikeStart) {
+        state.strikeStartDirection.copy(state.direction); // Anchor the strike interpolation to the LAST windup gravity/locomotion state.
+        state.hasStrikeStart = true;
+      }
+      const t = flailStrikeStraightening(state.progress, state.wf, state.sf);
+      if (state.strikeStartDirection.dot(shaftUp) < -0.9999) q.deltaQ.setFromAxisAngle(pitchAxis, Math.PI);
+      else q.deltaQ.setFromUnitVectors(state.strikeStartDirection, shaftUp);
+      state.direction.copy(state.strikeStartDirection).applyQuaternion(q.stepQ.identity().slerp(q.deltaQ, t)).normalize(); // No rotation with tool pitch until the strike transition begins.
+    } else {
+      const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
+      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel);
+      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Exact shaft follow, then signed follow-through during hold.
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
@@ -455,6 +474,7 @@
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Shows what drives hold-through rotation.
+      lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
         chainY: connectorAxisScale(s.config.flail.chain, 'scaleY'),
@@ -486,7 +506,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailWindupStraightening, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailStrikeStraightening, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

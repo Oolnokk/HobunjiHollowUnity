@@ -24,6 +24,12 @@ assert.match(editor, /HobunjiWeaponSpriteAssemblies\?\.tick\(dt\)/);
 assert.match(bandits, /HobunjiWeaponSpriteAssemblies\?\.setAction\(holder\.children\?\.\[0\]/);
 assert.match(grips, /hachututorchflail: \{/);
 assert(game.includes('windupFrac: WF, strikeFrac: SF, holdFrac:'), 'the player passes its live swing boundaries');
+assert(game.includes('movementPosition: playerMesh.position'), 'player flail uses game locomotion, not shaft-animation travel');
+assert(bandits.includes('movementPosition: c.avatarRef?.group?.position'), 'NPC flail uses actual character locomotion');
+assert(editor.includes('movementPosition: rig.position'), 'editor preview uses actor position, not hand offsets');
+assert(source.includes('state.progress <= state.wf'), 'all of neutral-to-windup uses a gravity-and-locomotion target');
+assert(source.includes('state.strikeStartDirection.copy(state.direction)'), 'transition starts from the real hanging-chain orientation');
+assert(!source.includes('windupStartDirection'), 'windup cannot drag the connector toward the shaft');
 assert(game.includes('(swingStrikePitch - swingWindupPitch) * combatSwingPower'), 'the player applies the same pitch-power multiplier as its sampled pose');
 assert(bandits.includes('(strikePitch - windupPitch) * power'), 'NPC partial-charge pose scaling also affects flail follow-through');
 assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs pass their own live swing boundaries');
@@ -83,12 +89,15 @@ assert.match(fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html',
 assert.equal(api.definitionFor('unknown', {}), null);
 assert.equal(scheduler.id, 'weapon-sprite-assemblies');
 assert.equal(scheduler.options.phase, 'pre-render');
-const straighten = api.flailWindupStraightening; // Windup straightening is progress-based, continuous, and reaches exact shaft alignment early.
-assert.equal(straighten(0, 0.16), 0, 'windup begins at the original hanging direction');
-assert(straighten(0.04, 0.16) > 0 && straighten(0.04, 0.16) < straighten(0.08, 0.16), 'chain progressively straightens instead of snapping');
-assert(straighten(0.12, 0.16) < 1, 'approach remains smooth just before the 80% windup threshold');
-assert.equal(straighten(0.128, 0.16), 1, 'chain reaches exact shaft alignment by 80% of the windup');
-assert.equal(straighten(0.16, 0.16), 1, 'the windup-to-strike lerp begins with an exactly straight chain');
+const straighten = api.flailStrikeStraightening; // Neutral→Windup remains gravity-only; straightening starts only during Windup→Strike.
+assert.equal(straighten(0, 0.16, 0.55), 0, 'neutral begins with a hanging chain');
+assert.equal(straighten(0.08, 0.16, 0.55), 0, 'mid-windup does not rotate the chain toward the handle');
+assert.equal(straighten(0.128, 0.16, 0.55), 0, 'the old 80%-of-windup snap no longer occurs');
+assert.equal(straighten(0.16, 0.16, 0.55), 0, 'at the end of windup the chain is still hanging down');
+assert(straighten(0.20, 0.16, 0.55) > 0 && straighten(0.20, 0.16, 0.55) < straighten(0.24, 0.16, 0.55), 'early strike begins smooth straightening');
+assert.equal(straighten(0.30, 0.16, 0.55), 1, 'alignment completes early in windup-to-strike');
+assert.equal(straighten(0.55, 0.16, 0.55), 1, 'connector stays collinear through strike');
+assert.equal(straighten(0.55, 0.16, 0.16), 1, 'zero-length strike still reaches shaft alignment');
 const follow = api.flailPitchOvershoot; // Pure animation phase math shared by player, NPC and standalone editor.
 const sf = 0.55, hf = 0.72, forward = Math.PI / 2, reverse = -Math.PI / 2;
 assert.equal(follow(0.20, sf, hf, forward), 0, 'the chain stays straight during windup-to-strike pitch follow');
@@ -103,4 +112,4 @@ assert.equal(follow(0.75, 0.6, 0.6, forward), 0, 'a zero-duration hold never int
 assert(Math.abs(follow(hf, sf, hf, 10)) <= Math.PI / 3, 'extreme pitch does not exceed a 60 degree overshoot');
 assert.equal(follow(hf, sf, hf, NaN), 0, 'invalid pitch is safely ignored');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
-console.log('weapon sprite assemblies: PASS (registry, alpha anchors, layers, editor, player, hostiles, scheduler)');
+console.log('weapon sprite assemblies: PASS (windup gravity and locomotion, early strike alignment, hold follow-through, editor/player/NPC, scheduler)');
