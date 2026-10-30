@@ -13,10 +13,7 @@
   const DRAFT_KEY = 'hobunji.multiSpriteWeapons.draft.v1'; // Local-only editing recovery; never read by gameplay.
   const assetImages = new Map(); // Source PNG image promises reused by preview renders.
   const painted = new Map(); // Stable preview material masks by sprite, hue and oxidation setting.
-  const alphaCache = new WeakMap(); // Opaque-PNG row scans reused during every animation frame.
   const logs = []; // Visible diagnostics available without a browser console.
-  const fireParticles = []; // Tool-only flame particles, bounded and inserted after their layer.
-  const imageSize = img => ({ w: img?.naturalWidth || img?.width || 1, h: img?.naturalHeight || img?.height || 1 });
   const safeNum = (v, fallback = 0, min = -1e6, max = 1e6) => {
     const n = Number(v); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
   };
@@ -146,7 +143,7 @@
 
   function selectWeapon(next) {
     if (!state.weapons[next]) return;
-    key = next; selected = 0; fireParticles.length = 0;
+    key = next; selected = 0; window.HobunjiMultiSpritePreviewRenderer?.resetEffects();
     stackTarget = entry().flail ? 'head' : 'weapon';
     $('stackTarget').value = stackTarget;
     fillWeapons(); setFlailFields(); fillLayers(); warmImages();
@@ -171,7 +168,7 @@
         button.disabled = index + delta < 0 || index + delta >= all.length;
         button.onclick = () => {
           const other = index + delta; [all[index], all[other]] = [all[other], all[index]];
-          selected = other; fireParticles.length = 0; fillLayers(); markChanged();
+          selected = other; window.HobunjiMultiSpritePreviewRenderer?.resetEffects(); fillLayers(); markChanged();
         };
         row.appendChild(button);
       }
@@ -300,6 +297,7 @@
       if (activeLayer()?.vfx) activeLayer().vfx.colors = value.split(',').map(s => s.trim()).filter(s => /^#[0-9a-f]{6}$/i.test(s));
     });
     for (const id of ['metalHex','verdigrisHex','oxidation']) on(id, 'input', () => { painted.clear(); warmImages(); });
+    on('soloLayer','change', () => { window.HobunjiMultiSpritePreviewRenderer?.resetEffects(); }); // Close-up solo mode never affects the full weapon.
     on('play','click', () => { playing = !playing; $('play').textContent = playing ? '⏸ Pause' : '▶ Play'; });
     on('scrub','input', () => { progress = safeNum($('scrub').value, 0, 0, 1); playing = false; $('play').textContent = '▶ Play'; });
     on('save','click', () => {
@@ -328,7 +326,10 @@
       $('importFile').value = '';
     });
     on('copyJson','click', () => copy(JSON.stringify(state, null, 2)));
-    on('copyDebug','click', () => copy(logs.join('\n') + '\n\n' + JSON.stringify({key,tab,stackTarget,selected,latestError}, null, 2)));
+    on('copyDebug','click', () => copy(logs.join('\n') + '\n\n' + JSON.stringify({
+      key, tab, stackTarget, selected, latestError,
+      preview: window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot(),
+    }, null, 2))); // Reports measured bounds, loaded layers, and fit scale for remote mobile bug reports.
   }
 
   function validHex(value, fallback) { return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : fallback; }
@@ -354,153 +355,28 @@
     sources.filter(Boolean).forEach(warm);
   }
 
-  function opaquePoint(img, edge) {
-    if (!img) return null;
-    let cached = alphaCache.get(img);
-    if (!cached) { cached = {}; alphaCache.set(img, cached); }
-    if (cached[edge]) return cached[edge];
-    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d', {willReadFrequently:true});
-    try {
-      ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, w, h).data;
-      for (let row = 0; row < h; row++) {
-        const y = edge === 'top' ? row : h - row - 1;
-        let sum = 0, count = 0;
-        for (let x = 0; x < w; x++) if (data[(y * w + x) * 4 + 3] >= 128) { sum += x; count++; }
-        if (count) return (cached[edge] = { x: sum / count, y });
-      }
-    } catch(e) { log('Cannot read alpha: ' + e.message, true); }
-    return (cached[edge] = {x:w/2,y:edge==='top'?0:h-1});
-  }
-  function anchor(img, spec, fallback) {
-    const size = imageSize(img); if (!img) return {x:size.w/2,y:size.h/2};
-    if (Number.isFinite(spec?.x) && Number.isFinite(spec?.y)) return { x:Math.max(0,Math.min(size.w-1,spec.x)), y:Math.max(0,Math.min(size.h-1,spec.y)) };
-    return opaquePoint(img, spec?.opaque || fallback);
-  }
-
-  function paintedImage(part) {
-    const img = image(part.sprite); if (!img) return null;
-    const target = validHex($('metalHex').value, '#CD7F32'), verdigris = validHex($('verdigrisHex').value, '#57B38B');
-    const oxidation = safeNum($('oxidation').value,.5,0,1);
-    if (part.material === 'marker') {
-      return window.HobunjiLayeredWeaponEffects?.recolorMarker(img, part.sourceHex || '#7F00FF', part.targetHex || '#E7DDC9') || img;
-    }
-    if (part.material !== 'metal') return img;
-    const cacheKey = part.sprite + '|' + target + '|' + verdigris + '|' + oxidation;
-    let hit = painted.get(cacheKey);
-    if (hit?.image) return hit.image;
-    if (hit?.pending) return img;
-    hit = {pending:true,image:null}; painted.set(cacheKey, hit);
-    window.ToolMetalRecolor.getRecoloredCanvas(assetUrl(part.sprite), {targetHex:target,verdigrisHex:verdigris,oxidationAmount:oxidation}).then(canvas => {
-      hit.image = canvas; hit.pending = false;
-    }).catch(error => { hit.pending = false; log('Metal recolor: '+error.message,true); });
-    return img;
-  }
-
-  function drawSprite(ctx,img,cx,cy,ppu,rotation=0,offset=null) {
-    if (!img) return;
-    const w = img.width, h = img.height;
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(rotation);
-    ctx.drawImage(img, -w*ppu/2 + (Number(offset?.x)||0)*ppu, -h*ppu/2 + (Number(offset?.y)||0)*ppu,w*ppu,h*ppu);
-    ctx.restore();
-  }
-
-  function drawWeapon(ctx, dt, canvas) {
-    const def = entry(), basePath = def.sprite || (key==='hachutuTorchFlail'?'assets/toolsprites/hachutu_torch-flail_handle.png':'');
-    const shaft = image(basePath); const f = def.flail;
-    if (!shaft) { $('status').textContent = latestError || 'Loading base sprite: ' + (basePath || '(set a PNG path)'); return; }
-    const {w,h} = imageSize(shaft), ppu = Math.min(canvas.width*.23/w,canvas.height*.54/h);
-    const centerX = canvas.width*.46, centerY=canvas.height*.48;
-    const isSwing = progress > .001 && progress < .98;
-    const shaftRotation = isSwing ? Math.sin(progress*Math.PI*2)*.32 : 0;
-    const rawShaft = {sprite:basePath,material:'metal'};
-    drawSprite(ctx,paintedImage(rawShaft),centerX,centerY,ppu,shaftRotation);
-    // Ordinary weapons may independently layer images over their rigid base.
-    for(const layer of def.layers || []) drawSprite(ctx,paintedImage(layer),centerX,centerY,ppu,shaftRotation,layer.offsetPx);
-    if (!f) return;
-    const chImg = image(f.chain?.sprite); if (!chImg) return;
-    const hp = anchor(shaft,f.haftAnchor,'top');
-    const axisX = (hp.x+0.5-w/2)*ppu, axisY=(hp.y+.5-h/2)*ppu;
-    const cr=Math.cos(shaftRotation), sr=Math.sin(shaftRotation);
-    const pivotX=centerX+axisX*cr-axisY*sr,pivotY=centerY+axisX*sr+axisY*cr;
-    const ct=anchor(chImg,f.chain?.top,'top'),cb=anchor(chImg,f.chain?.bottom,'bottom');
-    const sourceAngle=Math.atan2(cb.y-ct.y,cb.x-ct.x);
-    const tilt = isSwing ? Math.sin(progress*Math.PI*2)*(0.8+safeNum(f.motion?.lag,.065,0,1)) : Math.sin(performance.now()*.0013)*.04;
-    const chainAngle=Math.PI*.5+tilt;
-    const chainRotation=chainAngle-sourceAngle;
-    ctx.save(); ctx.translate(pivotX,pivotY); ctx.rotate(chainRotation);
-    // Chain top is fixed at the scanned or explicit first opaque pixel.
-    ctx.drawImage(paintedImage({...f.chain,sprite:f.chain.sprite}),-(ct.x+.5)*ppu,-(ct.y+.5)*ppu,chImg.width*ppu,chImg.height*ppu);
-    ctx.restore();
-    const length=Math.hypot(cb.x-ct.x,cb.y-ct.y)*ppu;
-    const headX=pivotX+Math.cos(chainAngle)*length,headY=pivotY+Math.sin(chainAngle)*length;
-    const parts=f.head?.layers || [];
-    const contactIndex=parts.findIndex(x=>x.id===f.head.anchorLayer);
-    const anchorPart=parts[Math.max(0,contactIndex)];
-    const anchorImg=image(anchorPart?.sprite); if(!anchorImg)return;
-    const headAnchor=anchor(anchorImg,f.head.anchor,'bottom'),hs=imageSize(anchorImg);
-    const hOff=anchorPart?.offsetPx || {};
-    const dx=(headAnchor.x+.5-hs.w/2+(Number(hOff.x)||0))*ppu;
-    const dy=(headAnchor.y+.5-hs.h/2+(Number(hOff.y)||0))*ppu;
-    const headRotation=isSwing?tilt:0;
-    ctx.save(); ctx.translate(headX,headY);ctx.rotate(headRotation);ctx.translate(-dx,-dy);
-    parts.forEach((part,index)=>{
-      const img=paintedImage(part);
-      drawSprite(ctx,img,0,0,ppu,0,part.offsetPx);
-      if(part.vfx?.type==='fire') drawFire(ctx,part,image(part.sprite),ppu,dt,index);
-    });
-    ctx.restore();
-    // Visual inspection overlay: marker at world chain joints.
-    ctx.fillStyle='#83bcff';ctx.beginPath();ctx.arc(pivotX,pivotY,3,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#ffc769';ctx.beginPath();ctx.arc(headX,headY,3,0,Math.PI*2);ctx.fill();
-  }
-
-  function drawFire(ctx,part,img,ppu,dt,index) {
-    if (!img) return;
-    const config=part.vfx;const sources=window.HobunjiLayeredWeaponEffects?.sourcePixels(img,config.sourceHex||part.sourceHex||'#7F00FF','marker') || [];
-    if (!sources.length) return;
-    // Reset particles when switching layer/reordering, leaving the original PNG fully visible.
-    const fireKey=key+':'+part.id+':'+index;
-    for(let i=fireParticles.length-1;i>=0;i--){
-      const p=fireParticles[i];if(p.key!==fireKey) continue; // Other interleaved emitters retain their own independent particle lifetimes.
-      p.age+=dt;if(p.age>=p.life){fireParticles.splice(i,1);continue;}
-      const t=p.age/p.life;ctx.globalAlpha=.85*Math.sin(Math.PI*t);
-      ctx.fillStyle=p.color;ctx.beginPath();
-      ctx.arc(p.x*ppu+Math.sin(t*9+p.phase)*ppu*3,(p.y-p.speed*p.age)*ppu,p.radius*ppu*(.6+t),0,Math.PI*2);ctx.fill();
-    }
-    ctx.globalAlpha=1;
-    if(!playing)return;
-    const max=32, rate=safeNum(config.rate,22,0,40);
-    if(fireParticles.filter(p=>p.key===fireKey).length>=max || Math.random()>rate*dt) return;
-    const p=sources[Math.floor(Math.random()*sources.length)];const imgSize=imageSize(img);
-    fireParticles.push({
-      key:fireKey,age:0,life:safeNum(config.life,.65,.1,5),phase:Math.random()*6.28,
-      x:p%imgSize.w+.5-imgSize.w/2+(Number(part.offsetPx?.x)||0), // Marker source pixel in layer-center coordinates, scaled only when drawn.
-      y:Math.floor(p/imgSize.w)+.5-imgSize.h/2+(Number(part.offsetPx?.y)||0),
-      radius:safeNum(config.size,.035,.001,.5)*imgSize.w*.55,
-      speed:imgSize.h*.12,
-      color:(config.colors || ['#FFAA3E'])[Math.floor(Math.random()*(config.colors?.length||1))] || '#FFAA3E',
-    });
-  }
-
   function frame(now) {
-    const dt=Math.max(0,Math.min(.05,(now-lastTime)/1000));lastTime=now;
-    if(playing) { progress=(progress+dt*.65)%1;$('scrub').value=progress; }
-    const canvas=$('preview'),ctx=canvas.getContext('2d');
-    const width=canvas.clientWidth||900,height=canvas.clientHeight||700;
-    const dpr=Math.min(2,window.devicePixelRatio||1);
-    if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){
-      canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
+    const dt = Math.max(0, Math.min(.05, (now - lastTime) / 1000)); // The same animation time powers the close-up and combined preview.
+    lastTime = now;
+    if (playing) { progress = (progress + dt * .65) % 1; $('scrub').value = progress; }
+    const renderer = window.HobunjiMultiSpritePreviewRenderer; // Separate pure layout logic auto-fits each visible PNG stack.
+    if (!renderer) {
+      if (latestError !== 'Preview renderer did not load') log('Preview renderer did not load', true);
+      return;
     }
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle='#0f1b29';ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle='#25374a';ctx.lineWidth=1;
-    for(let x=0;x<canvas.width;x+=45*dpr){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
-    for(let y=0;y<canvas.height;y+=45*dpr){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
-    try{drawWeapon(ctx,dt,canvas);}catch(e){if(latestError!==e.message)log('Preview: '+e.message,true);}
-    requestAnimationFrame(frame); // Explicitly isolated authoring-preview RAF; never used by gameplay runtime.
+    try {
+      const model = renderer.modelFor(entry(), image, progress, now);
+      const options = {
+        dt, playing, selected, stackTarget,
+        weaponKey: key, solo: $('soloLayer').checked,
+        effects: window.HobunjiLayeredWeaponEffects,
+      }; // Both panels share the same source assets, metal palette, and attack progress.
+      renderer.drawCanvas($('headPreview'), 'head', model, image, paintedImage, options);
+      renderer.drawCanvas($('preview'), 'combined', model, image, paintedImage, options);
+    } catch (error) {
+      if (latestError !== error.message) log('Preview: ' + error.message, true); // Display failures without devtools.
+    }
+    requestAnimationFrame(frame); // One RAF for both canvases; none is added to the gameplay runtime.
   }
 
   async function suggestRepoSprites() {
