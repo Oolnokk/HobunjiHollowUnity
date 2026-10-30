@@ -656,8 +656,21 @@
           record.secondaryActive = true;
           ensureFallbackState(record).owners.left = 'secondary-grip';
         } else {
-          applyFallbackSide(record, 'left');
-          record.secondaryActive = false;
+          // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
+          // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
+          const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
+          const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip) : null;
+          const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) : null;
+          if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
+            applyFallbackSide(record, 'left'); // The fallback is the other end of the blend: the invisible tool takes over as its weight rises.
+            const idleHand = handSocketAfterGripMode(record, offhandSocket);
+            record.rig.placeHandWorld?.('left', idleHand.position, idleHand.quaternion, modelCalibration, offhandIdle.blend);
+            record.secondaryActive = true;
+            ensureFallbackState(record).owners.left = 'offhand-idle-pose';
+          } else {
+            applyFallbackSide(record, 'left');
+            record.secondaryActive = false;
+          }
         }
       }
       record.lastToolKey = toolKey || null;

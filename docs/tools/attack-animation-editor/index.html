@@ -141,6 +141,8 @@ canvas{display:block;width:100%;height:100%}
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
     </div>
+    <div class="field"><button type="button" id="toggleLegBones" class="secondary" aria-pressed="false">🦴 Show leg bones</button>
+      <div class="help">Draws hip → knee → ankle for each leg. Under a body sink the legs separate into a front and a back leg; the leg on the side away from the body yaw's turn leads.</div></div>
     <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
     <details class="advancedDetails">
@@ -296,7 +298,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 </div>
 <script src="../../js/local-db-overrides.js?v=20261013ha525e98"></script>
-<script src="../../config/scratchbones-config.js?v=20261029maskSlots2"></script>
+<script src="../../config/scratchbones-config.js?v=20261030h3882d51"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261025hd81e6fa"></script>
 <script src="../../config/character-rig-scale-defaults.js?v=20261010hd4b4796"></script>
 <script src="../../js/character-rig-scale.js?v=20261007h0c4d7d9"></script>
@@ -307,16 +309,22 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/png-plane-avatar.js?v=20261029maskSlots2"></script>
 <script src="../../js/species-pose-scaling.js?v=20261029maskSlots2"></script>
 <script src="../../js/character-dimensions.js?v=20261007he86e7d1"></script>
+<!-- Feet + pants for the preview: the SAME procedural leg handle and pants garment the game uses, so body sink bends the real legs. -->
+<script src="../../js/leg-bones.js?v=20261013hb53d07e"></script>
+<script src="../../js/procedural-leg-animation.js?v=20261030h2d6073a"></script>
+<script src="../../config/pants-rigs.js?v=20261015h74422e2"></script>
+<script src="../../js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/pants-garment-renderer.js?v=20261026hghoulpantsnorm"></script>
 <!-- Shared local-transform dump utility (window.HobunjiTransformDump) — also
      loaded by the game's Pixel Probe, so this editor's preview dump and an
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261029maskSlots2"></script>
+<script src="../../js/held-action-animations.js?v=20261030hec64ffe"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
-<script src="../../js/combat/shared-attack-pose.js?v=20261027h6ae7521"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261017a"></script>
 <script type="module">
@@ -620,6 +628,42 @@ $('showHeadSkinVertices').addEventListener('change', () => {
 });
 syncNeckPreviewControls();
 
+// Feet and pants, built exactly as the game builds the player's (js/procedural-leg-animation.js + js/pants-garment-renderer.js).
+function disposePreviewLegs() {
+  if (!editorLegs) return;
+  try { editorLegs.dispose(); } catch (error) { logDebug('Preview legs dispose failed: ' + error.message); }
+  editorLegs = null;
+}
+async function attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h, size }) {
+  disposePreviewLegs();
+  editorLegs = window.ProceduralLegAnimation?.attach?.(THREE, characterBodyScaleRoot, {
+    speciesId, gender, bodyColors: profile?.bodyColors, modelWidth: w, modelHeight: h,
+    handAttachY: avatarModel.userData?.handAttachY, name: 'editor_preview', profile, portraitSize: size,
+  }) || null;
+  if (!editorLegs) { logDebug(`Preview legs unavailable for ${speciesId}/${gender}`); return; }
+  const Pants = window.PantsGarmentRenderer;
+  if (Pants && Pants.hasRigFor(speciesId, gender)) {
+    try {
+      const pants = Pants.attachToLegs(THREE, editorLegs, {
+        avatarGroup: avatarModel, speciesId, gender, name: 'editor_preview', garmentId: 'pants_basic',
+        appearance: Pants.appearanceFromBodyColors(profile?.bodyColors),
+        imageUrl: new URL('../../assets/cosmetics/clothes/legs/pants_basic.png', location.href).href, // The renderer's default `./assets/...` is relative to this page, not docs/.
+        overlayMask: await Pants.buildOverlayMask(frontCanvas, profile),
+      });
+      logDebug(pants ? 'Preview pants attached' : 'Preview pants could not be built for this avatar');
+    } catch (error) { logDebug('Preview pants failed: ' + error.message); }
+  }
+  editorLegs.update(0, 0, false, null, {});
+}
+
+$('toggleLegBones').addEventListener('click', () => {
+  const next = !window.ProceduralLegAnimation?.showBones;
+  window.ProceduralLegAnimation?.setShowBones(next);
+  $('toggleLegBones').setAttribute('aria-pressed', String(next));
+  $('toggleLegBones').textContent = next ? '🦴 Hide leg bones' : '🦴 Show leg bones';
+  editorLegs?.update(0, 0, false, null, {}); // Guides are shown/hidden when the chain is re-solved.
+});
+
 async function rebuildAvatar(speciesId, gender) {
   await window.HobunjiSpeciesPoseScale?.ready; // Ensures repo/local species+gender orbit data is loaded before the preview avatar caches it.
   await ensureCosmetics();
@@ -636,6 +680,7 @@ async function rebuildAvatar(speciesId, gender) {
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+  disposePreviewLegs();
   if (avatarModel) {
     disposeHeadSkinVertexOverlay();
     characterBodyScaleRoot.remove(avatarModel);
@@ -683,6 +728,11 @@ async function rebuildAvatar(speciesId, gender) {
   baseAttachX *= characterBodyScaleRoot.scale.x;
   baseAttachY *= characterBodyScaleRoot.scale.y;
   toolBase.position.set(toolBaseSideX(), baseAttachY, 0);
+  toolBaseRestY = baseAttachY;
+  characterBodyScaleRoot.position.y += appliedWorldSink; // A rebuild (Undo/Redo, species change) can happen while the body is sunk: un-apply it so the standing baseline is not the sunk height.
+  appliedWorldSink = 0;
+  characterBodyScaleRoot.userData.sinkBaseY = characterBodyScaleRoot.position.y;
+  await attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h, size });
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(currentPoseOrbitScale, currentArmLength) || { x: currentPoseOrbitScale, y: 1, z: currentPoseOrbitScale }; return a.x === a.z && a.y === 1 ? a.x.toFixed(5) : `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)} (x/y/z)`; })()}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
   refreshPreviewDebug();
 }
@@ -1007,6 +1057,19 @@ window.HobunjiAttackEditorPoseState = Object.freeze({
 const ELBOW_SIDES = ['left', 'right'];
 const ELBOW_AXES = ['x', 'y', 'z'];
 
+// Body sink (% of total height) is optional pose data: a Windup/Strike without one inherits the Neutral's, and an unauthored Neutral rests at
+// the weapon-stance idle sink (SharedAttackPose.idleBodySinkPct), exactly what the game's baked swing does.
+function sinkPctForPhase(phase) {
+  const own = anim.poses?.[phase]?.bodySink;
+  if (own != null && Number.isFinite(Number(own))) return Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(own)));
+  return phase === 'neutral' ? SharedAttackPose.idleBodySinkPct() : sinkPctForPhase('neutral');
+}
+function sinkPctForPose(pose) {
+  if (pose && Number.isFinite(Number(pose.bodySink))) return Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(pose.bodySink)));
+  const phase = Object.keys(anim.poses || {}).find(key => anim.poses[key] === pose);
+  return phase ? sinkPctForPhase(phase) : sinkPctForPhase('neutral');
+}
+
 const FIELD_DEFS = [
   { key: 'x', label: 'Tool X position (side)', min: -1, max: 1, step: 0.01, angle: false },
   { key: 'y', label: 'Tool Y position (height)', min: -1, max: 1, step: 0.01, angle: false },
@@ -1015,6 +1078,7 @@ const FIELD_DEFS = [
   { key: 'yaw', label: 'Tool Y rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'roll', label: 'Tool Z rotation°', min: -180, max: 180, step: 1, angle: true },
   { key: 'bodyYaw', label: 'Character Y rotation°', min: -180, max: 180, step: 1, angle: true },
+  { key: 'bodySink', label: 'Body sink (% of total height)', min: 0, max: 25, step: 0.5, angle: false, percent: true },
   { key: 'scale', label: 'Tool scale (uniform)', min: 0.1, max: 3, step: 0.01, angle: false, neutralOnly: true },
 ];
 
@@ -1081,7 +1145,7 @@ function renderActivePosePanel() {
     el.addEventListener('input', () => {
       const v = Number(el.value);
       anim.poses[editPhase][f.key] = v;
-      $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+      $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
       focusPreviewOnPhase(editPhase);
       applyPoseToRig(anim.poses[editPhase]);
       refreshJsonView();
@@ -1122,9 +1186,9 @@ function renderActivePosePanel() {
 function syncPosePanelFromState(phase = editPhase) {
   if (phase !== editPhase || !$('activePosePanel')) return;
   for (const f of poseFieldDefs(editPhase)) {
-    const v = safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0);
+    const v = f.key === 'bodySink' ? sinkPctForPhase(editPhase) : safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0); // An unauthored sink shows the value it inherits.
     $(`pose_${f.key}`).value = v;
-    $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : v.toFixed(2);
+    $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
   }
   for (const side of ELBOW_SIDES) {
     const point = elbowControlPoint(editPhase, side);
@@ -1201,6 +1265,7 @@ function flipPose(p) {
   const mirrored = SharedAttackPose.MIRRORED_POSE_KEYS; // Same left/right-handed channels the game negates for Backhand.
   const flipped = defaultPose(mirrored.x ? -p.x : p.x, mirrored.y ? -p.y : p.y, mirrored.z ? -p.z : p.z, mirrored.pitch ? -p.pitch : p.pitch, mirrored.yaw ? -p.yaw : p.yaw, mirrored.bodyYaw ? -p.bodyYaw : p.bodyYaw, mirrored.roll ? -(p.roll || 0) : (p.roll || 0));
   if (p.scale != null) flipped.scale = p.scale;
+  if (p.bodySink != null) flipped.bodySink = p.bodySink; // Sinking is symmetric about the midline; Backhand never mirrors it.
   if (p.shoulderAim) flipped.shoulderAim = { ...p.shoulderAim };
   if (p.secondaryGrip) flipped.secondaryGrip = { ...p.secondaryGrip };
   if (p.dualWield != null) flipped.dualWield = typeof p.dualWield === 'object' ? { ...p.dualWield } : p.dualWield;
@@ -1472,6 +1537,11 @@ function applyPreset(preset) {
 // the player and every enemy -- so what plays here is what plays in game. Only the phase labels and the
 // hold-phase pose object (which keeps its hand-grip/elbow fields) are editor-side.
 function poseAt(t) {
+  const result = poseChannelsAt(t);
+  result.pose.bodySink = SharedAttackPose.sequencedPoseLerp(anim.sequence, t, anim.windupFrac, anim.strikeFrac, anim.holdFrac, sinkPctForPhase('windup'), sinkPctForPhase('strike'), sinkPctForPhase('neutral'), sinkPctForPhase('neutral')); // Same easing as every other channel, so the legs fold across the whole swing.
+  return result;
+}
+function poseChannelsAt(t) {
   const wf = anim.windupFrac, sf = anim.strikeFrac, hf = anim.holdFrac;
   const { neutral, windup, strike } = anim.poses;
   const phase = anim.sequence === 'load' ? (t <= wf ? 'load windup' : 'load return')
@@ -1484,7 +1554,30 @@ function poseAt(t) {
   const k = SharedAttackPose.POSE_KEYS;
   return { pose: defaultPose(channel(k[0]), channel(k[1]), channel(k[2]), channel(k[3]), channel(k[4]), channel(k[5]), channel(k[6])), phase };
 }
+// Sinks the whole previewed body (portrait, hands, tool base) by `pct` of its total height. The leg handle raises its group by the same amount so
+// the soles stay on the floor and folds the two-bone legs at full length (knees bend); update(0) re-skins the pants onto the bent legs.
+let toolBaseRestY = 0; // toolBase's un-sunk Y, recorded by rebuildAvatar.
+let editorLegs = null; // ProceduralLegAnimation handle (feet + pants) under characterBodyScaleRoot.
+let appliedBodySinkPct = 0;
+let appliedWorldSink = 0; // World distance the body root is currently lowered by (so a rebuild can restore the standing baseline).
+function applyBodySink(pct, bodyYawDeg = 0) {
+  const sinkUnits = Math.max(0, pct) / 100 * currentAvatarModelHeight; // Body-root-local units, like the leg handle's own.
+  let applied = sinkUnits;
+  if (editorLegs) {
+    editorLegs.setStanceYawDeg(bodyYawDeg); // The leg on the side away from the turn leads and swings about its hip so its foot points forward.
+    editorLegs.setStanceDrop(sinkUnits, true);
+    editorLegs.update(0, 0, false, null, {}); // dt 0: no gait, but re-solves the chain and re-skins the pants.
+    applied = editorLegs.getStanceDrop();
+  }
+  appliedBodySinkPct = currentAvatarModelHeight > 0 ? applied / currentAvatarModelHeight * 100 : 0;
+  const worldSink = applied * characterBodyScaleRoot.scale.y;
+  appliedWorldSink = worldSink;
+  characterBodyScaleRoot.position.y = (characterBodyScaleRoot.userData.sinkBaseY || 0) - worldSink;
+  toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
+}
 function applyPoseToRig(pose) {
+  window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
+  applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose), pose.bodyYaw);
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.
@@ -2210,6 +2303,7 @@ function loadAnimObject(data) {
   anim.poses.strike = defaultPose(safeNum(s.x, 0), safeNum(s.y, 0), safeNum(s.z, 0), safeNum(s.pitch, 0), safeNum(s.yaw, 0), safeNum(s.bodyYaw, 0), safeNum(s.roll, 0));
   for (const [phase, raw] of [['neutral', n], ['windup', w], ['strike', s]]) {
     anim.poses[phase].headRelative = anim.headRelative;
+    if (raw?.bodySink != null && Number.isFinite(Number(raw.bodySink))) anim.poses[phase].bodySink = Math.max(0, Math.min(SharedAttackPose.MAX_BODY_SINK_PCT, Number(raw.bodySink)));
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
     if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;

@@ -6071,6 +6071,7 @@
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
+        if (c.avatarRef.bodySinkActor && (Number(c.health) || 0) <= 0) window.ActorBodySink?.release(c.avatarRef.bodySinkActor); // A corpse stands back up; js/actor-body-sink.js.
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,
@@ -23871,6 +23872,8 @@
             progress, WF, SF, poseHoldFrac, combatSwingSign, combatSwingPower, combatSwingSequence,
           );
           toolHolder.scale.setScalar(sampled.scale);
+          window.WeaponStanceDropRuntime?.noteSwingSink(sampled.bodySink, sampled.bodyYawRad * 180 / Math.PI);
+          window.HobunjiDualWieldWeaponVisuals?.setCarriedSample(sampled); // The invisible idle-offhand tool peels the pose the holder carries right now (js/dual-wield-weapon-visuals.js). // Authored per-pose body sink (percent of height); js/weapon-stance-drop-runtime.js sinks the body and folds the knees to match.
 
           // The hand attachment itself is part of a true midline flip. Keep it
           // on the attack side through impact, then carry it smoothly across

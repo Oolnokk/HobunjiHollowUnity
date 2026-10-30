@@ -115,7 +115,7 @@
     const cached = entity._enemyPreparedPose;
     if (cached && cached.source === source && cached.alternatesHeavyNeutral === alternatesHeavyNeutral && cached.action === action && cached.originalAnim === originalAnim
       && cached.originalPose === originalPose && cached.requestedSign === requestedSign && cached.power === power
-      && cached.spacing === spacing && stanceValuesMatch(cached, source)) {
+      && cached.spacing === spacing && cached.idleSink === window.SharedAttackPose.idleBodySinkPct() && stanceValuesMatch(cached, source)) {
       return cached.prepared;
     }
 
@@ -125,14 +125,15 @@
     // visible stance for forehand/backhand, and the Neutral the swing returns to (Heavy weapons alternate sides).
     const targetNeutral = SAP.normalizePose(source, {}); // Snapshot of the live stance; revalidated against `source` by stanceValuesMatch.
     const sequence = SAP.bakeStanceSequence(originalAnim, originalPose, requestedSign, power, targetNeutral, { alternatesHeavyNeutral });
+    const idleSink = SAP.idleBodySinkPct();
     const prepared = {
       originalAnim,
       requestedSign,
       effectiveSign: sequence.effectiveSign,
       stanceClass: stanceClassFor(entity),
       pose: {
-        neutral: sequence.neutral,
-        returnNeutral: sequence.returnNeutral,
+        neutral: { ...sequence.neutral, bodySink: idleSink }, // Eases out of and back into the stance's rest sink, like the player's baked swing (weapon-tool-stances.js).
+        returnNeutral: { ...sequence.returnNeutral, bodySink: idleSink },
         neutralMirrorSign: sequence.startNeutralSign,
         returnNeutralMirrorSign: sequence.returnNeutralSign,
         windup: sequence.windup,
@@ -140,7 +141,7 @@
       },
     };
     entity._enemyPreparedPose = {
-      source, alternatesHeavyNeutral, action, originalAnim, originalPose, requestedSign, power, spacing,
+      source, alternatesHeavyNeutral, action, originalAnim, originalPose, requestedSign, power, spacing, idleSink,
       stanceValues: POSE_KEYS.map(key => source[key]),
       prepared,
     };

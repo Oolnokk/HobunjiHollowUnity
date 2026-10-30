@@ -260,7 +260,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "Gameplay uses RuntimeFrameScheduler: installMaintenance() stays scheduler-owned and applyPrimaryGripVisuals() maintains intrinsic held-item scale only. Authored grip targets now move hands and never translate/rotate the weapon. The standalone Attack Animation Editor/Animation Author do not load RuntimeFrameScheduler, so this two-line fallback RAF loop remains isolated to those tool contexts.",
     "migrationStage": "migrated",
-    "line": 1384
+    "line": 1521
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
@@ -512,7 +512,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
     "migrationStage": "not-planned",
-    "line": 852
+    "line": 919
   },
   {
     "file": "docs/js/quick-potion-arc-ui.js",

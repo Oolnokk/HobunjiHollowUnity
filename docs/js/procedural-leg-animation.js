@@ -907,6 +907,13 @@
       hoverEnabled: false, // Dedicated airborne locomotion mode used by hovering humanoids such as Harlyao Liches.
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
+      stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
+      stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg on the side away from the turn steps forward.
+      stanceYawRad: 0, // The body's twist under the stance; the leading leg counter-rotates about its hip by this so its foot points forward.
+      splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
+      footDepthPush: 0, // World distance the feet are drawn farther from the camera (set by the worn pants, see installFootDepthPush).
+      stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
+      stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
     };
 
@@ -1016,6 +1023,7 @@
       chain.calfGuide.position.y = -calfLength * 0.5;
     }
 
+    const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling the foot under a sunk stance.
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -1024,15 +1032,64 @@
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
-        foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
+        foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : state.stanceDrop > 0.0001 ? standingLegLength() : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between. A lowered stance keeps the full bone length and bends the knees.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
       chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
-      mesh.rotation.x = state[`${side}Roll`];
+      if (state.stanceDrop > 1e-4) {
+        // A sunk stance folds the shin well off vertical; the sole stays flat on the floor by undoing the shin's world tilt (then the stride roll).
+        footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
+        mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
+      } else {
+        mesh.rotation.x = state[`${side}Roll`];
+        if (mesh.rotation.y || mesh.rotation.z) { mesh.rotation.y = 0; mesh.rotation.z = 0; } // Clears any levelling left over from a sunk stance.
+      }
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
+    }
+
+    // Weapon-stance sink. The body (portrait, hands, tool) is lowered by `state.stanceDrop` by whoever owns the body transform
+    // (PlayerBodyTransformComposer in game, the attack editor's body root); this keeps the soles where they were. The leg group is
+    // raised by the same amount in the body's frame and the hips drop with the body, so in body space the hips stay put while the
+    // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
+    // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
+    function applyStanceDrop(drop) {
+      const clamped = Math.max(0, Math.min(drop, standingLegLength() * 0.55)); // Beyond ~55% of the leg the fold would read as a sit, not a stance.
+      if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
+      state.stanceDrop = clamped;
+      root.position.y = clamped;
+      legChains.left.hip.position.y = legChains.right.hip.position.y = posteriorY - clamped;
+      applyStanceSplit();
+    }
+
+    // The sunk stance separates the legs into a front and a back leg: the stance widens with the sink (splitPerSink units of foot travel per unit
+    // of sink) but never past the point where the hip-to-foot distance would exceed the bone length, so the fold still bends rather than stretches.
+    // The offsets are added to the foot targets directly so they take effect immediately (the editor ticks with dt 0); applyPose keeps them in the gait target.
+    // The leading leg swings about its hip (Y) against the body's twist, so its foot lands and points along the actor's forward direction instead
+    // of being dragged round with the torso (up to ±90° of body yaw, beyond which it turns with the body); the trailing leg always turns with the body. Skipped while lunging (lunge footwork solves in world space).
+    const HIP_YAW_FOLLOW_LIMIT = Math.PI / 2;
+    function syncHipYaw() {
+      const active = state.stanceDropAllowed && !state.lungeActive && state.stanceDrop > 1e-6;
+      const ramp = active ? Math.min(1, state.stanceDrop / Math.max(1e-6, modelHeight * 0.01)) : 0; // Fades in with the sink so standing legs never twist.
+      const lead = { left: Math.max(0, -state.stanceSplitBias), right: Math.max(0, state.stanceSplitBias) };
+      const counter = Math.max(-HIP_YAW_FOLLOW_LIMIT, Math.min(HIP_YAW_FOLLOW_LIMIT, state.stanceYawRad)); // Past ±90° of body yaw the leading leg stops countering and turns with the rest of the body.
+      for (const side of ['left', 'right']) legChains[side].hip.rotation.y = -counter * lead[side] * ramp;
+    }
+
+    function applyStanceSplit() {
+      const length = standingLegLength(), drop = state.stanceDrop;
+      const reach = Math.sqrt(Math.max(0, length * length - (length - drop) * (length - drop))) * 0.97;
+      const magnitude = Math.min(drop * (Number(cfg().stanceDrop?.splitPerSink) >= 0 ? Number(cfg().stanceDrop.splitPerSink) : 1.5), reach);
+      const next = { left: -state.stanceSplitBias * magnitude, right: state.stanceSplitBias * magnitude };
+      for (const side of ['left', 'right']) {
+        state[`${side}Target`].z += next[side] - state.splitZ[side];
+        state.splitZ[side] = next[side];
+      }
+      syncHipYaw();
+      applyLegChain('left');
+      applyLegChain('right');
     }
 
     // Sets a leg's target straight to its idle stance (no damping — used
@@ -1042,7 +1099,7 @@
     // the chain's stale/default pose for a frame.
     function placeIdleTarget(side, contactY) {
       const idleX = side === 'left' ? state.idleLeftX : state.idleRightX;
-      state[`${side}Target`].set(idleX, contactY, 0);
+      state[`${side}Target`].set(idleX, contactY, state.splitZ[side]);
       state[`${side}Roll`] = 0;
       applyLegChain(side);
     }
@@ -1051,7 +1108,45 @@
     const partProfileKey = `${speciesId}::${gender}`; // Stable key avoids allocating lookup strings during joint animation.
     const partAxes = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes; // Optional authored foot-only axes leave hips, leg lengths, and stance positions untouched.
 
+    // Depth push for the feet (see PantsGarmentRenderer): worn pants must always draw over the feet, but must also be pure 3D proximity against
+    // the avatar's own planes, so the garment cannot carry a depth pull of its own. Instead each foot mesh is scaled about the CAMERA for its
+    // draw: the screen image is identical (a uniform scale about the eye changes nothing in projection) but the foot is `footDepthPush` farther,
+    // so the pants win the depth test over it. Done in onBeforeRender (three derives modelViewMatrix after it) and undone in onAfterRender.
+    const pushCamera = new THREE.Vector3();
+    const rootScaleY = () => { const e = root.matrixWorld.elements; return Math.hypot(e[4], e[5], e[6]) || 1; }; // World size of one root-local unit.
+    function installFootDepthPush(foot) {
+      foot.traverse(mesh => {
+        if (!mesh.isMesh || mesh.userData.hobunjiFootDepthPush) return;
+        const saved = mesh.userData.hobunjiFootDepthPush = new Float32Array(16);
+        const before = mesh.onBeforeRender, after = mesh.onAfterRender;
+        let pushed = false;
+        mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
+          before.call(this, renderer, scene, camera, ...rest);
+          pushed = false;
+          if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera) return;
+          const e = this.matrixWorld.elements;
+          pushCamera.setFromMatrixPosition(camera.matrixWorld);
+          const dx = e[12] - pushCamera.x, dy = e[13] - pushCamera.y, dz = e[14] - pushCamera.z;
+          const distance = Math.hypot(dx, dy, dz);
+          if (distance < 1e-3) return;
+          for (let i = 0; i < 16; i++) saved[i] = e[i];
+          // The base push covers how far a foot bulges past the portrait plane; the feet also sit fore/aft of that plane (stance split, stride), so the
+          // push grows with their displacement and pants cover the feet from the back as well as the front.
+          const fore = Math.max(Math.abs(state.leftTarget.z), Math.abs(state.rightTarget.z)) * rootScaleY();
+          const k = 1 + (state.footDepthPush + fore) / distance;
+          for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[i] *= k;
+          e[12] = pushCamera.x + dx * k; e[13] = pushCamera.y + dy * k; e[14] = pushCamera.z + dz * k;
+          pushed = true;
+        };
+        mesh.onAfterRender = function footDepthPushAfter(...args) {
+          if (pushed) { const e = this.matrixWorld.elements; for (let i = 0; i < 16; i++) e[i] = saved[i]; pushed = false; }
+          after.apply(this, args);
+        };
+      });
+    }
+
     function installFootAxes(foot) {
+      installFootDepthPush(foot);
       window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes);
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
     }
@@ -1158,7 +1253,7 @@
       const target = state[`${side}Target`];
       if (!state[side] || !target) return;
       target.x = damp(target.x, idleX, response, dt);
-      const targetZ = pose.travel;
+      const targetZ = pose.travel + state.splitZ[side]; // Front/back leg offset of a sunk stance (0 otherwise).
       target.z = damp(target.z, targetZ, response, dt);
       const rollAmount = pose.travel / Math.max(radius, 0.001) * 0.32;
       state[`${side}Roll`] = damp(state[`${side}Roll`], -rollAmount, response, dt);
@@ -1376,6 +1471,7 @@
       if (state.disposed) return;
       state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
+        applyStanceDrop(0); // Seat solve measures from the standing hip height.
         state.motionMode = 'seated';
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
         state.gaitStrideLength = 0;
@@ -1396,6 +1492,15 @@
       lastSeatedPoseDebug = null;
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
+      const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
+      state.stanceDropAllowed = stanceDropAllowed;
+      if (motion?.lunging || !stanceDropAllowed) { if (legChains.left.hip.rotation.y || legChains.right.hip.rotation.y) syncHipYaw(); }
+      const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
+      if (wantedDrop > 0 || state.stanceDrop > 0) {
+        const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
+        applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
+      }
+      if (state.stanceDrop > 1e-6) syncHipYaw(); // Re-applies after a lunge released it; cheap assignments only.
       if (suppressed) {
         state.motionMode = 'suppressed';
         // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
@@ -1573,13 +1678,27 @@
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets,
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
+      // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
+      // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
+      setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
+      getStanceDrop: () => state.stanceDrop,
+      setFootDepthPush: distance => { state.footDepthPush = Math.max(0, Number(distance) || 0); },
+      setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },
+      setStanceYawDeg: deg => { // One call for both consequences of the body's twist: which leg leads, and the lead leg's counter-rotation.
+        const bias = Math.max(-1, Math.min(1, -(0.35 + (Number(deg) || 0) / 15))), yaw = (Number(deg) || 0) * Math.PI / 180;
+        if (Math.abs(bias - state.stanceSplitBias) < 1e-6 && Math.abs(yaw - state.stanceYawRad) < 1e-6) return;
+        state.stanceSplitBias = bias; state.stanceYawRad = yaw;
+        if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit();
+      },
+      stanceSplitBiasForYawDeg: yawDeg => Math.max(-1, Math.min(1, -(0.35 + (Number(yawDeg) || 0) / 15))), // Continuous: -0.35 at yaw 0 (left foot leads by default), flips smoothly as the body turns the other way. The leg on the side AWAY from the turn leads.
+      modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
       getRestStance: () => {
         const stance = {};
         for (const side of ['left', 'right']) {
           const hip = legChains[side].hip.position;
-          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: side === 'left' ? state.leftContactY : state.rightContactY, z: 0 } };
+          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: (side === 'left' ? state.leftContactY : state.rightContactY) - state.stanceDrop, z: 0 } }; // Minus the sink: the group is raised by it, so in the body's frame the standing ankle (and the pants' rest bind) never moves.
         }
         return stance;
       },
