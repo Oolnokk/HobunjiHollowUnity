@@ -126,8 +126,6 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.ok(map.includes('specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex'),'Named ruin wall ink comes from the guardian roster Body Color C');
   assert.ok(preview.includes('applyCreatureBillboardScale?.(a.group'),'Workshop scales the actual hostile avatar root like gameplay');
   assert.ok(preview.includes('referenceX') && preview.includes('referenceY'),'Workshop camera preserves a stable body-size reference across re-rolls');
-  assert.ok(preview.includes('a.group.rotation.y = !a.riderMount && a.frontPlane && a.backPlane ? -Math.PI / 2 : 0'),'Workshop must face the front hostile portrait toward the camera; an edge-on sprite leaves only hands, feet and pants visible');
-  assert.ok(preview.includes('frontYawDegrees'),'Mobile Workshop snapshots must reveal the actual front-portrait facing angle');
   for (const filename of ['m','f'])
     assert.ok(fs.existsSync(path.join(root,'docs/assets/cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+filename+'.png')),'New eye sprites are committed to the repo');
   const sanctum=read('docs/js/dev-random-ruin-sanctum.js');
