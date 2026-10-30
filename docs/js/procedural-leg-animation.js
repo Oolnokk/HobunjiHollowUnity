@@ -1040,7 +1040,8 @@
         footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
         mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
       } else {
-        mesh.rotation.set(state[`${side}Roll`], 0, 0);
+        mesh.rotation.x = state[`${side}Roll`];
+        if (mesh.rotation.y || mesh.rotation.z) { mesh.rotation.y = 0; mesh.rotation.z = 0; } // Clears any levelling left over from a sunk stance.
       }
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
     }
