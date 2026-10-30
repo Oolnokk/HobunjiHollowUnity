@@ -80,6 +80,11 @@
     return { x: x - size.width / 2 + o.x, y: y - size.height / 2 + o.y };
   }
 
+  function partScale(part) {
+    const n = Number(part?.scale ?? 1); // Uses the same validated handle-relative multiplier as the gameplay assembly renderer.
+    return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
+  }
+
   function modelFor(def, lookup, progress, clock = 0) {
     const basePath = def.sprite || (def.flail?.chain ? 'assets/toolsprites/hachutu_torch-flail_handle.png' : '');
     const shaft = lookup(basePath);
@@ -91,6 +96,7 @@
       flail, parts: flail?.head?.layers || [], pivot: null,
       chain: null, chainTop: null, chainBottom: null, chainRotation: 0,
       headOrigin: null, headPosition: null, headRotation: 0,
+      chainScale: partScale(flail?.chain), headScale: partScale(flail?.head), // Both ratios reference the unmodified shaft pixels, not each other.
     }; // Used by both independently fitted canvases; source pixels remain authoritative.
     if (!shaft || !flail) return model;
     const chain = lookup(flail.chain?.sprite);
@@ -110,8 +116,8 @@
     const angle = Math.PI / 2 + tilt;
     model.chainRotation = angle - Math.atan2(cy, cx);
     model.headPosition = {
-      x: model.pivot.x + Math.cos(angle) * len,
-      y: model.pivot.y + Math.sin(angle) * len,
+      x: model.pivot.x + Math.cos(angle) * len * model.chainScale,
+      y: model.pivot.y + Math.sin(angle) * len * model.chainScale, // The hanging span grows relative to the existing handle size.
     }; // Physical chain span uses the actual opaque endpoint distance, not its entire canvas height.
     const head = flail.head;
     const target = model.parts.find(part => part.id === head?.anchorLayer) || model.parts[0];
@@ -122,8 +128,8 @@
     model.headRotation = swing ? tilt : 0;
     const rotatedContact = rotate(origin.x, origin.y, model.headRotation);
     model.headOrigin = {
-      x: model.headPosition.x - rotatedContact.x,
-      y: model.headPosition.y - rotatedContact.y,
+      x: model.headPosition.x - rotatedContact.x * model.headScale,
+      y: model.headPosition.y - rotatedContact.y * model.headScale, // Independent head sizing preserves contact at chain end.
     }; // Every head layer is positioned relative to this same corrected contact anchor.
     return model;
   }
@@ -133,7 +139,7 @@
     b.minX = Math.min(b.minX, x); b.minY = Math.min(b.minY, y);
     b.maxX = Math.max(b.maxX, x); b.maxY = Math.max(b.maxY, y);
   }
-  function addOpaque(b, image, origin, angle = 0, part = null, relativeTo = null) {
+  function addOpaque(b, image, origin, angle = 0, part = null, relativeTo = null, scale = 1) {
     const data = sourceData(image);
     if (!data) return;
     const o = offset(part), a = data.opaque;
@@ -143,7 +149,7 @@
     for (const [x, y] of corners) {
       const p = rotate(x - data.width / 2 + o.x - (relativeTo?.x || 0),
         y - data.height / 2 + o.y - (relativeTo?.y || 0), angle);
-      addPoint(b, origin.x + p.x, origin.y + p.y);
+      addPoint(b, origin.x + p.x * scale, origin.y + p.y * scale); // The combined auto-fit must include part-specific scaling or the head can clip again.
     }
   }
 
@@ -167,11 +173,11 @@
         const top = model.chainTop, d = sourceData(model.chain);
         addOpaque(bounds, model.chain, model.pivot, model.chainRotation, null, {
           x: top.x + .5 - d.width / 2, y: top.y + .5 - d.height / 2,
-        });
+        }, model.chainScale);
         addPoint(bounds, model.pivot.x, model.pivot.y);
       }
       if (model.headOrigin) model.parts.forEach(part => addOpaque(bounds,
-        lookup(part.sprite), model.headOrigin, model.headRotation, part));
+        lookup(part.sprite), model.headOrigin, model.headRotation, part, null, model.headScale));
       if (model.headPosition) addPoint(bounds, model.headPosition.x, model.headPosition.y);
     }
     if (!Number.isFinite(bounds.minX)) return { minX: -1, minY: -1, maxX: 1, maxY: 1, empty: true };
@@ -290,6 +296,7 @@
         const ct = model.chainTop;
         ctx.save(); ctx.translate(model.pivot.x, model.pivot.y);
         ctx.rotate(model.chainRotation);
+        ctx.scale(model.chainScale, model.chainScale); // Same shaft-relative chain magnification as the main game.
         const chainTexture = paint({ ...model.flail.chain, sprite: model.flail.chain.sprite });
         if (chainTexture) ctx.drawImage(chainTexture, -ct.x - .5, -ct.y - .5, dim.width, dim.height);
         ctx.restore();
@@ -298,6 +305,7 @@
         ctx.save();
         ctx.translate(model.headOrigin.x, model.headOrigin.y);
         ctx.rotate(model.headRotation);
+        ctx.scale(model.headScale, model.headScale); // Scale all head meshes, layer offsets and inset fire together.
         drawLayers(ctx, 'combined', model.parts, lookup, paint, options);
         ctx.restore();
       }
@@ -319,6 +327,7 @@
       partsExpected: model.parts.length,
       chainReady: !!model.chain, haftReady: !!model.shaft,
       joint: model.headPosition,
+      chainScale: model.chainScale, headScale: model.headScale, // Mobile diagnostics expose ratios and prevent mistaken interpretation of independently auto-fitted detail view.
     };
     return lastLayout[kind];
   }
