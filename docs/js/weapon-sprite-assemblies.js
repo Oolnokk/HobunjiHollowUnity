@@ -11,7 +11,7 @@
   const records = new Set(); // Active or recently detached assemblies, updated at the pre-render checkpoint.
   const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
-  const PIXEL_ALPHA = 16; // Ignore near-transparent anti-aliasing at the connection ends.
+  const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
   const DETACHED_TIMEOUT = 5000; // Remove orphaned assemblies without deleting reusable inventory meshes immediately.
