@@ -168,3 +168,57 @@ Tool Hub app startup and queued animation frames with six PNGs, verifying both
 preview canvases, pending and completed recoloring, rag tint, cache reuse,
 error de-duplication and recovery. This test complements the independent
 renderer geometry/fit regression.
+
+## Pick on sprite / handle-relative assembly scales
+
+The Flails tab now has a **Pick on sprite** button for the haft, chain-top,
+chain-bottom and head. This opens the actual source PNG in a touch-accessible
+canvas, fitted independently from the two normal previews. A tap writes the
+source **top-left pixel** `{x,y}` into the selected anchor and switches it
+to explicit coordinates. Existing automatic top/bottom alpha-anchor options
+remain supported. For generated ropes, the physical endpoints are fixed by
+the rope cylinder geometry and the chain-top/bottom PNG pick buttons are
+disabled; you still pick the haft and head attachment points.
+
+`flail.chain.scale` and `flail.head.scale` (default **1**) are **independent
+multipliers relative to the final scaled rigid handle**. Every existing
+weapon/character/hand-grip scale affects the entire weapon first, then these
+ratios alter only chain/rope length/diameter or the complete head assembly.
+The runtime reads `plane.getWorldScale()` and compares it to the parent
+holder scale, so an independently resized handle is the authority. Chain top
+stays attached to the handle; chain bottom moves with adjusted chain length;
+and the head's chosen attachment coordinate stays on that endpoint while
+its layers grow or shrink together.
+
+## Grapple-Flail generated rope and composite head
+
+The second registered recipe, `grappleFlail`, uses the three sprite assets
+`grapple-flail_handle.png`, `grapple-flail_grapple-back.png` and
+`grapple-flail_grapple-front.png`. The three source PNG blobs were copied
+from the repository's new main-branch art into the feature branch without
+merging unrelated main changes.
+
+Unlike Hachutu, this flail's connector uses
+`flail.chain.type: 'rope'` rather than a chain PNG, with editable
+`lengthPx` and `radiusPx` in original **handle pixels**, `color`,
+`scale`, and the existing root totem's
+`assets/textures/wavy_surface.png`. Gameplay builds a tapered textured
+`THREE.CylinderGeometry` with `THREE.MeshLambertMaterial`, matching the
+root-totem hanging-potion rope's construction. Both use the same flail
+lever/follow animation, rendered scale, and attachment math. The Tool Hub
+combined preview draws the corresponding fitted brown rope.
+
+The Grapple head has only two ordered PNG layers, **back → front**.
+Its attachment uses `flail.head.anchorSpace: 'composite'`, with
+`{x,y}` in the **shared image-centered pixel frame** (positive Y down).
+The *Between layers (shared center)* pick mode overlays both PNGs and allows
+selecting even fully transparent spaces **between** the rendered objects.
+This avoids snapping the rope to either sprite's opaque edge. Ordinary
+heads can still anchor to a named single source PNG instead. The default
+composite anchor is `{x:0,y:0}` and can be artist-calibrated in the editor.
+
+Regression coverage: `node scripts/test-flail-rope-picker-scale.js`
+checks rope preview placement, independent scaling, fitted mobile bounds,
+two-layer assembly, source-image pixel selection and composite-gap taps.
+`scripts/test-multi-sprite-editor-frame.js` also exercises the actual
+Grapple-Flail UI events and resulting saved JSON.
