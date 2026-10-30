@@ -911,6 +911,7 @@
       stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg on the side away from the turn steps forward.
       stanceYawRad: 0, // The body's twist under the stance; the leading leg counter-rotates about its hip by this so its foot points forward.
       splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
+      footDepthPush: 0, // World distance the feet are drawn farther from the camera (set by the worn pants, see installFootDepthPush).
       stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
       stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
@@ -1107,7 +1108,45 @@
     const partProfileKey = `${speciesId}::${gender}`; // Stable key avoids allocating lookup strings during joint animation.
     const partAxes = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes; // Optional authored foot-only axes leave hips, leg lengths, and stance positions untouched.
 
+    // Depth push for the feet (see PantsGarmentRenderer): worn pants must always draw over the feet, but must also be pure 3D proximity against
+    // the avatar's own planes, so the garment cannot carry a depth pull of its own. Instead each foot mesh is scaled about the CAMERA for its
+    // draw: the screen image is identical (a uniform scale about the eye changes nothing in projection) but the foot is `footDepthPush` farther,
+    // so the pants win the depth test over it. Done in onBeforeRender (three derives modelViewMatrix after it) and undone in onAfterRender.
+    const pushCamera = new THREE.Vector3();
+    const rootScaleY = () => { const e = root.matrixWorld.elements; return Math.hypot(e[4], e[5], e[6]) || 1; }; // World size of one root-local unit.
+    function installFootDepthPush(foot) {
+      foot.traverse(mesh => {
+        if (!mesh.isMesh || mesh.userData.hobunjiFootDepthPush) return;
+        const saved = mesh.userData.hobunjiFootDepthPush = new Float32Array(16);
+        const before = mesh.onBeforeRender, after = mesh.onAfterRender;
+        let pushed = false;
+        mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
+          before.call(this, renderer, scene, camera, ...rest);
+          pushed = false;
+          if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera) return;
+          const e = this.matrixWorld.elements;
+          pushCamera.setFromMatrixPosition(camera.matrixWorld);
+          const dx = e[12] - pushCamera.x, dy = e[13] - pushCamera.y, dz = e[14] - pushCamera.z;
+          const distance = Math.hypot(dx, dy, dz);
+          if (distance < 1e-3) return;
+          for (let i = 0; i < 16; i++) saved[i] = e[i];
+          // The base push covers how far a foot bulges past the portrait plane; the feet also sit fore/aft of that plane (stance split, stride), so the
+          // push grows with their displacement and pants cover the feet from the back as well as the front.
+          const fore = Math.max(Math.abs(state.leftTarget.z), Math.abs(state.rightTarget.z)) * rootScaleY();
+          const k = 1 + (state.footDepthPush + fore) / distance;
+          for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[i] *= k;
+          e[12] = pushCamera.x + dx * k; e[13] = pushCamera.y + dy * k; e[14] = pushCamera.z + dz * k;
+          pushed = true;
+        };
+        mesh.onAfterRender = function footDepthPushAfter(...args) {
+          if (pushed) { const e = this.matrixWorld.elements; for (let i = 0; i < 16; i++) e[i] = saved[i]; pushed = false; }
+          after.apply(this, args);
+        };
+      });
+    }
+
     function installFootAxes(foot) {
+      installFootDepthPush(foot);
       window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes);
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
     }
@@ -1643,6 +1682,7 @@
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
       setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
       getStanceDrop: () => state.stanceDrop,
+      setFootDepthPush: distance => { state.footDepthPush = Math.max(0, Number(distance) || 0); },
       setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },
       setStanceYawDeg: deg => { // One call for both consequences of the body's twist: which leg leads, and the lead leg's counter-rotation.
         const bias = Math.max(-1, Math.min(1, -(0.35 + (Number(deg) || 0) / 15))), yaw = (Number(deg) || 0) * Math.PI / 180;

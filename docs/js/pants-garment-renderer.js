@@ -404,7 +404,7 @@
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
     if (!data) return null;
     const handle = {
-      name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
+      name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
@@ -422,6 +422,7 @@
       let bias=handle.depthBiasBase||0; // Restore the ordinary foot overlay automatically after the last scope releases it.
       for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
       handle.maskUniforms.uPantsDepthBias.value=bias;
+      handle.legHandle?.setFootDepthPush?.(bias); // The pull is applied to the FEET (pushed away), never to the garment: see installFootDepthPush.
       return true;
     };
     const createMesh = canvas => {
@@ -436,11 +437,8 @@
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform float uPantsDepthBias;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;')
-          // Depth-only pull toward the camera: the garment stays exactly in the portrait plane on screen and in space, but
-          // wins the depth test against the procedural feet, so it reads over (x-rays through) them.
-          .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 pantsBiased = projectionMatrix * (mvPosition + vec4(0.0, 0.0, uPantsDepthBias, 0.0)); gl_Position.z = pantsBiased.z / pantsBiased.w * gl_Position.w; }');
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
@@ -716,8 +714,9 @@
 
     handle.model.updateMatrixWorld?.(true);
     const worldElements = handle.model.matrixWorld.elements;
-    handle.depthBiasBase = 0; // No garment-wide pull toward the camera (it let the pants x-ray through the avatar's own planes); depth is pure proximity. Scoped limits (setDepthBiasLimit) still work.
-    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase;
+    handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // How far the feet protrude toward the camera, in world units.
+    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // Stored feet-covering distance (scoped limits can lower it); drives the feet's depth push, not the garment.
+    legHandle.setFootDepthPush?.(handle.depthBiasBase);
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
