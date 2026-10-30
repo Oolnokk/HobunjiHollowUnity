@@ -1025,7 +1025,10 @@ function showRecord(record) {
   if (record.specialLichId) facts.append(
     fact('Named lich guardian',record.specialLichId + ' · ' + (record.bossSettings ? JSON.stringify(record.bossSettings) : 'game defaults'),true),
     fact('Signature glyph',record.roster.glyphPatternId || 'none',true),
-  ); // Roll summary is readable without devtools on mobile.
+    fact('Body planes · front / back',record.portraitFacing ? record.portraitFacing.frontYawDegrees+'° / '+record.portraitFacing.backYawDegrees+'°' : 'not detected'),
+    fact('Actual avatar width / height',record.renderedBodyScale ? Number(record.renderedBodyScale.z).toFixed(2)+'× / '+Number(record.renderedBodyScale.y).toFixed(2)+'×' : 'not detected'),
+    fact('Eye-glow emitters',String(record.eyeGlowSources?.length || 0)+' · Body C '+(record.bodyColor3 || 'missing')),
+  ); // Mobile-visible proof: front=0°, back=-180° after the edge-on preview bug fix.
   if (record.roster.metalArmorItems?.length)
     facts.append(
       fact(
