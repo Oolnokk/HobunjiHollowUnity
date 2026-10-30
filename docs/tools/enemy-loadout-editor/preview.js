@@ -572,6 +572,8 @@ export class EnemyPreview {
       definition: copy(a.def),
       rigScale: a.avatarRef.rigScale || null,
       renderedBodyScale: a.avatarRef.group?.scale ? {x:a.avatarRef.group.scale.x,y:a.avatarRef.group.scale.y,z:a.avatarRef.group.scale.z} : null, // Mobile-readable verification of the real body planes' parent scale.
+      bodyColor3: a.rosterRecord?.appearance?.bodyColors?.C?.hex || a.avatarRef.profile?.bodyColors?.C?.hex || null, // The same color the generated tomb consumes.
+      eyeGlowSources: (a.avatarRef.frontCanvas?.hobunjiPortraitGlows || []).map(glow=>({color:glow.color,radius:glow.radius})), // Mobile report proves the eye mask produced actual emissive masses rather than merely loading the PNG.
       poseOrbitAxes: a.avatarRef.poseOrbitAxes
         ? copy(a.avatarRef.poseOrbitAxes)
         : null,
