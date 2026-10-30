@@ -176,6 +176,13 @@
     old.offRoot?.parent?.remove?.(old.offRoot);
     disposeOwnedMaterial(old.mainMesh?.material);
     disposeOwnedMaterial(old.offMesh?.material);
+    for (const record of old.assemblyCopies?.values?.() || []) {
+      for (const copy of [record.main, record.off]) {
+        copy?.parent?.remove?.(copy);
+        disposeOwnedMaterial(copy?.material);
+      }
+      if (record.sourceMaterial) record.sourceMaterial.visible = record.originalVisible;
+    }
     states.delete(key);
   }
 
@@ -422,6 +429,53 @@
     return next;
   }
 
+  // Static multi-layer weapons may acquire their overlays asynchronously.
+  // Each visible main/offhand weapon must duplicate the entire authored sprite
+  // stack. The source layers are hidden while dual wield is active, exactly
+  // like its original base material; the original ordinary weapon remains the
+  // sole hand-grip/animation authority.
+  function syncAssemblyLayers(current, active) {
+    const source = current?.plane;
+    if (!source?.children || !current.mainMesh || !current.offMesh) return;
+    if (!current.assemblyCopies) current.assemblyCopies = new Map(); // Source PNG layer -> two owned visible sprite copies.
+    for (const layer of source.children) {
+      if (!layer?.isMesh || layer.userData?.hobunjiWeaponAssemblyPart !== true) continue;
+      let record = current.assemblyCopies.get(layer);
+      if (!record) {
+        const build = (side, parent) => {
+          const copy = layer.clone?.(false) || new layer.constructor(layer.geometry, cloneOwnedMaterial(layer.material));
+          if (!copy) return null;
+          copy.material = cloneOwnedMaterial(layer.material); // Different materials/maps from source so duplicate cleanup remains local.
+          copy.position.copy(layer.position);
+          copy.quaternion.copy(layer.quaternion);
+          copy.scale.copy(layer.scale);
+          copy.renderOrder = layer.renderOrder;
+          if (copy.layers && layer.layers) copy.layers.mask = layer.layers.mask;
+          copy.userData = { ...layer.userData, hobunjiDualWeaponSourceLayer: layer, hobunjiWeaponAssemblyPart: true, hobunjiHeldObjectPlane: true, side };
+          parent.add(copy);
+          return copy;
+        };
+        record = {
+          main: build('main', current.mainMesh),
+          off: build('off', current.offMesh),
+          sourceMaterial: layer.material,
+          originalVisible: layer.material?.visible !== false,
+        };
+        current.assemblyCopies.set(layer, record);
+      }
+      if (record.sourceMaterial) record.sourceMaterial.visible = active ? false : record.originalVisible;
+      // Surface maps may be replaced when a metal tool gains mastery or changes plating.
+      for (const copy of [record.main, record.off]) {
+        if (!copy?.material || !layer.material?.map) continue;
+        const sourceMap = layer.material.map;
+        if (copy.material.map?.image !== sourceMap.image) {
+          copy.material.map.image = sourceMap.image;
+          copy.material.map.needsUpdate = true;
+        }
+      }
+    }
+  }
+
   function syncNow(record = null) {
     const key = keyFor(record);
     const context = key === PLAYER_KEY ? currentContext() : actorContext(record);
@@ -442,6 +496,7 @@
     const active = dual.influence > ACTIVE_EPSILON;
     if (active) hideOriginalMaterial(current);
     else restoreOriginalMaterial(current);
+    syncAssemblyLayers(current, active); // Includes newly loaded sprite overlays in both visible copies.
     current.mainRoot.visible = active;
     current.offRoot.visible = active;
 
