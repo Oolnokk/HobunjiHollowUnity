@@ -908,7 +908,7 @@
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
-      stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg the body turns toward steps forward.
+      stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg on the side away from the turn steps forward.
       stanceYawRad: 0, // The body's twist under the stance; the leading leg counter-rotates about its hip by this so its foot points forward.
       splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
       stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
@@ -1643,12 +1643,12 @@
       getStanceDrop: () => state.stanceDrop,
       setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },
       setStanceYawDeg: deg => { // One call for both consequences of the body's twist: which leg leads, and the lead leg's counter-rotation.
-        const bias = Math.max(-1, Math.min(1, 0.35 + (Number(deg) || 0) / 15)), yaw = (Number(deg) || 0) * Math.PI / 180;
+        const bias = Math.max(-1, Math.min(1, -(0.35 + (Number(deg) || 0) / 15))), yaw = (Number(deg) || 0) * Math.PI / 180;
         if (Math.abs(bias - state.stanceSplitBias) < 1e-6 && Math.abs(yaw - state.stanceYawRad) < 1e-6) return;
         state.stanceSplitBias = bias; state.stanceYawRad = yaw;
         if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit();
       },
-      stanceSplitBiasForYawDeg: yawDeg => Math.max(-1, Math.min(1, 0.35 + (Number(yawDeg) || 0) / 15)), // Continuous: 0.35 at yaw 0 (right foot leads by default), flips smoothly as the body turns the other way.
+      stanceSplitBiasForYawDeg: yawDeg => Math.max(-1, Math.min(1, -(0.35 + (Number(yawDeg) || 0) / 15))), // Continuous: -0.35 at yaw 0 (left foot leads by default), flips smoothly as the body turns the other way. The leg on the side AWAY from the turn leads.
       modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.

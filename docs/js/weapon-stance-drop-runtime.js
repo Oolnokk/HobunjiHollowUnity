@@ -53,7 +53,7 @@
       const engaged = stances.stanceEngaged();
       const swinging = engaged && performance.now() - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
       const pct = engaged ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0)) : 0;
-      legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg the body turns toward leads, and swings about its hip so its foot points forward.
+      legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg on the side away from the turn leads, and swings about its hip so its foot points forward.
       legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging); // A playing swing is followed exactly; entering/leaving the stance is eased by the leg handle.
       lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : 'no-stance';
     }
