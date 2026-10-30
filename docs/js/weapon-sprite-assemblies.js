@@ -158,7 +158,7 @@
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
       metalOptions: options.metalOptions || null, resolveAsset: imageUrl, // Uses game's live plating/mastery resolver and the same canonical asset URL for every layer.
       headRoot: null, headAnchorImage: null, chainImage: null,
-      direction: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false,
+      direction: new THREE.Vector3(0, -1, 0), windupStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Holds the initial chain direction while its windup smoothly straightens toward the animated shaft.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
       strikeTurnRad: 0, wasAttacking: false, lastFrameProgress: 0, // Keeps overshoot state isolated to the current swing.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
@@ -302,8 +302,13 @@
     return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
   }
 
+  function flailWindupStraightening(progress, windupFrac) {
+    const normalized = Math.max(0, Math.min(1, progress / Math.max(0.0001, windupFrac * 0.8))); // Completes straightening by 80% of windup.
+    return normalized * normalized * (3 - 2 * normalized); // Continuous arrival at exact shaft alignment without an angular snap.
+  }
+
   function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad) {
-    if (!(progress > strikeFrac) || !Number.isFinite(pitchTravelRad) || Math.abs(pitchTravelRad) < 0.0001) return 0;
+    if (!(progress > strikeFrac) || holdFrac <= strikeFrac || !Number.isFinite(pitchTravelRad) || Math.abs(pitchTravelRad) < 0.0001) return 0;
     const sign = Math.sign(pitchTravelRad); // Continue turning in the same direction as the tool's pitch lerp.
     const maxAngle = sign * Math.min(Math.PI / 3, Math.max(0.22, Math.abs(pitchTravelRad) * 0.38)); // Scaled follow-through, bounded to 60°.
     const holdT = Math.max(0, Math.min(1, (progress - strikeFrac) / Math.max(0.0001, holdFrac - strikeFrac)));
@@ -372,7 +377,8 @@
     const shaftUp = q.shaftUp.set(0, 1, 0).applyQuaternion(baseQ).normalize(); // Real, fully-posed tool direction; no hardcoded attack-up target.
     const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(baseQ).normalize(); // Tool pitch rotates around local X, including its parent/body rotations.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
-      state.strikeTurnRad = 0; state.hasShaftUp = false; // A new attack cannot inherit the last hold's rotation.
+      state.strikeTurnRad = 0; state.hasShaftUp = false;
+      state.windupStartDirection.copy(state.direction); // Capture the hanging chain once: an exact progress-based ease will straighten it early without popping.
     }
     if (state.attacking && state.hasShaftUp && state.progress > state.wf && state.progress <= state.sf) {
       const sine = q.pitchCross.crossVectors(state.lastShaftUp, shaftUp).dot(pitchAxis);
@@ -381,18 +387,22 @@
     }
     state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
     state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
-    const followShaft = state.attacking && state.progress >= state.wf * 0.8; // Straighten early, BEFORE the windup-to-strike transition.
+    const followShaft = state.attacking && state.progress >= state.wf * 0.8; // The chain is exactly collinear BEFORE the windup-to-strike transition.
     if (followShaft) {
       const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
       const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel);
-      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Follow the exact tool pitch, then rotate beyond it during hold.
+      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Follow the shaft's actual pitch, then go beyond it during hold.
+    } else if (state.attacking) {
+      const t = flailWindupStraightening(state.progress, state.wf); // Early, deterministic easing rather than a one-frame snap at 80% windup.
+      if (state.windupStartDirection.dot(shaftUp) < -0.9999) q.deltaQ.setFromAxisAngle(pitchAxis, Math.PI);
+      else q.deltaQ.setFromUnitVectors(state.windupStartDirection, shaftUp);
+      state.direction.copy(state.windupStartDirection).applyQuaternion(q.stepQ.identity().slerp(q.deltaQ, t)).normalize();
     } else {
-      const target = state.attacking ? q.target.copy(shaftUp)
-        : q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Outside combat, retain the existing hanging-chain inertia.
+      const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Idle movement still produces hanging/inertial lag.
       const turnAngle = state.direction.angleTo(target);
       if (turnAngle > 1e-6) {
         const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
-          * Math.max(0.1, Math.min(60, Number(state.attacking ? motion.attackFollow : motion.idleFollow) || (state.attacking ? 15 : 7)));
+          * Math.max(0.1, Math.min(60, Number(motion.idleFollow) || 7));
         q.deltaQ.setFromUnitVectors(state.direction, target);
         q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
         state.direction.applyQuaternion(q.stepQ).normalize();
@@ -476,7 +486,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor, flailPitchOvershoot, // Deterministic phase helper exposed for focused regression tests.
+    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailWindupStraightening, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

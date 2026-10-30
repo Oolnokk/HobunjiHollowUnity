@@ -81,6 +81,12 @@ assert.match(fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html',
 assert.equal(api.definitionFor('unknown', {}), null);
 assert.equal(scheduler.id, 'weapon-sprite-assemblies');
 assert.equal(scheduler.options.phase, 'pre-render');
+const straighten = api.flailWindupStraightening; // Windup straightening is progress-based, continuous, and reaches exact shaft alignment early.
+assert.equal(straighten(0, 0.16), 0, 'windup begins at the original hanging direction');
+assert(straighten(0.04, 0.16) > 0 && straighten(0.04, 0.16) < straighten(0.08, 0.16), 'chain progressively straightens instead of snapping');
+assert(straighten(0.12, 0.16) < 1, 'approach remains smooth just before the 80% windup threshold');
+assert.equal(straighten(0.128, 0.16), 1, 'chain reaches exact shaft alignment by 80% of the windup');
+assert.equal(straighten(0.16, 0.16), 1, 'the windup-to-strike lerp begins with an exactly straight chain');
 const follow = api.flailPitchOvershoot; // Pure animation phase math shared by player, NPC and standalone editor.
 const sf = 0.55, hf = 0.72, forward = Math.PI / 2, reverse = -Math.PI / 2;
 assert.equal(follow(0.20, sf, hf, forward), 0, 'the chain stays straight during windup-to-strike pitch follow');
@@ -91,6 +97,7 @@ assert(follow(hf, sf, hf, forward) > follow(0.65, sf, hf, forward), 'maximum fol
 assert.equal(follow(hf, sf, hf, forward), -follow(hf, sf, hf, reverse), 'a negative pitch lerp reverses the chain follow-through');
 assert.equal(follow(1, sf, hf, forward), 0, 'return eases the chain back onto its handle');
 assert.equal(follow(0.65, sf, hf, 0), 0, 'a static pitch creates no artificial follow-through');
+assert.equal(follow(0.75, 0.6, 0.6, forward), 0, 'a zero-duration hold never introduces a one-frame overshoot');
 assert(Math.abs(follow(hf, sf, hf, 10)) <= Math.PI / 3, 'extreme pitch does not exceed a 60 degree overshoot');
 assert.equal(follow(hf, sf, hf, NaN), 0, 'invalid pitch is safely ignored');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
