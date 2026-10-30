@@ -3,6 +3,28 @@
 window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
   schema: 'hobunji_weapon_sprite_assemblies.v1',
   weapons: {
+    grappleFlail: {
+      label: 'Grapple-Flail',
+      sprite: 'assets/toolsprites/grapple-flail_handle.png',
+      flail: {
+        haftAnchor: { opaque: 'top' },
+        chain: {
+          type: 'rope', lengthPx: 160, radiusPx: 2.5,
+          color: '#6B4728', texture: 'assets/textures/wavy_surface.png',
+          scale: 1, // Relative to the original handle size, as are all weapon-scale modifiers.
+        },
+        head: {
+          scale: 1,
+          anchorSpace: 'composite', // Contact is measured in the common image-center frame, not either of the two sprite rectangles.
+          anchorLayer: 'composite',
+          anchor: { x: 0, y: 0 }, // Pixel offset from the composited head's shared center, positive Y down.
+          layers: [
+            { id: 'back', sprite: 'assets/toolsprites/grapple-flail_grapple-back.png', material: 'metal' },
+            { id: 'front', sprite: 'assets/toolsprites/grapple-flail_grapple-front.png', material: 'metal' },
+          ],
+        },
+      },
+    },
     hachutuTorchFlail: {
       label: 'Hachutu Torch-Flail',
       flail: {
