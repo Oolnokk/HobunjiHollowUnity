@@ -64,6 +64,22 @@ handle.setStanceDrop(0); settle();
 assert.strictEqual(handle.getStanceDrop(), 0, 'releasing the stance restores the standing pose exactly');
 assert(Math.abs(measure().hip - rest.hip) < 1e-9);
 
+// Front/back legs: the sunk stance separates the feet along Z, the leg the body yaw turns toward leads, and the legs still fold (not stretch).
+handle.setStanceDrop(drop); settle();
+const zOf = () => { const d = handle.getStandingPoseDebug(); return { l: d.left.targetZ, r: d.right.targetZ }; };
+handle.setStanceSplitBias(handle.stanceSplitBiasForYawDeg(40)); settle();
+let z = zOf();
+assert(z.r > 0.01 && z.l < -0.01, `yaw > 0: right foot leads (${JSON.stringify(z)})`);
+assert(Math.abs(measure().bones - (rest.hip - rest.footY)) < 1e-3, 'bones keep full length with split feet');
+handle.setStanceSplitBias(handle.stanceSplitBiasForYawDeg(-40)); settle();
+z = zOf();
+assert(z.l > 0.01 && z.r < -0.01, `yaw < 0: left foot leads (${JSON.stringify(z)})`);
+assert(handle.stanceSplitBiasForYawDeg(-5.25) < 0.01 && handle.stanceSplitBiasForYawDeg(-5.4) < 0, 'lead leg flips continuously through zero bias');
+handle.setStanceDrop(0); settle();
+z = zOf();
+assert(Math.abs(z.l) < 1e-6 && Math.abs(z.r) < 1e-6, 'feet come back together when the sink is released');
+handle.setStanceSplitBias(handle.stanceSplitBiasForYawDeg(0));
+
 // The leg group is raised by the sink (persistent, so skinned garments see it); the body owner lowers the body by the same amount.
 handle.setStanceDrop(drop); settle();
 assert(Math.abs(handle.group.position.y - drop) < 1e-4, `leg group raised by the sink (${handle.group.position.y})`);

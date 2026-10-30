@@ -908,6 +908,8 @@
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
+      stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg the body turns toward steps forward.
+      splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
       stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
       stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
@@ -1057,6 +1059,21 @@
       state.stanceDrop = clamped;
       root.position.y = clamped;
       legChains.left.hip.position.y = legChains.right.hip.position.y = posteriorY - clamped;
+      applyStanceSplit();
+    }
+
+    // The sunk stance separates the legs into a front and a back leg: the stance widens with the sink (splitPerSink units of foot travel per unit
+    // of sink) but never past the point where the hip-to-foot distance would exceed the bone length, so the fold still bends rather than stretches.
+    // The offsets are added to the foot targets directly so they take effect immediately (the editor ticks with dt 0); applyPose keeps them in the gait target.
+    function applyStanceSplit() {
+      const length = standingLegLength(), drop = state.stanceDrop;
+      const reach = Math.sqrt(Math.max(0, length * length - (length - drop) * (length - drop))) * 0.97;
+      const magnitude = Math.min(drop * (Number(cfg().stanceDrop?.splitPerSink) >= 0 ? Number(cfg().stanceDrop.splitPerSink) : 1.5), reach);
+      const next = { left: -state.stanceSplitBias * magnitude, right: state.stanceSplitBias * magnitude };
+      for (const side of ['left', 'right']) {
+        state[`${side}Target`].z += next[side] - state.splitZ[side];
+        state.splitZ[side] = next[side];
+      }
       applyLegChain('left');
       applyLegChain('right');
     }
@@ -1068,7 +1085,7 @@
     // the chain's stale/default pose for a frame.
     function placeIdleTarget(side, contactY) {
       const idleX = side === 'left' ? state.idleLeftX : state.idleRightX;
-      state[`${side}Target`].set(idleX, contactY, 0);
+      state[`${side}Target`].set(idleX, contactY, state.splitZ[side]);
       state[`${side}Roll`] = 0;
       applyLegChain(side);
     }
@@ -1184,7 +1201,7 @@
       const target = state[`${side}Target`];
       if (!state[side] || !target) return;
       target.x = damp(target.x, idleX, response, dt);
-      const targetZ = pose.travel;
+      const targetZ = pose.travel + state.splitZ[side]; // Front/back leg offset of a sunk stance (0 otherwise).
       target.z = damp(target.z, targetZ, response, dt);
       const rollAmount = pose.travel / Math.max(radius, 0.001) * 0.32;
       state[`${side}Roll`] = damp(state[`${side}Roll`], -rollAmount, response, dt);
@@ -1611,6 +1628,8 @@
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
       setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
       getStanceDrop: () => state.stanceDrop,
+      setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },
+      stanceSplitBiasForYawDeg: yawDeg => Math.max(-1, Math.min(1, 0.35 + (Number(yawDeg) || 0) / 15)), // Continuous: 0.35 at yaw 0 (right foot leads by default), flips smoothly as the body turns the other way.
       modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.

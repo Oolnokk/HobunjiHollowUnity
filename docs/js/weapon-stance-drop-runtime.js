@@ -20,14 +20,17 @@
   let lastPlayerMesh = null;
   let swingSinkPct = NaN;
   let swingSinkAtMs = -Infinity;
+  let swingBodyYawDeg = 0;
+  const idleYaw = { active: false, yawDeg: 0, reason: '' }; // Reused; refilled by WeaponToolStances.idleBodyYawSnapshot.
 
   function enabled() {
     return global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.stanceDrop?.enabled !== false;
   }
 
   // Called by game.js every frame the player's authored swing pose is sampled (percent of height; NaN = the pose authors none).
-  function noteSwingSink(pct) {
+  function noteSwingSink(pct, bodyYawDeg = 0) {
     swingSinkPct = Number(pct);
+    swingBodyYawDeg = Number(bodyYawDeg) || 0;
     swingSinkAtMs = performance.now();
   }
 
@@ -50,6 +53,7 @@
       const engaged = stances.stanceEngaged();
       const swinging = engaged && performance.now() - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
       const pct = engaged ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0)) : 0;
+      legs.setStanceSplitBias?.(legs.stanceSplitBiasForYawDeg(swinging ? swingBodyYawDeg : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0))); // The leg the body turns toward leads.
       legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging); // A playing swing is followed exactly; entering/leaving the stance is eased by the leg handle.
       lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : 'no-stance';
     }

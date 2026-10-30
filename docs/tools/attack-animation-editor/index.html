@@ -141,6 +141,8 @@ canvas{display:block;width:100%;height:100%}
       <div class="field"><label>Preview species</label><select id="avatarSpecies"></select></div>
       <div class="field"><label>Preview gender</label><select id="avatarGender"></select></div>
     </div>
+    <div class="field"><button type="button" id="toggleLegBones" class="secondary" aria-pressed="false">🦴 Show leg bones</button>
+      <div class="help">Draws hip → knee → ankle for each leg. Under a body sink the legs separate into a front and a back leg; the leg the body yaw turns toward leads.</div></div>
     <div class="help">The selected Action owns the animation being edited. The sprite selector is only a visual preview choice for actions that can be performed with more than one weapon. Species/gender changes only the preview transform and never rewrite authored pose values.</div>
 
     <details class="advancedDetails">
@@ -653,6 +655,14 @@ async function attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h
   }
   editorLegs.update(0, 0, false, null, {});
 }
+
+$('toggleLegBones').addEventListener('click', () => {
+  const next = !window.ProceduralLegAnimation?.showBones;
+  window.ProceduralLegAnimation?.setShowBones(next);
+  $('toggleLegBones').setAttribute('aria-pressed', String(next));
+  $('toggleLegBones').textContent = next ? '🦴 Hide leg bones' : '🦴 Show leg bones';
+  editorLegs?.update(0, 0, false, null, {}); // Guides are shown/hidden when the chain is re-solved.
+});
 
 async function rebuildAvatar(speciesId, gender) {
   await window.HobunjiSpeciesPoseScale?.ready; // Ensures repo/local species+gender orbit data is loaded before the preview avatar caches it.
@@ -1547,10 +1557,11 @@ function poseChannelsAt(t) {
 let toolBaseRestY = 0; // toolBase's un-sunk Y, recorded by rebuildAvatar.
 let editorLegs = null; // ProceduralLegAnimation handle (feet + pants) under characterBodyScaleRoot.
 let appliedBodySinkPct = 0;
-function applyBodySink(pct) {
+function applyBodySink(pct, bodyYawDeg = 0) {
   const sinkUnits = Math.max(0, pct) / 100 * currentAvatarModelHeight; // Body-root-local units, like the leg handle's own.
   let applied = sinkUnits;
   if (editorLegs) {
+    editorLegs.setStanceSplitBias(editorLegs.stanceSplitBiasForYawDeg(bodyYawDeg)); // Front/back leg follows the pose's body yaw.
     editorLegs.setStanceDrop(sinkUnits, true);
     editorLegs.update(0, 0, false, null, {}); // dt 0: no gait, but re-solves the chain and re-skins the pants.
     applied = editorLegs.getStanceDrop();
@@ -1561,7 +1572,7 @@ function applyBodySink(pct) {
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
 function applyPoseToRig(pose) {
-  applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose));
+  applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose), pose.bodyYaw);
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
   // toolBase/toolHolder are children of rig, so this automatically carries the tool
   // along with the body, same as game.js's playerMesh.rotation.y for sweep swings.

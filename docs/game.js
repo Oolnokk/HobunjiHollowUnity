@@ -23871,7 +23871,7 @@
             progress, WF, SF, poseHoldFrac, combatSwingSign, combatSwingPower, combatSwingSequence,
           );
           toolHolder.scale.setScalar(sampled.scale);
-          window.WeaponStanceDropRuntime?.noteSwingSink(sampled.bodySink); // Authored per-pose body sink (percent of height); js/weapon-stance-drop-runtime.js sinks the body and folds the knees to match.
+          window.WeaponStanceDropRuntime?.noteSwingSink(sampled.bodySink, sampled.bodyYawRad * 180 / Math.PI); // Authored per-pose body sink (percent of height); js/weapon-stance-drop-runtime.js sinks the body and folds the knees to match.
 
           // The hand attachment itself is part of a true midline flip. Keep it
           // on the attack side through impact, then carry it smoothly across
