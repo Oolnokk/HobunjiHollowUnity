@@ -269,7 +269,9 @@
         }));
         sprite.material.color.set(color);
         sprite.renderOrder = fx.renderOrder; // Interleaved between fuel and later metal silhouettes (front).
-        sprite.layers.mask = fx.group.layers.mask; // Match head assembly visibility in held-object overlay.
+        const overlayLayer = global.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Shared x-ray held-object replay draws fire with the assembled metal, never through world geometry.
+        if (Number.isInteger(overlayLayer) && ((fx.group.parent?.children?.[0]?.layers?.mask >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer);
+        else sprite.layers.set(0);
         sprite.position.set(px, py, FIRE_DEPTH_OFFSET);
         sprite.visible = true;
         fx.group.add(sprite);
