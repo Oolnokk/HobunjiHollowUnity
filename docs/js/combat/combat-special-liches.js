@@ -3,7 +3,7 @@
   'use strict';
   const DATA = Object.freeze({
     hronal: { id:'azgarlu', name:'Azgarlu of the Flame', tomb:"Azgarlu's Tomb", key:'azgarlu_key_stone', glyph:'harlyao_glyph_entropy', ink:'#ff8526', dye:'dye:CLOTH:pure_orange', scale:{x:1.30,y:1.20,head:1}, weapon:'warhammer_nativeCopper' },
-    tothal: { id:'nanahi', name:'Nanahi the Unsleeping', tomb:"Nanahi's Tomb", key:'nanahi_key_stone', glyph:'harlyao_glyph_servitude', ink:'#f0f9ff', dye:'dye:CLOTH:pure_green_blue', scale:{x:.80,y:1.30,head:1} },
+    tothal: { id:'nanahi', name:'Nanahi the Unsleeping', tomb:"Nanahi's Tomb", key:'nanahi_key_stone', glyph:'harlyao_glyph_servitude', ink:'#f0f9ff', dye:'dye:CLOTH:pale_blue', scale:{x:.80,y:1.30,head:1} },
     kanthic: { id:'imlao', name:'Imlao the Sightless', tomb:"Imlao's Tomb", key:'imlao_key_stone', glyph:'harlyao_glyph_ignorance', ink:'#a899eb', dye:'dye:CLOTH:dark_muted_blue_indigo', scale:{x:1,y:1,head:1} },
   }); // Boss metadata drives wardrobe, region title, key-stone and combat state.
   const TILE_FALLBACK = 64; // Used in isolated tests when BanditCombat has not supplied gameplay dependencies.
@@ -29,6 +29,12 @@
     if (!base) return null;
     const appearance = ruleFor(key).bossAppearance || {}; // Optional Workshop appearance overrides are applied at spawn and map decoration time.
     return {...base,glyph:appearance.glyphId || base.glyph,ink:appearance.ink || base.ink,dye:appearance.robeDye || base.dye,weapon:appearance.weaponKey || base.weapon};
+  }
+  function rigScaleFor(type) {
+    const data=DATA[type];if(!data)return null;
+    const gender=type==='tothal'?'female':'male'; // Reference Harlyao skeleton body for literal percent changes.
+    const base=window.HobunjiCharacterRigScale?.scaleFor?.('harlyao-skeleton',gender) || {x:1,y:1,head:1,offsetY:0};
+    return {x:base.x*data.scale.x,y:base.y*data.scale.y,head:base.head*(data.scale.head||1),offsetY:base.offsetY||0};
   }
   function settingsFor(type) { return {...BOSS_DEFAULTS[type],...(ruleFor(type).bossSettings || {})}; } // Per-actor snapshot prevents mid-fight editor edits changing live timing.
   function setting(actor,key,fallback) { return Number(actor?._specialBossSettings?.[key]) || fallback; } // Validated nonzero numeric fields, defaulting safely in isolated tools.
@@ -365,7 +371,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,rigScaleFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
