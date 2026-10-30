@@ -160,6 +160,7 @@
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
+      angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
       strikeTurnRad: 0, hasStrikeStart: false, wasAttacking: false, lastFrameProgress: 0, // The strike begins from the most recent gravity-and-lag position, never the shaft pose in windup.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
@@ -168,6 +169,7 @@
         normal: new THREE.Vector3(), scale: new THREE.Vector3(), rootScale: new THREE.Vector3(), target: new THREE.Vector3(), // Cached world scales measure the handle against the holder for independent chain/head ratios.
         up: new THREE.Vector3(), orientedNormal: new THREE.Vector3(), right: new THREE.Vector3(),
         axisUp: new THREE.Vector3(0, 1, 0), headUp: new THREE.Vector3(), span: new THREE.Vector3(),
+        previousDirection: new THREE.Vector3(), pivotAcceleration: new THREE.Vector3(), measuredPivotVelocity: new THREE.Vector3(), // Reused physics measurements, including actual animated haft movement.
         shaftUp: new THREE.Vector3(), pitchAxis: new THREE.Vector3(), pitchCross: new THREE.Vector3(), // Actual tool pitch direction and velocity for inertial hold-through.
         topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
         chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
@@ -261,13 +263,17 @@
   function setAction(root, options = {}) {
     const state = states.get(root);
     if (!state) return;
+    if (options.progress === 0 || options.attacking !== true && state.attacking) {
+      state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; // Reset attack replay without carrying momentum from a different timeline.
+      if (options.progress === 0) { state.direction.set(0, -1, 0); state.hasPivot = false; }
+    }
     state.attacking = options.attacking === true;
     state.progress = Number.isFinite(options.progress) ? Math.max(0, Math.min(1, options.progress)) : 0;
     state.wf = Number.isFinite(options.windupFrac) ? Math.max(0, Math.min(1, options.windupFrac)) : 0.16;
     state.sf = Number.isFinite(options.strikeFrac) ? Math.max(state.wf, Math.min(1, options.strikeFrac)) : 0.28;
     state.hf = Number.isFinite(options.holdFrac) ? Math.max(state.sf, Math.min(1, options.holdFrac)) : 0.68;
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
-    state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Sweep follow-through includes both tool yaw and whole-body turn.
+    state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
@@ -318,15 +324,32 @@
       + ((Number(strike.bodyYaw) || 0) - (Number(windup.bodyYaw) || 0))) * power * dirSign;
   }
 
-  function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad, yawTravelRad = 0) {
-    if (Math.abs(yawTravelRad) > Math.abs(pitchTravelRad || 0)) pitchTravelRad = yawTravelRad; // Sweeps can have no pitch at all; continue their dominant signed turn.
-    if (!(progress > strikeFrac) || holdFrac <= strikeFrac || !Number.isFinite(pitchTravelRad) || Math.abs(pitchTravelRad) < 0.0001) return 0;
-    const sign = Math.sign(pitchTravelRad); // Continue turning in the same direction as the tool's pitch lerp.
-    const maxAngle = sign * Math.min(Math.PI / 3, Math.max(0.22, Math.abs(pitchTravelRad) * 0.38)); // Scaled follow-through, bounded to 60°.
-    const holdT = Math.max(0, Math.min(1, (progress - strikeFrac) / Math.max(0.0001, holdFrac - strikeFrac)));
-    const returnT = Math.max(0, Math.min(1, (progress - holdFrac) / Math.max(0.0001, 1 - holdFrac)));
-    const ease = t => t * t * (3 - 2 * t); // Ease into hold overshoot and back to shaft during recovery.
-    return maxAngle * (progress <= holdFrac ? ease(holdT) : 1 - ease(returnT));
+  // A point-mass head on a taut, massless connector: I = m L² and
+  // torque = m L (direction × (gravity - pivotAcceleration)), so mass cancels.
+  // Small fixed substeps integrate angular momentum without prescribing an angle.
+  function stepPendulum(body, acceleration, length, dt, gravity = 9.81, damping = 0.12) {
+    if (!(dt > 0) || !Number.isFinite(dt) || !(length > 0) || !Number.isFinite(length)) return;
+    const d = body.direction, w = body.angularVelocity; // Mutated per-instance direction and angular velocity; no frame allocations.
+    const steps = Math.ceil(Math.min(MAX_DT, dt) * 240), h = Math.min(MAX_DT, dt) / steps; // At most 20 substeps per render frame.
+    const ax = -acceleration.x, ay = -gravity - acceleration.y, az = -acceleration.z; // Effective gravity in the accelerating pivot frame.
+    const decay = Math.exp(-Math.max(0, damping) * h); // Mild air/bearing loss expressed per second, independent of frame rate.
+    for (let i = 0; i < steps; i++) { // Kick/rotate/kick preserves free rotation and the exact connector length.
+      w.x += (d.y * az - d.z * ay) * h / (2 * length);
+      w.y += (d.z * ax - d.x * az) * h / (2 * length);
+      w.z += (d.x * ay - d.y * ax) * h / (2 * length);
+      const speed = Math.hypot(w.x, w.y, w.z); // Angular speed determines this substep's physical rotation.
+      if (speed > 1e-10) {
+        const x = w.x / speed, y = w.y / speed, z = w.z / speed; // Rotation axis for Rodrigues' formula.
+        const c = Math.cos(speed * h), sn = Math.sin(speed * h), dot = x * d.x + y * d.y + z * d.z; // Exact spherical drift avoids velocity-dependent projection losses.
+        const dx = d.x, dy = d.y, dz = d.z; // Preserve original components while rotating in place.
+        d.x = dx * c + (y * dz - z * dy) * sn + x * dot * (1 - c);
+        d.y = dy * c + (z * dx - x * dz) * sn + y * dot * (1 - c);
+        d.z = dz * c + (x * dy - y * dx) * sn + z * dot * (1 - c);
+      }
+      w.x = (w.x + (d.y * az - d.z * ay) * h / (2 * length)) * decay;
+      w.y = (w.y + (d.z * ax - d.x * az) * h / (2 * length)) * decay;
+      w.z = (w.z + (d.x * ay - d.y * ax) * h / (2 * length)) * decay;
+    }
   }
 
   function updateOne(state, dt, now) {
@@ -376,9 +399,13 @@
     bottomLocal.x *= chainScaleX; bottomLocal.y *= chainScaleY; // Contacts must use the same stretched coordinates as visible connector geometry.
     const chainSpan = q.span.copy(topLocal).sub(bottomLocal);
     if (chainSpan.lengthSq() < 1e-10) return; // Degenerate all-transparent/one-pixel chain cannot form a lever.
+    state.physicsLength = Math.max(0.01, chainSpan.length() * attachmentScale); // World-space rope length supplies the pendulum lever arm.
     chainSpan.normalize();
+    q.measuredPivotVelocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // The animated attachment transfers real handle momentum.
+    q.pivotAcceleration.copy(q.measuredPivotVelocity).sub(state.pivotVelocity).divideScalar(Math.max(0.001, dt));
     if (!state.hasPivot || pivot.distanceToSquared(state.lastPivot) > 9) {
       state.direction.set(0, -1, 0);
+      state.angularVelocity.set(0, 0, 0); q.measuredPivotVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; // First observation and teleports cannot inject momentum.
       state.lastPivot.copy(pivot);
       state.hasPivot = true;
     }
@@ -396,11 +423,15 @@
       velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // Fallback for third-party holders lacking an actor position.
     }
     state.lastPivot.copy(pivot);
+    if (!state.hasPhysicsVelocity) q.pivotAcceleration.set(0, 0, 0); // Ignore unknown velocity at initialization or after a seek.
+    if (dt > 0) state.pivotVelocity.copy(q.measuredPivotVelocity);
+    q.previousDirection.copy(state.direction); // Measure the driven connector velocity before release.
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
     const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(root.getWorldQuaternion(q.rootInverseQ)).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
+      state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; q.pivotAcceleration.set(0, 0, 0);
       state.strikeTurnRad = 0; state.hasShaftUp = false; state.hasStrikeStart = false; // Reset the cached strike entry after a new attack or timeline seek.
     }
     if (state.attacking && state.hasShaftUp && state.progress > state.wf && state.progress <= state.sf) {
@@ -414,7 +445,7 @@
       const target = q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Neutral and ALL of Neutral → Windup hang downward, disturbed only by actor movement.
       const turnAngle = state.direction.angleTo(target);
       if (turnAngle > 1e-6) {
-        const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
+        const maxTurn = Math.max(0, Math.min(MAX_DT, dt))
           * Math.max(0.1, Math.min(60, Number(motion.idleFollow) || 7));
         q.deltaQ.setFromUnitVectors(state.direction, target);
         q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
@@ -430,12 +461,18 @@
       if (state.strikeStartDirection.dot(shaftUp) < -0.9999) q.deltaQ.setFromAxisAngle(pitchAxis, Math.PI);
       else q.deltaQ.setFromUnitVectors(state.strikeStartDirection, shaftUp);
       state.direction.copy(state.strikeStartDirection).applyQuaternion(q.stepQ.identity().slerp(q.deltaQ, t)).normalize(); // No rotation with tool pitch until the strike transition begins.
-    } else {
-      const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
-      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel, state.yawTravelRad);
-      if (Math.abs(state.yawTravelRad) > Math.abs(pitchTravel || 0)) pitchAxis.set(0, 1, 0); // Authored tool/body yaw turns around world up while the strike pose stays held.
-      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Exact shaft follow, then signed follow-through during hold.
+    } else if (dt > 0) {
+      // The handle may freeze at Strike; connector momentum remains free through
+      // Hold and Recovery. Pivot deceleration contributes torque instead of a cap.
+      stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt);
     }
+    if (dt > 0 && (!state.attacking || state.progress < state.sf)) {
+      q.pitchCross.crossVectors(q.previousDirection, state.direction); // Real driven angular displacement includes simultaneous pitch, yaw, roll and body movement.
+      const sine = q.pitchCross.length(); // Atan2 recovers signed 3D travel without choosing a dominant authored axis.
+      if (state.hasPhysicsVelocity && sine > 1e-10) state.angularVelocity.copy(q.pitchCross).multiplyScalar(Math.atan2(sine, q.previousDirection.dot(state.direction)) / (sine * dt));
+      else state.angularVelocity.set(0, 0, 0);
+    }
+    if (dt > 0) state.hasPhysicsVelocity = true;
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
@@ -460,7 +497,7 @@
 
   function tick(deltaS) {
     const now = performance.now();
-    const dt = Math.min(MAX_DT, Math.max(0.001, Number(deltaS) || 1 / 60));
+    const dt = Math.min(MAX_DT, Math.max(0, Number.isFinite(deltaS) ? deltaS : 1 / 60));
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
       try {
@@ -482,9 +519,9 @@
       attached: !!s.root.parent, attacking: s.attacking,
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
-      pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Shows what drives hold-through rotation.
-      yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Mobile diagnostics show sweep follow-through even when pitch travel is zero.
-      holdTurnDeg: flailPitchOvershoot(s.progress, s.sf, s.hf, s.pitchTravelRad ?? s.strikeTurnRad, s.yawTravelRad) * 180 / Math.PI, // Reports connector rotation independently of the frozen strike pose.
+      pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
+      yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
+      physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -517,7 +554,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, definitionFor, stepPendulum, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

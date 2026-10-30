@@ -94,12 +94,21 @@ authored swing as a fixed-length lever, and rotates the head only during
 attacks. This is presentation-only: no additional hit detection or gameplay
 physics have been added.
 
-Latest change: the connector keeps rotating through Hold while the haft stays
-at its strike pose. Follow-through uses the dominant signed pitch or combined
-tool-yaw/body-yaw travel, including power and backhand mirroring. Sweep attacks
-with zero pitch therefore continue to move the chain/rope. Pitch axes come from
-the holder rather than the PNG's fixed sweep basis. `debugSnapshot()` exposes
-`yawTravelDeg` and `holdTurnDeg` for mobile inspection.
+Latest change: Hold and Recovery now integrate a taut spherical pendulum rather
+than a capped, authored overshoot. The driven strike measures actual world-space
+connector angular velocity (including combined pitch/yaw/roll); the moving haft
+supplies pivot acceleration. On release, gravity and pivot acceleration produce
+angular acceleration `direction × (gravity - pivotAcceleration) / length`.
+Mass cancels for the point-mass head approximation. The lever length is the
+rendered, scaled connector length. Kick/rotate/kick substeps at 240 Hz preserve
+rotation without prescribing a maximum angle; damping is 0.12 per second.
+
+Early strike alignment and gravity-only windup retain their existing authored
+behavior. This is a taut, massless-connector approximation: no slack, individual
+chain-link collisions, or independent head inertia. Hit detection stays unchanged.
+Paused editor scrubbing replays the preceding swing at 120 Hz; zero-time draws
+freeze the result. `debugSnapshot().physics` reports the model, lever length,
+angular velocity in rad/s, and gravity (9.81 world units/s²).
 
 ## Verification
 

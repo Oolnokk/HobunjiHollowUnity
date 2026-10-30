@@ -20,7 +20,7 @@ assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.setAction\(toolMeshMap\[act
 assert.match(game, /hachutuTorchFlail: \{ label: 'Hachutu Torch-Flail'/);
 assert.match(game, /spriteLayers: shape\.spriteLayers/);
 assert.match(editor, /hachutuTorchFlail: \{ label: 'Hachutu Torch-Flail/);
-assert.match(editor, /HobunjiWeaponSpriteAssemblies\?\.tick\(dt\)/);
+assert.match(editor, /HobunjiWeaponSpriteAssemblies\?\.tick\(sampleDt\)/);
 assert.match(bandits, /HobunjiWeaponSpriteAssemblies\?\.setAction\(holder\.children\?\.\[0\]/);
 assert.match(grips, /hachututorchflail: \{/);
 assert(game.includes('windupFrac: WF, strikeFrac: SF, holdFrac:'), 'the player passes its live swing boundaries');
@@ -36,7 +36,7 @@ assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs p
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
 assert(source.includes('const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ)'), 'flails extend outward from the bottom-end haft attachment, away from the grip');
-assert(source.includes('state.direction.copy(shaftUp).applyQuaternion'), 'hold follow-through rotates beyond the exact shaft heading');
+assert(source.includes('stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt)'), 'live assemblies integrate the same physical pendulum in Hold and Recovery');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
 for (const [x, y] of [[1, 1], [3, 1], [2, 2], [4, 3], [3, 4], [5, 4]]) {
@@ -98,32 +98,51 @@ assert(straighten(0.20, 0.16, 0.55) > 0 && straighten(0.20, 0.16, 0.55) < straig
 assert.equal(straighten(0.30, 0.16, 0.55), 1, 'alignment completes early in windup-to-strike');
 assert.equal(straighten(0.55, 0.16, 0.55), 1, 'connector stays collinear through strike');
 assert.equal(straighten(0.55, 0.16, 0.16), 1, 'zero-length strike still reaches shaft alignment');
-const follow = api.flailPitchOvershoot; // Pure animation phase math shared by player, NPC and standalone editor.
-const sf = 0.55, hf = 0.72, forward = Math.PI / 2, reverse = -Math.PI / 2;
-assert.equal(follow(0.20, sf, hf, forward), 0, 'the chain stays straight during windup-to-strike pitch follow');
-assert.equal(follow(sf, sf, hf, forward), 0, 'hold begins with zero discontinuity from straight shaft alignment');
-assert(follow(0.60, sf, hf, forward) > 0, 'hold continues in the same positive pitch direction');
-assert(follow(0.65, sf, hf, forward) > follow(0.60, sf, hf, forward), 'hold continues rotating after the tool stops');
-assert(follow(hf, sf, hf, forward) > follow(0.65, sf, hf, forward), 'maximum follow-through is reached by the hold endpoint');
-assert.equal(follow(hf, sf, hf, forward), -follow(hf, sf, hf, reverse), 'a negative pitch lerp reverses the chain follow-through');
-assert.equal(follow(1, sf, hf, forward), 0, 'return eases the chain back onto its handle');
-assert.equal(follow(0.65, sf, hf, 0), 0, 'a static pitch creates no artificial follow-through');
-assert.equal(follow(0.75, 0.6, 0.6, forward), 0, 'a zero-duration hold never introduces a one-frame overshoot');
-assert(Math.abs(follow(hf, sf, hf, 10)) <= Math.PI / 3, 'extreme pitch does not exceed a 60 degree overshoot');
-assert.equal(follow(hf, sf, hf, NaN), 0, 'invalid pitch is safely ignored');
-vm.runInNewContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { window }); // Exercise the same held-strike sampler used by gameplay.
-for (const holdProgress of [0.60, 0.65, hf]) {
-  assert.equal(window.SharedAttackPose.fourPhaseLerp(holdProgress, 0.16, sf, hf, -20, 20), 20, 'the handle remains at strike while the connector rotates');
+const pendulum = api.stepPendulum; // Execute the shared solver against analytic momentum, torque and energy expectations.
+const still = { x: 0, y: 0, z: 0 }; // Stationary pivot for isolated pendulum tests.
+function body(angle = 0, speed = 0) {
+  return { direction: { x: Math.sin(angle), y: -Math.cos(angle), z: 0 }, angularVelocity: { x: 0, y: 0, z: speed } };
 }
-const yawTravel = api.flailYawTravel({ pitch: 0, yaw: -20, bodyYaw: -40 }, { pitch: 0, yaw: 20, bodyYaw: 40 }) * Math.PI / 180; // A held sweep with no authored pitch must still rotate its connector.
-assert(yawTravel > 0);
-assert(follow(0.60, sf, hf, 0, yawTravel) > 0, 'zero-pitch sweep begins rotating during Hold');
-assert(follow(0.65, sf, hf, 0, yawTravel) > follow(0.60, sf, hf, 0, yawTravel), 'rope keeps rotating while the strike pose stays fixed');
-assert(follow(hf, sf, hf, 0, yawTravel) > follow(0.65, sf, hf, 0, yawTravel), 'rotation continues to the end of Hold');
-assert.equal(follow(0.65, sf, hf, 0, -yawTravel), -follow(0.65, sf, hf, 0, yawTravel), 'backhand reverses the held sweep rotation');
-assert.equal(follow(1, sf, hf, 0, yawTravel), 0, 'sweep follow-through recovers after Hold');
-assert.equal(api.flailYawTravel({ yaw: -20, bodyYaw: -40 }, { yaw: 20, bodyYaw: 40 }, 0.5, -1), -60, 'power and backhand sign match pose playback');
-assert.equal(api.flailYawTravel({ yaw: 0, bodyYaw: 0 }, { yaw: 30, bodyYaw: -30 }), 0, 'opposing tool/body turns cancel');
-assert.equal(api.flailYawTravel(null, null), 0, 'missing authored poses leave procedural fallback available');
+function simulate(value, length, seconds, fps = 60, gravity = 9.81, damping = 0) {
+  for (let frame = 0; frame < Math.round(seconds * fps); frame++) pendulum(value, still, length, 1 / fps, gravity, damping);
+  return value;
+}
+const free = simulate(body(0, 8), 1, 0.5, 60, 0); // With no gravity or damping, rotation follows omega * time with no 60-degree ceiling.
+assert(Math.abs(free.direction.x - Math.sin(4)) < 1e-10);
+assert(Math.abs(free.direction.y + Math.cos(4)) < 1e-10);
+assert.equal(free.angularVelocity.z, 8, 'free angular momentum remains constant');
+const faster = simulate(body(0, 16), 1, 0.1, 60, 0); // A twice-faster release travels twice as far in the same time.
+assert(Math.abs(faster.direction.x - Math.sin(1.6)) < 1e-10);
+const reverse = simulate(body(0, -8), 1, 0.5, 60, 0); // Mirrored attacks produce mirrored physical motion.
+assert(Math.abs(reverse.direction.x + free.direction.x) < 1e-10);
+const resting = simulate(body(), 1, 2); // Hanging motionless is a stable equilibrium.
+assert.deepEqual(resting, body());
+const short = body(0.4), long = body(0.4); // Torque/inertia produces acceleration proportional to 1 / lever length.
+pendulum(short, still, 1, 1 / 240, 9.81, 0);
+pendulum(long, still, 2, 1 / 240, 9.81, 0);
+assert(Math.abs(short.angularVelocity.z / long.angularVelocity.z - 2) < 0.0001);
+assert(short.angularVelocity.z < 0, 'gravity pulls a displaced head back toward vertical');
+const accelerated = body(); // A moving handle transfers momentum even when the connector starts vertical.
+pendulum(accelerated, { x: 12, y: 0, z: 0 }, 1, 1 / 240, 0, 0);
+assert(accelerated.angularVelocity.z < 0, 'head trails positive pivot acceleration');
+const spatial = body(); // Simultaneous axes remain independent; there is no dominant pitch/yaw selection.
+spatial.angularVelocity.x = 3; spatial.angularVelocity.z = 4;
+simulate(spatial, 1, 0.5, 60, 0);
+assert(Math.abs(Math.hypot(spatial.direction.x, spatial.direction.y, spatial.direction.z) - 1) < 1e-10);
+assert(Math.abs(spatial.direction.z) > 0.01);
+const energyStart = body(0.6), energyEnd = simulate(body(0.6), 1.4, 10); // The undamped integrator approximately conserves mechanical energy over many swings.
+const energy = value => 0.5 * 1.4 ** 2 * value.angularVelocity.z ** 2 + 9.81 * 1.4 * (1 + value.direction.y);
+assert(Math.abs(energy(energyEnd) - energy(energyStart)) / energy(energyStart) < 0.001);
+const lowFps = simulate(body(0.4, 2), 1, 1, 30), highFps = simulate(body(0.4, 2), 1, 1, 120); // Fixed internal substeps keep render-rate results consistent.
+assert(Math.abs(lowFps.direction.x - highFps.direction.x) < 1e-10);
+const frozen = body(0.3, 4), frozenBefore = JSON.stringify(frozen); // Paused editor draws do not advance physical time.
+pendulum(frozen, still, 1, 0);
+assert.equal(JSON.stringify(frozen), frozenBefore);
+for (const length of [0, -1, NaN, Infinity]) pendulum(frozen, still, length, 0.01); // Invalid geometry cannot corrupt the simulation.
+assert.equal(JSON.stringify(frozen), frozenBefore);
+const damped = simulate(body(0, 8), 1, 1, 60, 0, 0.12); // Damping uses seconds rather than render frames.
+assert(Math.abs(damped.angularVelocity.z - 8 * Math.exp(-0.12)) < 1e-10);
+vm.runInNewContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { window });
+for (const progress of [0.60, 0.65, 0.72]) assert.equal(window.SharedAttackPose.fourPhaseLerp(progress, 0.16, 0.55, 0.72, -20, 20), 20, 'strike pose stays fixed while momentum is integrated');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
 console.log('weapon sprite assemblies: PASS (windup gravity and locomotion, early strike alignment, hold follow-through, editor/player/NPC, scheduler)');

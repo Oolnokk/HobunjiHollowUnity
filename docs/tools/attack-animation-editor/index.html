@@ -104,11 +104,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261030h645b148"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261030hf8c70b3"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261030he8d0e4f"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261030layerfx2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261030hf8c70b3"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030he8d0e4f"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -594,7 +594,8 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: head-anchored tools no longer use the owner’s rear silhouette to mask them.',
+    'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
+    (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
@@ -2344,6 +2345,19 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+let lastFlailPreviewT = -1; // Detect timeline seeks for deterministic physics reconstruction.
+document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parameter edits also invalidate a paused physical preview.
+function updatePreviewFlail(sampleT, sampleDt) {
+  window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
+    attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
+    movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
+    windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
+    yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Authored travel remains available in mobile diagnostics.
+    pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
+  }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
+  window.HobunjiWeaponSpriteAssemblies?.tick(sampleDt); // No gameplay scheduler runs in the standalone ESM preview.
+}
+
 let lastFrameTime = performance.now();
 function animate() {
   requestAnimationFrame(animate);
@@ -2362,14 +2376,19 @@ function animate() {
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
-  window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
-    attacking: previewT > 0.001 && previewT < 0.999, progress: previewT,
-    movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
-    windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
-    yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Deterministic sweep follow-through also works when scrubbing directly into Hold.
-    pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
-  }); // Shared runtime keeps gravity through windup, straightens during strike, and follows through during Hold.
-  window.HobunjiWeaponSpriteAssemblies?.tick(dt); // No gameplay scheduler runs in the standalone ESM preview.
+  const flailPreviewChanged = previewT !== lastFlailPreviewT; // Paused scrubbing reconstructs momentum from the complete preceding swing.
+  if (!playing && flailPreviewChanged) {
+    applyPoseToRig(poseAt(0).pose);
+    updatePreviewFlail(0, 0);
+    const replaySteps = Math.ceil(previewT * Math.max(0.05, anim.durationS) * 120); // Same physical timeline at 120 Hz, including direct seeks into Hold.
+    for (let step = 1; step <= replaySteps; step++) { // Only replay on a changed scrub position, never continuously while paused.
+      const sampleT = previewT * step / replaySteps; // Normalized replay time supplies both pose and connector input.
+      applyPoseToRig(poseAt(sampleT).pose);
+      updatePreviewFlail(sampleT, Math.max(0.05, anim.durationS) * previewT / replaySteps);
+    }
+    refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
+  } else updatePreviewFlail(previewT, playing ? dt : 0);
+  lastFlailPreviewT = previewT;
   renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();
