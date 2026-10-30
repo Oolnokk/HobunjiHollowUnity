@@ -53,7 +53,7 @@ const files = [
   'js/combat/combat-counter-shield.js?v=20261028a',
   'js/combat/ranged-weapons.js?v=20261029maskSlots2',
   'js/alchemy-system.js?v=20261028a',
-  'js/combat/enemy-loadout-rules.js?v=20261029maskSlots2',
+  'js/combat/enemy-loadout-rules.js?v=20261030lichRules3',
   'js/combat/combat-bandit.js?v=20261030headMask1',
   'js/weapon-tool-stances.js?v=20261029a',
   'js/combat/enemy-weapon-stances.js?v=20261029a',
@@ -67,7 +67,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261029maskSlots2',
+  'tools/enemy-loadout-editor/source-data.js?v=20261030lichSource3',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
