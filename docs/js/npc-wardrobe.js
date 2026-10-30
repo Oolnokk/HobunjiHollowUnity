@@ -86,7 +86,12 @@
     const live = wornMapFor(rec.id)?.[slot];
     if (live?.cosmeticId === cosmeticId) return clone(live); // Gifted/manual garment keeps complete weaving, colorC, material and player-return metadata.
     const authored = clothingPatternPolicy(rec)?.defaultClothing?.[slot];
-    const base = authored && (!authored.cosmeticId || authored.cosmeticId === cosmeticId) ? clone(authored) : {};
+    const crafted = (Array.isArray(rec.metalArmorItems) ? rec.metalArmorItems : []).find(item =>
+      [item?.baseCosmeticId, item?.cosmeticId, item?.blueprintId].includes(cosmeticId)); // Keep hostile smith records (Temper + verdigris motifs) when the cloth adapter decorates the same portrait.
+    const base = {
+      ...(authored && (!authored.cosmeticId || authored.cosmeticId === cosmeticId) ? clone(authored) : {}),
+      ...(crafted ? clone(crafted) : {}),
+    };
     const colors = clothingColorsFromWorn(rec, slot);
     return {
       uid: base.uid || `npc_default_${rec.id}_${slot}`,
