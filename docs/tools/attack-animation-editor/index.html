@@ -729,6 +729,8 @@ async function rebuildAvatar(speciesId, gender) {
   baseAttachY *= characterBodyScaleRoot.scale.y;
   toolBase.position.set(toolBaseSideX(), baseAttachY, 0);
   toolBaseRestY = baseAttachY;
+  characterBodyScaleRoot.position.y += appliedWorldSink; // A rebuild (Undo/Redo, species change) can happen while the body is sunk: un-apply it so the standing baseline is not the sunk height.
+  appliedWorldSink = 0;
   characterBodyScaleRoot.userData.sinkBaseY = characterBodyScaleRoot.position.y;
   await attachPreviewLegs({ speciesId, gender, profile, frontCanvas, w, h, size });
   logDebug(`Avatar rebuilt: ${speciesId}/${gender} (prism ${w.toFixed(2)}x${h.toFixed(2)}, orbit ×${(() => { const a = window.HobunjiSpeciesPoseScale?.axesForPose?.(currentPoseOrbitScale, currentArmLength) || { x: currentPoseOrbitScale, y: 1, z: currentPoseOrbitScale }; return a.x === a.z && a.y === 1 ? a.x.toFixed(5) : `${a.x.toFixed(5)}/${a.y.toFixed(5)}/${a.z.toFixed(5)} (x/y/z)`; })()}, arm ${currentArmLength.toFixed(3)}, centroidY ${currentPoseCentroidY.toFixed(3)}, base at ${toolBase.position.x.toFixed(2)}/${baseAttachY.toFixed(2)}${toolMirrored ? ', mirrored' : ''})`);
@@ -1557,6 +1559,7 @@ function poseChannelsAt(t) {
 let toolBaseRestY = 0; // toolBase's un-sunk Y, recorded by rebuildAvatar.
 let editorLegs = null; // ProceduralLegAnimation handle (feet + pants) under characterBodyScaleRoot.
 let appliedBodySinkPct = 0;
+let appliedWorldSink = 0; // World distance the body root is currently lowered by (so a rebuild can restore the standing baseline).
 function applyBodySink(pct, bodyYawDeg = 0) {
   const sinkUnits = Math.max(0, pct) / 100 * currentAvatarModelHeight; // Body-root-local units, like the leg handle's own.
   let applied = sinkUnits;
@@ -1568,6 +1571,7 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   }
   appliedBodySinkPct = currentAvatarModelHeight > 0 ? applied / currentAvatarModelHeight * 100 : 0;
   const worldSink = applied * characterBodyScaleRoot.scale.y;
+  appliedWorldSink = worldSink;
   characterBodyScaleRoot.position.y = (characterBodyScaleRoot.userData.sinkBaseY || 0) - worldSink;
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }

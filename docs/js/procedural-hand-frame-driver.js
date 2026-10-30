@@ -657,8 +657,8 @@
           ensureFallbackState(record).owners.left = 'secondary-grip';
         } else {
           // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
-          // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Local player / editor only.
-          const offhandIdle = record.avatarRoot?.userData?.proceduralHandToolHolder ? null : toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
+          // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
+          const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
           const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip) : null;
           const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) : null;
           if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {

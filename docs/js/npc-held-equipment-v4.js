@@ -352,6 +352,29 @@
     return true;
   }
 
+  // A watchman's free hand holds an INVISIBLE copy of the weapon at the dual-wield offhand stance (js/dual-wield-weapon-visuals.js invisibleOffhandSocket)
+  // instead of the locomotion idle. The NPC owns its own hands, so this claims the left hand and places it exactly like attachPrimaryHand does the right.
+  function attachOffhandIdle(state, walker, holder, key, pose) {
+    const visuals = window.HobunjiDualWieldWeaponVisuals, rig = rigFor(walker), hand = handFrame(walker), socket = worldFrame(holder);
+    const plane = findToolPlane(holder), body = avatarRootFor(walker);
+    if (!visuals?.invisibleOffhandSocket || !rig?.placeHandWorld || !hand || !socket || !plane || !body || !pose) return false;
+    const claims = ensureClaims(rig);
+    if (claims) claims.left = 'offhand-idle';
+    const grip = grips()?.offhandPrimaryGripForTool?.(key, 'melee', gripIdentity(walker)) || primaryGrip(key);
+    const gripP = grip.position || {}, gripQ = gripQuaternion(grip), scale = gripScale(key, walker);
+    const target = grips()?.itemPointToHolder?.(key, gripP, 'melee', gripIdentity(walker))
+      || { x: (Number(gripP.x) || 0) * scale, y: (Number(gripP.y) || 0) * scale, z: (Number(gripP.z) || 0) * scale };
+    socket.position.add(new (T().Vector3)(target.x, target.y, target.z).applyQuaternion(socket.quaternion));
+    if (gripQ) socket.quaternion.multiply(gripQ);
+    const ctx = state.offhandCtx || (state.offhandCtx = {});
+    ctx.plane = plane; ctx.holder = holder; ctx.bodyRoot = body; ctx.carriedPose = pose; ctx.offhandPose = null; // The watchman's carried pose IS its stance pose.
+    const off = visuals.invisibleOffhandSocket(ctx, socket);
+    if (off === socket) return false;
+    rig.setSideVisible?.('left', true);
+    rig.placeHandWorld('left', off.position.clone().add(hand.position.clone().applyQuaternion(off.quaternion)), off.quaternion.clone().multiply(hand.quaternion));
+    return true;
+  }
+
   function findToolPlane(root) {
     if (!root) return null;
     if (root.userData?.toolPlane?.isObject3D) return root.userData.toolPlane;
@@ -530,6 +553,7 @@
       state.holder.visible = walker?.root?.visible !== false;
       applyGripScale(state.holder.userData?.npcGripVisualV4, loadout.toolKey, walker);
       state.handsAttached = attachPrimaryHand(walker, state.holder, loadout.toolKey, `watchman:${loadout.toolKey}`);
+      attachOffhandIdle(state, walker, state.holder, loadout.toolKey, pose); // The free hand holds an invisible tool at the dual-wield offhand pose.
       state.mode = 'watchman'; state.key = loadout.toolKey; state.loadout = loadout;
       return;
     }

@@ -65,4 +65,20 @@ assert.equal(state.blend, 1); assert.equal(state.pose, null);
 assert.equal(grips.offhandIdleStateForTool('hatchet', 'ranged'), null, 'ranged context');
 visuals.setCarriedSample({ x: 0.1, y: 0.2, z: 0.3, pitchRad: Math.PI / 2, yawRad: 0, rollRad: 0 });
 assert.equal(typeof visuals.setCarriedPose, 'function');
+// A real authored export (Forehand Swing): Neutral owns a custom offhand pose, 2H windup/strike release the hand to the grip.
+const forehand = {
+  poses: {
+    neutral: { secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, offhandIdle: { enabled: true, pose: { x: 0, y: -0.12, z: 0.05, pitch: -90, yaw: -90, roll: 0 } } },
+    windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+    strike: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true } },
+  },
+};
+const forehandTiming = { windupFrac: 0.3483968694774047, strikeFrac: 0.41908608937137093, holdFrac: 0.8533198687200203 };
+const rest = grips.animationGripAt(0, forehandTiming, forehand.poses, 'attack', 'hatchet');
+near(rest.offhandIdleBlend, 1, 'forehand: Neutral holds the invisible tool');
+for (const [channel, value] of Object.entries({ x: 0, y: -0.12, z: 0.05, pitch: -90, yaw: -90, roll: 0 })) near(rest.offhandIdlePose[channel], value, `forehand custom ${channel}`);
+near(grips.animationGripAt(forehandTiming.windupFrac, forehandTiming, forehand.poses, 'attack', 'hatchet').offhandIdleBlend, 0, 'forehand: the 2H windup releases it');
+near(grips.animationGripAt(0.6, forehandTiming, forehand.poses, 'attack', 'hatchet').offhandIdleBlend, 0, 'forehand: the strike hold stays on the 2H grip');
+const returning = grips.animationGripAt(0.95, forehandTiming, forehand.poses, 'attack', 'hatchet');
+assert(returning.offhandIdleBlend > 0 && returning.offhandIdleBlend < 1, `forehand: eases back onto the invisible tool on the return (${returning.offhandIdleBlend})`);
 console.log('offhand-idle-pose OK');

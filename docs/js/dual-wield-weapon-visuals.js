@@ -97,7 +97,7 @@
   // The actor's own animation grip (hand-tool-grips animationGripAt, evaluated against ITS weapon and swing).
   function actorDualState(record) {
     const grip = record?.avatarRoot?.userData?.proceduralHandAnimationGrip || null;
-    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), offhandIdle: 0, offhandPose: null, source: grip?.source || 'animation' }; // Invisible-offhand idle is the local player/editor's only (no per-actor carried pose yet).
+    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), offhandIdle: clamp01(grip?.offhandIdleBlend), offhandPose: grip?.offhandIdlePose || null, source: grip?.source || 'animation' }; // Invisible idle offhand: the actor's own animation grip says when (the carried pose comes from its swing sampler).
   }
 
   function materialList(material) {
@@ -297,7 +297,7 @@
       ? global.AttackIdleStanceEditor?.getConfig?.()?.stances
       : global.WeaponToolStances?.poses;
     let main = stances?.dualWieldMain || stances?.lightWeapon || null;
-    const carried = current?.invisible ? freshCarriedPose(current.key) : null;
+    const carried = current?.invisible ? (current.carriedPoseOverride || freshCarriedPose(current.key)) : null;
     if (carried) main = carried;
     let offhand = (current?.invisible && current.offhandPoseOverride) || stances?.dualWieldOffhand || null;
     if (!offhand && main) {
@@ -572,6 +572,32 @@
     current.lastHistoryFrame = null;
   }
 
+  // Stateless invisible offhand for actors that place their own hands (watchman NPCs): maps `socketFrame` (a grip on the MAIN holder) onto an invisible
+  // copy of the weapon held in the free hand, with no duplicate meshes or per-actor state. `ctx` supplies { plane, holder, bodyRoot, carriedPose?,
+  // offhandPose? } and is reused as scratch storage between calls. Returns the same shape transformSocketForHand does, or `socketFrame` when it cannot resolve.
+  function invisibleOffhandSocket(ctx, socketFrame) {
+    if (!ctx?.plane?.matrixWorld || !ctx.holder?.matrixWorld || !ctx.bodyRoot || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
+    if (!ctx.worldPositionScratch) { ctx.worldPositionScratch = new ctx.plane.position.constructor(); ctx.worldScaleScratch = new ctx.plane.scale.constructor(); }
+    ctx.invisible = true; ctx.source = 'actor'; ctx.key ||= ctx.bodyRoot;
+    ctx.carriedPoseOverride = ctx.carriedPose || null;
+    ctx.offhandPoseOverride = ctx.offhandPose || null;
+    ctx.holder.updateMatrixWorld?.(true);
+    const idle = idleOffhandLocalTransform(ctx);
+    if (!idle) return socketFrame;
+    const s = frameScratch(ctx);
+    const Matrix4 = ctx.plane.matrixWorld.constructor;
+    const weaponWorld = (ctx.weaponWorldScratch ||= new Matrix4()).compose(idle.position, idle.quaternion, s.unitScale).premultiply(ctx.plane.matrixWorld); // plane * offhand-root; the copy sits at its origin (no bread-slice offset)
+    const inversePlaneWorld = (ctx.inversePlaneScratch ||= new Matrix4()).copy(ctx.plane.matrixWorld).invert();
+    const planeLocalPosition = socketFrame.position.clone().applyMatrix4(inversePlaneWorld);
+    const position = planeLocalPosition.clone().applyMatrix4(weaponWorld);
+    const Quaternion = socketFrame.quaternion.constructor;
+    const planeWorldQ = bakedWorldQuaternion(ctx.plane, new Quaternion(), ctx);
+    const planeLocalQ = planeWorldQ.clone().invert().multiply(socketFrame.quaternion.clone()).normalize();
+    const weaponWorldQ = planeWorldQ.clone().multiply(idle.quaternion);
+    const quaternion = weaponWorldQ.multiply(mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())).normalize(); // The offhand grip is the mirror of the main grip.
+    return { ...socketFrame, position, quaternion, dualWield: { side: 'left', invisible: true, mirroredGripFrame: true } };
+  }
+
   function setEditorIdlePreview(active) {
     resetPoseHistory();
     const editorIdlePreviewActive = grips.setEditorIdlePreview?.(active) === true;
@@ -631,6 +657,7 @@
     transformSocketForHand,
     setCarriedPose,
     setCarriedSample,
+    invisibleOffhandSocket,
     defaultOffhandPose: () => { const poses = idleStancePoses(); return poses ? { x: poses.offhand.x, y: poses.offhand.y, z: poses.offhand.z, pitch: poses.offhand.pitch, yaw: poses.offhand.yaw, roll: poses.offhand.roll } : null; },
     setEditorIdlePreview,
     setEditorOffhandAuthoring,

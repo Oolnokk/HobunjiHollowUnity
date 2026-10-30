@@ -2386,7 +2386,9 @@
   // per weapon: the grip sampler allocates, and this is the same object every idle frame.
   function restGripFor(c, toolKey) {
     const grips = window.HobunjiHandToolGrips;
-    if (!toolKey || !grips?.isDualWieldWeapon?.(toolKey)) return null;
+    if (!toolKey) return null;
+    const stanced = !!window.EnemyWeaponStances?.stanceClassFor?.(c); // A Light/Heavy stance weapon rests with its free hand on the invisible offhand tool (grip state: offhandIdleBlend).
+    if (!grips?.isDualWieldWeapon?.(toolKey) && !stanced) return null;
     const cached = c._banditRestGrip;
     if (cached && cached.key === toolKey) return cached.grip;
     const grip = grips.animationGripAt?.(0, { windupFrac: 0.16, strikeFrac: 0.16, holdFrac: 1, poseScale: 1 }, {}, 'attack', toolKey) ?? null;
@@ -2577,6 +2579,7 @@
     const rollRad = sampled.rollRad;
     const bodyYawRad = sampled.bodyYawRad;
     c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
+    if (handDriverRoot) window.HobunjiDualWieldWeaponVisuals?.setCarriedSample(sampled, c._banditHandRecordKey ||= { avatarRoot: handDriverRoot }); // The invisible idle offhand tool peels the pose this holder carries right now.
     const sinkWorld = applyBanditBodySink(c, sampled, timelineLive); // Authored per-pose body sink (percent of height): sinks the body and folds the knees; the weapon below follows.
     // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
     // the player's hand anchor.
