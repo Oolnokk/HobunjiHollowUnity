@@ -138,7 +138,7 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.ok(markerCalls.every(c=>c.hex==='#7F00FF' && c.target==='#E7DDC9'));
   assert.equal(recolorCalls.length,4,'the haft and three metal head layers each start only one recolor even with two previews');
   assert.equal(recolorCalls[0].options.oxidationAmount,0.5);
-  await Promise.resolve();await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve)); // Flush real async recolor completion across Node and the editor VM before sampling the next frame.
   frames.shift()(175);
   assert.equal(paintSamples.at(-1).baseRecolored,true,'the completed recolor canvas replaces the temporary source PNG');
   assert.equal(recolorCalls.length,4,'repaint uses cached promises, not additional recolor requests');
