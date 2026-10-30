@@ -14,7 +14,7 @@
 <script src="js/terrain-preview.js?v=20261013he41c002"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
-<script src="js/live-root-growth.js?v=20261030h67bf156"></script>
+<script src="js/live-root-growth.js?v=20261030h44db00f"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -38,14 +38,14 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <body><div id="app">
 <aside>
 <h1>🌳 Live Root Growth Author</h1>
-<p>Prototype living root structures around an invisible imported furniture shape. Roots originate at concealed nodes on the dense wrapped floor; the same controller extends and retracts.</p>
+<p>Prototype living root structures around an invisible imported furniture shape. Roots originate on existing vegetation; the same controller extends and retracts the new shape.</p>
 <section><h2>Preview environment</h2>
 <label for="previewEnvironment">Root substrate</label><select id="previewEnvironment"><option value="flat">Flat floor preview</option><option value="ruin">Single ruin room</option></select>
 <label for="ruinSize">Room size</label><select id="ruinSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>
 <button id="previewRuin" type="button" style="width:100%;margin-top:8px">Build ruin preview</button>
 <p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
-<p id="ruinStatus" role="status">Uses the existing ruin generator. Its hidden brick floor and walls grow from roots; the selected furniture remains inside the room.</p>
-<p>Grow or scrub to reveal the room: floor first, then walls and furniture. Show guide reveals the original stone shapes. The seed and room size are saved in your recipe.</p>
+<p id="ruinStatus" role="status">Uses the existing ruin generator. Its pieces become rough rock, then receive fully grown vines and inward shrinkwrap before you grow the selected furniture from that vegetation.</p>
+<p>The room is already covered when the workflow begins. Grow, Retract and Reset affect only the new shape. Show guide reveals rough stone and target shapes. The seed and room size are saved in your recipe.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
 <label for="repoFurnitureSearch">Browse furniture in repository</label>
@@ -96,5 +96,5 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261030h9a6a428"></script>
+<script src="tools/live-root-growth/tool.js?v=20261030hcc00466"></script>
 </body></html>

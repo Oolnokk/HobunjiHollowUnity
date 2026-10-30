@@ -257,18 +257,20 @@
 
   // Choose branch origins FROM the generated floor strands, not arbitrary tiles.
   // Each hidden node lies inside the existing dense root blanket.
-  function floorNodes(THREE, floorGrowth, endpoints, recipe, random, actualFloor = false) {
-    const mesh = findGrowthMesh(floorGrowth), pos = mesh?.geometry?.getAttribute('position');
-    const candidates = []; // Bounded reservoir of centerline-adjacent vertices for floor-root node selection.
-    if (pos) {
-      const jump = Math.max(1, Math.floor(pos.count / 4000));
-      for (let i = 0; i < pos.count; i += jump) {
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        if (Number.isFinite(x + y + z) && Math.abs(y - recipe.floorY) <= recipe.radius * 5 + 0.15) {
-          candidates.push(new THREE.Vector3(x, y, z));
-        }
+  function floorNodes(THREE, floorGrowth, endpoints, recipe, random, actualFloor = false, vegetationSource = false, reference = null) {
+    const candidates = [],meshes=vegetationSource?growthMeshes(floorGrowth):[findGrowthMesh(floorGrowth)].filter(Boolean); // Prepared vegetation may cover walls as well as the floor.
+    floorGrowth.updateWorldMatrix?.(true,true);reference?.updateWorldMatrix?.(true,false);
+    const budget=Math.max(1,Math.floor(4000/Math.max(1,meshes.length))); // Bound all-surface sampling across dense pre-grown layers.
+    for(const mesh of meshes){
+      const pos=mesh.geometry?.getAttribute('position');if(!pos)continue;
+      const jump=Math.max(1,Math.ceil(pos.count/budget));
+      for(let i=0;i<pos.count;i+=jump){
+        const point=new THREE.Vector3().fromBufferAttribute(pos,i);
+        if(vegetationSource){mesh.localToWorld(point);reference?.worldToLocal(point);}
+        if(Number.isFinite(point.x+point.y+point.z)&&(vegetationSource||Math.abs(point.y-recipe.floorY)<=recipe.radius*5+.15))candidates.push(point);
       }
     }
+    if(vegetationSource&&!candidates.length)throw new Error('The prepared ruin vegetation has no usable growth nodes.');
     const chosen = []; // Separated source nodes prevent a single conspicuous center tuft.
     for (let i = 0; i < recipe.branchCount; i++) {
       const end = endpoints[i % endpoints.length], goalX = actualFloor?end.x:clamp(end.x, -recipe.floorWidth * .45, recipe.floorWidth * .45);
@@ -277,7 +279,7 @@
       for (let k = 0; k < Math.min(60, candidates.length); k++) {
         const point = candidates[Math.floor(random() * candidates.length)];
         const spread = chosen.reduce((penalty, node) => penalty + Math.max(0, .48 - node.distanceTo(point)) * 8, 0);
-        const cost = (point.x - goalX) ** 2 + (point.z - goalZ) ** 2 + spread + random() * 2.5;
+        const cost = (point.x - goalX) ** 2 + (point.z - goalZ) ** 2 + (vegetationSource?(point.y-end.y)**2:0) + spread + random() * 2.5;
         if (cost < score) { best = point; score = cost; }
       }
       // An empty wrap cannot yield genuine root nodes; keep the controller usable,
@@ -393,6 +395,7 @@
     const foliage = options.foliage || root.FoliageGenerator?.forThree?.(THREE) || root.FoliageGenerator;
     if (!THREE || !foliage?.buildSurfaceGrowth || !foliage?.normalizeSurfaceGrowth) throw new Error('LiveRootGrowth requires THREE and FoliageGenerator.');
     if (!options.target?.isObject3D) throw new TypeError('Pass a Three.js furniture group as options.target.');
+    if(options.growthSource!=null&&!options.growthSource.isObject3D)throw new TypeError('Pass prepared vegetation as options.growthSource.');
     if(options.substrate!=null&&!options.substrate.isObject3D)throw new TypeError('Pass a Three.js ruin group as options.substrate.');
     if(options.substrate){
       let hasFloor=false; // Reject invalid architecture before allocating generated roots.
@@ -430,7 +433,7 @@
       for (const child of [...driver.children]) holder.add(child);
       driver.parent.add(holder); driver.parent.remove(driver);
     }
-    const floorHost = new THREE.Group(), floor = options.substrate ? null : new THREE.Mesh(
+    const floorHost = new THREE.Group(), floor = options.substrate || options.growthSource ? null : new THREE.Mesh(
       new THREE.PlaneGeometry(recipe.floorWidth, recipe.floorDepth),
       new THREE.MeshBasicMaterial({visible:false}));
     ownedFloor=floor;
@@ -453,13 +456,13 @@
       mesh.layers?.disable?.(1); // A visible debug furniture guide is never part of the root-only shell outline pass.
       if (!wasVisible || isOriginalGrowth) mesh.userData.surfaceFoliageExclude = true;
     }); // The furniture is never rendered in normal mode, but its triangles remain eligible for sampling.
-    const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
+    const growthOptions = {kind:options.kind==='vines'?'vines':'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
       offset:0.012, density:recipe.floorDensity, color:rootFinish.color, texture:rootFinish.texture};
-    let floorGrowth = options.substrate ? null : yield* buildDenseWrap(THREE, foliage, floorHost, {
+    let floorGrowth = options.growthSource || (options.substrate ? null : yield* buildDenseWrap(THREE, foliage, floorHost, {
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
-    }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
-    if(floorGrowth){floorHost.add(floorGrowth);ownedGrowths.push(floorGrowth);}
+    }, recipe.floorDensity)); // Dense permanent cover uses precisely the temple Wrap solver.
+    if(floorGrowth&&!options.growthSource){floorHost.add(floorGrowth);ownedGrowths.push(floorGrowth);}
     const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
     // One per-part generator per density pass would multiply an authored 30-part
     // festival arch's 80-strand budget by 30. Divide the shared pass budget
@@ -509,7 +512,7 @@
     const groundGrowth=groundedPartPlan.map(part=>partGrowths[part.index]);
     const targets=sampledTargetPoints(THREE,target,targetGrowth,recipe.branchCount,random,group,
       true,groundGrowth,groundedPartPlan.map(part=>part.mesh));
-    const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random, !!options.substrate);
+    const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random, !!(options.substrate||options.growthSource),!!options.growthSource,group);
     const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
     const branchMaterial = branchSourceMaterial?.clone?.() ||
       new THREE.MeshBasicMaterial({color:parseInt(rootFinish.color.slice(1),16)}); // No-shape fallback still uses Temple bark color.
@@ -605,7 +608,8 @@
       },
       getDiagnostics() {
         return {progress, direction, branchCount:branches.length, rootFinish, outlinedBranches:branches.length,
-          substrate:options.substrate?'ruin':'flat',
+          substrate:options.substrate||options.growthSource?'ruin':'flat',
+          preparedVegetation:!!options.growthSource,vegetationKind:options.kind==='vines'?'vines':'roots',
           floorStrands:floorGrowth.userData?.generatedStrands || 0,
           shapeStrands:(targetGrowth.userData?.generatedStrands || 0)-(options.substrate?(floorGrowth.userData?.generatedStrands||0):0),
           groundedParts:partPlan.filter(part=>part.grounded).map(part=>part.label),
@@ -635,7 +639,7 @@
         for (const visual of emitterVisuals) visual.dispose(); // Stops spawning and frees particles without touching the furniture.
         for (const mesh of [...branches,...connectors]) mesh.geometry.dispose();
         branchMaterial.dispose();
-        for (const growth of options.substrate?[targetGrowth]:[floorGrowth, targetGrowth]) growth.traverse(node => {
+        for (const growth of options.substrate||options.growthSource?[targetGrowth]:[floorGrowth, targetGrowth]) growth.traverse(node => {
           node.geometry?.dispose?.(); if (Array.isArray(node.material)) node.material.forEach(mat => mat.dispose());
           else node.material?.dispose?.();
         });
