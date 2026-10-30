@@ -27,6 +27,9 @@ main>.content{display:grid;grid-template-columns:minmax(315px,415px) minmax(240p
 .previewCaption{font-size:11px;color:var(--muted)}
 .previewSolo{white-space:nowrap;margin:0;color:#c4dcef}
 .previewSolo input{width:auto;margin:0 4px 0 0;vertical-align:middle}
+#pickPanel{flex:0 0 auto}
+#pickButtons{margin-top:8px}
+#pickButtons button{flex:1 1 120px}
 .previewViewport{flex:1;position:relative;min-height:220px}
 #headViewport{min-height:220px}
 #viewport{min-height:260px}
@@ -85,7 +88,9 @@ h3{font-size:13px;margin:5px 0}
 <div class="panel">
 <h2>Rigid haft and chain</h2>
 <label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input list="repoSprites" id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
-<label for="chainSprite">Chain PNG</label><input list="repoSprites" id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png">
+<label for="connectorType">Connector type</label><select id="connectorType"><option value="chain">Chain sprite</option><option value="rope">Generated rope (root-totem material)</option></select>
+<div id="chainSpriteRow"><label for="chainSprite">Chain PNG</label><input list="repoSprites" id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png"></div>
+<div id="ropeFields" class="grid3" hidden><div><label for="ropeLength">Rope length (haft px)</label><input id="ropeLength" type="number" min="2" max="2048" step="1"></div><div><label for="ropeRadius">Rope radius (haft px)</label><input id="ropeRadius" type="number" min=".25" max="30" step=".25"></div><div><label for="ropeColor">Rope tint</label><input id="ropeColor" value="#6B4728"></div></div>
 <div class="grid2">
 <div><label>Haft contact</label><select id="haftMode"><option value="top">Highest opaque pixel</option><option value="bottom">Lowest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
 <div><label>Chain top</label><select id="chainTopMode"><option value="top">Highest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
@@ -98,8 +103,14 @@ h3{font-size:13px;margin:5px 0}
 <div><label>Bottom X</label><input type="number" id="chainBottomX" step="1"></div><div><label>Bottom Y</label><input type="number" id="chainBottomY" step="1"></div>
 <div><label>Head X</label><input type="number" id="headX" step="1"></div><div><label>Head Y</label><input type="number" id="headY" step="1"></div>
 </div>
-<label for="headAnchorLayer">Head attachment layer</label><select id="headAnchorLayer"></select>
-<p class="help">Opaque-pixel anchors are detected from original PNGs, before metal recoloring. Use coordinates when the artistic hinge differs.</p>
+<label for="headAnchorLayer">Head attachment frame</label><select id="headAnchorLayer"></select>
+<div class="grid2">
+<div><label for="chainScale">Chain / rope scale vs handle (×)</label><input type="number" id="chainScale" step=".05" min=".05" max="8" value="1"></div>
+<div><label for="headScale">Head scale vs handle (×)</label><input type="number" id="headScale" step=".05" min=".05" max="8" value="1"></div>
+</div>
+<p class="help">These are ratios relative to the existing handle size. Existing weapon scale and grip modifiers still scale the entire assembly.</p>
+<div class="row" id="pickButtons"><button data-pick="haft">Pick haft on sprite</button><button data-pick="chainTop">Pick chain top</button><button data-pick="chainBottom">Pick chain bottom</button><button data-pick="head">Pick head on sprite</button></div>
+<p class="help">Pick on sprite opens the actual PNG at an independently fitted, tappable scale. For the Grapple-Flail head, choose “Between layers (composite)” to place a rope contact in the space between the two sprites. Picked coordinates are saved in original image pixels; no dependence on preview zoom.</p>
 </div>
 <div class="panel">
 <h2>Idle inertia and swing</h2>
@@ -166,6 +177,11 @@ h3{font-size:13px;margin:5px 0}
 <div id="viewport" class="previewViewport"><canvas id="preview" width="900" height="600" aria-label="Complete weapon assembly with visible hanging brazier"></canvas><span class="previewLegend">Full assembly · fitted to visible PNGs</span></div>
 </section>
 <div id="status" role="status">Loading authored sprite assets…</div>
+<div id="pickPanel" class="panel" hidden>
+<h2 id="pickTitle">Pick sprite attachment</h2><p id="pickInfo" class="help"></p>
+<canvas id="pickCanvas" width="700" height="500" style="display:block;width:100%;max-height:48vh;aspect-ratio:7/5;background:#0b1522;border:1px solid var(--accent);border-radius:9px;touch-action:manipulation"></canvas>
+<div class="row"><button id="cancelPick">Cancel pick</button></div>
+</div>
 </section>
 </div>
 </main>
