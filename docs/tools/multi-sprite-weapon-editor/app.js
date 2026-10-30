@@ -136,7 +136,8 @@
     $('headScale').value = f.head.scale ?? 1;
     for (const name of ['chainTop','chainBottom']) {
       $(name+'Mode').disabled = rope; // A generated rope has geometric endpoints rather than opaque pixels to pick.
-      $('pickButtons').querySelector?.('[data-pick="'+name+'"]')?.setAttribute('disabled','');
+      const pickButton = [...document.querySelectorAll('[data-pick]')].find(button => button.dataset.pick === name);
+      if (pickButton) pickButton.disabled = rope; // Switching a rope back to a chain re-enables its pixel pickers.
     }
     coordinateField('haft', f.haftAnchor, 'top');
     coordinateField('chainTop', f.chain.top, 'top');
