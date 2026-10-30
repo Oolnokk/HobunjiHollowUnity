@@ -642,9 +642,9 @@
     const spritePath = sourceSpriteForWeapon(weaponKey); // Used to scan the untouched authored PNG for verdigris-compatible metal pixels.
     if (!heldVisual?.userData?.toolPlane || !spritePath) return { weaponKey, visual, heldVisual, spritePath, mask: null, counts: planarCounts(weaponKey), planes: [] };
     const assembly = window.HobunjiWeaponSpriteAssemblies; // Flail layer renderer owns the final visible head masks.
-    if (assembly?.definitionFor?.(weaponKey, window.Combat?.deps?.TOOL_ITEM_DEFS?.[weaponKey])?.flail) {
-      // No fallback to the haft or chain, even while the head's sprites are
-      // still loading; the next periodic scan picks up ready head masks.
+    if (assembly?.definitionFor?.(weaponKey, window.Combat?.deps?.TOOL_ITEM_DEFS?.[weaponKey])) {
+      // No fallback to the naked haft for an authored assembly while its sprites are
+      // still loading; the next periodic scan picks up ready visible-metal masks.
       const targets = assembly.enchantmentTargets(heldVisual); // Each target is one ordered metal layer and its post-occlusion pixel mask.
       const planes = targets.map(target => target.plane);
       const maskByPlane = new Map(targets.map(target => [target.plane, target.mask]));
