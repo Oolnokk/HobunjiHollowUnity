@@ -61,7 +61,7 @@ assert.deepEqual(Array.from(targets[0].mask.indices),[0],'back metal hidden by f
 assert.deepEqual(Array.from(targets[1].mask.indices),[3],'visible handle metal remains eligible');
 assert.deepEqual(Array.from(targets[2].mask.indices),[1],'frontmost metal remains eligible');
 const markers=api.sourcePixels(fuel,'#7F00FF','marker');
-assert.deepEqual(markers,[2], 'fire starts from original violet rag pixels, not the recolored render texture');
+assert.deepEqual(Array.from(markers),[2], 'fire starts from original violet rag pixels, not the recolored render texture');
 assert.strictEqual(markers,api.sourcePixels(fuel,'#7F00FF','marker'),'source alpha masks must be cached between frames');
 assert.equal(api.coveredByUpperLayers(1,0,layers[0],layers,0),true);
 assert.equal(api.coveredByUpperLayers(0,0,layers[0],layers,0),false);
