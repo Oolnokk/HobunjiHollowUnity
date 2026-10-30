@@ -615,7 +615,7 @@
     try {
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
-      const scaleIdentity = { speciesId: record.speciesId, gender: record.gender }; // Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      const scaleIdentity = { speciesId: record.speciesId, gender: record.gender, rigScaleY: Number(record.avatarRoot?.userData?.proceduralHandRigScaleY) || null }; // Authored per-enemy body height (Maskbound troops), so grip targets match the resized weapon. Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
       if (record.avatarRoot?.userData?.proceduralHandToolHolder) {
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }

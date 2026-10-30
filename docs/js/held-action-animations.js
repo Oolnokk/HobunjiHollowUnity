@@ -241,6 +241,7 @@
     ? new URL(configuredDocsBase, location.href)
     : (selfUrl && selfUrl.protocol !== 'blob:' ? new URL('../', selfUrl) : new URL('./', location.href));
   const isAttackEditor = /\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname);
+  const isEnemyLoadoutEditor = /\/tools\/enemy-loadout-editor\/(?:index\.html)?$/.test(location.pathname);
   const isAnimationAuthor = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname);
 
   // The Attack Animation Editor consumes this shared object directly through
@@ -250,7 +251,7 @@
     // The Attack Animation Editor now reads HeldActionAnimations directly through
     // its unified Action registry. Do not inject options, synthesize DOM events,
     // or maintain a second editor state bridge here.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     // Counter Shield's combat module predates the shared held-action library and
     // still owns a private fallback BLOCK_POSE. Once all synchronous combat scripts
     // have registered their abilities, wrap only Counter Shield's hold callbacks and
@@ -313,9 +314,9 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261027h94f76b7', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261029hf14c8c7', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261018hd906350', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261029h0c274fa', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261028hfirearmsync1', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
@@ -323,16 +324,16 @@
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261026ha18fbce', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261029maskSlots2', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261025h7c7ee63', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261024hef37f20', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261029hf430830', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
     // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
     // adapters run so a missed/cached helper request cannot strand the preview.
-    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261024h480a01e', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261029maskSlots2', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);
@@ -342,7 +343,7 @@
     handScripts.push(new URL('js/attack-editor-idle-hand-parity.js?v=20261019h611c43d', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-state-coherence.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-history.js?v=20260919history1', docsBase).href); // Loaded last so Undo/Redo can snapshot every hand/grip extension plus the core module once it initializes.
-  } else if (!isAnimationAuthor) {
+  } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
@@ -354,7 +355,10 @@
     return urls.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = src;
-      script.onload = resolve;
+      script.onload = () => {
+        const nested = /\/attachment-rig-latest-authored-snapshot\.js(?:[?#]|$)/.test(src) ? window.HobunjiLatestAuthoredRigReady : null;
+        Promise.resolve(nested).then(resolve, reject); // Dynamic tools must wait for species/mount wrappers before the hand driver wraps PNGPlaneAvatar.
+      };
       script.onerror = () => reject(new Error(`Failed to load ${src}`));
       document.head.appendChild(script);
     })), Promise.resolve());

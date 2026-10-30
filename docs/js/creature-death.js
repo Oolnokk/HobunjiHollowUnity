@@ -214,7 +214,7 @@
     c.deathRestRotX = 0;
     c.deathRestRotY = Number(c.groupRot) || 0;
     c.scaleY = 1;
-    c.avatarRef.group.scale.y = 1;
+    c.avatarRef.group.scale.y = c.isBandit && Number(c.visualScaleY) > 0 ? c.visualScaleY : 1; // Humanoid hostiles keep their species body height on the corpse; animals keep the existing reset.
     // Snap the cutout's two planes back to the exact pose they were
     // built with, undoing any camera-relative deadzone drift
     // (updateCreatureMesh's pngRot/perpState smoothing) frozen in at the
@@ -227,7 +227,7 @@
     // means pngRot === groupRot, the same nominal-facing convention the
     // planes' own PI/2 rest implicitly encodes once combined with their
     // baked mesh orientation.
-    if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
+    if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
     deps.corpseObjects.add(c);
     _prepareScorch(c);
     _spawnSpray(c);
@@ -269,7 +269,7 @@
         grp.rotation.set(0, Number(c.groupRot) || 0, Math.PI / 2);
         if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2;
         if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
-        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
+        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
         if (c.avatarRef.legs) c.avatarRef.legs.update(0, 0, true);
       }
     } catch (caught) { visualError = caught; }
@@ -368,7 +368,7 @@
     grp.scale.y = 1;
     if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2; // Same clean flat face as a settled ragdoll (see beginInternal).
     if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
-    if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = 0;
+    if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
     if (c.avatarRef.legs) c.avatarRef.legs.update(0, 0, true);
     const g = c.areaGrid || deps.getGrid();
     const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;

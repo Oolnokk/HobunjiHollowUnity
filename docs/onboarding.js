@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : new URL('./onboarding.js', location.href); // Resolves sibling scripts correctly from GitHub Pages, GitHack, or local hosting.
-  const coreUrl = new URL('onboarding-core.js?v=20261028h29bdc19', selfUrl).href; // Loads the legacy onboarding/save core first.
+  const coreUrl = new URL('onboarding-core.js?v=20261029maskSlots2', selfUrl).href; // Loads the legacy onboarding/save core first.
   const folderSaveBridgeUrl = new URL('js/folder-save-onboarding-bridge.js?v=20260925savecorrupt3', selfUrl).href; // Delays the first save-select snapshot until the primary folder has reconciled and supports in-page restores without a site reload.
   const viewportFitUrl = new URL('js/onboarding-viewport-fit.js?v=20261007ha3b8631', selfUrl).href; // Keeps creator/save cards inside the live viewport and exposes visible overflow diagnostics.
   const switchboxPlacementUrl = new URL('js/onboarding-switchbox-placement.js?v=20260913switchboxworld1', selfUrl).href; // Keeps the dev switchbox out of character creation and collapses it on the World step.
@@ -11,7 +11,7 @@
   const redesignUrl = new URL('js/onboarding-character-creation-redesign.js?v=20261025h745ccbf', selfUrl).href; // Loads the integrated 3D creator, Slagothim workflow, generated appearance/outfit rules, material parity, and shell pass.
   const nameAdvisorUrl = new URL('js/name-advisor.js?v=20261004names1', selfUrl).href; // Loads the local Scratchbones phonetic suggestion algorithms before the name controls.
   const randomNameUrl = new URL('js/onboarding-random-name.js?v=20261006hc3be71e', selfUrl).href; // Adds BanditNameForge-backed first-name rolls for the initial and every changed species/gender selection.
-  const lifePreviewUrl = new URL('js/onboarding-character-creation-life-preview.js?v=20261025hcc75e30', selfUrl).href; // Adds breathing/blinking, Bowl-Kasa dye parity, and the first living-preview layer.
+  const lifePreviewUrl = new URL('js/onboarding-character-creation-life-preview.js?v=20261029maskSlots2', selfUrl).href; // Adds breathing/blinking, Bowl-Kasa dye parity, and the first living-preview layer.
   const weaponViewFixUrl = new URL('js/onboarding-character-creation-weapon-view-fix.js?v=20261019hfae161f', selfUrl).href; // Randomizes/persists the actual starter weapon, gives it pre-render hand ownership, and makes face view follow current avatar height.
   const weaponPolishUrl = new URL('js/onboarding-character-creation-weapon-polish.js?v=20260930heightscale1', selfUrl).href; // Restores Hatchet/Spear idle sprite bases to the correct Hoe/Pick-Shovel equivalents; weapon size is handled by calculated character height.
   const linearFlowUrl = new URL('js/onboarding-linear-flow.js?v=20261008habe14df', selfUrl).href; // Turns character/world creation into Appearance → Clothing → Name → Farm Name → Farm Setup without duplicating the core save logic.

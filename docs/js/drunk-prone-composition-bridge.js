@@ -347,6 +347,7 @@
 
   window.HobunjiDrunkProneCompositionBridge = Object.freeze({
     banditFootingLoss,
+    prepareBanditSwayForRender, // Isolated authoring renderers use the same low-Footing/run/head composition seam.
     installLegBoneDebugCheckbox,
     getDebug() {
       const player = window.Combat?.deps?.player;

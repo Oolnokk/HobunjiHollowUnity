@@ -15,12 +15,17 @@
     window.ToastNotifications?.showZoneBanner?.(arrival.title);
     if (arrival.cue) window.Music?.playGameplayCue?.(arrival.cue);
     lastShown = { title: arrival.title, area: arrival.area, cue: arrival.cue, at: Date.now() };
+    window.__farmLog?.('[arrival] ' + arrival.title + ' | cue=' + (arrival.cue || 'none') + ' | area=' + (arrival.area || 'unknown'), 'info'); // Existing mobile diagnostics records the synchronized reveal.
   }
 
   function flushWhenLoaded() {
     const arrival = pending; // Consume before callbacks so duplicate loader events cannot repeat a sting.
     pending = null;
-    if (!arrival || (arrival.area && deps?.getCurrentArea?.() !== arrival.area)) return;
+    if (!arrival) return;
+    if (arrival.area && deps?.getCurrentArea?.() !== arrival.area) {
+      window.__farmLog?.('[arrival] cancelled stale title for ' + arrival.area, 'warn'); // Visible diagnostic for interrupted loading.
+      return;
+    }
     reveal(arrival);
   }
 

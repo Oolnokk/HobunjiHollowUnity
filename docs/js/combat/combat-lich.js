@@ -289,7 +289,7 @@
     const x = Number(options.x); // World X supplied by the Testing Arena spawner.
     const y = Number(options.y); // World Z-plane coordinate supplied by the Testing Arena spawner.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    const roster = rosterFor(def.id, options.gender); // Forced skeleton+raggedhood+bodywrap roster passed through the normal portrait builder.
+    const roster = options.roster || rosterFor(def.id, options.gender); // Forced skeleton+raggedhood+bodywrap roster passed through the normal portrait builder.
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const entity = await window.BanditCombat.makeEntity({
@@ -308,6 +308,7 @@
         leashRangePx: (deps.TILE || 64) * 14,
         moveSpeed: 104 + tier * 4,
         chaseSpeed: 142 + tier * 5,
+        ...(options.defOverride || {}),
       },
       extra: {
         homeX: x, homeY: y, state: 'chase',
@@ -1740,6 +1741,7 @@
   }
 
   function beginLichCast(lich, target, ability) {
+    if (window.EnemyLoadoutRules?.ruleFor('lich:'+lich.lichType)?.specialAttacks?.[ability] === false) return false;
     if (!lich || lich._banditAction || !isLiveActor(lich)) return false;
     const step = lichCastStep(lich, ability); // Existing Light Weapon attack timing/pose metadata used verbatim for the casting motion.
     const windupS = Number(step.windupS) || 0.16; // Captured once so Hronal's ground warning can be exactly 4× this cast's combined active timing.
@@ -1968,6 +1970,7 @@
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
+    lichCastStep, updateLichHoverPresentation, // Shared animation/presentation authority for isolated loadout previews.
     updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
     formatDebug() {

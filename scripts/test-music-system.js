@@ -15,7 +15,7 @@ const title = source('docs/js/title-screen-runtime.js');
 const formatUtils = source('docs/js/format-utils.js');
 const game = source('docs/game.js');
 const fishing = source('docs/js/fishing-minigame.js'); // Verifies the successful-catch path fires the semantic gameplay music cue.
-const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Loading context remains independent from in-world mine titles.
+const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Other authored loading context remains separate from mine titles.
 const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
 const nightbugsPath = path.join(__dirname, '../docs/assets/audio/sfx/bgs/bgs_nightbugs1.mp3'); // Points the asset-presence check at the normalized runtime recording.
@@ -446,11 +446,11 @@ assert.match(config, /"map_southern_cloud_forest": \[[\s\S]*?"url": "assets\/aud
 assert.match(fishing, /playGameplayCue\?\.\('fishCaught'\)/,
   'a committed successful catch fires the authored catch gameplay cue');
 assert.match(game, /if \(t\.mineDynamicDescent && proceduralMineTarget\) \{\s*window\.LocationArrival\.mineDescent\(t\.targetMapId\)/,
-  'only discovered mine holes request the unified post-load title and cue');
+  'only discovered mine holes request the coordinated post-load title and cue');
 assert.doesNotMatch(game, /playGameplayCue\?\.\('progressDeeper'\)/,
-  'mine loading cannot play a progress cue before the destination is visible');
+  'the transition cannot play progressDeeper while the loader is still visible');
 assert.match(game, /LoadingScreenRuntime\?\.show\(loadingMineFloor \? \{ reason: 'mine-floor-load' \} : undefined\)/,
-  'the mine loading overlay has progress information but no floor-number heading');
+  'mine loading shows progress without a floor-number loading caption');
 assert.match(loadingScreen, /id="hlsContext"[\s\S]*?contextText = typeof options === 'string' \? '' : \(options\?\.contextText \|\| ''\)/,
   'the loading screen renders caller-supplied destination context separately from rotating Compendium tips');
 assert.match(config, /"nightbugsVolume": 0\.34/,
@@ -470,9 +470,9 @@ assert.match(index, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
 assert.match(index, /town-mine\.js\?v=[A-Za-z0-9_.-]+/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 assert.match(index, /loading-screen-runtime\.js\?v=[A-Za-z0-9_-]+/,
-  'the browser cache key loads the completion notification for arrival titles');
+  'the browser cache key loads the loader completion notification API');
 assert.match(index, /location-arrival\.js\?v=[A-Za-z0-9_-]+/,
-  'the shared arrival coordinator is loaded before gameplay');
+  'the location arrival module loads before gameplay');
 assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');
 assert.match(index, /"game\.js\?v=\d{8}[A-Za-z0-9_-]+"/,

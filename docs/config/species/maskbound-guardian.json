@@ -1,0 +1,134 @@
+{
+  "speciesId": "maskbound-guardian",
+  "label": "Maskbound Guardian",
+  "parentSpecies": "mao-ao",
+  "npcOnly": true,
+  "playerSelectable": false,
+  "genders": [
+    "male"
+  ],
+  "inheritanceNotes": {
+    "transformSpecies": "mao-ao",
+    "wardrobeSpecies": "mao-ao",
+    "appearanceCosmetics": false,
+    "bodyColorCustomization": "troop-only",
+    "extremityColor": "#493426",
+    "rigScaleMultiplier": 1
+  },
+  "male": {
+    "armLength": 0.558,
+    "headSprite": "fightersprites/mao-ao-m/head_maoskel_m.png",
+    "headUrLayers": [],
+    "headXform": {
+      "ax": 0,
+      "ay": -0.1,
+      "sx": 0.95,
+      "sy": 1.14
+    },
+    "baseBodyTint": true,
+    "bodyColorRanges": {
+      "fixedHex": "#493426"
+    },
+    "allowedCosmetics": [
+      "hachutu_binding_mask_ii",
+      "ragged_hood",
+      "fine_hood",
+      "facewrap",
+      "rugged_poncho",
+      "tankan_bodywrap",
+      "bandolier1"
+    ],
+    "cosmeticWeights": {
+      "mask": {
+        "hachutu_binding_mask_ii": 100
+      }
+    },
+    "forcedCosmetics": {
+      "eyes": "none",
+      "upperFace": "none",
+      "facialHair": "none",
+      "hairFront": "none",
+      "hairBack": "none",
+      "hairSide": "none",
+      "hairSideL": "none"
+    },
+    "exclusiveSlotCosmetics": {
+      "eyes": [
+        "none"
+      ],
+      "upperFace": [
+        "none"
+      ],
+      "facialHair": [
+        "none"
+      ],
+      "hairFront": [
+        "none"
+      ],
+      "hairBack": [
+        "none"
+      ],
+      "hairSide": [
+        "none"
+      ],
+      "hairSideL": [
+        "none"
+      ],
+      "mask": [
+        "hachutu_binding_mask_ii"
+      ]
+    },
+    "portraitBodyLayers": [
+      {
+        "id": "armL",
+        "url": "portraitsprites/arm-L_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "torso",
+        "url": "portraitsprites/torso_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "back",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      },
+      {
+        "id": "armR",
+        "url": "portraitsprites/arm-R_maoskel_m.png",
+        "tintSlot": "A",
+        "pos": "front",
+        "xform": {
+          "ax": -0.2,
+          "ay": 0,
+          "scaleX": 2.55,
+          "scaleY": 2.55,
+          "rotDeg": 0
+        }
+      }
+    ],
+    "portraitOpacityMaskLayer": {
+      "id": "opacityMask",
+      "url": "hud/spriteopacitymask_cloud.png",
+      "xform": {
+        "ax": -0.2,
+        "ay": 0,
+        "scaleX": 2.55,
+        "scaleY": 2.55,
+        "rotDeg": 0
+      }
+    }
+  }
+}

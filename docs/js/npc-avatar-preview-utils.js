@@ -199,6 +199,7 @@
       gender: appearance.gender,
     });
     if (!profile) return null;
+    profile.pixelDyeSeed = npc.pixelDyeSeed || profileSeed; // Stable per character (NPCs/player) unless the record supplies its own (hostiles roll a fresh one per spawn).
     if (npc.id || Object.hasOwn(npc, 'restingExpression')) {
       profile.restingExpression = restingExpressionForRecord(npc);
       profile.portraitSeatId = npc.id || npc.name || 'npc';
@@ -256,6 +257,17 @@
     };
     applyEquip('hat', 'hat', hatOptions?.[0]);
     applyEquip('hood', 'hood', hoodOptions?.[0]);
+    applyEquip('mask', 'mask', cosmetics.maskOptions?.[0]);
+    // Masks that declare procedural patterns (the Hachutu mask) get a generated, per-wearer glyph pattern stack unless the wearer's
+    // record opts out (maskPatterns:false) or already carries authored mask weaving. Players use their own gear weaving.
+    if (npc.id !== 'player' && npc.maskPatterns !== false && window.ProceduralMaskPatterns?.enabled && profile.mask?.id) {
+      const marker = '__hobunjiWovenClothing';
+      const existing = Array.isArray(profile.bodyColors?.[marker]) ? profile.bodyColors[marker] : [];
+      if (!existing.some(descriptor => descriptor?.slot === 'mask')) {
+        const descriptor = window.ProceduralMaskPatterns.descriptorFor(profile.mask.id, profile.pixelDyeSeed || profileSeed, { scale: npc.maskPatternScale || null });
+        if (descriptor) profile.bodyColors = { ...(profile.bodyColors || {}), [marker]: [...existing, descriptor] };
+      }
+    }
     applyEquip('pauldron', 'pauldron', { id: 'none', label: 'No Pauldrons', tintSlot: null, layers: [] });
     applyEquip('torso', 'torsoCosmetic', torsoPortraitOptions?.[0]);
     applyEquip('overwear', 'armCosmetic', armPortraitOptions?.[0]);

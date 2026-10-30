@@ -37,8 +37,9 @@ const context = vm.createContext({ pixelPositionScratch: null, // Extracted prod
   smoothstep01: t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); },
 });
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
+vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
-  headScaleGateAtPixel: context.headScaleGateAtPixel, getPortraitsFlipped: () => context.portraitsFlipped };
+  headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 vm.runInContext(extract(paritySource, 'resolvePosition'), context);
 

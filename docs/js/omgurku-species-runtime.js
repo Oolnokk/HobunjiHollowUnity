@@ -39,6 +39,7 @@
   const live = new Set(); // Tracks currently attached Omgurku roots for one low-frequency shared gait update.
   const LOWER_TINT_KIND = 'omgurku-lower';
   let coatTextureCache = null; // Shared generated native animal-coat textures; refcounted through CreatureTextureCache.
+  let mountCoatTextureCache = null; // Genotype-composited mount coats (base recolour, patterns, eyes), keyed like the wild-creature cache.
   const status = { // Surfaced by the in-page mobile debugger and debugSnapshot().
     registered: false, rigProfiles: 0, handInherited: false, wardrobeInherited: false,
     paletteInherited: false, lowerRig: LOWER_RIG, lastError: null, builds: 0, disposals: 0,
@@ -167,10 +168,54 @@
     return renderer;
   }
 
+  // A ridden mount is a real creature: the same genotype compositor wild/farm Nazgraku use paints its coat, markings and eyes. The raw
+  // sprite is the uncoloured, eyeless base art, so without this a mount shows as a pale blank card. Until a frame's composite is ready
+  // (or when no genotype/compositor exists, e.g. a stripped-down harness) the raw frame stays visible.
+  function prepareMountCoat(THREE, record) {
+    const c = record?.root?.userData?.omgurkuComposite;
+    const renderer = window.CreatureGeneticsRender;
+    const genotype = c?.mountGenotype;
+    const kind = c?.mount?.lowerRig;
+    if (!c || !genotype || !kind || !renderer?.SPECIES?.[kind] || typeof renderer.composeFrame !== 'function' || !window.CreatureTextureCache?.create) return false;
+    mountCoatTextureCache ||= window.CreatureTextureCache.create('omgurku-mount-coat', null, new Map(), { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey });
+    const signature = renderer.genotypeSignature(kind, genotype);
+    for (let i = 0; i < FRAMES.length; i++) {
+      const ref = c.lowerRefs[i], frame = FRAMES[i];
+      const key = `${kind}|${frame}|${signature}|${renderer.eyeStateKey?.(false) || 'o'}`;
+      mountCoatTextureCache.retain(ref, key);
+      const attach = pair => {
+        if (!record.root.userData?.omgurkuComposite || window.CreatureTextureCache?.isDisposed?.(ref) || mountCoatTextureCache.keyFor(ref) !== key) return;
+        const frontMat = ref.frontPlane?.material, backMat = ref.backPlane?.material;
+        if (!frontMat || !backMat) return;
+        if (frontMat.map !== pair.front) { frontMat.map = pair.front; frontMat.needsUpdate = true; }
+        if (backMat.map !== pair.back) { backMat.map = pair.back; backMat.needsUpdate = true; }
+        status.mountCoatFrames = (status.mountCoatFrames || 0) + 1;
+      };
+      const cached = mountCoatTextureCache.get(key);
+      if (cached) { attach(cached); continue; }
+      if (!coatJobs.has(key)) {
+        const job = renderer.composeFrame(kind, frame, genotype, false)
+          .then(canvas => {
+            if (!canvas) return null;
+            const display = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas;
+            const front = new THREE.CanvasTexture(display); front.colorSpace = THREE.SRGBColorSpace;
+            const back = new THREE.CanvasTexture(display); back.colorSpace = THREE.SRGBColorSpace;
+            back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0); // Same mirrored back card as the wild-creature textures.
+            return mountCoatTextureCache.put(key, { front, back });
+          })
+          .catch(error => { status.lastError = 'mount coat: ' + String(error?.message || error); return null; })
+          .finally(() => coatJobs.delete(key));
+        coatJobs.set(key, job);
+      }
+      coatJobs.get(key).then(pair => { if (pair) attach(pair); });
+    }
+    return true;
+  }
+
   const coatJobs = new Map(); // One compositing job per native sprite and resolved swatch.
   function prepareLowerCoat(THREE, record) {
     const c = record?.root?.userData?.omgurkuComposite;
-    if (c?.mount) return true; // Ridden mounts keep their native creature coat.
+    if (c?.mount) return prepareMountCoat(THREE, record);
     const renderer = ensureCoatRenderer();
     if (!c || !renderer || !coatTextureCache) return false;
     status.coatColor = c.tintColor;
@@ -381,7 +426,8 @@
       // Position comes exclusively from the existing NPC walker path/schedule/AI.
       // Do not independently translate the animal, and do not run another AI tick.
       const position = root.getWorldPosition(c.positionScratch);
-      const moved = c.lastPosition
+      const previewSpeed = root.userData.omgurkuPreviewSpeed; // Explicit standalone-authoring input; ordinary NPCs retain movement-driven gait.
+      const moved = Number.isFinite(previewSpeed) ? previewSpeed > 0.01 : c.lastPosition
         && Math.hypot(position.x - c.lastPosition.x, position.z - c.lastPosition.z) > 0.005;
       if (!c.lastPosition) c.lastPosition = position.clone();
       else c.lastPosition.copy(position);
@@ -393,9 +439,11 @@
   // authored rig profile (the same sizeScales/groundOffsets/saddle anchor the
   // player's mount seat uses), and the rider is raised so its authored
   // posterior rests on that saddle instead of fusing at the waist.
-  function mountPlacement(mount, upper, riderSpeciesId, riderGender) {
+  function mountPlacement(mount, upper, riderSpeciesId, riderGender, genotype = null) {
     const rig = window.HOBUNJI_ATTACHMENT_RIG_PROFILES;
     const profile = rig?.creatures?.[mount.lowerRig];
+    const sizeClass = String(genotype?.sizeClass || mount.sizeClass).toLowerCase(); // The creature's own Size gene (wild specimens roll the species default), exactly what a wild/ridden Nazgraku uses.
+    mount = { ...mount, sizeClass };
     const size = profile?.sizeScales?.[mount.sizeClass];
     const sx = Number(size?.x) > 0 ? Number(size.x) : 1, sy = Number(size?.y) > 0 ? Number(size.y) : 1;
     const w = mount.modelWidth * sx, h = mount.modelWidth * mount.spriteAspect * sy;
@@ -428,7 +476,7 @@
       if (!upper) return upper;
       const riderSpecies = omgurku ? ID : (normalize(upper.userData?.speciesId) || optionSpecies(options));
       const riderGender = omgurku ? 'male' : (upper.userData?.gender || options.gender || options.profile?.fighter?.gender || 'male');
-      const lowerPlacement = mount ? mountPlacement(mount, upper, riderSpecies, riderGender) : placement;
+      const lowerPlacement = mount ? mountPlacement(mount, upper, riderSpecies, riderGender, options.mountGenotype) : placement;
       const lowerSprites = mount ? mount.sprites : SPRITES;
       const lowerRig = mount ? mount.lowerRig : LOWER_RIG;
       const lowerRefs = [];
@@ -456,7 +504,7 @@
         for (const ref of lowerRefs) root.add(ref.group);
         const c = {
           upper, riderFrame, lowerRefs, frame: null, builtLowerWidth: lowerPlacement.lowerWidth, builtLowerHeight: lowerPlacement.lowerHeight,
-          placement: lowerPlacement, mount, // Omgurku records share the live calibration object; mounts own a derived one.
+          placement: lowerPlacement, mount, mountGenotype: mount ? (options.mountGenotype || null) : null, // Omgurku records share the live calibration object; mounts own a derived one.
           positionScratch: new THREE.Vector3(), lastPosition: null,
           cameraScratch: new THREE.Vector3(), directionScratch: new THREE.Vector3(), cameraWorld: { x: 0, z: 0 },
           rawNpcYaw: null, npcFacing: null, animalFacing: {}, animalYaw: null, lastFaceSample: 0,
@@ -655,7 +703,8 @@
   window.HobunjiOmgurkuSpecies = Object.freeze({
     ready,
     id: ID, bodySpecies: BODY, lowerRigSpecies: LOWER_RIG, sprites: SPRITES, mounts: MOUNTS, mountPlacement,
-    install, setPlacement, setConnector, setPreviewFacing, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
+    install, setPlacement, setConnector, setPreviewFacing,
+    setPreviewMotion(root,speed) { if(root?.userData?.omgurkuComposite)root.userData.omgurkuPreviewSpeed=Number.isFinite(speed)?Math.max(0,speed):undefined; }, saveLocalPlacement, clearLocalPlacement, defaultPlacement: DEFAULT_PLACEMENT,
     localPlacementKey: LOCAL_PLACEMENT_KEY, debugSnapshot,
   });
   install();

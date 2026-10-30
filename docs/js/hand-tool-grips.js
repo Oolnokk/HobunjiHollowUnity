@@ -510,26 +510,43 @@
     return normalizeHeightMultiplier(entry?.heightMultiplier, DEFAULT_DATA.tools[key]?.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
   }
 
-  function characterHeightRatio(speciesId, gender) {
+  // rigScaleY is optional: a character whose body height is NOT the species/gender default (an authored per-enemy proportion such as a
+  // Maskbound troop) passes the rig Y scale it actually renders with. Dimensions are measured for the species default, so the measured
+  // height is rescaled by actualRigY / defaultRigY; without this every troop of a species got the same weapon size.
+  function characterHeightRatio(speciesId, gender, rigScaleY = null) {
     const dimensions = global.HobunjiCharacterDimensions;
     if (!dimensions?.dimensionsFor || !speciesId) return 1;
     const current = dimensions.dimensionsFor(speciesId, gender || 'male');
     const reference = dimensions.dimensionsFor(HEIGHT_REFERENCE_SPECIES, HEIGHT_REFERENCE_GENDER);
-    const currentHeight = Number(current?.height);
+    let currentHeight = Number(current?.height);
+    const actualRigY = Number(rigScaleY);
+    if (actualRigY > 0) {
+      const defaultRigY = Number(global.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender || 'male')?.y);
+      if (defaultRigY > 0) currentHeight *= actualRigY / defaultRigY;
+    }
     const referenceHeight = Number(reference?.height);
     if (!(currentHeight > 0) || !(referenceHeight > 0)) return 1;
     return currentHeight / referenceHeight;
   }
 
-  function heightFactorForTool(value, speciesId, gender) {
+  // False until HobunjiCharacterDimensions has measured this species and the
+  // height reference: characterHeightRatio then silently returns 1, so a
+  // placement computed now is a fallback and must not be cached by callers.
+  function characterHeightReady(speciesId, gender) {
+    const dimensions = global.HobunjiCharacterDimensions;
+    if (!dimensions?.isMeasured || !speciesId) return true; // No module / no identity: nothing to wait for.
+    return dimensions.isMeasured(speciesId, gender || 'male') && dimensions.isMeasured(HEIGHT_REFERENCE_SPECIES, HEIGHT_REFERENCE_GENDER);
+  }
+
+  function heightFactorForTool(value, speciesId, gender, rigScaleY = null) {
     const heightMultiplier = heightMultiplierForTool(value);
-    const heightRatio = characterHeightRatio(speciesId, gender);
+    const heightRatio = characterHeightRatio(speciesId, gender, rigScaleY);
     return Math.max(0.05, 1 + (heightRatio - 1) * heightMultiplier);
   }
 
-  function effectiveToolScaleForTool(value, speciesId, gender) {
+  function effectiveToolScaleForTool(value, speciesId, gender, rigScaleY = null) {
     const baseScale = toolScaleForTool(value);
-    return normalizeToolScale(baseScale * heightFactorForTool(value, speciesId, gender), baseScale);
+    return normalizeToolScale(baseScale * heightFactorForTool(value, speciesId, gender, rigScaleY), baseScale);
   }
 
   // The base toolScale scales the item about its own origin (unchanged legacy
@@ -539,7 +556,7 @@
   // in the visual's parent (tool-holder) space at base * ((1 - hf) * g + hf * p).
   function heldItemPlacementForTool(value, context = currentGripContext(), identity = null) {
     const baseScale = toolScaleForTool(value);
-    const heightFactor = heightFactorForTool(value, identity?.speciesId, identity?.gender);
+    const heightFactor = heightFactorForTool(value, identity?.speciesId, identity?.gender, identity?.rigScaleY);
     const grip = authoredPrimaryGripForTool(value, context).position;
     const k = baseScale * (1 - heightFactor);
     return {
@@ -1354,7 +1371,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,

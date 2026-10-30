@@ -373,9 +373,10 @@
     if (!group?.scale?.set) return false;
     const visibleWidthScale = Number(sizeScale?.x); // Used on group Z because each animal plane is rotated ±90° inside the group.
     const visibleHeightScale = Number(sizeScale?.y); // Used on group Y and optionally multiplied by an attack squash.
+    const depthScale = Number(sizeScale?.z); // Optional group X (the plane's depth axis); humanoid hostiles use it to match the player's z-tracks-x body scale. Animals omit it and stay at 1.
     const resolvedHeightMultiplier = Number(heightMultiplier); // Used to preserve temporary pounce/burrow squash independently from genotype size.
     group.scale.set(
-      1,
+      Number.isFinite(depthScale) && depthScale > 0 ? depthScale : 1,
       (Number.isFinite(visibleHeightScale) && visibleHeightScale > 0 ? visibleHeightScale : 1) * (Number.isFinite(resolvedHeightMultiplier) ? Math.max(0, resolvedHeightMultiplier) : 1),
       Number.isFinite(visibleWidthScale) && visibleWidthScale > 0 ? visibleWidthScale : 1,
     );

@@ -31,7 +31,7 @@ const shopCatalog = [
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
 const documentListeners = new Map();
 const documentStub = {
-  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=20261026hOverpassInk3' },
+  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=20261028h16bb717' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
@@ -596,7 +596,29 @@ assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === t
 assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
 assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the authored clothing trim runtime itself');
 assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
-assert.match(portraitSource, /drawPortraitLayerWarped\(ctx, img, resolveXform\(layer\)[\s\S]*?layer\.url, imageForTint\)/, 'breathing overwear layers use the same render-local tint resolver during WorldPortraitLife refreshes');
+// Execute the shared breathing-layer draw rather than pinning local variable names.
+{
+  const calls = [];
+  const resolver = () => {};
+  const probe = vm.createContext({
+    withPixelDyeLayer: (entry, draw) => draw(entry.image, entry.tint, 'selected-source'),
+    drawPortraitLayerWarped: (...args) => calls.push(args),
+    drawPortraitLayer: (...args) => calls.push(args),
+    resolveXform: layer => layer, ctx: {}, breathingComposer: {}, staticDeform: null,
+    speciesId: 'mao-ao', gender: 'male', nowMs: 1, breathingPhaseOffset: 0, seatId: null,
+    imageForTint: resolver,
+  });
+  const begin = portraitSource.indexOf('  const drawBreathingLayers =');
+  const end = portraitSource.indexOf('// Neck-rig construction', begin);
+  vm.runInContext(portraitSource.slice(begin, end) + '\nthis.draw = drawBreathingLayers;', probe);
+  probe.draw([{ layer: {}, image: {}, tint: {} }]);
+  assert.strictEqual(calls[0][12], resolver, 'breathing layers retain the render-local weaving tint resolver');
+  assert.equal(calls[0][11], 'selected-source');
+  probe.breathingComposer = null;
+  probe.draw([{ layer: {}, image: {}, tint: {} }]);
+  assert.strictEqual(calls[1][5], resolver, 'static layers retain the same render-local resolver');
+}
+
 
 const colorFillWindow = { SCRATCHBONES_CONFIG: { game: { portrait: { tinting: {} } } } }; // Isolated runtime used to prove sample-mask and paint-mask shading behavior.
 const colorFillContext = vm.createContext({ window: colorFillWindow, console });

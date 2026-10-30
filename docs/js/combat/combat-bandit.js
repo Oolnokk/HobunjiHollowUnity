@@ -122,7 +122,7 @@
   // a colorRange and no `appearance` block -> CLOTH), which is why this is a
   // flat slot->tintSlot map instead of a per-item JSON fetch. Confirmed
   // against the appliedDyes samples in config/npcs/hobunji-starter-npc-database.json.
-  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD', pants: 'PANTS' };
+  const BANDIT_TINT_SLOT_BY_SLOT = { torso: 'TORSO', overwear: 'CLOTH', hat: 'HAT', hood: 'HOOD', mask: 'MASK', pants: 'PANTS' };
 
   const BANDIT_NAME_PARTS = {
     first: ['Nakku', 'Tobri', 'Hesk', 'Vurra', 'Ommi', 'Dagat', 'Renji', 'Sulko', 'Pahru', 'Marek', 'Iggo', 'Yavra'],
@@ -231,9 +231,11 @@
   // packClothing entry without re-deriving its slot.
   async function rollBanditRoster(cfg, rank, nameOverride, genderOverride = null) {
     const speciesId = _banditWeightedPick(cfg?.speciesWeights) || 'mao-ao';
-    const gender = genderOverride === 'male' || genderOverride === 'female'
+    let gender = genderOverride === 'male' || genderOverride === 'female'
       ? genderOverride : (deps.rnd() < 0.5 ? 'male' : 'female'); // Only callers such as male Slagothim traders supply an override.
     const speciesDef = await loadBanditSpeciesDef(speciesId);
+    const supportedGenders = speciesDef?.genders;
+    if (supportedGenders?.length && !supportedGenders.includes(gender)) gender = supportedGenders[0];
     const slots = cfg?.clothingPool?.slots || [];
     const fillP = Number(cfg?.clothingPool?.fillProbabilityByRank?.[rank] ?? 0.5);
     const equippedCosmetics = [];
@@ -352,7 +354,7 @@
 
   function ensureEnemyPants(roster) {
     const speciesId = String(roster?.appearance?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Both excluded lower-body anatomies bypass the hostile garment fallback.
-    if (!roster || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
+    if (!roster || roster.enemyLoadoutAuthoredPants || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
     const renderer = window.PantsGarmentRenderer; // Existing garment registry and NPC dye fallback.
     if (!renderer) return null;
     if (!renderer.garmentForCosmetics(roster.equippedCosmetics)) {
@@ -372,6 +374,7 @@
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
     characterBuildStatus.garmentId = ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
     characterBuildStatus.stage = 'profile';
+    await window.ProceduralMaskPatterns?.ready; // Mask pattern library (config/patterns) must be loaded before the profile is built.
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');
@@ -407,7 +410,7 @@
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
-        mountSpecies: roster.mountSpecies || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
+        mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
       },
     );
     if (portrait.userData?.proceduralBodyRoot) { // Compound avatars (Omgurku rider + quadruped, mounted riders) keep their own hierarchy instead of being split into two rigid planes.
@@ -457,15 +460,19 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
-    const neckPivotPx = window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    const headCanvas = document.createElement('canvas');
+    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, {forceEyesOpen:true,onlyHeadSprite:true});
+    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:frontCanvas, headCanvas })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:backCanvas, headCanvas })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -484,6 +491,15 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
+    // The normal PNG root becomes a hidden hand-driver identity below. Move
+    // its authored mask light onto the visible hostile neck before discarding
+    // that original hierarchy, so the real fake-light registry sees it.
+    if (portrait.userData?.portraitGlowLight) {
+      const neck = frontNeckSkin?.headScaleBone || frontNeckSkin?.neckBone;
+      window.PNGPlaneAvatar.setPortraitGlowAttachment?.(portrait, neck || frontPivot, {
+        x: frontNeckSkin?.neckBone?.position.x || 0, y: frontPivot.position.y + (frontNeckSkin?.neckBone?.position.y || 0), z: 0,
+      });
+    }
 
     // Procedural feet, mirroring the NPC walker's own ProceduralLegAnimation.attach
     // call (see makeNpcWalker) -- needs its own floor-anchored pivot rather than
@@ -499,6 +515,17 @@
     // applied later by ranged-weapons' shared player/NPC 3D hitbox resolver.
     group.userData.portraitModelWidth = modelWidth;
     group.userData.portraitModelHeight = modelHeight;
+    if (frontNeckSkin) {
+      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12);
+      group.userData.sourceCanvas = frontCanvas;
+      group.userData.neckRig = {
+        available:true, skinnedPlane:frontNeckSkin.mesh,
+        neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
+        neckLocal:{...frontNeckSkin.neckBone.position},
+        headCentroidPx:headPixels?.centroidPx || neckPivotPx,
+        headBoundsPx:headPixels?.boundsPx || null,
+      }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
+    }
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
@@ -522,8 +549,10 @@
     const handsPivot = new THREE.Group(); // Floor-relative parent for procedural hands, matching the leg rig's center-anchored-hostile correction.
     handsPivot.name = 'bandit_hands_pivot';
     handsPivot.position.y = -(modelHeight / 2);
+    handsPivot.rotation.y = Math.PI / 2; // Same portrait-local -> enemy side-facing correction as legsFrame: free (ungripping) hands rest at the shoulders' lateral X, not the hostile's forward axis. Gripped hands follow the weapon in world space and are unaffected.
     group.add(handsPivot);
     portrait.position.set(0, -(modelHeight / 2), 0); // The original PNGPlaneAvatar root is now a metadata/hand-driver sentinel at the hostile's true floor origin.
+    handsPivot.userData.hobunjiCharacterRigScaleInherited = true; // The whole hostile group carries the species body scale (applyAuthoredHostileRigScale); hands inherit it rather than being scaled again by the hand-attach hook.
     portrait.userData.proceduralHandParent = handsPivot; // ProceduralHandFrameDriver attaches rendered hands to this visible hostile hierarchy instead of the discarded portrait assembly.
     group.add(portrait); // Its front/back meshes were already extracted above, so parenting it enables hand discovery without double-rendering the portrait.
     // legsPivot's rotation.y is kept in sync with the same pngRot-derived
@@ -538,6 +567,7 @@
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
+      gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
@@ -555,7 +585,8 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
-      handsPivot, handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
+      handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
+      handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
       combatExpressionActive: false,
       modelWidth, modelHeight,
@@ -566,6 +597,7 @@
       // readable neck pivot could be detected (e.g. a fully transparent
       // portrait canvas), in which case that system just no-ops.
       neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
+      headScaleJoint: (frontNeckSkin && backNeckSkin) ? {front:frontNeckSkin.headScaleBone,back:backNeckSkin.headScaleBone} : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
       // scanOpaqueVerticalBounds/scanRowFirstOpaqueColumn) -- mirrors how
@@ -806,10 +838,17 @@
   function rollBanditFlaskLoadout(cfg) {
     const available = availableBanditFlaskRecipeIds(); // Used to keep Flaskers automatically in sync with every authored throwable Afflict recipe.
     const requested = Math.max(1, Math.floor(Number(cfg?.flasker?.loadoutSize) || 2)); // Used to author loadout size in the existing bandit config.
-    const pool = [...available]; // Per-bandit copy used for sampling without replacement.
+    const recipeWeights = cfg?.flasker?.recipeWeights;
+    const pool = available.filter(id=>!recipeWeights || Number(recipeWeights[id])>0); // Per-bandit copy used for sampling without replacement.
     const picked = []; // Used by AI and corpse loot; exactly two entries with the current authored tuning when possible.
     while (picked.length < requested && pool.length) {
-      const index = Math.min(pool.length - 1, Math.floor((deps?.rnd?.() ?? Math.random()) * pool.length));
+      const random = deps?.rnd?.() ?? Math.random();
+      let index = Math.min(pool.length - 1, Math.floor(random * pool.length));
+      if (recipeWeights) {
+        let cursor = random * pool.reduce((sum, id) => sum + Number(recipeWeights[id]), 0);
+        index = pool.findIndex(id => (cursor -= Number(recipeWeights[id])) < 0);
+        if (index < 0) index = pool.length - 1;
+      }
       picked.push(pool.splice(index, 1)[0]);
     }
     return picked;
@@ -1916,8 +1955,12 @@
     // vertical axis reads the same real-world direction on both cards
     // regardless of that baseline difference, so mirroring the sign here
     // would turn the two cards away from each other instead of in tandem.
-    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
-    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD;
+    // The pose's body yaw (idle weapon stance, swing wind-up) turns the whole group; the head must keep looking where the
+    // glance/forward target says, exactly like the player's neck (target world yaw minus body yaw) and the Attack Editor's
+    // automatic counter-turn. Recorded each frame by updateBanditToolMesh from the same sampled pose that yaws the group.
+    const counterYawRad = -(Number(c._banditBodyYawRad) || 0);
+    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
+    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
   }
 
   // Eases the neck glance back to center — called from game.js's hostile
@@ -2190,6 +2233,7 @@
   // lands on the visible weapon. Recomputed only when grip/height data changes.
   let banditWeaponScaleRevision = 0;
   let banditWeaponScaleSubscribed = false;
+  let banditWeaponDimensionsSubscribed = false;
   function syncBanditWeaponScale(c, holder, weaponKey, gripContext = 'melee') {
     const visual = holder?.children?.[0]; // makeToolPlaneMesh group; pose/spin transforms live on the holder and toolPlane instead.
     const grips = window.HobunjiHandToolGrips;
@@ -2198,16 +2242,23 @@
       grips.subscribe(() => { banditWeaponScaleRevision += 1; });
       banditWeaponScaleSubscribed = true;
     }
+    const dimensions = window.HobunjiCharacterDimensions; // Species heights are measured once, asynchronously; edits and late measurements bump the same revision.
+    if (!banditWeaponDimensionsSubscribed && dimensions?.subscribe) {
+      dimensions.subscribe(() => { banditWeaponScaleRevision += 1; });
+      banditWeaponDimensionsSubscribed = true;
+    }
     const data = visual.userData;
     if (data.banditWeaponScaleKey === weaponKey && data.banditWeaponScaleRevision === banditWeaponScaleRevision) return;
     const group = c?.avatarRef?.group;
     const speciesId = c?.avatarRef?.speciesId || group?.userData?.speciesId || '';
     const gender = c?.avatarRef?.gender || group?.userData?.gender || 'male';
-    const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender }); // Base size about the origin, height about the grip.
+    const rigScaleY = Number(c?.avatarRef?.rigScale?.y) || null; // Authored per-enemy body height (Maskbound troops) sizes the weapon, not just the species default.
+    const placement = grips.heldItemPlacementForTool?.(weaponKey, gripContext, { speciesId, gender, rigScaleY }); // Base size about the origin, height about the grip.
+    const heightReady = grips.characterHeightReady?.(speciesId, gender) !== false; // Until measured the height factor is a fallback 1, which the player and editor never show; retry instead of caching it.
     const scale = Number(placement?.scale ?? grips.effectiveToolScaleForTool(weaponKey, speciesId, gender));
     visual.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1);
     if (placement?.offset) visual.position.set(placement.offset.x, placement.offset.y, placement.offset.z); // Grip stays fixed under the hand.
-    data.banditWeaponScaleKey = weaponKey;
+    data.banditWeaponScaleKey = heightReady ? weaponKey : null;
     data.banditWeaponScaleRevision = banditWeaponScaleRevision;
     data.banditWeaponScale = visual.scale.x; // Mobile/debug readout of the applied effective scale.
   }
@@ -2506,6 +2557,7 @@
     const yawRad = sampled.yawRad;
     const rollRad = sampled.rollRad;
     const bodyYawRad = sampled.bodyYawRad;
+    c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
     // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
     // the player's hand anchor.
     const handBaseX = base.x * sampled.mirrorBlend;
@@ -2563,11 +2615,13 @@
     const speciesId = avatarRef?.speciesId || group.userData?.speciesId || null; // Used by the shared portrait-height ratio.
     const gender = avatarRef?.gender || group.userData?.gender || 'male';
     const scaler = window.HobunjiSpeciesPoseScale; // Shared transform keeps player, bandit, and NPC interpretation identical.
-    const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null; // Bandit visuals are not parent-scaled by CharacterRigScale, so their hierarchy contributes 1.0 here.
+    const poseModelHeight = avatarRef.poseModelHeight || modelHeight;
+    const rigScaleY = avatarRef.poseRigScaleY || 1;
+    const height = scaler?.heightMetrics?.(speciesId, gender, poseModelHeight, rigScaleY) || null; // Keep raw PNG height and the full character-rig multiplier separate, as the player does.
     if (scaler?.transformPosePoint) {
       scaler.transformPosePoint(holder.position, {
         cx: group.position.x, cz: group.position.z, floorY, baseY,
-        speciesId, gender, modelHeight, rigScaleY: 1,
+        speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: poseYawRad,
       });
     } else {
@@ -2637,14 +2691,62 @@
     } finally { characterBuildPending--; unlock(); }
   }
 
+  function applyAuthoredHostileRigScale(avatarRef, explicitScale) {
+    if (!avatarRef?.group || !explicitScale) return false;
+    const positive = value => Number.isFinite(Number(value)) && Number(value) > 0; // Validate caller-authored scale fields before mutating live meshes.
+    const x = positive(explicitScale.x) ? Math.min(4, Math.max(0.1, Number(explicitScale.x))) : 1;
+    const y = positive(explicitScale.y) ? Math.min(4, Math.max(0.1, Number(explicitScale.y))) : 1;
+    const head = positive(explicitScale.head) ? Math.min(4, Math.max(0.1, Number(explicitScale.head))) : 1;
+    const offsetY = Number.isFinite(Number(explicitScale.offsetY)) ? Math.max(-0.5, Math.min(0.5, Number(explicitScale.offsetY))) : 0;
+    const originalHeight = avatarRef.modelHeight;
+    const originalWidth = avatarRef.modelWidth; // Head-neck offset is expressed against the unscaled local avatar height.
+    // Both the skinned face and rear head track their independently rotated neck bones.
+    // Counteract non-uniform whole-rig scaling so the skull stays undistorted.
+    for (const joint of [avatarRef.headScaleJoint?.front || avatarRef.neckJoint?.front, avatarRef.headScaleJoint?.back || avatarRef.neckJoint?.back]) {
+      if (!joint?.scale) continue;
+      joint.scale.x *= head / x;
+      joint.scale.y *= head / y;
+      joint.scale.z = (Number(joint.scale.z) || 1) * head / x;
+      if (joint.position) joint.position.y += originalHeight * offsetY;
+      joint.updateMatrix?.();
+    }
+    avatarRef.group.scale.set(avatarRef.group.scale.x * x, avatarRef.group.scale.y * y, avatarRef.group.scale.z * x);
+    avatarRef.modelWidth *= x; // makeBanditDef, melee targeting and collision must see the same dimensions as the rendered enemy.
+    avatarRef.poseModelHeight = originalHeight;
+    avatarRef.poseRigScaleY = y;
+    avatarRef.modelHeight *= y;
+    avatarRef.group.userData.portraitModelWidth = originalWidth; // Scene hitboxes apply matrixWorld scale themselves; metadata stays local.
+    avatarRef.group.userData.portraitModelHeight = originalHeight;
+    avatarRef.rigScale = { x, y, head, offsetY }; // Mobile-readable proof of the actual values applied.
+    return true;
+  }
+
   async function makeBanditEntity(cfg, rank, tier, x, y, opts = {}) {
-    const roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride);
+    await window.EnemyLoadoutRules?.ready;
+    const loadoutRules = window.EnemyLoadoutRules;
+    const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
+    cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
+    const legacyMask = (roster.equippedCosmetics || []).find(id=>window.isPortraitMaskCosmeticId?.(id) && roster.cosmeticSlots?.[id] === 'hood');
+    if (legacyMask) {
+      roster={...roster,cosmeticSlots:{...roster.cosmeticSlots,[legacyMask]:'mask'},appliedDyes:{...roster.appliedDyes},appearance:{...roster.appearance,bodyColors:{...roster.appearance?.bodyColors}}};
+      for (const suffix of ['', '_B', '_C']) {
+        roster.appliedDyes['MASK'+suffix] ??= roster.appliedDyes['HOOD'+suffix];
+        roster.appearance.bodyColors['MASK'+suffix] ??= roster.appearance.bodyColors['HOOD'+suffix];
+      }
+    }
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
-    if (roster?.appearance?.speciesId === 'ghoul') styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
+    if (roster?.mountSpecies && !roster.mountGenotype) roster.mountGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(roster.mountSpecies) || null; // Same coat/pattern roll a wild specimen gets; kept on the roster so a rebuilt avatar keeps its mount.
+    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
+    roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
+    let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
+    const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
+    if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
+    if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
       window.__farmLog?.(`[bandits] portrait avatar build failed for a ${rank} (${roster.appearance.speciesId}/${roster.appearance.gender}) -- skipping this gang member.`, 'wildlife');
@@ -2659,8 +2761,24 @@
       avatarRef.dispose();
       return null;
     }
+    const authoredRule = loadoutRules?.ruleFor(loadoutKind);
+    if (authoredRule?.metals && !authoredRule.weapons && opts.defOverride?.weaponKey) {
+      const shape = deps.TOOL_ITEM_DEFS?.[opts.defOverride.weaponKey]?.shapeKey;
+      if (shape) cfg = { ...cfg, weaponShapePool: [shape] };
+    }
     const mastery = banditMasteryFor(cfg, rank, tier);
-    const def = Object.assign(makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth), opts.defOverride || {});
+    const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
+    let def = Object.assign({ ...rolledDefinition }, opts.defOverride || {});
+    // Special enemies supply fixed weapons through defOverride. Explicit authored
+    // weapon pools replace those fields too, using the same stats/ability factory.
+    if (authoredRule?.weapons || authoredRule?.metals) {
+      const authored = rolledDefinition;
+      def.weaponShapeKey=deps.TOOL_ITEM_DEFS?.[authored.weaponKey]?.shapeKey;
+      def.weaponMetalKey=deps.TOOL_ITEM_DEFS?.[authored.weaponKey]?.metalKey;
+      for (const key of ['weaponKey','weaponShapeStats','attackTag','attackDamage','attackRangePx','attackStaminaCost','attackCooldownS','banditAbilityLoadout']) def[key] = authored[key];
+    }
+    if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
+    def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
@@ -2677,6 +2795,9 @@
     avatarRef.group.position.set(x / deps.TILE, surfY + halfH, y / deps.TILE);
     deps.markPngPlane(avatarRef.group);
     targetScene.add(avatarRef.group);
+    // A lighting pass can prune a still-building avatar's off-scene light
+    // while async portrait/limb work yields. Register again at scene adoption.
+    for (const portraitGlowLight of avatarRef.handRigAvatarRoot?.userData?.portraitGlowLights || []) window.FurnitureLightRegistry?.register(portraitGlowLight); // One per glowing eye.
     const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
     const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
@@ -2687,6 +2808,8 @@
       handDriverRoot.userData.proceduralHandToolHolder = banditToolHolder || null;
       handDriverRoot.userData.proceduralHandToolKey = def.weaponKey || null;
       handDriverRoot.userData.proceduralHandGripContext = 'melee';
+      handDriverRoot.userData.proceduralHandRigScaleY = Number(avatarRef.rigScale?.y) || null; // Hand grip targets size the weapon from the same body height the visual does.
+      handDriverRoot.userData.poseFrameYawOffsetRad = Number(def.aimAngleOffset) || 0; // The hostile group is turned aimAngleOffset away from the pose frame (+X lateral); dual-wield mirrors the offhand across THAT frame's midline.
     }
 
     const groundShadow = deps.makeCharacterGroundShadow('bandit_ground_shadow');
@@ -2705,6 +2828,12 @@
       stamina: def.maxStamina, maxStamina: def.maxStamina,
       facing: 0, groupRot: 0, pngRot: 0, perpState: {},
       scaleY: 1,
+      // updateCreatureMesh rewrites the group's scale from these every frame
+      // (CreatureGenetics.applyCreatureBillboardScale), so the species/troop
+      // body scale applied by applyAuthoredHostileRigScale only survives
+      // gameplay if it is also the entity's visual scale. Depth tracks width,
+      // like the player's parent scale.
+      visualScaleX: avatarRef.rigScale?.x ?? 1, visualScaleY: avatarRef.rigScale?.y ?? 1, visualScaleZ: avatarRef.rigScale?.x ?? 1,
       attackCooldownT: 0, retreatT: 0, hitFlashT: 0,
       knockbackT: 0, knockbackVX: 0, knockbackVY: 0,
       runFrame: 0, runFrameDistPx: 0, currentFrameUrl: null,
@@ -2741,6 +2870,7 @@
       // a gang doesn't all sway in unison.
       _banditStrafePhase: deps.rnd() * Math.PI * 2,
       rosterRecord: roster,
+      enemyLoadoutKind: loadoutKind,
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
@@ -2785,6 +2915,7 @@
     // a gang-shaped config without building an entity — used by
     // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
     rollRoster: rollBanditRoster,
+    clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
     updateCombatAI: updateBanditCombatAI,
     restNeckLook,
     updateMovementHeadLook,

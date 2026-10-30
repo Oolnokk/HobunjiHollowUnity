@@ -56,6 +56,12 @@
     obj.userData.isPngPlane = true;
     obj.traverse(child => {
       if (!child.isMesh) return;
+      // A hostile's portrait root also contains real GLB hands/feet. Those
+      // already own volume-shell and visible-matrix hooks; tagging the whole
+      // avatar as PNG must never disable their outlines or repaint their color.
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      if (child.userData.hobunjiProceduralHand || child.userData.hobunjiProceduralFoot
+          || materials.some(material => material?.userData?.hobunjiHandRole || material?.userData?.hobunjiFootRole)) return;
       // PNG art supplies its own outline. Disable the shell layer on the
       // mesh itself, while retaining this layer for depth-only occlusion of
       // genuine 3D outlines behind the sprite.
