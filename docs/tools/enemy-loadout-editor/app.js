@@ -475,6 +475,8 @@ function bodyDefaults(species, gender) {
       head: troop.anatomy.headScale,
       offsetY: troop.anatomy.headOffsetY,
     };
+  const special = window.SpecialHarlyaoLiches?.DATA?.[state.kind.split(':')[1]]; // Named bosses start from their exact custom stature, not normal skeleton proportions.
+  if (state.kind.split(':').length === 3 && special?.scale) return {...special.scale,offsetY:special.scale.offsetY || 0};
   const base = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender);
   return base
     ? { x: base.x, y: base.y, head: base.head, offsetY: base.offsetY }
@@ -582,6 +584,55 @@ function renderBodyProportions(species, gender) {
   box.append(apply);
   $('poolPanel').append(box);
 }
+function renderBossSettings(special) {
+  const type=state.kind.split(':')[1]; // Runtime boss tradition selects the ability set rather than hand-entered editor copies.
+  const names=type==='hronal'
+    ? {switchSeconds:'Seconds between magic and melee',meleeCooldownSeconds:'Warhammer attack cooldown (seconds)',meleeDamage:'Warhammer damage'}
+    : type==='tothal'
+      ? {specialCooldownSeconds:'Seconds between kneeling barrages',kneelDurationSeconds:'Time kneeling and vulnerable (seconds)',barrageIntervalSeconds:'Seconds between overlapping icicle waves'}
+      : {specialCooldownSeconds:'Seconds between charge sequences',chargeSpeedTiles:'Charge speed (tiles/second)',chargeCount:'Consecutive charges',chargeMaxTiles:'Maximum tiles per charge',blastRadiusTiles:'Concussive blast radius (tiles)',blastDamage:'Concussive blast damage',plasmDurationSeconds:'Trail plasm lifetime (seconds)'};
+  const defaults=window.SpecialHarlyaoLiches.BOSS_DEFAULTS[type]; // Same constants as the actual boss combat module.
+  const ranges=window.EnemyLoadoutRules.bossRanges; // Shared validation used by import, export, and runtime.
+  const container=el('section','pool');
+  container.append(el('h3',null,'Named-boss combat tuning'),el('p','help','Check a value to override the shipped boss default. These values affect the real encounter after you export the rule file.'));
+  for(const [key,labelText] of Object.entries(names)) {
+    const row=el('label','chance',labelText);
+    const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossSettings?.[key]!=null;
+    const input=el('input');input.type='number';input.min=ranges[key][0];input.max=ranges[key][1];input.step=key==='chargeCount'?'1':'0.05';input.value=rule().bossSettings?.[key] ?? defaults[key];input.disabled=!enabled.checked;
+    const hint=el('small','muted',' default '+defaults[key]);
+    const commit=()=>{
+      try { mutate(r=>pathSet(r,['bossSettings',key],enabled.checked?Number(input.value):undefined));renderPools(); }
+      catch(_) {renderPools();}
+    };
+    enabled.onchange=commit;input.onchange=commit;
+    row.prepend(enabled);row.append(input,hint);container.append(row);
+  }
+  $('poolPanel').append(container);
+}
+function renderBossAppearance(special, tab) {
+  const box=el('section','pool');
+  box.append(el('h3',null,tab==='weapons'?'Signature weapon':'Signature colors and glyph'),
+    el('p','help','Values are used for the actual boss, its ruin inscriptions, and its original portrait; unchecked fields keep the canonical preset.'));
+  const settings=tab==='weapons'
+    ? [['weaponKey','Warhammer tool key',special.weapon || 'warhammer_nativeCopper','text']]
+    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Glyph color (hex)',special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
+  for(const [key,labelText,fallback,type] of settings) {
+    const row=el('label','chance',labelText);
+    const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossAppearance?.[key]!=null;
+    let input;
+    if(type==='glyph') {
+      input=el('select');
+      for(const id of window.EnemyLoadoutRules.bossGlyphIds) {
+        const option=el('option',null,id.replace('harlyao_glyph_',''));option.value=id;input.append(option);
+      }
+    } else {input=el('input');input.type=type==='color'?'color':'text';input.style.maxWidth='13rem';}
+    input.value=rule().bossAppearance?.[key] || fallback;input.disabled=!enabled.checked;
+    const commit=()=>{try{mutate(r=>pathSet(r,['bossAppearance',key],enabled.checked?input.value:undefined));renderPools();}catch(_){renderPools();}};
+    enabled.onchange=commit;input.onchange=commit;
+    row.prepend(enabled);row.append(input);box.append(row);
+  }
+  $('poolPanel').append(box);
+}
 function renderPools() {
   if (!state.ready) return;
   $('poolPanel').replaceChildren();
@@ -602,8 +653,10 @@ function renderPools() {
     window.ScratchbonesAccount?.getDyeCatalog?.().map((dye) => dye.id) ||
     Object.keys(d.dyes);
   const note = $('specialNote');
-  note.textContent = d.lich
-    ? 'Liches keep their tradition’s spell AI. Primary/summon toggles affect that AI; the viewport previews the shared casting gesture.'
+  note.textContent = d.special
+    ? d.special.name + ' · exclusive key-stone guardian. Body proportions, combat cadence, colors, signature glyphs and attacks are editable; export enemy-loadouts.json to use changes in game.'
+    : d.lich
+      ? 'Ordinary liches keep their tradition’s spell AI. Primary/summon toggles affect that AI; the viewport previews the shared casting gesture.'
     : d.mount
       ? 'Mount: ' +
         d.mount +
@@ -616,11 +669,14 @@ function renderPools() {
   }
   if (state.tab === 'weapons') {
     if (d.lich) {
+      if(d.special?.weapon) renderBossAppearance(d.special,'weapons'); // Azgarlu's visible enchanted hammer has its own editable authored tool key.
       $('poolPanel').append(
         el(
           'p',
           'help',
-          'Liches carry an invisible casting tool, rather than a visible melee weapon. Their tradition’s primary spell and summon can be enabled in Attacks. Use Clothing and Species & dyes to author the caster’s appearance.',
+          d.special
+            ? (d.special.weapon ? 'This boss holds an enchanted warhammer for melee, then alternates to magic. Signature glyph and robe color are under Species & dyes.' : 'This boss uses spellcasting poses and its exclusive attack phase; edit its combat cadence in Attacks.')
+            : 'Ordinary liches carry an invisible casting tool. Primary/summon toggles affect its spell AI.',
         ),
       );
       updateRuleJson();
@@ -820,6 +876,7 @@ function renderPools() {
       ['male', 'female'],
       'Species with one authored gender retain that restriction.',
     );
+    if (d.special) renderBossAppearance(d.special,'identity'); // Authored robe dye and glyph color/pattern are independent of ordinary random-dye weights.
     for (const slot of [
       'A',
       'B',
@@ -858,7 +915,10 @@ function renderPools() {
       );
   } else if (state.tab === 'attacks') {
     if (d.lich) {
-      for (const ability of ['primary', 'summon']) {
+      const exclusive = d.special
+        ? [state.kind.includes('hronal')?'melee':state.kind.includes('tothal')?'blizzard':'plasmCharge']
+        : []; // Per-boss toggles appear in addition to the existing primary spell and resurrection.
+      for (const ability of ['primary', 'summon', ...exclusive]) {
         const line = el('label', 'toggle-line');
         const input = el('input');
         input.type = 'checkbox';
@@ -873,11 +933,15 @@ function renderPools() {
           document.createTextNode(
             ability === 'primary'
               ? 'Allow tradition’s primary spell'
-              : 'Allow skeleton summoning',
+              : ability === 'summon' ? 'Allow skeleton summoning / reanimation'
+                : ability === 'melee' ? 'Allow Azgarlu’s warhammer melee stance'
+                : ability === 'blizzard' ? 'Allow Nanahi’s kneeling ceiling barrage'
+                : 'Allow Imlao’s plasm-covered charging sequence',
           ),
         );
         $('poolPanel').append(line);
       }
+      if(d.special) renderBossSettings(d.special); // Dedicated numeric controls persist into the shared spawn-rule JSON.
     } else
       for (const slot of ['tap1', 'tap2', 'hold1', 'hold2'])
         pool(
@@ -958,6 +1022,10 @@ function showRecord(record) {
       true,
     ),
   );
+  if (record.specialLichId) facts.append(
+    fact('Named lich guardian',record.specialLichId + ' · ' + (record.bossSettings ? JSON.stringify(record.bossSettings) : 'game defaults'),true),
+    fact('Signature glyph',record.roster.glyphPatternId || 'none',true),
+  ); // Roll summary is readable without devtools on mobile.
   if (record.roster.metalArmorItems?.length)
     facts.append(
       fact(
