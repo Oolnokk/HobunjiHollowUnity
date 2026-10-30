@@ -35,7 +35,7 @@ const api=windowMock.ProceduralFurniture;
 const corners=[[-1.5,-.5,-1],[1.5,-.5,-1],[1.5,-.5,1],[-1.5,-.5,1],[-1.5,.5,-1],[1.5,.5,-1],[1.5,.5,1],[-1.5,.5,1]];
 const indices=[0,1,2,0,2,3,4,6,5,4,7,6,0,5,1,0,4,5,1,6,2,1,5,6,2,7,3,2,6,7,3,4,0,3,7,4];
 const source=new Geometry().setAttribute('position',new Attribute(indices.flatMap(index=>corners[index]),3));
-const settings={seed:'surface-group-rock-joints',roughness:1};
+const settings={seed:'surface-group-rock-joints',roughness:1,contactArea:1};
 const baseline=api.createRockGeometry(source,{...settings,roughness:0}).getAttribute('position');
 const freeGeometry=api.createRockGeometry(source,settings),free=freeGeometry.getAttribute('position');
 const face={source:'body',normal:[0,1,0],offset:-.5,min:[-.5,-.5,-.5],max:[.5,-.5,.5],sourceFaces:[0,1],stretch:[0,-.08,0]};
@@ -43,16 +43,19 @@ const stretched=api.createRockGeometry(source,{...settings,contactFaces:[face]})
 const same=(a,b,i)=>Math.abs(a.getX(i)-b.getX(i))+Math.abs(a.getY(i)-b.getY(i))+Math.abs(a.getZ(i)-b.getZ(i))<1e-7;
 let contactVertices=0,roughVertices=0;
 for(let i=0;i<baseline.count;i++)if(Math.abs(baseline.getY(i)+.5)<1e-7){
-  contactVertices++;assert(Math.abs(stretched.getY(i)-free.getY(i)+.08)<1e-7,'the source surface group must stretch together toward its rough neighbor');
-  assert.equal(stretched.getX(i),free.getX(i));assert.equal(stretched.getZ(i),free.getZ(i));
+  contactVertices++;assert(same(stretched,baseline,i),'the shared attachment patch must keep its source contact positions');
   if(Math.abs(free.getY(i)-baseline.getY(i))>1e-6)roughVertices++;
 }
-assert(contactVertices&&roughVertices,'reconnecting groups must retain their rough profile, rather than restoring a flat source cap');
-const ancestry=freeGeometry.getAttribute('rockSourceFace'),rest=freeGeometry.getAttribute('rockSourcePosition');
-assert.equal(ancestry.count,free.count);assert.equal(rest.count,free.count);
+assert(contactVertices&&roughVertices);
+let exposedRough=0;for(let i=0;i<baseline.count;i++)if(baseline.getY(i)>.1&&!same(stretched,baseline,i))exposedRough++;assert(exposedRough,'surfaces outside the patch must stay rocky');
+const heldCount=area=>{const p=api.createRockGeometry(source,{...settings,contactArea:area,contactFaces:[face]}).getAttribute('position');let held=0;for(let i=0;i<baseline.count;i++)if(Math.abs(baseline.getY(i)+.5)<1e-7&&same(p,baseline,i))held++;return held;};
+assert(heldCount(.01)>0&&heldCount(.01)<heldCount(1),'larger contact area must hold a broader patch');
+const disabled=api.createRockGeometry(source,{...settings,contactArea:0,contactFaces:[face]}).getAttribute('position');assert.deepEqual(Array.from(disabled.array),Array.from(free.array),'zero area must disable attachments completely');
+assert.equal(heldCount(-1),heldCount(0));assert.equal(heldCount(3),heldCount(1));assert.equal(heldCount(NaN),heldCount(.35));
+const ancestry=freeGeometry.getAttribute('rockSourceFace');
+assert.equal(ancestry.count,free.count);
 for(let i=0;i<free.count;i++){
   assert.equal(ancestry.getX(i),Math.floor(i/48),'all 16 child triangles must remember their original triangle');
-  assert.equal(rest.getX(i),baseline.getX(i));assert.equal(rest.getY(i),baseline.getY(i));assert.equal(rest.getZ(i),baseline.getZ(i));
 }
 const pointKey=(a,i)=>[a.getX(i),a.getY(i),a.getZ(i)].join(',');
 const shared=new Map();
@@ -65,12 +68,12 @@ for(let first=0;first<baseline.count;first+=3){
   const points=[0,1,2].map(offset=>[baseline.getX(first+offset)/3,baseline.getZ(first+offset)/2]);
   const [a,b,c]=points,den=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1]);
   const u=((b[1]-c[1])*(.12-c[0])+(c[0]-b[0])*(.34-c[1]))/den,v=((c[1]-a[1])*(.12-c[0])+(a[0]-c[0])*(.34-c[1]))/den;
-  if(u>=0&&v>=0&&u+v<=1){coveringTriangles++;for(let offset=0;offset<3;offset++)assert(Math.abs(small.getY(first+offset)-free.getY(first+offset)+.08)<1e-7,'tiny support descendants must stretch as a group');}
+  if(u>=0&&v>=0&&u+v<=1){coveringTriangles++;for(let offset=0;offset<3;offset++)assert(same(small,baseline,first+offset),'tiny supports must hold the whole covering triangle to keep contact between subdivision vertices');}
 }
 assert(coveringTriangles);
 const other=api.createRockGeometry(source,{...settings,contactFaces:[{...face,source:'other-mesh'}]}).getAttribute('position');
 assert.deepEqual(Array.from(other.array),Array.from(free.array),'GLB source masks must not leak onto unrelated child meshes');
-const invalid=api.createRockGeometry(source,{...settings,contactFaces:[{...face,stretch:[NaN,0,0]}]}).getAttribute('position');
-assert.deepEqual(Array.from(invalid.array),Array.from(free.array),'invalid imported stretch data must not corrupt geometry');
+const invalid=api.createRockGeometry(source,{...settings,contactFaces:[{...face,min:[NaN,0,0]}]}).getAttribute('position');
+assert.deepEqual(Array.from(invalid.array),Array.from(free.array),'invalid imported contact data must not corrupt geometry');
 assert.equal(source.disposed,undefined,'contact reconnection never disposes caller-owned geometry');
-console.log('Rock surface groups: subdivision ancestry, rough-profile stretch, tiny support patches, shared side edges, scoped masks and invalid input passed.');
+console.log('Rock surface groups: subdivision ancestry, adjustable shared patches, tiny support patches, shared side edges, zero-area disabling, clamped settings, scoped masks and invalid input passed.');

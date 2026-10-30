@@ -383,89 +383,42 @@
       }
       return false;
     };
-    const protect=(record,face,other)=>{
+    const protect=(record,face,other,neighbor)=>{
+      if(!record.part.rockShape?.enabled)return;
       const patch=face.bounds.clone().expandByScalar(epsilon).intersect(other.bounds.clone().expandByScalar(epsilon)).applyMatrix4(record.matrix.clone().invert()); // Preserve the joint patch, rather than straightening the full length of an embedded leg.
       const size=record.geometry.boundingBox.getSize(new THREE.Vector3()),center=record.geometry.boundingBox.getCenter(new THREE.Vector3());
       const normalized=point=>[size.x?(point.x-center.x)/size.x:0,size.y?(point.y-center.y)/size.y:0,size.z?(point.z-center.z)/size.z:0];
-      const plane={...face.plane,sourceFaces:[face.sourceFace],min:normalized(patch.min),max:normalized(patch.max)},key=plane.normal.map(value=>value.toFixed(5)).join(',')+':'+plane.offset.toFixed(5),previous=record.planes.get(key);
+      const plane={...face.plane,sourceFaces:[face.sourceFace],min:normalized(patch.min),max:normalized(patch.max)},key=plane.normal.map(value=>value.toFixed(5)).join(',')+':'+plane.offset.toFixed(5)+':'+neighbor,previous=record.planes.get(key);
       if(previous){plane.sourceFaces=[...new Set([...previous.sourceFaces,face.sourceFace])];plane.min=plane.min.map((value,axis)=>Math.min(value,previous.min[axis]));plane.max=plane.max.map((value,axis)=>Math.max(value,previous.max[axis]));}
-      record.planes.set(key,plane);return key;
+      record.planes.set(key,plane);
     };
-    let contacts=0;const links=new Map(); // Build-time diagnostics, never a per-frame collision query.
+    let contacts=0; // Build-time diagnostics, never a per-frame collision query.
     for(let a=0;a<records.length;a++)for(let b=a+1;b<records.length;b++){
       const first=records[a],second=records[b];
       if(!first.part.rockShape?.enabled&&!second.part.rockShape?.enabled||!first.bounds.clone().expandByScalar(epsilon).intersectsBox(second.bounds))continue;
       const left=rockTriangles(first).filter(face=>face.bounds.clone().expandByScalar(epsilon).intersectsBox(second.bounds));
       const right=rockTriangles(second).filter(face=>face.bounds.clone().expandByScalar(epsilon).intersectsBox(first.bounds));
       for(const face of left)for(const other of right)if(touch(face,other)){
-        const firstKey=protect(first,face,other),secondKey=protect(second,other,face);
-        links.set(`${a}:${b}:${firstKey}:${secondKey}`,{first,second,firstKey,secondKey});contacts++;
+        protect(first,face,other,b);protect(second,other,face,a);contacts++;
       }
     }
-    // Reconnect descendants of the old touching surfaces using their rough geometry, rather than restoring the original flat cap.
-    for(const record of records)record.rough=record.part.rockShape?.enabled?createRockGeometry(record.geometry,{...record.part.rockShape,contactFaces:[]},record.key):record.geometry;
-    const descendants=(record,key)=>{
-      record.descendants=record.descendants||new Map();if(record.descendants.has(key))return record.descendants.get(key);
-      const group=record.planes.get(key),ids=new Set(group.sourceFaces),geometry=record.rough,positions=geometry.getAttribute('position'),rest=geometry.getAttribute('rockSourcePosition')||positions,index=geometry.index,ancestry=geometry.getAttribute('rockSourceFace'),faces=[];
-      const sourceSize=record.geometry.boundingBox.getSize(new THREE.Vector3()),sourceCenter=record.geometry.boundingBox.getCenter(new THREE.Vector3());
-      for(let offset=0;offset+2<(index?index.count:positions.count);offset+=3){
-        const first=index?index.getX(offset):offset,sourceFace=ancestry?ancestry.getX(first):offset/3;
-        if(!ids.has(sourceFace))continue;
-        const original=[0,1,2].map(corner=>new THREE.Vector3().fromBufferAttribute(rest,index?index.getX(offset+corner):offset+corner).sub(sourceCenter));
-        if([0,1,2].some(axis=>{const dimension=['x','y','z'][axis],values=original.map(point=>sourceSize[dimension]?point[dimension]/sourceSize[dimension]:0);return Math.max(...values)<group.min[axis]||Math.min(...values)>group.max[axis];}))continue;
-        const points=[0,1,2].map(corner=>new THREE.Vector3().fromBufferAttribute(positions,index?index.getX(offset+corner):offset+corner).applyMatrix4(record.matrix));
-        faces.push({points,triangle:new THREE.Triangle(...points),bounds:new THREE.Box3().setFromPoints(points)});
-      }
-      // Bound detailed GLB searches; choose a deterministic sample near the original joint patch.
-      const bounds=record.geometry.boundingBox,size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
-      const anchor=new THREE.Vector3(...group.min.map((value,axis)=>(value+group.max[axis])*.5)).multiply(size).add(center).applyMatrix4(record.matrix);
-      faces.sort((a,b)=>a.bounds.distanceToPoint(anchor)-b.bounds.distanceToPoint(anchor));
-      const result=faces.slice(0,96);record.descendants.set(key,result);return result;
-    };
-    const saveStretch=(record,key,delta)=>{
-      if(!record.part.rockShape?.enabled)return;
-      const group=record.planes.get(key),distance=delta.lengthSq();
-      if(group.reach!=null&&group.reach<=distance)return; // One surviving patch per original surface is enough; avoid flattening it against every neighbor.
-      const inverse=record.matrix.clone().invert(),origin=new THREE.Vector3().applyMatrix4(inverse),local=delta.clone().applyMatrix4(inverse).sub(origin),size=record.geometry.boundingBox.getSize(new THREE.Vector3());
-      group.stretch=[size.x?local.x/size.x:0,size.y?local.y/size.y:0,size.z?local.z/size.z:0];group.reach=distance;
-    };
-    for(const {first,second,firstKey,secondKey} of links.values()){
-      const left=descendants(first,firstKey),right=descendants(second,secondKey);
-      let best=Infinity;const from=new THREE.Vector3(),to=new THREE.Vector3();
-      const consider=(a,b)=>{const distance=a.distanceToSquared(b);if(distance<best){best=distance;from.copy(a);to.copy(b);}};
-      for(const a of left)for(const b of right){
-        if(best<=epsilonSq)break;
-        if(a.bounds.distanceToPoint(b.bounds.getCenter(onEdge))>Math.sqrt(best)+b.bounds.getSize(onRay).length()*.5)continue;
-        for(const point of a.points){b.triangle.closestPointToPoint(point,closest);consider(point,closest);}
-        for(const point of b.points){a.triangle.closestPointToPoint(point,closest);consider(closest,point);}
-        for(const [start,end,reverse] of [[a,b,false],[b,a,true]])for(let edge=0;edge<3;edge++){
-          const origin=start.points[edge],length=direction.subVectors(start.points[(edge+1)%3],origin).length();if(length<1e-9)continue;
-          ray.set(origin,direction.multiplyScalar(1/length));
-          const hit=ray.intersectTriangle(...end.points,false,closest);
-          if(hit&&origin.distanceToSquared(hit)<=length*length)consider(hit,hit);
-          for(let other=0;other<3;other++){
-            ray.distanceSqToSegment(end.points[other],end.points[(other+1)%3],onRay,onEdge);
-            if(origin.distanceToSquared(onRay)<=length*length)reverse?consider(onEdge,onRay):consider(onRay,onEdge);
-          }
-        }
-      }
-      if(!Number.isFinite(best))continue;
-      const delta=to.clone().sub(from),share=first.part.rockShape?.enabled&&second.part.rockShape?.enabled ? .5 : 1;
-      saveStretch(first,firstKey,delta.clone().multiplyScalar(share));saveStretch(second,secondKey,delta.multiplyScalar(-share));
-    }
-    for(const record of records){if(record.rough!==record.geometry)record.rough.dispose();for(const group of record.planes.values())delete group.reach;}
     const facesByPart=new Map(); // Save only compact contact planes; animation records and original source definitions remain intact.
     for(const record of records){const faces=facesByPart.get(record.part.id)||[];if(record.part.rockShape?.enabled)faces.push(...record.planes.values());facesByPart.set(record.part.id,faces);}
-    let protectedFaces=0;
+    let protectedFaces=0; // Count active attachment groups for the editor diagnostics.
     for(const record of records)if(record.part.rockShape?.enabled){
       const faces=facesByPart.get(record.part.id)||[],settings={...record.part.rockShape,contactFaces:faces};
       const geometry=createRockGeometry(record.geometry,settings,record.key); // Extend joint surfaces after final bounds fitting, so refitting cannot open the joint again.
       if(Array.isArray(record.mesh.material))for(const group of record.mesh.geometry.groups.length?record.mesh.geometry.groups:[{start:0,count:geometry.getAttribute('position').count,materialIndex:0}])geometry.addGroup(group.start,group.count,group.materialIndex); // Retain the editor's material/picking groups on replacement geometry.
       record.mesh.geometry.dispose();record.mesh.geometry=geometry;
-      record.mesh.userData.rockContactFaceCount=record.planes.size;protectedFaces+=record.planes.size;
+      const activeFaces=getRockContactArea(settings)>0?record.planes.size:0; // A zero area keeps all of the unconstrained rock shape.
+      record.mesh.userData.rockContactFaceCount=activeFaces;protectedFaces+=activeFaces;
       if(options.persist)record.part.rockShape={...record.part.rockShape,contactFaces:faces}; // Only the editor opts into modifying its owned recipe.
     }
     return {contacts,protectedFaces};
+  }
+  function getRockContactArea(settings={}){
+    const value=Number(settings?.contactArea??.35); // Shared default/validation for saved recipes and editor diagnostics.
+    return Number.isFinite(value)?Math.max(0,Math.min(1,value)):.35;
   }
   function createRockGeometry(source,settings={},sourceKey='body') {
     const terrain=window.TerrainPreview; // The same seeded boulder-mound solver used by terrain/cavern previews supplies the stone lobes.
@@ -493,7 +446,6 @@
     }
     const geometry=new THREE.BufferGeometry(); // Rock topology remains under the original independently animated piece owner.
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
-    geometry.setAttribute('rockSourcePosition',new THREE.Float32BufferAttribute(vertices,3)); // Rest positions let contact patches follow the same descendants after roughening.
     geometry.setAttribute('rockSourceFace',new THREE.Float32BufferAttribute(Array.from({length:vertices.length/3},(_,index)=>Math.floor(index/(3*4**levels))),1)); // Every child triangle remembers its original surface through subdivision and roughening.
     const positions=geometry.getAttribute('position'); // Deterministic deformation is evaluated once, never during animation frames.
     for(let index=0;index<positions.count;index++){
@@ -509,9 +461,13 @@
       rockSize.x>.000001?bounds.min.x+(positions.getX(index)-rockMin.x)*size.x/rockSize.x:center.x,
       rockSize.y>.000001?bounds.min.y+(positions.getY(index)-rockMin.y)*size.y/rockSize.y:center.y,
       rockSize.z>.000001?bounds.min.z+(positions.getZ(index)-rockMin.z)*size.z/rockSize.z:center.z);
-    const contactFaces=Array.isArray(settings.contactFaces)?settings.contactFaces.filter(face=>face?.source===sourceKey&&Array.isArray(face.normal)&&face.normal.length===3&&face.normal.every(Number.isFinite)&&Number.isFinite(face.offset)&&Array.isArray(face.stretch)&&face.stretch.length===3&&face.stretch.every(Number.isFinite)):[]; // Imported recipes cannot inject invalid geometry coordinates.
+    const contactArea=getRockContactArea(settings),patchScale=Math.sqrt(contactArea); // Area changes patch width, not the strength of the attachment.
+    const contactFaces=contactArea>0&&Array.isArray(settings.contactFaces)?settings.contactFaces.filter(face=>face?.source===sourceKey&&Array.isArray(face.normal)&&face.normal.length===3&&face.normal.every(Number.isFinite)&&Number.isFinite(face.offset)&&Array.isArray(face.min)&&Array.isArray(face.max)&&face.min.length===3&&face.max.length===3&&[...face.min,...face.max].every(Number.isFinite)).map(face=>{
+      const midpoint=face.min.map((value,axis)=>(value+face.max[axis])*.5); // Center each attachment on its original contact region.
+      return {...face,min:midpoint.map((value,axis)=>value+(face.min[axis]-value)*patchScale),max:midpoint.map((value,axis)=>value+(face.max[axis]-value)*patchScale)};
+    }):[]; // Legacy stretch targets are ignored; source contact patches are the only attachment authority.
     const normalizedAt=index=>[size.x?(vertices[index*3]-center.x)/size.x:0,size.y?(vertices[index*3+1]-center.y)/size.y:0,size.z?(vertices[index*3+2]-center.z)/size.z:0];
-    const lockKey=point=>point.map(value=>value.toFixed(7)).join(','),jointVertices=new Map(); // Shared edge vertices must agree across separate non-indexed faces to keep the rock watertight.
+    const lockKey=point=>point.map(value=>value.toFixed(7)).join(','),jointVertices=new Set(); // Shared edge vertices must agree across separate non-indexed faces to keep the rock watertight.
     for(let first=0;first+2<positions.count&&contactFaces.length;first+=3){
       const corners=[0,1,2].map(offset=>normalizedAt(first+offset));
       for(const face of contactFaces){
@@ -519,21 +475,18 @@
         if(!corners.every(point=>Math.abs(face.normal.reduce((sum,value,axis)=>sum+value*point[axis],0)-face.offset)<.00001))continue;
         const patch=Array.isArray(face.min)&&Array.isArray(face.max)&&face.min.length===3&&face.max.length===3&&[...face.min,...face.max].every(Number.isFinite);
         if(patch&&[0,1,2].some(axis=>Math.max(...corners.map(point=>point[axis]))<face.min[axis]||Math.min(...corners.map(point=>point[axis]))>face.max[axis]))continue;
-        for(const point of corners){const key=lockKey(point),faces=jointVertices.get(key)||new Set();faces.add(face);jointVertices.set(key,faces);} // Even a small foot between vertices extends its supporting triangle to the joint.
+        for(const point of corners)jointVertices.add(lockKey(point)); // Even a small foot between vertices extends its supporting triangle to the joint.
       }
     }
     for(let index=0;index<positions.count&&contactFaces.length;index++){
       const x=vertices[index*3],y=vertices[index*3+1],z=vertices[index*3+2];
       const normalized=[size.x?(x-center.x)/size.x:0,size.y?(y-center.y)/size.y:0,size.z?(z-center.z)/size.z:0];
-      const joint=jointVertices.get(lockKey(normalized)),displacement=[0,0,0];let total=0;
+      let lock=jointVertices.has(lockKey(normalized))?1:0; // Hold the patch in its shared source position; adjacent sides follow the same edge vertices.
       for(const face of contactFaces){let distance=Math.abs(face.normal.reduce((sum,value,axis)=>sum+value*normalized[axis],0)-face.offset);
-        if(Array.isArray(face.min)&&Array.isArray(face.max))for(let axis=0;axis<3;axis++)if(Number.isFinite(face.min[axis])&&Number.isFinite(face.max[axis]))distance=Math.max(distance,face.min[axis]-normalized[axis],normalized[axis]-face.max[axis]);
-        const weight=joint?.has(face)?1:distance<.00001?1:Math.max(0,1-distance/.06);
-        if(!weight)continue;
-        for(let axis=0;axis<3;axis++)displacement[axis]+=face.stretch[axis]*weight;total+=weight;
+        for(let axis=0;axis<3;axis++)distance=Math.max(distance,face.min[axis]-normalized[axis],normalized[axis]-face.max[axis]);
+        lock=Math.max(lock,Math.max(0,1-distance/.06)); // Blend the attachment into the surrounding rock instead of creating a sharp transition.
       }
-      // A group keeps its rough profile while its adjoining sides stretch with it. Blend competing groups at shared edges, keeping the mesh watertight.
-      const divisor=Math.max(1,total);positions.setXYZ(index,positions.getX(index)+displacement[0]*size.x/divisor,positions.getY(index)+displacement[1]*size.y/divisor,positions.getZ(index)+displacement[2]*size.z/divisor);
+      if(lock)positions.setXYZ(index,positions.getX(index)*(1-lock)+x*lock,positions.getY(index)*(1-lock)+y*lock,positions.getZ(index)*(1-lock)+z*lock);
     }
     geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
     input.dispose();
@@ -1055,8 +1008,9 @@ function campfireRecipe() {
     buildPartMesh,
     createRockGeometry,
     applyRockContacts,
+    getRockContactArea,
     makePartMaterial,
-    latestChange: 'Subdivided rock faces remember their original surfaces; neighboring surface groups stretch to regain partial contact without flattening the rough shape.',
+    latestChange: 'Contact area now controls shared attachment patches before roughening: small patches preserve more rock detail; large patches hold broader joints together.',
     shade,
     CATALOG,
   };
