@@ -15,24 +15,9 @@
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
   const DETACHED_TIMEOUT = 5000; // Remove orphaned assemblies without deleting reusable inventory meshes immediately.
-  const DEF = Object.freeze({
-    hachutuTorchFlail: {
-      flail: {
-        haftAnchor: { opaque: 'top' }, // Safe initial mounting point; override with { x, y } in PNG pixels when authored.
-        chain: { sprite: 'assets/toolsprites/hachutu_torch-flail_chain.png' },
-        head: {
-          anchorLayer: 'handle', // The chain terminates on the lower opaque end of this brazier component.
-          anchor: { opaque: 'bottom' }, // Supports an explicitly authored { x, y } pixel coordinate instead.
-          layers: [
-            { id: 'back', sprite: 'assets/toolsprites/torch-flail_brazier-back.png' },
-            { id: 'fuel', sprite: 'assets/toolsprites/torch-flail_brazier-fuel.png' },
-            { id: 'handle', sprite: 'assets/toolsprites/torch-flail_brazier-handle.png' },
-            { id: 'front', sprite: 'assets/toolsprites/torch-flail_brazier-front.png' },
-          ],
-        },
-      },
-    },
-  }); // Default Hachutu assembly; the same data shape may be supplied by any future TOOL_ITEM_DEFS entry.
+  const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
+  const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
+
 
   function report(message) {
     global.__farmLog?.('[weapon assembly] ' + message, 'warn');
@@ -151,6 +136,7 @@
     if (!state) return;
     state.dead = true;
     records.delete(state);
+    effects?.dispose(state); // Dispose pooled fire sprites before removing their head owner.
     for (const child of state.owned) destroyPart(child);
     states.delete(root);
   }
@@ -169,6 +155,7 @@
     const plane = root.userData.toolPlane;
     const state = {
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
+      metalOptions: options.metalOptions || null, resolveAsset: imageUrl, // Uses game's live plating/mastery resolver and the same canonical asset URL for every layer.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false,
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
@@ -202,6 +189,7 @@
         mesh.position.z = 0.001 * (state.owned.length + 1);
         plane.add(mesh);
         state.owned.push(mesh);
+        effects?.registerLayer(state, mesh, layer, texture.image); // Ordinary layered weapons support both recolor and author-defined material roles.
       }
       if (!config.flail) return;
       const f = config.flail;
@@ -211,6 +199,7 @@
       if (state.dead) return;
       const chainImg = chainTex.image;
       const chain = buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
+      effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating, but is deliberately excluded from head enchantment masks.
       const headRoot = new THREE.Group();
       headRoot.name = itemKey + '_flail_head';
       headRoot.userData.hobunjiWeaponAssemblyPart = false;
@@ -218,6 +207,7 @@
         const mesh = buildPlane(THREE, headTextures[i].image, headTextures[i], unit, order + 0.02 + i * 0.001, layer.offsetPx);
         headRoot.add(mesh);
         state.headParts.push(mesh);
+        effects?.registerLayer(state, mesh, layer, headTextures[i].image); // Each head layer owns its material and may spawn effects between neighboring layers.
       });
       root.add(chain, headRoot);
       state.owned.push(chain, headRoot);
@@ -229,6 +219,7 @@
       state.chainTop = anchor(chainImg, f.chain.top, 'top'); // Cached alpha anchor shared by all animation frames.
       state.chainBottom = anchor(chainImg, f.chain.bottom, 'bottom');
       state.headAnchor = anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Head mounting point is fixed relative to its layer.
+      effects?.activateHead(state, f.head, headTextures, unit); // Compute post-assembly visible-metal sources and fuel→front interleaved fire once.
       global.__farmLog?.('[weapon assembly] ' + itemKey + ' chain/head ready', 'info'); // Visible in the existing mobile game diagnostic log.
     };
     // The base PNG can still be loading while the equipment holder is built.
@@ -322,6 +313,7 @@
     const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale).applyQuaternion(headQ));
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
+    if (root.visible !== false) effects?.stepFire(state, dt); // Flame stays in the assembled head and behind later opaque sprites.
   }
 
   function tick(deltaS) {
@@ -329,7 +321,10 @@
     const dt = Math.min(MAX_DT, Math.max(0.001, Number(deltaS) || 1 / 60));
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
-      try { updateOne(state, dt, now); }
+      try {
+        effects?.refreshMetal(state, now); // Throttled tint updates share weapon plating and verdigris without creating a second animation loop.
+        updateOne(state, dt, now);
+      }
       catch (error) {
         if (!state.lastErrorAt || now - state.lastErrorAt > 5000) {
           state.lastErrorAt = now;
@@ -347,8 +342,12 @@
     }));
   }
 
+  function enchantmentTargets(visual) {
+    return states.get(visual)?.metalTargets || []; // The assembled head's visible metal only; never the chain or rigid haft.
+  }
+
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, debugSnapshot,
+    definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
     opaqueAt, anchor, definitionFor,
   };
   if (global.RuntimeFrameScheduler?.register) {
