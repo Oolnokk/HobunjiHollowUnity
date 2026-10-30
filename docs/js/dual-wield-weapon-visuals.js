@@ -443,7 +443,7 @@
       let record = current.assemblyCopies.get(layer);
       if (!record) {
         const build = (side, parent) => {
-          const copy = layer.clone?.(false) || new layer.constructor(layer.geometry, cloneOwnedMaterial(layer.material));
+          const copy = layer.clone?.(false) || new layer.constructor(layer.geometry, layer.material);
           if (!copy) return null;
           copy.material = cloneOwnedMaterial(layer.material); // Different materials/maps from source so duplicate cleanup remains local.
           copy.position.copy(layer.position);
@@ -465,12 +465,14 @@
       }
       if (record.sourceMaterial) record.sourceMaterial.visible = active ? false : record.originalVisible;
       // Surface maps may be replaced when a metal tool gains mastery or changes plating.
-      for (const copy of [record.main, record.off]) {
-        if (!copy?.material || !layer.material?.map) continue;
-        const sourceMap = layer.material.map;
-        if (copy.material.map?.image !== sourceMap.image) {
-          copy.material.map.image = sourceMap.image;
-          copy.material.map.needsUpdate = true;
+      const sourceMap = layer.material?.map; // Same source image for each authored overlay; duplicate materials retain separate ownership.
+      if (sourceMap) {
+        const main = record.main, off = record.off;
+        if (main?.material?.map && main.material.map.image !== sourceMap.image) {
+          main.material.map.image = sourceMap.image; main.material.map.needsUpdate = true;
+        }
+        if (off?.material?.map && off.material.map.image !== sourceMap.image) {
+          off.material.map.image = sourceMap.image; off.material.map.needsUpdate = true;
         }
       }
     }
