@@ -357,7 +357,23 @@
   }
 
   function enchantmentTargets(visual) {
-    return states.get(visual)?.metalTargets || []; // The assembled head's visible metal only; never the chain or rigid haft.
+    const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
+    const plane = visual?.userData?.toolPlane;
+    if (!plane || !global.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.()?.active) return sourceTargets;
+    // Dual-wielded ordinary layered weapons duplicate their visible base and
+    // overlay meshes. Redirect enchantments to the two visible copies rather
+    // than emitting at the hidden midpoint or at the original layers.
+    const copies = [];
+    plane.traverse?.(node => {
+      const parentSource = node?.userData?.hobunjiDualWeaponSourceLayer; // The exact source layer cloned by the dual-wield renderer.
+      for (const target of sourceTargets) {
+        if (parentSource === target.plane
+          || (target.plane === plane && node?.userData?.hobunjiDualWieldDuplicate)) {
+          copies.push({ plane: node, mask: target.mask });
+        }
+      }
+    });
+    return copies;
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
