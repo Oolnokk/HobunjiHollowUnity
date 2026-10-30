@@ -404,7 +404,7 @@
     const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character);
     if (!data) return null;
     const handle = {
-      name, garmentId, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
+      name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
@@ -422,22 +422,23 @@
       let bias=handle.depthBiasBase||0; // Restore the ordinary foot overlay automatically after the last scope releases it.
       for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
       handle.maskUniforms.uPantsDepthBias.value=bias;
+      handle.legHandle?.setFootDepthPush?.(bias); // The pull is applied to the FEET (pushed away), never to the garment: see installFootDepthPush.
       return true;
     };
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
-      const overrides = { side: DOUBLE_SIDE, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      // The garment is a real 3D plane like the portrait's own front/back planes: depth-tested AND depth-writing, so whatever is nearer the camera covers
+      // whatever is behind it, with no other rule (a leg turned behind the portrait is hidden by it; a turned leg's own faces occlude each other).
+      // The small polygon offset is only a tie-breaker for the coplanar rest pose.
+      const overrides = { side: DOUBLE_SIDE, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform float uPantsDepthBias;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;')
-          // Depth-only pull toward the camera: the garment stays exactly in the portrait plane on screen and in space, but
-          // wins the depth test against the procedural feet, so it reads over (x-rays through) them.
-          .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 pantsBiased = projectionMatrix * (mvPosition + vec4(0.0, 0.0, uPantsDepthBias, 0.0)); gl_Position.z = pantsBiased.z / pantsBiased.w * gl_Position.w; }');
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
@@ -545,11 +546,20 @@
       return signature;
     };
     handle.restRecheckIn = REST_RECHECK_FRAMES;
+    // The roll amplification exaggerates a leg's sideways splay so face-on pants visibly follow it, but a sunk weapon stance splits the feet
+    // fore/aft under a body twist, which leans that split into the sideways axis and doubles it: the pant legs drift off the bones. Fade the
+    // exaggeration out as the stance sinks so the garment sits exactly on the real bones (legHandle.getStanceDrop, js/procedural-leg-animation.js).
+    const effectiveRollGain = () => {
+      const drop = Number(legHandle.getStanceDrop?.()) || 0;
+      if (drop <= 0) return handle.legRollGain;
+      const blend = Math.min(1, drop / Math.max(1e-6, (Number(legHandle.modelHeight) || 1) * 0.01));
+      return handle.legRollGain + (1 - handle.legRollGain) * blend;
+    };
     const aimAtLiveLegs = () => {
       const measured = readLiveBones(handle);
       const aim = handle.scratch.aim;
       for (const side of ['left', 'right']) {
-        Core.amplifyLegRoll(measured[side], handle.legRollGain, aim[side]);
+        Core.amplifyLegRoll(measured[side], effectiveRollGain(), aim[side]);
         for (const joint of ['hip', 'knee', 'ankle']) aim[side][joint].z += handle.bones2D[side][joint].z - handle.restRaw[side][joint].z;
       }
       return aim;
@@ -704,8 +714,9 @@
 
     handle.model.updateMatrixWorld?.(true);
     const worldElements = handle.model.matrixWorld.elements;
-    handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]);
-    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // View-space distance to pull the garment's depth toward the camera.
+    handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // How far the feet protrude toward the camera, in world units.
+    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // Stored feet-covering distance (scoped limits can lower it); drives the feet's depth push, not the garment.
+    legHandle.setFootDepthPush?.(handle.depthBiasBase);
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
