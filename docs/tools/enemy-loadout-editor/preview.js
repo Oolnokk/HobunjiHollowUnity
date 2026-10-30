@@ -58,7 +58,8 @@ const files = [
   'js/combat/enemy-weapon-stances.js?v=20261029a',
   'js/combat/combat-minion.js?v=20261028a',
   'js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2',
-  'js/combat/combat-lich.js?v=20261029enemyParity1',
+  'js/combat/combat-lich.js?v=20261030namedboss2',
+  'js/combat/combat-special-liches.js?v=20261030namedboss2', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/player-body-transform-composer.js?v=20261029a',
   'js/drunk-locomotion.js?v=20261029a',
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
@@ -567,6 +568,8 @@ export class EnemyPreview {
         : null,
       mountSpecies: a.rosterRecord.mountSpecies || null,
       lichType: a.lichType || null,
+      specialLichId: a.specialLichId || null, // History records the named guardian's identity.
+      bossSettings: a._specialBossSettings ? copy(a._specialBossSettings) : null, // Instantiated boss timing and damage values, visible on mobile.
       maskboundTroop: a.maskboundTroop || null,
       thumbnail:
         a.avatarRef.frontCanvas?.toDataURL?.() ||
@@ -680,18 +683,21 @@ export class EnemyPreview {
         id: 'throwFlask',
         label: 'Throw flask · ' + actor.def.banditFlaskLoadout.join(', '),
       });
-    if (actor.lichType)
+    if (actor.lichType) {
+      const kind = actor.isSpecialLich ? window.SpecialHarlyaoLiches.kindFor(actor.lichType) : 'lich:'+actor.lichType; // Named and ordinary spell toggles are independent.
+      const extra=actor.isSpecialLich
+        ? actor.lichType==='hronal' ? [{id:'melee',label:'Azgarlu · warhammer melee stance'}]
+        : actor.lichType==='tothal' ? [{id:'blizzard',label:'Nanahi · kneeling barrage pose'}]
+        : [{id:'plasmCharge',label:'Imlao · plasm charge transformation'}]
+        : [];
       return [
         {
           id: 'primary',
           label: actor.lichType + ' · primary spell gesture',
         },
-        { id: 'summon', label: 'Summon · casting gesture' },
-      ].filter(
-        (entry) =>
-          window.EnemyLoadoutRules.ruleFor('lich:' + actor.lichType)
-            ?.specialAttacks?.[entry.id] !== false,
-      );
+        { id: 'summon', label: 'Summon · casting gesture' },...extra,
+      ].filter(entry=>window.EnemyLoadoutRules.ruleFor(kind)?.specialAttacks?.[entry.id] !== false);
+    }
     return list;
   }
   play(id, progress = 0, frozen = false) {
@@ -710,6 +716,19 @@ export class EnemyPreview {
     let castStep = null;
     let power = 1;
     const shapeSpeed = Number(c.def.weaponShapeStats?.speed) || 1;
+    if (id === 'melee') {
+      c._specialMode='melee';c._specialHoverTarget=0; // Real hover blend transitions into Azgarlu's melee stance.
+      steps=window.Combat.comboData?.swingCombo?.slice?.(0,1) || [];
+      anim='chop';windup=.3;strike=.2;
+    } else if (id === 'blizzard') {
+      c._specialStage={kind:'kneel'};c._specialHoverTarget=0;
+      steps=[window.HarlyaoLichCombat.lichCastStep(c,'summon')];anim='thrust';
+      windup=Number(c._specialBossSettings?.kneelDurationSeconds)||4.8;strike=.2;
+    } else if (id === 'plasmCharge') {
+      c._specialStage={kind:'charge',remaining:1};c._specialHoverTarget=1;
+      window.SpecialHarlyaoLiches?.applyPlasmSkin?.(c,true); // Reuse the live oil-material transformation.
+      steps=[window.HarlyaoLichCombat.lichCastStep(c,'primary')];anim='thrust';windup=.2;strike=.42;
+    }
     if (id === 'primary' || id === 'summon') {
       castStep = window.HarlyaoLichCombat.lichCastStep(c, id);
       steps = [castStep];
@@ -719,7 +738,7 @@ export class EnemyPreview {
       const step = steps[stepIndex % steps.length];
       pose =
         window.Combat.comboStepPose?.(
-          id === 'primary' || id === 'summon' ? 'pokeCombo' : id,
+          id === 'primary' || id === 'summon' || id === 'blizzard' || id === 'plasmCharge' ? 'pokeCombo' : id === 'melee' ? 'swingCombo' : id,
           step,
         ) ||
         step.pose ||
@@ -733,6 +752,7 @@ export class EnemyPreview {
         strike /= shapeSpeed;
       }
     }
+    if(id==='blizzard') {windup=Math.max(0.6,(c._specialBossSettings?.kneelDurationSeconds||4.8)-.2);strike=.2;} // Preview timeline matches the authored kneeling duration, not the short casting gesture.
     const quick = window.Combat.quickAttackData;
     if (quick?.TECHNIQUES?.[id]) {
       pose = quick.quickAttackPose?.();
@@ -837,7 +857,7 @@ export class EnemyPreview {
         : this.motion === 'sprint'
           ? c.def.chaseSpeed / this.dependencies.TILE
           : 0;
-    const hover = this.motion === 'hover' || !!c.lichType;
+    const hover = this.motion === 'hover' || (!!c.lichType && (!c.isSpecialLich || c._specialHoverTarget !== 0)); // Named boss hover is not forced while walking or kneeling.
     a.legs?.setHoverMode(hover);
     a.legs?.update(dt, move, false, null, {
       speed: move,
@@ -850,6 +870,10 @@ export class EnemyPreview {
       a.handRigAvatarRoot,
       move,
     );
+    if(c.isSpecialLich) {
+      window.SpecialHarlyaoLiches?.tick?.(c,dt); // Reuses authentic boss stance, kneel and drip animation controllers.
+      window.SpecialHarlyaoLiches?.updateEffects?.(dt); // One bounded temporary effects tick in the viewport.
+    }
     window.HarlyaoLichCombat.updateLichHoverPresentation(c, dt);
     const base = c.halfHeight || 0.45;
     a.group.position.y = c.lichType
@@ -888,6 +912,12 @@ export class EnemyPreview {
         const id = attack.id;
         this.attack = null;
         c._banditAction = null;
+        if (c.isSpecialLich) {
+          c._specialStage=null;
+          if (id==='plasmCharge') window.SpecialHarlyaoLiches?.applyPlasmSkin?.(c,false);
+          if (id==='melee') c._specialMode='magic';
+          c._specialHoverTarget=1;
+        }
         c._banditFlaskActionActive = false;
         c._rangedMode = false;
         c._rangedAction = null;
@@ -900,6 +930,11 @@ export class EnemyPreview {
     if (!travelGaze) window.BanditCombat.restNeckLook(c, dt); // Same idle neck update the game's hostile loop runs; applies the body-yaw counter-turn.
   }
   discard(actor) {
+    if(actor?.isSpecialLich) {
+      window.SpecialHarlyaoLiches?.applyPlasmSkin?.(actor,false);
+      window.SpecialHarlyaoLiches?.releaseWarhammer?.(actor);
+      window.SpecialHarlyaoLiches?.clear?.();
+    } // Each temporary boss-owned material and particle is disposed before re-rolling.
     // Gameplay caches these maps globally; the workshop owns per-roll textures.
     const textures = new Set();
     for (const holder of [
