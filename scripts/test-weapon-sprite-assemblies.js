@@ -24,6 +24,8 @@ assert.match(editor, /HobunjiWeaponSpriteAssemblies\?\.tick\(dt\)/);
 assert.match(bandits, /HobunjiWeaponSpriteAssemblies\?\.setAction\(holder\.children\?\.\[0\]/);
 assert.match(grips, /hachututorchflail: \{/);
 assert(game.includes('windupFrac: WF, strikeFrac: SF, holdFrac:'), 'the player passes its live swing boundaries');
+assert(game.includes('(swingStrikePitch - swingWindupPitch) * combatSwingPower'), 'the player applies the same pitch-power multiplier as its sampled pose');
+assert(bandits.includes('(strikePitch - windupPitch) * power'), 'NPC partial-charge pose scaling also affects flail follow-through');
 assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs pass their own live swing boundaries');
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');

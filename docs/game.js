@@ -23860,7 +23860,7 @@
         window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
           attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
-          pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? swingStrikePitch - swingWindupPitch : undefined,
+          pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? (swingStrikePitch - swingWindupPitch) * combatSwingPower : undefined, // Match SharedAttackPose's actual power-scaled pitch lerp.
         }); // Late enough to pass real, eased weapon timing. Pre-render uses the final shaft pitch on this same frame.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
