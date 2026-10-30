@@ -35,7 +35,7 @@ assert(bandits.includes('(strikePitch - windupPitch) * power'), 'NPC partial-cha
 assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs pass their own live swing boundaries');
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
-assert(source.includes('const shaftUp = q.shaftUp.set(0, 1, 0).applyQuaternion(baseQ)'), 'flails track the actual held tool instead of an artificial attack-up vector');
+assert(source.includes('const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ)'), 'flails extend outward from the bottom-end haft attachment, away from the grip');
 assert(source.includes('state.direction.copy(shaftUp).applyQuaternion'), 'hold follow-through rotates beyond the exact shaft heading');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
