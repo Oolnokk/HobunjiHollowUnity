@@ -43,9 +43,12 @@ const node = id => {
 for (const [id, value] of [['metalHex','#CD7F32'], ['verdigrisHex','#57B38B'], ['oxidation','0.5']]) node(id).value = value;
 const selectors = [new Element('tab-flails'), new Element('tab-layers')]; // Actual tab switching is exercised by selectWeapon().
 selectors[0].dataset.tab = 'flails'; selectors[1].dataset.tab = 'layers';
+const pickButtons = ['haft','chainTop','chainBottom','head'].map(name => {
+  const button=new Element(name+'Picker');button.dataset.pick=name;return button;
+}); // Real buttons are enumerated by the app when wiring exact PNG coordinate picking.
 const document = {
   getElementById: node,
-  querySelectorAll: sel => sel === '[data-tab]' ? selectors : [],
+  querySelectorAll: sel => sel === '[data-tab]' ? selectors : sel === '[data-pick]' ? pickButtons : [],
   createElement: name => new Element(name),
 };
 const frames = []; // Scheduled animation callbacks are executed on demand, without browser timers.
@@ -68,8 +71,10 @@ class Image {
     this.onload?.();
   }
 }
+let pickerOptions=null; // Captures the editor's real pick-button callback without importing PNG pixels from the browser.
 const window = {
   devicePixelRatio: 1,
+  HobunjiSpritePointPicker: { create(){ return {open(options){pickerOptions=options;}}; } },
   addEventListener() {},
   HobunjiLayeredWeaponEffects: {
     recolorMarker(source, hex, target) {
@@ -108,7 +113,8 @@ const window = {
     debugSnapshot() {return {head:{partsReady:4},combined:{chainReady:true}};},
   },
 };
-const localStorage = {getItem:()=>null,removeItem(){},setItem(){}};
+const savedDrafts=[]; // Captures the actual JSON persisted by the Tool Hub after editing a Grapple-Flail.
+const localStorage = {getItem:()=>null,removeItem(){},setItem(_key,value){savedDrafts.push(JSON.parse(value));}};
 const sandbox = {
   window, document, Image, localStorage,
   URL, location:{href:'https://example.test/tools/multi-sprite-weapon-editor/index.html'},
@@ -146,5 +152,23 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   shouldThrow=false;
   frames.shift()(250);
   assert.equal(previewCalls.at(-1).canvas,'preview','the preview can recover without rebuilding the editor');
+  node('weapon').value='grappleFlail';
+  node('weapon').handlers.get('change')();
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(node('connectorType').value,'rope','Grapple-Flail selects generated rope without requiring a PNG');
+  assert.equal(node('headAnchorLayer').value,'composite','Grapple-Flail can attach between the two visible PNG layers');
+  assert.equal(pickButtons.find(x=>x.dataset.pick==='chainTop').disabled,true,'rope has geometric ends, so raster chain-end picking is disabled');
+  node('chainScale').value='2';node('chainScale').handlers.get('change')();
+  node('headScale').value='.5';node('headScale').handlers.get('change')();
+  pickButtons.find(x=>x.dataset.pick==='head').click();
+  assert.equal(pickerOptions.composite,true,'head picker must use shared composite coordinates');
+  assert.equal(pickerOptions.images.length,2,'both grapple head PNGs must appear in the composite picker');
+  pickerOptions.onPick({x:12,y:-14});
+  node('save').click();
+  const draft=savedDrafts.at(-1).weapons.grappleFlail.flail;
+  assert.equal(draft.chain.scale,2);
+  assert.equal(draft.head.scale,.5);
+  assert.deepEqual(draft.head.anchor,{x:12,y:-14});
+  assert.equal(draft.head.anchorSpace,'composite');
   console.log('multi-sprite editor frame: PASS (real startup, six PNGs, both canvases, metal palette, rag tint, recolor cache, deduplicated errors)');
 })().catch(error => { console.error(error); process.exitCode=1; });
