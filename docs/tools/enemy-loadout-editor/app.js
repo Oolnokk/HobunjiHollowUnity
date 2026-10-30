@@ -496,7 +496,7 @@ function renderBodyProportions(species, gender) {
     el(
       'p',
       'help',
-      'Same four values as Character Rig Scale in the Multi-Avatar Animation Author. Tick a value to override ' +
+      'Same four values as Character Rig Scale in the Multi-Avatar Animation Author. Camera framing stays at the unmodified species size so changing body width/height visibly resizes the actual portrait, not just hands and pants. Tick a value to override ' +
         (state.kind.startsWith('maskbound:') ? 'this troop’s' : 'the species') +
         ' default for this enemy; unticked values keep the default. Overrides are saved with the spawn rules and used in game.',
     ),
@@ -612,10 +612,10 @@ function renderBossSettings(special) {
 function renderBossAppearance(special, tab) {
   const box=el('section','pool');
   box.append(el('h3',null,tab==='weapons'?'Signature weapon':'Signature colors and glyph'),
-    el('p','help','Values are used for the actual boss, its ruin inscriptions, and its original portrait; unchecked fields keep the canonical preset.'));
+    el('p','help','The guardian’s Body Color C is shared by eye glow, robe motif and ruin walls. An authored Body Color C swatch takes priority over this fallback; unchecked fields keep the canonical preset.'));
   const settings=tab==='weapons'
     ? [['weaponKey','Warhammer tool key',special.weapon || 'warhammer_nativeCopper','text']]
-    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Glyph color (hex)',special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
+    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Body Color 3 fallback / eye and wall glow (hex)',special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
   for(const [key,labelText,fallback,type] of settings) {
     const row=el('label','chance',labelText);
     const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossAppearance?.[key]!=null;
@@ -898,7 +898,7 @@ function renderPools() {
     ])
       pool(
         slot.startsWith('A') || ['B', 'C'].includes(slot)
-          ? 'Body color ' + slot
+          ? (slot==='C' && d.special ? 'Body color C · eye / walls / robe glyph' : 'Body color ' + slot)
           : slot === 'MASK_C'
             ? 'Mask · glow (color 3)'
             : slot === 'MASK'
@@ -911,7 +911,7 @@ function renderPools() {
           ? { '#7F00FF': 1 }
           : d.dyes,
         [...dyeIds, ...Object.keys(d.dyes)],
-        'Dye IDs or an exact #RRGGBB color. MASK_C is mask dye color 3; HOOD colors are independent.',
+        'Dye IDs or an exact #RRGGBB color. On named liches, the highest-weight Body C swatch is fixed per guardian and drives its eyes, robe pattern and ruin walls. MASK_C is independent mask dye color 3.',
       );
   } else if (state.tab === 'attacks') {
     if (d.lich) {
