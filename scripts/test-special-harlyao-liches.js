@@ -126,6 +126,15 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.ok(map.includes('specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex'),'Named ruin wall ink comes from the guardian roster Body Color C');
   assert.ok(preview.includes('applyCreatureBillboardScale?.(a.group'),'Workshop scales the actual hostile avatar root like gameplay');
   assert.ok(preview.includes('referenceX') && preview.includes('referenceY'),'Workshop camera preserves a stable body-size reference across re-rolls');
+  assert.ok(preview.includes('a.group.rotation.y = 0;') && !preview.includes('a.group.rotation.y = !a.riderMount'),'Workshop camera facing remains user-rotatable as before; do not apply the discarded edge-on theory');
+  assert.ok(!preview.includes('portraitFacing:'),'Discarded camera-facing diagnostics must be removed with the incorrect change');
+  assert.ok(workshop.includes("$('resetRepoBtn').onclick"),'Workshop exposes a Reset to repo action');
+  assert.ok(workshop.includes("fetch(url.href, {cache:'no-store'})"),'Reset fetches the actual repository JSON without a cached response');
+  assert.ok(workshop.includes("url.searchParams.set('workshopReset'"),'Reset also uses a unique URL to bypass intermediary caches');
+  assert.ok(workshop.includes('localStorage.removeItem(DRAFT_KEY)'),'Reset clears the old device-local draft rather than re-saving it');
+  assert.ok(workshop.includes('await roll(false)'),'Reset rebuilds the enemy from freshly restored repository rules');
+  const editorHtml=read('docs/tools/enemy-loadout-editor/index.html');
+  assert.ok(editorHtml.includes('id="resetRepoBtn"'),'Reset to repo is available as a mobile-accessible UI button');
   for (const filename of ['m','f'])
     assert.ok(fs.existsSync(path.join(root,'docs/assets/cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+filename+'.png')),'New eye sprites are committed to the repo');
   const sanctum=read('docs/js/dev-random-ruin-sanctum.js');
