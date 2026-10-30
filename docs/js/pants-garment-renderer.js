@@ -413,6 +413,7 @@
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
 
+    const pantsFacing = new THREE.Vector3(), pantsToCamera = new THREE.Vector3(); // Scratch for the per-draw front/back test below.
     const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
     handle.setDepthBiasLimit=(owner,limit=null)=>{
       if(!owner)return false;
@@ -424,7 +425,6 @@
       handle.maskUniforms.uPantsDepthBias.value=bias;
       return true;
     };
-    const pantsFacing = new THREE.Vector3(), pantsToCamera = new THREE.Vector3(); // Scratch for the per-draw front/back test below.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
