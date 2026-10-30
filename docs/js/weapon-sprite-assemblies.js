@@ -182,6 +182,7 @@
       if (!baseImg?.width && !baseImg?.naturalWidth) return;
       const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImg.naturalWidth || baseImg.width);
       const order = plane.renderOrder || 1.5;
+      const staticMeshes = []; // Ordered normal-weapon overlays, used for visible-metal and interleaved VFX masks.
       for (const layer of layers) {
         const texture = await textureFor(THREE, layer.sprite);
         if (state.dead) return;
@@ -190,7 +191,13 @@
         mesh.position.z = 0.001 * (state.owned.length + 1);
         plane.add(mesh);
         state.owned.push(mesh);
+        staticMeshes.push(mesh);
         effects?.registerLayer(state, mesh, layer, texture.image); // Ordinary layered weapons support both recolor and author-defined material roles.
+      }
+      if (layers.length) {
+        const rawBase = def?.sprite ? await textureFor(THREE, def.sprite) : null; // Authored metal key, never a live oxide/plating texture.
+        if (state.dead) return;
+        effects?.activateStatic(state, layers, staticMeshes, rawBase?.image || baseImg, unit);
       }
       if (!config.flail) return;
       const f = config.flail;
@@ -255,7 +262,10 @@
       return;
     }
     state.detachedAt = 0;
-    if (!state.chain || !state.headRoot) return;
+    if (!state.chain || !state.headRoot) {
+      if (root.visible !== false) effects?.stepFire(state, dt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
+      return;
+    }
     // Use the final holder+plane world pose, including the game's transient
     // authored Neutral. The rigid haft never relinquishes animation authority.
     plane.updateWorldMatrix(true, false);
