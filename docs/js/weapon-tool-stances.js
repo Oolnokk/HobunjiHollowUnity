@@ -310,6 +310,8 @@
       meleeSpacing: rawOpts.meleeSpacing !== false,
     });
 
+    const idleSink = SAP.idleBodySinkPct(); // The swing eases out of and back into the stance's rest sink (weapon-stance-drop-runtime.js); Windup/Strike may author their own.
+
     return {
       ...rawOpts,
       anim,
@@ -318,8 +320,8 @@
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral },
-        returnNeutral: sequence.returnNeutral,
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral, bodySink: idleSink },
+        returnNeutral: { ...sequence.returnNeutral, bodySink: idleSink },
         neutralMirrorSign: sequence.startNeutralSign,
         returnNeutralMirrorSign: sequence.returnNeutralSign,
         windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.windup },

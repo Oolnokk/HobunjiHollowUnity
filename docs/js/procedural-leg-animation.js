@@ -908,6 +908,7 @@
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
+      stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
       stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
     };
@@ -1018,6 +1019,7 @@
       chain.calfGuide.position.y = -calfLength * 0.5;
     }
 
+    const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling the foot under a sunk stance.
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -1033,16 +1035,26 @@
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
       chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
-      mesh.rotation.x = state[`${side}Roll`];
+      if (state.stanceDrop > 1e-4) {
+        // A sunk stance folds the shin well off vertical; the sole stays flat on the floor by undoing the shin's world tilt (then the stride roll).
+        footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
+        mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
+      } else {
+        mesh.rotation.set(state[`${side}Roll`], 0, 0);
+      }
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
     }
 
-    // Lowers both hips by `state.stanceDrop` while the foot targets (root-local, floor-anchored) stay where the gait/idle math put them.
-    // Hips sit closer to the soles, so applyLegChain's fold keeps the bones at full length and bends the knees instead of telescoping.
+    // Weapon-stance sink. The body (portrait, hands, tool) is lowered by `state.stanceDrop` by whoever owns the body transform
+    // (PlayerBodyTransformComposer in game, the attack editor's body root); this keeps the soles where they were. The leg group is
+    // raised by the same amount in the body's frame and the hips drop with the body, so in body space the hips stay put while the
+    // feet are lifted toward them: applyLegChain's fixed-length fold then bends the knees instead of shortening the legs. Raising
+    // the group (rather than counter-moving it at render time) keeps everything skinned to these joints, i.e. the pants, in the same frame.
     function applyStanceDrop(drop) {
       const clamped = Math.max(0, Math.min(drop, standingLegLength() * 0.55)); // Beyond ~55% of the leg the fold would read as a sit, not a stance.
-      if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(legChains.left.hip.position.y - (posteriorY - clamped)) < 1e-6) return;
+      if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(root.position.y - clamped) < 1e-6) return;
       state.stanceDrop = clamped;
+      root.position.y = clamped;
       legChains.left.hip.position.y = legChains.right.hip.position.y = posteriorY - clamped;
       applyLegChain('left');
       applyLegChain('right');
@@ -1411,6 +1423,7 @@
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
       const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
+      state.stanceDropAllowed = stanceDropAllowed;
       const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
       if (wantedDrop > 0 || state.stanceDrop > 0) {
         const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
@@ -1595,7 +1608,7 @@
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
-      setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed) applyStanceDrop(state.stanceDropTarget); },
+      setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
       getStanceDrop: () => state.stanceDrop,
       modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:

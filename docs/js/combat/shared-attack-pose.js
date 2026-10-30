@@ -26,7 +26,12 @@
   if (window.SharedAttackPose) return;
 
   const POSE_KEYS = Object.freeze(['x', 'y', 'z', 'pitch', 'yaw', 'bodyYaw', 'roll']);
-  const CHANNELS = Object.freeze([...POSE_KEYS, 'scale']); // Merged for the per-frame sample; scale is the static holder scale, never lerped.
+  // Body sink: how far the whole body (portrait, hands, tool) sits below standing, as a PERCENT of the avatar's total height. It is a
+  // pose channel (authored per Neutral/Windup/Strike, lerped like the rest) but deliberately NOT in POSE_KEYS: that list is the 7-channel
+  // schema the stance matching/baking code compares, and a missing bodySink simply inherits the Neutral's. Not mirrored by Backhand.
+  const SINK_KEY = 'bodySink';
+  const MAX_BODY_SINK_PCT = 25;
+  const CHANNELS = Object.freeze([...POSE_KEYS, 'scale', SINK_KEY]); // Merged for the per-frame sample; scale is the static holder scale, never lerped.
   // Mirroring across the character's midline (Backhand, dirSign -1) negates the
   // left/right-handed channels and leaves y, z and pitch alone -- the attack
   // editor's flipPose() convention.
@@ -132,7 +137,7 @@
   // mirrorBlend runs 1 -> -1 across a true midline flip (1 when the pose has no
   // mirror sequence) and multiplies the hand-attach X.
   function createSample() {
-    return { x: 0, y: 0, z: 0, pitchRad: 0, yawRad: 0, rollRad: 0, bodyYawRad: 0, scale: 1, mirrorBlend: 1, hasMirrorSequence: false };
+    return { x: 0, y: 0, z: 0, pitchRad: 0, yawRad: 0, rollRad: 0, bodyYawRad: 0, bodySink: 0, scale: 1, mirrorBlend: 1, hasMirrorSequence: false };
   }
 
   const _neutral = {}; // Scratch: pose.neutral merged over the style neutral.
@@ -141,7 +146,7 @@
     for (let i = 0; i < CHANNELS.length; i += 1) {
       const key = CHANNELS[i];
       const value = over ? over[key] : undefined;
-      target[key] = value != null ? value : base[key];
+      target[key] = value != null ? value : (base[key] ?? 0);
     }
   }
 
@@ -182,6 +187,7 @@
     out.yawRad = poseChannel('yaw', true, pose, progress, wf, sf, hf, sign, power, sequence) * DEG_TO_RAD;
     out.rollRad = poseChannel('roll', true, pose, progress, wf, sf, hf, sign, power, sequence) * DEG_TO_RAD;
     out.bodyYawRad = poseChannel('bodyYaw', true, pose, progress, wf, sf, hf, sign, power, sequence) * DEG_TO_RAD;
+    out.bodySink = Math.max(0, poseChannel(SINK_KEY, false, pose, progress, wf, sf, hf, sign, power, sequence)); // Percent of avatar height; the swing's sunk-ness at this instant.
     return out;
   }
 
@@ -198,6 +204,7 @@
     out.yawRad = fourPhaseLerp(progress, wf, sf, hf, 0, T.strikeYawDeg * DEG_TO_RAD * power);
     out.rollRad = 0;
     out.bodyYawRad = fourPhaseLerp(progress, wf, sf, hf, T.windupBodyYawDeg * DEG_TO_RAD * power, T.strikeBodyYawDeg * DEG_TO_RAD * power);
+    out.bodySink = NaN; // Legacy arcs author no sink: consumers fall back to the stance's idle sink.
     out.scale = 1;
     out.mirrorBlend = 1;
     out.hasMirrorSequence = false;
@@ -220,6 +227,7 @@
     out.yawRad = 0;
     out.rollRad = 0;
     out.bodyYawRad = fourPhaseLerp(progress, wf, sf, hf, S.windupRad * power * dir, S.strikeRad * power * dir);
+    out.bodySink = NaN;
     out.scale = 1;
     out.mirrorBlend = dir;
     out.hasMirrorSequence = false;
@@ -334,6 +342,15 @@
       strike = window.MeleePoseSpacing.adjustEndpoint(strike, 'strike');
     }
     return { windup, strike };
+  }
+
+  // The weapon-stance idle sink in percent of height (proceduralFeet.stanceDrop.heightFraction): what a Light/Heavy stance sinks to at rest,
+  // and the Neutral the player's baked swings ease out of and back into (weapon-tool-stances.js adds it to the baked Neutral). 0 when the feature is disabled.
+  function idleBodySinkPct() {
+    const c = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.stanceDrop || {};
+    if (c.enabled === false) return 0;
+    const fraction = Number(c.heightFraction);
+    return (Number.isFinite(fraction) ? Math.max(0, Math.min(MAX_BODY_SINK_PCT / 100, fraction)) : 0.06) * 100;
   }
 
   // A whole attack against a weapon's Light/Heavy (or dual-wield main) stance: the baked Windup/Strike endpoints, the
@@ -549,6 +566,9 @@
     headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolEdgeOnDeadzone, toolEdgeOnDeadzoneDeg, setCameraProvider, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
+    SINK_KEY,
+    MAX_BODY_SINK_PCT,
+    idleBodySinkPct,
     MIRRORED_POSE_KEYS,
     STYLE_NEUTRAL_POSE,
     LEGACY_THRUST,

@@ -23,9 +23,11 @@ const SharedAttackPose = window.SharedAttackPose;
 ${slice('function defaultPose(', '\n') }
 ${slice('const STYLE_NEUTRAL_POSE', 'function neutralPoseFor')}
 ${wholeFunction('flipPose')}
+${wholeFunction('sinkPctForPhase')}
+var anim;
 `, sandbox);
 vm.runInContext(slice('function poseAt(t) {', 'function applyPoseToRig'), sandbox);
-vm.runInContext('globalThis.__editor = { STYLE_NEUTRAL_POSE, poseAt, flipPose, setAnim(a) { anim = a; } }; var anim;', sandbox);
+vm.runInContext('globalThis.__editor = { STYLE_NEUTRAL_POSE, poseAt, flipPose, setAnim(a) { anim = a; } };', sandbox);
 const editor = sandbox.__editor;
 
 // Rest poses are the game's (plus the editor-only drink preview), as independent copies.
@@ -37,9 +39,9 @@ assert.ok(editor.STYLE_NEUTRAL_POSE.drink, 'editor-only drink preview rest pose 
 
 // Every phase of poseAt equals the game's sampled channels (degrees) for the same timeline.
 const authored = {
-  neutral: { x: 0.1, y: 0, z: 0.16, pitch: 0, yaw: 10, bodyYaw: 0, roll: 20, scale: 1 },
-  windup: { x: 0.3, y: 0.1, z: 0.2, pitch: 30, yaw: 40, bodyYaw: -60, roll: 50 },
-  strike: { x: -0.2, y: 0.2, z: 0.4, pitch: -30, yaw: -40, bodyYaw: 70, roll: -50 },
+  neutral: { x: 0.1, y: 0, z: 0.16, pitch: 0, yaw: 10, bodyYaw: 0, roll: 20, scale: 1, bodySink: 6 },
+  windup: { x: 0.3, y: 0.1, z: 0.2, pitch: 30, yaw: 40, bodyYaw: -60, roll: 50, bodySink: 14 },
+  strike: { x: -0.2, y: 0.2, z: 0.4, pitch: -30, yaw: -40, bodyYaw: 70, roll: -50, bodySink: 3 },
 };
 const out = SAP.createSample();
 for (const sequence of ['attack', 'load', 'fire']) {
@@ -52,6 +54,7 @@ for (const sequence of ['attack', 'load', 'fire']) {
     close(pose.x, out.x, 'x'); close(pose.y, out.y, 'y'); close(pose.z, out.z, 'z');
     close(pose.pitch * Math.PI / 180, out.pitchRad, 'pitch'); close(pose.yaw * Math.PI / 180, out.yawRad, 'yaw');
     close(pose.roll * Math.PI / 180, out.rollRad, 'roll'); close(pose.bodyYaw * Math.PI / 180, out.bodyYawRad, 'bodyYaw');
+    close(pose.bodySink, out.bodySink, 'bodySink'); // The legs fold on the same lerp the game plays.
   }
 }
 editor.setAnim({ sequence: 'attack', windupFrac: 0.2, strikeFrac: 0.4, holdFrac: 0.6, poses: { ...authored, strike: { ...authored.strike, secondaryGrip: { enabled: true } } } });

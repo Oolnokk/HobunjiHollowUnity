@@ -39,6 +39,14 @@ Enemies therefore play the player's swing **clock** too: `swingTimeline` turns t
 - **Dual-wield stance.** A weapon that `HobunjiHandToolGrips.isDualWieldWeapon` accepts rests in the authored `dualWieldMain` stance for the player and for enemies alike.
 - **Dual-wield hands and weapons.** An enemy's `updateBanditToolMesh` evaluates `animationGripAt` with its own weapon key, so the hand mode (one-hand / two-hand / dual) comes from the weapon, and a dual-wield weapon rests with the grip state's `dualWieldIdleBlend` of 1. `dual-wield-weapon-visuals.js` keeps one state per actor (the player under a fixed key, every other actor keyed by its avatar root): each gets its own hidden-original plane, two duplicates with the plane-normal gap, the authored offhand idle stance mirrored across *that actor's* body, and the small main-hand lag. The hand driver already resolved sockets through the actor's own record; the pre-render sync now covers every actor with duplicates and tears one down when its holder leaves the scene.
 
+## Body sink (per-pose, in the attack animation editor)
+
+`bodySink` is a pose channel — **percent of the avatar's total height** the whole body sits below standing — authored per Neutral / Windup / Strike and lerped by `samplePose` like every other channel (`sample.bodySink`). It is deliberately *not* in `POSE_KEYS` (the 7-channel schema stance matching compares); a missing value inherits the Neutral's, and an unauthored Neutral rests at `SharedAttackPose.idleBodySinkPct()` (`proceduralFeet.stanceDrop.heightFraction`).
+
+- **Editor:** a "Body sink" slider on every pose tab; the preview lowers the body/hands/tool base and renders the real procedural feet and pants (`ProceduralLegAnimation` + `PantsGarmentRenderer`), so scrubbing a swing shows the knees bend.
+- **Game (player):** `game.js` reports each frame's sample through `WeaponStanceDropRuntime.noteSwingSink`; `js/weapon-stance-drop-runtime.js` lowers the body with a `PlayerBodyTransformComposer` translation channel and calls `legs.setStanceDrop`. `weapon-tool-stances.js` bakes the stance's idle sink into the swing's Neutral. At rest in a Light/Heavy stance the idle sink applies.
+- **Legs:** `setStanceDrop` raises the leg group by the sink (hips stay put in body space, soles rise toward them) and the fixed-length two-bone fold bends the knees instead of shortening the legs; feet are levelled against the shin. Seated / mounted / airborne / hover release it. Enemies do not consume the channel yet.
+
 ## Performance
 
 Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyThrust`) writes into a caller-owned sample object and module scratch — no per-frame objects or closures. `EnemyWeaponStances` bakes each enemy's stance pose once per attack (cached on the entity, revalidated against the live stance values, the attack's pose/power/sign and the action identity) instead of rebuilding about a dozen objects per enemy per frame.

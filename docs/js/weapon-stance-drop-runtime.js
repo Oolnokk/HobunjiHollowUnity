@@ -1,23 +1,34 @@
-// Lowers the player's whole rendered body while a weapon stance or attack is engaged, so stances read less rigid.
+// Sinks the player's whole rendered body while a weapon stance or attack is engaged, so stances read less rigid.
 //
-// The portrait, hands, held weapon and every other composer-owned visual sink by a fraction of the avatar's
-// total height (proceduralFeet.stanceDrop.heightFraction). The feet stay on the ground: the leg handle drops its
-// hips by the same amount and folds the knees at full bone length (ProceduralLegAnimation setStanceDrop), and the
-// body channel is flagged `plantedLegs` so the composer moves the leg group back up. The leg handle owns the easing
-// and the gating (seated, mounted, airborne...) and reports the drop it really applied; this channel lowers by exactly that.
+// The depth is the pose channel `bodySink` (percent of the avatar's total height, SharedAttackPose): the Light/Heavy idle stance rests at
+// SharedAttackPose.idleBodySinkPct() (proceduralFeet.stanceDrop.heightFraction), and an attack animation authors its own Windup/Strike
+// values in the attack animation editor, lerped across the swing by SharedAttackPose.samplePose. game.js reports each frame's sampled value
+// through noteSwingSink().
+//
+// The portrait, hands, held weapon and every other composer-owned visual sink via a translation channel. The leg handle
+// (ProceduralLegAnimation setStanceDrop) keeps the feet planted: its group is raised by the same amount, so the hips stay put in
+// body space while the soles rise toward them, and the fixed-length two-bone fold bends the knees. The leg handle owns easing and gating
+// (seated, mounted, airborne...) and reports the sink it really applied; this channel lowers by exactly that.
 (function (global) {
   'use strict';
 
   const CHANNEL = 'weapon-stance-drop';
+  const SWING_SAMPLE_FRESH_MS = 120; // A swing sample older than this means no swing is playing any more.
   let lastDrop = 0;
   let lastReason = 'waiting';
   let lastComposer = null;
   let lastPlayerMesh = null;
+  let swingSinkPct = NaN;
+  let swingSinkAtMs = -Infinity;
 
-  function settings() {
-    const c = global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.stanceDrop || {};
-    const fraction = Number(c.heightFraction);
-    return { enabled: c.enabled !== false, fraction: Number.isFinite(fraction) ? Math.max(0, Math.min(0.25, fraction)) : 0.06 };
+  function enabled() {
+    return global.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.stanceDrop?.enabled !== false;
+  }
+
+  // Called by game.js every frame the player's authored swing pose is sampled (percent of height; NaN = the pose authors none).
+  function noteSwingSink(pct) {
+    swingSinkPct = Number(pct);
+    swingSinkAtMs = performance.now();
   }
 
   function sync() {
@@ -31,23 +42,23 @@
     lastComposer = composer;
     lastPlayerMesh = playerMesh;
 
-    const { enabled, fraction } = settings();
     const ownsBody = global.ImpactRagdollPlayback?.isActive?.() || global.PlayerCrawl?.isActive?.(); // Ragdoll / crawl write their own leg and body pose.
-    if (ownsBody) {
+    if (ownsBody || !enabled()) {
       legs.setStanceDrop(0, true);
-      lastReason = 'body-pose-owned';
+      lastReason = ownsBody ? 'body-pose-owned' : 'disabled';
     } else {
-      const wanted = enabled && stances.stanceEngaged() ? fraction * (legs.modelHeight || 0) : 0;
-      legs.setStanceDrop(wanted);
-      lastReason = wanted > 0 ? 'weapon-stance' : 'no-stance';
+      const engaged = stances.stanceEngaged();
+      const swinging = engaged && performance.now() - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
+      const pct = engaged ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0)) : 0;
+      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging); // A playing swing is followed exactly; entering/leaving the stance is eased by the leg handle.
+      lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : 'no-stance';
     }
 
-    const applied = ownsBody ? 0 : legs.getStanceDrop();
+    const applied = ownsBody || !enabled() ? 0 : legs.getStanceDrop();
     if (applied > 1e-5) {
       if (composerChanged || applied !== lastDrop) composer.setChannel(CHANNEL, {
         priority: 4,
         mode: 'additive',
-        plantedLegs: true,
         translation: { x: 0, y: -applied, z: 0 },
       });
     } else if (lastDrop > 0 || composerChanged) {
@@ -58,12 +69,13 @@
 
   global.WeaponStanceDropRuntime = {
     channel: CHANNEL,
-    getDebug: () => ({ drop: lastDrop, reason: lastReason, settings: settings() }),
+    noteSwingSink,
+    getDebug: () => ({ drop: lastDrop, reason: lastReason, swingSinkPct }),
   };
 
   global.RuntimeFrameScheduler.register('weapon-stance-drop-sync', sync, {
     phase: 'pre-render',
     owner: 'WeaponStanceDropRuntime',
-    description: 'Lowers the player body for weapon stances and asks the legs to fold the knees to match.',
+    description: 'Sinks the player body for weapon stances and swing poses and asks the legs to fold the knees to match.',
   });
 })(window);

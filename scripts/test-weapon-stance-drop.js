@@ -64,16 +64,32 @@ handle.setStanceDrop(0); settle();
 assert.strictEqual(handle.getStanceDrop(), 0, 'releasing the stance restores the standing pose exactly');
 assert(Math.abs(measure().hip - rest.hip) < 1e-9);
 
-// Composer: body lowered, leg group counter-raised, both restored after render.
+// The leg group is raised by the sink (persistent, so skinned garments see it); the body owner lowers the body by the same amount.
+handle.setStanceDrop(drop); settle();
+assert(Math.abs(handle.group.position.y - drop) < 1e-4, `leg group raised by the sink (${handle.group.position.y})`);
 const composer = win.PlayerBodyTransformComposer;
-composer.setChannel('t', { plantedLegs: true, translation: { x: 0, y: -drop, z: 0 } });
+composer.setChannel('t', { translation: { x: 0, y: -handle.getStanceDrop(), z: 0 } });
 const scene = new THREE.Scene(); scene.add(playerMesh);
 const fakeRenderer = Object.create(THREE.WebGLRenderer.prototype);
-{
-  fakeRenderer.render(scene, new THREE.PerspectiveCamera());
-  assert(Math.abs(bodyY - -drop) < 1e-9, `body lowered (${bodyY})`);
-  assert(Math.abs(legWorldY) < 1e-9, `leg group stays on the floor (${legWorldY})`);
-  assert.strictEqual(playerMesh.position.y, 0, 'render delta undone');
-  assert.strictEqual(handle.group.position.y, 0, 'leg group restored after render');
-}
+fakeRenderer.render(scene, new THREE.PerspectiveCamera());
+assert(Math.abs(bodyY - -drop) < 1e-4, `body lowered (${bodyY})`);
+assert(Math.abs(legWorldY) < 1e-4, `leg group nets to the floor (${legWorldY})`);
+assert.strictEqual(playerMesh.position.y, 0, 'render delta undone');
+composer.clearChannel('t');
+handle.setStanceDrop(0); settle();
+assert.strictEqual(handle.group.position.y, 0, 'leg group back on the floor when the sink is released');
+
+// Pose channel: bodySink lerps Neutral -> Windup -> Strike like every other channel, in percent of height.
+const SAP = (() => { const w = { SCRATCHBONES_CONFIG: win.SCRATCHBONES_CONFIG, setTimeout, performance }; w.window = w; vm.runInNewContext(read('docs/js/combat/shared-attack-pose.js'), { window: w, performance }, { filename: 'shared-attack-pose.js' }); return w.SharedAttackPose; })();
+assert.strictEqual(SAP.idleBodySinkPct(), 6, 'idle stance sink comes from proceduralFeet.stanceDrop.heightFraction');
+const out = SAP.createSample();
+const pose = { neutral: { bodySink: 6 }, windup: { bodySink: 14 }, strike: { bodySink: 2 } };
+const at = p => SAP.samplePose(out, pose, SAP.STYLE_NEUTRAL_POSE.thrust, p, 0.3, 0.5, 0.7).bodySink;
+assert(Math.abs(at(0) - 6) < 1e-9, 'starts at the neutral sink');
+assert(Math.abs(at(0.3) - 14) < 1e-9, 'reaches the windup sink');
+assert(Math.abs(at(0.5) - 2) < 1e-9, 'reaches the strike sink');
+assert(at(0.15) > 6 && at(0.15) < 14, 'lerps across the windup');
+const inherit = SAP.samplePose(out, { neutral: { bodySink: 9 }, windup: {}, strike: {} }, SAP.STYLE_NEUTRAL_POSE.thrust, 0.4, 0.3, 0.5, 0.7).bodySink;
+assert(Math.abs(inherit - 9) < 1e-9, 'a pose without an authored sink inherits the neutral');
+assert.strictEqual(SAP.samplePose(out, {}, SAP.STYLE_NEUTRAL_POSE.thrust, 0.4, 0.3, 0.5, 0.7).bodySink, 0, 'no authored sink at all means standing');
 console.log('weapon-stance-drop OK');
