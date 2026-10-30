@@ -24,6 +24,7 @@
   const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
   let playerMesh = null;
   let playerLegRoot = null;
+  let playerLegHandle = null; // The live ProceduralLegAnimation handle, so body-lowering channels can ask the legs to fold.
   let playerPosteriorY = 0;
   let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
@@ -339,6 +340,23 @@
     return active ? resolveDelta('player').translation.add(new THREE.Vector3(0, lift, 0)) : null;
   }
 
+  // A channel flagged `plantedLegs` lowers/raises the body but leaves the leg group where it was (rotation still follows the body), so the
+  // feet stay on the ground while the hips come down to meet them — the leg handle folds the knees to take up the slack (setStanceDrop).
+  // Returns the summed translation of those channels in the body's local frame, or null when none is active.
+  const plantedLegsTranslation = new THREE.Vector3();
+  function resolvePlantedLegsTranslation() {
+    let active = false;
+    plantedLegsTranslation.set(0, 0, 0);
+    for (const channel of channels.values()) {
+      if (!channel || channel.enabled === false || channel.space !== 'local' || channel.includePlayer === false || !channel.plantedLegs || !channel.translation) continue;
+      active = true;
+      plantedLegsTranslation.x += finite(channel.translation.x);
+      plantedLegsTranslation.y += finite(channel.translation.y);
+      plantedLegsTranslation.z += finite(channel.translation.z);
+    }
+    return active ? plantedLegsTranslation : null;
+  }
+
   function hasResolvedDelta(delta) {
     return !!delta && (
       Math.abs(delta.rotation.x) + Math.abs(delta.rotation.y) + Math.abs(delta.rotation.z) > 1e-8
@@ -386,6 +404,7 @@
       enabled: contribution.enabled !== false,
       absoluteYaw: Number.isFinite(contribution.absoluteYaw) ? contribution.absoluteYaw : undefined, // Final world yaw (rotation.y convention) of the body; the composer derives the delta from the live base yaw each render.
       absoluteLegs: contribution.absoluteLegs === true, // Recorded/authored leg poses are avatar-local: the leg group ignores this channel's rotation and keeps only its translation (see resolveAbsoluteLegsTranslation).
+      plantedLegs: contribution.plantedLegs === true, // Translation lowers the body only; the leg group is moved back so the soles stay on the ground (see resolvePlantedLegsTranslation).
       absoluteLegsLiftY: finite(contribution.absoluteLegsLiftY), // Raises the legs relative to the body so authored foot centres do not sink the soles into the floor.
       includePlayer: contribution.includePlayer !== false,
       includeExternal: contribution.includeExternal !== false,
@@ -443,6 +462,7 @@
     if (neck) { const yaw = neck.rotation.y; neck.rotation.y -= correction; undo.push(() => { neck.rotation.y = yaw; }); }
   }
 
+  const identityQuaternion = new THREE.Quaternion(); // No-rotation delta used when only a translation is applied to the leg group.
   const absoluteLegsParentQuaternion = new THREE.Quaternion(); // Reused by restoreAbsoluteLegs.
   function restoreAbsoluteLegs(base, undo, renderDebug) {
     if (!playerLegRoot?.parent) return;
@@ -494,6 +514,7 @@
   function registerPlayerRig(parent, handle) {
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
+    playerLegHandle = playerLegRoot ? handle : null;
     playerPosteriorY = finite(handle?.standingPosteriorY);
     playerNeckJointCache = null;
     renderFacingState = {};
@@ -504,6 +525,7 @@
     if (handle?.group && playerLegRoot !== handle.group) return;
     playerMesh = null;
     playerLegRoot = null;
+    playerLegHandle = null;
     playerPosteriorY = 0;
     playerNeckJointCache = null;
     setHeadAimTarget(null);
@@ -571,6 +593,12 @@
               .multiply(baseWorldQuaternion.clone().invert());
             const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
             applyWorldDelta(entry.root, pivotWorld, worldRotation, worldTranslation, undo);
+          }
+          const planted = playerLegRoot && !legsTranslation ? resolvePlantedLegsTranslation() : null; // absoluteLegs channels already position the legs themselves.
+          if (planted && playerLegRoot.parent === playerMesh) {
+            const plantedWorld = planted.clone().applyQuaternion(baseWorldQuaternion).negate(); // Undoes exactly the lowering the body just received.
+            applyWorldDelta(playerLegRoot, pivotWorld, identityQuaternion, plantedWorld, undo);
+            renderDebug.plantedLegs = true;
           }
           renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
         }
@@ -651,6 +679,7 @@
     resolvedYawDeltaRad,
     getHeadMaxYawDeg: () => PLAYER_HEAD_MAX_YAW_DEG, // Shared physical yaw cap lets NPC greeting neck turns match the player's head limit without duplicating the number.
     getPlayerMesh: () => playerMesh,
+    getPlayerLegHandle: () => playerLegHandle,
     getPosteriorY: () => playerPosteriorY, // Exact live player-local posterior pivot shared by holding/camera/composed body transforms.
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),

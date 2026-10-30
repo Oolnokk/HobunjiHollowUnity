@@ -689,6 +689,19 @@
     return target;
   }
 
+  // True while the player holds a weapon in its Light/Heavy idle stance or is mid-attack with it: the poses the stance-drop runtime
+  // (weapon-stance-drop-runtime.js) lowers the whole body for. Allocation-free; same put-away/seated gates as idleBodyYawSnapshot.
+  function stanceEngaged() {
+    if (window.__hobunjiFurnitureDebug?.sitInteraction && window.__hobunjiFurnitureDebug.sitInteraction.phase !== 'out') return false;
+    const heldMode = deps?.getHeldMode?.();
+    if (heldMode != null && heldMode !== 'tool') return false;
+    if (deps?.getActiveTool?.() !== 'weapon') return false;
+    if (combatVisualState) return true;
+    const itemKey = deps?.equipmentSlots?.weapon || null;
+    const idleClass = itemKey ? weaponIdleClass(itemKey, deps?.TOOL_ITEM_DEFS?.[itemKey]) : null;
+    return idleClass === 'light' || idleClass === 'heavy';
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     augmentToolDefinitions();
@@ -713,6 +726,7 @@
     prepareCombatOptions,
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
+    stanceEngaged,
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
     debugSnapshot,

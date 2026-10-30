@@ -907,6 +907,8 @@
       hoverEnabled: false, // Dedicated airborne locomotion mode used by hovering humanoids such as Harlyao Liches.
       hoverPhase: 0, // Slow continuous phase drives loose left/right dangling asymmetry without depending on walking speed.
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
+      stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
+      stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
       disposed: false,
     };
 
@@ -1024,7 +1026,7 @@
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
-        foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between.
+        foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : state.stanceDrop > 0.0001 ? standingLegLength() : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between. A lowered stance keeps the full bone length and bends the knees.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
       chain.calf.position.set(0, -solved.thighLength, 0);
@@ -1033,6 +1035,17 @@
       mesh.position.set(0, -solved.calfLength, 0);
       mesh.rotation.x = state[`${side}Roll`];
       applyBoneGuideTransforms(chain, solved.thighLength, solved.calfLength);
+    }
+
+    // Lowers both hips by `state.stanceDrop` while the foot targets (root-local, floor-anchored) stay where the gait/idle math put them.
+    // Hips sit closer to the soles, so applyLegChain's fold keeps the bones at full length and bends the knees instead of telescoping.
+    function applyStanceDrop(drop) {
+      const clamped = Math.max(0, Math.min(drop, standingLegLength() * 0.55)); // Beyond ~55% of the leg the fold would read as a sit, not a stance.
+      if (Math.abs(clamped - state.stanceDrop) < 1e-6 && Math.abs(legChains.left.hip.position.y - (posteriorY - clamped)) < 1e-6) return;
+      state.stanceDrop = clamped;
+      legChains.left.hip.position.y = legChains.right.hip.position.y = posteriorY - clamped;
+      applyLegChain('left');
+      applyLegChain('right');
     }
 
     // Sets a leg's target straight to its idle stance (no damping — used
@@ -1376,6 +1389,7 @@
       if (state.disposed) return;
       state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
+        applyStanceDrop(0); // Seat solve measures from the standing hip height.
         state.motionMode = 'seated';
         state.gaitStrength = damp(state.gaitStrength, 0, 12, dt);
         state.gaitStrideLength = 0;
@@ -1396,6 +1410,12 @@
       lastSeatedPoseDebug = null;
       legChains.left.thigh.position.set(0, 0, 0);
       legChains.right.thigh.position.set(0, 0, 0);
+      const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
+      const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
+      if (wantedDrop > 0 || state.stanceDrop > 0) {
+        const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
+        applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
+      }
       if (suppressed) {
         state.motionMode = 'suppressed';
         // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
@@ -1573,6 +1593,11 @@
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets,
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
+      // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
+      // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
+      setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed) applyStanceDrop(state.stanceDropTarget); },
+      getStanceDrop: () => state.stanceDrop,
+      modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
       // the Pants garment binds to this so it fits the same whether the avatar is seated, mid-stride or just spawned.
       getRestStance: () => {
