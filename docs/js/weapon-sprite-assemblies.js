@@ -117,7 +117,8 @@
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set((Number(offset?.x) || 0) * unit, -(Number(offset?.y) || 0) * unit, 0);
     mesh.renderOrder = order;
-    mesh.userData.hobunjiWeaponAssemblyPart = true;
+    mesh.userData.hobunjiHeldObjectPlane = true; // Reuse the existing held-object occlusion/replay pipeline for all chain/head layers.
+    mesh.userData.hobunjiWeaponAssemblyPart = true; // HeldObjectRenderOrder preserves this assembly plane's ordered overlay layer.
     return mesh;
   }
 
@@ -285,13 +286,16 @@
     }
     const velocity = q.velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt));
     state.lastPivot.copy(pivot);
+    const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
+    const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const target = state.attacking
       ? q.target.set(0, 1, 0).applyQuaternion(baseQ).normalize()
-      : q.target.set(-velocity.x * MOTION_LAG, -1, -velocity.z * MOTION_LAG).normalize();
+      : q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize();
     // Angular follow avoids the 180-degree deadlock of normalized linear lerp.
     const turnAngle = state.direction.angleTo(target);
     if (turnAngle > 1e-6) {
-      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt)) * (state.attacking ? 15 : 7); // Fast lever on attack, gentler travel lag at rest.
+      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
+        * Math.max(0.1, Math.min(60, Number(state.attacking ? motion.attackFollow : motion.idleFollow) || (state.attacking ? 15 : 7))); // Fast lever on attack, gentler travel lag at rest.
       q.deltaQ.setFromUnitVectors(state.direction, target);
       q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
       state.direction.applyQuaternion(q.stepQ).normalize();
