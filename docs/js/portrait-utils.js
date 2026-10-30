@@ -1894,7 +1894,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (onlyHeadSprite) {
     if (headUrl) {
       const image = imgMap.get(headUrl);
-      if (image) drawLayerWithEmote(image, getPortraitXformPreset('B'), tintA, 1, headUrl);
+      if (image) {
+        const headPreset = getPortraitXformPreset('B'); // Match the behind-view head's mirrored transform when generating rear alpha masks.
+        drawLayerWithEmote(image, renderBehindView ? { ...headPreset, sx: -headPreset.sx } : headPreset, tintA, 1, headUrl);
+      }
     }
     if (_needsScale) ctx.restore();
     return;
