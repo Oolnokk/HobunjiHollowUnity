@@ -89,8 +89,8 @@
       equippedCosmetics:cosmetics, cosmeticSlots:Object.fromEntries(cosmetics.map(id=>[id,slots[id]])), appliedDyes,
       lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
       clothingPatterns:{forcedOverpassBySlot:{
-        overwear:{pattern:glyphPattern(def),fallbackColorC:{hex:def.ink}}, // Garb is visibly woven with its own named Harlyao glyph.
-        ...(type==='hronal'?{pants:{pattern:glyphPattern(def),fallbackColorC:{hex:def.ink}}}:{}),
+        overwear:{pattern:glyphPattern(def),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
+        ...(type==='hronal'?{pants:{pattern:glyphPattern(def),fallbackColorC:{hex:bodyColor3For(type)}}}:{}),
       }},
     };
     if (type==='hronal') {
