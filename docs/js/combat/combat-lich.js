@@ -1864,7 +1864,21 @@
     const bobAmplitude = modelHeight * HOVER_BOB_MODEL_FRACTION; // Gentle secondary float, deliberately much smaller than the main lift.
     const bob = Math.sin((lich._lichHoverClockS / HOVER_BOB_PERIOD_S) * Math.PI * 2) * bobAmplitude;
     lich._lichHoverOffsetWorld = (hoverHeight + bob) * lich._specialHoverBlend;
-    lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld; // Existing creature renderer applies this presentation lift without changing X/Z AI/collision.
+    const kneel = lich.lichType === 'tothal' && lich.isSpecialLich ? Math.max(0, Math.min(1, Number(lich._specialKneelBlend) || 0)) : 0; // Nanahi's head/torso descends toward the sanctum floor during the deadly barrage.
+    const crouch = modelHeight * .20 * kneel; // Visual-only crouch; combat collision and damage hitbox retain their normal authoritative size.
+    lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld - crouch; // Existing creature renderer applies this lift without changing X/Z simulation.
+    if (kneel > .12 && legs?.getRestStance && legs?.applyWorldFootTargets && window.THREE?.Vector3) {
+      const stance = legs.getRestStance(); // Actual per-species knee/ankle rig, not an independent fake limb mesh.
+      const root = legs.group; // Pose solver owns these same thigh/calf bones for normal walking and pants.
+      if (root?.localToWorld && stance.left && stance.right) {
+        root.updateWorldMatrix?.(true,false);
+        const foot = (side, forward) => {
+          const a = stance[side].ankle; // Use current feet as anchors; one kneels back while the other braces forward.
+          return root.localToWorld(new THREE.Vector3(a.x, a.y + crouch, a.z + forward * modelHeight * kneel));
+        };
+        legs.applyWorldFootTargets({left:foot('left',-.19),right:foot('right',.15)}); // Real two-bone IK folds the legs into an asymmetric knee-down braced stance.
+      }
+    }
   }
 
   function updateRuntime(dt) {
