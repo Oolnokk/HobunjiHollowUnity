@@ -125,11 +125,33 @@
     if (!f) { stackTarget = 'weapon'; $('stackTarget').value = 'weapon'; return; }
     $('baseSprite').value = def.sprite || (key === 'hachutuTorchFlail' ? 'assets/toolsprites/hachutu_torch-flail_handle.png' : '');
     $('chainSprite').value = f.chain.sprite || '';
+    const rope = f.chain.type === 'rope'; // A generated rope replaces the chain PNG but shares attachment animation.
+    $('connectorType').value = rope ? 'rope' : 'chain';
+    $('chainSpriteRow').hidden = rope;
+    $('ropeFields').hidden = !rope;
+    $('ropeLength').value = f.chain.lengthPx ?? 160;
+    $('ropeRadius').value = f.chain.radiusPx ?? 2.5;
+    $('ropeColor').value = f.chain.color || '#6B4728';
+    $('chainScale').value = f.chain.scale ?? 1;
+    $('headScale').value = f.head.scale ?? 1;
+    for (const name of ['chainTop','chainBottom']) {
+      $(name+'Mode').disabled = rope; // A generated rope has geometric endpoints rather than opaque pixels to pick.
+      $('pickButtons').querySelector?.('[data-pick="'+name+'"]')?.setAttribute('disabled','');
+    }
     coordinateField('haft', f.haftAnchor, 'top');
     coordinateField('chainTop', f.chain.top, 'top');
     coordinateField('chainBottom', f.chain.bottom, 'bottom');
     coordinateField('head', f.head.anchor, 'bottom');
-    setOptions($('headAnchorLayer'), f.head.layers.map(layer => [layer.id, layer.id]), f.head.anchorLayer);
+    setOptions($('headAnchorLayer'), [
+      ...f.head.layers.map(layer => [layer.id, layer.id]),
+      ['composite', 'Between layers (shared center)'],
+    ], f.head.anchorSpace === 'composite' ? 'composite' : f.head.anchorLayer);
+    if (f.head.anchorSpace === 'composite') {
+      $('headMode').value = 'pixel'; $('headMode').disabled = true;
+      $('headX').disabled = false; $('headY').disabled = false;
+      $('headX').value = f.head.anchor?.x ?? 0;
+      $('headY').value = f.head.anchor?.y ?? 0;
+    } else $('headMode').disabled = false;
     $('lag').value = f.motion?.lag ?? DEFAULTS.motion.lag;
     $('idleFollow').value = f.motion?.idleFollow ?? DEFAULTS.motion.idleFollow;
     $('attackFollow').value = f.motion?.attackFollow ?? DEFAULTS.motion.attackFollow;
@@ -210,7 +232,7 @@
   function on(id, event, callback) { $(id).addEventListener(event, callback); }
 
   function writeCoordinate(name, target) {
-    const mode = $(name + 'Mode').value;
+    const mode = name==='head' && entry().flail?.head?.anchorSpace==='composite' ? 'pixel' : $(name + 'Mode').value;
     const x = $(name + 'X'), y = $(name + 'Y');
     x.disabled = y.disabled = mode !== 'pixel';
     if (mode === 'pixel') {
@@ -246,6 +268,19 @@
     bindInput('baseSprite', value => { entry().sprite = value; $('baseSpriteGeneral').value = value; });
     bindInput('baseSpriteGeneral', value => { entry().sprite = value; $('baseSprite').value = value; });
     bindInput('chainSprite', value => { ensureFlail().chain.sprite = value; });
+    bindInput('connectorType', value => {
+      const chain = ensureFlail().chain; // Type conversion retains saved PNG and rope settings if toggled back.
+      if (value === 'rope') {
+        chain.type = 'rope'; chain.lengthPx ??= 160; chain.radiusPx ??= 2.5;
+        chain.color ||= '#6B4728'; chain.texture ||= 'assets/textures/wavy_surface.png';
+      } else delete chain.type;
+      setFlailFields(); window.HobunjiMultiSpritePreviewRenderer?.resetEffects();
+    });
+    bindInput('ropeLength', value => { ensureFlail().chain.lengthPx = safeNum(value,160,2,2048); });
+    bindInput('ropeRadius', value => { ensureFlail().chain.radiusPx = safeNum(value,2.5,.25,30); });
+    bindInput('ropeColor', value => { ensureFlail().chain.color = validHex(value,'#6B4728'); });
+    bindInput('chainScale', value => { ensureFlail().chain.scale = safeNum(value,1,.05,8); });
+    bindInput('headScale', value => { ensureFlail().head.scale = safeNum(value,1,.05,8); });
     const coordinates = [
       ['haft', () => ensureFlail().haftAnchor || (ensureFlail().haftAnchor = {})],
       ['chainTop', () => ensureFlail().chain.top || (ensureFlail().chain.top = {})],
@@ -255,7 +290,59 @@
     for (const [name, getTarget] of coordinates) {
       for (const suffix of ['Mode','X','Y']) on(name + suffix, 'change', () => writeCoordinate(name, getTarget()));
     }
-    bindInput('headAnchorLayer', value => { ensureFlail().head.anchorLayer = value; });
+    const picker = window.HobunjiSpritePointPicker?.create({
+      canvas: $('pickCanvas'), panel: $('pickPanel'),
+      title: $('pickTitle'), info: $('pickInfo'), cancel: $('cancelPick'),
+    }); // One picker handles all exact anchors, using source PNG coordinates rather than fitted preview coordinates.
+    document.querySelectorAll('[data-pick]').forEach(button => {
+      button.addEventListener('click', () => {
+        const which=button.dataset.pick, f=entry().flail;
+        if (!f) return;
+        const isRope=f.chain.type==='rope';
+        if (isRope && (which==='chainTop'||which==='chainBottom')) {
+          log('Generated ropes have fixed geometric endpoints. Pick the haft or composite head attachment instead.');
+          return;
+        }
+        const composite=which==='head' && f.head.anchorSpace==='composite';
+        let spritePaths=[];
+        if (which==='haft') spritePaths=[entry().sprite || 'assets/toolsprites/hachutu_torch-flail_handle.png'];
+        else if (which==='chainTop'||which==='chainBottom') spritePaths=[f.chain.sprite];
+        else if (composite) spritePaths=f.head.layers.map(part=>part.sprite);
+        else spritePaths=[(f.head.layers.find(part=>part.id===f.head.anchorLayer)||f.head.layers[0])?.sprite];
+        const imgs=spritePaths.map(image);
+        if (!imgs.length||imgs.some(img=>!img)) {
+          spritePaths.filter(Boolean).forEach(warm);
+          log('Load the PNG first, then tap Pick on sprite again.',true);
+          return;
+        }
+        picker?.open({
+          images:imgs, composite, label:which+' · '+spritePaths.map(s=>s.split('/').pop()).join(' + '),
+          onPick:point=>{
+            if (which==='head' && composite) {
+              f.head.anchor={x:point.x,y:point.y};
+            } else {
+              const target=coordinates.find(row=>row[0]===which)?.[1]();
+              if (!target) return;
+              target.x=point.x;target.y=point.y;delete target.opaque;
+            }
+            setFlailFields();markChanged();
+            log('Picked '+which+' at ('+point.x+', '+point.y+') in '+(composite?'composite center':'source PNG')+' coordinates.');
+          },
+        });
+      });
+    });
+    bindInput('headAnchorLayer', value => {
+      const head = ensureFlail().head;
+      const wasComposite = head.anchorSpace === 'composite';
+      if (value === 'composite') {
+        head.anchorSpace = 'composite';head.anchorLayer = 'composite';
+        head.anchor = {x:0,y:0}; // Shared center permits rope connection inside the gap between two distinct sprites.
+      } else {
+        delete head.anchorSpace;head.anchorLayer = value;
+        if (wasComposite) head.anchor = {opaque:'bottom'};
+      }
+      setFlailFields();
+    });
     bindInput('lag', value => { ensureFlail().motion.lag = safeNum(value, 0.065, 0, 1); });
     bindInput('idleFollow', value => { ensureFlail().motion.idleFollow = safeNum(value, 7, 0.1, 60); });
     bindInput('attackFollow', value => { ensureFlail().motion.attackFollow = safeNum(value, 15, 0.1, 60); });
@@ -328,6 +415,7 @@
     on('copyJson','click', () => copy(JSON.stringify(state, null, 2)));
     on('copyDebug','click', () => copy(logs.join('\n') + '\n\n' + JSON.stringify({
       key, tab, stackTarget, selected, latestError,
+      flailScale: entry().flail ? {chain:entry().flail.chain?.scale??1,head:entry().flail.head?.scale??1,connector:entry().flail.chain?.type||'chain'}:null,
       preview: window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot(),
     }, null, 2))); // Reports measured bounds, loaded layers, and fit scale for remote mobile bug reports.
   }
