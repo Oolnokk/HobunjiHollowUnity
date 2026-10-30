@@ -79,9 +79,9 @@
     if (!actor?._specialWarhammerGlyph || actor._specialWarhammerPatternRequested || typeof document==='undefined' || typeof Image==='undefined') return;
     const holder=actor._banditToolHolder; // The standard BanditCombat weapon holder already knows every grip, strike and two-handed scale.
     if (!holder?.parent) return;
-    let mesh=null; // Real tool-plane mesh with a loaded PNG, rather than a second invented weapon model.
-    holder.traverse?.(obj=>{if(!mesh && obj.isMesh && obj.material?.map?.image?.width)mesh=obj;});
-    if(!mesh)return;
+    const mesh=holder.children?.[0]?.userData?.toolPlane; // Target the factory's actual painted weapon, never its shadow/outline or an empty grip placeholder.
+    const sourceImage=mesh?.material?.map?.image; // Live PNG or Workshop's asynchronous recolored canvas.
+    if(!mesh?.isMesh || !sourceImage || sourceImage.width<=2 || sourceImage.height<=2)return; // Wait for the real asset rather than stamping a 2×2 placeholder quad.
     actor._specialWarhammerPatternRequested=true; // The asset loads once per guardian instead of spawning asynchronous work each frame.
     const original=mesh.material, originalMap=original.map; // Keep game-owned weapon texture intact for all other warhammers.
     const motif=new Image(); // Authored entropy-glyph PNG shared by wall engravings and crafted-armor verdigris.
@@ -104,14 +104,17 @@
         const texture=new window.THREE.CanvasTexture(canvas);
         texture.colorSpace=originalMap.colorSpace;texture.flipY=originalMap.flipY;
         texture.magFilter=originalMap.magFilter;texture.minFilter=originalMap.minFilter;
-        const material=original.clone();material.map=texture;material.needsUpdate=true;
+        const material=original.clone();material.map=texture;
+        material.color?.set?.('#ffffff'); // The recolored PNG already supplies its own metal hue; a dark shader multiplier would blacken the entire plane.
+        material.transparent=true;material.alphaTest=Math.max(.01,Number(original.alphaTest)||0);material.depthWrite=false; // Keep transparent PNG pixels transparent in the Workshop and in combat.
+        material.needsUpdate=true;
         mesh.material=material;
         actor._specialWarhammerMaterial={mesh,original,material,texture}; // Restores/disposes this per-boss patina on clear.
         lastEvent='azgarlu:entropy-verdigris';
       }catch(error){window.__farmLog?.('[special-lich] warhammer motif: '+error.message,'warn');}
     };
     motif.onerror=()=>{actor._specialWarhammerPatternRequested=false;}; // Asset failure leaves the original functional warhammer alone.
-    motif.src='assets/patterns/motif_harlyao_glyph_entropy.png';
+    motif.src='assets/patterns/motif_' + encodeURIComponent(actor._specialWarhammerGlyph) + '.png'; // Workshop glyph overrides follow the same image as the boss's garments.
   }
   function releaseWarhammer(actor) {
     const entry=actor?._specialWarhammerMaterial;
@@ -140,9 +143,7 @@
       entity._banditToolHolder.add(light);
     }
     if (type==='kanthic') {
-      for (const joint of [entity.avatarRef?.headScaleJoint?.front,entity.avatarRef?.headScaleJoint?.back]) {
-        joint?.scale?.set?.(.001,.001,.001); // Hide the head itself, never the whole torso PNG.
-      }
+      entity._specialSkullTransparent = !!entity.avatarRef?.group?.userData?.skullPixelsTransparent; // Preserve full-scale neck/head bones; the shared portrait builder removes only Imlao's skull pixels.
     }
     lastEvent = 'spawn:' + spec.id;
     return entity;
