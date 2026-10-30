@@ -85,6 +85,11 @@
     return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
   }
 
+  function connectorAxisScale(part, axis) {
+    const n = Number(part?.[axis] ?? part?.scale ?? 1); // Match gameplay's axis scaling and backward compatibility for uniform drafts.
+    return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
+  }
+
   function modelFor(def, lookup, progress, clock = 0) {
     const basePath = def.sprite || (def.flail?.chain ? 'assets/toolsprites/hachutu_torch-flail_handle.png' : '');
     const shaft = lookup(basePath);
@@ -101,7 +106,9 @@
         color: flail.chain.color || '#6B4728',
       } : null, // Generated totem-style rope has no image asset and uses original-handle-pixel units.
       headOrigin: null, headPosition: null, headRotation: 0,
-      chainScale: partScale(flail?.chain), headScale: partScale(flail?.head), // Both ratios reference the unmodified shaft pixels, not each other.
+      chainScaleX: connectorAxisScale(flail?.chain, 'scaleX'), // Horizontal chain width and rope thickness.
+      chainScaleY: connectorAxisScale(flail?.chain, 'scaleY'), // Vertical connector reach.
+      headScale: partScale(flail?.head), // Independent head scale remains relative to the handle.
     }; // Used by both independently fitted canvases; source pixels remain authoritative.
     if (!shaft || !flail) return model;
     const chain = model.rope ? {width:1,height:model.rope.length+1} : lookup(flail.chain?.sprite);
@@ -114,15 +121,15 @@
     model.chainBottom = model.rope ? {x:0,y:model.rope.length} : anchor(chain, flail.chain?.bottom, 'bottom');
     const cx = model.chainBottom.x - model.chainTop.x;
     const cy = model.chainBottom.y - model.chainTop.y;
-    const len = Math.hypot(cx, cy);
+    const len = Math.hypot(cx * model.chainScaleX, cy * model.chainScaleY); // Endpoint span after independent scaling.
     const tilt = swing
       ? Math.sin(progress * Math.PI * 2) * (0.8 + (Number(flail.motion?.lag) || .065))
       : Math.sin(clock * .0013) * .04;
     const angle = Math.PI / 2 + tilt;
-    model.chainRotation = angle - Math.atan2(cy, cx);
+    model.chainRotation = angle - Math.atan2(cy * model.chainScaleY, cx * model.chainScaleX); // Orient the stretched chain's endpoint vector.
     model.headPosition = {
-      x: model.pivot.x + Math.cos(angle) * len * model.chainScale,
-      y: model.pivot.y + Math.sin(angle) * len * model.chainScale, // The hanging span grows relative to the existing handle size.
+      x: model.pivot.x + Math.cos(angle) * len,
+      y: model.pivot.y + Math.sin(angle) * len, // Width-only changes do not lengthen a vertical rope.
     }; // Physical chain span uses the actual opaque endpoint distance, not its entire canvas height.
     const head = flail.head;
     const target = model.parts.find(part => part.id === head?.anchorLayer) || model.parts[0];
@@ -155,9 +162,11 @@
       [a.left, a.top], [a.right, a.top], [a.right, a.bottom], [a.left, a.bottom],
     ];
     for (const [x, y] of corners) {
-      const p = rotate(x - data.width / 2 + o.x - (relativeTo?.x || 0),
-        y - data.height / 2 + o.y - (relativeTo?.y || 0), angle);
-      addPoint(b, origin.x + p.x * scale, origin.y + p.y * scale); // The combined auto-fit must include part-specific scaling or the head can clip again.
+      const sx = typeof scale === 'number' ? scale : (scale?.x ?? 1); // Horizontal fit multiplier for stretched chain sprites.
+      const sy = typeof scale === 'number' ? scale : (scale?.y ?? 1); // Vertical fit multiplier; other pieces use the original scalar.
+      const p = rotate((x - data.width / 2 + o.x - (relativeTo?.x || 0)) * sx,
+        (y - data.height / 2 + o.y - (relativeTo?.y || 0)) * sy, angle);
+      addPoint(b, origin.x + p.x, origin.y + p.y); // Fit the actual rotated, stretched art to prevent clipping.
     }
   }
 
@@ -179,7 +188,7 @@
       model.baseLayers.forEach(part => addOpaque(bounds, lookup(part.sprite), { x: 0, y: 0 }, model.shaftRotation, part));
       if (model.chain && model.pivot) {
         if (model.rope) {
-          const diameter = model.rope.radius * 2 * model.chainScale;
+          const diameter = model.rope.radius * 2 * model.chainScaleX; // Width affects silhouette but not length.
           for (const point of [model.pivot, model.headPosition]) if (point) {
             addPoint(bounds,point.x-diameter,point.y-diameter);
             addPoint(bounds,point.x+diameter,point.y+diameter);
@@ -188,7 +197,7 @@
           const top = model.chainTop, d = sourceData(model.chain);
           addOpaque(bounds, model.chain, model.pivot, model.chainRotation, null, {
             x: top.x + .5 - d.width / 2, y: top.y + .5 - d.height / 2,
-          }, model.chainScale);
+          }, { x: model.chainScaleX, y: model.chainScaleY });
         }
         addPoint(bounds, model.pivot.x, model.pivot.y);
       }
@@ -310,7 +319,7 @@
       if (model.chain && model.pivot) {
         if (model.rope) {
           ctx.save();
-          ctx.strokeStyle = model.rope.color; ctx.lineWidth = model.rope.radius * 2 * model.chainScale;
+          ctx.strokeStyle = model.rope.color; ctx.lineWidth = model.rope.radius * 2 * model.chainScaleX; // Rope width follows X only.
           ctx.lineCap = 'round';
           ctx.beginPath();ctx.moveTo(model.pivot.x,model.pivot.y);
           ctx.lineTo(model.headPosition.x,model.headPosition.y);ctx.stroke();
@@ -319,7 +328,7 @@
           const dim = sourceData(model.chain);
           const ct = model.chainTop;
           ctx.save(); ctx.translate(model.pivot.x, model.pivot.y);
-          ctx.rotate(model.chainRotation); ctx.scale(model.chainScale, model.chainScale);
+          ctx.rotate(model.chainRotation); ctx.scale(model.chainScaleX, model.chainScaleY); // Match gameplay's per-axis stretched chain.
           const chainTexture = paint({ ...model.flail.chain, sprite: model.flail.chain.sprite });
           if (chainTexture) ctx.drawImage(chainTexture, -ct.x - .5, -ct.y - .5, dim.width, dim.height);
           ctx.restore();
@@ -351,7 +360,7 @@
       partsExpected: model.parts.length,
       chainReady: !!model.chain, connectorType: model.rope ? 'rope' : 'chain', haftReady: !!model.shaft,
       joint: model.headPosition,
-      chainScale: model.chainScale, headScale: model.headScale, // Mobile diagnostics expose ratios and prevent mistaken interpretation of independently auto-fitted detail view.
+      chainScaleX: model.chainScaleX, chainScaleY: model.chainScaleY, headScale: model.headScale, // Mobile diagnostics expose thickness and reach separately.
     };
     return lastLayout[kind];
   }

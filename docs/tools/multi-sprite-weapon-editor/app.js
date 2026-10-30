@@ -132,7 +132,8 @@
     $('ropeLength').value = f.chain.lengthPx ?? 160;
     $('ropeRadius').value = f.chain.radiusPx ?? 2.5;
     $('ropeColor').value = f.chain.color || '#6B4728';
-    $('chainScale').value = f.chain.scale ?? 1;
+    $('chainScaleX').value = f.chain.scaleX ?? f.chain.scale ?? 1; // A saved uniform multiplier still appears correctly on both axis controls.
+    $('chainScaleY').value = f.chain.scaleY ?? f.chain.scale ?? 1;
     $('headScale').value = f.head.scale ?? 1;
     for (const name of ['chainTop','chainBottom']) {
       $(name+'Mode').disabled = rope; // A generated rope has geometric endpoints rather than opaque pixels to pick.
@@ -280,7 +281,14 @@
     bindInput('ropeLength', value => { ensureFlail().chain.lengthPx = safeNum(value,160,2,2048); });
     bindInput('ropeRadius', value => { ensureFlail().chain.radiusPx = safeNum(value,2.5,.25,30); });
     bindInput('ropeColor', value => { ensureFlail().chain.color = validHex(value,'#6B4728'); });
-    bindInput('chainScale', value => { ensureFlail().chain.scale = safeNum(value,1,.05,8); });
+    for (const [id, axis] of [['chainScaleX', 'scaleX'], ['chainScaleY', 'scaleY']]) bindInput(id, value => {
+      const chain = ensureFlail().chain; // Used by the renderer and serialized weapon recipe for both chains and generated ropes.
+      const legacyScale = safeNum(chain.scale ?? 1, 1, 0.05, 8); // Preserves the untouched axis when migrating a saved uniform draft.
+      chain.scaleX ??= legacyScale;
+      chain.scaleY ??= legacyScale;
+      delete chain.scale;
+      chain[axis] = safeNum(value, chain[axis], 0.05, 8);
+    });
     bindInput('headScale', value => { ensureFlail().head.scale = safeNum(value,1,.05,8); });
     const coordinates = [
       ['haft', () => ensureFlail().haftAnchor || (ensureFlail().haftAnchor = {})],
@@ -420,7 +428,12 @@
     on('copyJson','click', () => copy(JSON.stringify(state, null, 2)));
     on('copyDebug','click', () => copy(logs.join('\n') + '\n\n' + JSON.stringify({
       key, tab, stackTarget, selected, latestError,
-      flailScale: entry().flail ? {chain:entry().flail.chain?.scale??1,head:entry().flail.head?.scale??1,connector:entry().flail.chain?.type||'chain'}:null,
+      flailScale: entry().flail ? {
+        chainX: entry().flail.chain?.scaleX ?? entry().flail.chain?.scale ?? 1,
+        chainY: entry().flail.chain?.scaleY ?? entry().flail.chain?.scale ?? 1,
+        head: entry().flail.head?.scale ?? 1,
+        connector: entry().flail.chain?.type || 'chain',
+      } : null, // Mobile diagnostics expose independently adjusted width and length.
       preview: window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot(),
     }, null, 2))); // Reports measured bounds, loaded layers, and fit scale for remote mobile bug reports.
   }
