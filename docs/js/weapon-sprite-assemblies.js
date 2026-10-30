@@ -176,7 +176,7 @@
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
     records.add(state);
-    const layers = def?.spriteLayers || config.layers || [];
+    const layers = config.layers || def?.spriteLayers || []; // Committed Tool Hub recipe overrides shape defaults when both are present.
     const setup = async () => {
       const baseImg = plane.material?.map?.image;
       if (!baseImg?.width && !baseImg?.naturalWidth) return;
