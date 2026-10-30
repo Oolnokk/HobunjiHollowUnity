@@ -104,6 +104,7 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261030h645b148"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030flail1"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -836,6 +837,7 @@ $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
 // shape, and it's obvious which end is the tool's business end.
 const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
+  hachutuTorchFlail: { label: 'Hachutu Torch-Flail (sweep)', sprite: '../../assets/toolsprites/hachutu_torch-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   throwingflask:{ label: 'Throwing Flask (hatchet throw)', sprite: '../../assets/objectsprites/throwing_flask.png', animStyle: 'chop', usesWeaponStanceBasis: true },
   pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',    animStyle: 'thrust', usesWeaponStanceBasis: true },
@@ -886,6 +888,7 @@ function buildToolPlaneMesh(toolKey) {
       g.rotation.z = 0; // Parent stays identity-oriented; pose rotation remains owned by toolHolder.
       g.userData.toolEndFlipBase = def.flip === true;
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
+      window.HobunjiWeaponSpriteAssemblies?.decorate(g, toolKey, def, { THREE }); // Matching gameplay layered/chain visual; haft remains the authored pose authority.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
       // an axe head) stay on the correct side instead of appearing reversed.
@@ -900,7 +903,7 @@ async function setToolSprite(toolKey) {
   const g = await buildToolPlaneMesh(toolKey);
   if (requestId !== toolSpriteRequestId) { if (g) disposeToolPlaneMesh(g); return; }
   window.HobunjiDualWieldWeaponVisuals?.teardown?.();
-  if (toolPlaneMesh) { toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  if (toolPlaneMesh) { window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
   toolPlaneMesh = g;
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
@@ -2354,6 +2357,8 @@ function animate() {
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
+  window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, { attacking: previewT > 0.001 && previewT < 0.999, progress: previewT });
+  window.HobunjiWeaponSpriteAssemblies?.tick(dt); // No gameplay scheduler runs in the standalone ESM preview.
   renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();
