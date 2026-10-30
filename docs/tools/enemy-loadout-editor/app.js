@@ -55,6 +55,7 @@ function setBusy(value) {
     'replayBtn',
     'batchBtn',
     'importBtn',
+    'resetRepoBtn',
     'applyRuleBtn',
     'resetRuleBtn',
   ])
@@ -1025,10 +1026,7 @@ function showRecord(record) {
   if (record.specialLichId) facts.append(
     fact('Named lich guardian',record.specialLichId + ' · ' + (record.bossSettings ? JSON.stringify(record.bossSettings) : 'game defaults'),true),
     fact('Signature glyph',record.roster.glyphPatternId || 'none',true),
-    fact('Body planes · front / back',record.portraitFacing ? record.portraitFacing.frontYawDegrees+'° / '+record.portraitFacing.backYawDegrees+'°' : 'not detected'),
-    fact('Actual avatar width / height',record.renderedBodyScale ? Number(record.renderedBodyScale.z).toFixed(2)+'× / '+Number(record.renderedBodyScale.y).toFixed(2)+'×' : 'not detected'),
-    fact('Eye-glow emitters',String(record.eyeGlowSources?.length || 0)+' · Body C '+(record.bodyColor3 || 'missing')),
-  ); // Mobile-visible proof: front=0°, back=-180° after the edge-on preview bug fix.
+  ); // Roll summary is readable without devtools on mobile.
   if (record.roster.metalArmorItems?.length)
     facts.append(
       fact(
@@ -1242,6 +1240,33 @@ $('exportBtn').onclick = async () => {
   toast(
     'Exported spawn rules. Install the file at docs/config/combat/enemy-loadouts.json.',
   );
+};
+
+async function readUncachedRepoRules() {
+  const url = new URL('config/combat/enemy-loadouts.json', document.baseURI); // The actual repository rules file served by this commit; never a device-stored Workshop draft.
+  url.searchParams.set('workshopReset', String(Date.now())); // Unique URL also bypasses stale CDN responses for the JSON.
+  const response = await fetch(url.href, {cache:'no-store'}); // Verify fetch and schema before touching the local draft.
+  if (!response.ok) throw new Error('Repository rules HTTP ' + response.status);
+  return window.EnemyLoadoutRules.validate(await response.json());
+}
+$('resetRepoBtn').onclick = async () => {
+  if (state.busy || !state.ready) return;
+  if (!window.confirm('Discard ALL locally edited Enemy Workshop rules and restore the repository copy? Export any changes you want to keep first.')) return;
+  setBusy(true);
+  try {
+    const repositoryRules = await readUncachedRepoRules();
+    localStorage.removeItem(DRAFT_KEY); // Unlike persist(), reset must not immediately write the old draft back.
+    window.EnemyLoadoutRules.set(repositoryRules);
+    $('draftState').textContent = 'Repository rules loaded · local draft cleared';
+    log('Reset to repository rules; discarded this device’s stored Workshop draft.');
+    const reloadUrl = new URL(window.location.href);
+    reloadUrl.searchParams.set('workshopReset', String(Date.now())); // Refresh the UI and all runtime state from this commit instead of retaining old preview actors.
+    window.location.replace(reloadUrl.href);
+  } catch (error) {
+    log('Reset to repo failed: ' + (error.stack || error.message)); // On fetch or storage failure, retain the existing draft and report why on mobile.
+    toast('Reset failed: ' + error.message);
+    setBusy(false);
+  }
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async () => {
