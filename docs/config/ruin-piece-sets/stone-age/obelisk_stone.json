@@ -1,0 +1,41 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_obelisk_stone",
+  "pieceId": "stone_age_obelisk_stone",
+  "name": "Tapered Marker Stone",
+  "equivalentTo": "obelisk_stone",
+  "notes": "Stone Age equivalent of obelisk_stone. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "obelisk_stone_standing_stone",
+      "name": "Standing Stone",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0,
+        "y": 1.1099999999999999,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.7215999999999999,
+        "sy": 2.2199999999999998,
+        "sz": 0.697
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

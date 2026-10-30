@@ -6,6 +6,32 @@
 
   let previewLoopPaused = false;
 
+  let activePieceSet=null,pieceSetPromise=null,activePillarsOnly=false; // Opt-in visual equivalents; normal Harlyao generation keeps its original asset paths and data.
+  const resolveOriginalRuinAsset=resolveRuinAsset; // The immutable V50 resolver remains the placement and footprint authority.
+  resolveRuinAsset=async function(path){
+    const asset=await resolveOriginalRuinAsset(path),key=String(path||'').split('/').pop().replace(/\.json$/i,'');
+    const replacement=activePieceSet?.mapping?.[key];
+    if(!asset||!replacement)return asset;
+    const data=await fetchRepoFurnitureData('docs/'+replacement); // Reuse the generator's existing repository cache/branch-aware URL loader.
+    return {...asset,data,pieceSet:activePieceSet.id,equivalentKey:key}; // Keep asset.name, path and footprint exactly as Harlyao's mapping expects.
+  };
+  async function selectPieceSet(name){
+    if(name!=='stoneAge'){activePieceSet=null;return;}
+    if(!pieceSetPromise)pieceSetPromise=fetch(new URL('../../config/ruin-piece-sets/stone-age.json',location.href)).then(response=>{
+      if(!response.ok)throw new Error('Stone Age piece set HTTP '+response.status);return response.json();
+    }).then(data=>{
+      if(data.schema!=='hobunji_ruin_piece_set.v1'||data.id!=='stoneAge'||!data.mapping)throw new Error('Invalid Stone Age ruin piece set.');
+      for(const path of Object.values(data.mapping))if(!/^config\/ruin-piece-sets\/stone-age\/[a-z_]+\.json$/.test(path))throw new Error('Invalid Stone Age piece path.');
+      return data;
+    }).catch(error=>{pieceSetPromise=null;throw error;});
+    activePieceSet=await pieceSetPromise;
+  }
+
+  const originalSupportPillarSlots=interiorSupportPillarSlots; // Reuse V50's support lattice when the preview removes the display props that would otherwise reserve those slots.
+  interiorSupportPillarSlots=function(room,network,plateau,bridgeCorridors,pillarDenseRoom){
+    return originalSupportPillarSlots(room,network,activePillarsOnly?{...plateau,focuses:[]}:plateau,bridgeCorridors,pillarDenseRoom);
+  };
+
   // The recovered V50 source is immutable (verified by its SHA in regression
   // tests). Its existing bridge owns these material overrides for all ruins.
   createSharedRuinStoneMaterial = async function () {
@@ -174,6 +200,8 @@
   }
 
   async function generateInteriorLocale(options = {}) {
+    activePillarsOnly=options.floorProps==='pillarsOnly';
+    await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
     window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
@@ -207,6 +235,7 @@
 
     return {
       seed: $('localeSeed').value,
+      pieceSet:activePieceSet?.id||'harlyao',
       locale: cloneJson(lastGeneratedLocale),
       status: $('localeStatus')?.textContent || '',
       runtimeWallPlanes: runtimeWallPlaneState(),
@@ -223,6 +252,8 @@
   // Exposes V50's already-tested purposeful outdoor ruin path without
   // duplicating or modifying the SHA-protected generator source.
   async function generateOutdoorLocale(options = {}) {
+    activePillarsOnly=false;
+    await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
     $('localeSeed').value = String(options.seed ?? 'outdoor-ruin');
