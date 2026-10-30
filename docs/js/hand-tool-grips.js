@@ -680,9 +680,9 @@
   }
 
   const editorSecondaryPoses = {
-    neutral: { enabled: false, dualWield: true, percent: 50, primaryPercent: 50 },
-    windup: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50 },
-    strike: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50 },
+    neutral: { enabled: false, dualWield: true, percent: 50, primaryPercent: 50, offhandIdle: { enabled: true, pose: null } },
+    windup: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50, offhandIdle: { enabled: true, pose: null } },
+    strike: { enabled: true, dualWield: true, percent: 50, primaryPercent: 50, offhandIdle: { enabled: true, pose: null } },
   };
   let editorHandPreview = null; // Shared by hands and weapons: pair preview or isolated stance authoring, only at Neutral.
   let capturedMelee = null;
@@ -693,16 +693,47 @@
     return raw == null ? fallback : (raw === true || raw?.enabled === true);
   }
 
-  function normalizeAnimationGrip(raw, { defaultEnabled = false, dualWield = false, dualWieldIdle = false, handMode = 'two-hand' } = {}) {
+  // Invisible offhand tool: a pose that is neither 2H nor Dual Wield may hold an invisible copy of the weapon in the free hand, so the idle offhand
+  // keeps a deliberate pose instead of the locomotion fallback. `offhandIdle` is the pose's optional authored data: { enabled, pose? } (absent = on,
+  // using the dual-wield offhand stance). Returns the weight (0 when the pose uses a 2H grip or Dual Wield) and the pose it asks for (null = stance).
+  function offhandIdleFor(offhandIdle, influence, dualWieldInfluence) {
+    const enabled = offhandIdle?.enabled !== false;
+    const custom = enabled && offhandIdle?.pose && typeof offhandIdle.pose === 'object' ? offhandIdle.pose : null;
+    return { weight: enabled ? (1 - influence) * (1 - dualWieldInfluence) : 0, pose: custom };
+  }
+  const OFFHAND_POSE_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll'];
+  function resolvedOffhandPose(pose) {
+    const base = pose || global.HobunjiDualWieldWeaponVisuals?.defaultOffhandPose?.() || null;
+    if (!base) return null;
+    const out = {};
+    for (const channel of OFFHAND_POSE_CHANNELS) out[channel] = Number(base[channel]) || 0;
+    return out;
+  }
+
+  function normalizeAnimationGrip(raw, { defaultEnabled = false, dualWield = false, dualWieldIdle = false, handMode = 'two-hand', offhandIdle = null } = {}) {
     const explicit = raw && typeof raw === 'object';
     const twoHandEnabled = handMode === 'two-hand' && (explicit ? raw.enabled === true : defaultEnabled);
+    const dualWieldInfluence = handMode === 'dual' && dualWield ? 1 : 0;
+    const offhand = offhandIdleFor(offhandIdle, twoHandEnabled ? 1 : 0, dualWieldInfluence);
     return {
       influence: twoHandEnabled ? 1 : 0,
-      dualWieldInfluence: handMode === 'dual' && dualWield ? 1 : 0,
+      dualWieldInfluence,
+      offhandIdle: offhand.weight,
+      offhandPose: offhand.pose,
       dualWieldIdleBlend: handMode === 'dual' && dualWield && dualWieldIdle ? 1 : 0,
       percent: clamp(raw?.percent ?? 50, 0, 100),
       primaryPercent: clamp(raw?.primaryPercent ?? 50, 0, 100),
     };
+  }
+
+  // Both ends default to the stance pose, so the common case (nothing authored) stays null and follows live stance edits.
+  function lerpOffhandPose(a, b, k) {
+    if (!a.offhandPose && !b.offhandPose) return null;
+    const from = resolvedOffhandPose(a.offhandPose), to = resolvedOffhandPose(b.offhandPose);
+    if (!from || !to) return from || to;
+    const out = {};
+    for (const channel of OFFHAND_POSE_CHANNELS) out[channel] = from[channel] + (to[channel] - from[channel]) * k;
+    return out;
   }
 
   function lerpAnimationGrip(a, b, t) {
@@ -711,6 +742,8 @@
       influence: a.influence + (b.influence - a.influence) * k,
       dualWieldInfluence: a.dualWieldInfluence + (b.dualWieldInfluence - a.dualWieldInfluence) * k,
       dualWieldIdleBlend: (a.dualWieldIdleBlend || 0) + ((b.dualWieldIdleBlend || 0) - (a.dualWieldIdleBlend || 0)) * k,
+      offhandIdle: (a.offhandIdle || 0) + ((b.offhandIdle || 0) - (a.offhandIdle || 0)) * k,
+      offhandPose: lerpOffhandPose(a, b, k),
       percent: a.percent + (b.percent - a.percent) * k,
       primaryPercent: a.primaryPercent + (b.primaryPercent - a.primaryPercent) * k,
     };
@@ -725,7 +758,7 @@
 
   function animationGripAt(progress, timing = {}, poseSet = {}, sequence = 'attack', toolKey = '') {
     if (sequence === 'load' || sequence === 'fire') {
-      return { influence: 0, dualWieldInfluence: 0, percent: 50, primaryPercent: 50, source: 'ranged' };
+      return { influence: 0, dualWieldInfluence: 0, offhandIdleBlend: 0, percent: 50, primaryPercent: 50, source: 'ranged' };
     }
     const defaultTwoHand = sequence === 'attack'; // Ordinary melee attacks use 2H automatically when the equipped weapon exposes both grip ranges.
     const t = clamp01(progress);
@@ -736,15 +769,15 @@
     const neutralDualWield = dualWieldEnabled(poseSet.neutral?.dualWield, defaultTwoHand);
     const neutral = normalizeAnimationGrip(
       { ...poseSet.neutral?.secondaryGrip, enabled: false },
-      { defaultEnabled: false, dualWield: neutralDualWield, dualWieldIdle: neutralDualWield, handMode },
+      { defaultEnabled: false, dualWield: neutralDualWield, dualWieldIdle: neutralDualWield, handMode, offhandIdle: poseSet.neutral?.offhandIdle },
     ); // Neutral can explicitly own Dual Wield; 2H itself remains attack-only.
     const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip, {
       defaultEnabled: defaultTwoHand,
-      dualWield: dualWieldEnabled(poseSet.windup?.dualWield, defaultTwoHand), handMode,
+      dualWield: dualWieldEnabled(poseSet.windup?.dualWield, defaultTwoHand), handMode, offhandIdle: poseSet.windup?.offhandIdle,
     });
     const strike = normalizeAnimationGrip(poseSet.strike?.secondaryGrip, {
       defaultEnabled: defaultTwoHand,
-      dualWield: dualWieldEnabled(poseSet.strike?.dualWield, defaultTwoHand), handMode,
+      dualWield: dualWieldEnabled(poseSet.strike?.dualWield, defaultTwoHand), handMode, offhandIdle: poseSet.strike?.offhandIdle,
     });
     const poseScale = clamp01(timing.poseScale ?? 1);
     const scaledWindup = lerpAnimationGrip(neutral, windup, poseScale);
@@ -769,6 +802,8 @@
       influence: clamp01(result.influence), // Authored flags stay independent; the weapon selects their effective influence.
       dualWieldInfluence,
       dualWieldIdleBlend: clamp01(result.dualWieldIdleBlend),
+      offhandIdleBlend: clamp01(result.offhandIdle) * (1 - dualWieldInfluence), // Never alongside a Dual Wield offhand weapon.
+      offhandIdlePose: result.offhandPose || null,
       source: hasAnimationGripMetadata(poseSet) ? 'animation-pose' : (handMode === 'dual' ? 'default-dual-wield' : handMode === 'single' ? 'default-single-hand' : 'default-two-hand'),
     };
   }
@@ -783,9 +818,9 @@
       holdFrac: document.getElementById('holdFrac')?.value ?? 0.68,
     };
     const poseSet = {
-      neutral: { secondaryGrip: editorSecondaryPoses.neutral, dualWield: { enabled: editorSecondaryPoses.neutral.dualWield === true } },
-      windup: { secondaryGrip: editorSecondaryPoses.windup, dualWield: { enabled: editorSecondaryPoses.windup.dualWield === true } },
-      strike: { secondaryGrip: editorSecondaryPoses.strike, dualWield: { enabled: editorSecondaryPoses.strike.dualWield === true } },
+      neutral: { secondaryGrip: editorSecondaryPoses.neutral, dualWield: { enabled: editorSecondaryPoses.neutral.dualWield === true }, offhandIdle: editorSecondaryPoses.neutral.offhandIdle },
+      windup: { secondaryGrip: editorSecondaryPoses.windup, dualWield: { enabled: editorSecondaryPoses.windup.dualWield === true }, offhandIdle: editorSecondaryPoses.windup.offhandIdle },
+      strike: { secondaryGrip: editorSecondaryPoses.strike, dualWield: { enabled: editorSecondaryPoses.strike.dualWield === true }, offhandIdle: editorSecondaryPoses.strike.offhandIdle },
     };
     const sequence = editorGripContext() === 'ranged' || document.getElementById('animStyle')?.value === 'ranged' ? 'fire' : (document.getElementById('playbackSequence')?.value || 'attack');
     if (editorHandPreview && progress === 0 && sequence === 'attack' && editorGripContext() === 'melee') {
@@ -806,10 +841,13 @@
       }
       capturedMelee = null;
       const dualIdle = snapshot?.activeSlot === 'weapon' && isDualWieldWeapon(currentTool) && runtimeIdleDualWield !== false;
+      const offhandIdle = !dualIdle && snapshot?.activeSlot === 'weapon' && global.WeaponToolStances?.stanceEngaged?.() === true; // A stance weapon at rest holds an invisible tool in the free hand.
       return {
         influence: 0,
         dualWieldInfluence: dualIdle ? 1 : 0,
         dualWieldIdleBlend: dualIdle ? 1 : 0,
+        offhandIdleBlend: offhandIdle ? 1 : 0,
+        offhandIdlePose: null,
         percent: 50,
         primaryPercent: 50,
         source: dualIdle ? 'dual-wield-idle' : 'idle',
@@ -830,11 +868,20 @@
   }
 
   function currentSecondaryGripAnimationState() { return inAttackEditor() ? editorAnimationGripState() : runtimeAnimationGripState(); }
+  // The invisible offhand tool for the hand driver: weight + the pose the free hand should hold (null = the dual-wield offhand stance). Melee only.
+  function offhandIdleStateForTool(value, context = currentGripContext(), identity = null) {
+    if (normalizeGripContext(context) === 'ranged' || weaponHandModeForTool(value) === 'single') return null;
+    const state = identity?.animationGripState !== undefined ? identity.animationGripState : currentSecondaryGripAnimationState();
+    const blend = clamp01(state?.offhandIdleBlend);
+    return blend > 0.0001 ? { blend, pose: state.offhandIdlePose || null } : null;
+  }
   function currentDualWieldAnimationState() {
     const state = currentSecondaryGripAnimationState();
     return {
       influence: clamp01(state?.dualWieldInfluence),
       idleBlend: clamp01(state?.dualWieldIdleBlend),
+      offhandIdle: clamp01(state?.offhandIdleBlend),
+      offhandPose: state?.offhandIdlePose || null,
       source: state?.source || 'none',
     };
   }
@@ -1109,6 +1156,9 @@
         primaryPercent: clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100),
       };
       parsed.poses[phase].dualWield = { enabled: dualWield };
+      const offhand = editorSecondaryPoses[phase].offhandIdle;
+      if (offhand && (offhand.enabled === false || offhand.pose)) parsed.poses[phase].offhandIdle = { enabled: offhand.enabled !== false, ...(offhand.pose ? { pose: { ...offhand.pose } } : {}) }; // Only non-default data is written.
+      else delete parsed.poses[phase].offhandIdle;
     }
     return parsed;
   }
@@ -1130,6 +1180,11 @@
       const dualWield = dualWieldEnabled(pose?.dualWield, defaultTwoHand);
       const explicitTwoHand = raw && typeof raw === 'object';
       editorSecondaryPoses[phase].dualWield = dualWield;
+      const offhandRaw = pose?.offhandIdle;
+      editorSecondaryPoses[phase].offhandIdle = {
+        enabled: offhandRaw?.enabled !== false,
+        pose: offhandRaw?.pose && typeof offhandRaw.pose === 'object' ? Object.fromEntries(OFFHAND_POSE_CHANNELS.map(channel => [channel, Number(offhandRaw.pose[channel]) || 0])) : null,
+      };
       editorSecondaryPoses[phase].enabled = phase !== 'neutral' && (explicitTwoHand ? raw.enabled === true : defaultTwoHand);
       editorSecondaryPoses[phase].percent = clamp(raw?.percent ?? 50, 0, 100);
       editorSecondaryPoses[phase].primaryPercent = clamp(raw?.primaryPercent ?? 50, 0, 100);
@@ -1191,6 +1246,13 @@
       controls.primaryPercent.range.disabled = !editingTwoHand; controls.primaryPercent.number.disabled = !editingTwoHand;
       controls.enabled.disabled = !melee || phase === 'neutral'; controls.dual.disabled = !canDual;
       controls.percent.range.disabled = !editingTwoHand; controls.percent.number.disabled = !editingTwoHand;
+      const offhand = editorSecondaryPoses[phase].offhandIdle || { enabled: true, pose: null };
+      controls.offhandEnabled.checked = offhand.enabled !== false;
+      controls.offhandEnabled.disabled = !melee;
+      controls.offhandCustom.checked = !!offhand.pose;
+      controls.offhandCustom.disabled = !melee || offhand.enabled === false;
+      controls.offhandFields.style.display = offhand.pose && offhand.enabled !== false ? '' : 'none';
+      if (offhand.pose) for (const channel of OFFHAND_POSE_CHANNELS) controls.offhandPairs[channel].set(numberOrZero(offhand.pose[channel]));
     }
     const state = editorAnimationGripState();
     const identity = editorScaleIdentity();
@@ -1268,7 +1330,7 @@
     for (const phase of ['neutral', 'windup', 'strike']) {
       const box = document.createElement('div');
       box.className = 'field';
-      box.innerHTML = `<div class="fieldRow" style="gap:12px;flex-wrap:wrap"><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phase[0].toUpperCase() + phase.slice(1)} 2H</label><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handDualWieldAnim_${phase}_enabled" style="width:auto;margin-right:6px">Dual wield</label></div><div id="handSecondaryAnim_${phase}_percent"></div>`;
+      box.innerHTML = `<div class="fieldRow" style="gap:12px;flex-wrap:wrap"><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handSecondaryAnim_${phase}_enabled" style="width:auto;margin-right:6px">${phase[0].toUpperCase() + phase.slice(1)} 2H</label><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handDualWieldAnim_${phase}_enabled" style="width:auto;margin-right:6px">Dual wield</label></div><div id="handSecondaryAnim_${phase}_percent"></div><div class="fieldRow" style="gap:12px;flex-wrap:wrap;margin-top:6px"><label class="fieldRow" style="cursor:pointer;margin:0" title="When this pose is neither 2H nor Dual Wield, the free hand holds an invisible copy of the weapon at an offhand pose instead of the locomotion idle."><input type="checkbox" id="handOffhandIdle_${phase}_enabled" style="width:auto;margin-right:6px">Idle offhand pose (invisible tool)</label><label class="fieldRow" style="cursor:pointer;margin:0"><input type="checkbox" id="handOffhandIdle_${phase}_custom" style="width:auto;margin-right:6px">Custom pose</label></div><div id="handOffhandIdle_${phase}_fields"></div>`;
       animationFields.appendChild(box);
       const enabled = box.querySelector(`#handSecondaryAnim_${phase}_enabled`);
       const dual = box.querySelector(`#handDualWieldAnim_${phase}_enabled`);
@@ -1285,7 +1347,30 @@
         global.HobunjiDualWieldWeaponVisuals?.syncNow?.();
       });
       const primaryPercent = editorFieldPair(box, `handPrimaryAnim_${phase}_pct`, `${phase[0].toUpperCase() + phase.slice(1)} main-hand range %`, 50, 0, 100, 1, value => { editorSecondaryPoses[phase].primaryPercent = clamp(value, 0, 100); patchEditorJsonView(); syncEditorSpanUi(); }); // Authored independently from the offhand percentage.
-      pose[phase] = { enabled, dual, percent, primaryPercent };
+      const offhandEnabled = box.querySelector(`#handOffhandIdle_${phase}_enabled`);
+      const offhandCustom = box.querySelector(`#handOffhandIdle_${phase}_custom`);
+      const offhandFields = box.querySelector(`#handOffhandIdle_${phase}_fields`);
+      const offhandPairs = {};
+      const offhandRanges = { x: [-1, 1, 0.01], y: [-1, 1, 0.01], z: [-1, 1, 0.01], pitch: [-180, 180, 1], yaw: [-180, 180, 1], roll: [-180, 180, 1] };
+      const offhandData = () => editorSecondaryPoses[phase].offhandIdle || (editorSecondaryPoses[phase].offhandIdle = { enabled: true, pose: null });
+      for (const channel of OFFHAND_POSE_CHANNELS) {
+        const [min, max, step] = offhandRanges[channel];
+        offhandPairs[channel] = editorFieldPair(offhandFields, `handOffhandIdle_${phase}_${channel}`, `${phase[0].toUpperCase() + phase.slice(1)} offhand tool ${channel}`, 0, min, max, step, value => {
+          const data = offhandData();
+          data.pose = { ...(data.pose || resolvedOffhandPose(null) || {}), [channel]: value };
+          patchEditorJsonView(); global.HobunjiDualWieldWeaponVisuals?.syncNow?.(); global.ProceduralHandFrameDriver?.syncNow?.();
+        });
+      }
+      offhandEnabled.addEventListener('change', () => {
+        setEditorIdlePreview(false); offhandData().enabled = offhandEnabled.checked;
+        patchEditorJsonView(); syncEditorSpanUi(); global.HobunjiDualWieldWeaponVisuals?.syncNow?.(); global.ProceduralHandFrameDriver?.syncNow?.();
+      });
+      offhandCustom.addEventListener('change', () => {
+        setEditorIdlePreview(false); const data = offhandData();
+        data.pose = offhandCustom.checked ? resolvedOffhandPose(null) : null; // Starts from the dual-wield offhand stance; unticking returns to following it.
+        patchEditorJsonView(); syncEditorSpanUi(); global.HobunjiDualWieldWeaponVisuals?.syncNow?.(); global.ProceduralHandFrameDriver?.syncNow?.();
+      });
+      pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
     editorUi = { scalePanel, scalePair, heightPair, panel, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
@@ -1373,7 +1458,7 @@
     clone: cleanClone,
     toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool,
+    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {

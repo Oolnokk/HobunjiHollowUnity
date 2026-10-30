@@ -1572,6 +1572,7 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
 function applyPoseToRig(pose) {
+  window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
   applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose), pose.bodyYaw);
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
   // toolBase/toolHolder are children of rig, so this automatically carries the tool

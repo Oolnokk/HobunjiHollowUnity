@@ -63,6 +63,8 @@
       return {
         influence: clamp01(direct.influence),
         idleBlend: clamp01(direct.idleBlend ?? direct.dualWieldIdleBlend),
+        offhandIdle: clamp01(direct.offhandIdle),
+        offhandPose: direct.offhandPose || null,
         source: direct.source || 'animation',
       };
     }
@@ -70,6 +72,8 @@
     return {
       influence: clamp01(fallback?.dualWieldInfluence),
       idleBlend: clamp01(fallback?.dualWieldIdleBlend),
+      offhandIdle: clamp01(fallback?.offhandIdleBlend),
+      offhandPose: fallback?.offhandIdlePose || null,
       source: fallback?.source || 'animation',
     };
   }
@@ -93,7 +97,7 @@
   // The actor's own animation grip (hand-tool-grips animationGripAt, evaluated against ITS weapon and swing).
   function actorDualState(record) {
     const grip = record?.avatarRoot?.userData?.proceduralHandAnimationGrip || null;
-    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), source: grip?.source || 'animation' };
+    return { influence: clamp01(grip?.dualWieldInfluence), idleBlend: clamp01(grip?.dualWieldIdleBlend), offhandIdle: 0, offhandPose: null, source: grip?.source || 'animation' }; // Invisible-offhand idle is the local player/editor's only (no per-actor carried pose yet).
   }
 
   function materialList(material) {
@@ -261,12 +265,41 @@
     return sample || currentPlanePose(current);
   }
 
-  function idleStancePoses() {
+  // The pose the main holder is carrying right now (percent-free channel degrees), reported each frame by whoever samples the swing. Lets the
+  // invisible offhand peel the CURRENT pose off the holder instead of assuming the idle stance, so it stays put on the body through a swing.
+  const carriedPoses = new Map(); // key -> { pose, at }
+  const CARRIED_POSE_FRESH_MS = 120;
+  function setCarriedPose(pose, record = null) {
+    const key = keyFor(record);
+    if (!pose) { carriedPoses.delete(key); return; }
+    const entry = carriedPoses.get(key) || { pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }, at: 0 };
+    for (const channel of ['x', 'y', 'z', 'pitch', 'yaw', 'roll']) entry.pose[channel] = Number(pose[channel]) || 0;
+    entry.at = global.performance?.now?.() ?? Date.now();
+    carriedPoses.set(key, entry);
+  }
+  // Allocation-free variant for per-frame callers holding a SharedAttackPose sample (radians for the three rotations).
+  function setCarriedSample(sample, record = null) {
+    const key = keyFor(record);
+    const entry = carriedPoses.get(key) || { pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 }, at: 0 };
+    const deg = 180 / Math.PI, pose = entry.pose;
+    pose.x = sample.x; pose.y = sample.y; pose.z = sample.z;
+    pose.pitch = sample.pitchRad * deg; pose.yaw = sample.yawRad * deg; pose.roll = sample.rollRad * deg;
+    entry.at = global.performance?.now?.() ?? Date.now();
+    carriedPoses.set(key, entry);
+  }
+  function freshCarriedPose(key) {
+    const entry = carriedPoses.get(key);
+    return entry && (global.performance?.now?.() ?? Date.now()) - entry.at < CARRIED_POSE_FRESH_MS ? entry.pose : null;
+  }
+
+  function idleStancePoses(current = null) {
     const stances = inAttackEditor()
       ? global.AttackIdleStanceEditor?.getConfig?.()?.stances
       : global.WeaponToolStances?.poses;
-    const main = stances?.dualWieldMain || stances?.lightWeapon || null;
-    let offhand = stances?.dualWieldOffhand || null;
+    let main = stances?.dualWieldMain || stances?.lightWeapon || null;
+    const carried = current?.invisible ? freshCarriedPose(current.key) : null;
+    if (carried) main = carried;
+    let offhand = (current?.invisible && current.offhandPoseOverride) || stances?.dualWieldOffhand || null;
     if (!offhand && main) {
       offhand = {
         ...main,
@@ -286,7 +319,7 @@
   }
 
   function idleOffhandLocalTransform(current) {
-    const poses = idleStancePoses();
+    const poses = idleStancePoses(current);
     return poses ? idleCounterpartTransform(current, poses.main, poses.offhand) : null;
   }
 
@@ -433,17 +466,26 @@
     if (existing && (existing.visual !== context.visual || existing.plane !== context.plane)) teardown(key);
     const dual = key === PLAYER_KEY ? currentDualState() : actorDualState(record);
     const found = states.get(key);
-    if (!found && dual.influence <= ACTIVE_EPSILON) return null;
+    // Invisible offhand tool: a pose that is neither 2H nor Dual Wield can still hold an INVISIBLE copy of the weapon in the free hand, placed by the
+    // same idle-offhand math (authored per pose, defaulting to the dual-wield offhand stance). The real weapon stays untouched and visible.
+    const invisible = dual.influence <= ACTIVE_EPSILON && dual.offhandIdle > ACTIVE_EPSILON;
+    if (!found && dual.influence <= ACTIVE_EPSILON && !invisible) return null;
     const current = found || buildState(context, key, record);
     if (!current) return null;
-    current.influence = dual.influence;
-    current.idleBlend = dual.idleBlend;
-    current.dualSource = dual.source;
+    current.invisible = invisible;
+    current.offhandPoseOverride = invisible ? dual.offhandPose : null;
+    current.influence = invisible ? dual.offhandIdle : dual.influence;
+    current.idleBlend = invisible ? 1 : dual.idleBlend;
+    current.dualSource = invisible ? 'invisible-offhand' : dual.source;
     const active = dual.influence > ACTIVE_EPSILON;
     if (active) hideOriginalMaterial(current);
     else restoreOriginalMaterial(current);
     current.mainRoot.visible = active;
-    current.offRoot.visible = active;
+    current.offRoot.visible = active || invisible;
+    if (current.offMesh) {
+      current.offMesh.visible = !invisible; // The offhand tool exists for hand placement only; nothing is drawn.
+      current.offMesh.position.z = invisible ? 0 : HALF_Z_SEPARATION; // No bread-slice separation for a tool that is never seen.
+    }
 
     // Bake the source first. Runtime idle stances are temporarily applied by
     // the holder's updateMatrixWorld owner, so updateWorldMatrix would bypass them.
@@ -475,7 +517,7 @@
         scratch.offTargetQuaternion.identity().slerp(mainTransform.quaternion, idleAmount);
         setRootToward(current.mainRoot, scratch.offTargetPosition, scratch.offTargetQuaternion, current.influence); // No lag: a stance is authored directly.
       }
-    } else if (active) applyMainLag(current);
+    } else if (active && !invisible) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
     return current;
@@ -587,6 +629,9 @@
     teardown,
     resetPoseHistory,
     transformSocketForHand,
+    setCarriedPose,
+    setCarriedSample,
+    defaultOffhandPose: () => { const poses = idleStancePoses(); return poses ? { x: poses.offhand.x, y: poses.offhand.y, z: poses.offhand.z, pitch: poses.offhand.pitch, yaw: poses.offhand.yaw, roll: poses.offhand.roll } : null; },
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
     editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.

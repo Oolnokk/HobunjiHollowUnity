@@ -60,6 +60,16 @@ Everything on the per-frame path (`fourPhaseLerp`, `samplePose`, `sampleLegacyTh
 
 `animationGripAt` (`hand-tool-grips.js`) defaults an attack's windup/strike to two-handed and its Neutral to one-handed, which is exactly what the player's `prepareCombatOptions` spells out as explicit `secondaryGrip` / `dualWield` flags, so enemies get the same behavior from the same flags (authored flags on Windup/Strike ride through the baker). See above for the weapon-driven hand mode.
 
+## Idle offhand pose (invisible offhand tool)
+
+A pose that is neither 2H nor Dual Wield used to leave the free hand on the locomotion idle, which reads wrong once the legs bend under a body sink. Now the free hand holds an **invisible copy of the weapon** at an offhand pose, placed by the same math as the Dual Wield idle offhand (`dual-wield-weapon-visuals.js`, "invisible" mode: the real weapon stays visible and untouched, the offhand copy is never drawn).
+
+- **Data:** optional per-pose `offhandIdle: { enabled?, pose? }` on Neutral / Windup / Strike. Absent = on, using the **dual-wield offhand stance** (`WeaponToolStances.poses.dualWieldOffhand`) and following live edits to it; `pose` (x/y/z/pitch/yaw/roll) overrides it; `enabled: false` keeps the old locomotion idle for that pose. Only non-default data is exported.
+- **Weight:** `animationGripAt` returns `offhandIdleBlend` (1 when the pose is neither 2H nor Dual Wield, easing with the grip lerp) and `offhandIdlePose` (null = stance, else lerped channel by channel).
+- **Placement:** `procedural-hand-frame-driver.js` grips the invisible tool in its not-2H / not-dual branch. `setCarriedPose` / `setCarriedSample` tell the visuals module which pose the holder carries right now, so the offhand stays put on the body through a swing instead of following it.
+- **Editor:** each pose in the hand panel has "Idle offhand pose (invisible tool)" and "Custom pose" (six sliders, starting from the stance values).
+- **Scope:** the local player and the attack editor. Enemies and NPCs keep the locomotion idle for now.
+
 ## Held windups and hands
 
 An enemy's Charged Breaker covers the first part of the player's decelerating held-windup curve (`Combat.windupCurve`, the bare curve) over its own windup, so its pose, hands and blade twist reach the charge at the same rate the player's do. Weapon shape speed (`weapon-shape-stats.js`) shortens both sides' windup alike, so the enemy's curve span is its windup times speed over `MAX_CHARGE_S`. `Combat.windupPoseProgress` additionally applies the player's own held-ability transforms (Furious Charged Breaker); enemies never use it, and their hand-grip calls pass `heldTransforms: false` and the charge fraction as `poseScale`.
