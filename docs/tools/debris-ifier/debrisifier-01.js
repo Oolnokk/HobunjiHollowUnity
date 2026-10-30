@@ -53,7 +53,7 @@
     const treeNeedle = "const REPO_TREE_URL='https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/git/trees/main?recursive=1';";
     const treeReplacement = `const REPO_TREE_URL='${EMBEDDED_TREE}';`;
     const rawNeedle = "function rawTextureUrl(path){return REPO_RAW_ROOT+String(path||'').replace(/^\\/+/, '');}";
-    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;return new URL('../../'+fromDocsRoot,location.href).href;}";
+    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;const resolved=new URL('../../'+fromDocsRoot,location.href);const attempt=new URLSearchParams(location.search).get('assetAttempt');if(attempt)resolved.searchParams.set('assetAttempt',attempt);return resolved.href;}";
     const brickNeedle = 'new THREE.GLTFLoader().load(REPO_RAW_ROOT+WALL_BRICK_GLB_PATH,gltf=>';
     const brickReplacement = 'new THREE.GLTFLoader().load(rawTextureUrl(WALL_BRICK_GLB_PATH),gltf=>';
     const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';

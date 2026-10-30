@@ -225,15 +225,24 @@
     (loadRoofShingle(path) || loadFurnitureGlb(path).then(template => template.clone(true))).then(instance => {
       if (mesh.userData.glbDisposed) return; // A world reset/move can dispose the owner while the GLB is still loading.
       // Cached materials/geometries are never mutated or disposed by a furniture instance.
+      const convertedSkins=[]; // Converted model parts become ordinary rock meshes under the same animated GLB owner.
       instance.traverse(child => {
         if (/^(?:shinglebone|.*_bone|bone)$/i.test(child.name || '')) child.visible = false;
         if (!child.isMesh) return;
-        if (child.userData.sharedShingle) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look.
+        if (child.userData.sharedShingle&&!part.rockShape?.enabled) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look unless this furniture explicitly requests stone.
         child.geometry = child.geometry.clone();
-        const color = material => { const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
-        child.material = Array.isArray(child.material) ? child.material.map(color) : color(child.material);
+        if(part.rockShape?.enabled){const original=child.geometry;child.geometry=createRockGeometry(original,part.rockShape);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
+        const color = material => {const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
+        child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
+      for(const skin of convertedSkins){
+        const stone=new THREE.Mesh(skin.geometry,skin.material); // Rigid furniture animation still targets the original wrapper; rocks need no missing skin vertex attributes.
+        stone.name=skin.name;stone.position.copy(skin.position);stone.quaternion.copy(skin.quaternion);stone.scale.copy(skin.scale);stone.visible=skin.visible;
+        stone.castShadow=stone.receiveShadow=true;stone.userData={...skin.userData,rockShape:true};
+        for(const child of [...skin.children])stone.add(child);
+        skin.parent.add(stone);skin.parent.remove(skin);
+      }
       instance.updateMatrixWorld(true);
       const box = new THREE.Box3(); // Visible geometry only; the hidden alignment bone cannot inflate the model bounds.
       instance.traverse(child => { if (child.isMesh && child.visible) { child.geometry.computeBoundingBox(); box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)); } });
@@ -313,6 +322,56 @@
     return geo;
   }
 
+  function rockMaterialPart(part) {
+    return {...part,color:'#808080',materialRole:'stone',materialTexture:'carved_smooth.png',
+      materialCapTexture:null,materialFillEnabled:true,materialFillColor:'#808080',materialFillMode:'always',
+      materialLighting:'unlit',surfaceOpacity:1,textureTransparent:false,patternSurfaces:[]}; // Keep the authored source finish intact so the editor can restore it.
+  }
+  function createRockGeometry(source,settings={}) {
+    const terrain=window.TerrainPreview; // The same seeded boulder-mound solver used by terrain/cavern previews supplies the stone lobes.
+    if(!terrain?.buildRockMoundBumpField||!terrain?.sampleRockMoundBump)throw new Error('Rock conversion requires TerrainPreview.');
+    const input=source.index?source.toNonIndexed():source.clone(); // Never mutate cached GLB/primitive buffers.
+    input.computeBoundingBox();
+    const bounds=input.boundingBox.clone(),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3()); // Preserve each original piece's dimensions and local pivot.
+    if(!Number.isFinite(size.x+size.y+size.z)||Math.max(size.x,size.y,size.z)<=0){input.dispose();throw new Error('The furniture piece has no finite rock shape.');}
+    let salt=2166136261; // A saved part ID/seed keeps the same stone shape through exports, animation and rebuilds.
+    for(const character of String(settings.seed||'furniture-rock').slice(0,128))salt=Math.imul(salt^character.charCodeAt(0),16777619)>>>0;
+    const fields=[0,1,2].map(axis=>terrain.buildRockMoundBumpField(3,3,0,0,(salt+axis*7919)>>>0)); // Triplanar samples avoid seams at coincident vertices.
+    const roughness=Number.isFinite(Number(settings.roughness))?Math.max(0,Math.min(1,Number(settings.roughness))):.35; // Thin legs and oversized inputs retain bounded shape changes.
+    const sourcePositions=input.getAttribute('position'); // Imported GLBs may use interleaved attributes with no direct .array property.
+    let vertices=[]; // Subdivide coarse boxes enough to show lobes without replacing holes or disconnected sections.
+    for(let index=0;index<sourcePositions.count;index++)vertices.push(sourcePositions.getX(index),sourcePositions.getY(index),sourcePositions.getZ(index));
+    const levels=vertices.length/9<256?2:vertices.length/9<1024?1:0; // At most 4,096 new triangles; detailed imports reuse their existing tessellation.
+    for(let level=0;level<levels;level++){
+      const next=[]; // Temporary triangle buffer used only while authoring/building.
+      for(let offset=0;offset+8<vertices.length;offset+=9){
+        const a=vertices.slice(offset,offset+3),b=vertices.slice(offset+3,offset+6),c=vertices.slice(offset+6,offset+9);
+        const ab=a.map((value,axis)=>(value+b[axis])*.5),bc=b.map((value,axis)=>(value+c[axis])*.5),ca=c.map((value,axis)=>(value+a[axis])*.5);
+        next.push(...a,...ab,...ca,...ab,...b,...bc,...ca,...bc,...c,...ab,...bc,...ca);
+      }
+      vertices=next;
+    }
+    const geometry=new THREE.BufferGeometry(); // Rock topology remains under the original independently animated piece owner.
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+    const positions=geometry.getAttribute('position'); // Deterministic deformation is evaluated once, never during animation frames.
+    for(let index=0;index<positions.count;index++){
+      const x=size.x>.000001?(positions.getX(index)-center.x)/size.x:0,y=size.y>.000001?(positions.getY(index)-center.y)/size.y:0,z=size.z>.000001?(positions.getZ(index)-center.z)/size.z:0;
+      const weight=Math.abs(x)+Math.abs(y)+Math.abs(z)||1;
+      const bump=(Math.abs(x)*terrain.sampleRockMoundBump(fields[0],y+.5,z+.5)+Math.abs(y)*terrain.sampleRockMoundBump(fields[1],x+.5,z+.5)+Math.abs(z)*terrain.sampleRockMoundBump(fields[2],x+.5,y+.5))/weight;
+      const rounding=1-roughness*.5*Math.max(0,Math.hypot(x,y,z)-.5),scale=rounding*(1+roughness*(bump-.12)); // Rounded edges and the existing rock ridges soften each source silhouette.
+      positions.setXYZ(index,center.x+x*size.x*scale,center.y+y*size.y*scale,center.z+z*size.z*scale);
+    }
+    geometry.computeBoundingBox();
+    const rockSize=geometry.boundingBox.getSize(new THREE.Vector3()),rockMin=geometry.boundingBox.min.clone(); // Fit the rough result back to authored bounds so attachments/pivots do not drift.
+    for(let index=0;index<positions.count;index++)positions.setXYZ(index,
+      rockSize.x>.000001?bounds.min.x+(positions.getX(index)-rockMin.x)*size.x/rockSize.x:center.x,
+      rockSize.y>.000001?bounds.min.y+(positions.getY(index)-rockMin.y)*size.y/rockSize.y:center.y,
+      rockSize.z>.000001?bounds.min.z+(positions.getZ(index)-rockMin.z)*size.z/rockSize.z:center.z);
+    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+    input.dispose();
+    return ensureUvs(geometry);
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -334,21 +393,26 @@
     } else {
       geo = createTaperedBoxGeometry(part);
     }
-    const mat = partMaterial(part, baseColor);
-    applySurfaceOpacity(mat, part);
+    const rock=part.rockShape?.enabled===true,renderPart=rock?rockMaterialPart(part):part; // Conversion changes geometry/finish, never kind, transform, part ID or animation bindings.
+    if(rock&&part.kind==='banner'){geo.dispose();geo=new THREE.BoxGeometry(Math.max(.01,t.sx),Math.max(.01,t.sy),Math.max(.01,t.sz||.02));} // A formerly flat fabric guide becomes a thin stone slab.
+    if(rock){const original=geo;geo=createRockGeometry(original,part.rockShape);original.dispose();}
+    const mat = partMaterial(renderPart, baseColor);
+    applySurfaceOpacity(mat, renderPart);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.position.set(t.x || 0, t.y || 0, t.z || 0);
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
-    if (part.materialTexture) applyPartTexture(mat, part);
-    applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
-    if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
+    if (renderPart.materialTexture) applyPartTexture(mat, renderPart);
+    applyAuthoredSurfaceMapping(mesh, renderPart); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
+    if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes stay visible behind transparent effects.
+    if(rock)mat.depthWrite=true; // Converted stone is solid even when its source was a VFX backdrop.
     mesh.userData ||= {};
     mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
-    window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
-    if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
+    mesh.userData.rockShape=rock;
+    window.FurniturePatternSurfaces?.applyPart?.(mesh, renderPart);
+    if (part.kind === 'banner'&&!rock) { mat.visible = false; mesh.castShadow = false; } // Converted banners are visible stone rather than hidden fabric guides.
     return mesh;
   }
 
@@ -819,8 +883,9 @@ function campfireRecipe() {
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
+    createRockGeometry,
     makePartMaterial,
-    latestChange: 'Fixed textured furniture startup crashes on Three.js r128 by initializing clone metadata.',
+    latestChange: 'Rock conversion uses terrain rock lobes while retaining each furniture component and its animation bindings.',
     shade,
     CATALOG,
   };

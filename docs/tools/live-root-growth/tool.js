@@ -13,6 +13,20 @@
   let repoRequestId = 0; // Ignores stale results from overlapping catalog refresh requests.
   let buildRequestId = 0, ruinFrame = null, ruinLoader = null, ruinQueue = Promise.resolve(), ruinRoom = null; // Serialize generator ownership and discard obsolete preview requests.
   let framedEnvironment = 'flat'; // Reframe once per room/seed so rebuilds preserve the user's orbit and zoom.
+  let buildController=null,roomCancel=null; // Cancel obsolete Wrap work and release a stalled generator instead of blocking future rebuilds.
+  const buildState={running:false,stage:'idle',message:'Ready'}; // Mobile-visible construction progress is distinct from animation progress.
+  function buildMessage(stage,message){
+    buildState.stage=stage;buildState.message=message;
+    $('buildStatus').textContent=message;$('cancelBuild').disabled=!buildState.running;
+    for(const id of ['extend','retract','pause','reset','full','scrub'])if($(id).disabled!==buildState.running)$(id).disabled=buildState.running; // Do not silently send a Grow press to the previous instance while its replacement is being built.
+    if(buildState.running)status.textContent=message;
+  }
+  function cancelBuild(){
+    ++buildRequestId;buildController?.abort();roomCancel?.();
+    if(buildState.stage==='loading'){ruinFrame?.remove();ruinFrame=null;ruinLoader=null;}
+    buildState.running=false;buildMessage('cancelled','Build cancelled. You can rebuild or choose a different preview.');
+    updateStatus(true);
+  }
   let active = null, lastStatus = '', lastDebug = '', lastTimestamp = 0, pendingRecipe = null; // Instance/diagnostic state for this isolated preview.
   function reportError(error) {
     errorBox.style.display = 'block'; errorBox.textContent = error?.stack || error?.message || String(error);
@@ -78,6 +92,7 @@
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   $('render').appendChild(renderer.domElement);
   const orbit = new T.OrbitControls(camera, renderer.domElement);
+  let previewDirty=true;orbit.addEventListener('change',()=>{previewDirty=true;}); // Keep orbit responsive during construction without redrawing a static dense scene between every layer.
   orbit.enableDamping = true; orbit.dampingFactor = .1; orbit.target.set(0, 1, 0);
   scene.add(new T.HemisphereLight(0xdcecff,0x33462d,1.5));
   const sun = new T.DirectionalLight(0xffefd6, 1.1);
@@ -127,32 +142,46 @@
   }
   async function ruinGenerator() {
     if(ruinLoader)return ruinLoader;
+    let loadingFrame=null; // A cancelled loader must never remove a newer retry's frame.
     ruinLoader=(async()=>{
-      ruinFrame=document.createElement('iframe');
+      const frame=document.createElement('iframe');ruinFrame=frame;loadingFrame=frame; // Keep this request's frame separate from any subsequent retry.
       ruinFrame.title='Ruin geometry generator';ruinFrame.tabIndex=-1;ruinFrame.setAttribute('aria-hidden','true');
       ruinFrame.style.cssText='position:fixed;left:-10000px;top:-10000px;width:16px;height:16px;visibility:hidden;border:0';
-      ruinFrame.src=new URL('tools/debris-ifier/index.html?devRuntime=1',document.baseURI).href;
+      ruinFrame.src=new URL('tools/debris-ifier/index.html?devRuntime=1&assetAttempt='+Date.now().toString(36)+'-'+buildRequestId,document.baseURI).href; // Parent THREE shares pending FileLoader requests across frames; a retry needs fresh asset URLs after a download stalls.
       document.body.appendChild(ruinFrame);
       const started=Date.now(); // A visible error replaces an indefinite mobile loading state.
       while(Date.now()-started<45000){
-        const api=ruinFrame.contentWindow?.DebrisifierV50; // Reuse the exact same parent-THREE generator bridge as the playable ruins.
+        if(!frame.isConnected)throw Object.assign(new Error('Ruin loading cancelled.'),{name:'AbortError'});
+        const api=frame.contentWindow?.DebrisifierV50; // Reuse the exact same parent-THREE generator bridge as the playable ruins.
         if(api?.generateInteriorLocale)return api;
         const debug=ruinFrame.contentDocument?.getElementById('debug')?.textContent||'';
         if(/FAILED/i.test(debug))throw new Error(debug);
         await new Promise(resolve=>setTimeout(resolve,50));
       }
       throw new Error('Ruin generator did not load within 45 seconds. Rebuild to retry.');
-    })().catch(error=>{ruinFrame?.remove();ruinFrame=null;ruinLoader=null;throw error;});
+    })().catch(error=>{loadingFrame?.remove();if(ruinFrame===loadingFrame){ruinFrame=null;ruinLoader=null;}throw error;});
     return ruinLoader;
   }
-  function roomForSeed(seed,size) {
+  function roomForSeed(seed,size,request) {
     ruinQueue=ruinQueue.catch(()=>{}).then(async()=>{
+      if(request!==buildRequestId)throw Object.assign(new Error('Obsolete room request.'),{name:'AbortError'});
       const key=seed+'|'+size; // A saved seed regenerates the same room without rebuilding on every growth-setting adjustment.
       if(ruinRoom?.key===key)return ruinRoom;
       $('ruinStatus').textContent='Building one room with the existing ruin generator…';
+      buildMessage('loading','Loading the existing ruin generator…');
       const api=await ruinGenerator(); // The hidden frame owns no render loop or extra WebGL context.
-      const result=await api.generateInteriorLocale({seed,size,singleRoom:true,
-        puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}});
+      if(request!==buildRequestId)throw Object.assign(new Error('Obsolete room request.'),{name:'AbortError'});
+      buildMessage('room','Generating the room walls and brick floor…');
+      let timer; // Missing textures, models or furniture downloads must not leave the entire rebuild queue pending forever.
+      const deadline=new Promise((resolve,reject)=>{
+        roomCancel=()=>reject(Object.assign(new Error('Ruin generation cancelled.'),{name:'AbortError'}));
+        timer=setTimeout(()=>reject(new Error('Ruin generation timed out after 45 seconds. A model or texture may not have loaded. Rebuild to retry.')),45000);
+      });
+      let result; // Discard the stalled iframe on timeout/cancel; the next rebuild starts a clean generator.
+      try{result=await Promise.race([api.generateInteriorLocale({seed,size,singleRoom:true,
+        puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}}),deadline]);}
+      catch(error){ruinFrame?.remove();ruinFrame=null;ruinLoader=null;throw error;}
+      finally{clearTimeout(timer);roomCancel=null;}
       api.pausePreviewLoop();
       const meta=result.locale?.meta?.interiorShell; // Authoritative room count and floor elevation, not a separately invented rectangle.
       if(meta?.rooms?.length!==1)throw new Error('The ruin preview must generate exactly one room.');
@@ -195,16 +224,23 @@
   }
   async function rebuild(keepProgress = true) {
     const request=++buildRequestId; // An older asynchronous room build must never overwrite a newer furniture or recipe choice.
+    buildController?.abort();
+    roomCancel?.();
+    const controller=new AbortController();buildController=controller; // Every rebuild owns its cancellation signal.
+    buildState.running=true;buildMessage('starting','Preparing the root preview…');
     try {
       errorBox.style.display = 'none';
-      const room=$('previewEnvironment').value==='ruin'?await roomForSeed(readRecipe().seed,$('ruinSize').value):null;
+      const room=$('previewEnvironment').value==='ruin'?await roomForSeed(readRecipe().seed,$('ruinSize').value,request):null;
       if(request!==buildRequestId)return;
       const progress = keepProgress ? active?.getProgress() ?? 0 : 0;
-      if (active) { active.dispose(); active = null; }
       const placed = source.model.clone(true); // Never mutate the reusable imported source's local geometry.
       placed.position.copy(readPosition()); // Purpose-agnostic target transform for platform, bridge or future door shapes.
-      active = growth.create({THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},target:placed,
-        ...(room?{substrate:room.model}:{}),progress,rootFinish:templeRootFinish});
+      const next=await growth.createAsync({THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},target:placed,
+        ...(room?{substrate:room.model}:{}),progress,rootFinish:templeRootFinish,signal:controller.signal,
+        onProgress:step=>{if(request===buildRequestId)buildMessage('roots','Building roots: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
+      if(request!==buildRequestId){next.dispose();return;}
+      active?.dispose();active=next;
+      buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
       scene.add(active.group); rebuildMarkers();
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
       frameEnvironment(room);
@@ -218,9 +254,10 @@
         errorBox.style.display = 'block';
         errorBox.textContent = 'Inward shrinkwrap found only '+metrics.shrinkwrapHits+'/'+metrics.shrinkwrapRays+' hits on the hidden furniture. Some roots may not lie inside its volume. Check that the imported furniture has real surfaces and closed geometry.';
       }
-    } catch (error) { if(request===buildRequestId)reportError(error); }
+    } catch (error) { if(request===buildRequestId){buildState.running=false;buildMessage(error.name==='AbortError'?'cancelled':'error',error.message);if(error.name!=='AbortError')reportError(error);} }
   }
   function updateStatus(force = false) {
+    if(buildState.running&&!force)return;
     if (!active) return;
     const info = active.getDiagnostics(), percent = Math.round(info.progress * 100);
     $('scrub').value = String(percent); $('progressLabel').textContent = percent+'%';
@@ -468,6 +505,7 @@
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
   }
   $('rebuild').onclick=()=>rebuild();
+  $('cancelBuild').onclick=cancelBuild;
   $('previewEnvironment').onchange=()=>rebuild(false);
   $('ruinSize').onchange=()=>{if($('previewEnvironment').value==='ruin')rebuild(false);};
   $('previewRuin').onclick=()=>{$('previewEnvironment').value='ruin';rebuild(false);};
@@ -488,6 +526,7 @@
     catch(error){reportError(error);}finally{event.target.value='';}};
   $('download').onclick=saveJson;$('copy').onclick=()=>copyJson().catch(reportError);
   window._liveRootGrowthAuthorBridge = {getRecipe:exportedRecipe, rebuild,
+    getBuildState:()=>({...buildState}),cancelBuild, // Report loading versus geometry work even before an animated instance exists.
     getInstance:()=>active, // Allows exact hidden geometry, growth stages and disposal checks without renderer interception.
     diagnostics:()=>active?.getDiagnostics(), refreshRepoFurniture, getRepoCount:()=>repoCatalog.size}; // Built-in mobile diagnostic hook for the Tools Hub.
   if (window.ResizeObserver) new ResizeObserver(resize).observe($('render'));else window.addEventListener('resize',resize);
@@ -509,7 +548,8 @@
   function frame(timestamp) {
     requestAnimationFrame(frame); // Isolated authoring preview, never part of the game's permanent frame scheduler.
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
-    lastTimestamp=timestamp;active?.update(delta);orbit.update();renderSceneWithShellOutlines();
+    lastTimestamp=timestamp;if(!buildState.running)active?.update(delta);orbit.update();
+    if(!buildState.running||previewDirty){renderSceneWithShellOutlines();previewDirty=false;}
     if (active && (timestamp % 220 < 18)) updateStatus();
   }
   resize();rebuild(false);requestAnimationFrame(frame);

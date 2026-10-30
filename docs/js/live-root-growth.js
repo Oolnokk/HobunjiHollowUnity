@@ -69,16 +69,30 @@
   // The shared FoliageGenerator deliberately caps each Wrap pass at density 1.
   // Higher values here mean layered independent seeded Wrap passes, rather
   // than modifying the generator's global semantics or silently clamping to 1.
-  function buildDenseWrap(THREE, foliage, parent, options, density, layerOptions = null) {
-    if (density <= 1) return foliage.buildSurfaceGrowth(parent,{...options,density,
-      ...(layerOptions?.(0,1) || {})});
+  function disposeGenerated(groups) {
+    const geometries=new Set(),materials=new Set(); // Generated assets can share materials across strands; release each owned resource once.
+    for(const group of groups)group?.traverse(node=>{
+      if(node.geometry)geometries.add(node.geometry);
+      for(const material of Array.isArray(node.material)?node.material:[node.material])if(material)materials.add(material);
+    });
+    for(const geometry of geometries)geometry.dispose();
+    for(const material of materials)material.dispose();
+  }
+  function* buildDenseWrap(THREE, foliage, parent, options, density, layerOptions = null) {
+    if (density <= 1) {
+      const layer=foliage.buildSurfaceGrowth(parent,{...options,density,...(layerOptions?.(0,1) || {})}); // Single-pass recipes also give the browser a chance to paint.
+      let complete=false; // A cancelled asynchronous build owns and releases this unfinished layer.
+      try{yield {part:options.growthLabel||'Floor',layer:1,layers:1};complete=true;return layer;}
+      finally{if(!complete)disposeGenerated([layer]);}
+    }
     const layers = new THREE.Group();
     layers.name = 'Layered surface roots';
     layers.userData.surfaceFoliage = true; // Other layers must ignore all already-generated growth.
     layers.userData.surfaceGrowthEndpoints = [];
     layers.userData.generatedStrands = 0;
     let remaining = density, pass = 0;
-    while (remaining > 0.00001) {
+    let complete=false; // Cancellation while paused between layers must not leak partial geometry.
+    try { while (remaining > 0.00001) {
       const totalPasses=Math.ceil(density);
       const layer = foliage.buildSurfaceGrowth(parent, {
         ...options, density:Math.min(1,remaining), seed:options.seed+':layer-'+pass,
@@ -90,11 +104,13 @@
         layers.userData.surfaceGrowthEndpoints.push(endpoint);
       }
       remaining -= 1; pass++;
+      yield {part:options.growthLabel||'Floor',layer:pass,layers:totalPasses};
     }
     layers.userData.diagnostics = pass + ' independent Wrap layers; ' +
       layers.userData.generatedStrands + ' total root strands';
     layers.userData.densityPasses = pass;
-    return layers;
+    complete=true;return layers;
+    } finally {if(!complete)disposeGenerated([layers]);}
   }
 
   // Build a ground-rooted part graph from actual geometry, not part names.
@@ -372,7 +388,7 @@
     return mesh;
   }
 
-  function create(options = {}) {
+  function* createSteps(options = {}) {
     const THREE = options.THREE || root.THREE; // Native Three instance, passed explicitly in previews if required.
     const foliage = options.foliage || root.FoliageGenerator?.forThree?.(THREE) || root.FoliageGenerator;
     if (!THREE || !foliage?.buildSurfaceGrowth || !foliage?.normalizeSurfaceGrowth) throw new Error('LiveRootGrowth requires THREE and FoliageGenerator.');
@@ -393,6 +409,8 @@
     }; // Keep serialized material inputs safe for all callers.
     const group = new THREE.Group(); // Public scene-owned root, containing floor, hidden shape and generated foliage.
     group.name = 'Live root growth';
+    const ownedGrowths=[];let ownedFloor=null,complete=false; // Only generated geometry is released when an asynchronous build is interrupted.
+    try {
     const target = options.substrate?.isObject3D ? new THREE.Group() : options.target.clone(true); // A generated ruin and optional furniture share one staged growth graph.
     if(options.substrate?.isObject3D) target.add(options.substrate.clone(true),options.target.clone(true));
     target.name = 'Invisible growth shape';
@@ -415,6 +433,7 @@
     const floorHost = new THREE.Group(), floor = options.substrate ? null : new THREE.Mesh(
       new THREE.PlaneGeometry(recipe.floorWidth, recipe.floorDepth),
       new THREE.MeshBasicMaterial({visible:false}));
+    ownedFloor=floor;
     if(floor){
       floor.rotation.x = -Math.PI / 2; floor.position.y = recipe.floorY;
       floor.userData.surfaceFoliageRole = 'floors';
@@ -437,10 +456,10 @@
     const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
       offset:0.012, density:recipe.floorDensity, color:rootFinish.color, texture:rootFinish.texture};
-    let floorGrowth = options.substrate ? null : buildDenseWrap(THREE, foliage, floorHost, {
+    let floorGrowth = options.substrate ? null : yield* buildDenseWrap(THREE, foliage, floorHost, {
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
     }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
-    if(floorGrowth)floorHost.add(floorGrowth);
+    if(floorGrowth){floorHost.add(floorGrowth);ownedGrowths.push(floorGrowth);}
     const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
     // One per-part generator per density pass would multiply an authored 30-part
     // festival arch's 80-strand budget by 30. Divide the shared pass budget
@@ -451,15 +470,18 @@
     targetGrowth.userData.surfaceFoliage=true;
     targetGrowth.userData.generatedStrands=0;
     targetGrowth.userData.surfaceGrowthEndpoints=[];
+    ownedGrowths.push(targetGrowth);
     // A per-mesh plan keeps elevated tabletop/overhang triangles out of the
     // initial roots. Each part retains the same six inward shrinkwrap passes.
-    const partGrowths=partPlan.map(part=>{
+    const partGrowths=[]; // Both synchronous gameplay callers and the cooperative author use this same per-piece construction.
+    for(const part of partPlan){
       const extent=part.bounds.max.clone().sub(part.bounds.min);
       const minimumThickness=Math.max(.01,Math.min(...[extent.x,extent.y,extent.z].filter(size=>size>.001))); // Ruin walls are open planes: keep full root radius instead of treating their zero thickness as a tiny solid.
       const partRadius=Math.max(.005,Math.min(recipe.radius,minimumThickness*.42));
       const isFloor=part.mesh.userData?.liveRootFloor===true; // Structural floor roots use floor controls while retaining staged inward growth.
-      const wrapped=buildDenseWrap(THREE, foliage, target, {
+      const wrapped=yield* buildDenseWrap(THREE, foliage, target, {
         ...growthOptions, seed:recipe.seed+':part-'+part.index,
+        growthLabel:part.label,
         radius:partRadius, strandLimit:partWrapLimit,count:partWrapLimit,
         target:isFloor?'floors':'all', targetMeshId:part.mesh.uuid, length:isFloor?recipe.floorLength:recipe.targetLength,
         shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
@@ -473,8 +495,8 @@
       targetGrowth.add(wrapped);
       targetGrowth.userData.generatedStrands+=wrapped.userData.generatedStrands||0;
       targetGrowth.userData.surfaceGrowthEndpoints.push(...(wrapped.userData.surfaceGrowthEndpoints||[]));
-      return wrapped;
-    });
+      partGrowths.push(wrapped);
+    }
     targetGrowth.userData.densityPasses=partGrowths[0]?.userData?.densityPasses||1;
     target.add(targetGrowth);
     if(!floorGrowth){
@@ -621,8 +643,27 @@
       }
     };
     api.setProgress(options.progress ?? 0);
-    return api;
+    complete=true;return api;
+    } finally {if(!complete){disposeGenerated(ownedGrowths);ownedFloor?.geometry.dispose();ownedFloor?.material.dispose();}}
   }
 
-  root.LiveRootGrowth = {version:2, DEFAULTS, TEMPLE_ROOT_FINISH, normalizeRecipe, create};
+  function create(options = {}) {
+    const steps=createSteps(options);let step; // Preserve the existing synchronous API and deterministic output.
+    do{step=steps.next();}while(!step.done);
+    return step.value;
+  }
+  async function createAsync(options = {}) {
+    const steps=createSteps(options),schedule=options.schedule||(()=>new Promise(resolve=>root.setTimeout(resolve,0))); // Yield between Wrap passes so mobile input, progress and cancel can run.
+    try {
+      while(true){
+        await schedule();
+        if(options.signal?.aborted)throw Object.assign(new Error('Root preview build cancelled.'),{name:'AbortError'});
+        const step=steps.next(); // A layer uses the original Wrap solver without changing its seed or density.
+        if(step.done)return step.value;
+        options.onProgress?.(step.value);
+      }
+    } finally {steps.return();}
+  }
+
+  root.LiveRootGrowth = {version:2, DEFAULTS, TEMPLE_ROOT_FINISH, normalizeRecipe, create, createAsync};
 })(typeof window !== 'undefined' ? window : globalThis);

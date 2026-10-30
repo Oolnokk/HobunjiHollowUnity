@@ -449,3 +449,20 @@ assert(editor.includes('function importRepoFurniture('));
 assert(editor.includes('scene.overrideMaterial = shellOutlineMaterial'));
 assert(editor.includes('camera.layers.set(1)'));
 console.log('Live root growth: wrap reuse, source preservation, deterministic nodes, controls, retraction, disposal and Tools Hub wiring passed.');
+(async()=>{
+  let turns=0;const progress=[]; // Cooperative creation must pause between layers while preserving the synchronous geometry.
+  const asyncCase=await feature.createAsync({...options,schedule:async()=>{turns++;},onProgress:step=>progress.push(step)});
+  assert(turns>12&&progress.length===12,'the six floor and six shape layers must give input/progress a chance to run');
+  assert.deepEqual(asyncCase.branches.map(branch=>branch.geometry.parameters.path.points.map(point=>point.toArray())),
+    first.branches.map(branch=>branch.geometry.parameters.path.points.map(point=>point.toArray())));
+  asyncCase.dispose();
+  const signal={aborted:false},generated=[];let cancelTurns=0; // Abort during construction, before an instance can be returned.
+  await assert.rejects(feature.createAsync({...options,signal,
+    foliage:{...foliage,buildSurfaceGrowth(parent,recipe){const group=fakeGrowth(parent,recipe);generated.push(group);return group;}},
+    schedule:async()=>{if(++cancelTurns===4)signal.aborted=true;}}),error=>error.name==='AbortError');
+  assert(generated.length>0);
+  assert(generated.every(group=>group.children.every(mesh=>mesh.geometry.disposed&&mesh.material.disposed)),
+    'cancel must free every partially generated layer');
+  assert.equal(input.children[0].geometry.disposed,undefined,'cancel must retain the caller-owned source');
+  console.log('Cooperative root generation: deterministic layers, browser yields and cancellation cleanup passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

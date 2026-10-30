@@ -160,6 +160,12 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
         <button id="addLiquidToVesselBtn" class="ok">Add Liquid to Selected Cup</button>
         <p class="muted tight">The liquid surface follows the vessel and recalculates its ellipse, taper, and skew at the current fill height.</p>
       </div>
+      <div class="section"><h2>Rock furniture</h2>
+        <p class="muted">Convert every component of this furniture item into a rock with roughly the same shape. Piece IDs, pivots and existing animations are preserved.</p>
+        <label>Rock roughness <input id="rockRoughness" type="number" min="0" max="1" step="0.05" value="0.35"></label>
+        <div class="g2"><button id="rockAllPieces" type="button">Turn all pieces into rocks</button><button id="restoreRockPieces" type="button">Restore original pieces</button></div>
+        <p id="rockConversionStatus" class="muted" role="status">Uses the existing terrain rock generator. Conversion is saved in furniture JSON.</p>
+      </div>
       <div class="section"><h2>Pieces</h2><div id="partList" class="list"></div></div>
     </div>
 
@@ -620,10 +626,12 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../js/foliage-generator.js?v=20261028temple-finish"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
-<script src="../../js/procedural-furniture.js?v=20261025hab1da68" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261030had53a66"></script>
+<script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
+<script src="../../js/procedural-furniture.js?v=20261030ha16d9df" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
-<script src="../../js/furniture-vessel-runtime.js?v=20261027htemple-vessel-a2"></script>
+<script src="../../js/furniture-vessel-runtime.js?v=20261030h33c4e64"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js" onerror="window.__hobunjiThreeLoadError.push('portrait-utils failed to load')"></script>
 <script src="../../js/portrait-breathing.js" onerror="window.__hobunjiThreeLoadError.push('portrait-breathing failed to load')"></script>
 <script src="../../js/npc-avatar-preview-utils.js" onerror="window.__hobunjiThreeLoadError.push('npc-avatar-preview-utils failed to load')"></script>
@@ -1116,12 +1124,24 @@ function disposeObject(object) { object?.traverse?.(child=>{child.geometry?.disp
 
 function removeDerivedSurfacesForPart(partId) { for(const [surfaceId,group] of [...surfaceGroups.entries()])if(group.partId===partId)surfaceGroups.delete(surfaceId); }
 function buildPartMesh(part) {
-  if (part.kind === 'glb') {
+  if (part.kind === 'glb'||part.rockShape?.enabled) {
     const old = meshes.get(part.id); // Replaces only this independently transformable imported piece.
     if (old) { root.remove(old); disposeObject(old); }
+    removeDerivedSurfacesForPart(part.id);
     window.__hobunjiFurnitureAssetBase = '../../assets/';
     const mesh = window.ProceduralFurniture.buildPartMesh(part, hexToNum(part.color || '#8b6540')); // Shares runtime bounds normalization and hidden-bone behavior.
-    mesh.userData.type = 'part'; mesh.userData.id = part.id; root.add(mesh); meshes.set(part.id, mesh); return mesh;
+    mesh.userData.type = 'part'; mesh.userData.id = part.id;
+    mesh.userData.authoredDimensions={sx:part.transform.sx,sy:part.transform.sy,sz:part.transform.sz};
+    if(part.kind!=='glb'){
+      const groups=analyzeSurfaceGroups(part,mesh.geometry); // Keep recognized surfaces and picking on the generated rock topology.
+      mesh.userData.faceToSurface=Array.from({length:mesh.geometry.getAttribute('position').count/3},()=>null);
+      mesh.userData.surfaceMaterialIndex={};mesh.userData.recognizedSurfaces=[];
+      mesh.material=[mesh.material];mesh.geometry.clearGroups();mesh.geometry.addGroup(0,mesh.geometry.getAttribute('position').count,0);
+      for(const group of groups){surfaceGroups.set(group.id,group);ensureSurfaceSetting(group);mesh.userData.surfaceMaterialIndex[group.id]=0;
+        mesh.userData.recognizedSurfaces.push({id:group.id,faceIndices:group.faceIndices,recognizedType:group.recognizedType});
+        for(const face of group.faceIndices)mesh.userData.faceToSurface[face]=group.id;}
+    }
+    root.add(mesh); meshes.set(part.id, mesh); return mesh;
   }
   const old=meshes.get(part.id);if(old){root.remove(old);disposeObject(old);meshes.delete(part.id);}removeDerivedSurfacesForPart(part.id);const geometry=createPartGeometry(part),groups=analyzeSurfaceGroups(part,geometry);groups.forEach(group=>{surfaceGroups.set(group.id,group);ensureSurfaceSetting(group);});applySurfaceUVs(geometry,groups);geometry.clearGroups();
   const materials=[],surfaceMaterialIndex={};groups.forEach((group,index)=>{const setting=ensureSurfaceSetting(group),isSelected=isSurfaceSelected(group.id),isLiquid=part.kind==='liquidSurface',liquidValue=isLiquid?effectiveLiquidState(part):null,color=state.surfaceRecognition.colorCode?surfaceColorFor(group,index):(isLiquid?liquidValue.color:part.color),liquidHasTexture=isLiquid&&!!setting.texture.source,liquidOpacity=isLiquid?liquidValue.opacity:1,material=new THREE.MeshStandardMaterial({color:hexToNum(liquidHasTexture?liquidTextureTint(liquidValue):color),roughness:isLiquid?(liquidHasTexture?.78:.18):.82,metalness:isLiquid?(liquidHasTexture?0:.04):.02,transparent:isLiquid?(liquidOpacity<.999||!!setting.texture.transparent):!!setting.texture.transparent,opacity:liquidOpacity,depthWrite:!isLiquid||liquidOpacity>=.999,side:isLiquid?THREE.DoubleSide:THREE.FrontSide});if(isSelected){material.emissive=new THREE.Color(0x21496b);material.emissiveIntensity=.65;}materials.push(material);surfaceMaterialIndex[group.id]=index;for(const faceIndex of group.faceIndices)geometry.addGroup(faceIndex*3,3,index);if(!state.surfaceRecognition.colorCode&&setting.texture.source)makeSurfaceTexture(setting.texture).then(texture=>{const live=meshes.get(part.id),materialIndex=live?.userData?.surfaceMaterialIndex?.[group.id],liveMaterial=Array.isArray(live?.material)?live.material[materialIndex]:null;if(liveMaterial&&texture){liveMaterial.map=texture;const livePart=state.parts.find(candidate=>candidate.id===part.id),liquidState=livePart?.kind==='liquidSurface'?effectiveLiquidState(livePart):null;liveMaterial.color.setHex(hexToNum(liquidState?liquidTextureTint(liquidState):'#ffffff'));liveMaterial.opacity=liquidState?liquidState.opacity:1;liveMaterial.transparent=liquidState?liquidState.opacity<.999||!!setting.texture.transparent:!!setting.texture.transparent;liveMaterial.depthWrite=liquidState?liquidState.opacity>=.999:true;liveMaterial.roughness=liquidState?.78:liveMaterial.roughness;liveMaterial.needsUpdate=true;}}).catch(error=>log(`Surface texture failed (${setting.texture.name||group.id}): ${error.message}`,'warn'));});
@@ -2219,7 +2239,18 @@ function frameFurniture(){
 }
 function setCameraView(view){const target=orbit?.target||new THREE.Vector3(0,.5,0),distance=5;if(view==='front')camera.position.set(target.x,target.y,target.z+distance);else if(view==='top')camera.position.set(target.x,target.y+distance,target.z+.001);else camera.position.set(target.x+3.8,target.y+2.65,target.z+4.5);camera.lookAt(target);orbit?.update();}
 
+function convertFurnitureToRocks(enabled){
+  if(!state.parts.length){$('rockConversionStatus').textContent='Import or build a furniture item first.';return;}
+  const roughness=clamp(num('rockRoughness',.35),0,1); // One furniture-level action writes a stable setting onto every independently animated component.
+  for(const part of state.parts){if(enabled)part.rockShape={enabled:true,seed:part.rockShape?.seed||`${state.id}:${part.id}`,roughness};else delete part.rockShape;}
+  rebuildFurnitureMeshes();queueUndoHistory(enabled?'convert all furniture pieces to rocks':'restore original furniture pieces');
+  $('rockConversionStatus').textContent=enabled?`${state.parts.length} pieces converted to rock. Original transforms, pivots and animation links retained.`:'Original geometry and finishes restored.';
+  log($('rockConversionStatus').textContent,'ok');
+}
+
 function setupEvents(){
+  $('rockAllPieces').onclick=()=>convertFurnitureToRocks(true);
+  $('restoreRockPieces').onclick=()=>convertFurnitureToRocks(false);
   document.querySelectorAll('[data-left-tab]').forEach(button=>button.onclick=()=>setEditorMode(button.dataset.leftTab));
   document.querySelectorAll('[data-add]').forEach(button=>button.onclick=()=>addPart(button.dataset.add));document.querySelectorAll('[data-preset]').forEach(button=>button.onclick=()=>({table:presetTable,chair:presetChair,chairCushion:presetChairCushion,bench:presetBench,stool:presetStool,bed:presetBed,barrel:presetBarrel,campfire:presetCampfire,hangingBanner:()=>window.FurniturePatternAuthor?.loadBannerPreset?.(),clear:clearFurniture}[button.dataset.preset])?.());document.querySelectorAll('[data-transform-mode]').forEach(button=>button.onclick=()=>{if(['seatAnchor','emitter'].includes(state.selectedType)&&button.dataset.transformMode==='scale'){log('Seat anchors and emitters have fixed scale; use Move or Rotate.','warn');setTransformMode('translate');return;}if(selectedPart()?.kind==='liquidSurface'&&button.dataset.transformMode!=='translate'){log('Liquid level uses only its local vessel-axis Move gizmo.','warn');setTransformMode('translate');return;}setTransformMode(button.dataset.transformMode);configureTransformAxesForSelection();});document.querySelectorAll('[data-camera]').forEach(button=>button.onclick=()=>setCameraView(button.dataset.camera));$('frameAllBtn').onclick=frameFurniture;$('bladedHazard').onchange=()=>{state.bladedHazard=$('bladedHazard').checked;};$('fireHazard').onchange=()=>{state.fireHazard=$('fireHazard').checked;};$('partMultiSelect').onchange=()=>{state.partMultiSelect=$('partMultiSelect').checked;};$('selectAllPartsBtn').onclick=selectAllParts;$('clearPartSelectionBtn').onclick=clearPartSelection;$('createWarpFromSelectionBtn').onclick=addProcessingWarpFromSelection;$('deleteSelectedPartsBtn').onclick=deleteSelectedParts;$('addLiquidToVesselBtn').onclick=addLiquidToSelectedVessel;['liquidLevel','liquidLevelNumber','liquidColor','liquidOpacity','liquidFillOpacity','liquidSubstanceColor','liquidUseTimelineSubstance'].forEach(id=>{$(id).addEventListener('input',updateLiquidFields);$(id).addEventListener('change',updateLiquidFields);});$('liquidDeleteBtn').onclick=deleteSelectedParts;document.querySelectorAll('[data-add-emitter]').forEach(button=>button.onclick=()=>addEmitter(button.dataset.addEmitter));$('addProcessingWarpBtn').onclick=addProcessingWarpFromSelection;['emitterName','emitterType','emitterEnabled','emitterX','emitterY','emitterZ','emitterRX','emitterRY','emitterRZ','emitterRate','emitterLifetime','emitterSize','emitterSpeed','emitterSpread','emitterRadius','emitterGravity','emitterColorA','emitterColorB'].forEach(id=>{$(id).addEventListener('change',applyEmitterFields);if(['emitterColorA','emitterColorB'].includes(id))$(id).addEventListener('input',applyEmitterFields);});$('emitterAttachPart').addEventListener('change',changeEmitterAttachment);$('deleteEmitterBtn').onclick=deleteSelectedEmitter;['warpName','warpEnabled','warpStyle','warpStrength','warpSpeed','warpSway','warpTwist','warpDepth','warpPhase','warpImpact','warpRock'].forEach(id=>$(id).addEventListener('change',applyWarpFields));['warpDownSpeed','warpUpSpeed'].forEach(id=>{$(id).addEventListener('input',applyWarpFields);$(id).addEventListener('change',applyWarpFields);});$('deleteWarpBtn').onclick=deleteSelectedWarp;$('addStompAttachPointBtn').onclick=addStompAttachPoint;['stompAttachName','stompAttachEnabled','stompCreatureVisible','stompAttachParent','stompAttachWarp','stompCreatureKind','stompAttachX','stompAttachY','stompAttachZ','stompAttachRX','stompAttachRY','stompAttachRZ','stompAttachBounce','stompCreatureOpacity'].forEach(id=>$(id).addEventListener('change',applyStompAttachFields));$('rebuildStompCreatureBtn').onclick=rebuildStompAttachVisuals;$('deleteStompAttachPointBtn').onclick=deleteSelectedStompAttachPoint;$('addProcessTimelineBtn').onclick=addProcessTimeline;$('deleteProcessTimelineBtn').onclick=deleteSelectedProcessTimeline;$('processTimelineName').addEventListener('change',applyProcessTimelineFields);$('processTimelineEnabled').addEventListener('change',applyProcessTimelineFields);$('processTimelineLoop').addEventListener('change',applyProcessTimelineFields);$('processTimelineDuration').addEventListener('change',applyProcessTimelineFields);$('processTimelineSubstance').addEventListener('input',applyProcessTimelineFields);$('processTimelineProgress').addEventListener('input',()=>{const timeline=selectedProcessTimeline();if(!timeline)return;timeline.progress=clamp(num('processTimelineProgress',0),0,1);$('processTimelineProgressNumber').value=timeline.progress;});$('processTimelineProgressNumber').addEventListener('input',()=>{const timeline=selectedProcessTimeline();if(!timeline)return;timeline.progress=clamp(num('processTimelineProgressNumber',0),0,1);$('processTimelineProgress').value=timeline.progress;});$('processTimelinePlayBtn').onclick=()=>{const timeline=selectedProcessTimeline();if(!timeline)return;if(timeline.progress>=1&&!timeline.loop)timeline.progress=0;timeline.playing=!timeline.playing;renderProcessTimelineUI();};$('processTimelineResetBtn').onclick=()=>{const timeline=selectedProcessTimeline();if(!timeline)return;timeline.playing=false;timeline.progress=0;renderProcessTimelineUI();};$('captureTimelineStartBtn').onclick=()=>captureProcessTimelineAt(0);$('captureTimelineKeyBtn').onclick=()=>captureProcessTimelineAt(selectedProcessTimeline()?.progress||0);$('captureTimelineEndBtn').onclick=()=>captureProcessTimelineAt(1);
   const partIds=['selName','selX','selY','selZ','selRX','selRY','selRZ','selSX','selSY','selSZ','topScaleX','topScaleZ','bottomScaleX','bottomScaleZ','topSkewX','topSkewZ','taperAxis','segments','innerScale','basinDepth','selColor','wonk'];const livePartStateIds=new Set(['selX','selY','selZ','selRX','selRY','selRZ','selSX','selSY','selSZ','topScaleX','topScaleZ','bottomScaleX','bottomScaleZ','topSkewX','topSkewZ','segments','innerScale','basinDepth','wonk']);partIds.forEach(id=>{$(id).addEventListener('change',applyPartFields);if(id==='selColor')$(id).addEventListener('input',applyPartFields);else if(livePartStateIds.has(id))$(id).addEventListener('input',()=>readPartFieldsIntoState());});

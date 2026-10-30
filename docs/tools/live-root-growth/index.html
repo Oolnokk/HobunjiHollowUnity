@@ -11,9 +11,10 @@
 <script src="js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="js/foliage-generator.js?v=20261029h12f5e2b"></script>
 <script src="js/GLTFLoader.js"></script>
+<script src="js/terrain-preview.js?v=20261013he41c002"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
-<script src="js/live-root-growth.js?v=20261030hff278e9"></script>
+<script src="js/live-root-growth.js?v=20261030h67bf156"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -42,6 +43,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <label for="previewEnvironment">Root substrate</label><select id="previewEnvironment"><option value="flat">Flat floor preview</option><option value="ruin">Single ruin room</option></select>
 <label for="ruinSize">Room size</label><select id="ruinSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>
 <button id="previewRuin" type="button" style="width:100%;margin-top:8px">Build ruin preview</button>
+<p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
 <p id="ruinStatus" role="status">Uses the existing ruin generator. Its hidden brick floor and walls grow from roots; the selected furniture remains inside the room.</p>
 <p>Grow or scrub to reveal the room: floor first, then walls and furniture. Show guide reveals the original stone shapes. The seed and room size are saved in your recipe.</p>
 </section>
@@ -89,10 +91,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Single-room ruin preview: actual generated walls and brick floor replace the flat substrate and grow through the same hidden-shape root system as furniture.</p></section>
+<section><h2>Latest change</h2><p>Root construction now yields between layers, displays its current stage, and can be cancelled. Stalled ruin downloads time out so Rebuild can retry.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261030h44c63b9"></script>
+<script src="tools/live-root-growth/tool.js?v=20261030h9a6a428"></script>
 </body></html>
