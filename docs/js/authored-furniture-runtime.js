@@ -76,6 +76,11 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
+      const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
+      for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
+      refreshRockContacts();
+    }
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);

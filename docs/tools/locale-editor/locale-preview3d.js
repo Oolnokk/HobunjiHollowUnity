@@ -182,7 +182,7 @@
     }
     await loadScript('../../js/terrain-preview.js?v=20261013he41c002', () => !!window.TerrainPreview?.buildRockMoundBumpField);
     await loadScript('../../js/procedural-furniture.js', () => !!window.ProceduralFurniture?.buildPartMesh);
-    await loadScript('../../js/authored-furniture-runtime.js?v=20261030had53a66', () => !!window.AuthoredFurniture?.buildGroup);
+    await loadScript('../../js/authored-furniture-runtime.js?v=20261030hbbf6776', () => !!window.AuthoredFurniture?.buildGroup);
     await loadScript('../../js/color-fill.js?v=20260923colorfill7', () => !!window.ColorFill?.shadeFillPixels);
     await loadScript('../../js/portrait-utils.js?v=20261026hmaskalpha1', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);

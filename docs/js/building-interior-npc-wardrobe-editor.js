@@ -3,7 +3,7 @@
 
   if (window.BuildingInteriorNpcWardrobeEditor) return;
 
-  const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20261030h894e0b6'; // Used to keep this editor on the same authored/procedural furniture visual path as gameplay.
+  const RUNTIME_FURNITURE_BRIDGE_URL = '../../js/building-interior-runtime-furniture.js?v=20261030h0cd5d1a'; // Used to keep this editor on the same authored/procedural furniture visual path as gameplay.
 
   function loadRuntimeFurnitureBridge() {
     const existing = [...document.scripts].find(script => script.src && script.src.includes('building-interior-runtime-furniture.js')); // Used to avoid duplicate bridge requests if this extension is re-evaluated.
