@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/weapon-sprite-assemblies.js', 'utf8'); // Evaluated in a DOM shim to exercise the real asset-anchor helpers.
+const registry = fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'); // Shared committed artist recipe, loaded before the reusable runtime.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Confirms that all gameplay tool planes acquire the same decorator.
 const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 'utf8'); // Confirms the standalone preview uses the same visual logic.
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Confirms the game loads the assembly before its main script.
@@ -14,7 +15,7 @@ const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Haft gri
 
 new Function(source); // Compile check for syntax errors without executing browser-dependent code.
 assert.match(html, /src="js\/weapon-sprite-assemblies\.js/);
-assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.decorate\(g, itemKey, def, \{ THREE \}\)/);
+assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.decorate\(g, itemKey, def, \{ THREE, metalOptions:/);
 assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.setAction\(toolMeshMap\[activeTool\]/);
 assert.match(game, /hachutuTorchFlail: \{ label: 'Hachutu Torch-Flail'/);
 assert.match(game, /spriteLayers: shape\.spriteLayers/);
@@ -42,6 +43,7 @@ const document = {
 };
 const scheduler = { register(id, callback, options) { this.id = id; this.callback = callback; this.options = options; } }; // Records the real module's pre-render registration.
 const window = { RuntimeFrameScheduler: scheduler }; // Minimal host, no gameplay side effects.
+vm.runInNewContext(registry, { window }); // The source of truth now comes from the shared editor + gameplay configuration.
 vm.runInNewContext(source, {
   window, document, URL, setTimeout: () => {}, performance: { now: () => 100 },
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
@@ -56,7 +58,15 @@ assert.equal(last.x, 4); assert.equal(last.y, 4);
 assert.equal(api.anchor(image, { x: 5, y: 2 }, 'top').x, 5); // Explicit artist coordinates override edge detection.
 assert.equal(api.anchor(image, { x: -100, y: 99 }, 'top').y, 5); // Out-of-bounds authored anchors clamp safely.
 assert.equal(api.definitionFor('plain', { spriteLayers: [{ sprite: 'assets/toolsprites/example.png' }] }).layers.length, 1);
-assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers.length, 4);
+assert.deepEqual(Array.from(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers, part => part.id), ['back','handle','fuel','front']);
+assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.material, 'metal');
+assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
+assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
+assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');
+assert.match(html, /js\/weapon-layer-effects\.js/, 'the shared effects implementation loads in gameplay');
+assert.match(editor, /js\/weapon-layer-effects\.js/, 'the Attack Editor uses the same interleaved effects');
+assert.match(fs.readFileSync('docs/tools/index.html', 'utf8'), /multi-sprite-weapon-editor/, 'the Tool Hub contains the new two-tab author');
+assert.match(fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html', 'utf8'), /1\. Flails[\s\S]*2\. Multi-layer Parts/, 'both requested tabs exist');
 assert.equal(api.definitionFor('unknown', {}), null);
 assert.equal(scheduler.id, 'weapon-sprite-assemblies');
 assert.equal(scheduler.options.phase, 'pre-render');
