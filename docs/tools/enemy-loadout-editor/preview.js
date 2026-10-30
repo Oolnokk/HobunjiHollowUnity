@@ -546,11 +546,7 @@ export class EnemyPreview {
     next.facing = Math.PI / 2;
     next.groupRot = 0;
     next.pngRot = 0;
-    // Humanoid hostile portrait pivots are +90°/-90° from their root. At yaw=0 the
-    // Workshop's +/-Z camera sees both BODY sprites edge-on, while independent
-    // gloves/boots/pants remain visible. Face the front mesh toward +Z instead;
-    // preserve the existing side-on mount treatment for composite Omgurku.
-    a.group.rotation.y = !a.riderMount && a.frontPlane && a.backPlane ? -Math.PI / 2 : 0;
+    a.group.rotation.y = 0;
     if (a.frontPlane) a.frontPlane.rotation.y = Math.PI / 2;
     if (a.backPlane) a.backPlane.rotation.y = -Math.PI / 2;
     if (a.legsPivot) { a.legsPivot.rotation.y = 0; a.syncHandFrame?.(); }
@@ -578,11 +574,6 @@ export class EnemyPreview {
       renderedBodyScale: a.avatarRef.group?.scale ? {x:a.avatarRef.group.scale.x,y:a.avatarRef.group.scale.y,z:a.avatarRef.group.scale.z} : null, // Mobile-readable verification of the real body planes' parent scale.
       bodyColor3: a.rosterRecord?.appearance?.bodyColors?.C?.hex || a.avatarRef.profile?.bodyColors?.C?.hex || null, // The same color the generated tomb consumes.
       eyeGlowSources: (a.avatarRef.frontCanvas?.hobunjiPortraitGlows || []).map(glow=>({color:glow.color,radius:glow.radius})), // Mobile report proves the eye mask produced actual emissive masses rather than merely loading the PNG.
-      portraitFacing: a.frontPlane ? {
-        rootYawDegrees:Math.round(180 * a.group.rotation.y / Math.PI),
-        frontYawDegrees:Math.round(180 * (a.group.rotation.y + a.frontPlane.rotation.y) / Math.PI),
-        backYawDegrees:Math.round(180 * (a.group.rotation.y + (a.backPlane?.rotation.y || 0)) / Math.PI),
-      } : null, // Mobile diagnostics: the visible front must be 0° to face the camera instead of 90° edge-on.
       poseOrbitAxes: a.avatarRef.poseOrbitAxes
         ? copy(a.avatarRef.poseOrbitAxes)
         : null,
