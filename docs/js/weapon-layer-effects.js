@@ -12,6 +12,7 @@
   const RAG_HEX = '#E7DDC9'; // Default off-white cloth/wick tint for fuel markers.
   const pixelsByImage = new WeakMap(); // Read-only source RGBA scans cached once per PNG.
   const ragCanvases = new WeakMap(); // Source image -> palette-keyed recoloring canvases.
+  const sourceMaskCache = new WeakMap(); // Marker/metal pixel matches are read once per PNG+hex, including the editor's animated preview.
   let fireTexture = null; // Shared transparent emitter texture, created only for a head that emits fire.
 
   function hexRgb(hex) {
@@ -68,11 +69,16 @@
   function sourcePixels(image, hex, kind) {
     const source = rgba(image);
     if (!source) return [];
+    let cache = sourceMaskCache.get(image);
+    if (!cache) { cache = new Map(); sourceMaskCache.set(image, cache); }
+    const key = kind + ':' + hex;
+    if (cache.has(key)) return cache.get(key);
     const hits = [];
     for (let i = 0; i < source.data.length; i += 4) {
       if (source.data[i + 3] < OPAQUE) continue;
       if (pixelMaskMatches(source.data[i], source.data[i + 1], source.data[i + 2], hex, kind)) hits.push(i >> 2);
     }
+    cache.set(key, hits); // Tool Hub preview can now sample every frame without rescanning thousands of RGBA pixels.
     return hits;
   }
 
@@ -203,10 +209,8 @@
     return fireTexture;
   }
 
-  function activateHead(state, head, images, unit) {
-    const layers = head.layers.map((config, index) => ({
-      config, mesh: state.headParts[index], image: images[index].image,
-    })); // Ordered physical layers; VFX may occupy any inter-layer gap.
+  function activateStack(state, layers, owner, unit) {
+    // One ordered stack drives both regular layered tools and multi-piece flail heads.
     state.metalTargets = visibleMetalTargets(layers);
     const emitters = [];
     layers.forEach((layer, index) => {
@@ -220,7 +224,7 @@
       const group = new THREE.Group(); // Local to rotating head, not shaft; particles originate in the fuel's image frame.
       group.name = 'weapon_interleaved_fire_' + layer.config.id;
       group.userData.weaponInterleavedVfx = true;
-      state.headRoot.add(group);
+      owner.add(group); // Fire is local to whichever part of the weapon owns this sprite stack.
       const above = layers[index + 1]?.mesh;
       const renderOrder = layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2;
       emitters.push({
@@ -230,6 +234,24 @@
       });
     });
     state.fireEmitters = emitters; // Updated by the assembly's existing pre-render clock.
+  }
+
+  function activateHead(state, head, images, unit) {
+    const layers = head.layers.map((config, index) => ({
+      config, mesh: state.headParts[index], image: images[index].image,
+    })); // Ordered flail head stack.
+    activateStack(state, layers, state.headRoot, unit);
+  }
+
+  function activateStatic(state, layers, meshes, sourceImage, unit) {
+    const all = [
+      { config: { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
+      ...layers.map((config, index) => ({
+        config, mesh: meshes[index],
+        image: state.materialLayers.find(entry => entry.mesh === meshes[index])?.image,
+      })),
+    ]; // The ordinary weapon's original PNG is layer zero, followed by authored overlays.
+    activateStack(state, all, state.plane, unit);
   }
 
   function stepFire(state, dt) {
@@ -296,7 +318,7 @@
   }
 
   global.HobunjiLayeredWeaponEffects = Object.freeze({
-    registerLayer, activateHead, refreshMetal, stepFire, dispose,
+    registerLayer, activateHead, activateStatic, refreshMetal, stepFire, dispose,
     visibleMetalTargets, sourcePixels, recolorMarker, coveredByUpperLayers,
   });
 })(window);
