@@ -151,7 +151,7 @@
   }
 
   function definitionFor(itemKey, def) {
-    return def?.weaponAssembly || DEF[itemKey] || DEF[def?.shapeKey] || null;
+    return def?.weaponAssembly || DEF[itemKey] || DEF[def?.shapeKey] || (Array.isArray(def?.spriteLayers) && def.spriteLayers.length ? { layers: def.spriteLayers } : null);
   }
 
   // Called at the existing tool-plane factory, so player, bandits, NPC props
@@ -255,8 +255,9 @@
     const pivot = plane.localToWorld(pixelPoint(THREE, baseImage, pivotPixel, unit));
     const baseQ = plane.getWorldQuaternion(new THREE.Quaternion());
     const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(baseQ);
-    const scale = plane.getWorldScale(new THREE.Vector3());
-    const pixelWorld = unit * Math.max(0.01, Math.abs(scale.x));
+    const scale = root.getWorldScale(new THREE.Vector3()); // Both mesh attachments inherit the grip-scaled tool parent.
+    const attachmentScale = Math.max(0.01, Math.abs(scale.x)); // Converts pixel-space offsets into world displacements without double-applying the parent scale.
+    const pixelWorld = unit * attachmentScale;
     const chainTop = anchor(state.chainImage, flail.chain.top, 'top');
     const chainBottom = anchor(state.chainImage, flail.chain.bottom, 'bottom');
     if (!chainTop || !chainBottom) return;
@@ -283,22 +284,22 @@
     const correction = new THREE.Quaternion().setFromUnitVectors(chainSpan, new THREE.Vector3(0, 1, 0));
     worldQ.multiply(correction); // Exactly aligns the two scanned opaque chain endpoints even if the PNG is slightly crooked.
 
-    const chainCenterWorld = pivot.clone().sub(topLocal.clone().applyQuaternion(worldQ));
+    const chainCenterWorld = pivot.clone().sub(topLocal.clone().multiplyScalar(attachmentScale).applyQuaternion(worldQ));
     root.updateWorldMatrix(true, false);
     const rootQInverse = root.getWorldQuaternion(new THREE.Quaternion()).invert();
     state.chain.position.copy(root.worldToLocal(chainCenterWorld));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
-    const endWorld = chainCenterWorld.add(bottomLocal.applyQuaternion(worldQ));
+    const endWorld = chainCenterWorld.add(bottomLocal.multiplyScalar(attachmentScale).applyQuaternion(worldQ));
 
     const headSpec = flail.head;
     const headPixel = anchor(state.headAnchorImage, headSpec.anchor, 'bottom');
     if (!headPixel) return;
     // Rest: gravity does not rotate the brazier. Attack: its long axis follows the chain.
-    const headUp = state.attacking ? state.direction : new THREE.Vector3(0, 1, 0);
+    const headUp = state.attacking ? state.direction.clone().negate() : new THREE.Vector3(0, 1, 0); // Top of the brazier faces back toward the haft rather than flipping upside-down as the swing starts.
     const headQ = planeQuaternion(THREE, headUp, normal);
     const headAnchorLocal = pixelPoint(THREE, state.headAnchorImage, headPixel, unit,
       headSpec.layers.find(layer => layer.id === headSpec.anchorLayer)?.offsetPx);
-    const headCenterWorld = endWorld.sub(headAnchorLocal.applyQuaternion(headQ));
+    const headCenterWorld = endWorld.sub(headAnchorLocal.multiplyScalar(attachmentScale).applyQuaternion(headQ));
     state.headRoot.position.copy(root.worldToLocal(headCenterWorld));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
   }
