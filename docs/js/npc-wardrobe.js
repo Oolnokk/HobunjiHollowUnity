@@ -117,7 +117,7 @@
 
   function wornClothingItemsForRecord(rec, effective = false) {
     return (rec?.equippedCosmetics || []).map(cosmeticId => {
-      const slot = guessSlot(cosmeticId);
+      const slot = rec?.cosmeticSlots?.[cosmeticId] || guessSlot(cosmeticId); // Honor authored hostile slots: Nanahi's facewrap is a hood, not a body overwrap.
       const raw = rawWornClothingItem(rec, cosmeticId, slot);
       return effective ? effectiveWornClothingItem(rec, raw) : raw;
     }).filter(Boolean);
