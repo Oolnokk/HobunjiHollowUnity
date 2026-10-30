@@ -501,6 +501,32 @@
     requestAnimationFrame(frame); // Explicitly isolated authoring-preview RAF; never used by gameplay runtime.
   }
 
+  async function suggestRepoSprites() {
+    const paths = new Set(); // Suggested PNGs from committed recipes, even when offline.
+    for (const def of Object.values(state.weapons)) {
+      for (const path of [def.sprite, def.flail?.chain?.sprite,
+        ...(def.layers || []).map(layer => layer.sprite),
+        ...(def.flail?.head?.layers || []).map(layer => layer.sprite)]) {
+        if (path) paths.add(path);
+      }
+    }
+    try {
+      const result = await fetch('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/contents/docs/assets/toolsprites');
+      if (result.ok) {
+        const files = await result.json();
+        for (const file of files) {
+          if (file.type === 'file' && /\.(png|webp)$/i.test(file.name)) paths.add('assets/toolsprites/' + file.name);
+        }
+      }
+    } catch (_) { /* Committed config still provides valid source paths offline. */ }
+    const list = $('repoSprites'); // Shared datalist helps mobile authors choose assets without typing full paths.
+    list.replaceChildren();
+    for (const path of paths) {
+      const option = document.createElement('option');
+      option.value = path; list.appendChild(option);
+    }
+  }
+
   function start() {
     try {
       const stored=JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
@@ -510,6 +536,7 @@
     }catch(e){log('Draft restore failed: '+e.message,true);}
     key=Object.keys(state.weapons)[0]||key;
     selectWeapon(key);installEvents();selectTab('flails');requestAnimationFrame(frame);
+    suggestRepoSprites(); // Optional repo PNG suggestions; no credentials required.
     log('Multi-sprite editor ready. Layer order and interleaved fire share the game schema.');
   }
   start();
