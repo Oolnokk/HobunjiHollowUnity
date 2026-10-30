@@ -378,7 +378,8 @@ export class EnemyPreview {
     }
     const plane = group.userData.toolPlane;
     const metal = this.data.metals[def.metalKey];
-    if (!plane || !def.sprite) { // A missing sprite must be reported rather than leaving a black placeholder quad.
+    const spritePath = def.sprite || (key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png' : null); // The shipped warhammer PNG is an explicit fallback for the named relic holder.
+    if (!plane || !spritePath) { // Never display an untextured black plane as a weapon.
       this.log('Missing workshop weapon image definition for ' + key);
       group.visible = false;
       return group;
@@ -407,13 +408,14 @@ export class EnemyPreview {
       });
     };
     const task = Promise.all([
-      load(def.sprite, !!metal),
+      load(spritePath, !!metal),
       def.loadedSprite ? load(def.loadedSprite, false) : null,
     ])
       .then(([image, loadedImage]) => {
         if (disposed) return;
         texture.image = image;
         texture.needsUpdate = true;
+        if (group.visible === false) group.visible = true; // A successful image load may recover a previously hidden placeholder.
         def._imgW = image.naturalWidth || image.width;
         def._imgH = image.naturalHeight || image.height;
         plane.geometry.dispose();
