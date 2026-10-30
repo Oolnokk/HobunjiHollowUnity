@@ -378,6 +378,7 @@
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');
+    window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -2764,6 +2765,7 @@
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
+    if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
     const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
