@@ -1256,14 +1256,19 @@ $('resetRepoBtn').onclick = async () => {
   try {
     const repositoryRules = await readUncachedRepoRules();
     localStorage.removeItem(DRAFT_KEY); // Unlike persist(), reset must not immediately write the old draft back.
-    window.EnemyLoadoutRules.set(repositoryRules);
+    window.EnemyLoadoutRules.set(repositoryRules); // Use the freshly fetched bytes now; a page reload could independently retrieve stale cached JSON.
+    state.history = []; // Old previews were built with the discarded rules, so their snapshots cannot be treated as current.
+    state.selected = null;
+    renderHistory();
+    updateRuleJson();
+    renderPools();
     $('draftState').textContent = 'Repository rules loaded · local draft cleared';
-    log('Reset to repository rules; discarded this device’s stored Workshop draft.');
-    const reloadUrl = new URL(window.location.href);
-    reloadUrl.searchParams.set('workshopReset', String(Date.now())); // Refresh the UI and all runtime state from this commit instead of retaining old preview actors.
-    window.location.replace(reloadUrl.href);
+    log('Reset to fresh repository rules; discarded saved draft and prior preview history.');
+    setBusy(false); // The normal roll path owns its own busy state.
+    await roll(false); // Build the real avatar again from freshly fetched repository rules.
+    toast('Repository rules restored and enemy preview rebuilt.');
   } catch (error) {
-    log('Reset to repo failed: ' + (error.stack || error.message)); // On fetch or storage failure, retain the existing draft and report why on mobile.
+    log('Reset to repo failed: ' + (error.stack || error.message)); // A failed fetch or storage clear leaves the old draft intact; a failed roll has its own visible diagnostics.
     toast('Reset failed: ' + error.message);
     setBusy(false);
   }
