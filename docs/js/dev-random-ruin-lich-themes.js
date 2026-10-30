@@ -600,7 +600,7 @@
         spike.mesh.visible = false; spike.phase = 'done';
         playRockImpact();
         emitShards(spike.x, spike.ground + .1, spike.z, 0xaad9ff, 2, 28);
-        for (const actor of actors) if (actor !== spike.owner && distance(pointOf(actor, kit.deps.TILE), spike) < 2) { // Nanahi is immune to her barrage; her own minions are not.
+        for (const actor of actors) if (actor !== spike.owner && !(actor.isSpecialLich && actor.lichType === 'tothal') && distance(pointOf(actor, kit.deps.TILE), spike) < 2) { // Nanahi is immune to every icicle in her sanctum; her skeleton minions are not.
           window.ResourceSystem?.addAffliction?.(actor, 'shatteredStamina', 13);
           window.ResourceSystem?.spendFooting?.(actor, 10, 'falling icicle');
           const fromX=spike.x*kit.deps.TILE,fromZ=spike.z*kit.deps.TILE; // Impact center produces outward canonical knockback.
