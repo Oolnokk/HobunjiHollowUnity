@@ -142,3 +142,29 @@ Run `node scripts/test-multi-sprite-weapon-preview.js` to guard against the
 old crop. Its synthetic images include a 1,050px chain, differently sized
 transparent head PNGs, six swing phases, both mobile and desktop aspect
 ratios, exact source draw order and the solo-fuel mode.
+
+## Preview painter regression and fix
+
+When the initial head/combined preview renderer was extracted from the Tool
+Hub editor, its caller still referenced `paintedImage`, but the helper was
+accidentally removed with the retired single-canvas renderer. The browser
+repeatedly logged `Preview: paintedImage is not defined`, leaving both
+preview drawings blank despite successful PNG loads.
+
+The editor now restores `paintedImage(part)` as the single color/material
+adapter shared by **both** preview canvases. Metal layers invoke the existing
+`ToolMetalRecolor.getRecoloredCanvas` with the editor's selected metal,
+verdigris and oxidation, one cached request per sprite/palette. Until the
+promise resolves, the original source PNG is drawn. Marker layers use
+`HobunjiLayeredWeaponEffects.recolorMarker`, preserving the fuel sprite's
+off-white rag palette; other layers are unchanged. Failed recolors use the
+source sprite without trying again every animation frame.
+
+The frame exception logger now compares the full `Preview: …` message to its
+previous error, so a persistent rendering failure is logged **once**, not
+dozens of times per second. The dedicated
+`node scripts/test-multi-sprite-editor-frame.js` test executes the actual
+Tool Hub app startup and queued animation frames with six PNGs, verifying both
+preview canvases, pending and completed recoloring, rag tint, cache reuse,
+error de-duplication and recovery. This test complements the independent
+renderer geometry/fit regression.
