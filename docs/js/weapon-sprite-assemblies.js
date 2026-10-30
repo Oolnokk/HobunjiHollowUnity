@@ -203,13 +203,14 @@
       const f = config.flail;
       const isRope = f.chain.type === 'rope'; // Generated suspension shares the same attachment animation as a raster chain.
       const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
+      const ropeTexture = isRope ? await textureFor(THREE, f.chain.texture || 'assets/textures/wavy_surface.png') : null; // Same texture resource as suspended root-totem bottles.
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
       const ropePixels = Math.max(2, Math.min(2048, Number(f.chain.lengthPx) || 160));
       const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Virtual raster frame puts rope endpoints at the geometric cylinder ends.
       const chain = isRope
-        ? makeRope(THREE, f.chain, unit, order + 0.01)
+        ? makeRope(THREE, f.chain, unit, order + 0.01, ropeTexture)
         : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
       if (!isRope) effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating; generated natural rope keeps its authored bark-brown surface.
       const headRoot = new THREE.Group();
@@ -260,14 +261,20 @@
     state.progress = Number.isFinite(options.progress) ? options.progress : 0;
   }
 
-  function makeRope(THREE, spec, unit, renderOrder) {
+  function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
     const length = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)) * unit; // The rope length is expressed in the handle's original pixels, then inherits all handle size modifiers.
     const radius = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)) * unit; // Root-totem style generated rope cylinder, never a flat PNG chain.
     const geometry = new THREE.CylinderGeometry(radius, radius * 0.75, length, 6, 1, true);
+    const ropeTexture = sourceTexture?.clone?.() || null; // Reuses the root totem's authored wavy_surface texture without sharing mutable UV repeat state.
+    if (ropeTexture) {
+      ropeTexture.wrapS = ropeTexture.wrapT = THREE.RepeatWrapping;
+      ropeTexture.repeat.set(1, Math.max(1, length / 0.22));
+      ropeTexture.needsUpdate = true;
+    }
     const material = new THREE.MeshLambertMaterial({
-      color: spec.color || '#6B4728', side: THREE.FrontSide,
+      map: ropeTexture, color: spec.color || '#6B4728', side: THREE.FrontSide,
       transparent: false,
-    }); // Matches the root totem's tapered volumetric rope and natural material behavior.
+    }); // Matches the root totem's tapered, textured volumetric rope, rather than substituting a flat chain sprite.
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'flail_generated_rope';
     mesh.renderOrder = renderOrder;
