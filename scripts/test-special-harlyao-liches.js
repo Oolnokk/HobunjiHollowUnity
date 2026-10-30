@@ -47,6 +47,12 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.equal(nanahiRobe.slot,'overwear');
   assert.equal(nanahiRobe.weaving.forcedOverpassPattern.motifUrl,'assets/patterns/motif_harlyao_glyph_servitude.png');
   assert.equal(nanahiRobe.colorC.hex,liches.DATA.tothal.ink);
+  const azgarlu=liches.specialRoster('hronal');
+  const forgedWorn=window.NpcWardrobe.wornClothingItemsForRecord(azgarlu,true);
+  const forgedPauldron=forgedWorn.find(item=>item.cosmeticId==='rounded_pauldron');
+  assert.equal(forgedPauldron.temperXp,window.MetalArmorSystem.MAX_TEMPER_XP,'NPC clothing adapter must preserve forged armor Temper');
+  assert.equal(forgedPauldron.smithTreatment.mode,'pattern','NPC clothing adapter must preserve smith verdigris motifs');
+  assert.equal(forgedPauldron.smithTreatment.pattern.motifUrl,'assets/patterns/motif_harlyao_glyph_entropy.png');
   const imlao={avatarRef:{group:{userData:{skullPixelsTransparent:true}},headScaleJoint:{front:{scale:{set(){throw Error('Head bone must not be collapsed');}}}}}};
   liches.init(imlao,'kanthic');
   assert.equal(imlao._specialSkullTransparent,true,'Skull is transparent with a full-size articulated head');
