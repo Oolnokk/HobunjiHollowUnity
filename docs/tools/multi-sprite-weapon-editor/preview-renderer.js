@@ -95,18 +95,23 @@
       shaft, basePath, shaftRotation, baseLayers: def.layers || [],
       flail, parts: flail?.head?.layers || [], pivot: null,
       chain: null, chainTop: null, chainBottom: null, chainRotation: 0,
+      rope: flail?.chain?.type === 'rope' ? {
+        length: Math.max(2, Math.min(2048, Number(flail.chain.lengthPx) || 160)),
+        radius: Math.max(.25, Math.min(30, Number(flail.chain.radiusPx) || 2.5)),
+        color: flail.chain.color || '#6B4728',
+      } : null, // Generated totem-style rope has no image asset and uses original-handle-pixel units.
       headOrigin: null, headPosition: null, headRotation: 0,
       chainScale: partScale(flail?.chain), headScale: partScale(flail?.head), // Both ratios reference the unmodified shaft pixels, not each other.
     }; // Used by both independently fitted canvases; source pixels remain authoritative.
     if (!shaft || !flail) return model;
-    const chain = lookup(flail.chain?.sprite);
+    const chain = model.rope ? {width:1,height:model.rope.length+1} : lookup(flail.chain?.sprite);
     if (!chain) return model;
     model.chain = chain;
     const baseAnchor = anchor(shaft, flail.haftAnchor, 'top');
     const p = pointOnSprite(shaft, baseAnchor.x + .5, baseAnchor.y + .5);
     model.pivot = rotate(p.x, p.y, shaftRotation);
-    model.chainTop = anchor(chain, flail.chain?.top, 'top');
-    model.chainBottom = anchor(chain, flail.chain?.bottom, 'bottom');
+    model.chainTop = model.rope ? {x:0,y:0} : anchor(chain, flail.chain?.top, 'top');
+    model.chainBottom = model.rope ? {x:0,y:model.rope.length} : anchor(chain, flail.chain?.bottom, 'bottom');
     const cx = model.chainBottom.x - model.chainTop.x;
     const cy = model.chainBottom.y - model.chainTop.y;
     const len = Math.hypot(cx, cy);
@@ -123,8 +128,11 @@
     const target = model.parts.find(part => part.id === head?.anchorLayer) || model.parts[0];
     const targetImage = lookup(target?.sprite);
     if (!targetImage) return model;
-    const headContact = anchor(targetImage, head?.anchor, 'bottom');
-    const origin = pointOnSprite(targetImage, headContact.x + .5, headContact.y + .5, target);
+    const headContact = head?.anchorSpace === 'composite'
+      ? {x:Number(head.anchor?.x)||0,y:Number(head.anchor?.y)||0}
+      : anchor(targetImage, head?.anchor, 'bottom');
+    const origin = head?.anchorSpace === 'composite' ? headContact
+      : pointOnSprite(targetImage, headContact.x + .5, headContact.y + .5, target); // Composite hinge can sit between back and front art.
     model.headRotation = swing ? tilt : 0;
     const rotatedContact = rotate(origin.x, origin.y, model.headRotation);
     model.headOrigin = {
@@ -170,10 +178,18 @@
       addOpaque(bounds, model.shaft, { x: 0, y: 0 }, model.shaftRotation);
       model.baseLayers.forEach(part => addOpaque(bounds, lookup(part.sprite), { x: 0, y: 0 }, model.shaftRotation, part));
       if (model.chain && model.pivot) {
-        const top = model.chainTop, d = sourceData(model.chain);
-        addOpaque(bounds, model.chain, model.pivot, model.chainRotation, null, {
-          x: top.x + .5 - d.width / 2, y: top.y + .5 - d.height / 2,
-        }, model.chainScale);
+        if (model.rope) {
+          const diameter = model.rope.radius * 2 * model.chainScale;
+          for (const point of [model.pivot, model.headPosition]) if (point) {
+            addPoint(bounds,point.x-diameter,point.y-diameter);
+            addPoint(bounds,point.x+diameter,point.y+diameter);
+          }
+        } else {
+          const top = model.chainTop, d = sourceData(model.chain);
+          addOpaque(bounds, model.chain, model.pivot, model.chainRotation, null, {
+            x: top.x + .5 - d.width / 2, y: top.y + .5 - d.height / 2,
+          }, model.chainScale);
+        }
         addPoint(bounds, model.pivot.x, model.pivot.y);
       }
       if (model.headOrigin) model.parts.forEach(part => addOpaque(bounds,
@@ -292,14 +308,22 @@
         ctx.restore();
       }
       if (model.chain && model.pivot) {
-        const dim = sourceData(model.chain);
-        const ct = model.chainTop;
-        ctx.save(); ctx.translate(model.pivot.x, model.pivot.y);
-        ctx.rotate(model.chainRotation);
-        ctx.scale(model.chainScale, model.chainScale); // Same shaft-relative chain magnification as the main game.
-        const chainTexture = paint({ ...model.flail.chain, sprite: model.flail.chain.sprite });
-        if (chainTexture) ctx.drawImage(chainTexture, -ct.x - .5, -ct.y - .5, dim.width, dim.height);
-        ctx.restore();
+        if (model.rope) {
+          ctx.save();
+          ctx.strokeStyle = model.rope.color; ctx.lineWidth = model.rope.radius * 2 * model.chainScale;
+          ctx.lineCap = 'round';
+          ctx.beginPath();ctx.moveTo(model.pivot.x,model.pivot.y);
+          ctx.lineTo(model.headPosition.x,model.headPosition.y);ctx.stroke();
+          ctx.restore(); // Original rope connects the two independently scaled attachment points.
+        } else {
+          const dim = sourceData(model.chain);
+          const ct = model.chainTop;
+          ctx.save(); ctx.translate(model.pivot.x, model.pivot.y);
+          ctx.rotate(model.chainRotation); ctx.scale(model.chainScale, model.chainScale);
+          const chainTexture = paint({ ...model.flail.chain, sprite: model.flail.chain.sprite });
+          if (chainTexture) ctx.drawImage(chainTexture, -ct.x - .5, -ct.y - .5, dim.width, dim.height);
+          ctx.restore();
+        }
       }
       if (model.headOrigin) {
         ctx.save();
@@ -325,7 +349,7 @@
       bounds: b, fit: transform,
       partsReady: model.parts.filter(part => !!lookup(part.sprite)).length,
       partsExpected: model.parts.length,
-      chainReady: !!model.chain, haftReady: !!model.shaft,
+      chainReady: !!model.chain, connectorType: model.rope ? 'rope' : 'chain', haftReady: !!model.shaft,
       joint: model.headPosition,
       chainScale: model.chainScale, headScale: model.headScale, // Mobile diagnostics expose ratios and prevent mistaken interpretation of independently auto-fitted detail view.
     };
