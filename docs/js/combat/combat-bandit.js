@@ -404,6 +404,30 @@
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    // Imlao keeps an articulated, normally sized head; only the skull pixels become invisible.
+    // Keep the original mask-detection canvases so making the head transparent cannot remove its neck bones.
+    const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the alpha cutout to this named boss.
+    const headCanvas = document.createElement('canvas'); // Shared front head-only portrait also locates every humanoid's neck pivot.
+    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
+    const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Uncut pixels retain correct head-skin weights.
+    const originalHeadRigBack = transparentLichSkull ? document.createElement('canvas') : backCanvas; // The rear neck shares the same true head proportions.
+    if (transparentLichSkull) {
+      for (const [source, original] of [[frontCanvas, originalHeadRigFront], [backCanvas, originalHeadRigBack]]) {
+        original.width = source.width; original.height = source.height;
+        original.getContext('2d').drawImage(source, 0, 0);
+      }
+      const rearHead = document.createElement('canvas'); // Back-specific skull mask avoids cutting unrelated rear garment pixels.
+      rearHead.width = rearHead.height = PORTRAIT_SIZE;
+      await window.NpcAvatarPreview.renderProfileToCanvas(rearHead, profile, { portraitView: 'behind', forceEyesOpen: true, onlyHeadSprite: true });
+      for (const [canvas, mask] of [[frontCanvas, headCanvas], [neutralFrontCanvas, headCanvas], [combatFrownCanvas, headCanvas], [backCanvas, rearHead]]) {
+        const context = canvas.getContext('2d');
+        context.save();
+        context.globalCompositeOperation = 'destination-out';
+        context.drawImage(mask, 0, 0); // Erases only the head mask's alpha; preserves shoulders, clothes and head rig.
+        context.restore();
+      }
+    }
     characterBuildStatus.stage = 'portrait-model';
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
@@ -460,19 +484,16 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
-    const headCanvas = document.createElement('canvas');
-    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, {forceEyesOpen:true,onlyHeadSprite:true});
-    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12)?.pivotPx
-      || window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:frontCanvas, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:backCanvas, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -516,8 +537,8 @@
     group.userData.portraitModelWidth = modelWidth;
     group.userData.portraitModelHeight = modelHeight;
     if (frontNeckSkin) {
-      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12);
-      group.userData.sourceCanvas = frontCanvas;
+      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12);
+      group.userData.sourceCanvas = originalHeadRigFront;
       group.userData.neckRig = {
         available:true, skinnedPlane:frontNeckSkin.mesh,
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
@@ -526,6 +547,7 @@
         headBoundsPx:headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
+    group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
