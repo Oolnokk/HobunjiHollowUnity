@@ -10,6 +10,7 @@
   const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
+  let templeCoverRecipes=null,templeSettingsLoad=null; // Initial ruin cover follows authored Temple layers, independent of new-growth controls.
   let repoRequestId = 0; // Ignores stale results from overlapping catalog refresh requests.
   let buildRequestId = 0, ruinFrame = null, ruinLoader = null, ruinQueue = Promise.resolve(), ruinRoom = null; // Serialize generator ownership and discard obsolete preview requests.
   let preparedRuin=null; // Completed vegetation remains separate from the interactive Grow/Reset instance.
@@ -227,11 +228,12 @@
     return ruinQueue;
   }
   async function prepareRuin(room,request,signal){
-    const recipe={...readRecipe(),seed:room.seed+':ruin-cover',floorY:room.floorY,showGuide:false}; // Pre-grown cover uses the same dense Wrap and inward volume passes as new furniture.
-    const key=JSON.stringify([room.key,recipe.floorDensity,recipe.targetDensity,recipe.strandLimit,recipe.radius,recipe.floorLength,recipe.targetLength,recipe.shapeInset,recipe.volumeFillDepth,templeRootFinish]);
+    if(!templeCoverRecipes)await (templeSettingsLoad ||= loadTempleRootFinish());
+    if(!templeCoverRecipes)throw new Error('Life Temple vegetation settings could not be loaded. Rebuild to retry.');
+    const key=JSON.stringify([room.key,templeCoverRecipes]); // Editing a new structure must not regenerate the initial vegetation.
     if(preparedRuin?.key===key)return preparedRuin;
-    const cover=await growth.createAsync({THREE:T,foliage,recipe,target:new T.Group(),substrate:room.model,kind:'vines',progress:1,
-      rootFinish:templeRootFinish,signal,onProgress:step=>{if(request===buildRequestId)buildMessage('cover','Covering rough ruin: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
+    const cover=await growth.createCoverAsync({THREE:T,foliage,target:room.model,recipes:templeCoverRecipes,seed:room.seed+':ruin-cover',floorY:room.floorY,
+      signal,onProgress:step=>{if(request===buildRequestId)buildMessage('cover','Life Temple cover: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
     return {key,cover,room};
   }
   function frameEnvironment(room) {
@@ -268,7 +270,7 @@
       active?.dispose();active=next;next=null;
       if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
       if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
-      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} walls · ${room.floors} floor · ${room.pieces} rock pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Vine cover is fully grown; Grow/Reset affects only the new shape.`;
+      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} walls · ${room.floors} floor · ${room.pieces} rock pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Life Temple root + vine cover is ready; Grow/Reset affects only the new shape.`;
       buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
       scene.add(active.group); rebuildMarkers();
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
@@ -291,8 +293,8 @@
     if (!active) return;
     const info = active.getDiagnostics(), percent = Math.round(info.progress * 100);
     $('scrub').value = String(percent); $('progressLabel').textContent = percent+'%';
-    const message = (info.substrate==='ruin'?'Pre-grown vine ruin + ':'') + source.name + ' · ' + percent + '% grown\n' +
-      info.branchCount + ' branches · ' + info.floorStrands + (info.preparedVegetation?' existing vine wraps · ':' floor wraps · ') +
+    const message = (info.substrate==='ruin'?'Temple-covered ruin + ':'') + source.name + ' · ' + percent + '% grown\n' +
+      info.branchCount + ' branches · ' + info.floorStrands + (info.preparedVegetation?' existing vegetation strands · ':' floor wraps · ') +
       info.shapeStrands + ' shape wraps · ' + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
       ' inward hits\n' + info.groundedParts.length + ' grounded parts → ' +
       (info.partCount-info.groundedParts.length) + ' raised parts (' +
@@ -452,11 +454,15 @@
       if (!layer || !/^#[a-f0-9]{6}$/i.test(layer.color) || !/^assets\/textures\/[A-Za-z0-9_.-]+\.png$/.test(layer.texture)) {
         throw new Error('Temple root surface recipe is missing or invalid.');
       }
+      const coverRecipes=temple.surfaceGrowth?.filter(item=>item.kind==='roots'||item.kind==='vines'); // Read all authored layers instead of approximating Temple vegetation with the structure controls.
+      if(!coverRecipes?.length)throw new Error('Temple surface-growth layers are missing.');
+      templeCoverRecipes=JSON.parse(JSON.stringify(coverRecipes));
       templeRootFinish = {color:layer.color,texture:layer.texture};
-      if (active) rebuild(true); // Regenerate the preview using the actual authored Temple finish.
+      if (active&&!buildState.running) rebuild(true); // Regenerate the preview using the actual authored Temple finish.
     } catch(error) {
-      // Fallback stays identical to the current Temple root recipe; expose the issue rather than hiding it.
-      const message = 'Temple root finish fallback: ' + error.message;
+      // The flat preview retains its root finish fallback; ruin preparation requires the actual Temple layers.
+      templeSettingsLoad=null; // A failed fetch can be retried when preparing the ruin.
+      const message = 'Temple vegetation settings unavailable: ' + error.message;
       $('repoFurnitureStatus').title = message; console.warn('[LiveRootGrowth]',message);
     }
   }
@@ -584,7 +590,7 @@
     if(!buildState.running||previewDirty){renderSceneWithShellOutlines();previewDirty=false;}
     if (active && (timestamp % 220 < 18)) updateStatus();
   }
+  templeSettingsLoad=loadTempleRootFinish();
   resize();rebuild(false);requestAnimationFrame(frame);
   refreshRepoFurniture().catch(reportError);
-  loadTempleRootFinish().catch(reportError);
 })();

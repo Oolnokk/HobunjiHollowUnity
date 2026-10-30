@@ -669,5 +669,35 @@
     } finally {steps.return();}
   }
 
-  root.LiveRootGrowth = {version:2, DEFAULTS, TEMPLE_ROOT_FINISH, normalizeRecipe, create, createAsync};
+  async function createCoverAsync(options={}){
+    const THREE=options.THREE||root.THREE,foliage=options.foliage||root.FoliageGenerator?.forThree?.(THREE)||root.FoliageGenerator; // Static cover uses the same recipe authority as authored building vegetation.
+    if(!THREE||!foliage?.buildSurfaceGrowth||!foliage?.normalizeSurfaceGrowth)throw new Error('Static vegetation requires THREE and FoliageGenerator.');
+    if(!options.target?.isObject3D)throw new TypeError('Pass a Three.js ruin group as options.target.');
+    if(!Array.isArray(options.recipes)||!options.recipes.length)throw new Error('Static vegetation requires authored surface-growth recipes.');
+    const recipes=options.recipes.map(recipe=>foliage.normalizeSurfaceGrowth({...recipe,seed:String(options.seed||'ruin-cover')+':'+recipe.seed,shrinkwrapHidden:true})); // Preserve each authored style, target, density, finish and signed inset.
+    const group=new THREE.Group(),target=options.target.clone(true),targetGrowth=new THREE.Group(); // Source stone remains caller-owned; only generated vegetation is released by this instance.
+    group.name='Prepared ruin with Life Temple vegetation';targetGrowth.userData.surfaceFoliage=true;targetGrowth.userData.generatedStrands=0;
+    group.add(target);target.add(targetGrowth);
+    const schedule=options.schedule||(()=>new Promise(resolve=>root.setTimeout(resolve,0))); // Yield between recipe layers for progress and cancellation.
+    const checkCancelled=()=>{if(options.signal?.aborted)throw Object.assign(new Error('Ruin vegetation build cancelled.'),{name:'AbortError'});};
+    let complete=false,disposed=false;
+    try{
+      for(let index=0;index<recipes.length;index++){
+        await schedule();checkCancelled();
+        const recipe=recipes[index],layer=foliage.buildSurfaceGrowth(target,recipe);
+        targetGrowth.add(layer);targetGrowth.userData.generatedStrands+=layer.userData.generatedStrands||0;
+        options.onProgress?.({part:recipe.kind+' / '+recipe.style,layer:index+1,layers:recipes.length});
+      }
+      checkCancelled();
+      const partPlan=planFurnitureGrowth(THREE,target,Number(options.floorY)||0,.1); // Retain the existing guide/scenery mesh records without animation stages.
+      const api={group,target,targetGrowth,partPlan,getProgress:()=>1,
+        getDiagnostics:()=>({progress:1,vegetationKind:'temple-mixed',recipeCount:recipes.length,vegetationRecipes:recipes,
+          shapeStrands:targetGrowth.userData.generatedStrands,shrinkwrapRays:targetGrowth.children.reduce((n,layer)=>n+(layer.userData.surfaceGrowthStats?.shrinkwrapRays||0),0),
+          shrinkwrapHits:targetGrowth.children.reduce((n,layer)=>n+(layer.userData.surfaceGrowthStats?.shrinkwrapHits||0),0)}),
+        dispose(){if(disposed)return;disposed=true;group.parent?.remove(group);disposeGenerated([targetGrowth]);}};
+      complete=true;return api;
+    }finally{if(!complete)disposeGenerated([targetGrowth]);}
+  }
+
+  root.LiveRootGrowth = {version:2, DEFAULTS, TEMPLE_ROOT_FINISH, normalizeRecipe, create, createAsync, createCoverAsync};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -486,5 +486,17 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
   assert(generated.every(group=>group.children.every(mesh=>mesh.geometry.disposed&&mesh.material.disposed)),
     'cancel must free every partially generated layer');
   assert.equal(input.children[0].geometry.disposed,undefined,'cancel must retain the caller-owned source');
+  const templeRecipes=JSON.parse(fs.readFileSync('docs/config/pieces/temple.json','utf8')).surfaceGrowth,templeSnapshot=JSON.stringify(templeRecipes),staticCalls=[];
+  const templeCover=await feature.createCoverAsync({...options,target:ruinSubstrate,recipes:templeRecipes,seed:'temple-cover-test',schedule:async()=>{},
+    foliage:{...foliage,buildSurfaceGrowth(parent,recipe){staticCalls.push(recipe);return fakeGrowth(parent,recipe);}}});
+  assert.equal(staticCalls.length,templeRecipes.length,'each authored Temple layer must run exactly once');
+  staticCalls.forEach((actual,index)=>{for(const [key,value] of Object.entries(templeRecipes[index]))if(key!=='seed')assert.deepEqual(actual[key],value,'Temple '+key+' must remain independent of structure settings');});
+  assert.equal(JSON.stringify(templeRecipes),templeSnapshot,'preparing cover must not mutate the authored Temple configuration');
+  assert.equal(templeCover.getProgress(),1);assert.equal(templeCover.getDiagnostics().recipeCount,4);
+  const templeGeometry=templeCover.targetGrowth.children[0].children[0].geometry;templeCover.dispose();assert(templeGeometry.disposed);assert.equal(roomFloor.geometry.disposed,undefined);
+  const cancelCover={aborted:false},coverLayers=[];
+  await assert.rejects(feature.createCoverAsync({...options,target:ruinSubstrate,recipes:templeRecipes,signal:cancelCover,schedule:async()=>{},
+    foliage:{...foliage,buildSurfaceGrowth(parent,recipe){const layer=fakeGrowth(parent,recipe);coverLayers.push(layer);cancelCover.aborted=true;return layer;}}}),error=>error.name==='AbortError');
+  assert(coverLayers.length===1&&coverLayers[0].children[0].geometry.disposed,'cancel must release partially generated static cover');
   console.log('Cooperative root generation: deterministic layers, browser yields and cancellation cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
