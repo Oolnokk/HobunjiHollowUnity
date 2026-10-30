@@ -58,6 +58,13 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   for(const slot of ['hat','hood','mask','eyes','upperFace','facialHair'])
     assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot);
   assert.equal(imlaoBare.bodyColors.C.hex,liches.bodyColor3For('kanthic'));
+  const incorrectlyDressed=liches.specialRoster('kanthic');
+  incorrectlyDressed.equippedCosmetics.push('ragged_hood','tangedcirclet','facewrap');
+  incorrectlyDressed.cosmeticSlots.ragged_hood='hood';
+  incorrectlyDressed.cosmeticSlots.tangedcirclet='hat';
+  incorrectlyDressed.cosmeticSlots.facewrap='mask';
+  liches.applyBodyColor3ToRoster(incorrectlyDressed,'kanthic');
+  assert.ok(incorrectlyDressed.equippedCosmetics.every(id=>!['ragged_hood','tangedcirclet','facewrap'].includes(id)),'General clothing overrides cannot put headwear on Imlao');
   const nanahiWorn=window.NpcWardrobe.wornClothingItemsForRecord(liches.specialRoster('tothal'),true);
   assert.equal(nanahiWorn.find(item=>item.cosmeticId==='facewrap').slot,'hood','Explicit facewrap slot must survive NPC wardrobe processing');
   const nanahiRobe=nanahiWorn.find(item=>item.cosmeticId==='tankan_bodywrap');
