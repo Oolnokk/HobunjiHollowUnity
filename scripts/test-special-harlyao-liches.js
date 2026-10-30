@@ -28,6 +28,7 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   load('docs/js/combat/enemy-loadout-rules.js');
   await window.EnemyLoadoutRules.ready;
   load('docs/js/combat/combat-special-liches.js');
+  load('docs/js/npc-wardrobe.js'); // The same standalone adapter now ships with the Enemy Workshop.
   load('docs/tools/enemy-loadout-editor/source-data.js');
   const rules=window.EnemyLoadoutRules, liches=window.SpecialHarlyaoLiches;
   assert.deepEqual(Object.keys(liches.DATA).sort(),['hronal','kanthic','tothal']);
@@ -40,6 +41,15 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.equal(liches.specialRoster('tothal').cosmeticSlots.facewrap,'hood');
   assert.ok(liches.specialRoster('hronal').equippedCosmetics.includes('rounded_pauldron'));
   assert.ok(!liches.specialRoster('kanthic').equippedCosmetics.includes('ragged_hood'));
+  const nanahiWorn=window.NpcWardrobe.wornClothingItemsForRecord(liches.specialRoster('tothal'),true);
+  assert.equal(nanahiWorn.find(item=>item.cosmeticId==='facewrap').slot,'hood','Explicit facewrap slot must survive NPC wardrobe processing');
+  const nanahiRobe=nanahiWorn.find(item=>item.cosmeticId==='tankan_bodywrap');
+  assert.equal(nanahiRobe.slot,'overwear');
+  assert.equal(nanahiRobe.weaving.forcedOverpassPattern.motifUrl,'assets/patterns/motif_harlyao_glyph_servitude.png');
+  assert.equal(nanahiRobe.colorC.hex,liches.DATA.tothal.ink);
+  const imlao={avatarRef:{group:{userData:{skullPixelsTransparent:true}},headScaleJoint:{front:{scale:{set(){throw Error('Head bone must not be collapsed');}}}}}};
+  liches.init(imlao,'kanthic');
+  assert.equal(imlao._specialSkullTransparent,true,'Skull is transparent with a full-size articulated head');
   const key=liches.kindFor('tothal');
   const docData={schema:rules.schema,rules:{[key]:{
     bossSettings:{specialCooldownSeconds:7.2,barrageIntervalSeconds:.3},
@@ -68,6 +78,12 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
     assert.ok(workshop.includes(label),'Workshop must expose '+label);
   const preview=read('docs/tools/enemy-loadout-editor/preview.js');
   assert.ok(preview.includes('js/combat/combat-special-liches.js'),'Workshop preview must load actual named-boss runtime');
+  assert.ok(preview.includes('js/npc-wardrobe.js'),'Workshop must load the NPC forced-overpass adapter for patterned clothing');
+  assert.ok(preview.includes("key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png'"),'Workshop retains a concrete canonical warhammer sprite fallback');
+  const hostileRenderer=read('docs/js/combat/combat-bandit.js');
+  assert.ok(hostileRenderer.includes("roster.specialLichId === 'imlao'"),'Imlao alpha-mask must be in the shared hostile portrait builder');
+  assert.ok(hostileRenderer.includes("context.globalCompositeOperation = 'destination-out'"),'Skull pixels are removed without collapsing head joints');
+  assert.ok(hostileRenderer.includes('originalHeadRigFront'),'Transparent head still retains the original neck skinning source');
   const map=read('docs/js/dev-random-ruin-interior-map.js');
   assert.ok(map.includes('specialBoss:!!specialDef'),'Ruin generation must pass named-boss marker to sanctum');
   const sanctum=read('docs/js/dev-random-ruin-sanctum.js');
