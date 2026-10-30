@@ -874,7 +874,9 @@
 
         await window.RepoPatternLibrary?.load?.(); // Author-exported collectible definitions must be ready before deterministic ruin selection.
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
-        window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:specialDef.ink } : undefined); // Guardian-colored glowing motifs on named-ruin walls.
+        const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
+        ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
+        window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
         const retryCount=attempt;
