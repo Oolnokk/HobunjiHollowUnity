@@ -2502,6 +2502,7 @@
     const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1, poseScale: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
     timelineState.live = timelineLive; timelineState.progress = progress; timelineState.wf = wf; timelineState.hf = hf;
     timelineState.poseScale = poseScale; // Partial Charged Breaker: the twist cancels by the same fraction as the player's partial release.
+    window.HobunjiWeaponSpriteAssemblies?.setAction(holder.children?.[0], { attacking: timelineLive, progress }); // Each hostile uses its own chain motion; the haft remains the existing attack authority.
 
     // NEITHER c.facing NOR c.groupRot directly -- the weapon holder is a
     // standalone world object using the exact same rotation.y convention
