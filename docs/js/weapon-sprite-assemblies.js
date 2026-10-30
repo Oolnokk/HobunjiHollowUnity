@@ -176,7 +176,7 @@
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
-      attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
+      attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, yawTravelRad: 0, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
     records.add(state);
@@ -267,6 +267,7 @@
     state.sf = Number.isFinite(options.strikeFrac) ? Math.max(state.wf, Math.min(1, options.strikeFrac)) : 0.28;
     state.hf = Number.isFinite(options.holdFrac) ? Math.max(state.sf, Math.min(1, options.holdFrac)) : 0.68;
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
+    state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Sweep follow-through includes both tool yaw and whole-body turn.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
   }
 
@@ -311,7 +312,14 @@
     return t * t * (3 - 2 * t); // Gradual contact with the animated shaft; exactly aligned for the rest of strike.
   }
 
-  function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad) {
+  function flailYawTravel(windup, strike, power = 1, dirSign = 1) {
+    if (!windup || !strike) return 0;
+    return (((Number(strike.yaw) || 0) - (Number(windup.yaw) || 0))
+      + ((Number(strike.bodyYaw) || 0) - (Number(windup.bodyYaw) || 0))) * power * dirSign;
+  }
+
+  function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad, yawTravelRad = 0) {
+    if (Math.abs(yawTravelRad) > Math.abs(pitchTravelRad || 0)) pitchTravelRad = yawTravelRad; // Sweeps can have no pitch at all; continue their dominant signed turn.
     if (!(progress > strikeFrac) || holdFrac <= strikeFrac || !Number.isFinite(pitchTravelRad) || Math.abs(pitchTravelRad) < 0.0001) return 0;
     const sign = Math.sign(pitchTravelRad); // Continue turning in the same direction as the tool's pitch lerp.
     const maxAngle = sign * Math.min(Math.PI / 3, Math.max(0.22, Math.abs(pitchTravelRad) * 0.38)); // Scaled follow-through, bounded to 60°.
@@ -391,7 +399,7 @@
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
     const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
-    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(baseQ).normalize(); // Tool pitch rotates around local X, including its parent/body rotations.
+    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(root.getWorldQuaternion(q.rootInverseQ)).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
       state.strikeTurnRad = 0; state.hasShaftUp = false; state.hasStrikeStart = false; // Reset the cached strike entry after a new attack or timeline seek.
     }
@@ -424,7 +432,8 @@
       state.direction.copy(state.strikeStartDirection).applyQuaternion(q.stepQ.identity().slerp(q.deltaQ, t)).normalize(); // No rotation with tool pitch until the strike transition begins.
     } else {
       const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
-      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel);
+      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel, state.yawTravelRad);
+      if (Math.abs(state.yawTravelRad) > Math.abs(pitchTravel || 0)) pitchAxis.set(0, 1, 0); // Authored tool/body yaw turns around world up while the strike pose stays held.
       state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Exact shaft follow, then signed follow-through during hold.
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
@@ -474,6 +483,8 @@
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Shows what drives hold-through rotation.
+      yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Mobile diagnostics show sweep follow-through even when pitch travel is zero.
+      holdTurnDeg: flailPitchOvershoot(s.progress, s.sf, s.hf, s.pitchTravelRad ?? s.strikeTurnRad, s.yawTravelRad) * 180 / Math.PI, // Reports connector rotation independently of the frozen strike pose.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -506,7 +517,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailStrikeStraightening, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, definitionFor, flailPitchOvershoot, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

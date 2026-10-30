@@ -2507,6 +2507,7 @@
     window.HobunjiWeaponSpriteAssemblies?.setAction(holder.children?.[0], {
       attacking: timelineLive, progress, movementPosition: c.avatarRef?.group?.position, // Actual NPC-world locomotion excludes attack-pose hand translation.
       windupFrac: wf, strikeFrac: sf, holdFrac: hf,
+      yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(pose?.windup, pose?.strike, power, dirSign), // Same held sweep follow-through as the player.
       pitchTravelDeg: Number.isFinite(windupPitch) && Number.isFinite(strikePitch) ? (strikePitch - windupPitch) * power : undefined, // Match the enemy's actual partial-charge pose pitch.
     }); // Uses the same per-enemy timeline and final holder pose as players and editor.
 

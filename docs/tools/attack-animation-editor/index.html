@@ -104,11 +104,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261030h645b148"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261030h586526c"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261030hf8c70b3"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261030layerfx2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261030h586526c"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030hf8c70b3"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -2366,6 +2366,7 @@ function animate() {
     attacking: previewT > 0.001 && previewT < 0.999, progress: previewT,
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
+    yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Deterministic sweep follow-through also works when scrubbing directly into Hold.
     pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
   }); // Shared runtime keeps gravity through windup, straightens during strike, and follows through during Hold.
   window.HobunjiWeaponSpriteAssemblies?.tick(dt); // No gameplay scheduler runs in the standalone ESM preview.

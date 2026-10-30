@@ -94,6 +94,13 @@ authored swing as a fixed-length lever, and rotates the head only during
 attacks. This is presentation-only: no additional hit detection or gameplay
 physics have been added.
 
+Latest change: the connector keeps rotating through Hold while the haft stays
+at its strike pose. Follow-through uses the dominant signed pitch or combined
+tool-yaw/body-yaw travel, including power and backhand mirroring. Sweep attacks
+with zero pitch therefore continue to move the chain/rope. Pitch axes come from
+the holder rather than the PNG's fixed sweep basis. `debugSnapshot()` exposes
+`yawTravelDeg` and `holdTurnDeg` for mobile inspection.
+
 ## Verification
 
 Run:

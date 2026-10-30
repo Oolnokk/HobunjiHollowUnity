@@ -23861,6 +23861,7 @@
           attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
           movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
           windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
+          yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
           pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? (swingStrikePitch - swingWindupPitch) * combatSwingPower : undefined, // Match SharedAttackPose's actual power-scaled pitch lerp.
         }); // Late enough to pass real, eased weapon timing. Pre-render uses the final shaft pitch on this same frame.
 

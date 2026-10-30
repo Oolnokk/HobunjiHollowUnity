@@ -111,5 +111,19 @@ assert.equal(follow(0.65, sf, hf, 0), 0, 'a static pitch creates no artificial f
 assert.equal(follow(0.75, 0.6, 0.6, forward), 0, 'a zero-duration hold never introduces a one-frame overshoot');
 assert(Math.abs(follow(hf, sf, hf, 10)) <= Math.PI / 3, 'extreme pitch does not exceed a 60 degree overshoot');
 assert.equal(follow(hf, sf, hf, NaN), 0, 'invalid pitch is safely ignored');
+vm.runInNewContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8'), { window }); // Exercise the same held-strike sampler used by gameplay.
+for (const holdProgress of [0.60, 0.65, hf]) {
+  assert.equal(window.SharedAttackPose.fourPhaseLerp(holdProgress, 0.16, sf, hf, -20, 20), 20, 'the handle remains at strike while the connector rotates');
+}
+const yawTravel = api.flailYawTravel({ pitch: 0, yaw: -20, bodyYaw: -40 }, { pitch: 0, yaw: 20, bodyYaw: 40 }) * Math.PI / 180; // A held sweep with no authored pitch must still rotate its connector.
+assert(yawTravel > 0);
+assert(follow(0.60, sf, hf, 0, yawTravel) > 0, 'zero-pitch sweep begins rotating during Hold');
+assert(follow(0.65, sf, hf, 0, yawTravel) > follow(0.60, sf, hf, 0, yawTravel), 'rope keeps rotating while the strike pose stays fixed');
+assert(follow(hf, sf, hf, 0, yawTravel) > follow(0.65, sf, hf, 0, yawTravel), 'rotation continues to the end of Hold');
+assert.equal(follow(0.65, sf, hf, 0, -yawTravel), -follow(0.65, sf, hf, 0, yawTravel), 'backhand reverses the held sweep rotation');
+assert.equal(follow(1, sf, hf, 0, yawTravel), 0, 'sweep follow-through recovers after Hold');
+assert.equal(api.flailYawTravel({ yaw: -20, bodyYaw: -40 }, { yaw: 20, bodyYaw: 40 }, 0.5, -1), -60, 'power and backhand sign match pose playback');
+assert.equal(api.flailYawTravel({ yaw: 0, bodyYaw: 0 }, { yaw: 30, bodyYaw: -30 }), 0, 'opposing tool/body turns cancel');
+assert.equal(api.flailYawTravel(null, null), 0, 'missing authored poses leave procedural fallback available');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
 console.log('weapon sprite assemblies: PASS (windup gravity and locomotion, early strike alignment, hold follow-through, editor/player/NPC, scheduler)');
