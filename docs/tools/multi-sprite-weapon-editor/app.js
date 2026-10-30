@@ -121,6 +121,7 @@
   function setFlailFields() {
     const def = entry(), f = def.flail ? ensureFlail() : null; // Normalize only an existing flail, never invent one for ordinary layered weapons.
     $('weaponLabel').value = def.label || key;
+    $('baseSpriteGeneral').value = def.sprite || (key === 'hachutuTorchFlail' ? 'assets/toolsprites/hachutu_torch-flail_handle.png' : ''); // Ordinary layered weapons can author their original rigid sprite without enabling flails.
     $('enableFlail').textContent = f ? 'Remove flail assembly' : '+ Enable flail assembly';
     $('flailFields').hidden = !f;
     $('stackTarget').querySelector('option[value="head"]').disabled = !f;
@@ -245,7 +246,8 @@
       selectWeapon(id);
     });
     bindInput('weaponLabel', value => { entry().label = value; fillWeapons(); });
-    bindInput('baseSprite', value => { entry().sprite = value; });
+    bindInput('baseSprite', value => { entry().sprite = value; $('baseSpriteGeneral').value = value; });
+    bindInput('baseSpriteGeneral', value => { entry().sprite = value; $('baseSprite').value = value; });
     bindInput('chainSprite', value => { ensureFlail().chain.sprite = value; });
     const coordinates = [
       ['haft', () => ensureFlail().haftAnchor || (ensureFlail().haftAnchor = {})],
