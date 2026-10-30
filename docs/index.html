@@ -251,7 +251,7 @@
   <script src="js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261027h02f64e7"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261030lichWalls3"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -366,7 +366,7 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/enemy-loadout-rules.js?v=20261028a"></script>
+  <script src="js/combat/enemy-loadout-rules.js?v=20261030lichRules3"></script>
   <script src="js/combat/combat-bandit.js?v=20261030headMask1"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
@@ -617,7 +617,7 @@
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20261026hRepoDefaults5"></script>
+  <script src="js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
@@ -856,7 +856,7 @@
   <script src="js/shattercasks.js?v=20261028hfruitburst2"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
-  <script src="js/ruin-sites.js?v=20261029hguild2"></script>
+  <script src="js/ruin-sites.js?v=20261030lichSites3"></script>
   <script src="js/zone-den-totem-features.js?v=20261028localeopen2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2861,7 +2861,7 @@
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
+  <script src="js/delvers-guild-story.js?v=20261030lichQuest3"></script>
   <script src="game.js?v=20261030harrivalreview1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
