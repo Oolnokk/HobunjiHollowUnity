@@ -476,7 +476,7 @@ function bodyDefaults(species, gender) {
       offsetY: troop.anatomy.headOffsetY,
     };
   const special = window.SpecialHarlyaoLiches?.DATA?.[state.kind.split(':')[1]]; // Named bosses start from their exact custom stature, not normal skeleton proportions.
-  if (state.kind.split(':').length === 3 && special?.scale) return {...special.scale,offsetY:special.scale.offsetY || 0};
+  if (state.kind.split(':').length === 3 && special?.scale) return window.SpecialHarlyaoLiches?.rigScaleFor?.(state.kind.split(':')[1]) || {x:1,y:1,head:1,offsetY:0}; // Editor controls are the exact relative-to-species boss body dimensions applied in game.
   const base = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender);
   return base
     ? { x: base.x, y: base.y, head: base.head, offsetY: base.offsetY }
