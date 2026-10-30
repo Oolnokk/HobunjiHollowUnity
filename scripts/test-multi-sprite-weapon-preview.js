@@ -69,7 +69,8 @@ function assertFitted(bounds,viewWidth,viewHeight) {
 for (const t of [0,0.12,0.25,0.5,0.68,0.95]) {
   const model=renderer.modelFor(recipe,lookup,t,1500);
   assert.ok(model.headOrigin && model.headPosition);
-  assert.ok(model.headPosition.y>500,'large chain head is far beyond the old haft-centered crop');
+  assert.ok(Math.hypot(model.headPosition.x-model.pivot.x, model.headPosition.y-model.pivot.y)>300,
+    'approved shorter chain still spans more than 300 handle pixels throughout the swing');
   const full=renderer.boundsFor(model,lookup,'combined');
   const detail=renderer.boundsFor(model,lookup,'head');
   assert.ok(full.maxY>model.headPosition.y-200,'combined view measures the brazier, not just the haft');

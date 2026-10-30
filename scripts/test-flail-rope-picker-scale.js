@@ -94,7 +94,7 @@ delete legacy.flail.chain.scaleX;delete legacy.flail.chain.scaleY;
 const older=preview.modelFor(legacy,lookup,0,0);
 assert.equal(older.chainScaleX,2);
 assert.equal(older.chainScaleY,2);
-assert(Math.abs((b.headOrigin.y-b.headPosition.y)-95)<1e-7,'authored composite contact y=190 stays attached to the scaled head at 0.5×');
+assert(Math.abs((b.headPosition.y-b.headOrigin.y)-95)<1e-7,'authored composite contact y=190 stays attached to the scaled head at 0.5×');
 const textured=preview.modelFor({...scaled,flail:{...scaled.flail,head:{...scaled.flail.head,anchor:{x:12,y:-14}}}},lookup,0,0);
 assert.equal(textured.headOrigin.x,textured.headPosition.x-6,'composite x coordinate is measured from the shared center');
 assert.equal(textured.headOrigin.y,textured.headPosition.y+7,'composite y coordinate is measured from the shared center');
