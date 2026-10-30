@@ -90,7 +90,7 @@
   function layers() {
     const def = entry();
     if (stackTarget === 'weapon') return def.layers || (def.layers = []);
-    return ensureFlail().head.layers;
+    return def.flail?.head?.layers || []; // Ordinary multi-layer weapons do not silently acquire a chain.
   }
 
   function activeLayer() { return layers()[selected] || null; }
@@ -119,8 +119,12 @@
   }
 
   function setFlailFields() {
-    const def = entry(), f = ensureFlail();
+    const def = entry(), f = def.flail;
     $('weaponLabel').value = def.label || key;
+    $('enableFlail').textContent = f ? 'Remove flail assembly' : '+ Enable flail assembly';
+    $('flailFields').hidden = !f;
+    $('stackTarget').querySelector('option[value="head"]').disabled = !f;
+    if (!f) { stackTarget = 'weapon'; $('stackTarget').value = 'weapon'; return; }
     $('baseSprite').value = def.sprite || (key === 'hachutuTorchFlail' ? 'assets/toolsprites/hachutu_torch-flail_handle.png' : '');
     $('chainSprite').value = f.chain.sprite || '';
     coordinateField('haft', f.haftAnchor, 'top');
@@ -142,6 +146,8 @@
   function selectWeapon(next) {
     if (!state.weapons[next]) return;
     key = next; selected = 0; fireParticles.length = 0;
+    stackTarget = entry().flail ? 'head' : 'weapon';
+    $('stackTarget').value = stackTarget;
     fillWeapons(); setFlailFields(); fillLayers(); warmImages();
     log('Selected ' + (entry().label || key));
   }
@@ -223,6 +229,15 @@
   function installEvents() {
     document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => selectTab(button.dataset.tab));
     on('weapon', 'change', () => selectWeapon($('weapon').value));
+    on('enableFlail','click', () => {
+      if (entry().flail) {
+        if (!confirm('Remove this weapon\'s chain and flail-head layers? Ordinary sprite layers are preserved.')) return;
+        delete entry().flail;
+      } else ensureFlail();
+      stackTarget = entry().flail ? 'head' : 'weapon';
+      $('stackTarget').value = stackTarget;
+      selected = 0; setFlailFields(); fillLayers(); markChanged();
+    });
     on('newWeapon', 'click', () => {
       const id = prompt('Existing TOOL_ITEM_DEFS key or held shape ID (letters and digits):', 'warhammer');
       if (!id || !/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(id)) { log('Please enter a valid existing weapon key.', true); return; }
@@ -263,7 +278,10 @@
       part.offsetPx[axis.toLowerCase()] = safeNum(value, 0);
     });
     bindInput('material', value => { activeLayer().material = value; });
-    bindInput('markerHex', value => { activeLayer().sourceHex = validHex(value, '#7F00FF'); });
+    bindInput('markerHex', value => {
+      const part = activeLayer(); part.sourceHex = validHex(value, '#7F00FF');
+      if (part.vfx?.type === 'fire') part.vfx.sourceHex = part.sourceHex; // Dye and ember sampling always use the same authored source region.
+    });
     bindInput('ragHex', value => { activeLayer().targetHex = validHex(value, '#E7DDC9'); });
     bindInput('vfxType', value => {
       const part = activeLayer();
@@ -448,7 +466,7 @@
       p.age+=dt;if(p.age>=p.life){fireParticles.splice(i,1);continue;}
       const t=p.age/p.life;ctx.globalAlpha=.85*Math.sin(Math.PI*t);
       ctx.fillStyle=p.color;ctx.beginPath();
-      ctx.arc(p.x+Math.sin(t*9+p.phase)*ppu*3,p.y-p.speed*ppu*p.age,p.radius*ppu*(.6+t),0,Math.PI*2);ctx.fill();
+      ctx.arc(p.x*ppu+Math.sin(t*9+p.phase)*ppu*3,(p.y-p.speed*p.age)*ppu,p.radius*ppu*(.6+t),0,Math.PI*2);ctx.fill();
     }
     ctx.globalAlpha=1;
     if(!playing)return;
@@ -457,8 +475,8 @@
     const p=sources[Math.floor(Math.random()*sources.length)];const imgSize=imageSize(img);
     fireParticles.push({
       key:fireKey,age:0,life:safeNum(config.life,.65,.1,5),phase:Math.random()*6.28,
-      x:(p%imgSize.w+.5-imgSize.w/2+(Number(part.offsetPx?.x)||0))*ppu/ppu,
-      y:(Math.floor(p/imgSize.w)+.5-imgSize.h/2+(Number(part.offsetPx?.y)||0))*ppu/ppu,
+      x:p%imgSize.w+.5-imgSize.w/2+(Number(part.offsetPx?.x)||0), // Marker source pixel in layer-center coordinates, scaled only when drawn.
+      y:Math.floor(p/imgSize.w)+.5-imgSize.h/2+(Number(part.offsetPx?.y)||0),
       radius:safeNum(config.size,.035,.001,.5)*imgSize.w*.55,
       speed:imgSize.h*.12,
       color:(config.colors || ['#FFAA3E'])[Math.floor(Math.random()*(config.colors?.length||1))] || '#FFAA3E',
