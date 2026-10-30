@@ -15,7 +15,7 @@ const title = source('docs/js/title-screen-runtime.js');
 const formatUtils = source('docs/js/format-utils.js');
 const game = source('docs/game.js');
 const fishing = source('docs/js/fishing-minigame.js'); // Verifies the successful-catch path fires the semantic gameplay music cue.
-const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Verifies mine destination context is visible on the shared loading overlay.
+const loadingScreen = source('docs/js/loading-screen-runtime.js'); // Loading context remains independent from in-world mine titles.
 const config = source('docs/config/scratchbones-config.js');
 const index = source('docs/index.html');
 const nightbugsPath = path.join(__dirname, '../docs/assets/audio/sfx/bgs/bgs_nightbugs1.mp3'); // Points the asset-presence check at the normalized runtime recording.
@@ -445,10 +445,12 @@ assert.match(config, /"map_southern_cloud_forest": \[[\s\S]*?"url": "assets\/aud
   'The Undergrowth mirrors the Western Slope night-only exclusive-soundtrack pattern in the Cloud Forest');
 assert.match(fishing, /playGameplayCue\?\.\('fishCaught'\)/,
   'a committed successful catch fires the authored catch gameplay cue');
-assert.match(game, /const mineDescentFloor = t\.mineDynamicDescent && proceduralMineTarget[\s\S]*?enterBuilding\([^\n]*mineDescentFloor \? `Floor \${mineDescentFloor}` : ''\)[\s\S]*?if \(mineDescentFloor\)[\s\S]*?playGameplayCue\?\.\('progressDeeper'\)/,
-  'only a discovered mine-hole transition supplies the destination floor heading and fires the progress-deeper gameplay cue');
-assert.match(game, /function enterBuilding\(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = ''\)[\s\S]*?LoadingScreenRuntime\?\.show\(loadingContextText \? \{ reason: loadingMineFloor \? 'mine-floor-load' : 'map-change', contextText: loadingContextText \} : undefined\)/,
-  'ordinary mine loads keep the lore loading screen but cannot invent a Floor N heading without hole-descent context');
+assert.match(game, /if \(t\.mineDynamicDescent && proceduralMineTarget\) \{\s*window\.LocationArrival\.mineDescent\(t\.targetMapId\)/,
+  'only discovered mine holes request the unified post-load title and cue');
+assert.doesNotMatch(game, /playGameplayCue\?\.\('progressDeeper'\)/,
+  'mine loading cannot play a progress cue before the destination is visible');
+assert.match(game, /LoadingScreenRuntime\?\.show\(loadingMineFloor \? \{ reason: 'mine-floor-load' \} : undefined\)/,
+  'the mine loading overlay has progress information but no floor-number heading');
 assert.match(loadingScreen, /id="hlsContext"[\s\S]*?contextText = typeof options === 'string' \? '' : \(options\?\.contextText \|\| ''\)/,
   'the loading screen renders caller-supplied destination context separately from rotating Compendium tips');
 assert.match(config, /"nightbugsVolume": 0\.34/,
@@ -468,7 +470,9 @@ assert.match(index, /audio-track-gain-settings\.js\?v=[A-Za-z0-9_.-]+/,
 assert.match(index, /town-mine\.js\?v=[A-Za-z0-9_.-]+/,
   'the browser cache key loads the Ghoul soundtrack combat exemption');
 assert.match(index, /loading-screen-runtime\.js\?v=[A-Za-z0-9_-]+/,
-  'the browser cache key loads destination-floor context on mine loading screens');
+  'the browser cache key loads the completion notification for arrival titles');
+assert.match(index, /location-arrival\.js\?v=[A-Za-z0-9_-]+/,
+  'the shared arrival coordinator is loaded before gameplay');
 assert.match(index, /fishing-minigame\.js\?v=[A-Za-z0-9_-]+/,
   'the browser cache key loads the successful-catch music cue hook');
 assert.match(index, /"game\.js\?v=\d{8}[A-Za-z0-9_-]+"/,
