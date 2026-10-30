@@ -175,7 +175,7 @@
       'harlyao-skeleton',
       'ghost-marcher',
     ].includes(kind);
-    const special = kind.split(':').length === 3 && kind.startsWith('lich:') ? window.SpecialHarlyaoLiches?.defFor?.(kind.split(':')[1]) : null; // Pulls editable boss defaults from the runtime, never a duplicated workshop table.
+    const special = kind.split(':').length === 3 && kind.startsWith('lich:') ? window.SpecialHarlyaoLiches?.DATA?.[kind.split(':')[1]] : null; // Workshop defaults are original shipped presets, not already-applied draft overrides.
     const lich = kind.startsWith('lich:')
       ? window.HarlyaoLichCombat.TYPE_DEFS[kind.split(':')[1]]
       : null;
