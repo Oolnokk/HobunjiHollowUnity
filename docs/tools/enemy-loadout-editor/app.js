@@ -483,6 +483,15 @@ function bodyDefaults(species, gender) {
     ? { x: base.x, y: base.y, head: base.head, offsetY: base.offsetY }
     : { x: 1, y: 1, head: 1, offsetY: 0 };
 }
+let proportionPreviewTimer = null;
+// Body edits only change the saved rule; the enemy is built from it, so replay the current seed (debounced, and retried while a build is running) to show the new head/torso proportions without a manual roll.
+function queueProportionPreview() {
+  clearTimeout(proportionPreviewTimer);
+  proportionPreviewTimer = setTimeout(() => {
+    if (state.busy) queueProportionPreview();
+    else if (state.ready) roll(false);
+  }, 350);
+}
 function renderBodyProportions(species, gender) {
   const defaults = bodyDefaults(species, gender);
   const ranges = window.EnemyLoadoutRules.rigScaleRanges;
@@ -517,7 +526,7 @@ function renderBodyProportions(species, gender) {
     ).toFixed(1);
     input.disabled = !check.checked;
     const hint = el('span', 'muted', ' default ' + (defaults[key] * 100).toFixed(1));
-    const write = () =>
+    const write = () => {
       mutate((r) => {
         if (check.checked) {
           const [lo, hi] = ranges[key];
@@ -528,6 +537,8 @@ function renderBodyProportions(species, gender) {
           if (!Object.keys(r.rigScale).length) delete r.rigScale;
         }
       });
+      queueProportionPreview();
+    };
     check.onchange = () => {
       write();
       renderPools();
