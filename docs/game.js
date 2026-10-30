@@ -6070,6 +6070,7 @@
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
         if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
+        if (c.avatarRef.bodySinkActor && (Number(c.health) || 0) <= 0) window.ActorBodySink?.release(c.avatarRef.bodySinkActor); // A corpse stands back up; js/actor-body-sink.js.
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,

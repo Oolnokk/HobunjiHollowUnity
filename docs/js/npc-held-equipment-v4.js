@@ -497,6 +497,19 @@
     return !!state.walker?.area && state.walker.area !== area;
   }
 
+  // A watchman holds its weapon in the Light/Heavy idle stance, so it rests at the stance's idle body sink like the player and enemies
+  // (js/actor-body-sink.js). The NPC's body is its floor-anchored rig root, scaled by the species rig scale, which the legs live under.
+  function applyWatchmanSink(state, walker, pose) {
+    const sink = window.ActorBodySink;
+    if (!sink?.enabled() || !walker?.legs) return;
+    if (!state.sinkActor) {
+      const rigRoot = walker.root?.getObjectByName?.('npc_character_rig_root');
+      if (!rigRoot) return;
+      state.sinkActor = { legs: walker.legs, lower: [{ obj: rigRoot, factor: () => rigRoot.scale?.y || 1 }] };
+    }
+    sink.apply(state.sinkActor, window.SharedAttackPose?.idleBodySinkPct?.() ?? 0, Number(pose?.bodyYaw) || 0, false);
+  }
+
   function updateState(state) {
     const walker = state.walker;
     state.lastUpdateAt = performance.now();
@@ -513,6 +526,7 @@
       if (parent && state.holder.parent !== parent) parent.add(state.holder);
       const pose = watchmanPose(loadout);
       if (pose) setHolderPose(state, state.holder, pose);
+      applyWatchmanSink(state, walker, pose);
       state.holder.visible = walker?.root?.visible !== false;
       applyGripScale(state.holder.userData?.npcGripVisualV4, loadout.toolKey, walker);
       state.handsAttached = attachPrimaryHand(walker, state.holder, loadout.toolKey, `watchman:${loadout.toolKey}`);
@@ -521,6 +535,7 @@
     }
 
     state.loadout = null;
+    if (state.sinkActor) window.ActorBodySink?.release(state.sinkActor); // Off watch: stand up again.
     if (state.holder) state.holder.visible = false; // An existing outdoor holder must disappear immediately on interior entry.
     const target = walker?.currentScheduleTarget || null;
     const key = normalizeToolKey(target?.toolKey || walker?.stationToolKey);

@@ -2394,6 +2394,24 @@
     return grip;
   }
 
+  // Body sink for a humanoid enemy (js/actor-body-sink.js): the sampled pose's `bodySink` lowers the plane/hand pivots while the legs keep the soles on
+  // the floor and fold the knees. Returns the world-space sink so the weapon holder can follow. Enemies without a Light/Heavy stance author no sink (0).
+  function releaseBanditBodySink(c) {
+    const ref = c?.avatarRef;
+    if (ref?.bodySinkActor) window.ActorBodySink?.release(ref.bodySinkActor);
+  }
+  function applyBanditBodySink(c, sampled, swinging) {
+    const ref = c?.avatarRef;
+    const sink = window.ActorBodySink;
+    if (!sink?.enabled() || !ref?.legs || !ref.frontPlane || !ref.handsPivot || ref.riderMount) return 0; // Mounted riders and legless bodies keep standing.
+    ref.bodySinkActor ||= { legs: ref.legs, lower: [{ obj: ref.frontPlane }, { obj: ref.backPlane }, { obj: ref.handsPivot }] }; // All children of the group the legs also live under.
+    const standing = (Number(c.health) || 0) > 0 && !c.prone;
+    let pct = 0;
+    if (standing) pct = Number.isFinite(sampled.bodySink) ? sampled.bodySink : (c._enemyPreparedPose ? window.SharedAttackPose.idleBodySinkPct() : 0); // Legacy arcs author no sink: only a stance weapon rests at the idle sink.
+    const applied = sink.apply(ref.bodySinkActor, pct, sampled.bodyYawRad * 180 / Math.PI, swinging);
+    return applied * (ref.group?.scale?.y || 1);
+  }
+
   function updateBanditToolMesh(c) {
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
     const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
@@ -2408,7 +2426,7 @@
     syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey, 'ranged');
     syncBanditWeaponScale(c, c._banditFlaskToolHolder, BANDIT_FLASK_TOOL_KEY, 'ranged');
     const holder = flaskActive ? c._banditFlaskToolHolder : c._banditToolHolder;
-    if (!holder) return;
+    if (!holder) { releaseBanditBodySink(c); return; }
     if (flaskActive) {
       if (c._banditToolHolder) c._banditToolHolder.visible = false;
       if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
@@ -2416,6 +2434,7 @@
     } else if (c._rangedMode) {
       holder.visible = false;
       if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
+      releaseBanditBodySink(c);
       window.RangedWeapons?.updateBanditVisual?.(c);
       return;
     } else {
@@ -2558,6 +2577,7 @@
     const rollRad = sampled.rollRad;
     const bodyYawRad = sampled.bodyYawRad;
     c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
+    const sinkWorld = applyBanditBodySink(c, sampled, timelineLive); // Authored per-pose body sink (percent of height): sinks the body and folds the knees; the weapon below follows.
     // 1 unless the pose authors a midline-flip sequence (Heavy weapons) or is the legacy Backhand sweep, exactly like
     // the player's hand anchor.
     const handBaseX = base.x * sampled.mirrorBlend;
@@ -2595,6 +2615,7 @@
       c.y / deps.TILE + vRZ * (handBaseX + x) + vFZ * z,
     );
     scaleBanditToolPositionAroundCentroid(c, holder, vθ); // Finished raw pose is orbited around this avatar's visual centroid (per-axis in the pose's own frame).
+    holder.position.y -= sinkWorld; // The orbit above is measured from the unsunk floor; the whole weapon sinks with the body.
     if (c.avatarRef?.riderMount) { holder.scale.setScalar(1); applyRiderMount(c, holder); }
     if (resetAfterDraw) {
       resetBanditSwingToNatural(c);

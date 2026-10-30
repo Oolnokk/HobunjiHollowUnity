@@ -80,6 +80,33 @@ z = zOf();
 assert(Math.abs(z.l) < 1e-6 && Math.abs(z.r) < 1e-6, 'feet come back together when the sink is released');
 handle.setStanceSplitBias(handle.stanceSplitBiasForYawDeg(0));
 
+// Front leg swings about its hip against the body twist so its foot points forward; the back leg keeps turning with the body.
+handle.setStanceDrop(drop); settle();
+const hips = {}; handle.group.traverse(o => { if (/_hip$/.test(o.name)) hips[o.name.replace('_hip', '')] = o; });
+handle.setStanceYawDeg(40); settle();
+assert(Math.abs(hips.right.rotation.y - -40 * Math.PI / 180) < 1e-6, `yaw 40: right (lead) hip counter-rotates (${hips.right.rotation.y})`);
+assert(Math.abs(hips.left.rotation.y) < 1e-9, 'trailing hip keeps turning with the body');
+handle.setStanceYawDeg(-40); settle();
+assert(Math.abs(hips.left.rotation.y - 40 * Math.PI / 180) < 1e-6 && Math.abs(hips.right.rotation.y) < 1e-9, 'yaw -40: left leads and counter-rotates');
+handle.setStanceDrop(0); settle();
+assert(Math.abs(hips.left.rotation.y) < 1e-9 && Math.abs(hips.right.rotation.y) < 1e-9, 'hips untwist when the sink is released');
+handle.setStanceYawDeg(0);
+
+// Actor body sink (enemies / NPCs): the listed roots are lowered by exactly the applied sink, and restored on release.
+vm.runInContext(read('docs/js/actor-body-sink.js'), sandbox, { filename: 'actor-body-sink.js' });
+const ABS = win.ActorBodySink;
+const plane = new THREE.Group(), rigRoot = new THREE.Group(); plane.position.y = 0.5; rigRoot.scale.set(1, 1.5, 1);
+const actor = { legs: handle, lower: [{ obj: plane }, { obj: rigRoot, factor: () => rigRoot.scale.y }] };
+const applied = ABS.apply(actor, 6, 20, true);
+assert(Math.abs(applied - drop) < 1e-6, `applies pct of model height (${applied})`);
+assert(Math.abs(plane.position.y - (0.5 - applied)) < 1e-9 && Math.abs(rigRoot.position.y - -applied * 1.5) < 1e-9, 'roots lowered (rig root by its scale)');
+ABS.apply(actor, 6, 20, true);
+assert(Math.abs(plane.position.y - (0.5 - applied)) < 1e-9, 'applying again is idempotent');
+ABS.apply(actor, 0, 0, true);
+for (let i = 0; i < 60; i++) handle.update(1 / 30, 0, false, undefined, {});
+ABS.apply(actor, 0, 0, false);
+assert(Math.abs(plane.position.y - 0.5) < 1e-9 && Math.abs(rigRoot.position.y) < 1e-9, 'roots restored once the legs stand again');
+
 // The leg group is raised by the sink (persistent, so skinned garments see it); the body owner lowers the body by the same amount.
 handle.setStanceDrop(drop); settle();
 assert(Math.abs(handle.group.position.y - drop) < 1e-4, `leg group raised by the sink (${handle.group.position.y})`);

@@ -113,7 +113,7 @@ function approx(actual, expected, epsilon = 1e-9) {
   assert.strictEqual(window.BanditCombat.updateToolMesh(entity), 'rendered');
   assert.strictEqual(renderCalls.length, 1);
   assert.strictEqual(renderCalls[0].anim, 'sweep');
-  assert.deepStrictEqual(renderCalls[0].pose.neutral, heavyPose);
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, { ...heavyPose, bodySink: 6 }); // The stance's idle body sink rides the baked Neutral.
   assert.strictEqual(renderCalls[0].power, 1);
   assert.strictEqual(entity._banditSwingAnim, 'thrust');
   assert.strictEqual(entity._banditSwingPose, originalPose);
@@ -128,7 +128,7 @@ function approx(actual, expected, epsilon = 1e-9) {
   renderCalls.length = 0;
   const ghoul = makeEntity({ weaponKey: 'light_weapon', speciesId: 'ghoul', anim: 'thrust' });
   window.BanditCombat.updateToolMesh(ghoul);
-  assert.deepStrictEqual(renderCalls[0].pose.neutral, lightPose);
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, { ...lightPose, bodySink: 6 }); // The stance's idle body sink rides the baked Neutral.
   assert.strictEqual(ghoul._enemyWeaponStanceDebug.stanceClass, 'light');
   assert.strictEqual(ghoul._enemyWeaponStanceDebug.speciesId, 'ghoul');
 }
@@ -208,7 +208,7 @@ function approx(actual, expected, epsilon = 1e-9) {
   const entity = makeEntity({ weaponKey: 'light_weapon', anim: 'thrust', sign: -1, power: 1.2, action: { windupS: 0.3, strikeS: 0.2, t: 0 } });
   window.BanditCombat.updateToolMesh(entity);
   assert.strictEqual(renderCalls[0].dirSign, 1);
-  assert.deepStrictEqual(renderCalls[0].pose.neutral, lightPose);
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, { ...lightPose, bodySink: 6 }); // The stance's idle body sink rides the baked Neutral.
   const rawWindup = { x: 0, y: 0, z: -0.40 * 1.2, pitch: 10.31, yaw: 0, bodyYaw: -45 * 1.2, roll: 0 };
   const rawStrike = { x: -0.23 * 1.2, y: 0, z: 0.32 * 1.2, pitch: 1, yaw: -45 * 1.2, bodyYaw: 46 * 1.2, roll: 0 };
   const spacedWindup = window.MeleePoseSpacing.adjustEndpoint(rawWindup, 'windup');
@@ -308,7 +308,7 @@ function approx(actual, expected, epsilon = 1e-9) {
   entity._banditToolTail = { startMs: 0, baseElapsedS: 0.6, durationS: 0.6, windupFrac: 0.7, strikeFrac: 1, holdS: 0.4 };
   window.BanditCombat.updateToolMesh(entity);
   assert.strictEqual(renderCalls[0].anim, 'sweep', 'stance pose is applied through the tail');
-  assert.deepStrictEqual(renderCalls[0].pose.neutral, heavyPose);
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, { ...heavyPose, bodySink: 6 }); // The stance's idle body sink rides the baked Neutral.
   assert.strictEqual(entity._enemyWeaponStanceDebug.applied, true);
 
   // The draw that finishes the tail restores the rest stance; the adapter keeps it instead of restoring the old swing.

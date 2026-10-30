@@ -1561,7 +1561,7 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   const sinkUnits = Math.max(0, pct) / 100 * currentAvatarModelHeight; // Body-root-local units, like the leg handle's own.
   let applied = sinkUnits;
   if (editorLegs) {
-    editorLegs.setStanceSplitBias(editorLegs.stanceSplitBiasForYawDeg(bodyYawDeg)); // Front/back leg follows the pose's body yaw.
+    editorLegs.setStanceYawDeg(bodyYawDeg); // The leg the body turns toward leads and swings about its hip so its foot points forward.
     editorLegs.setStanceDrop(sinkUnits, true);
     editorLegs.update(0, 0, false, null, {}); // dt 0: no gait, but re-solves the chain and re-skins the pants.
     applied = editorLegs.getStanceDrop();

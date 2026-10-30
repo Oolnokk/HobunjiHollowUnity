@@ -909,6 +909,7 @@
       hoverStrength: 0, // Damped 0→1 blend prevents feet snapping between planted gait and the airborne pose.
       stanceDropTarget: 0, // Requested hip lowering (root-local units) from a weapon stance; ignored while seated/suppressed/airborne.
       stanceSplitBias: 0.35, // -1..1: which foot leads under a sunk stance (+1 = the right/+X foot forward, -1 = the left); fed from body yaw so the leg the body turns toward steps forward.
+      stanceYawRad: 0, // The body's twist under the stance; the leading leg counter-rotates about its hip by this so its foot points forward.
       splitZ: { left: 0, right: 0 }, // Forward(+)/back(-) foot offsets currently applied, in root-local units.
       stanceDropAllowed: true, // Set every update(): false while seated/suppressed/airborne/hovering, so a sink request cannot override those poses.
       stanceDrop: 0, // Damped hip lowering actually applied: the hips sink while the feet stay planted, so the knees fold instead of the legs shortening.
@@ -1065,6 +1066,15 @@
     // The sunk stance separates the legs into a front and a back leg: the stance widens with the sink (splitPerSink units of foot travel per unit
     // of sink) but never past the point where the hip-to-foot distance would exceed the bone length, so the fold still bends rather than stretches.
     // The offsets are added to the foot targets directly so they take effect immediately (the editor ticks with dt 0); applyPose keeps them in the gait target.
+    // The leading leg swings about its hip (Y) against the body's twist, so its foot lands and points along the actor's forward direction instead
+    // of being dragged round with the torso; the trailing leg keeps turning with the body. Skipped while lunging (lunge footwork solves in world space).
+    function syncHipYaw() {
+      const active = state.stanceDropAllowed && !state.lungeActive && state.stanceDrop > 1e-6;
+      const ramp = active ? Math.min(1, state.stanceDrop / Math.max(1e-6, modelHeight * 0.01)) : 0; // Fades in with the sink so standing legs never twist.
+      const lead = { left: Math.max(0, -state.stanceSplitBias), right: Math.max(0, state.stanceSplitBias) };
+      for (const side of ['left', 'right']) legChains[side].hip.rotation.y = -state.stanceYawRad * lead[side] * ramp;
+    }
+
     function applyStanceSplit() {
       const length = standingLegLength(), drop = state.stanceDrop;
       const reach = Math.sqrt(Math.max(0, length * length - (length - drop) * (length - drop))) * 0.97;
@@ -1074,6 +1084,7 @@
         state[`${side}Target`].z += next[side] - state.splitZ[side];
         state.splitZ[side] = next[side];
       }
+      syncHipYaw();
       applyLegChain('left');
       applyLegChain('right');
     }
@@ -1442,11 +1453,13 @@
       legChains.right.thigh.position.set(0, 0, 0);
       const stanceDropAllowed = !suppressed && !state.hoverEnabled && !motion?.airborne; // Mounts, hover and falls own the whole-body pose.
       state.stanceDropAllowed = stanceDropAllowed;
+      if (motion?.lunging || !stanceDropAllowed) { if (legChains.left.hip.rotation.y || legChains.right.hip.rotation.y) syncHipYaw(); }
       const wantedDrop = stanceDropAllowed ? state.stanceDropTarget : 0;
       if (wantedDrop > 0 || state.stanceDrop > 0) {
         const eased = damp(state.stanceDrop, wantedDrop, wantedDrop > state.stanceDrop ? 12 : 9, dt);
         applyStanceDrop(wantedDrop === 0 && eased < modelHeight * 0.0005 ? 0 : eased); // Snaps the last sliver home so the standing pose is restored exactly.
       }
+      if (state.stanceDrop > 1e-6) syncHipYaw(); // Re-applies after a lunge released it; cheap assignments only.
       if (suppressed) {
         state.motionMode = 'suppressed';
         // Explicit suppression (prone/death/mount/harvest) outranks hover, so airborne actors can still be physically brought down.
@@ -1629,6 +1642,12 @@
       setStanceDrop: (units, immediate = false) => { state.stanceDropTarget = Math.max(0, Number(units) || 0); if (immediate && !state.disposed && state.stanceDropAllowed) applyStanceDrop(state.stanceDropTarget); },
       getStanceDrop: () => state.stanceDrop,
       setStanceSplitBias: bias => { const next = Math.max(-1, Math.min(1, Number(bias) || 0)); if (Math.abs(next - state.stanceSplitBias) > 1e-6) { state.stanceSplitBias = next; if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit(); } },
+      setStanceYawDeg: deg => { // One call for both consequences of the body's twist: which leg leads, and the lead leg's counter-rotation.
+        const bias = Math.max(-1, Math.min(1, 0.35 + (Number(deg) || 0) / 15)), yaw = (Number(deg) || 0) * Math.PI / 180;
+        if (Math.abs(bias - state.stanceSplitBias) < 1e-6 && Math.abs(yaw - state.stanceYawRad) < 1e-6) return;
+        state.stanceSplitBias = bias; state.stanceYawRad = yaw;
+        if (!state.disposed && state.stanceDrop > 1e-6) applyStanceSplit();
+      },
       stanceSplitBiasForYawDeg: yawDeg => Math.max(-1, Math.min(1, 0.35 + (Number(yawDeg) || 0) / 15)), // Continuous: 0.35 at yaw 0 (right foot leads by default), flips smoothly as the body turns the other way.
       modelHeight,
       // The legs' standing stance (hip and idle-foot positions, group-local), independent of whatever pose they are in right now:
