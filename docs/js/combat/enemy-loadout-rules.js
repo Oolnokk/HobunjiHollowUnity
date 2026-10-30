@@ -16,6 +16,13 @@
     hold2: ['none', 'counterShield'],
   });
   const rigScaleRanges = Object.freeze({ x: [0.1, 4], y: [0.1, 4], head: [0.1, 4], offsetY: [-0.5, 0.5] }); // Mirrors HobunjiCharacterRigScale's clamps.
+  const bossRanges = Object.freeze({ // Named lich attack tuning, read by SpecialHarlyaoLiches at runtime and drawn in the workshop.
+    switchSeconds:[0.5,30], meleeCooldownSeconds:[0.25,12], meleeDamage:[1,200],
+    specialCooldownSeconds:[1,90], kneelDurationSeconds:[1,15], barrageIntervalSeconds:[0.15,5],
+    chargeSpeedTiles:[2,35], chargeCount:[1,12], chargeMaxTiles:[1,20],
+    blastRadiusTiles:[0.5,8], blastDamage:[1,200], plasmDurationSeconds:[1,90],
+  });
+  const bossGlyphIds = Object.freeze(['harlyao_glyph_entropy','harlyao_glyph_servitude','harlyao_glyph_ignorance']); // Only existing authored motifs are allowed for a boss's symbolic inscription.
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
@@ -82,11 +89,32 @@
         }
         if (!Object.keys(rule.rigScale).length) delete rule.rigScale;
       }
+      if (rule.bossSettings != null) {
+        if (!kind.startsWith('lich:') || kind.split(':').length !== 3 || typeof rule.bossSettings !== 'object' || Array.isArray(rule.bossSettings))
+          throw Error(kind + '.bossSettings: only named liches may use numeric boss tuning');
+        for (const [key,value] of Object.entries(rule.bossSettings)) {
+          const bounds = bossRanges[key];
+          if (!bounds || typeof value !== 'number' || !Number.isFinite(value) || value < bounds[0] || value > bounds[1] || (key==='chargeCount' && !Number.isInteger(value)))
+            throw Error(kind + '.bossSettings.' + key + ' outside allowed range');
+        }
+      }
+      if (rule.bossAppearance != null) {
+        const appearance = rule.bossAppearance;
+        if (!kind.startsWith('lich:') || kind.split(':').length !== 3 || typeof appearance !== 'object' || Array.isArray(appearance))
+          throw Error(kind + '.bossAppearance: named liches only');
+        for (const [field,value] of Object.entries(appearance)) {
+          if (field === 'glyphId' && !bossGlyphIds.includes(value)) throw Error(kind + '.bossAppearance.glyphId is unknown');
+          else if (field === 'ink' && !/^#[0-9a-fA-F]{6}$/.test(value)) throw Error(kind + '.bossAppearance.ink needs #RRGGBB');
+          else if (field === 'robeDye' && (typeof value !== 'string' || !/^dye:CLOTH:[a-z0-9_]+$/.test(value))) throw Error(kind + '.bossAppearance.robeDye requires a cloth dye ID');
+          else if (field === 'weaponKey' && (typeof value !== 'string' || !/^[a-zA-Z0-9_:-]{1,80}$/.test(value))) throw Error(kind + '.bossAppearance.weaponKey is not a tool key');
+          else if (!['glyphId','ink','robeDye','weaponKey'].includes(field)) throw Error(kind + '.bossAppearance.' + field + ' is unknown');
+        }
+      }
       for (const [ability, allowed] of Object.entries(
         rule.specialAttacks || {},
       ))
         if (
-          !['primary', 'summon'].includes(ability) ||
+          !['primary', 'summon', ...(kind.split(':').length === 3 && kind.startsWith('lich:') ? ['melee','blizzard','plasmCharge'] : [])].includes(ability) ||
           typeof allowed !== 'boolean'
         )
           throw Error('Invalid special attack toggle');
@@ -356,6 +384,7 @@
     ruleFor,
     rigScaleFor,
     rigScaleRanges,
+    bossRanges,bossGlyphIds, // Workshop uses the same validated fields as gameplay, including safe ranges.
     status: () => ({ error }),
   });
 })();
