@@ -418,7 +418,7 @@
     return key || 'other';
   }
 
-  function decorateRuin(root, seed) {
+  function decorateRuin(root, seed, special = null) {
     if (!root) return [];
     const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
     const ids = new Set(), meshes = []; // Collect first so adding overlay children cannot extend traversal.
@@ -431,7 +431,8 @@
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
-      const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Built-in eligibility when no rules module is loaded.
+      const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || '');
+      const namedWall = !!special?.specialBoss && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Only the named tomb's walls glow with the guardian's own glyph. // Built-in eligibility when no rules module is loaded.
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
@@ -454,15 +455,22 @@
       const records = templates.map(template => {
         const slot = template.slot; // Sides and tops of one surface type roll separately.
         const entry = catalog[hash(`${seed}|${category}|${slot}`) % catalog.length]; // Stable per-ruin, per-surface-type selection.
-        const patternId = template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
+        const patternId = namedWall && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
         return { ...template, pattern: template.random === false ? template.pattern : null,
           patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
-          patternId, palette: template.palette || ['#b7a185', '#625447'], scale: template.scale || rule?.defaultScale || 1.5,
+          patternId, palette: namedWall ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });
       const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.
       applyPart(mesh, { ...authored, patternScale: authored?.patternScale ?? rule?.partScale, patternSurfaces: records });
-      for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') { ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++; } // Only motifs actually shown are granted on completion.
+      for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') {
+        ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++;
+        if (namedWall && child.material) {
+          child.material.blending = THREE.AdditiveBlending; // Mask-eye-like glow preserves the existing base wall texture.
+          child.material.transparent = true; child.material.depthWrite = false; child.material.needsUpdate = true;
+          child.userData.specialLichGlyphGlow = {id:special.patternId, ink:special.ink}; // Exposed for per-wall diagnostics on mobile.
+        }
+      } // Only motifs actually shown are granted on completion.
     }
     root.userData.ruinPatternTypes = types;
     root.userData.ruinPatternOverlays = overlays;
