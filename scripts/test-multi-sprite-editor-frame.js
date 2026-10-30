@@ -53,6 +53,7 @@ const images = [];
 const markerCalls = [];
 const recolorCalls = [];
 const previewCalls = [];
+const paintSamples = []; // Observes both source-PNG fallback during async recolor and the completed metal canvas.
 let shouldThrow = false; // Used to test log deduplication for repeated rendering failures.
 class Image {
   constructor() {
@@ -93,10 +94,14 @@ const window = {
     drawCanvas(canvas, kind, model, lookup, paint) {
       if (shouldThrow) throw new Error('synthetic drawing failure');
       previewCalls.push({canvas:canvas.id,kind,loaded:model.loaded});
-      assert.ok(paint({sprite:model.basePath,material:'metal'}), 'base PNG must be paintable');
+      const basePaint = paint({sprite:model.basePath,material:'metal'});
+      assert.ok(basePaint, 'base PNG must be paintable');
+      paintSamples.push({kind,baseRecolored:basePaint.painted === true});
       for (const part of model.parts) {
         assert.ok(lookup(part.sprite), 'PNG must be loaded by the app before rendering');
-        assert.ok(paint(part), 'each head layer must have a drawable image');
+        const result = paint(part);
+        assert.ok(result, 'each head layer must have a drawable image');
+        if (part.id === 'fuel') assert.equal(result.tinted, true, 'off-white rag marker must produce the composited tinted canvas');
       }
     },
     resetEffects() {},
@@ -122,12 +127,14 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   await Promise.resolve();await Promise.resolve(); // Image onload -> cached imageValues in the real app.
   frames.shift()(150); // This exact call previously threw ReferenceError: paintedImage is not defined.
   assert.deepEqual(previewCalls.map(c=>c.canvas),['headPreview','preview']);
+  assert.equal(paintSamples[0].baseRecolored,false,'the PNG loads visibly while async metal coloring is pending');
   assert.equal(markerCalls.length,2,'the fuel marker is tinted in both previews');
   assert.ok(markerCalls.every(c=>c.hex==='#7F00FF' && c.target==='#E7DDC9'));
   assert.equal(recolorCalls.length,4,'the haft and three metal head layers each start only one recolor even with two previews');
   assert.equal(recolorCalls[0].options.oxidationAmount,0.5);
   await Promise.resolve();await Promise.resolve();
   frames.shift()(175);
+  assert.equal(paintSamples.at(-1).baseRecolored,true,'the completed recolor canvas replaces the temporary source PNG');
   assert.equal(recolorCalls.length,4,'repaint uses cached promises, not additional recolor requests');
   assert.equal(node('log').textContent.includes('Preview:'),false,'successful frames must not log an undefined paint callback');
   shouldThrow=true;
