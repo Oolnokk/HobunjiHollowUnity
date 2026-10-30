@@ -439,9 +439,11 @@
   // authored rig profile (the same sizeScales/groundOffsets/saddle anchor the
   // player's mount seat uses), and the rider is raised so its authored
   // posterior rests on that saddle instead of fusing at the waist.
-  function mountPlacement(mount, upper, riderSpeciesId, riderGender) {
+  function mountPlacement(mount, upper, riderSpeciesId, riderGender, genotype = null) {
     const rig = window.HOBUNJI_ATTACHMENT_RIG_PROFILES;
     const profile = rig?.creatures?.[mount.lowerRig];
+    const sizeClass = String(genotype?.sizeClass || mount.sizeClass).toLowerCase(); // The creature's own Size gene (wild specimens roll the species default), exactly what a wild/ridden Nazgraku uses.
+    mount = { ...mount, sizeClass };
     const size = profile?.sizeScales?.[mount.sizeClass];
     const sx = Number(size?.x) > 0 ? Number(size.x) : 1, sy = Number(size?.y) > 0 ? Number(size.y) : 1;
     const w = mount.modelWidth * sx, h = mount.modelWidth * mount.spriteAspect * sy;
@@ -474,7 +476,7 @@
       if (!upper) return upper;
       const riderSpecies = omgurku ? ID : (normalize(upper.userData?.speciesId) || optionSpecies(options));
       const riderGender = omgurku ? 'male' : (upper.userData?.gender || options.gender || options.profile?.fighter?.gender || 'male');
-      const lowerPlacement = mount ? mountPlacement(mount, upper, riderSpecies, riderGender) : placement;
+      const lowerPlacement = mount ? mountPlacement(mount, upper, riderSpecies, riderGender, options.mountGenotype) : placement;
       const lowerSprites = mount ? mount.sprites : SPRITES;
       const lowerRig = mount ? mount.lowerRig : LOWER_RIG;
       const lowerRefs = [];
