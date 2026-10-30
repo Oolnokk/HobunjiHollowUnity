@@ -23,6 +23,12 @@ assert.match(editor, /hachutuTorchFlail: \{ label: 'Hachutu Torch-Flail/);
 assert.match(editor, /HobunjiWeaponSpriteAssemblies\?\.tick\(dt\)/);
 assert.match(bandits, /HobunjiWeaponSpriteAssemblies\?\.setAction\(holder\.children\?\.\[0\]/);
 assert.match(grips, /hachututorchflail: \{/);
+assert(game.includes('windupFrac: WF, strikeFrac: SF, holdFrac:'), 'the player passes its live swing boundaries');
+assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs pass their own live swing boundaries');
+assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
+assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
+assert(source.includes('const shaftUp = q.shaftUp.set(0, 1, 0).applyQuaternion(baseQ)'), 'flails track the actual held tool instead of an artificial attack-up vector');
+assert(source.includes('state.direction.copy(shaftUp).applyQuaternion'), 'hold follow-through rotates beyond the exact shaft heading');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
 for (const [x, y] of [[1, 1], [3, 1], [2, 2], [4, 3], [3, 4], [5, 4]]) {
@@ -75,5 +81,17 @@ assert.match(fs.readFileSync('docs/tools/multi-sprite-weapon-editor/index.html',
 assert.equal(api.definitionFor('unknown', {}), null);
 assert.equal(scheduler.id, 'weapon-sprite-assemblies');
 assert.equal(scheduler.options.phase, 'pre-render');
+const follow = api.flailPitchOvershoot; // Pure animation phase math shared by player, NPC and standalone editor.
+const sf = 0.55, hf = 0.72, forward = Math.PI / 2, reverse = -Math.PI / 2;
+assert.equal(follow(0.20, sf, hf, forward), 0, 'the chain stays straight during windup-to-strike pitch follow');
+assert.equal(follow(sf, sf, hf, forward), 0, 'hold begins with zero discontinuity from straight shaft alignment');
+assert(follow(0.60, sf, hf, forward) > 0, 'hold continues in the same positive pitch direction');
+assert(follow(0.65, sf, hf, forward) > follow(0.60, sf, hf, forward), 'hold continues rotating after the tool stops');
+assert(follow(hf, sf, hf, forward) > follow(0.65, sf, hf, forward), 'maximum follow-through is reached by the hold endpoint');
+assert.equal(follow(hf, sf, hf, forward), -follow(hf, sf, hf, reverse), 'a negative pitch lerp reverses the chain follow-through');
+assert.equal(follow(1, sf, hf, forward), 0, 'return eases the chain back onto its handle');
+assert.equal(follow(0.65, sf, hf, 0), 0, 'a static pitch creates no artificial follow-through');
+assert(Math.abs(follow(hf, sf, hf, 10)) <= Math.PI / 3, 'extreme pitch does not exceed a 60 degree overshoot');
+assert.equal(follow(hf, sf, hf, NaN), 0, 'invalid pitch is safely ignored');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
 console.log('weapon sprite assemblies: PASS (registry, alpha anchors, layers, editor, player, hostiles, scheduler)');

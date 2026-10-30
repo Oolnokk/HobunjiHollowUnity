@@ -159,12 +159,15 @@
       metalOptions: options.metalOptions || null, resolveAsset: imageUrl, // Uses game's live plating/mastery resolver and the same canonical asset URL for every layer.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false,
+      lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
+      strikeTurnRad: 0, wasAttacking: false, lastFrameProgress: 0, // Keeps overshoot state isolated to the current swing.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
       scratch: {
         pivotLocal: new THREE.Vector3(), pivot: new THREE.Vector3(), velocity: new THREE.Vector3(),
         normal: new THREE.Vector3(), scale: new THREE.Vector3(), rootScale: new THREE.Vector3(), target: new THREE.Vector3(), // Cached world scales measure the handle against the holder for independent chain/head ratios.
         up: new THREE.Vector3(), orientedNormal: new THREE.Vector3(), right: new THREE.Vector3(),
         axisUp: new THREE.Vector3(0, 1, 0), headUp: new THREE.Vector3(), span: new THREE.Vector3(),
+        shaftUp: new THREE.Vector3(), pitchAxis: new THREE.Vector3(), pitchCross: new THREE.Vector3(), // Actual tool pitch direction and velocity for inertial hold-through.
         topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
         chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
         chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
@@ -172,7 +175,7 @@
         worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
         deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
       }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
-      attacking: false, progress: 0, detachedAt: 0, dead: false,
+      attacking: false, progress: 0, wf: 0.16, sf: 0.28, hf: 0.68, pitchTravelRad: null, detachedAt: 0, dead: false, // Per-weapon attack timing supplied by player, enemies, or editor.
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
     records.add(state);
@@ -258,7 +261,11 @@
     const state = states.get(root);
     if (!state) return;
     state.attacking = options.attacking === true;
-    state.progress = Number.isFinite(options.progress) ? options.progress : 0;
+    state.progress = Number.isFinite(options.progress) ? Math.max(0, Math.min(1, options.progress)) : 0;
+    state.wf = Number.isFinite(options.windupFrac) ? Math.max(0, Math.min(1, options.windupFrac)) : 0.16;
+    state.sf = Number.isFinite(options.strikeFrac) ? Math.max(state.wf, Math.min(1, options.strikeFrac)) : 0.28;
+    state.hf = Number.isFinite(options.holdFrac) ? Math.max(state.sf, Math.min(1, options.holdFrac)) : 0.68;
+    state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
   }
 
   function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
@@ -293,6 +300,16 @@
   function connectorAxisScale(part, axis) {
     const n = Number(part?.[axis] ?? part?.scale ?? 1); // Resolves independent connector size, falling back to legacy uniform drafts.
     return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
+  }
+
+  function flailPitchOvershoot(progress, strikeFrac, holdFrac, pitchTravelRad) {
+    if (!(progress > strikeFrac) || !Number.isFinite(pitchTravelRad) || Math.abs(pitchTravelRad) < 0.0001) return 0;
+    const sign = Math.sign(pitchTravelRad); // Continue turning in the same direction as the tool's pitch lerp.
+    const maxAngle = sign * Math.min(Math.PI / 3, Math.max(0.22, Math.abs(pitchTravelRad) * 0.38)); // Scaled follow-through, bounded to 60°.
+    const holdT = Math.max(0, Math.min(1, (progress - strikeFrac) / Math.max(0.0001, holdFrac - strikeFrac)));
+    const returnT = Math.max(0, Math.min(1, (progress - holdFrac) / Math.max(0.0001, 1 - holdFrac)));
+    const ease = t => t * t * (3 - 2 * t); // Ease into hold overshoot and back to shaft during recovery.
+    return maxAngle * (progress <= holdFrac ? ease(holdT) : 1 - ease(returnT));
   }
 
   function updateOne(state, dt, now) {
@@ -352,17 +369,34 @@
     state.lastPivot.copy(pivot);
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
-    const target = state.attacking
-      ? q.target.set(0, 1, 0).applyQuaternion(baseQ).normalize()
-      : q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize();
-    // Angular follow avoids the 180-degree deadlock of normalized linear lerp.
-    const turnAngle = state.direction.angleTo(target);
-    if (turnAngle > 1e-6) {
-      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
-        * Math.max(0.1, Math.min(60, Number(state.attacking ? motion.attackFollow : motion.idleFollow) || (state.attacking ? 15 : 7))); // Fast lever on attack, gentler travel lag at rest.
-      q.deltaQ.setFromUnitVectors(state.direction, target);
-      q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
-      state.direction.applyQuaternion(q.stepQ).normalize();
+    const shaftUp = q.shaftUp.set(0, 1, 0).applyQuaternion(baseQ).normalize(); // Real, fully-posed tool direction; no hardcoded attack-up target.
+    const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(baseQ).normalize(); // Tool pitch rotates around local X, including its parent/body rotations.
+    if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
+      state.strikeTurnRad = 0; state.hasShaftUp = false; // A new attack cannot inherit the last hold's rotation.
+    }
+    if (state.attacking && state.hasShaftUp && state.progress > state.wf && state.progress <= state.sf) {
+      const sine = q.pitchCross.crossVectors(state.lastShaftUp, shaftUp).dot(pitchAxis);
+      const turn = Math.atan2(sine, Math.max(-1, Math.min(1, state.lastShaftUp.dot(shaftUp))));
+      if (Math.abs(turn) < 0.5) state.strikeTurnRad += turn; // Observe pitch for procedural swings without explicit pose metadata.
+    }
+    state.lastShaftUp.copy(shaftUp); state.hasShaftUp = true;
+    state.wasAttacking = state.attacking; state.lastFrameProgress = state.progress;
+    const followShaft = state.attacking && state.progress >= state.wf * 0.8; // Straighten early, BEFORE the windup-to-strike transition.
+    if (followShaft) {
+      const pitchTravel = state.pitchTravelRad ?? state.strikeTurnRad;
+      const extra = flailPitchOvershoot(state.progress, state.sf, state.hf, pitchTravel);
+      state.direction.copy(shaftUp).applyQuaternion(q.stepQ.setFromAxisAngle(pitchAxis, extra)).normalize(); // Follow the exact tool pitch, then rotate beyond it during hold.
+    } else {
+      const target = state.attacking ? q.target.copy(shaftUp)
+        : q.target.set(-velocity.x * lag, -1, -velocity.z * lag).normalize(); // Outside combat, retain the existing hanging-chain inertia.
+      const turnAngle = state.direction.angleTo(target);
+      if (turnAngle > 1e-6) {
+        const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt))
+          * Math.max(0.1, Math.min(60, Number(state.attacking ? motion.attackFollow : motion.idleFollow) || (state.attacking ? 15 : 7)));
+        q.deltaQ.setFromUnitVectors(state.direction, target);
+        q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
+        state.direction.applyQuaternion(q.stepQ).normalize();
+      }
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
@@ -409,6 +443,8 @@
       itemKey: s.itemKey, loaded: !!(s.chain && s.headRoot),
       attached: !!s.root.parent, attacking: s.attacking,
       progress: s.progress, direction: s.direction.toArray(),
+      attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
+      pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Shows what drives hold-through rotation.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
         chainY: connectorAxisScale(s.config.flail.chain, 'scaleY'),
@@ -440,7 +476,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor,
+    opaqueAt, anchor, definitionFor, flailPitchOvershoot, // Deterministic phase helper exposed for focused regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

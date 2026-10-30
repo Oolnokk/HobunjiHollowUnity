@@ -23833,7 +23833,6 @@
         _swAxis.set(rightX, 0, rightZ);
 
         const anim = chargeAnimOverride || combatSwingAnim || activeAnimStyle();
-        window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], { attacking: activeTool === 'weapon' && toolSwingT > 0, progress }); // Only flail components consume this; the weapon's ordinary attack still drives the haft.
         // Tool actions keep their original fixed 16%/28% split; combat
         // triggers use each ability's own windupS/strikeS ratio (set via
         // triggerWeaponSwingVisual's opts) so a heavily-telegraphed swing
@@ -23856,6 +23855,13 @@
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
         const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
+        const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
+        const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
+        window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
+          attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
+          windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
+          pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? swingStrikePitch - swingWindupPitch : undefined,
+        }); // Late enough to pass real, eased weapon timing. Pre-render uses the final shaft pitch on this same frame.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {
