@@ -465,6 +465,11 @@ assert(editor.includes('git/trees/'));
 assert(editor.includes('function importRepoFurniture('));
 assert(editor.includes('scene.overrideMaterial = shellOutlineMaterial'));
 assert(editor.includes('camera.layers.set(1)'));
+const roughnessHelper=editor.slice(editor.indexOf('  function readRuinRoughness('),editor.indexOf('  function disposeRoomModel(')); // Execute the preview's saved-setting validator without creating WebGL.
+const roughnessContext={$:()=>({value:'.85'})};vm.createContext(roughnessContext);vm.runInContext(roughnessHelper,roughnessContext);
+for(const [value,expected] of [[0,0],[1,1],[-2,0],[4,1],['.25',.25],[NaN,.85],[undefined,.85],[Infinity,.85]]){
+  roughnessContext.value=value;assert.equal(vm.runInContext('readRuinRoughness(value)',roughnessContext),expected);
+}
 console.log('Live root growth: wrap reuse, source preservation, deterministic nodes, controls, retraction, disposal and Tools Hub wiring passed.');
 (async()=>{
   let turns=0;const progress=[]; // Cooperative creation must pause between layers while preserving the synchronous geometry.

@@ -163,10 +163,20 @@
     })().catch(error=>{loadingFrame?.remove();if(ruinFrame===loadingFrame){ruinFrame=null;ruinLoader=null;}throw error;});
     return ruinLoader;
   }
-  function roomForSeed(seed,size,request) {
+  function readRuinRoughness(value=$('ruinRoughness').value){
+    const number=Number(value??.85); // Saved recipes and the editable control share one finite, bounded roughness value.
+    return Number.isFinite(number)?Math.max(0,Math.min(1,number)):.85;
+  }
+  function disposeRoomModel(room){
+    if(!room||room.disposed)return;room.disposed=true;
+    const materials=new Set(); // Instanced and ordinary room pieces share one stone finish.
+    room.model.traverse(mesh=>{mesh.geometry?.dispose();for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material])if(material)materials.add(material);});
+    for(const material of materials)material.dispose();
+  }
+  function roomForSeed(seed,size,roughness,request) {
     ruinQueue=ruinQueue.catch(()=>{}).then(async()=>{
       if(request!==buildRequestId)throw Object.assign(new Error('Obsolete room request.'),{name:'AbortError'});
-      const key=seed+'|'+size; // A saved seed regenerates the same room without rebuilding on every growth-setting adjustment.
+      const key=seed+'|'+size+'|'+roughness; // A saved seed regenerates the same room without rebuilding on every growth-setting adjustment.
       if(ruinRoom?.key===key)return ruinRoom;
       $('ruinStatus').textContent='Building one room with the existing ruin generator…';
       buildMessage('loading','Loading the existing ruin generator…');
@@ -188,6 +198,8 @@
       if(meta?.rooms?.length!==1)throw new Error('The ruin preview must generate exactly one room.');
       const roots=api.takePreviewRoots(),model=new T.Group(); // Keep the generated architecture and furniture; the selected growth target is added later.
       roots.localeRoot.updateWorldMatrix(true,true);
+      const stoneMaterial=window.ProceduralFurniture.makePartMaterial({color:'#808080',materialRole:'stone'},0x808080); // All generated pieces use the same grey, lit stone finish.
+      stoneMaterial.side=T.DoubleSide; // Open wall planes remain visible from inside the ruin.
       let walls=0,floors=0,pieces=0; // On-device evidence that both real architectural surface types were imported.
       roots.localeRoot.traverse(mesh=>{
         if(!mesh.isMesh)return;
@@ -195,10 +207,10 @@
         let node=mesh;while(node&&node!==roots.localeRoot){if(node.visible===false||node.userData?.surfaceFoliage||node.userData?.surfaceFoliageGuide)return;node=node.parent;}
         if(!mesh.geometry?.getAttribute('position')||mesh.userData?.furnitureGlbPart)return;
         const copy=mesh.clone(false); // Clone owned buffers: the generator disposes its originals on the next seed.
-        copy.geometry=window.ProceduralFurniture.createRockGeometry(mesh.geometry,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness:.85,contactArea:.35}); // Reuse the furniture rock solver; instanced brick batches retain their placement matrices.
+        copy.geometry=window.ProceduralFurniture.createRockGeometry(mesh.geometry,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness,contactArea:.35}); // Reuse the furniture rock solver; instanced brick batches retain their placement matrices.
         pieces+=mesh.isInstancedMesh?mesh.count:1;
-        copy.userData.rockShape={enabled:true,roughness:.85};
-        copy.material=Array.isArray(mesh.material)?mesh.material.map(material=>material.clone()):mesh.material.clone();
+        copy.userData.rockShape={enabled:true,roughness};
+        copy.material=stoneMaterial;
         mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);
         copy.visible=true;copy.userData.liveRootFloor=isFloor;
         copy.userData.surfaceFoliageRole=isFloor?'floors':'walls';
@@ -207,10 +219,9 @@
       if(!floors||!walls)throw new Error('The generated room is missing its physical floor or walls.');
       model.updateWorldMatrix(true,true);
       const floorY=Number(meta.floorSurfaceY)||0; // Keep furniture placement and floor-node sampling in the generated room's own coordinate system.
-      if(ruinRoom)ruinRoom.model.traverse(mesh=>{mesh.geometry?.dispose();
-        if(Array.isArray(mesh.material))mesh.material.forEach(material=>material.dispose());else mesh.material?.dispose();});
-      ruinRoom={key,model,floorY,walls,floors,rooms:1,seed,size,pieces,rockRoughness:.85};
-      $('ruinStatus').textContent='1 room · '+walls+' generated wall panels · '+floors+' generated brick floor · '+pieces+' pieces converted to rock (85% roughness). Preparing vegetation…';
+      if(ruinRoom!==preparedRuin?.room)disposeRoomModel(ruinRoom); // Keep the previous visible stone alive until its replacement has finished building.
+      ruinRoom={key,model,stoneMaterial,floorY,walls,floors,rooms:1,seed,size,pieces,rockRoughness:roughness};
+      $('ruinStatus').textContent=`1 room · ${walls} walls · ${floors} floor · ${pieces} stone pieces (${Math.round(roughness*100)}% roughness). Preparing vegetation…`;
       return ruinRoom;
     });
     return ruinQueue;
@@ -224,7 +235,7 @@
     return {key,cover,room};
   }
   function frameEnvironment(room) {
-    const key=room?.key||'flat'; // Each room's actual wall bounds determine a comfortable camera distance on desktop and mobile.
+    const key=room?room.seed+'|'+room.size:'flat'; // Roughness edits preserve the user's current view; each room's actual wall bounds determine a comfortable camera distance on desktop and mobile.
     if(key===framedEnvironment)return;
     framedEnvironment=key;
     if(!room){orbit.target.set(0,1,0);camera.position.set(9,8,11);return;}
@@ -243,7 +254,7 @@
     let pendingCover=null,next=null; // Uncommitted generated assets are released on cancellation or failure.
     try {
       errorBox.style.display = 'none';
-      const room=$('previewEnvironment').value==='ruin'?await roomForSeed(readRecipe().seed,$('ruinSize').value,request):null;
+      const room=$('previewEnvironment').value==='ruin'?await roomForSeed(readRecipe().seed,$('ruinSize').value,readRuinRoughness(),request):null;
       if(request!==buildRequestId)return;
       pendingCover=room?await prepareRuin(room,request,controller.signal):null;
       if(request!==buildRequestId)return;
@@ -255,9 +266,9 @@
         onProgress:step=>{if(request===buildRequestId)buildMessage('roots','Building roots: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
       if(request!==buildRequestId)return;
       active?.dispose();active=next;next=null;
-      if(preparedRuin!==pendingCover){preparedRuin?.cover.dispose();preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
-      if(preparedRuin)for(const part of preparedRuin.cover.partPlan)part.mesh.visible=readRecipe().showGuide; // Guide toggles do not regenerate or retract the permanent cover.
-      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} walls · ${room.floors} floor · ${room.pieces} rock pieces (85% roughness). Vine cover is fully grown; Grow/Reset affects only the new shape.`;
+      if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
+      if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
+      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} walls · ${room.floors} floor · ${room.pieces} rock pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Vine cover is fully grown; Grow/Reset affects only the new shape.`;
       buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
       scene.add(active.group); rebuildMarkers();
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
@@ -471,7 +482,7 @@
   }
   function exportedRecipe() {
     return {schema:'hobunji_live_root_growth.v1',
-      environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,
+      environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),
       recipe:readRecipe(), position:readPosition().toArray(),
       target:{kind:source.kind,file:source.file,
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
@@ -500,6 +511,7 @@
     fillRecipe(json.recipe);
     $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
     $('ruinSize').value=['small','medium','large'].includes(json.ruinSize)?json.ruinSize:'small';
+    $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.85));
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
       const n = Number(json.position[i]); if (Number.isFinite(n)) $(id).value = String(n);
     });
@@ -526,6 +538,7 @@
   $('rebuild').onclick=()=>rebuild();
   $('cancelBuild').onclick=cancelBuild;
   $('previewEnvironment').onchange=()=>rebuild(false);
+  $('ruinRoughness').onchange=()=>{$('ruinRoughness').value=String(readRuinRoughness());if($('previewEnvironment').value==='ruin')rebuild();};
   $('ruinSize').onchange=()=>{if($('previewEnvironment').value==='ruin')rebuild(false);};
   $('previewRuin').onclick=()=>{$('previewEnvironment').value='ruin';rebuild(false);};
   $('repoFurnitureSearch').addEventListener('input',renderRepoCatalog);
