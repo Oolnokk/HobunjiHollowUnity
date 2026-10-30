@@ -1782,6 +1782,7 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
+        grappleFlail: { label: 'Grapple-Flail', icon: '🪝', sprite: 'assets/toolsprites/grapple-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'grappleFlail', metalKey: 'tinBronze' }, // Unique rope flail; reuses the same shaft-attached weapon assembly and hit logic.
         hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
@@ -16221,6 +16222,7 @@
       // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
       // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
       // 5 hand-authored tool keys just above.
+      ITEM_DEFS.grappleFlail = { icon: '🪝', label: 'Grapple-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Flail', 'Grapple'], desc: 'A two-part metal grapple head suspended on a generated rope.' }; // Inventory metadata only; acquisition remains authored separately.
       ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Unique, non-smithing weapon registered for inventory lookups without unlocking it by default.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
