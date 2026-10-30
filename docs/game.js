@@ -1782,6 +1782,7 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -1912,6 +1913,8 @@
             dmgType: shape.dmgType,
             spinning: shape.spinning,
             weaponIdleClass: shape.weaponIdleClass,
+            spriteLayers: shape.spriteLayers, // Future ordinary multi-PNG shapes inherit the reusable visual layers.
+            weaponAssembly: shape.weaponAssembly, // Future flail shapes inherit their authored chain/head layout.
             shapeKey, metalKey,
             itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
           };
@@ -16218,6 +16221,7 @@
       // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
       // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
       // 5 hand-authored tool keys just above.
+      ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Unique, non-smithing weapon registered for inventory lookups without unlocking it by default.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
@@ -22951,6 +22955,7 @@
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
         _markPngPlane(g);
+        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
         return g;
       }
 
@@ -23826,6 +23831,7 @@
         _swAxis.set(rightX, 0, rightZ);
 
         const anim = chargeAnimOverride || combatSwingAnim || activeAnimStyle();
+        window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], { attacking: activeTool === 'weapon' && toolSwingT > 0, progress }); // Only flail components consume this; the weapon's ordinary attack still drives the haft.
         // Tool actions keep their original fixed 16%/28% split; combat
         // triggers use each ability's own windupS/strikeS ratio (set via
         // triggerWeaponSwingVisual's opts) so a heavily-telegraphed swing
