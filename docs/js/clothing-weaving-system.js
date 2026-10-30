@@ -25,8 +25,8 @@
   }); // Central outfit-weight tuning; all four tradeoffs derive from total equipped clothing/armor weight, regardless of material.
   const CLOTHING_MARKER_KEY = '__hobunjiWovenClothing'; // Temporary bodyColors metadata passed only through avatar render data.
   const CRAFT_ID_MARKER = '#loom:'; // Makes each crafted article unique to legacy duplicate-collapsing logic.
-  const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'torso', 'overwear', 'pants']);
-  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'pauldron', 'torso', 'overwear', 'pants']); // All clothing slots contribute to outfit burden when an article supplies a weight; material type is not inferred from slot.
+  const CLOTHING_SLOTS = Object.freeze(['hat', 'hood', 'mask', 'torso', 'overwear', 'pants']);
+  const OUTFIT_WEIGHT_SLOTS = Object.freeze(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']); // All clothing slots contribute to outfit burden when an article supplies a weight; material type is not inferred from slot.
   const PATTERN_SCALE_REFERENCE = 0.25; // Converts normalized whole-pattern scale to the pre-normalization renderer scale; 1.00 now means the old 0.25.
   const PATTERN_SCALE_MIN = 0.4; // Normalized lower clamp used by woven pattern rendering; equivalent to the old physical 0.10.
   const PATTERN_SCALE_MAX = 3.2; // Normalized upper clamp used by woven pattern rendering; equivalent to the old physical 0.80.
@@ -463,7 +463,7 @@
   }
 
   function thirdTintKey(slot) {
-    return ({ hat: 'HAT_C', hood: 'HOOD_C', torso: 'TORSO_C', overwear: 'CLOTH_C', pants: 'PANTS_C' })[slot] || null;
+    return ({ hat: 'HAT_C', hood: 'HOOD_C', mask: 'MASK_C', torso: 'TORSO_C', overwear: 'CLOTH_C', pants: 'PANTS_C' })[slot] || null;
   }
 
   function portraitClothingColor(color) {
@@ -677,6 +677,7 @@
 
     const gear = gearInventory();
     const hasSecondary = await hasSecondaryDyeForItem(item); // One-color garments such as Ragged Hood no longer inherit a fake Trim channel from their broad slot type.
+    const thirdLabel = await hasPixelDyeForItem(item) ? 'Dye color 3 · Glow' : 'Pattern';
     const original = { colorA: clone(item.colorA), colorB: clone(item.colorB), colorC: clone(item.colorC), label: item.label };
     let active = 'A';
     let pendingA = item.colorA?.dyeId || null;
@@ -694,7 +695,7 @@
       if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
       if (dyeC) item.colorC = window.DyeSystem.toClothingColor(dyeC);
       previewEl.innerHTML = '';
-      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], ['Pattern', dyeC]]) {
+      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], [thirdLabel, dyeC]]) {
         if (!dye || (label === 'Trim' && !hasSecondary)) continue;
         const chip = document.createElement('span');
         chip.className = 'dye-preview-chip';
@@ -721,7 +722,7 @@
 
     function renderSubslots() {
       subslotsEl.innerHTML = '';
-      const slots = [['A', 'Primary'], ...(hasSecondary ? [['B', 'Trim']] : []), ['C', 'Pattern']];
+      const slots = [['A', 'Primary'], ...(hasSecondary ? [['B', 'Trim']] : []), ['C', thirdLabel]];
       for (const [which, label] of slots) {
         const button = document.createElement('button');
         button.className = 'dye-subslot-btn' + (active === which ? ' active' : '');
@@ -1757,6 +1758,14 @@
     return layersUseSecondaryDye(layers);
   }
 
+  async function hasPixelDyeForItem(item) {
+    const config = await cosmeticConfig(baseCosmeticId(item)).catch(() => null);
+    const partsHavePixelDye = parts => Object.values(parts || {}).some(part =>
+      Object.values(part?.layers || {}).some(layer => layer?.pixelDye?.paletteColorKey === 'C'));
+    return partsHavePixelDye(config?.parts) || Object.values(config?.speciesVariants || {})
+      .some(variant => partsHavePixelDye(variant?.parts));
+  }
+
   async function hasSecondaryDyeForItem(item) {
     return hasSecondaryDyeForCosmetic(baseCosmeticId(item)); // Lets EquipmentPanel ask about a literal garment without duplicating cosmetic-config loading.
   }
@@ -2634,9 +2643,12 @@
       patternCanvases.push(buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
     }
     await window.PixelWorkYield?.maybeYield();
-    const [r, g, b] = hexRgb(colorHex);
+    // The primary pattern may carry its own ink colour too (procedural mask glyphs paint every pattern in its own hue); otherwise it
+    // uses the item's pattern dye as before. The overpass is compared against the primary's actual ink.
+    const primaryInkHex = /^#[0-9a-f]{6}$/i.test(String(active[0].pattern.inkColorHex || '')) ? active[0].pattern.inkColorHex : colorHex;
+    const [r, g, b] = hexRgb(primaryInkHex);
     const overpassInkHex = active.length > 1 && /^#[0-9a-f]{6}$/i.test(String(active[1].pattern.inkColorHex || ''))
-      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(colorHex).toLowerCase()
+      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(primaryInkHex).toLowerCase()
       ? active[1].pattern.inkColorHex : null; // Same-color overpasses take the old single-pass fast path. // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
@@ -2775,7 +2787,9 @@
   }
 
   function patternImageForTint(patternMap, baseTintResolver, onPatternPending, img, sourceKey, tint) {
-    const descriptor = patternMap?.get(normalizeAssetPath(sourceKey));
+    // Pixel-dye layers (the mask) extend their tint key with '|pixelDye|<glowOnly>|<rgb>'. The cloth/wood partition (glowOnly=false) is
+    // patterned like any layer; the luminous partition (the eyes) is never patterned.
+    const descriptor = patternMap?.get(normalizeAssetPath(String(sourceKey).replace(/\|pixelDye\|false\|[^|]*$/, '')));
     const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
     const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
     if (!patterns.length && !trimPattern) return baseTintResolver(img, sourceKey, tint);
@@ -3019,6 +3033,8 @@
     openLoom,
     closeLoom,
     hasSecondaryDyeForItem,
+    hasPixelDyeForItem,
+    openExtendedRedyePanel,
     hasAuthoredTrimForCosmetic: async (baseCosmeticIdValue, speciesId = null, gender = null, view = 'front') => {
       const playerVariant = playerSpeciesGender();
       return !!await authoredTrimPatternForCosmetic(baseCosmeticIdValue, speciesId || playerVariant.speciesId, gender || playerVariant.gender, view);

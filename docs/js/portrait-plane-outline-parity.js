@@ -71,7 +71,7 @@
       );
       const neckY = Number(rig.neckLocal?.y) || 0;
       const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
-      const headWeight = t * t * (3 - 2 * t);
+      let headWeight = t * t * (3 - 2 * t);
 
       // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
       // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
@@ -88,7 +88,8 @@
       bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
       deformed.set(0, 0, 0);
       const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
-        ? headWeight * avatarApi.headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
+        ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
+      headWeight = Math.max(headWeight, headScaleWeight);
       for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
         const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
         if (!weight) continue;

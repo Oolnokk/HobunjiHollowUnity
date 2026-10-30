@@ -13,6 +13,12 @@
 // ── Xform Presets ──────────────────────────────────────────
 // B: used for all portrait layers (head, ur-head overlays, body, and cosmetics)
 // C/D: placeholder presets (identity)
+const portraitMaskIds = new Set();
+function isPortraitMaskCosmeticId(id) {
+  return portraitMaskIds.has(id) || /^(?:festivalmask_|hachutu_binding_mask)/.test(String(id || ''));
+}
+window.isPortraitMaskCosmeticId = isPortraitMaskCosmeticId;
+
 const _XFORM_PRESET_DEFAULTS = {
   A: { ax: -0.2,    ay: 0,       sx: 2.55, sy: 2.55 },
   B: { ax: -0.0983, ay: -0.0809, sx: 2.49, sy: 2.49 },
@@ -312,6 +318,35 @@ function resolvePortraitAssetUrl(relPath) {
   }
 }
 
+// Repository mirrors must keep the exact owner, repository and revision.
+// In particular, a preview must never recover by silently borrowing main.
+function portraitRepositoryUrlCandidates(value) {
+  const original = String(value);
+  const candidates = [original];
+  try {
+    const url = new URL(original);
+    let match;
+    if (url.hostname === 'cdn.jsdelivr.net' && (match = /^\/gh\/([^/]+)\/([^/@]+)@([^/]+)\/(.+)$/.exec(url.pathname))) {
+      candidates.push(`https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}${url.search}`);
+    } else if (url.hostname === 'raw.githubusercontent.com' && (match = /^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname))) {
+      candidates.push(`https://cdn.jsdelivr.net/gh/${match[1]}/${match[2]}@${match[3]}/${match[4]}${url.search}`);
+    }
+  } catch (_) { /* Local/relative assets retain their existing serving root. */ }
+  return candidates;
+}
+
+async function fetchPortraitJson(url, options) {
+  let lastError;
+  for (const candidate of portraitRepositoryUrlCandidates(url)) {
+    try {
+      const response = await fetch(candidate, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${candidate}`);
+      return await response.json();
+    } catch (error) { lastError = error; }
+  }
+  throw lastError;
+}
+
 function loadImg(relPath) {
   const cached = IMG_CACHE.get(relPath);
   // Fast path: image already resolved — return a pre-resolved promise so callers
@@ -347,7 +382,7 @@ function loadImg(relPath) {
   ];
 
   const seen = new Set();
-  const uniqueCandidates = candidateUrls.filter((url) => {
+  const uniqueCandidates = candidateUrls.filter(Boolean).flatMap(portraitRepositoryUrlCandidates).filter((url) => {
     if (!url || seen.has(url)) return false;
     seen.add(url);
     return true;
@@ -657,6 +692,83 @@ function _imageForTint(img, sourceKey, tint) {
   if (tint?.mode === 'hueSatFill') return getHueSatFillCanvas(img, sourceKey, tint);
   if (tint?.mode === 'shadeFill') return getShadeFillCanvas(img, sourceKey, tint);
   return img;
+}
+
+// The default colour of a pixel dye: its defaultHex, or one hue of its defaultHexPool chosen by a stable seed (same character, same hue).
+function pixelDyeDefaultHex(pixelDye, seed, dyeSlot) {
+  const pool = Array.isArray(pixelDye?.defaultHexPool) ? pixelDye.defaultHexPool.filter(hex => parseHexColor(hex)) : [];
+  if (!pool.length) return pixelDye?.defaultHex || pixelDye?.sourceHex;
+  let h = 2166136261;
+  for (const ch of String(seed) + '|' + dyeSlot) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return pool[(h >>> 0) % pool.length];
+}
+window.pixelDyeDefaultHex = pixelDyeDefaultHex;
+
+// Exact authored marker selection happens before ordinary cloth tinting. Both
+// partitions preserve alpha; only the selected pixels use the third dye.
+const _PIXEL_DYE_CACHE = new PortraitPixelCache(8 * 1024 * 1024);
+function pixelDyeLayerImage(img, layer, rgb) {
+  if (!layer.pixelDye) return img;
+  const key = [layer.url, layer.pixelDye.sourceHex, layer.pixelDyeOnly, ...(rgb || [])].join('|');
+  const cached = _PIXEL_DYE_CACHE.get(key);
+  if (cached) return cached;
+  const source = parseHexColor(layer.pixelDye.sourceHex);
+  if (!source) return img;
+  // The marker is a COLOUR FAMILY, not one exact value: artists shade it, so a second glowing mass may only contain darker versions of
+  // the same hue (e.g. (74,0,148) next to (127,0,255)). A pixel belongs when it is the source scaled by some brightness k, within a small
+  // tolerance; its dye colour is scaled by the same k, so the whole eye (core, gradient and ring) follows the dye instead of only the
+  // few exactly-#7F00FF pixels.
+  const peak = Math.max(source.r, source.g, source.b, 1);
+  const tolerance = 10;
+  const canvas = Object.assign(document.createElement('canvas'), {
+    width: img.naturalWidth || img.width, height: img.naturalHeight || img.height,
+  });
+  canvas.naturalWidth = canvas.width;
+  canvas.naturalHeight = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const W = canvas.width, H = canvas.height, data = pixels.data;
+  const brightness = new Float32Array(W * H); // k for marker-family pixels, 0 elsewhere.
+  for (let p = 0; p < W * H; p++) {
+    const i = p * 4;
+    if (!data[i + 3]) continue;
+    const k = Math.max(data[i], data[i + 1], data[i + 2]) / peak;
+    if (k >= 0.28 && k <= 1.04
+      && Math.abs(data[i] - source.r * k) <= tolerance && Math.abs(data[i + 1] - source.g * k) <= tolerance && Math.abs(data[i + 2] - source.b * k) <= tolerance) brightness[p] = Math.min(1, k);
+  }
+  for (let p = 0; p < W * H; p++) {
+    const i = p * 4, k = brightness[p], matches = k > 0;
+    if (matches !== !!layer.pixelDyeOnly) { data[i + 3] = 0; continue; }
+    if (layer.pixelDyeOnly && data[i + 3]) {
+      const dye = rgb || [source.r, source.g, source.b];
+      data[i] = Math.round(dye[0] * k); data[i + 1] = Math.round(dye[1] * k); data[i + 2] = Math.round(dye[2] * k);
+    }
+  }
+  ctx.putImageData(pixels, 0, 0);
+  // One centroid per connected glowing mass (each eye), weighted toward the bright core.
+  const seen = new Uint8Array(W * H), masses = [];
+  for (let start = 0; start < W * H && layer.pixelDyeOnly; start++) {
+    if (!brightness[start] || seen[start]) continue;
+    const stack = [start]; seen[start] = 1;
+    let weight = 0, sumX = 0, sumY = 0, count = 0;
+    while (stack.length) {
+      const p = stack.pop(), x = p % W, y = (p - x) / W, w = brightness[p] * brightness[p] * data[p * 4 + 3];
+      sumX += (x + 0.5) * w; sumY += (y + 0.5) * w; weight += w; count++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const q = ny * W + nx;
+        if (brightness[q] && !seen[q]) { seen[q] = 1; stack.push(q); }
+      }
+    }
+    if (count >= 4 && weight > 0) masses.push({ x: sumX / weight / W, y: sumY / weight / H, weight });
+  }
+  const strongest = Math.max(1, ...masses.map(m => m.weight));
+  canvas.pixelDyeCentroids = masses.map(m => ({ x: m.x, y: m.y, scale: Math.max(0.6, Math.min(1, Math.sqrt(m.weight / strongest))) })); // Smaller eyes get a proportionally smaller glow.
+  canvas.pixelDyeCentroid = canvas.pixelDyeCentroids[0] || null; // First mass, kept for callers that expect one.
+  _PIXEL_DYE_CACHE.set(key, canvas);
+  return canvas;
 }
 
 // Behind-view layers that need to cancel the later whole-canvas mirror (see
@@ -1068,7 +1180,7 @@ function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
 
 function getProfileSpriteXforms(profile) {
   if (!profile) return [];
-  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
+  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const resolvedFighter = resolvePortraitFighter(fighter) || fighter;
   const opacityMaskLayer = resolvedFighter?.opacityMaskLayer || fighter?.opacityMaskLayer || null;
   const headUrl = resolvedFighter?.headUrl || fighter?.headUrl;
@@ -1139,6 +1251,7 @@ function getProfileSpriteXforms(profile) {
     // Hat (under hood), hood, pauldron, hat (over hood)
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
+    pushGroupRecords(mask);
     pushGroupRecords(hood, layer => layer.pos !== 'back');
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
@@ -1311,7 +1424,7 @@ function resolveLayerTintSlot(key, baseTintSlot) {
 // ── Rendering ──────────────────────────────────────────────
 
 async function renderProfile(canvas, profile, renderOptions = {}) {
-  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
+  const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
   const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
@@ -1355,6 +1468,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const _needsScale = (_scaleX !== 1 || _scaleY !== 1);
   if (_needsScale) { ctx.save(); ctx.scale(_scaleX, _scaleY); }
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
+  canvas.hobunjiPortraitGlow = null; // Rebuild/removal must clear stale mask lighting.
+  canvas.hobunjiPortraitGlows = null;
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
   const tintFor = (slot) => {
@@ -1406,7 +1521,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const hiddenCosmeticGroups = new Set([
     ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
-    ...(hoodHidesFacialHair(hood) ? [facialHair] : []),
+    ...((hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask)) ? [facialHair] : []),
   ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
@@ -1419,6 +1534,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hatUnderLayers   = [];  // hat front when configured to render under hoods
   const elevatedEyeAccessoryLayers = []; // tagged eye accessories that render above under-hood hats
   const hoodBackLayers = []; // authored hood rear pieces — breathing-warped behind the skull instead of repainting over it.
+  const maskLayers = []; // Face masks share the head rig but equip independently from hoods.
   const hoodLayers    = [];  // hood front/opening pieces — breathing-warped above the skull.
   const pauldronLayers = []; // pauldron — static draw order
   const hatOverLayers    = [];  // hat front when hoodLayering=over (default)
@@ -1492,6 +1608,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   }
   if (renderHeadCosmetics) {
+    pushToTarget(mask, maskLayers);
     const hoodIsWorn = !!hood && String(hood.id || '').toLowerCase() !== 'none'; // A selected hood/facewrap counts as occupied even if the structural layer itself is not a selectable hairstyle.
     for (const fixedLayer of (fixedPortraitSlots?.pauldron || [])) { // Structural pauldron-slot layers append after equipped pauldron art unless their own visibility rule suppresses them.
       if (fixedLayer?.hideWhenHood === true && hoodIsWorn) continue; // Generic fixed-layer rule used by Harlyao Skeleton female default hair so it never clips through a hood.
@@ -1519,7 +1636,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
+      elevatedEyeAccessoryLayers, maskLayers, hoodBackLayers, hoodLayers, pauldronLayers, hatUnderLayers,
       hatOverLayers,
     ].forEach(useBehindLayers);
     // The base body (arms/torso) needs the same pre-flip as every cosmetic
@@ -1537,7 +1654,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const cosmeticLayerLists = [
       preBackLayers, torsoClothingLayers, overwearLayers, sideLeftLayers,
       rightSideHairLayers, facialHairLayers, frontHairLayers, eyesLayers,
-      elevatedEyeAccessoryLayers, upperFaceLayers, hoodBackLayers, hoodLayers, pauldronLayers,
+      elevatedEyeAccessoryLayers, upperFaceLayers, maskLayers, hoodBackLayers, hoodLayers, pauldronLayers,
       hatUnderLayers, hatOverLayers,
     ];
     for (const layerList of cosmeticLayerLists) {
@@ -1575,6 +1692,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     ...frontHairLayers.map(({ layer }) => layer.url),
     ...hatUnderLayers.map(({ layer }) => layer.url),
     ...(renderBehindView ? [] : elevatedEyeAccessoryLayers.map(({ layer }) => layer.url)),
+    ...maskLayers.map(({ layer }) => layer.url),
     ...hoodBackLayers.map(({ layer }) => layer.url),
     ...hoodLayers.map(({ layer }) => layer.url),
     ...pauldronLayers.map(({ layer }) => layer.url),
@@ -1703,25 +1821,70 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     }
   };
 
+  // Dye 3 (the luminous pixel dye) may declare a defaultHexPool: unless the wearer applied a dye, the colour is one of the pool's hues,
+  // chosen per wearer by a seed kept on the profile (so every render of the same character agrees and never flickers).
+  const pixelDyeDefaultRgb = (pixelDye, dyeSlot) => {
+    const seed = Array.isArray(pixelDye.defaultHexPool) && pixelDye.defaultHexPool.length
+      ? (profile.pixelDyeSeed ||= 'pixel-dye:' + Math.random().toString(36).slice(2)) // No identity supplied: random once per profile.
+      : '';
+    const c = parseHexColor(pixelDyeDefaultHex(pixelDye, seed, dyeSlot));
+    return [c.r, c.g, c.b];
+  };
+
+  const withPixelDyeLayer = (entry, draw) => {
+    const { layer, group } = entry;
+    let img = imgMap.get(layer.url);
+    if (!img) return;
+    let tint = entry.tint || entry.filter;
+    let sourceKey = layer.url;
+    if (layer.pixelDye) {
+      const dyeSlot = resolveLayerTintSlot(layer.pixelDye.paletteColorKey || 'C', group?.tintSlot);
+      const rgb = _resolveTargetRgbColor(bodyColors[dyeSlot], _dyeReferenceHexForSlot(dyeSlot, speciesId))
+        || pixelDyeDefaultRgb(layer.pixelDye, dyeSlot);
+      img = pixelDyeLayerImage(img, layer, layer.pixelDyeOnly ? rgb : null);
+      sourceKey += '|pixelDye|' + !!layer.pixelDyeOnly + '|' + rgb.join(',');
+      if (layer.pixelDyeOnly) {
+        tint = { mode: 'none' }; // Literal dye RGB is the luminous core color.
+        const glow = layer.pixelDye.glow;
+        if (glow && img.pixelDyeCentroids?.length) {
+          const color = '#' + rgb.map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
+          ctx.save();
+          ctx.shadowColor = color;
+          ctx.shadowBlur = Number(glow.blur) || 3;
+          draw(img, tint, sourceKey);
+          ctx.restore();
+          const xf = resolveXform(layer);
+          const h = PORTRAIT_L * xf.sy;
+          const w = img.width / img.height * PORTRAIT_L * Math.abs(xf.sx);
+          canvas.hobunjiPortraitGlows = img.pixelDyeCentroids.map(center => ({ // One fake light + glow circle per glowing mass (each eye).
+            color, radius: glow.radius * center.scale, intensity: glow.intensity * center.scale, orbScale: center.scale,
+            x: (PORTRAIT_CW / 2 + xf.ay * PORTRAIT_L + (xf.sx < 0 ? 0.5 - center.x : center.x - 0.5) * w) / PORTRAIT_CW,
+            y: (PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L + (center.y - 0.5) * h) / PORTRAIT_CH,
+          }));
+          canvas.hobunjiPortraitGlow = canvas.hobunjiPortraitGlows[0]; // First mass, kept for older readers.
+          return;
+        }
+      }
+    }
+    draw(img, tint, sourceKey);
+  };
+
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
   const drawEmoteLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
-      const img = imgMap.get(layer.url);
-      if (img) drawLayerWithEmote(img, resolveXform(layer), tint || filter, 1, layer.url);
-    }
+    for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
+      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey);
+    });
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
   const drawBreathingLayers = (layerList) => {
-    for (const { layer, tint, filter } of layerList) {
-      const img = imgMap.get(layer.url);
-      if (!img) continue;
+    for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(layer), tint || filter, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, layer.url, imageForTint);
+        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(layer), tint || filter, layer.url, imageForTint);
+        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
-    }
+    });
   };
 
   // Neck-rig construction needs the base head's real opaque-pixel centroid,
@@ -1748,6 +1911,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // -- otherwise the head is the one thing still mirrored relative to the
       // front while hair/hood/cosmetics and the arms/torso are not.
       head:          () => {
+        drawEmoteLayers(maskLayers); // The far-side face mask must remain behind the rear skull.
         if (headUrl) {
           const img = imgMap.get(headUrl);
           if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl);
@@ -1856,6 +2020,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
   drawBreathingLayers(hoodLayers);
+  drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
@@ -1912,6 +2077,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            pixelDye: layer.pixelDye || null,
             materialKind: layer.materialKind || null, // Per-layer hybrid material survives cosmetic portrait layer extraction.
             xformPreset: 'B',
           });
@@ -1963,7 +2129,10 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
       }
     }
   }
-  return layers;
+  return layers.flatMap(layer => layer.pixelDye ? [
+    layer,
+    { ...layer, pixelDyeOnly: true, paletteColorKey: layer.pixelDye.paletteColorKey || 'C' },
+  ] : [layer]);
 }
 
 /**
@@ -2127,6 +2296,7 @@ function portraitOptionFromJson(entry, json) {
   const resolvedTintSlot = taggedTintSlot || (
                            json.slot === 'hat' && colorRange ? 'HAT'
                          : json.slot === 'hood' && colorRange ? 'HOOD'
+                         : json.slot === 'mask' && colorRange ? 'MASK'
                          : json.slot === 'torso' && colorRange ? 'TORSO'
                          : !json.appearance && colorRange ? 'CLOTH'
                          : json.slot === 'hood' && !json.appearance ? (json.tintSlot ?? 'HOOD')
@@ -2146,9 +2316,7 @@ const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, las
 async function loadPortraitSpeciesJson(url) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await fetch(url, attempt ? { cache: 'reload' } : undefined);
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-      return await response.json();
+      return await fetchPortraitJson(url, attempt ? { cache: 'reload' } : undefined);
     } catch (error) {
       if (attempt) throw error;
       portraitSpeciesLoadStatus.retryCount++;
@@ -2163,20 +2331,8 @@ window.portraitSpeciesLoadSnapshot = () => ({ ...portraitSpeciesLoadStatus, figh
  * Throws on unrecoverable failure.
  */
 async function loadPortraitCosmetics(configBase) {
-  let indexBaseUrl = new URL(configBase + 'cosmetics/index.json', window.location.href).toString();
-  let data;
-  try {
-    const resp = await fetch(indexBaseUrl);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    data = await resp.json();
-  } catch (e) {
-    console.warn('[portrait] Primary index fetch failed, falling back to raw GitHub URL', e);
-    const rawUrl = 'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/main/docs/config/cosmetics/index.json';
-    const resp2 = await fetch(rawUrl);
-    if (!resp2.ok) throw new Error('HTTP ' + resp2.status);
-    data = await resp2.json();
-    indexBaseUrl = rawUrl;
-  }
+  const indexBaseUrl = new URL(configBase + 'cosmetics/index.json', window.location.href).toString();
+  const data = await fetchPortraitJson(indexBaseUrl);
 
   const allEntries = (data.entries || []).filter(e => e.id && (e.id.startsWith('appearance::') || !e.id.includes('::')));
   const pathToEntries = new Map();
@@ -2192,9 +2348,7 @@ async function loadPortraitCosmetics(configBase) {
     const jsonUrl = new URL(path, indexBaseUrl).toString();
     let json;
     try {
-      const resp = await fetch(jsonUrl);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status + ' for ' + path);
-      json = await resp.json();
+      json = await fetchPortraitJson(jsonUrl);
     } catch (e) {
       console.warn('[portrait] Could not load cosmetic JSON:', path, e);
       return;
@@ -2217,6 +2371,7 @@ async function loadPortraitCosmetics(configBase) {
   const facialHairOptions = [{ id: 'none', label: 'No Facial Hair', tintSlot: null, layers: [] }];
   const upperFaceOptions = [{ id: 'none', label: 'No Upper Face', tintSlot: null, layers: [] }];
   const hatOptions        = [{ id: 'none', label: 'No Hat',         tintSlot: null, layers: [] }];
+  const maskOptions = [{ id: 'none', label: 'No Mask', tintSlot: null, layers: [] }];
   const hoodOptions       = [{ id: 'none', label: 'No Hood',        tintSlot: null, layers: [] }];
   const torsoPortraitOptions = [{ id: 'none', label: 'No Torso Clothing', tintSlot: null, layers: [] }];
   const armPortraitOptions = [{ id: 'none', label: 'No Arm Clothing', tintSlot: null, layers: [] }];
@@ -2237,6 +2392,7 @@ async function loadPortraitCosmetics(configBase) {
               : opt.portraitSlot === 'upperFace'  ? 'upperFace'
               : opt.slot === 'hat'        ? 'hat'
               : opt.slot === 'hood'       ? 'hood'
+              : opt.slot === 'mask'       ? 'mask'
               : opt.hairSlot === 'front'  ? 'hairFront'
               : opt.hairSlot === 'back'   ? 'hairBack'
               : opt.hairSlot === 'side'   ? 'hairSide'
@@ -2244,6 +2400,7 @@ async function loadPortraitCosmetics(configBase) {
               : portraitCategoryForEntry(entry);
     if      (cat === 'hat')        hatOptions.push(opt);
     else if (cat === 'hood')       hoodOptions.push(opt);
+    else if (cat === 'mask') { maskOptions.push(opt); portraitMaskIds.add(opt.id); }
     else if (cat === 'hairFront')  hairFrontOptions.push(opt);
     else if (cat === 'hairBack')   hairBackOptions.push(opt);
     else if (cat === 'hairSide')   hairSideOptions.push(opt);
@@ -2288,8 +2445,7 @@ async function loadPortraitCosmetics(configBase) {
       }));
       LAST_SPECIES_DATA_BY_ID = speciesDataById;
       try {
-        const fallbackRes = await fetch(new URL('./cosmetic-fallback-groups.json', speciesIdxUrl).toString());
-        LAST_COSMETIC_FALLBACK_GROUPS = fallbackRes.ok ? await fallbackRes.json() : null;
+        LAST_COSMETIC_FALLBACK_GROUPS = await fetchPortraitJson(new URL('./cosmetic-fallback-groups.json', speciesIdxUrl).toString());
       } catch (e) {
         LAST_COSMETIC_FALLBACK_GROUPS = null;
       }
@@ -2475,7 +2631,7 @@ async function loadPortraitCosmetics(configBase) {
   portraitSpeciesLoadStatus.phase = 'ready';
   LAST_RANDOMIZATION_RULES_BY_FIGHTER = randomizationRulesByFighter;
 
-  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
+  return { hairFrontOptions, hairBackOptions, hairSideOptions, hairSideLOptions, eyesOptions, upperFaceOptions, facialHairOptions, hatOptions, hoodOptions, maskOptions, torsoPortraitOptions, armPortraitOptions, indexEntries, optionCache, bodyColorRangesByGender, allowedCosmeticsByFighter, cosmeticWeightsByFighter, forcedCosmeticsByFighter, conditionalCosmeticsByFighter, randomizationRulesByFighter, mandatoryCosmeticSlotsByFighter, exclusiveCosmeticsByFighter };
 }
 
 // ── Seeded randomisation ───────────────────────────────────
@@ -2578,7 +2734,7 @@ function isClothPortraitOption(option, clothMaterialTag) {
   // Older cloth cosmetics predate explicit material tags. Treat untyped
   // portrait clothing as cloth while preserving tagged non-cloth items such as
   // leather bandoliers and rigid-fiber hats.
-  return !option.materialTag && (option.slot === 'hood' || option.slot === 'torso' || option.slot === 'overwear');
+  return !option.materialTag && (option.slot === 'hood' || option.slot === 'mask' || option.slot === 'torso' || option.slot === 'overwear');
 }
 
 
@@ -2847,6 +3003,7 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
     ? weightedPickRng(filteredHat.length ? filteredHat : [noHat], weights.hat, rng)
     : (rng() < 0.5 ? pickRng(filteredHat) : noHat);
   const noHood     = filteredHood.find(o => o.id === 'none') ?? filteredHood[0];
+  const mask = {id:'none',label:'No Mask',tintSlot:null,layers:[]};
   let hood = weights?.hood
     ? weightedPickRng(filteredHood.length ? filteredHood : [noHood], weights.hood, rng)
     : noHood;
@@ -3037,7 +3194,7 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
       : randomColorFromRangeSeeded(hatSourceRange, rng);
   }
   return ensurePortraitClothingPaletteColors(
-    { fighter, hairFront, hairBack, hairSide, hairSideL, hood, eyes, upperFace, facialHair, hat, torsoCosmetic, armCosmetic, bodyColors },
+    { fighter, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, upperFace, facialHair, hat, torsoCosmetic, armCosmetic, bodyColors },
     rng,
     { clothingRule }
   );

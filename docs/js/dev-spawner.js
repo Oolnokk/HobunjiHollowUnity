@@ -193,6 +193,7 @@
   const DEV_SPAWN_OMGURKU_KEY = 'omgurku:hunter'; // Rival tribe hunter (compound rider + quadruped) through the same tribe spawn path.
   const DEV_SPAWN_AVENGER_KEY = 'porakaneki:avenger'; // Nazgraku-mounted Porakaneki Avenger through the same tribe spawn path.
   const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
+  const DEV_SPAWN_MASKBOUND_PREFIX = 'maskbound:'; // Arena-only buttons route all three guardian troop forms through MaskboundGuardianCombat.
   const DEV_SPAWN_HARLYAO_LICH_KEYS = Object.freeze({ // Testing Arena-only spellcaster buttons routed through HarlyaoLichCombat rather than CREATURE_DB.
     tothal: 'harlyao-lich:tothal',
     hronal: 'harlyao-lich:hronal',
@@ -244,12 +245,17 @@
       const avengerBtn = `<button type="button" class="fed-btn${avengerActive}" data-species="${deps.esc(DEV_SPAWN_AVENGER_KEY)}">🐟 Porakaneki Avenger</button>`;
       const harlyaoSkeletonActive = DEV_SPAWN_HARLYAO_SKELETON_KEY === devSpawnSelectedKey ? ' fed-active' : ''; // Used to keep the skeleton button's selected state consistent with every other arena spawn option.
       const harlyaoSkeletonBtn = `<button type="button" class="fed-btn${harlyaoSkeletonActive}" data-species="${deps.esc(DEV_SPAWN_HARLYAO_SKELETON_KEY)}">☠️ Harlyao Skeleton</button>`; // Added to the same species grid so it works on mobile/controller through the existing panel.
+      const maskboundBtns = Object.entries(window.MaskboundGuardianCombat?.troopTypes || {}).map(([type, troop]) => { // Each authored body silhouette can be tested from the same mobile species grid.
+        const key = DEV_SPAWN_MASKBOUND_PREFIX + type;
+        const active = key === devSpawnSelectedKey ? ' fed-active' : '';
+        return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🪵 ${deps.esc(troop.label)}</button>`;
+      });
       const lichBtns = Object.entries(DEV_SPAWN_HARLYAO_LICH_KEYS).map(([type, key]) => { // Three explicit arena buttons make each spell kit independently testable on mobile.
         const active = key === devSpawnSelectedKey ? ' fed-active' : ''; // Selected styling uses the existing species-grid convention.
         const label = type.charAt(0).toUpperCase() + type.slice(1); // Human-readable lich tradition shown on the button.
         return `<button type="button" class="fed-btn${active}" data-species="${deps.esc(key)}">🜏 ${deps.esc(label)} Lich</button>`;
       });
-      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, avengerBtn, omgurkuBtn, harlyaoSkeletonBtn], lichBtns).join('');
+      grid.innerHTML = creatureBtns.concat(banditBtns).concat([porakanekiBtn, avengerBtn, omgurkuBtn, harlyaoSkeletonBtn], maskboundBtns, lichBtns).join('');
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
@@ -442,6 +448,32 @@
     renderDevSpawnPanel();
   }
 
+  // Guardian troop shapes are independently available in the Arena so dramatic
+  // body ratios, mask variants, hand placement and collisions can be verified on mobile.
+  async function spawnDevArenaMaskboundGuardian(troopType, tier) {
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
+    if (!window.MaskboundGuardianCombat?.makeEntity) throw new Error('Maskbound guardian combat module is not loaded.');
+    const angle = Math.random() * Math.PI * 2; // Random bearing for safe testing-ring placement.
+    const dist = deps.TILE * (1.5 + Math.random() * 2.5); // Same spawn-ring policy as Minions.
+    const x = deps.player.x + Math.cos(angle) * dist; // World X for BanditCombat's common entity builder.
+    const y = deps.player.y + Math.sin(angle) * dist; // World Y/Z for the same builder.
+    const creature = await window.MaskboundGuardianCombat.makeEntity({
+      troopType, tier, x, y, zoneId: DEV_ARENA_ZONE_ID,
+      extra: { homeX: x, homeY: y, state: 'idle' },
+    });
+    if (!creature) throw new Error('Could not spawn maskbound guardian; check the humanoid debug report.');
+    if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) {
+      window.BanditCombat?.discardEntity?.(creature);
+      return;
+    }
+    deps.hostileObjects.add(creature);
+    _arenaSpawnedCreatures.add(creature);
+    const report = window.MaskboundGuardianCombat.formatDebug(creature); // Copyable, console-free diagnostics for mobile.
+    window.__farmLog?.('[dev-arena] ' + report, 'wildlife');
+    showSpawnStatus(report);
+    renderDevSpawnPanel();
+  }
+
   async function spawnDevArenaHarlyaoLich(type, tier) {
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) return;
     if (!window.HarlyaoLichCombat?.makeEntity) { throw new Error('Could not spawn Harlyao Lich — lich combat class is unavailable.'); }
@@ -582,7 +614,7 @@
   let lastSpawnRequest = { phase: 'idle', selected: null, tier: null, error: null }; // Scalar status survives log scrolling and panel close/reopen.
 
   function spawnSnapshot() {
-    return { latestChange: 'Arena spawn failures are caught and visible; failed gang configuration requests can retry.', ...lastSpawnRequest,
+    return { latestChange: 'Maskbound sentinel/bulwark/reacher spawn with copyable per-troop shape and wood-color diagnostics.', ...lastSpawnRequest,
       currentArea: deps?.getCurrentArea?.() ?? null, liveFromPanel: _arenaSpawnedCreatures.size,
       humanoidBuild: window.BanditCombat?.characterBuildSnapshot?.() ?? null };
   }
@@ -608,6 +640,7 @@
       else if (selected === DEV_SPAWN_OMGURKU_KEY) await spawnDevArenaPorakaneki(tier, 'omgurku');
       else if (selected === DEV_SPAWN_AVENGER_KEY) await spawnDevArenaPorakaneki(tier, 'porakaneki', 'nazgraku');
       else if (selected === DEV_SPAWN_HARLYAO_SKELETON_KEY) await spawnDevArenaHarlyaoSkeleton(tier);
+       else if (selected?.startsWith('maskbound:')) await spawnDevArenaMaskboundGuardian(selected.slice('maskbound:'.length), tier);
       else if (selected?.startsWith('harlyao-lich:')) await spawnDevArenaHarlyaoLich(selected.slice('harlyao-lich:'.length), tier);
       else await spawnDevArenaCreature(selected);
       if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) throw new Error('Spawn canceled because you left the Testing Arena.');

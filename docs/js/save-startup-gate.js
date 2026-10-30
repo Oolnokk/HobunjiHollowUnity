@@ -119,6 +119,7 @@
   function clothingTintKeysForSlot(slot) {
     if (slot === 'hat') return ['HAT'];
     if (slot === 'hood') return ['HOOD', 'HOOD_B'];
+    if (slot === 'mask') return ['MASK', 'MASK_B'];
     if (slot === 'pauldron') return ['PAULDRON'];
     if (slot === 'torso') return ['TORSO'];
     if (slot === 'overwear') return ['CLOTH', 'CLOTH_B'];
@@ -203,11 +204,16 @@
       const profileKeyBySlot = {
         hat: 'hat',
         hood: 'hood',
+        mask: 'mask',
         pauldron: 'pauldron',
         torso: 'torsoCosmetic',
         overwear: 'armCosmetic',
       };
 
+      if (window.isPortraitMaskCosmeticId?.(gearClothing.hood?.cosmeticId)) {
+        gearClothing.mask ||= gearClothing.hood;
+        gearClothing.hood = null;
+      }
       for (const [slot, profileKey] of Object.entries(profileKeyBySlot)) {
         const item = gearClothing[slot] || null;
         profile[profileKey] = resolveSavePortraitClothingOption(cosmetics, slot, item, character);

@@ -428,10 +428,10 @@
   // the camera's actual right vector instead gives the same screen radius
   // no matter which way the camera is yawed, by construction.
   const _camRightVec = new THREE.Vector3();
-  function _lightScreenRadius(tx, tz, worldY, tiles) {
-    _camRightVec.setFromMatrixColumn(deps.camera.matrixWorld, 0);
-    const c = deps.worldToOverlay(tx, worldY, tz);
-    const e = deps.worldToOverlay(tx + _camRightVec.x * tiles, worldY + _camRightVec.y * tiles, tz + _camRightVec.z * tiles);
+  function _lightScreenRadius(tx, tz, worldY, tiles, projection = deps) {
+    _camRightVec.setFromMatrixColumn(projection.camera.matrixWorld, 0);
+    const c = projection.worldToOverlay(tx, worldY, tz);
+    const e = projection.worldToOverlay(tx + _camRightVec.x * tiles, worldY + _camRightVec.y * tiles, tz + _camRightVec.z * tiles);
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
@@ -492,13 +492,13 @@
 
   // Furniture uses the lantern mask technique, scaled by each real Three.js
   // light's range/intensity, plus a restrained warm glow near the source.
-  function drawFurnitureLightMasks() {
-    const lctx = deps.lctx;
+  function drawFurnitureLightMasks(projection = deps) {
+    const lctx = projection.lctx;
     const visibleLights = [];
-    for (const light of deps.getFurnitureLightSources()) {
-      const center = deps.worldToOverlay(light.x, light.y, light.z);
+    for (const light of projection.getFurnitureLightSources()) {
+      const center = projection.worldToOverlay(light.x, light.y, light.z);
       if (!center.visible) continue;
-      const shineR = _lightScreenRadius(light.x, light.z, light.y, light.distance);
+      const shineR = _lightScreenRadius(light.x, light.z, light.y, light.distance, projection);
       if (!(shineR > 0)) continue;
       visibleLights.push({ light, center, shineR });
     }
@@ -563,9 +563,25 @@
     }
 
     const { r, g, b, a } = getLightingState();
-    const W = rect.width;
-    const H = rect.height;
+    drawSkyTint(lctx, rect.width, rect.height, { r, g, b, a });
 
+    drawLanternMasks();
+    drawFurnitureLightMasks();
+
+    // Lightning flash on lighting canvas too
+    if (lightningAlpha > 0) {
+      lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
+      lctx.fillRect(0, 0, rect.width, rect.height);
+    }
+    if (sceneTransAlpha > 0) {
+      lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
+      lctx.fillRect(0, 0, rect.width, rect.height);
+    }
+  }
+
+  // Shared by gameplay and isolated authoring viewports; preserves the game's
+  // flat sprite albedo, then applies sky tint and projected fake-light masks.
+  function drawSkyTint(lctx, W, H, { r, g, b, a }) {
     // Flat sky tint (ported from ScratchbonesGame's outdoor lighting):
     // screen-blend at low opacity adds warmth/brightness on clear days,
     // multiply-blend once opacity climbs darkens normally toward dusk/night.
@@ -575,21 +591,6 @@
     lctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
     lctx.fillRect(0, 0, W, H);
     lctx.globalCompositeOperation = 'source-over';
-
-    drawLanternMasks();
-    drawFurnitureLightMasks();
-
-    // Lightning flash on lighting canvas too
-    if (lightningAlpha > 0) {
-      lctx.fillStyle = `rgba(220, 240, 255, ${lightningAlpha * 0.45})`;
-      lctx.fillRect(0, 0, W, H);
-    }
-
-    // Scene transition fade-to-black
-    if (sceneTransAlpha > 0) {
-      lctx.fillStyle = `rgba(0,0,0,${sceneTransAlpha})`;
-      lctx.fillRect(0, 0, W, H);
-    }
   }
 
   // Keyframe stops: [hour, r, g, b, alpha]. Static data — hoisted out of
@@ -610,9 +611,10 @@
   ];
 
   function _computeRawLightingState() {
-    const calendar = deps.calendar;
-    const hour = window.CalendarSystem.getHour(); // 6..22
-    const season = window.CalendarSystem.currentSeason();
+    return lightingStateFor(window.CalendarSystem.getHour(), deps.calendar);
+  }
+
+  function lightingStateFor(hour, calendar = {}) {
     const isRaining = calendar.isRaining;
     const isStorm = isRaining && calendar.rainStrength >= 3;
 
@@ -859,6 +861,7 @@
     checkForMajorStorm,
     drawLightingOverlay,
     getLightingState,
+    lightingStateFor, drawSkyTint, drawFurnitureLightMasks,
     _advanceSmoothedLighting,
     updateWaterParticles,
     updateRipples,
@@ -871,6 +874,7 @@
     getDebugWeather,
     getDebugWeatherOwner,
     ensurePresentationSurface,
+    getProjection: () => deps, // Camera/worldToOverlay/rect provider for layers drawn above the lighting canvas (js/emissive-light-orbs.js).
     getRenderRecoveryState,
     // Debug/QA only — the player lantern's current on-screen shine radius,
     // to verify it stays roughly constant across camera azimuths instead of

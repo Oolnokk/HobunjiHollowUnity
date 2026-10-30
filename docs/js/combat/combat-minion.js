@@ -107,16 +107,18 @@
       cols: options.cols,
       rows: options.rows,
       rosterOverride: roster,
-      enemyClass: CLASS_ID,
+      enemyClass: options.enemyClass || CLASS_ID,
+      avatarRigScale: options.avatarRigScale || null, // Caller-authored puppet proportions travel through BanditCombat before collision sizes are computed.
       defOverride: { ...(options.defOverride || {}), rangedWeaponKey: null },
-      extra: { ...(options.extra || {}), enemyClass: CLASS_ID, isMinion: true },
+      extra: { ...(options.extra || {}), enemyClass: options.enemyClass || CLASS_ID, isMinion: true },
     });
     if (!entity) return null;
 
-    const shamblingAmount = (Number(entity.maxFooting) || 0) * SHAMBLING_FOOTING_FRACTION; // Exactly 70% of this Minion's spawned Footing is permanently reserved.
-    resources.setImmutableAffliction(entity, 'shamblingFooting', shamblingAmount);
-    resources.enforceCaps?.(entity); // Initial full Footing immediately clamps to its 30% usable ceiling.
-    entity.shamblingFootingFraction = SHAMBLING_FOOTING_FRACTION; // Debug/readability marker for future Minion diagnostics.
+    const shamblingFraction = Number.isFinite(Number(options.shamblingFootingFraction)) ? Math.max(0, Math.min(1, Number(options.shamblingFootingFraction))) : SHAMBLING_FOOTING_FRACTION; // Custom puppet troops bypass Minion's Harlyao-only shamble.
+    const shamblingAmount = (Number(entity.maxFooting) || 0) * shamblingFraction; // Reserve permanent footing only when the troop requests it.
+    if (shamblingAmount > 0) resources.setImmutableAffliction(entity, 'shamblingFooting', shamblingAmount);
+    resources.enforceCaps?.(entity); // Respect a canonical per-entity resource cap after any immutable affliction.
+    entity.shamblingFootingFraction = shamblingFraction; // Mobile/debug-readable troop value.
     return entity;
   }
 

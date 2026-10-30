@@ -31,6 +31,11 @@
       "path": "./mao-ao-skeleton.json"
     },
     {
+      "speciesId": "maskbound-guardian",
+      "label": "Maskbound Guardian",
+      "path": "./maskbound-guardian.json"
+    },
+    {
       "speciesId": "porakaneki",
       "label": "Porakaneki",
       "path": "./porakaneki.json"

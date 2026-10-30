@@ -155,7 +155,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261028hsourcfg1"></script>
+  <script src="config/scratchbones-config.js?v=20261029maskSlots2"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -164,7 +164,7 @@
   <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261028farmwork1">
+  <link rel="stylesheet" href="style.css?v=20261029maskSlots2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -177,25 +177,25 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261026hmaskalpha1"></script>
+  <script src="js/portrait-utils.js?v=20261029maskSlots2"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261024h03348de"></script>
-  <script src="js/png-plane-avatar.js?v=20261026hmaskalpha2"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261029maskSlots2"></script>
+  <script src="js/png-plane-avatar.js?v=20261029maskSlots2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
-  <script src="js/species-pose-scaling.js?v=20261025h561f2e2"></script>
+  <script src="js/species-pose-scaling.js?v=20261029maskSlots2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20261022h372be04"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20261029maskSlots2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261028hfirearmsync1"></script>
+  <script src="js/held-action-animations.js?v=20261029maskSlots2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261027h3fdc239"></script>
+  <script src="js/character-action-locks.js?v=20261029h4aff487"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-movement-head-target.js?v=20261027headcarrot1"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -206,7 +206,7 @@
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
-  <script src="js/procedural-leg-animation.js?v=20261022h500c2bc"></script>
+  <script src="js/procedural-leg-animation.js?v=20261028masklurch1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -222,7 +222,7 @@
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
-  <script src="js/creature-genetics.js?v=20261027hf47b5cc"></script>
+  <script src="js/creature-genetics.js?v=20261029h86f0973"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
   <script src="js/creature-genetics-render.js?v=20261026honeyStatic3"></script>
@@ -256,7 +256,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
-  <script src="js/terrain-preview.js?v=20261013he41c002"></script>
+  <script src="js/terrain-preview.js?v=20261029maskSlots2"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <script src="js/wilderness-map-generator.js?v=20261028localeopen1"></script>
@@ -284,21 +284,21 @@
   <!-- Item trait vocabulary/computation (window.ItemTraits) — see
        docs/js/item-traits.js. Initialized from game.js once ITEM_DEFS
        exists; consumed by npc-gifting.js and tools/item-database-editor. -->
-  <script src="js/item-traits.js?v=20261010h5bc00b2"></script>
+  <script src="js/item-traits.js?v=20261029maskSlots2"></script>
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/condition-registry.js?v=20261028h032d631"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js. -->
-  <script src="js/local-save-folder.js?v=20261022h1783ba2"></script>
+  <script src="js/local-save-folder.js?v=20261029maskSlots2"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
   <script src="config/farm-specializations.js?v=20261023h27b1956"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261028h36dd920"></script>
+  <script src="onboarding.js?v=20261029maskSlots2"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261026renthealth2"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -346,7 +346,7 @@
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
   <script src="js/combat/weapon-enchantment-vfx.js?v=20261027previewemitter1"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
-  <script src="js/combat/loadout-weapon-preview.js?v=20261027fixedpreview2"></script>
+  <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
   <script src="js/nearby-volume-collision.js?v=20261015h91b22f2"></script>
@@ -356,7 +356,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261028himmediate1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261029maskSlots2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261010hffc6292"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -366,10 +366,12 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/combat-bandit.js?v=20261028hquicknpc1"></script>
+  <script src="js/combat/enemy-loadout-rules.js?v=20261028a"></script>
+  <script src="js/combat/combat-bandit.js?v=20261029enemyParity1"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
-  <script src="js/combat/combat-minion.js?v=20261024hb113ee1"></script>
+  <script src="js/combat/combat-minion.js?v=20261027maskbound1"></script>
+  <script src="js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles and static Kanthic spell-plasm puddles, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261028h66c69cd"></script>
@@ -386,7 +388,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261028hfuryloader1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261029enemyParity1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -473,7 +475,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261024h8b1749f"></script>
+  <script src="js/creature-death.js?v=20261029h1dc9ebe"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -609,6 +611,7 @@
        Needs init(deps) from game.js, so must load before it, same as
        dye-system.js. -->
   <script src="js/pattern-library.js?v=20261026hPlayerDefaults5"></script>
+  <script src="js/procedural-mask-patterns.js?v=20261029maskpat1"></script> <!-- Procedural glyph pattern stacks for masks (Hachutu mask). -->
   <!-- Dev-mode Settings exporter for the active character's saved PatternLibrary entries. -->
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
@@ -647,7 +650,7 @@
   <script src="js/town-zone-buildings.js?v=20261027h07bdab3"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
-  <script src="js/map-live-preview.js?v=20260909a&window=20260926rebase1"></script>
+  <script src="js/map-live-preview.js?v=20261029maskSlots2&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20261027h8bf7bae"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
@@ -668,7 +671,7 @@
   <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
-  <script src="js/dev-spawner.js?v=20261026hb990dff"></script>
+  <script src="js/dev-spawner.js?v=20261027maskbound1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
        reticle-targeted gameplay placement mode and closes this panel so
@@ -697,7 +700,8 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261018indoorweather"></script>
+  <script src="js/weather-fx.js?v=20261029enemyParity1"></script>
+  <script src="js/emissive-light-orbs.js?v=20261029orbs1"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
@@ -772,7 +776,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261028packpreview2"></script>
+  <script src="js/equipment-panel.js?v=20261030h5d56939"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -869,7 +873,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261026hmaskalpha8"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261029enemyParity1"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -2224,6 +2228,9 @@
             </div>
             <button type="button" id="devCompanionOpenBtn" class="settings-small-btn">Open</button>
           </div>
+          <a class="settings-row" href="tools/enemy-loadout-editor/index.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+            <div><div class="settings-name">Enemy Loadout Workshop ↗</div><div class="settings-desc">Roll fully equipped enemy previews and author species, wardrobe, dye, weapon and attack pools.</div></div>
+          </a>
           <label data-dev-only class="settings-row" id="settingFlipPngPortraitsRow" hidden style="display:none">
             <div class="settings-label">
               <div class="settings-name">Flip PNG Character Portraits Sideways</div>
@@ -2284,6 +2291,7 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button id="debugProbeArmBtn" style="font-size:11px;padding:3px 10px;background:rgba(163,230,53,.15);border:1px solid rgba(163,230,53,.4);border-radius:6px;color:#a3e635;cursor:pointer">🎯 Probe a pixel</button>
               <button id="debugRigTransformDumpBtn" style="font-size:11px;padding:3px 10px;background:rgba(69,214,160,.15);border:1px solid rgba(69,214,160,.4);border-radius:6px;color:#45d6a0;cursor:pointer">Dump rig transforms</button>
+              <button id="debugFullRigDumpBtn" title="Every node of the player and nearest hostiles, local + root-relative + world, with weapon holder and hands" style="font-size:11px;padding:3px 10px;background:rgba(69,214,160,.15);border:1px solid rgba(69,214,160,.4);border-radius:6px;color:#45d6a0;cursor:pointer">Dump full rig (root-relative)</button>
               <button id="debugCopyBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy</button>
               <button id="debugMusicStatusBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Copy music status</button>
               <button id="debugClearBtn" style="font-size:11px;padding:3px 10px;background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.35);border-radius:6px;color:#f87171;cursor:pointer">Clear</button>
@@ -2664,10 +2672,11 @@
        node-by-node local transforms use the exact same code/format as the
        editor's own preview dump. Must load before pixel-probe.js below. -->
   <script src="js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
+  <script src="js/rig-transform-dump.js?v=20261029rigdump1"></script> <!-- Full root-relative rig dump (player + hostiles), diffable against the Attack Animation Editor. -->
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261029hguild2"></script>
+  <script src="js/pixel-probe.js?v=20261030ha62f90b"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2693,7 +2702,7 @@
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
   <script src="js/festival-potluck-contest.js?v=20261028h97a1825"></script>
   <script src="js/festival-locale-activities.js?v=20261023h2f3ea4a"></script>
-  <script src="js/festival-system.js?v=20261028hf666f6a"></script>
+  <script src="js/festival-system.js?v=20261029maskSlots2"></script>
   <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
   <script src="js/festival-ui.js?v=20261023h929b96d"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
@@ -2718,7 +2727,7 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261028packpreview2"></script>
+  <script src="js/fishing-minigame.js?v=20261029maskSlots2"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
@@ -2726,7 +2735,7 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261028packpreview2"></script>
+  <script src="js/music-minigame.js?v=20261029maskSlots2"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2850,7 +2859,7 @@
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
-  <script src="game.js?v=20261029templepewcam2"></script>
+  <script src="game.js?v=20261030h79d96f5"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

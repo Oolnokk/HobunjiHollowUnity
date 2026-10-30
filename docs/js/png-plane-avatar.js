@@ -130,6 +130,7 @@
   function setPortraitsFlipped(enabled, options = {}) {
     portraitsFlipped = !!enabled;
     for (const texture of trackedPortraitTextures) applyPortraitTextureFlip(texture);
+    for (const root of portraitGlowModels) syncPortraitGlow(portraitThreeByRoot.get(root), root, root.userData.sourceCanvas);
     if (options.persist !== false) {
       try { localStorage.setItem(PORTRAIT_FLIP_STORAGE_KEY, portraitsFlipped ? '1' : '0'); } catch {}
     }
@@ -464,6 +465,19 @@
       : smoothstep01(1 - (dx - inner) / (outer - inner));
   }
 
+  function headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turnWeight) {
+    if (!bounds) return turnWeight;
+    // The whole bare skull (and its mask) has one size. The broad head-turn
+    // blend can still reach the shoulders, but scale fades only BELOW the
+    // skull, with a grid-cell margin so its last painted row is fully rigid.
+    const fullBelow = modelHeight / 36;
+    // The fade band must be taller than any plausible Head Y offset (hunch). With the old 0.08 band a head lowered by 9.5-12% of the
+    // model height (Mashtzarr, Maskbound troops) moved further than the band is tall, so the mesh folded over itself under the chin
+    // and showed hard-edged shoulder/neck strips; 0.2 leaves room for offsets up to ~17% before any fold.
+    const blendBelow = modelHeight * 0.2;
+    return smoothstep01((y - (neckY - blendBelow)) / (blendBelow - fullBelow)) * headScaleGateAtPixel(pixelX, bounds);
+  }
+
   // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
   // Every grid vertex receives root/head weights regardless of the texel alpha
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
@@ -506,8 +520,9 @@
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-      const headScaleWeight = headWeight * headScaleGateAtPixel(pixelX, headBoundsPx);
+      const turnWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
+      const headScaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight);
+      const headWeight = Math.max(turnWeight, headScaleWeight);
       const headRotateWeight = headWeight - headScaleWeight;
       skinIndices.push(0, 1, 2, 0);
       skinWeights.push(1 - headWeight, headRotateWeight, headScaleWeight, 0);
@@ -526,7 +541,7 @@
       for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, 1);
     }
     const frontVertexCount = positions.length / 3;
-    for (let row = 0; row < segmentsY; row++) {
+    if (!options.frontOnly) for (let row = 0; row < segmentsY; row++) {
       for (let column = 0; column < segmentsX; column++) appendCell({ column, row }, -1);
     }
 
@@ -542,7 +557,7 @@
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.addGroup(0, frontVertexCount, 0);
-    geometry.addGroup(frontVertexCount, frontVertexCount, 1);
+    if (!options.frontOnly) geometry.addGroup(frontVertexCount, frontVertexCount, 1);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData = {
@@ -555,7 +570,7 @@
   }
 
   // Builds the neck-rigged variant of the single-plane assembly: a
-  // THREE.SkinnedMesh (root bone + neck bone) instead of the two rigid front/
+  // THREE.SkinnedMesh (root, neck, and independent head-scale bones) instead of the two rigid front/
   // back Mesh objects createSinglePlaneAssembly makes, so `neckJoint.rotation`
   // can bend just the head region of the plane. Returns null if no neck pivot
   // could be detected (e.g. an unreadable/tainted canvas) — callers should
@@ -672,8 +687,18 @@
     const pivotU = mirrorX ? 1 - pivotNormalized.x : pivotNormalized.x;
     const pivotLocalX = (pivotU - 0.5) * planeWidth;
     const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
-    const blendHeight = Math.max(planeHeight * .02, planeHeight * .22);
-    const weightedGeometry = buildAutoNeckWeightedGeometry(THREE, plane.geometry, pivotLocalY, blendHeight);
+    const sourceCanvas = fallbackDimensions.sourceCanvas;
+    const detectedHead = sourceCanvas ? detectHeadRigPixels(fallbackDimensions.headCanvas, sourceCanvas, 12) : null;
+    const headBounds = detectedHead?.boundsPx;
+    const pixelWidth = sourceCanvas?.width || 1;
+    const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
+      {x:pivotLocalX,y:pivotLocalY,z:0}, {
+        frontOnly:true, pixelWidth, pixelHeight:sourceCanvas?.height || 1,
+        headBoundsPx:headBounds && mirrorX ? {...headBounds,left:pixelWidth-headBounds.right,right:pixelWidth-headBounds.left} : headBounds,
+      });
+    // The converted hostile keeps separate front/rear meshes. Reuse the exact
+    // player skin grid/weights, drawing just its front half on each mesh.
+    weightedGeometry.setDrawRange(0, weightedGeometry.groups[0].count);
     const material = plane.material; // Reused so cosmetic/texture updates keep working unchanged.
     material.skinning = true;
     material.needsUpdate = true;
@@ -684,6 +709,9 @@
     neckBone.name = `${plane.name}_neck_bone`;
     neckBone.position.set(pivotLocalX, pivotLocalY, 0);
     torsoBone.add(neckBone);
+    const headScaleBone = new THREE.Bone();
+    headScaleBone.name = `${plane.name}_head_scale_bone`;
+    neckBone.add(headScaleBone);
 
     const skinned = new THREE.SkinnedMesh(weightedGeometry, material);
     skinned.name = plane.name;
@@ -696,9 +724,9 @@
     skinned.userData = { ...plane.userData };
     skinned.onBeforeRender = plane.onBeforeRender;
     skinned.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckBone]);
+    const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone };
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1000,7 +1028,7 @@
     );
     const neckY = Number(rig.neckLocal?.y) || 0;
     const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
-    const headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
+    let headWeight = t * t * (3 - 2 * t); // Same smoothstep as buildSkinnedPlaneGeometry.
 
     // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
     // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
@@ -1017,7 +1045,8 @@
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
-      ? headWeight * headScaleGateAtPixel(renderedPixelX, rig.headBoundsPx) : 0; // Match the rendered head-scale bone.
+      ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
+    headWeight = Math.max(headWeight, headScaleWeight);
     for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
       const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
       if (!weight) continue;
@@ -1070,6 +1099,66 @@
       vertical,
       normal,
     };
+  }
+
+  // Authored luminous pixels are baked through the canonical portrait pipeline.
+  // Their small fake-light data source follows the same neck/head transform;
+  // no animation loop or real WebGL lighting is introduced.
+  const portraitThreeByRoot = new WeakMap();
+  const portraitGlowModels = new Set();
+  const portraitGlowAttachments = new WeakMap();
+  function syncPortraitGlow(THREE, root, sourceCanvas) {
+    const glows = sourceCanvas?.hobunjiPortraitGlows || (sourceCanvas?.hobunjiPortraitGlow ? [sourceCanvas.hobunjiPortraitGlow] : []); // One per glowing mass (each eye).
+    let lights = root.userData.portraitGlowLights || (root.userData.portraitGlowLights = []);
+    while (lights.length > glows.length) { const extra = lights.pop(); extra.parent?.remove(extra); extra.dispose?.(); }
+    if (!glows.length) {
+      root.userData.portraitGlowLight = null;
+      portraitGlowModels.delete(root);
+      return;
+    }
+    const width = root.userData.portraitModelWidth;
+    const height = root.userData.portraitModelHeight;
+    const assemblyY = root.userData.visualCentroidLocalY || 0;
+    const anchorZ = root.userData.visualCentroidLocalZ || 0;
+    const rig = root.userData.neckRig;
+    const attachment = portraitGlowAttachments.get(root);
+    portraitGlowModels.add(root);
+    glows.forEach((glow, index) => {
+      let light = lights[index];
+      if (!light) {
+        light = new THREE.PointLight(glow.color, glow.intensity || 3.5, glow.radius || 0.65);
+        light.name = index ? `Portrait_Dye3_Mote_Light_${index + 1}` : 'Portrait_Dye3_Mote_Light';
+        light.userData.furnitureLightMask = true;
+        light.userData.intentionalFakeLightSource = true;
+        light.layers.set(31); // Also stays overlay-only in editors without the registry bridge.
+        light.castShadow = false;
+        lights[index] = light;
+      }
+      light.userData.emissiveOrb = { radius: 0.085 * (glow.orbScale || 1) }; // Also drawn as a glowing circle above darkness and fog (js/emissive-light-orbs.js); the fake-light aura around it is unchanged.
+      light.color.set(glow.color);
+      light.intensity = glow.intensity || 3.5;
+      light.distance = glow.radius || 0.65;
+      const x = ((portraitsFlipped ? 1 - glow.x : glow.x) - 0.5) * width;
+      if (attachment) {
+        attachment.parent.add(light);
+        light.position.set(x - attachment.offset.x, assemblyY + (0.5 - glow.y) * height - attachment.offset.y, anchorZ - attachment.offset.z);
+      } else if (rig?.available) {
+        rig.headScaleJoint.add(light);
+        light.position.set(x - rig.neckLocal.x, (0.5 - glow.y) * height - rig.neckLocal.y, anchorZ - rig.neckLocal.z);
+      } else {
+        root.add(light);
+        light.position.set(x, assemblyY + (0.5 - glow.y) * height, anchorZ);
+      }
+      window.FurnitureLightRegistry?.register(light);
+    });
+    root.userData.portraitGlowLight = lights[0] || null; // First mass, kept for callers that expect one light.
+  }
+
+  function setPortraitGlowAttachment(root, parent, offset = {x:0,y:0,z:0}) {
+    if(!root)return;
+    if(parent)portraitGlowAttachments.set(root,{parent,offset:{...offset}});
+    else portraitGlowAttachments.delete(root);
+    syncPortraitGlow(portraitThreeByRoot.get(root),root,root.userData.sourceCanvas);
   }
 
   function buildSinglePlaneAvatarModel(THREE, sourceCanvas, options = {}) {
@@ -1201,6 +1290,8 @@
     root.userData.frontTexture = textures.frontOriginal;
     root.userData.backTexture = textures.backForOriginal;
     root.userData.backTextureUsesSilhouette = !(options.backCanvas || options.backImage);
+    portraitThreeByRoot.set(root, THREE);
+    syncPortraitGlow(THREE, root, sourceCanvas);
     return root;
   }
 
@@ -1211,6 +1302,7 @@
     root.userData.sourceCanvas = nextSource;
     drawVariantCanvas(root.userData.frontTexture.image, nextSource);
     root.userData.frontTexture.needsUpdate = true;
+    syncPortraitGlow(portraitThreeByRoot.get(root), root, nextSource);
 
     const nextBack = options.backCanvas || options.backImage || root.userData.backCanvas;
     if (nextBack && root.userData.backTexture) {
@@ -1227,6 +1319,9 @@
 
   function disposeAvatarModel(root) {
     if (!root) return;
+    portraitGlowModels.delete(root);
+    for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
+    if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
     root.traverse(child => {
       if (child.geometry) child.geometry.dispose();
       const materials = child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : [];
@@ -1250,6 +1345,7 @@
   }
 
   window.PNGPlaneAvatar = {
+    setPortraitGlowAttachment,
     PORTRAIT_FLIP_STORAGE_KEY,
     backMapFor,
     enableSharedFaceMirror,
@@ -1270,8 +1366,10 @@
     loadThreeModules,
     scanOpaqueVerticalBoundsOfImage,
     detectNeckPivotPx,
+    detectHeadRigPixels,
     upgradePlaneToAutoNeckSkin,
     headScaleGateAtPixel,
+    headScaleWeightAt,
     resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,

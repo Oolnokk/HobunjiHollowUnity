@@ -341,6 +341,10 @@
     return amount > 0 ? (Math.random() * 2 - 1) * amount : 0;
   }
 
+  function specialVoiceFor(entity, event) {
+    return window.MaskboundGuardianCombat?.voiceVariantFor?.(entity, event) || null; // Guardian-only voice preset; all ordinary players/NPCs retain their native recordings.
+  }
+
   function voicePlaybackPlan(randomSemitones = 0, entity = player()) {
     const mod = voiceModulation(entity);
     return {
@@ -401,7 +405,10 @@
   }
 
   function playOneShot(entity, url, baseVolume, pitchRandomSemitones, debugKind, detail = {}, voiceKind = 'active', durationScale = 1, overlapGroup = null) {
-    if (!url || !isHumanoidVocalEntity(entity)) return null;
+    if (!isHumanoidVocalEntity(entity)) return null;
+    const special = specialVoiceFor(entity, debugKind === 'dodge' ? 'dodge' : debugKind === 'pain' ? 'pain' : debugKind === 'breath' ? 'breath' : 'strike'); // Attack, pain, dodge and stamina breathing share the same scream.
+    url = special?.url || url; // Prevent generic human voice files from reaching the guardian's playback channel.
+    if (!url) return null;
     const audio = audioConfig();
     if (audio.enabled === false || Number(audio.sfxVolume ?? 1) <= 0) return null;
     // Passive breathing may begin before the asynchronously requested playback module loads.
@@ -431,7 +438,8 @@
     }) || null;
     if (window.CharacterVoiceOwner && !claim) return { suppressed: true, reason: 'voice-priority', voiceKind, ...detail };
 
-    const plan = voicePlaybackPlan(randomPitchSemitones(pitchRandomSemitones), entity);
+    const plan = voicePlaybackPlan(special ? special.pitchOffsetSemitones : randomPitchSemitones(pitchRandomSemitones), entity);
+    if (special) plan.tempo *= special.tempoMultiplier; // Vary tempo independently of pitch via AnimalVoiceIndependentPlayback.
     plan.tempo /= durationScale; // Shortens dodge duration independently of the species/gender pitch.
     const volume = clamp(
       Number(baseVolume ?? 1) * plan.modulation.gain * Number(audio.sfxVolume ?? 1) * spatial.gain,
@@ -940,6 +948,7 @@ function releaseCharge(token) {
 function beginCharge(options = {}) {
   const requestedTarget = options.targetDurationS ?? options.durationS;
   const entity = options.entity || player();
+  const special = options.voiceVariant || specialVoiceFor(entity, options.assetUrl ? 'strike' : 'charge'); // One rolled variation survives async decode and attack windup.
   const token = {
     id: ++chargeTokenSerial,
     entity,
@@ -968,7 +977,8 @@ function beginCharge(options = {}) {
   trackBreather(entity);
   activeChargeTokens.add(token);
 
-  (options.assetUrl ? preloadStrikeBuffer(options.assetUrl) : preloadChargeBuffer()).then(async buffer => {
+  const chosenUrl = special?.url || options.assetUrl || config.assets?.chargeGrunt; // Puppets never fetch human charge/release grunt files.
+  (special || options.assetUrl ? preloadStrikeBuffer(chosenUrl) : preloadChargeBuffer()).then(async buffer => { // Normal voices retain the existing shared charge buffer; guardians decode their one scream instead.
     if (!buffer || token.cancelled || token.released || token.done) {
       finishChargeToken(token);
       return;
@@ -987,10 +997,14 @@ function beginCharge(options = {}) {
       buffer, sourceDurationS: buffer.duration, trimmedDurationS: buffer.duration, trimStartS: 0, trimEndS: 0, trimmed: false,
     };
     const audibleBuffer = trim.buffer || buffer; // Charge math uses actual audible waveform duration, not leading/trailing silence or codec padding.
-    const voice = voicePlaybackPlan(Number.isFinite(options.pitchOffsetSemitones)
+    const voice = voicePlaybackPlan(special ? special.pitchOffsetSemitones : Number.isFinite(options.pitchOffsetSemitones)
       ? options.pitchOffsetSemitones // Pre-rolled by prewarmStrikeGrunt so this render is already cached.
       : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0), entity);
     const plan = chargeRatePlan(audibleBuffer.duration, token.targetDurationS, voice.tempo);
+    if (special) { // Tempo variation is independent from pitch while preserving the shared timed-attack renderer.
+      plan.stretchedTempo = clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, MAX_MAPPED_TEMPO);
+      plan.catchUpTempo = clamp(plan.catchUpTempo * special.tempoMultiplier, 1 / 9, 4);
+    }
     const renderOpts = { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO };
     const [fullRendered, catchUpRendered] = await Promise.all([
       renderIndependent(audibleBuffer, ctx, { ...renderOpts, tempo: plan.stretchedTempo }),
@@ -1107,9 +1121,10 @@ function beginCharge(options = {}) {
   // not at all, leaving only the windup grunt, which ends at the strike. Roll
   // the pitch and render at attack start; the windup-end call reuses the cache.
   function prewarmStrikeGrunt(entity, category, durationS) {
-    const url = pickStrikeGruntUrl(category);
-    if (!url || !(durationS > 0)) return url ? { url } : null;
-    const pitchOffsetSemitones = randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
+    const special = specialVoiceFor(entity, 'strike'); // Keep the same pitch/tempo variation during prewarm and strike playback.
+    const url = special?.url || pickStrikeGruntUrl(category);
+    if (!url || !(durationS > 0)) return url ? { url, voiceVariant: special } : null;
+    const pitchOffsetSemitones = special ? special.pitchOffsetSemitones : randomPitchSemitones(config.grunts?.pitchRandomSemitones ?? 0);
     if (isHumanoidVocalEntity(entity) && audioConfig().enabled !== false && Number(audioConfig().sfxVolume ?? 1) > 0) {
       preloadStrikeBuffer(url).then(buffer => {
         const ctx = ensureAudioContext();
@@ -1119,21 +1134,23 @@ function beginCharge(options = {}) {
         const audible = trim.buffer || buffer; // Same trimmed buffer object beginCharge will use (trims are cached per buffer).
         const voice = voicePlaybackPlan(pitchOffsetSemitones, entity);
         const plan = chargeRatePlan(audible.duration, durationS, voice.tempo);
-        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO, tempo: plan.stretchedTempo });
+        const tempo = special ? clamp(plan.stretchedTempo * special.tempoMultiplier, 1 / 9, MAX_MAPPED_TEMPO) : plan.stretchedTempo; // Match beginCharge exactly so cached pitch-preserving audio is reusable.
+        return playback.renderDecodedIndependentBuffer(audible, ctx, { pitchSemitones: voice.pitchSemitones, tailPadS: 0, trimSilence: false, maxTempo: MAX_MAPPED_TEMPO, tempo });
       }).catch(() => {});
     }
-    return { url, pitchOffsetSemitones };
+    return { url, pitchOffsetSemitones, voiceVariant: special };
   }
 
   function playStrikeGrunt(entity, category, abilityId, durationS = 0, elapsedS = 0, preset = null) {
     const isCombo = category === 'combo';
-    const url = preset?.url || pickStrikeGruntUrl(category);
+    const url = preset?.url || specialVoiceFor(entity, 'strike')?.url || pickStrikeGruntUrl(category);
     if (!url) return;
     const played = durationS > 0 ? beginCharge({
       entity, category, abilityId, assetUrl: url, targetDurationS: durationS,
       overlapGroup: isCombo ? null : 'release-grunt',
       createdAtMs: nowMs() - Math.max(0, elapsedS) * 1000,
       pitchOffsetSemitones: preset?.pitchOffsetSemitones,
+      voiceVariant: preset?.voiceVariant, // Reuse the exact enemy-specific pitch and tempo rolled during the windup.
     }) : playOneShot(
       entity,
       url,
@@ -1412,6 +1429,7 @@ function beginCharge(options = {}) {
     debugSnapshot: () => ({
       version: VERSION,
       latestChange: window.CombatVocalizations.latestChange,
+      maskboundVoiceSource: window.MaskboundGuardianCombat?.voiceSource || null, // Mobile debug proves all guardian combat utterances use the same recorded scream.
       configSource,
       configError,
       attackStartDelayS: attackStartDelayS(),

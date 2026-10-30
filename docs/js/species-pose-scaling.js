@@ -32,6 +32,7 @@
     }),
   });
   const ALIASES = Object.freeze({ ghoul: 'mao-ao' });
+  const ORBIT_PARENTS = Object.freeze({'mao-ao-skeleton':'mao-ao','maskbound-guardian':'mao-ao','harlyao':'engh-sho','harlyao-skeleton':'harlyao','omgurku':'engh-sho'});
   const listeners = new Set();
   const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -100,7 +101,7 @@
   }
   function resolveAxes(speciesId, gender, armLength = null) {
     const key = normalizeSpeciesId(speciesId);
-    const authored = axesFromValue(config.species?.[key]?.[normalizeGender(gender)]);
+    const authored = axesFromValue(resolveAuthored(key, gender));
     return authored ?? axesForPose(null, armLength);
   }
   function resolveScale(speciesId, gender, armLength = null) {
@@ -108,8 +109,14 @@
   }
   // The stored entry exactly as authored (number or object), or null: lets inheritance copy it without flattening.
   function resolveAuthored(speciesId, gender) {
-    const entry = config.species?.[normalizeSpeciesId(speciesId)]?.[normalizeGender(gender)];
-    return entry == null ? null : clone(entry);
+    let key = normalizeSpeciesId(speciesId);
+    const g = normalizeGender(gender);
+    while (key) {
+      const entry = config.species?.[key]?.[g];
+      if (entry != null) return clone(entry);
+      key = ORBIT_PARENTS[key];
+    }
+    return null;
   }
   function setScale(speciesId, gender, value) {
     const key = normalizeSpeciesId(speciesId);

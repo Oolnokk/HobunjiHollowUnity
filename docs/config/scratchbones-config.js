@@ -1544,11 +1544,12 @@ window.SCRATCHBONES_CONFIG = {
       },
       "randomization": {
         "minimumNpcClothingArticles": 1,
-        "clothingSlots": ["hat", "hood", "torsoCosmetic", "armCosmetic"],
+        "clothingSlots": ["hat", "hood", "mask", "torsoCosmetic", "armCosmetic"],
         "clothingRepairSlotPreference": ["torsoCosmetic", "armCosmetic", "hat", "hood"],
         "clothingOptionPoolsBySlot": {
           "hat": "hatOptions",
           "hood": "hoodOptions",
+          "mask": "maskOptions",
           "torsoCosmetic": "torsoPortraitOptions",
           "armCosmetic": "armPortraitOptions"
         },
@@ -1560,6 +1561,7 @@ window.SCRATCHBONES_CONFIG = {
         "clothingFallbackTintSlotsBySlot": {
           "hat": "HAT",
           "hood": "HOOD",
+          "mask": "MASK",
           "torsoCosmetic": "CLOTH",
           "armCosmetic": "CLOTH"
         }

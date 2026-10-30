@@ -2275,7 +2275,7 @@
           // room to grow into) — a fresh character now genuinely starts at
           // the bottom of the smithing ladder (see toolMetalMultiplier).
           tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, crossbow: true, scatterbow: true },
-          clothing: { hat: null, hood: null, torso: null, overwear: null, pants: null },
+          clothing: { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null },
           clothingItems: [],
           charms: [],
           whistles: [
@@ -5973,7 +5973,7 @@
           }
         }
         const breathScaleY = kickPoseHeld ? 1 : window.CreatureGenetics.creatureBreathScaleY(c.avatarRef, performance.now()); // Keep the whole held kick silhouette truly still, without idle breathing.
-        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
+        window.CreatureGenetics.applyCreatureBillboardScale(grp, { x: c.visualScaleX, y: c.visualScaleY, z: c.visualScaleZ }, scaleY * breathScaleY); // Preserves both authored size axes through attack squash, plus a subtle idle breathing multiplier.
         // Tracks the body's own smoothed XZ (not the raw target, and not
         // its squash/height) so the shadow doesn't lead a fast-moving
         // creature or float with it during a pounce crouch.
@@ -6069,7 +6069,7 @@
         // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
-        if (c.avatarRef.legsPivot) c.avatarRef.legsPivot.rotation.y = planeDelta;
+        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
         if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,
@@ -12303,11 +12303,22 @@
           groundShadow.scale.set(animalShadow.radiusX, 1, animalShadow.radiusZ);
         }
         root.add(groundShadow);
-        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, root, avatarGroup, rec?.id);
+        // Humanoids get one floor-relative rig root owning portrait, hands AND
+        // feet (the NPC equivalent of the player's playerMesh), so
+        // HobunjiCharacterRigScale's species body scale reaches all three. It
+        // used to land on the lean pivot (the hands' parent) and leave NPC feet
+        // at 1.0 under a scaled body.
+        const npcCharacterRigRoot = namedAnimalDef ? root : new THREE.Group();
+        if (npcCharacterRigRoot !== root) {
+          npcCharacterRigRoot.name = 'npc_character_rig_root';
+          npcCharacterRigRoot.userData.hobunjiCharacterRigScaleRoot = true; // Hand attachment scales this instead of the lean pivot (HobunjiCharacterRigScale.rigScaleRootFor).
+          root.add(npcCharacterRigRoot);
+        }
+        const alcoholPoseGroup = window.NpcCharacterState?.attachAlcoholPose?.(THREE, npcCharacterRigRoot, avatarGroup, rec?.id);
         const npcRunLeanPivot = namedAnimalDef ? null : new THREE.Group(); // Only humanoids need the shared full-body run lean; the separate feet and held tools remain unaffected.
         if (npcRunLeanPivot) {
           npcRunLeanPivot.name = 'npc_run_lean_visual';
-          (alcoholPoseGroup || root).add(npcRunLeanPivot);
+          (alcoholPoseGroup || npcCharacterRigRoot).add(npcRunLeanPivot);
           npcRunLeanPivot.add(avatarGroup); // Reparent the portrait under an additive ground-anchored pivot, not under the animated foot bones.
         } else if (!alcoholPoseGroup) root.add(avatarGroup);
 
@@ -12328,11 +12339,11 @@
           root._npcScene = null; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = spawnArea;
         } else { scene.add(root); root._npcScene = scene; root._pendingTownAdd = false; root._pendingBuildingAdd = null; root._pendingZoneAdd = null; }
 
-        // Procedural feet attach directly under `root` (floor-anchored, Y=0),
+        // Procedural feet attach directly under the floor-anchored rig root (Y=0),
         // NOT under avatarGroup (offset up by avatarHeight/2 — see
         // buildSinglePlaneAvatarModel) — see docs/js/procedural-leg-animation.js.
         // Creatures/wildlife never call this; only humanoid species get legs.
-        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, root, {
+        const legs = namedAnimalDef ? null : window.ProceduralLegAnimation?.attach(THREE, npcCharacterRigRoot, {
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
@@ -28761,6 +28772,30 @@
       // mirroring window._devSpawner/_farmEditor above — no in-game UI path
       // to grant furniture items directly, so this exists for headless/
       // console testing rather than as a player-facing cheat.
+      window.HobunjiRigDump?.setGameSources({ // Full rig transform dump (js/rig-transform-dump.js): player body + tool holder and nearby hostiles, diffable against the Attack Animation Editor.
+        playerMesh: () => playerMesh,
+        toolHolder: () => toolHolder,
+        activeTool: () => activeTool,
+        equippedWeapon: () => equipmentSlots.weapon,
+        heldMode: () => heldMode,
+        hostiles: () => hostileObjects,
+        playerIdentity: () => ({ speciesId: _playerData?.appearance?.speciesId || _playerData?.appearance?.species || null, gender: _playerData?.appearance?.gender || null }),
+        // Debug-only: put the live player in another body / weapon so a rig dump can be compared against other previews. Not persisted unless the game saves afterwards.
+        async debugPlayerLoadout({ speciesId, gender, weaponKey } = {}) {
+          const appearance = _playerData?.appearance;
+          if (appearance && (speciesId || gender)) {
+            if (speciesId) appearance.speciesId = speciesId;
+            if (gender) appearance.gender = gender;
+            await refreshPlayerAvatar();
+          }
+          if (weaponKey) {
+            gearInventory.tools[weaponKey] = true;
+            window.EquipmentPanel.equipItem(weaponKey, 'weapon');
+            setActiveTool('weapon', { silent: true });
+          }
+          return { speciesId: appearance?.speciesId, gender: appearance?.gender, activeTool };
+        },
+      });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
         place: placeDecorativeFurniture,
@@ -29801,6 +29836,11 @@
         isOutdoorArea: () => currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea),
       });
 
+      window.EmissiveLightOrbs?.installGameOverlay({ // Mask-eye glow circles drawn above the darkness/fog canvas every frame.
+        getProjection: () => window.WeatherFX.getProjection(),
+        getScene: () => window.GridTileAccessors.getActiveScene(),
+      });
+
       window.CloudForestFog?.init({
         THREE,
         player,
@@ -30289,8 +30329,8 @@
           const helmId = window.FestivalPotluckContest?.HELM_ID;
           const isHelm = !!helmId && id === helmId;
           if (!isHelm && !window.FestivalSystem.MASKS.some(mask => id === `festivalmask_${mask}`)) return false;
-          const piece = { category: isHelm ? 'hat' : 'hood', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
-          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'hood', label: piece.label, baseLabel: piece.label,
+          const piece = { category: isHelm ? 'hat' : 'mask', label: ITEM_DEFS[`cosmetic:${id}`]?.label || (isHelm ? 'Replica Helm of Bzabag' : id.replace('festivalmask_', '') + ' Festival Mask'), price: 20 }; // Only authored festival masks and the potluck prize enter the normal clothing pack.
+          packClothing.push({ uid: `festival_${id}_${Date.now()}`, cosmeticId: id, slot: piece.category || 'mask', label: piece.label, baseLabel: piece.label,
             colorA: { hex: '#ddaf64', h: 37, s: 55, v: 87 }, colorB: { hex: '#8072bd', h: 251, s: 40, v: 74 }, colorC: { hex: '#e7d8aa', h: 45, s: 26, v: 91 }, sprite: window.EquipmentPanel.clothingSpriteForCosmetic(id), sellPrice: Math.floor((piece.price || 0) * .4) });
           return true;
         },
@@ -31846,7 +31886,7 @@
         // new slot is immediately testable without invalidating old saves.
         gearInventory.tools.crossbow ??= true;
         gearInventory.tools.scatterbow ??= true;
-        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, torso: null, overwear: null, pants: null };
+        if (!gearInventory.clothing) gearInventory.clothing = { hat: null, hood: null, mask: null, torso: null, overwear: null, pants: null };
         if (!gearInventory.charms)   gearInventory.charms   = [];
         if (!gearInventory.whistles || !gearInventory.whistles.length) {
           gearInventory.whistles = [{ id: 'whistle_bingo', creatureKey: 'dabinggi-hound', name: 'Bingo' }];
