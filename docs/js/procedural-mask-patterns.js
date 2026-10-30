@@ -121,14 +121,22 @@
 
   // Deterministic per seed. Returns the weaving object ({ patterns: [primary, overpass] }) or null when disabled / not loaded yet.
   // eyeHex (optional) is kept out of the ink palette so the patterns never match the glowing eyes.
-  function weavingFor(seed, { eyeHex = null } = {}) {
+  // scale (optional) overrides the shipped frame-scale range: { min, max } multiples of the authored glyph frame. A missing side keeps
+  // the shipped value; unlike the shipped range an override may scale UP (max above 1).
+  function weavingFor(seed, { eyeHex = null, scale = null } = {}) {
     if (!config || !library.length) return null;
+    const lo = Number(scale?.min), hi = Number(scale?.max);
+    const settings = scale && (Number.isFinite(lo) || Number.isFinite(hi))
+      ? { ...config,
+          frameScaleMin: Number.isFinite(lo) ? lo : (Number.isFinite(hi) ? Math.min(hi, config.frameScaleMin) : config.frameScaleMin),
+          frameScaleMax: Number.isFinite(hi) ? hi : (Number.isFinite(lo) ? Math.max(lo, config.frameScaleMax) : config.frameScaleMax) }
+      : config;
     const rng = mulberry32(hashSeed(String(seed) + '|mask-pattern'));
     const layers = Math.max(1, Math.min(2, Math.round(Number(config.layers) || 2)));
     const taken = [eyeHex];
     const patterns = [];
     for (let i = 0; i < layers; i++) {
-      const layer = randomizedLayer(rng, config, taken);
+      const layer = randomizedLayer(rng, settings, taken);
       taken.push(layer.inkColorHex);
       patterns.push(layer);
     }
@@ -139,7 +147,7 @@
   function descriptorFor(maskId, seed, options = {}) {
     if (maskId !== MASK_ID) return null;
     const eyeHex = options.eyeHex ?? (maskPixelDye && global.pixelDyeDefaultHex ? global.pixelDyeDefaultHex(maskPixelDye, seed, 'MASK_C') : null);
-    const weaving = weavingFor(seed, { eyeHex });
+    const weaving = weavingFor(seed, { eyeHex, scale: options.scale });
     if (!weaving) return null;
     return { uid: 'procedural_mask_' + hashSeed(seed).toString(36), slot: 'mask', baseCosmeticId: maskId, weaving, colorA: null, colorB: null, colorC: null };
   }

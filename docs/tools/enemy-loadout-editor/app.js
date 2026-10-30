@@ -555,6 +555,28 @@ function renderBodyProportions(species, gender) {
     el('span', 'muted', ' random Hachutu glyph + overpass, each in its own iridescent colour'),
   );
   box.append(patterns);
+  const scaleRow = el('label', 'chance', 'Pattern scale % (min / max of authored)');
+  const scaleInputs = ['min', 'max'].map((side) => {
+    const input = el('input');
+    input.type = 'number';
+    input.step = '5';
+    input.min = '5';
+    input.max = '200';
+    input.placeholder = side === 'min' ? '25' : '100';
+    input.value = rule().maskPatternScale?.[side] != null ? String(Math.round(rule().maskPatternScale[side] * 100)) : '';
+    input.onchange = () =>
+      mutate((r) => {
+        const entry = { ...(r.maskPatternScale || {}) };
+        const raw = input.value.trim();
+        if (raw === '') delete entry[side];
+        else entry[side] = Math.min(2, Math.max(0.05, Number(raw) / 100));
+        if (Object.keys(entry).length) r.maskPatternScale = entry;
+        else delete r.maskPatternScale;
+      });
+    return input;
+  });
+  scaleRow.append(' ', scaleInputs[0], ' / ', scaleInputs[1], el('span', 'muted', ' blank = game default (25 / 100)'));
+  box.append(scaleRow);
   const apply = el('button', null, 'Roll with these proportions');
   apply.onclick = () => roll(false);
   box.append(apply);

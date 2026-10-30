@@ -52,6 +52,18 @@ const read = p => fs.readFileSync(p, 'utf8');
     assert.notEqual(a.inkColorHex, b.inkColorHex, 'each layer has its own colour');
   }
   assert.ok(seen.rot.size >= 8 && seen.scale.size >= 3 && seen.ink.size >= 6, 'the randomization actually varies across wearers');
+  // Scale override: ratios stay inside the overridden range, may exceed 100%, and a one-sided override keeps the other default.
+  const ratios = (scale) => Array.from({ length: 60 }, (_, i) => api.weavingFor('s' + i, { scale }).patterns.map(l => l.frameScale / authored.frameScale)).flat();
+  const big = ratios({ min: 1.2, max: 1.6 });
+  assert.ok(big.every(r => r >= 1.2 - 1e-3 && r <= 1.6 + 1e-3) && Math.max(...big) > 1.3, 'override can scale UP: ' + Math.min(...big) + '..' + Math.max(...big));
+  const fixed = ratios({ min: 0.5, max: 0.5 });
+  assert.ok(fixed.every(r => Math.abs(r - 0.5) < 1e-3), 'min = max pins the scale');
+  const lowOnly = ratios({ max: 0.4 });
+  assert.ok(lowOnly.every(r => r <= 0.4 + 1e-3), 'max-only override caps the shipped range');
+  const highOnly = ratios({ min: 0.8 });
+  assert.ok(highOnly.every(r => r >= 0.8 - 1e-3 && r <= 1 + 1e-3), 'min-only override keeps the shipped max');
+  assert.deepEqual(api.weavingFor('same', { scale: { min: 0.3, max: 0.3 } }), api.weavingFor('same', { scale: { min: 0.3, max: 0.3 } }), 'override stays deterministic');
+  assert.deepEqual(api.weavingFor('same', { scale: {} }), api.weavingFor('same'), 'an empty override is the shipped behaviour');
   assert.deepEqual(api.weavingFor('same'), api.weavingFor('same'), 'a wearer keeps its mask');
   assert.notDeepEqual(api.weavingFor('one'), api.weavingFor('two'), 'different wearers differ');
   assert.equal(api.descriptorFor('some_other_mask', 'x'), null, 'only the Hachutu mask declares procedural patterns');
@@ -75,6 +87,13 @@ const read = p => fs.readFileSync(p, 'utf8');
   vm.runInNewContext(read('docs/js/combat/enemy-loadout-rules.js'), { window: rules, console, URL, document: { currentScript: { src: 'https://game.test/docs/js/combat/enemy-loadout-rules.js' }, baseURI: 'https://game.test/docs/' }, fetch: async () => ({ ok: true, json: async () => ({ schema: 'hobunji_enemy_loadouts.v1', rules: {} }) }) });
   await rules.EnemyLoadoutRules.ready;
   assert.throws(() => rules.EnemyLoadoutRules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'maskbound:sentinel': { maskPatterns: 'no' } } }), /maskPatterns/);
+  rules.EnemyLoadoutRules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'maskbound:sentinel': { maskPatterns: false } } });
+  for (const bad of [{ min: 0.01 }, { max: 3 }, { min: 1, max: 0.5 }, { mid: 1 }, 'big'])
+    assert.throws(() => rules.EnemyLoadoutRules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'maskbound:sentinel': { maskPatternScale: bad } } }), /maskPatternScale/, JSON.stringify(bad));
+  rules.EnemyLoadoutRules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'maskbound:sentinel': { maskPatternScale: { min: 0.5, max: 1.5 } } } });
+  assert.equal(JSON.stringify(rules.EnemyLoadoutRules.applyRoster('maskbound:sentinel', { appearance: { speciesId: 'maskbound-guardian', gender: 'male' }, equippedCosmetics: [] }, Math.random, {}).maskPatternScale), '{"min":0.5,"max":1.5}');
+  assert.match(read('docs/js/npc-avatar-preview-utils.js'), /scale: npc\.maskPatternScale/, 'the override reaches the generator');
+  assert.match(read('docs/tools/enemy-loadout-editor/app.js'), /maskPatternScale/, 'the Workshop edits it');
   rules.EnemyLoadoutRules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'maskbound:sentinel': { maskPatterns: false } } });
   assert.equal(rules.EnemyLoadoutRules.applyRoster('maskbound:sentinel', { appearance: { speciesId: 'maskbound-guardian', gender: 'male' }, equippedCosmetics: [] }, Math.random, {}).maskPatterns, false);
 

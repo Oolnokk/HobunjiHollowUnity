@@ -57,6 +57,19 @@
         throw Error('Enemy rule enabled must be true/false');
       if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
         throw Error(kind + '.maskPatterns must be true/false');
+      if (rule.maskPatternScale != null) {
+        // Range the procedural mask patterns' frame scale is drawn from, as a multiple of the authored glyph frame (shipped default 0.25–1).
+        const range = rule.maskPatternScale;
+        if (typeof range !== 'object' || Array.isArray(range))
+          throw Error(kind + '.maskPatternScale: expected { min, max }');
+        for (const field of Object.keys(range))
+          if (field !== 'min' && field !== 'max') throw Error(kind + '.maskPatternScale: unknown field ' + field);
+        for (const field of ['min', 'max'])
+          if (range[field] != null && !(Number(range[field]) >= 0.05 && Number(range[field]) <= 2))
+            throw Error(kind + '.maskPatternScale.' + field + ' must be 0.05–2');
+        if (range.min != null && range.max != null && Number(range.min) > Number(range.max))
+          throw Error(kind + '.maskPatternScale: min cannot exceed max');
+      }
       if (rule.rigScale != null) {
         // Same four values (and units: scale multipliers / fraction of model height) as the Animation Author's Character Rig Scale section.
         if (typeof rule.rigScale !== 'object' || Array.isArray(rule.rigScale))
@@ -261,6 +274,7 @@
     roster.equippedCosmetics ||= [];
     roster.cosmeticSlots ||= {};
     roster.appliedDyes ||= {};
+    if (rule.maskPatternScale) roster.maskPatternScale = { ...rule.maskPatternScale }; // Override of the procedural mask pattern scale range.
     if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
       if (roster.metalArmorItems)

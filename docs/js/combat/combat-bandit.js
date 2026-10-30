@@ -410,7 +410,7 @@
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait',
-        mountSpecies: roster.mountSpecies || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
+        mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
       },
     );
     if (portrait.userData?.proceduralBodyRoot) { // Compound avatars (Omgurku rider + quadruped, mounted riders) keep their own hierarchy instead of being split into two rigid planes.
@@ -2736,6 +2736,7 @@
       }
     }
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
+    if (roster?.mountSpecies && !roster.mountGenotype) roster.mountGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(roster.mountSpecies) || null; // Same coat/pattern roll a wild specimen gets; kept on the roster so a rebuilt avatar keeps its mount.
     if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.

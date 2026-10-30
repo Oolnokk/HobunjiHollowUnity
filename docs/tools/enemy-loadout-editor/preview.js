@@ -34,6 +34,9 @@ const files = [
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',
   'js/pants-garment-renderer.js?v=20261028a',
+  'js/perp-rotation.js?v=20261026h7f6f691', // Mounts turn like creature cards (dead-zone facing); without it the Nazgraku card stays edge-on.
+  'js/creature-texture-cache.js?v=20261011h0a4170f',
+  'js/creature-genetics.js?v=20261029h86f0973', // makeDefaultGenotype: the same coat roll wild Nazgraku get.
   'js/creature-genetics-render.js?v=20261028a',
   'config/modular-weapons.js?v=20261028a',
   'js/modular-weapons.js?v=20261028a',
@@ -111,6 +114,14 @@ export class EnemyPreview {
         document.head.append(s);
       });
     }
+    window.PerpRotation?.init({
+      angleDiff: (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current)),
+      playerWorldPosition: () => null,
+    });
+    window.CreatureGenetics?.init({
+      clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+      CREATURE_DB: { nazgraku: { defaultSizeClass: 'large' } },
+    });
     await window.HobunjiHandRuntimeReady;
     await window.HobunjiSpeciesPoseScale?.ready;
     await window.HobunjiCharacterDimensions?.ready; // Without measured species heights the weapon falls back to the unscaled 0.55 and no grip offset.
@@ -530,6 +541,10 @@ export class EnemyPreview {
     if (a.frontPlane) a.frontPlane.rotation.y = Math.PI / 2;
     if (a.backPlane) a.backPlane.rotation.y = -Math.PI / 2;
     if (a.legsPivot) { a.legsPivot.rotation.y = 0; a.syncHandFrame?.(); }
+    if (a.riderMount && a.handRigAvatarRoot) {
+      window.HobunjiOmgurkuSpecies?.setPreviewFacing(a.handRigAvatarRoot, Math.PI / 2); // The mount heads sideways (+X), so its card reads as a side view instead of edge-on to the camera...
+      a.handRigAvatarRoot.userData.omgurkuPreviewBodyYaw = -Math.PI / 2; // ...while the rider keeps facing the camera like every other previewed enemy.
+    }
     this.dependencies.hostileObjects = [next];
     window.PngPlaneOutlineOccluder.prune();
   }
