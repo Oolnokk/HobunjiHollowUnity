@@ -1782,7 +1782,7 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
-        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -22955,7 +22955,7 @@
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
         _markPngPlane(g);
-        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
+        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
         return g;
       }
 
