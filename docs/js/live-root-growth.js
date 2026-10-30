@@ -111,6 +111,15 @@
         if(node===target)break; node=node.parent; }
       if(excluded)return;
       const bounds=new THREE.Box3().setFromObject(mesh);
+      if(mesh.isInstancedMesh){
+        mesh.geometry.computeBoundingBox();
+        bounds.makeEmpty();
+        const matrix=new THREE.Matrix4(),world=new THREE.Matrix4(); // Include every placed ruin-floor brick, rather than only the untransformed source brick.
+        for(let instance=0;instance<mesh.count;instance++){
+          mesh.getMatrixAt(instance,matrix);world.multiplyMatrices(mesh.matrixWorld,matrix);
+          bounds.union(mesh.geometry.boundingBox.clone().applyMatrix4(world));
+        }
+      }
       if(bounds.isEmpty?.())return;
       const min=bounds.min,max=bounds.max;
       if(![min.x,min.y,min.z,max.x,max.y,max.z].every(Number.isFinite))return;
@@ -120,7 +129,8 @@
     });
     if(!parts.length)throw new Error('The imported furniture has no valid growth parts.');
     const floorGap=Math.max(.18,radius*4);
-    let grounded=parts.filter(p=>p.bounds.min.y<=floorY+floorGap &&
+    const structuralFloors=parts.filter(p=>p.mesh.userData?.liveRootFloor); // A ruin grows from its real floor before reaching walls and furniture.
+    let grounded=structuralFloors.length?structuralFloors:parts.filter(p=>p.bounds.min.y<=floorY+floorGap &&
       p.bounds.max.y>=floorY-floorGap);
     if(!grounded.length){ // An elevated asset still needs one entry point, never all-at-once targets.
       const minHeight=Math.min(...parts.map(p=>p.bounds.min.y));
@@ -231,7 +241,7 @@
 
   // Choose branch origins FROM the generated floor strands, not arbitrary tiles.
   // Each hidden node lies inside the existing dense root blanket.
-  function floorNodes(THREE, floorGrowth, endpoints, recipe, random) {
+  function floorNodes(THREE, floorGrowth, endpoints, recipe, random, actualFloor = false) {
     const mesh = findGrowthMesh(floorGrowth), pos = mesh?.geometry?.getAttribute('position');
     const candidates = []; // Bounded reservoir of centerline-adjacent vertices for floor-root node selection.
     if (pos) {
@@ -245,8 +255,8 @@
     }
     const chosen = []; // Separated source nodes prevent a single conspicuous center tuft.
     for (let i = 0; i < recipe.branchCount; i++) {
-      const end = endpoints[i % endpoints.length], goalX = clamp(end.x, -recipe.floorWidth * .45, recipe.floorWidth * .45);
-      const goalZ = clamp(end.z, -recipe.floorDepth * .45, recipe.floorDepth * .45);
+      const end = endpoints[i % endpoints.length], goalX = actualFloor?end.x:clamp(end.x, -recipe.floorWidth * .45, recipe.floorWidth * .45);
+      const goalZ = actualFloor?end.z:clamp(end.z, -recipe.floorDepth * .45, recipe.floorDepth * .45);
       let best = null, score = Infinity;
       for (let k = 0; k < Math.min(60, candidates.length); k++) {
         const point = candidates[Math.floor(random() * candidates.length)];
@@ -275,7 +285,7 @@
       }))) : growthMeshes(growth).map(mesh=>({mesh,source:null}));
     if (interior) for (const {mesh,source} of interiorMeshes) {
       const bounds=source?new THREE.Box3().setFromObject(source):null;
-      const entryCeiling=bounds ? bounds.min.y+
+      const entryCeiling=bounds && !source.userData?.liveRootFloor ? bounds.min.y+
         Math.max(.12,(bounds.max.y-bounds.min.y)*.25) : Infinity;
       const pos=mesh.geometry.getAttribute('position');
       const ringCount=Math.floor(pos.count/6);
@@ -367,6 +377,12 @@
     const foliage = options.foliage || root.FoliageGenerator?.forThree?.(THREE) || root.FoliageGenerator;
     if (!THREE || !foliage?.buildSurfaceGrowth || !foliage?.normalizeSurfaceGrowth) throw new Error('LiveRootGrowth requires THREE and FoliageGenerator.');
     if (!options.target?.isObject3D) throw new TypeError('Pass a Three.js furniture group as options.target.');
+    if(options.substrate!=null&&!options.substrate.isObject3D)throw new TypeError('Pass a Three.js ruin group as options.substrate.');
+    if(options.substrate){
+      let hasFloor=false; // Reject invalid architecture before allocating generated roots.
+      options.substrate.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.liveRootFloor)hasFloor=true;});
+      if(!hasFloor)throw new Error('A ruin substrate must contain a mesh tagged liveRootFloor.');
+    }
     const recipe = normalizeRecipe(options.recipe), random = randomFromSeed(recipe.seed);
     const proposedFinish = options.rootFinish || TEMPLE_ROOT_FINISH; // Editor may provide the current Temple configuration at build time.
     const rootFinish = {
@@ -377,7 +393,8 @@
     }; // Keep serialized material inputs safe for all callers.
     const group = new THREE.Group(); // Public scene-owned root, containing floor, hidden shape and generated foliage.
     group.name = 'Live root growth';
-    const target = options.target.clone(true); // Imported furniture and its materials remain owned by the caller.
+    const target = options.substrate?.isObject3D ? new THREE.Group() : options.target.clone(true); // A generated ruin and optional furniture share one staged growth graph.
+    if(options.substrate?.isObject3D) target.add(options.substrate.clone(true),options.target.clone(true));
     target.name = 'Invisible growth shape';
     // Imported furniture GLBs use a tiny Mesh as an async driver. Replace the
     // loaded driver with a transform-identical Group so wrapping sees only the
@@ -395,13 +412,15 @@
       for (const child of [...driver.children]) holder.add(child);
       driver.parent.add(holder); driver.parent.remove(driver);
     }
-    const floorHost = new THREE.Group(), floor = new THREE.Mesh(
+    const floorHost = new THREE.Group(), floor = options.substrate ? null : new THREE.Mesh(
       new THREE.PlaneGeometry(recipe.floorWidth, recipe.floorDepth),
       new THREE.MeshBasicMaterial({visible:false}));
-    floor.rotation.x = -Math.PI / 2; floor.position.y = recipe.floorY;
-    floor.userData.surfaceFoliageRole = 'floors';
-    floor.name = 'Invisible root-floor navigation surface';
-    floorHost.add(floor);
+    if(floor){
+      floor.rotation.x = -Math.PI / 2; floor.position.y = recipe.floorY;
+      floor.userData.surfaceFoliageRole = 'floors';
+      floor.name = 'Invisible root-floor navigation surface';
+      floorHost.add(floor);
+    } // Room mode must never create, sample or display the synthetic rectangular substrate.
     group.add(floorHost, target);
     target.traverse(mesh => {
       if (!mesh.isMesh) return;
@@ -418,10 +437,10 @@
     const growthOptions = {kind:'roots', style:'wrap', count:recipe.strandLimit,
       strandLimit:recipe.strandLimit, radius:recipe.radius, curl:recipe.curl,
       offset:0.012, density:recipe.floorDensity, color:rootFinish.color, texture:rootFinish.texture};
-    const floorGrowth = buildDenseWrap(THREE, foliage, floorHost, {
+    let floorGrowth = options.substrate ? null : buildDenseWrap(THREE, foliage, floorHost, {
       ...growthOptions, seed:recipe.seed+':floor', target:'floors', length:recipe.floorLength
     }, recipe.floorDensity); // Dense permanent cover uses precisely the temple Wrap solver.
-    floorHost.add(floorGrowth);
+    if(floorGrowth)floorHost.add(floorGrowth);
     const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
     // One per-part generator per density pass would multiply an authored 30-part
     // festival arch's 80-strand budget by 30. Divide the shared pass budget
@@ -436,14 +455,15 @@
     // initial roots. Each part retains the same six inward shrinkwrap passes.
     const partGrowths=partPlan.map(part=>{
       const extent=part.bounds.max.clone().sub(part.bounds.min);
-      const minimumThickness=Math.max(.01,Math.min(extent.x,extent.y,extent.z));
+      const minimumThickness=Math.max(.01,Math.min(...[extent.x,extent.y,extent.z].filter(size=>size>.001))); // Ruin walls are open planes: keep full root radius instead of treating their zero thickness as a tiny solid.
       const partRadius=Math.max(.005,Math.min(recipe.radius,minimumThickness*.42));
+      const isFloor=part.mesh.userData?.liveRootFloor===true; // Structural floor roots use floor controls while retaining staged inward growth.
       const wrapped=buildDenseWrap(THREE, foliage, target, {
         ...growthOptions, seed:recipe.seed+':part-'+part.index,
         radius:partRadius, strandLimit:partWrapLimit,count:partWrapLimit,
-        target:'all', targetMeshId:part.mesh.uuid, length:recipe.targetLength,
+        target:isFloor?'floors':'all', targetMeshId:part.mesh.uuid, length:isFloor?recipe.floorLength:recipe.targetLength,
         shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
-      },recipe.targetDensity,(pass,passes)=>({
+      },isFloor?recipe.floorDensity:recipe.targetDensity,(pass,passes)=>({
         inset:Math.min(.5,recipe.shapeInset+
           recipe.volumeFillDepth*(passes<=1?0:pass/(passes-1)))
       }));
@@ -457,12 +477,17 @@
     });
     targetGrowth.userData.densityPasses=partGrowths[0]?.userData?.densityPasses||1;
     target.add(targetGrowth);
+    if(!floorGrowth){
+      const floorPart=partPlan.find(part=>part.mesh.userData?.liveRootFloor); // Source nodes are sampled from generated room-floor roots, including irregular footprints.
+      if(!floorPart)throw new Error('A ruin substrate must contain a mesh tagged liveRootFloor.');
+      floorGrowth=partGrowths[floorPart.index];
+    }
     const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
     const groundedPartPlan=partPlan.filter(part=>part.grounded);
     const groundGrowth=groundedPartPlan.map(part=>partGrowths[part.index]);
     const targets=sampledTargetPoints(THREE,target,targetGrowth,recipe.branchCount,random,group,
       true,groundGrowth,groundedPartPlan.map(part=>part.mesh));
-    const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random);
+    const source = floorNodes(THREE, floorGrowth, targets.points, recipe, random, !!options.substrate);
     const branchSourceMaterial = shapeMesh?.material || floorMesh?.material; // Existing Temple-textured Wrap material is authoritative for branch finish.
     const branchMaterial = branchSourceMaterial?.clone?.() ||
       new THREE.MeshBasicMaterial({color:parseInt(rootFinish.color.slice(1),16)}); // No-shape fallback still uses Temple bark color.
@@ -502,7 +527,7 @@
       connectors.push(connector);branchGroup.add(connector);
     }
     const emitterRecords = Array.isArray(options.particleEmitters) ? options.particleEmitters :
-      (Array.isArray(target.userData?.authoredParticleEmitters) ? target.userData.authoredParticleEmitters : []);
+      (Array.isArray(options.target.userData?.authoredParticleEmitters) ? options.target.userData.authoredParticleEmitters : []);
     const emitterRuntime = options.emitterRuntime || root.AuthoredFurniture;
     if (emitterRecords.length && typeof emitterRuntime?.createEmitterVisual !== 'function') {
       throw new Error('Furniture particle emitters require AuthoredFurniture.createEmitterVisual.');
@@ -558,8 +583,9 @@
       },
       getDiagnostics() {
         return {progress, direction, branchCount:branches.length, rootFinish, outlinedBranches:branches.length,
+          substrate:options.substrate?'ruin':'flat',
           floorStrands:floorGrowth.userData?.generatedStrands || 0,
-          shapeStrands:targetGrowth.userData?.generatedStrands || 0,
+          shapeStrands:(targetGrowth.userData?.generatedStrands || 0)-(options.substrate?(floorGrowth.userData?.generatedStrands||0):0),
           groundedParts:partPlan.filter(part=>part.grounded).map(part=>part.label),
           partCount:partPlan.length, rootTransferCount:connectors.length,
           maxPartDepth:maxDepth, perPartStrandLimit:partWrapLimit,
@@ -587,11 +613,11 @@
         for (const visual of emitterVisuals) visual.dispose(); // Stops spawning and frees particles without touching the furniture.
         for (const mesh of [...branches,...connectors]) mesh.geometry.dispose();
         branchMaterial.dispose();
-        for (const growth of [floorGrowth, targetGrowth]) growth.traverse(node => {
+        for (const growth of options.substrate?[targetGrowth]:[floorGrowth, targetGrowth]) growth.traverse(node => {
           node.geometry?.dispose?.(); if (Array.isArray(node.material)) node.material.forEach(mat => mat.dispose());
           else node.material?.dispose?.();
         });
-        floor.geometry.dispose(); floor.material.dispose();
+        floor?.geometry.dispose(); floor?.material.dispose();
       }
     };
     api.setProgress(options.progress ?? 0);

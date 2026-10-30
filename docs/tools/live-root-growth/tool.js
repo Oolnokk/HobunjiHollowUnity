@@ -11,6 +11,8 @@
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
   let repoRequestId = 0; // Ignores stale results from overlapping catalog refresh requests.
+  let buildRequestId = 0, ruinFrame = null, ruinLoader = null, ruinQueue = Promise.resolve(), ruinRoom = null; // Serialize generator ownership and discard obsolete preview requests.
+  let framedEnvironment = 'flat'; // Reframe once per room/seed so rebuilds preserve the user's orbit and zoom.
   let active = null, lastStatus = '', lastDebug = '', lastTimestamp = 0, pendingRecipe = null; // Instance/diagnostic state for this isolated preview.
   function reportError(error) {
     errorBox.style.display = 'block'; errorBox.textContent = error?.stack || error?.message || String(error);
@@ -123,15 +125,89 @@
       dot.position.copy(node); nodeMarkers.add(dot);
     }
   }
-  function rebuild(keepProgress = true) {
+  async function ruinGenerator() {
+    if(ruinLoader)return ruinLoader;
+    ruinLoader=(async()=>{
+      ruinFrame=document.createElement('iframe');
+      ruinFrame.title='Ruin geometry generator';ruinFrame.tabIndex=-1;ruinFrame.setAttribute('aria-hidden','true');
+      ruinFrame.style.cssText='position:fixed;left:-10000px;top:-10000px;width:16px;height:16px;visibility:hidden;border:0';
+      ruinFrame.src=new URL('tools/debris-ifier/index.html?devRuntime=1',document.baseURI).href;
+      document.body.appendChild(ruinFrame);
+      const started=Date.now(); // A visible error replaces an indefinite mobile loading state.
+      while(Date.now()-started<45000){
+        const api=ruinFrame.contentWindow?.DebrisifierV50; // Reuse the exact same parent-THREE generator bridge as the playable ruins.
+        if(api?.generateInteriorLocale)return api;
+        const debug=ruinFrame.contentDocument?.getElementById('debug')?.textContent||'';
+        if(/FAILED/i.test(debug))throw new Error(debug);
+        await new Promise(resolve=>setTimeout(resolve,50));
+      }
+      throw new Error('Ruin generator did not load within 45 seconds. Rebuild to retry.');
+    })().catch(error=>{ruinFrame?.remove();ruinFrame=null;ruinLoader=null;throw error;});
+    return ruinLoader;
+  }
+  function roomForSeed(seed,size) {
+    ruinQueue=ruinQueue.catch(()=>{}).then(async()=>{
+      const key=seed+'|'+size; // A saved seed regenerates the same room without rebuilding on every growth-setting adjustment.
+      if(ruinRoom?.key===key)return ruinRoom;
+      $('ruinStatus').textContent='Building one room with the existing ruin generator…';
+      const api=await ruinGenerator(); // The hidden frame owns no render loop or extra WebGL context.
+      const result=await api.generateInteriorLocale({seed,size,singleRoom:true,
+        puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}});
+      api.pausePreviewLoop();
+      const meta=result.locale?.meta?.interiorShell; // Authoritative room count and floor elevation, not a separately invented rectangle.
+      if(meta?.rooms?.length!==1)throw new Error('The ruin preview must generate exactly one room.');
+      const roots=api.takePreviewRoots(),model=new T.Group(); // Preserve generated wall/floor geometry while excluding puzzles and unrelated ruin props.
+      roots.localeRoot.updateWorldMatrix(true,true);
+      let walls=0,floors=0; // On-device evidence that both real architectural surface types were imported.
+      roots.localeRoot.traverse(mesh=>{
+        if(!mesh.isMesh)return;
+        const isFloor=mesh.userData?.wallBuilderRecipe==='wallrecipe2.json';
+        if(!isFloor&&!mesh.userData?.ruinInteriorWall)return;
+        const copy=mesh.clone(false); // Clone owned buffers: the generator disposes its originals on the next seed.
+        copy.geometry=mesh.geometry.clone();
+        copy.material=Array.isArray(mesh.material)?mesh.material.map(material=>material.clone()):mesh.material.clone();
+        mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);
+        copy.visible=true;copy.userData.liveRootFloor=isFloor;
+        copy.userData.surfaceFoliageRole=isFloor?'floors':'walls';
+        model.add(copy);if(isFloor)floors++;else walls++;
+      });
+      if(!floors||!walls)throw new Error('The generated room is missing its physical floor or walls.');
+      model.updateWorldMatrix(true,true);
+      const floorY=Number(meta.floorSurfaceY)||0; // Keep furniture placement and floor-node sampling in the generated room's own coordinate system.
+      if(ruinRoom)ruinRoom.model.traverse(mesh=>{mesh.geometry?.dispose();
+        if(Array.isArray(mesh.material))mesh.material.forEach(material=>material.dispose());else mesh.material?.dispose();});
+      ruinRoom={key,model,floorY,walls,floors,rooms:1,seed,size};
+      $('ruinStatus').textContent='1 room · '+walls+' generated wall panels · '+floors+' generated brick floor. Stone stays hidden; roots form the room.';
+      return ruinRoom;
+    });
+    return ruinQueue;
+  }
+  function frameEnvironment(room) {
+    const key=room?.key||'flat'; // Each room's actual wall bounds determine a comfortable camera distance on desktop and mobile.
+    if(key===framedEnvironment)return;
+    framedEnvironment=key;
+    if(!room){orbit.target.set(0,1,0);camera.position.set(9,8,11);return;}
+    const bounds=new T.Box3().setFromObject(room.model),center=bounds.getCenter(new T.Vector3()),size=bounds.getSize(new T.Vector3());
+    const distance=Math.max(size.x,size.y,size.z)/
+      (2*Math.tan(camera.fov*Math.PI/360))*1.65/Math.min(1,camera.aspect);
+    orbit.target.copy(center);camera.position.copy(center).add(new T.Vector3(1,.9,1.2).normalize().multiplyScalar(distance));
+    orbit.update();
+  }
+  async function rebuild(keepProgress = true) {
+    const request=++buildRequestId; // An older asynchronous room build must never overwrite a newer furniture or recipe choice.
     try {
       errorBox.style.display = 'none';
+      const room=$('previewEnvironment').value==='ruin'?await roomForSeed(readRecipe().seed,$('ruinSize').value):null;
+      if(request!==buildRequestId)return;
       const progress = keepProgress ? active?.getProgress() ?? 0 : 0;
       if (active) { active.dispose(); active = null; }
       const placed = source.model.clone(true); // Never mutate the reusable imported source's local geometry.
       placed.position.copy(readPosition()); // Purpose-agnostic target transform for platform, bridge or future door shapes.
-      active = growth.create({THREE:T,foliage,recipe:readRecipe(),target:placed,progress,rootFinish:templeRootFinish});
+      active = growth.create({THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},target:placed,
+        ...(room?{substrate:room.model}:{}),progress,rootFinish:templeRootFinish});
       scene.add(active.group); rebuildMarkers();
+      grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
+      frameEnvironment(room);
       $('sourceName').textContent = source.name + ' · hidden geometry; growth-only preview';
       updateStatus(true);
       const metrics = active.getDiagnostics();
@@ -142,13 +218,13 @@
         errorBox.style.display = 'block';
         errorBox.textContent = 'Inward shrinkwrap found only '+metrics.shrinkwrapHits+'/'+metrics.shrinkwrapRays+' hits on the hidden furniture. Some roots may not lie inside its volume. Check that the imported furniture has real surfaces and closed geometry.';
       }
-    } catch (error) { reportError(error); }
+    } catch (error) { if(request===buildRequestId)reportError(error); }
   }
   function updateStatus(force = false) {
     if (!active) return;
     const info = active.getDiagnostics(), percent = Math.round(info.progress * 100);
     $('scrub').value = String(percent); $('progressLabel').textContent = percent+'%';
-    const message = source.name + ' · ' + percent + '% grown\n' +
+    const message = (info.substrate==='ruin'?'Single ruin room + ':'') + source.name + ' · ' + percent + '% grown\n' +
       info.branchCount + ' branches · ' + info.floorStrands + ' floor wraps · ' +
       info.shapeStrands + ' shape wraps · ' + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
       ' inward hits\n' + info.groundedParts.length + ' grounded parts → ' +
@@ -157,6 +233,8 @@
     if (force || message !== lastStatus) { status.textContent = message; lastStatus = message; }
     const details = JSON.stringify({
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,
+      environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
+        {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed}:null,
       targetPosition:readPosition().toArray(), ...info
     }, null, 2);
     if (force || details !== lastDebug) { diagnostics.textContent = details; lastDebug = details; }
@@ -337,6 +415,7 @@
   }
   function exportedRecipe() {
     return {schema:'hobunji_live_root_growth.v1',
+      environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,
       recipe:readRecipe(), position:readPosition().toArray(),
       target:{kind:source.kind,file:source.file,
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
@@ -363,6 +442,8 @@
     const json = JSON.parse(await file.text());
     if (json.schema !== 'hobunji_live_root_growth.v1') throw new Error('Not a live-root-growth recipe.');
     fillRecipe(json.recipe);
+    $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
+    $('ruinSize').value=['small','medium','large'].includes(json.ruinSize)?json.ruinSize:'small';
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
       const n = Number(json.position[i]); if (Number.isFinite(n)) $(id).value = String(n);
     });
@@ -380,13 +461,16 @@
         return;
       }
     }
-    pendingRecipe=null;rebuild(false);
+    pendingRecipe=null;await rebuild(false);
   }
   function resize() {
     const rect=$('render').getBoundingClientRect(), w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
   }
   $('rebuild').onclick=()=>rebuild();
+  $('previewEnvironment').onchange=()=>rebuild(false);
+  $('ruinSize').onchange=()=>{if($('previewEnvironment').value==='ruin')rebuild(false);};
+  $('previewRuin').onclick=()=>{$('previewEnvironment').value='ruin';rebuild(false);};
   $('repoFurnitureSearch').addEventListener('input',renderRepoCatalog);
   $('refreshRepoFurniture').onclick=()=>refreshRepoFurniture().catch(reportError);
   $('importRepoFurniture').onclick=()=>importRepoFurniture().catch(reportError);
@@ -404,6 +488,7 @@
     catch(error){reportError(error);}finally{event.target.value='';}};
   $('download').onclick=saveJson;$('copy').onclick=()=>copyJson().catch(reportError);
   window._liveRootGrowthAuthorBridge = {getRecipe:exportedRecipe, rebuild,
+    getInstance:()=>active, // Allows exact hidden geometry, growth stages and disposal checks without renderer interception.
     diagnostics:()=>active?.getDiagnostics(), refreshRepoFurniture, getRepoCount:()=>repoCatalog.size}; // Built-in mobile diagnostic hook for the Tools Hub.
   if (window.ResizeObserver) new ResizeObserver(resize).observe($('render'));else window.addEventListener('resize',resize);
   function renderSceneWithShellOutlines() {

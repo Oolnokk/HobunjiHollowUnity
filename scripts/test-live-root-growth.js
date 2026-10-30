@@ -380,6 +380,46 @@ assert(fallback.branches.every(branch=>branch.geometry.parameters.path.points.at
   'when grounded wraps are empty, floor roots still must not target the raised tabletop');
 fallback.dispose();
 const scene=new Group();scene.add(first.group); // Disposal must detach from a real scene parent.
+const ruinSubstrate=new Group(); // Generated architecture enters the same hidden target graph as furniture.
+const roomFloor=new Mesh(new Geometry([new Vector3(-3,0,-3),new Vector3(3,0,-3),new Vector3(3,0,3)]),new Material());
+roomFloor.name='Generated brick floor';roomFloor.userData.liveRootFloor=true;roomFloor.userData.surfaceFoliageRole='floors';
+const roomWall=new Mesh(new Geometry([new Vector3(-3,0,-3),new Vector3(3,0,-3),new Vector3(3,3,-3)]),new Material());
+roomWall.name='Generated wall';roomWall.userData.ruinInteriorWall=true;
+ruinSubstrate.add(roomFloor,roomWall);
+const roomCase=feature.create({...options,substrate:ruinSubstrate,recipe:{seed:'single-room',floorDensity:2,targetDensity:3}});
+assert.equal(roomCase.getDiagnostics().substrate,'ruin');
+assert.equal(roomCase.group.children[0].children.length,0,'a ruin must not contain a synthetic plane or permanent flat floor growth');
+assert.equal(roomCase.partPlan.length,3,'the generated floor, wall and selected furniture all receive staged roots');
+assert.deepEqual(Array.from(roomCase.getDiagnostics().groundedParts),['Generated brick floor'],
+  'the actual room floor must grow before the walls, even though walls also touch floor height');
+const wallPlan=roomCase.partPlan.find(part=>part.label==='Generated wall');
+assert(wallPlan.depth>0);
+assert.equal(roomCase.floorGrowth.children.length,2,'room floor density uses the existing floor setting');
+assert.equal(roomCase.partGrowths[wallPlan.index].children.length,3,'wall density uses the existing shape setting');
+assert(roomCase.partPlan.every(part=>part.mesh.visible===false),'all original stone and furniture geometry stays hidden');
+roomCase.setProgress(0);
+assert(roomCase.floorGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count===0),
+  'unlike the old substrate, generated floor roots retract completely');
+roomCase.setProgress(.4);
+assert(roomCase.floorGrowth.children.every(layer=>layer.children[0].geometry.drawRange.count>0));
+assert(roomCase.partGrowths[wallPlan.index].children.every(layer=>layer.children[0].geometry.drawRange.count===0),
+  'walls must wait until their rooted floor stage completes');
+roomCase.setProgress(1);
+assert(roomCase.partGrowths.every(part=>part.children.every(layer=>layer.children[0].geometry.drawRange.count>0)));
+const floorRoots=roomCase.floorGrowth.children[0].children[0].geometry; // Disposal frees staged floor roots exactly as it frees furniture roots.
+roomCase.dispose();
+assert(floorRoots.disposed);
+assert.equal(roomFloor.visible,true,'caller-owned ruin source remains untouched');
+assert.equal(roomFloor.geometry.disposed,undefined,'rebuilds must retain reusable generated stone geometry');
+const roomEmission=feature.create({...options,target:emitterInput,substrate:ruinSubstrate,emitterRuntime}); // Combining architecture and furniture must preserve authored effects and attachment transforms.
+assert.equal(roomEmission.getDiagnostics().furnitureEmitterCount,1);
+roomEmission.setProgress(1);roomEmission.update(.01);
+assert.equal(emitted.at(-1).active,true);
+roomEmission.setProgress(.9);roomEmission.update(.01);
+assert.equal(emitted.at(-1).active,false);
+roomEmission.dispose();
+assert.throws(()=>feature.create({...options,substrate:{}}),/Three.js ruin group/);
+assert.throws(()=>feature.create({...options,substrate:new Group()}),/liveRootFloor/);
 const owned=first.branches[0].geometry;first.dispose();first.dispose();
 assert.equal(owned.disposed,true);
 assert.equal(first.group.parent,null);

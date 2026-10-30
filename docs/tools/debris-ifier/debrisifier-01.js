@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261002ruin-materials', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261030h78f26de', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js?v=20261002ruin-materials';
+    api.src = 'debrisifier-v50-api.js?v=20261030h78f26de';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }
@@ -121,6 +121,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const elevatorSocketCallReplacement = "const socketExit=path?.[1]?{dx:Math.sign(path[1].x-source.x),dz:Math.sign(path[1].z-source.z)}:null,elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07,socketExit);";
 
     const patches = [
+      // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
+      ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
+      ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],
