@@ -306,9 +306,13 @@
         }
         const composite=which==='head' && f.head.anchorSpace==='composite';
         let spritePaths=[];
+        let spriteOffsets=[]; // Per-layer head offsets, read by composite sprite picking only.
         if (which==='haft') spritePaths=[entry().sprite || 'assets/toolsprites/hachutu_torch-flail_handle.png'];
         else if (which==='chainTop'||which==='chainBottom') spritePaths=[f.chain.sprite];
-        else if (composite) spritePaths=f.head.layers.map(part=>part.sprite);
+        else if (composite) {
+          spritePaths=f.head.layers.map(part=>part.sprite);
+          spriteOffsets=f.head.layers.map(part=>part.offsetPx || {x:0,y:0}); // Pass authored per-layer displacements into the shared-center picker.
+        }
         else spritePaths=[(f.head.layers.find(part=>part.id===f.head.anchorLayer)||f.head.layers[0])?.sprite];
         const imgs=spritePaths.map(image);
         if (!imgs.length||imgs.some(img=>!img)) {
@@ -317,7 +321,7 @@
           return;
         }
         picker?.open({
-          images:imgs, composite, label:which+' · '+spritePaths.map(s=>s.split('/').pop()).join(' + '),
+          images:imgs, offsets:spriteOffsets, composite, label:which+' · '+spritePaths.map(s=>s.split('/').pop()).join(' + '),
           onPick:point=>{
             if (which==='head' && composite) {
               f.head.anchor={x:point.x,y:point.y};
@@ -405,7 +409,7 @@
         const data = JSON.parse(await file.text());
         if (data?.schema !== 'hobunji_weapon_sprite_assemblies.v1' || !data.weapons || typeof data.weapons !== 'object' || Array.isArray(data.weapons)) throw Error('Unrecognized multi-sprite weapon JSON schema.');
         for (const weapon of Object.values(data.weapons)) {
-          if (weapon.flail && (!weapon.flail.chain?.sprite || !Array.isArray(weapon.flail.head?.layers))) throw Error('Incomplete flail recipe.');
+          if (weapon.flail && ((!weapon.flail.chain?.sprite && weapon.flail.chain?.type !== 'rope') || !Array.isArray(weapon.flail.head?.layers))) throw Error('Incomplete flail recipe.'); // Generated rope has geometric endpoints and requires no chain PNG.
           const all = [...(weapon.layers || []), ...(weapon.flail?.head?.layers || [])];
           if (all.length > 32 || all.some(part => !part.id || !part.sprite)) throw Error('Each sprite layer needs an ID and PNG path (limit 32).');
         }

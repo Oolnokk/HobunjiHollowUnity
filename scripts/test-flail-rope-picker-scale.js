@@ -79,10 +79,11 @@ const textured=preview.modelFor({...scaled,flail:{...scaled.flail,head:{...scale
 assert.equal(textured.headOrigin.x,textured.headPosition.x-6,'composite x coordinate is measured from the shared center');
 assert.equal(textured.headOrigin.y,textured.headPosition.y+7,'composite y coordinate is measured from the shared center');
 
+const drawnLayers=[]; // Captures composite picker images to confirm their authored per-layer displacements. 
 const callbacks = new Map();
 const canvas = {
  width:700,height:500,
- getContext(){return {...ctx,drawImage(){},setTransform(){}};},
+ getContext(){return {...ctx,drawImage(img,x,y){drawnLayers.push({name:img.name,x,y});},setTransform(){}};},
  addEventListener(event,fn){callbacks.set(event,fn);},
  getBoundingClientRect(){return {left:10,top:20,width:350,height:250};},
 };
@@ -92,8 +93,9 @@ const title={textContent:''},info={textContent:''};
 vm.runInNewContext(picker,{window,document});
 const control=window.HobunjiSpritePointPicker.create({canvas,panel,title,info,cancel:button});
 let chosen=null;
-assert(control.open({images:[art['grapple-flail_grapple-back.png'],art['grapple-flail_grapple-front.png']],composite:true,label:'Grapple head',onPick:p=>chosen=p}));
+assert(control.open({images:[art['grapple-flail_grapple-back.png'],art['grapple-flail_grapple-front.png']],composite:true,offsets:[{x:18,y:-8},{x:-18,y:8}],label:'Grapple head',onPick:p=>chosen=p}));
 assert.equal(panel.hidden,false);
+assert.deepEqual(drawnLayers.slice(-2).map(p=>[p.name,p.x,p.y]),[['back',-22,-48],['front',-58,-32]],'the two PNGs render with different authored offsets');
 const center=control.fromEvent({clientX:185,clientY:145});
 assert.deepEqual(JSON.parse(JSON.stringify(center)),{x:0,y:0},'center gap can be selected without any opaque pixel');
 callbacks.get('pointerdown')({clientX:185,clientY:145});

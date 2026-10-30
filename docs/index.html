@@ -2721,7 +2721,7 @@
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
-  <script src="js/loading-screen-runtime.js?v=20261018resourcecolors2"></script>
+  <script src="js/loading-screen-runtime.js?v=20261030harrivalb"></script>
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/ambient-dialogue.js?v=20261028spouse1"></script>
@@ -2857,12 +2857,14 @@
   <script src="js/farm-access.js?v=20261016a"></script>
   <!-- Toast/zone-banner + message history, and the keyboard QoL layer (menu hotkeys, F1 cheat sheet, H message log); game.js inits both. -->
   <script src="js/toast-notifications.js?v=20261025qol1"></script>
+  <!-- Shared location arrival titles and musical stings after loading. -->
+  <script src="js/location-arrival.js?v=20261030harrivalreview2"></script>
   <script src="js/qol-hotkeys.js?v=20261025qol1"></script>
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
-  <script src="game.js?v=20261030grapple1"></script>
+  <script src="game.js?v=20261030grappleArrival1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

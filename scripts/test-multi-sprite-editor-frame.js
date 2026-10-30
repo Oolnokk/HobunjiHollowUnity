@@ -163,6 +163,7 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   pickButtons.find(x=>x.dataset.pick==='head').click();
   assert.equal(pickerOptions.composite,true,'head picker must use shared composite coordinates');
   assert.equal(pickerOptions.images.length,2,'both grapple head PNGs must appear in the composite picker');
+  assert.equal(pickerOptions.offsets.length,2,'composite picking forwards one authored offset per sprite layer');
   pickerOptions.onPick({x:12,y:-14});
   node('save').click();
   const draft=savedDrafts.at(-1).weapons.grappleFlail.flail;
@@ -170,5 +171,8 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.equal(draft.head.scale,.5);
   assert.deepEqual(draft.head.anchor,{x:12,y:-14});
   assert.equal(draft.head.anchorSpace,'composite');
+  node('importFile').files=[{name:'grapple-flail.json',text:async()=>JSON.stringify(savedDrafts.at(-1))}]; // Round-trip the real exported draft through the actual JSON import handler.
+  await node('importFile').handlers.get('change')();
+  assert.match(node('log').textContent,/Imported grapple-flail\.json/,'a rope-only flail must re-import without a chain sprite');
   console.log('multi-sprite editor frame: PASS (real startup, six PNGs, both canvases, metal palette, rag tint, recolor cache, deduplicated errors)');
 })().catch(error => { console.error(error); process.exitCode=1; });
