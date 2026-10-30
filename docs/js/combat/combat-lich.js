@@ -302,7 +302,7 @@
       rosterOverride: roster,
       enemyClass: CLASS_ID,
       nameOverride: special?.name || def.label,
-      avatarRigScale: options.avatarRigScale || special?.scale || null, // Saved Workshop enemy snapshots may restore explicit body dimensions; normal named spawn uses its fixed preset.
+      avatarRigScale: options.avatarRigScale || (special ? window.SpecialHarlyaoLiches?.rigScaleFor?.(def.id) : null), // Exact 20/30% dimensions relative to the existing skeleton defaults, unless a Workshop rule overrides them.
       defOverride: {
         weaponKey: special?.weapon || LICH_CAST_WEAPON_KEY, // Azgarlu wields a visible warhammer; baseline liches keep invisible Light Weapon casting.
         rangedWeaponKey: null,
