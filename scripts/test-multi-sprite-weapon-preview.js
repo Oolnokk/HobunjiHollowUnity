@@ -69,8 +69,8 @@ function assertFitted(bounds,viewWidth,viewHeight) {
 for (const t of [0,0.12,0.25,0.5,0.68,0.95]) {
   const model=renderer.modelFor(recipe,lookup,t,1500);
   assert.ok(model.headOrigin && model.headPosition);
-  assert.ok(Math.hypot(model.headPosition.x-model.pivot.x, model.headPosition.y-model.pivot.y)>300,
-    'approved shorter chain still spans more than 300 handle pixels throughout the swing');
+  assert.ok(Math.hypot(model.headPosition.x-model.pivot.x, model.headPosition.y-model.pivot.y)>200,
+    'approved shorter chain still spans more than 200 handle pixels throughout the swing');
   const full=renderer.boundsFor(model,lookup,'combined');
   const detail=renderer.boundsFor(model,lookup,'head');
   assert.ok(full.maxY>model.headPosition.y-200,'combined view measures the brazier, not just the haft');
@@ -81,7 +81,7 @@ for (const t of [0,0.12,0.25,0.5,0.68,0.95]) {
   assertFitted(detail,960,360);
 }
 const model=renderer.modelFor(recipe,lookup,.25,1500); // Pure fit fixtures above remain useful; live rendering below delegates to the real gameplay owner.
-assert(renderer.fireReach(model) > 2, '0.4-world-unit fire inherits 2.5x head scale, rather than an arbitrary 2D pixel radius');
+assert(Math.abs(renderer.fireReach(model) - 2.5 * (.02 * 2 + .12 * .35 * 1.5)) < 1e-10, 'uploaded fire size and lifetime inherit 2.5x head scale in actual world units');
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z);} set(x,y,z){Object.assign(this,{x,y,z});return this;} copy(v){return this.set(v.x,v.y,v.z);} add(v){return this.set(this.x+v.x,this.y+v.y,this.z+v.z);} sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);} length(){return Math.hypot(this.x,this.y,this.z);} distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);} applyMatrix4(){return this;}
 }

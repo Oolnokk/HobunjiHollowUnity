@@ -12,8 +12,8 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
           top: { opaque: 'top' },
           bottom: { opaque: 'bottom' },
           material: 'metal',
-          scaleX: 1,
-          scaleY: 0.35,
+          scaleX: 0.35,
+          scaleY: 0.25,
         },
         head: {
           anchorLayer: 'handle',
@@ -27,14 +27,15 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
               vfx: {
                 type: 'fire', sourceHex: '#7F00FF', rate: 22,
                 colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
-                size: 0.4, life: 0.65, speed: 0.12,
+                size: 0.02, life: 0.35, speed: 0.12,
               },
+              offsetPx: { x: 0, y: 0 },
             },
             { id: 'front', sprite: 'assets/toolsprites/torch-flail_brazier-front.png', material: 'metal' },
           ],
           scale: 2.5,
         },
-        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15, angularDamping: 8 },
+        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
       },
     },
     grappleFlail: {
@@ -45,7 +46,7 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
         chain: {
           type: 'rope', lengthPx: 160, radiusPx: 2.5,
           color: '#6B4728', texture: 'assets/textures/wavy_surface.png',
-          scaleX: 5.25, scaleY: 5.25,
+          scaleX: 5.25, scaleY: 3.75, // Length inherits the torch chain ratio: 5.25 × (0.25 / 0.35).
         },
         head: {
           scale: 1,

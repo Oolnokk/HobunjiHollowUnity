@@ -159,7 +159,7 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.equal(node('headAnchorLayer').value,'composite','Grapple-Flail can attach between the two visible PNG layers');
   assert.equal(pickButtons.find(x=>x.dataset.pick==='chainTop').disabled,true,'rope has geometric ends, so raster chain-end picking is disabled');
   assert.equal(node('chainScaleX').value,5.25,'the approved Grapple-Flail width loads from the committed registry');
-  assert.equal(node('chainScaleY').value,5.25,'the approved Grapple-Flail length loads from the committed registry');
+  assert.equal(node('chainScaleY').value,3.75,'the approved Grapple-Flail length loads from the committed registry');
   node('chainScaleX').value='3';node('chainScaleX').handlers.get('change')();
   node('chainScaleY').value='2';node('chainScaleY').handlers.get('change')();
   node('angularDamping').value='12';node('angularDamping').handlers.get('change')();

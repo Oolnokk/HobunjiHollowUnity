@@ -74,11 +74,11 @@ assert.equal(api.anchor(image, { x: -100, y: 99 }, 'top').y, 5); // Out-of-bound
 assert.equal(api.definitionFor('plain', { spriteLayers: [{ sprite: 'assets/toolsprites/example.png' }] }).layers.length, 1);
 assert.deepEqual(Array.from(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers, part => part.id), ['back','handle','fuel','front']);
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.material, 'metal');
-assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleX, 1);
-assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleY, 0.35);
+assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleX, 0.35);
+assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.chain.scaleY, 0.25);
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.scale, 2.5);
 assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleX, 5.25);
-assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 5.25);
+assert.equal(api.definitionFor('grappleFlail', {}).flail.chain.scaleY, 3.75);
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].vfx.type, 'fire');
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers[2].targetHex.toUpperCase(), '#E7DDC9');
 assert.match(source, /enchantmentTargets/, 'the assembly exposes head-only enchantment masks');
