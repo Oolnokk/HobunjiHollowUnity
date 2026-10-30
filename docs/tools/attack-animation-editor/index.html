@@ -841,6 +841,7 @@ $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
 // shape, and it's obvious which end is the tool's business end.
 const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
+  grappleFlail: { label: 'Grapple-Flail (rope sweep)', sprite: '../../assets/toolsprites/grapple-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hachutuTorchFlail: { label: 'Hachutu Torch-Flail (sweep)', sprite: '../../assets/toolsprites/hachutu_torch-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   throwingflask:{ label: 'Throwing Flask (hatchet throw)', sprite: '../../assets/objectsprites/throwing_flask.png', animStyle: 'chop', usesWeaponStanceBasis: true },
