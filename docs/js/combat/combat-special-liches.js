@@ -57,6 +57,17 @@
     roster.appearance ||= {};
     roster.appearance.bodyColors={...(roster.appearance.bodyColors || {}),C:{hex,tintMode:'hexShadeFill'}};
     roster.appliedDyes && delete roster.appliedDyes.C; // A separately rolled dye must not replace the guardian's wall-matched color.
+    if(type==='kanthic') {
+      const forbidden=new Set(['hood','hat','mask','upperFace','eyes','facialHair']); // Imlao's bare head is canonical even if a general enemy-clothing preset supplies headwear.
+      roster.equippedCosmetics=(roster.equippedCosmetics||[]).filter(id=>{
+        const slot=roster.cosmeticSlots?.[id] || window.NpcWardrobe?.slotForCosmetic?.(id) || (/facewrap|hood/i.test(id)?'hood':/circlet|hat|helmet/i.test(id)?'hat':/mask/i.test(id)?'mask':'');
+        if(!forbidden.has(slot))return true;
+        if(roster.cosmeticSlots)delete roster.cosmeticSlots[id];
+        return false;
+      });
+      roster.metalArmorItems=(roster.metalArmorItems||[]).filter(item=>!forbidden.has(item.slot)); // Do not retain invisible hats as potential corpse loot.
+      roster.appearance.cosmetics={...(roster.appearance.cosmetics||{}),hood:'none',hat:'none',mask:'none',upperFace:'none',eyes:'none',facialHair:'none'};
+    }
     return roster;
   }
   function decoratePortraitProfile(profile,roster) {
