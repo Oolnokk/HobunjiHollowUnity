@@ -52,7 +52,7 @@
     try { all = JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (_) { all = {}; }
     const key = worldId();
     let entry = all[key];
-    if (!entry || entry.cycle !== cycle()) entry = { cycle:cycle(), entrances:{}, holes:{} }; // A Tothal Shift wipes every site: new ruins, holes filled.
+    if (!entry || entry.cycle !== cycle()) entry = { cycle:cycle(), entrances:{}, holes:{}, bossSites:{} }; // Three named graves are reselected each Tothal Shift; completed quest keys persist separately. // A Tothal Shift wipes every site: new ruins, holes filled.
     return { all, key, entry };
   }
   function state() { return loadStore().entry; }
@@ -418,11 +418,23 @@
     }
     const R = window.DevRandomRuin;
     if (!R?.generate) { deps?.showToast?.('The ruin is not ready yet — try again in a moment.', false); return false; }
-    activeVisit = { ...visit };
-    debug.lastEnter = { ...visit, at:Date.now() };
+    const siteSeed=seedFor(visit.id); // Stable world/cycle/site identity; never rerolled by ruin solvability retries.
+    const types=['tothal','hronal','kanthic']; // Matches existing HarlyaoLichCombat tradition IDs.
+    const theme=types[siteSeed%types.length]; // Deterministic ruin tradition controls glyphs, hazards, lich and quest key.
+    const priorOwner=state().bossSites?.[theme]; // Exactly one named guardian grave per tradition within this Tothal Shift.
+    const specialBoss=!priorOwner || priorOwner===visit.id; // The first entered site of each tradition becomes its unique key-stone tomb.
+    activeVisit = { ...visit, theme, specialBoss };
+    debug.lastEnter = { ...visit, theme, specialBoss, at:Date.now() };
     const returnAnchor = { area:visit.zoneId, x:visit.returnAt.x * deps.TILE, y:visit.returnAt.z * deps.TILE };
-    Promise.resolve(R.generate(seedFor(visit.id), { site:true, label:visit.kind === 'hole' ? 'Buried Ruin' : 'Ancient Ruin', returnAnchor }))
-      .then(ok => { if (!ok) activeVisit = null; })
+    Promise.resolve(R.generate(siteSeed, { site:true, theme, specialBoss, label:visit.kind === 'hole' ? 'Buried Ruin' : 'Ancient Ruin', returnAnchor }))
+      .then(ok => {
+        if (!ok) { activeVisit=null; return; }
+        if (specialBoss) {
+          const next=state(); // Commit an assignment only after a playable ruin was generated.
+          next.bossSites ||= {};
+          if (!next.bossSites[theme]) {next.bossSites[theme]=visit.id;saveState(next);}
+        }
+      })
       .catch(() => { activeVisit = null; });
     return true;
   }
@@ -556,7 +568,7 @@
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,
       zones:Object.fromEntries([...sitesByZone].map(([zoneId, sites]) => [zoneId, sites.map(site => ({ id:site.id, facing:site.facing, door:site.door, state:entranceState(site.id) }))])),
       rendered:Object.fromEntries([...rendered].map(([zoneId, runtime]) => [zoneId, { sites:runtime.sites.map(record => ({ id:record.site.id, doorPoint:record.layout.doorPoint, approach:record.layout.approach, y:record.y, pillars:record.pillars.map(p => ({ id:p.slot.id, x:p.slot.x, z:p.slot.z, struck:p.struck })), spent:!!record.rubble })), holes:runtime.holes.map(h => h.id), blockers:runtime.blockers.length, cells:runtime.cells.size }])),
-      holes:state().holes,
+      holes:state().holes, bossSites:state().bossSites||{}, // Mobile-readable evidence of the three unique key-guardian graves.
       mapMarkers:[...(deps?._zoneLayouts?.values?.() || [])].reduce((sum, layout) => sum + (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).length, 0),
     }),
     debugStrikeAll(zoneId) {
