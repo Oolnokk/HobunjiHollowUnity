@@ -846,6 +846,39 @@
     return minion;
   }
 
+  function roomGuardPosition(kit, bounds) {
+    if (!bounds) return null;
+    const floor = s?.context?.floorSet; // Same walkable tile index used by the solvability audit and encounter collision.
+    const midX = (bounds.minX + bounds.maxX) * .5, midZ = (bounds.minZ + bounds.maxZ) * .5;
+    const candidates = []; // Prefer the room's center; fallback positions avoid furniture and obstructed floor.
+    for (let radius=0;radius<4;radius++) for (let dz=-radius;dz<=radius;dz++) for (let dx=-radius;dx<=radius;dx++) {
+      const x = Math.floor(midX)+dx+.5, z = Math.floor(midZ)+dz+.5;
+      if(x<=bounds.minX+.5||x>=bounds.maxX-.5||z<=bounds.minZ+.5||z>=bounds.maxZ-.5)continue;
+      if(floor && !floor.has(Math.floor(x)+','+Math.floor(z)))continue;
+      if(window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,.32))continue;
+      candidates.push({x,z});
+    }
+    return candidates[0] || null;
+  }
+
+  function wakeRoomGuard(guard) {
+    if (!guard || guard.spawned || guard.spawnPending || !s?.isSpecialBoss) return;
+    guard.spawnPending=true; // Avoid duplicate asynchronous portraits when a player remains in the same room.
+    spawnSkeleton(guard).then(entity => {guard.spawned=!!entity;}).finally(() => {guard.spawnPending=false;});
+  }
+
+  function updateRoomGuards(kit) {
+    if (!s?.isSpecialBoss || !s.roomCoffins?.length || !s.built || !s.inSanctum && !s.boss) {
+      // The ordinary dungeon rooms can be explored before the sanctum boss awakens.
+    }
+    if (!s?.isSpecialBoss || deps?.getCurrentArea?.()!==MAP_ID) return;
+    const tile=deps.TILE||64, px=deps.player.x/tile, pz=deps.player.y/tile;
+    for(const guard of s.roomCoffins||[]) {
+      const b=guard.bounds;
+      if(px>=b.minX && px<b.maxX && pz>=b.minZ && pz<b.maxZ)wakeRoomGuard(guard);
+    }
+  }
+
   function wakeCoffins() {
     for (const coffin of s.coffins || []) {
       coffin.open = true;
@@ -854,7 +887,7 @@
   }
 
   function deadSkeletons() {
-    return (s?.coffins || []).filter(coffin => coffin.skeleton && !(Number(coffin.skeleton.health) > 0) && coffin.skeleton.state === 'corpse' && !coffin.raising); // Settled corpses only; mid-ragdoll bodies are still owned by CreatureDeath.
+    return [...(s?.coffins || []), ...(s?.roomCoffins || [])].filter(coffin => coffin.skeleton && !(Number(coffin.skeleton.health) > 0) && coffin.skeleton.state === 'corpse' && !coffin.raising); // Settled corpses only; mid-ragdoll bodies are still owned by CreatureDeath.
   }
 
   // Replaces summoning: the lich raises one of its fallen skeletons where it
@@ -950,7 +983,7 @@
     const { arena, zc } = s.layout;
     const x = (arena.minX + arena.maxX) / 2 + 2.5, z = zc;
     const tile = deps.TILE || 64;
-    const creature = await combat.makeEntity({ type:s.bossType, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } });
+    const creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
     s.bossPending = false;
     if (!creature || !s || deps?.getCurrentArea?.() !== MAP_ID) { creature?.avatarRef?.dispose?.(); return; }
     const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));
@@ -961,7 +994,7 @@
     deps.hostileObjects?.add?.(creature);
     s.boss = creature;
     wakeCoffins();
-    const label = combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
+    const label = (s.isSpecialBoss && window.SpecialHarlyaoLiches?.defFor?.(s.bossType)?.name) || combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
     deps?.showToast?.(`${label} rises from the sanctum floor!`, false);
     window.__farmLog?.(`[random-ruin] sanctum boss ${s.bossType} spawned hp=${max}`, 'world');
   }
@@ -982,10 +1015,11 @@
     const dead = !(Number(boss.health) > 0) || boss.dead === true || !deps?.hostileObjects?.has?.(boss);
     if (!dead) return;
     s.bossDefeated = true;
+    if (s.isSpecialBoss) window.SpecialHarlyaoLiches?.onDefeat?.(boss); // Single canonical Key-Stone grant; repeats and old saves cannot duplicate the quest reward.
     window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
     s.bossDefeatedAt = now;
     for (const minion of boss._lichSummons || []) if (Number(minion?.health) > 0) deps?.damageCreature?.(minion, minion.health, undefined, undefined, 0, {});
-    for (const coffin of s.coffins || []) if (Number(coffin.skeleton?.health) > 0) deps?.damageCreature?.(coffin.skeleton, coffin.skeleton.health, undefined, undefined, 0, {}); // Its skeletons fall with it.
+    for (const coffin of [...(s.coffins || []),...(s.roomCoffins || [])]) if (Number(coffin.skeleton?.health) > 0) deps?.damageCreature?.(coffin.skeleton, coffin.skeleton.health, undefined, undefined, 0, {}); // Its skeletons fall with it.
     deps?.showToast?.('The lich collapses into ash. Behind it, a stone door grinds open.', true);
     if (s.rearDoor) s.rearDoor.open = true;
   }
@@ -1006,6 +1040,11 @@
     const context = s.context;
     DOOR_WIDTH = Math.max(2, Math.min(4.5, cfg('sanctum.door.width', 3.2)));
     s.built = true;
+    s.roomCoffins = (s.isSpecialBoss ? (context.meta?.rooms || []) : []).map((room,index) => {
+      const bounds=kit.roomBounds(context.meta,room); // Existing generated dungeon room bounds, not sanctum/vault tiles.
+      const rise=roomGuardPosition(kit,bounds);
+      return rise ? {index:'room-'+index,bounds,rise,open:true,spawned:false,spawnPending:false,skeleton:null} : null;
+    }).filter(Boolean); // Every eligible generated room has one sleeping skeleton encounter.
     s.braziers = buildBraziers(kit, context);
     if (cfg('sanctum.safePathBraziers', true)) buildSafePathBraziers(kit);
     const site = chooseDoorSite(kit, context, s.rng);
@@ -1026,6 +1065,7 @@
         context, rng, built:false, rejects:[], braziers:[], litOrder:[], occluders:[], door:null, bgs:null,
         layout:reservedLayout(context), // floorProjection reserved these tiles; recover the plan from the live grid size.
         boss:null, bossPending:false, bossDefeated:false, inSanctum:false,
+        isSpecialBoss:context.specialBoss === true, roomCoffins:[], // Site generation explicitly opts into the three named key guardians; dev/ordinary ruins stay unchanged.
       };
     },
     update(kit, now, dt) {
@@ -1042,6 +1082,7 @@
       updateDoorVisual(s.door, now, dt, allLit);
       updateDoorVisual(s.returnDoor, now, dt, true);
       updateBoss(now);
+      updateRoomGuards(kit); // Room sentinels spawn once on first entry, keeping large ruins efficient on mobile.
       updateRearDoor(dt);
       updateCoffins(dt);
     },
@@ -1064,7 +1105,7 @@
         door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, decals:s.door.decals.length } : null,
         bgs:!!s.bgs, layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
-        bossDefeated:s.bossDefeated, rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
+        bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
         inSanctum:s.inSanctum,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
@@ -1074,7 +1115,8 @@
       if (!s) return;
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
       if (s.boss) { for (const minion of s.boss._lichSummons || []) disposeActor(minion); disposeActor(s.boss); }
-      for (const coffin of s.coffins || []) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
+      for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
+      if (s.boss) window.SpecialHarlyaoLiches?.applyPlasmSkin?.(s.boss,false); // Temporary charge-retexture materials never survive a reroll.
       const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
       if (occlusion) for (const mesh of s.occluders) { const i = occlusion.indexOf(mesh); if (i >= 0) occlusion.splice(i, 1); }
       for (const object of s.hiddenDecor || []) object.visible = true;
