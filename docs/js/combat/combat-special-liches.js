@@ -43,6 +43,40 @@
     const fallback = 'assets/patterns/motif_' + def.glyph + '.png'; // Visible even when the pattern library has not loaded yet.
     return cached?.pattern || {repoPatternId:def.glyph,motifUrl:fallback,motifScale:1,tiling:true};
   }
+  function bodyColor3For(type) {
+    const rule = ruleFor(type); // Named guardian C is a single deterministic light color; the corresponding ruin must not roll a different shade.
+    const choices = Object.entries(rule.dyes?.C || {}).filter(([,weight]) => Number(weight) > 0).sort((a,b) => Number(b[1])-Number(a[1]));
+    const authored = choices[0]?.[0]; // Highest-weight authored Color C swatch wins for a named guardian, rather than changing each spawn.
+    if (/^#[0-9a-f]{6}$/i.test(authored || '')) return authored;
+    const dye = authored && (window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []).find(item=>item.id===authored);
+    return /^#[0-9a-f]{6}$/i.test(dye?.hex || '') ? dye.hex : (defFor(type)?.ink || '#ffffff');
+  }
+  function applyBodyColor3ToRoster(roster,type) {
+    if (!roster || !DATA[type]) return roster;
+    const hex=bodyColor3For(type); // One actual body-color channel drives eye pixels, fake lights and every named ruin wall.
+    roster.appearance ||= {};
+    roster.appearance.bodyColors={...(roster.appearance.bodyColors || {}),C:{hex,tintMode:'hexShadeFill'}};
+    roster.appliedDyes && delete roster.appliedDyes.C; // A separately rolled dye must not replace the guardian's wall-matched color.
+    return roster;
+  }
+  function decoratePortraitProfile(profile,roster) {
+    if (!profile || !roster?.specialLichId) return profile;
+    const type=Object.keys(DATA).find(key=>DATA[key].id===roster.specialLichId);
+    if (!type)return profile;
+    profile.bodyColors={...(profile.bodyColors || {}),C:{hex:roster.appearance?.bodyColors?.C?.hex || bodyColor3For(type)}}; // Override the ordinary skeleton's fixed bone-C guard only for named guardians.
+    if (type==='kanthic') {
+      const empty={id:'none',layers:[],tintSlot:null}; // Imlao has no hood, hat, face covering, or facial ornament, including randomly forced headwear.
+      profile.hat=empty;profile.hood=empty;profile.mask=empty;profile.upperFace=empty;
+      profile.facialHair=empty;profile.eyes=empty;
+      return profile;
+    }
+    const url='cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+(type==='tothal'?'f':'m')+'.png'; // Uses the user-uploaded skeleton appearance PNG for each named guardian.
+    const pixelDye={sourceHex:'#7F00FF',paletteColorKey:'C',defaultHex:bodyColor3For(type),glow:{blur:3,radius:.65,intensity:3.5}}; // Same exact purple-marker family, two-layer dye and emissive eye lighting as the Hachutu binding mask.
+    const base={url,ax:0,ay:0,sx:1,sy:1,pos:'front',xformPreset:'B',pixelDye};
+    profile.eyes={id:'special_hskel_eyeglow_'+type,slot:'eyes',tintSlot:null,layers:[base,{...base,pixelDyeOnly:true,paletteColorKey:'C'}]};
+    return profile;
+  }
+
   function specialRoster(type) {
     const def = defFor(type);
     if (!def) return null;
@@ -72,7 +106,7 @@
         return item;
       }).filter(Boolean);
     }
-    return roster;
+    return applyBodyColor3ToRoster(roster,type);
   }
 
   function patternWarhammer(actor) {
@@ -372,7 +406,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,rigScaleFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
