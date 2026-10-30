@@ -7,11 +7,12 @@ const vm = require('node:vm');
 
 const gripSource = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8');
 const visualSource = fs.readFileSync('docs/js/dual-wield-weapon-visuals.js', 'utf8');
-const STANCE_OFFHAND = { x: 0.13, y: -0.04, z: 0.1, pitch: 40, yaw: 88, roll: -73 };
+const STANCE_OFFHAND = { x: 0, y: -0.12, z: 0.05, pitch: -90, yaw: -90, roll: 0 }; // SharedAttackPose.IDLE_OFFHAND_POSE: the shared default for the invisible offhand tool.
 const tasks = new Map();
 const window = {
   location: { pathname: '/index.html' },
   RuntimeFrameScheduler: { register: (id, cb) => tasks.set(id, cb) },
+  SharedAttackPose: { IDLE_OFFHAND_POSE: STANCE_OFFHAND },
   WeaponToolStances: { getRuntimeState: () => ({ activeSlot: 'weapon', itemKey: 'hatchet', combatNeutralInjected: false }), stanceEngaged: () => true, poses: { dualWieldMain: { x: -0.09, y: 0, z: -0.04, pitch: 37, yaw: -68, roll: -114 }, dualWieldOffhand: { ...STANCE_OFFHAND } } },
   Combat: { deps: { __weaponToolStanceVisualHooks: true, triggerWeaponSwingVisual() {}, triggerWeaponHoldVisual() {} } },
 };
@@ -22,7 +23,7 @@ const grips = window.HobunjiHandToolGrips;
 const visuals = window.HobunjiDualWieldWeaponVisuals;
 const near = (a, b, what) => assert(Math.abs(a - b) < 1e-9, `${what}: ${a} vs ${b}`);
 
-assert.deepEqual({ ...visuals.defaultOffhandPose() }, STANCE_OFFHAND, 'the default offhand pose is the dual-wield offhand stance');
+assert.deepEqual({ ...visuals.defaultOffhandPose() }, STANCE_OFFHAND, 'the default offhand pose is the shared IDLE_OFFHAND_POSE');
 
 // A one-handed swing (no 2H grip, no Dual Wield): the free hand holds the invisible tool the whole time, at the stance pose.
 const oneHand = { neutral: { secondaryGrip: { enabled: false }, dualWield: { enabled: false } }, windup: { secondaryGrip: { enabled: false }, dualWield: { enabled: false } }, strike: { secondaryGrip: { enabled: false }, dualWield: { enabled: false } } };

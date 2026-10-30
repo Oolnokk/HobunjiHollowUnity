@@ -299,7 +299,7 @@
     let main = stances?.dualWieldMain || stances?.lightWeapon || null;
     const carried = current?.invisible ? (current.carriedPoseOverride || freshCarriedPose(current.key)) : null;
     if (carried) main = carried;
-    let offhand = (current?.invisible && current.offhandPoseOverride) || stances?.dualWieldOffhand || null;
+    let offhand = current?.invisible ? (current.offhandPoseOverride || global.SharedAttackPose?.IDLE_OFFHAND_POSE || stances?.dualWieldOffhand || null) : (stances?.dualWieldOffhand || null); // An invisible tool uses its own default pose; a real Dual Wield offhand weapon keeps its stance.
     if (!offhand && main) {
       offhand = {
         ...main,
@@ -658,7 +658,7 @@
     setCarriedPose,
     setCarriedSample,
     invisibleOffhandSocket,
-    defaultOffhandPose: () => { const poses = idleStancePoses(); return poses ? { x: poses.offhand.x, y: poses.offhand.y, z: poses.offhand.z, pitch: poses.offhand.pitch, yaw: poses.offhand.yaw, roll: poses.offhand.roll } : null; },
+    defaultOffhandPose: () => { const pose = global.SharedAttackPose?.IDLE_OFFHAND_POSE || idleStancePoses()?.offhand || null; return pose ? { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll } : null; }, // The invisible idle offhand's default pose (the shared IDLE_OFFHAND_POSE).
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
     editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.

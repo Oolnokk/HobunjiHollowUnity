@@ -344,6 +344,10 @@
     return { windup, strike };
   }
 
+  // The pose the free hand holds when it carries an INVISIBLE copy of the weapon (a pose that is neither 2H nor Dual Wield; see hand-tool-grips.js
+  // offhandIdle). Same channel frame as the idle stances. Deliberately separate from the Dual Wield offhand stance, which places a real, visible weapon.
+  const IDLE_OFFHAND_POSE = deepFreeze({ x: 0, y: -0.12, z: 0.05, pitch: -90, yaw: -90, roll: 0 });
+
   // The weapon-stance idle sink in percent of height (proceduralFeet.stanceDrop.heightFraction): what a Light/Heavy stance sinks to at rest,
   // and the Neutral the player's baked swings ease out of and back into (weapon-tool-stances.js adds it to the baked Neutral). 0 when the feature is disabled.
   function idleBodySinkPct() {
@@ -569,6 +573,7 @@
     SINK_KEY,
     MAX_BODY_SINK_PCT,
     idleBodySinkPct,
+    IDLE_OFFHAND_POSE,
     MIRRORED_POSE_KEYS,
     STYLE_NEUTRAL_POSE,
     LEGACY_THRUST,
