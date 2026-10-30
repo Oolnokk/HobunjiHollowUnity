@@ -114,3 +114,31 @@ reports load/alpha/material errors; the game exposes
 
 The unique weapon has an inventory definition but is not added to every
 player's starting gear. Acquisition is separate from sprite authoring.
+
+## Head-only and combined previews (October 30 fix)
+
+The Multi-sprite Weapon editor now offers two independent **live canvas previews**:
+1. **Head / layered part close-up** — renders the brazier's four PNGs with
+   their authored offsets, metal colors and interleaved fire. The **Solo
+   selected layer** checkbox temporarily isolates a layer (particularly
+   useful for the fuel beneath the front brazier). This never changes the
+   actual assembly or what the combined canvas displays.
+2. **Combined weapon preview** — draws the original rigid weapon PNG, chain,
+   and layered head at their authored contact points; blue and amber markers
+   identify the two chain joints.
+
+Both previews use [preview-renderer.js](../tools/multi-sprite-weapon-editor/preview-renderer.js)
+to derive a **visible-alpha-pixel bounding rectangle** for every sprite and
+then fit the complete transformed stack to the available canvas. The previous
+shaft-only zoom could place the chain-end head outside the preview with **no
+error in the mobile log**, even after every PNG loaded successfully.
+
+One animation progress control and one requestAnimationFrame drive both panes,
+but each holds separate fire particles and fit transforms. The preview debug
+copy now includes each pane's measured bounds, zoom, number of loaded head
+parts, chain readiness, and head joint coordinates.
+
+Run `node scripts/test-multi-sprite-weapon-preview.js` to guard against the
+old crop. Its synthetic images include a 1,050px chain, differently sized
+transparent head PNGs, six swing phases, both mobile and desktop aspect
+ratios, exact source draw order and the solo-fuel mode.
