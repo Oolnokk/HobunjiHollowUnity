@@ -355,6 +355,44 @@
     sources.filter(Boolean).forEach(warm);
   }
 
+  function paintedImage(part) {
+    const source = image(part?.sprite); // The preview always falls back to the authored PNG while asynchronous metal coloring finishes.
+    if (!source) return null;
+    if (part.material === 'marker') {
+      return window.HobunjiLayeredWeaponEffects?.recolorMarker?.(
+        source, part.sourceHex || '#7F00FF', part.targetHex || '#E7DDC9',
+      ) || source; // The fuel's off-white cloth colors preserve the original marker-pixel fire sources.
+    }
+    if (part.material !== 'metal') return source; // Plain overlays are never run through verdigris.
+    const targetHex = validHex($('metalHex').value, '#CD7F32');
+    const verdigrisHex = validHex($('verdigrisHex').value, '#57B38B');
+    const oxidationAmount = safeNum($('oxidation').value, 0.5, 0, 1);
+    const cacheKey = JSON.stringify([part.sprite, targetHex, verdigrisHex, oxidationAmount]); // Shared by head and combined previews; changes in any palette control produce a new canvas.
+    const cached = painted.get(cacheKey);
+    if (cached) return cached.image || source;
+    const recolor = window.ToolMetalRecolor?.getRecoloredCanvas;
+    if (typeof recolor !== 'function') return source; // A missing optional recolorer must not blank the weapon preview.
+    const result = { image: null, pending: true, error: false }; // One asynchronous request per PNG/preview palette; the two panels never duplicate it.
+    painted.set(cacheKey, result);
+    try {
+      Promise.resolve(recolor(assetUrl(part.sprite), {
+        targetHex, verdigrisHex, oxidationAmount,
+      })).then(canvas => {
+        result.pending = false;
+        result.image = canvas || null;
+      }).catch(error => {
+        result.pending = false;
+        result.error = true; // Keep source PNG as the fallback and do not retry/log every frame.
+        log('Metal recolor failed for ' + part.sprite + ': ' + (error?.message || error), true);
+      });
+    } catch (error) {
+      result.pending = false;
+      result.error = true; // Caches a synchronous failure as well so it cannot spam the mobile log.
+      log('Metal recolor failed for ' + part.sprite + ': ' + (error?.message || error), true);
+    }
+    return source;
+  }
+
   function frame(now) {
     const dt = Math.max(0, Math.min(.05, (now - lastTime) / 1000)); // The same animation time powers the close-up and combined preview.
     lastTime = now;
@@ -374,7 +412,8 @@
       renderer.drawCanvas($('headPreview'), 'head', model, image, paintedImage, options);
       renderer.drawCanvas($('preview'), 'combined', model, image, paintedImage, options);
     } catch (error) {
-      if (latestError !== error.message) log('Preview: ' + error.message, true); // Display failures without devtools.
+      const message = 'Preview: ' + (error?.message || String(error));
+      if (latestError !== message) log(message, true); // Compare the exact logged value; repeated RAF errors must not flood mobile diagnostics.
     }
     requestAnimationFrame(frame); // One RAF for both canvases; none is added to the gameplay runtime.
   }
