@@ -36,7 +36,7 @@ assert(bandits.includes('windupFrac: wf, strikeFrac: sf, holdFrac: hf'), 'NPCs p
 assert(editor.includes('windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac'), 'editor preview passes authored stage timing');
 assert(editor.includes("pitchTravelDeg: (Number(anim.poses?.strike?.pitch)"), 'editor passes strike-minus-windup pitch');
 assert(source.includes('const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ)'), 'flails extend outward from the bottom-end haft attachment, away from the grip');
-assert(source.includes('stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt)'), 'live assemblies integrate the same physical pendulum in Hold and Recovery');
+assert(source.includes('stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion))'), 'live assemblies integrate the same physical pendulum in Hold and Recovery');
 
 const pixels = new Uint8ClampedArray(6 * 6 * 4); // Synthetic transparent PNG alpha data with two top and two bottom edge pixels.
 for (const [x, y] of [[1, 1], [3, 1], [2, 2], [4, 3], [3, 4], [5, 4]]) {
@@ -98,6 +98,10 @@ assert(straighten(0.20, 0.16, 0.55) > 0 && straighten(0.20, 0.16, 0.55) < straig
 assert.equal(straighten(0.30, 0.16, 0.55), 1, 'alignment completes early in windup-to-strike');
 assert.equal(straighten(0.55, 0.16, 0.55), 1, 'connector stays collinear through strike');
 assert.equal(straighten(0.55, 0.16, 0.16), 1, 'zero-length strike still reaches shaft alignment');
+assert.equal(api.flailDamping(), 8, 'old recipes receive the stronger default drag');
+assert.equal(api.flailDamping({angularDamping:0}), 0, 'explicit zero damping remains valid');
+assert.equal(api.flailDamping({angularDamping:100}), 30, 'extreme drag is safely bounded');
+assert.equal(api.flailDamping({angularDamping:NaN}), 8, 'invalid drag uses the default');
 const pendulum = api.stepPendulum; // Execute the shared solver against analytic momentum, torque and energy expectations.
 const still = { x: 0, y: 0, z: 0 }; // Stationary pivot for isolated pendulum tests.
 function body(angle = 0, speed = 0) {

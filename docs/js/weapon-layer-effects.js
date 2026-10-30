@@ -299,7 +299,7 @@
         fx.group.add(sprite);
         fx.particles.push({
           sprite, age: 0, life: Math.max(0.1, Number(fx.config.life) || 0.65),
-          x: px, y: py, speed: (Number(fx.config.speed) || 0.12) * (0.5 + Math.random()),
+          x: px, y: py, speed: (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()),
           phase: Math.random() * 6.283, size: Math.max(0.004, Number(fx.config.size) || 0.035),
         });
       }

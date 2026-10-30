@@ -8,7 +8,7 @@
     haftAnchor: { opaque: 'top' },
     chain: { sprite: 'assets/toolsprites/hachutu_torch-flail_chain.png', top: { opaque: 'top' }, bottom: { opaque: 'bottom' }, material: 'metal' },
     head: { anchorLayer: 'handle', anchor: { opaque: 'bottom' }, layers: [] },
-    motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
+    motion: { lag: 0.065, idleFollow: 7, attackFollow: 15, angularDamping: 8 },
   }; // Starting values match the shared runtime's unconfigured behavior.
   const DRAFT_KEY = 'hobunji.multiSpriteWeapons.draft.v1'; // Local-only editing recovery; never read by gameplay.
   const assetImages = new Map(); // Source PNG image promises reused by preview renders.
@@ -22,9 +22,10 @@
   let tab = 'flails'; // Which of the two requested modes is visible.
   let stackTarget = 'head'; // Flail-head vs ordinary-weapon stack on the Multi-layer Parts tab.
   let selected = 0; // Selected layer index into the visible ordered stack.
-  let playing = true; // Whether the isolated 2D authoring preview advances automatically.
+  let playing = true; // Whether the isolated 3D authoring preview advances automatically.
   let progress = 0; // 0..1 representation of the preview swing cycle.
   let lastTime = performance.now(); // Delta time for the tool's isolated canvas requestAnimationFrame.
+  let revision = 0; // Recipe changes invalidate the shared 3D assembly once, outside the frame loop.
   let latestError = ''; // Last failure exposed in status and copyable diagnostics.
 
   function log(message, failure = false) {
@@ -157,6 +158,7 @@
     $('lag').value = f.motion?.lag ?? DEFAULTS.motion.lag;
     $('idleFollow').value = f.motion?.idleFollow ?? DEFAULTS.motion.idleFollow;
     $('attackFollow').value = f.motion?.attackFollow ?? DEFAULTS.motion.attackFollow;
+    $('angularDamping').value = f.motion?.angularDamping ?? DEFAULTS.motion.angularDamping;
   }
 
   function selectTab(value) {
@@ -221,12 +223,14 @@
     $('fireRate').value = part.vfx?.rate ?? 22;
     $('fireLife').value = part.vfx?.life ?? .65;
     $('fireSize').value = part.vfx?.size ?? .035;
+    $('fireSpeed').value = part.vfx?.speed ?? .12;
     $('fireColors').value = (part.vfx?.colors || ['#FFE6A5','#FFAA3E','#FF5F20']).join(', ');
     $('fireSettings').hidden = $('vfxType').value !== 'fire';
     warmImages();
   }
 
   function markChanged() {
+    revision++; // Rebuild the shared visual only when authored settings actually change.
     warmImages();
     $('status').textContent = 'Unsaved changes · Export JS config to commit the recipe.';
   }
@@ -358,6 +362,7 @@
     });
     bindInput('lag', value => { ensureFlail().motion.lag = safeNum(value, 0.065, 0, 1); });
     bindInput('idleFollow', value => { ensureFlail().motion.idleFollow = safeNum(value, 7, 0.1, 60); });
+    bindInput('angularDamping', value => { ensureFlail().motion.angularDamping = safeNum(value, 8, 0, 30); });
     bindInput('attackFollow', value => { ensureFlail().motion.attackFollow = safeNum(value, 15, 0.1, 60); });
     on('stackTarget','change', () => { stackTarget = $('stackTarget').value; selected = 0; fillLayers(); });
     on('addLayer','click', () => {
@@ -390,14 +395,15 @@
       fillLayers();
     });
     const editVfx = (name, fall, min, max) => bindInput(name, value => {
-      if (activeLayer()?.vfx) activeLayer().vfx[{fireRate:'rate',fireLife:'life',fireSize:'size'}[name]] = safeNum(value, fall, min, max);
+      if (activeLayer()?.vfx) activeLayer().vfx[{fireRate:'rate',fireLife:'life',fireSize:'size',fireSpeed:'speed'}[name]] = safeNum(value, fall, min, max);
     });
-    editVfx('fireRate', 22, 0, 40); editVfx('fireLife', .65, .1, 5); editVfx('fireSize', .035, .001, .5);
+    editVfx('fireRate', 22, 0, 40); editVfx('fireLife', .65, .1, 5); editVfx('fireSize', .035, .001, 2); editVfx('fireSpeed', .12, 0, 5);
     bindInput('fireColors', value => {
       if (activeLayer()?.vfx) activeLayer().vfx.colors = value.split(',').map(s => s.trim()).filter(s => /^#[0-9a-f]{6}$/i.test(s));
     });
     for (const id of ['metalHex','verdigrisHex','oxidation']) on(id, 'input', () => { painted.clear(); warmImages(); });
     on('soloLayer','change', () => { window.HobunjiMultiSpritePreviewRenderer?.resetEffects(); }); // Close-up solo mode never affects the full weapon.
+    on('resetView','click', () => { window.HobunjiMultiSpritePreviewRenderer?.resetView(); });
     on('play','click', () => { playing = !playing; $('play').textContent = playing ? '⏸ Pause' : '▶ Play'; });
     on('scrub','input', () => { progress = safeNum($('scrub').value, 0, 0, 1); playing = false; $('play').textContent = '▶ Play'; });
     on('save','click', () => {
@@ -511,10 +517,12 @@
     try {
       const model = renderer.modelFor(entry(), image, progress, now);
       const options = {
-        dt, playing, selected, stackTarget,
+        dt, playing, selected, stackTarget, revision,
         weaponKey: key, solo: $('soloLayer').checked,
+        metalOptions: { targetHex: validHex($('metalHex').value, '#CD7F32'), verdigrisHex: validHex($('verdigrisHex').value, '#57B38B'), oxidationAmount: safeNum($('oxidation').value, .5, 0, 1) }, // Shared gameplay material resolver receives the live authoring palette.
         effects: window.HobunjiLayeredWeaponEffects,
       }; // Both panels share the same source assets, metal palette, and attack progress.
+      renderer.beginFrame?.(model, image, paintedImage, options); // One shared gameplay assembly and particle clock feed both 3D cameras.
       renderer.drawCanvas($('headPreview'), 'head', model, image, paintedImage, options);
       renderer.drawCanvas($('preview'), 'combined', model, image, paintedImage, options);
     } catch (error) {
@@ -551,6 +559,7 @@
   }
 
   function start() {
+    window.__farmLog = (message, level) => log(message, level === 'error' || level === 'warn'); // Shared gameplay loading/alpha errors stay visible on mobile.
     try {
       const stored=JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
       if(stored?.schema===state.schema && stored.weapons && typeof stored.weapons==='object') {
@@ -562,7 +571,7 @@
     window.addEventListener('error', event => log('Browser error: ' + event.message, true)); // Visible on phones without devtools.
     window.addEventListener('unhandledrejection', event => log('Async error: ' + (event.reason?.message || event.reason), true));
     suggestRepoSprites(); // Optional repo PNG suggestions; no credentials required.
-    log('Multi-sprite editor ready. Layer order and interleaved fire share the game schema.');
+    log('Multi-sprite editor ready. 3D preview uses the gameplay assembly and particle emitter. Drag to orbit; pinch or scroll to zoom.');
   }
   start();
 })();

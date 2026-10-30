@@ -33,7 +33,7 @@ main>.content{display:grid;grid-template-columns:minmax(315px,415px) minmax(240p
 .previewViewport{flex:1;position:relative;min-height:220px}
 #headViewport{min-height:220px}
 #viewport{min-height:260px}
-#preview,#headPreview{width:100%;height:100%;display:block;touch-action:manipulation;border:1px solid #304052;border-radius:10px;background:radial-gradient(#1a2a39,#0b1119)}
+#preview,#headPreview{width:100%;height:100%;display:block;touch-action:none;border:1px solid #304052;border-radius:10px;background:radial-gradient(#1a2a39,#0b1119)}
 .previewLegend{position:absolute;left:8px;bottom:8px;pointer-events:none;font:10px/1.35 ui-monospace,monospace;color:#bdcddd;background:#09131bc9;border-radius:6px;padding:4px 6px}
 #status{font:12px/1.5 ui-monospace,monospace;color:#a7d5ff;word-break:break-word}
 #log{max-height:120px;overflow:auto;white-space:pre-wrap;color:#c8cfdb;background:#071019;padding:8px;border-radius:6px}
@@ -53,13 +53,18 @@ h3{font-size:13px;margin:5px 0}
 [hidden]{display:none!important}
 @media(max-width:760px){main>.content{grid-template-columns:1fr;grid-template-rows:minmax(300px,45vh) minmax(200px,1fr)}#stage{grid-row:1;padding:8px;overflow-y:auto}#side{grid-row:2;border-right:0;border-top:1px solid var(--line);padding:8px}.previewPanel{flex:none}#headViewport{height:240px}#viewport{height:300px}.previewViewport{flex:none}header{padding:7px}h2{font-size:14px}}
 </style>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/portrait-utils.js?v=20261030preview3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../config/weapon-sprite-assemblies.js?v=20261030he8d0e4f"></script>
-<script src="../../js/weapon-layer-effects.js?v=20261030layerfx2"></script>
-<script src="preview-renderer.js?v=20261030chainaxes1"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261030h7ef005e"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261030preview3d1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030preview3d1"></script>
+<script src="preview-renderer.js?v=20261030he301a26"></script>
 <script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
-<script defer src="app.js?v=20261030h057cd38"></script>
+<script defer src="app.js?v=20261030hfa63c25"></script>
 </head>
 <body>
 <main>
@@ -119,8 +124,9 @@ h3{font-size:13px;margin:5px 0}
 <div class="grid3">
 <div><label for="lag">Travel lag</label><input id="lag" type="number" min="0" max="1" step=".005"></div>
 <div><label for="idleFollow">Idle follow rad/s</label><input id="idleFollow" type="number" min="0.1" max="60" step=".5"></div>
-<div><label for="attackFollow">Swing follow rad/s</label><input id="attackFollow" type="number" min="0.1" max="60" step=".5"></div>
-</div><p class="help">The rigid haft keeps using the existing attack pose and hand grip. Only the chain and head use these presentation settings.</p>
+<div><label for="angularDamping">Angular damping (1/s)</label><input id="angularDamping" type="number" min="0" max="30" step=".5"></div>
+<input id="attackFollow" type="hidden">
+</div><p class="help">Angular damping slows the released chain/head during Hold and Recovery. 0 = no drag; 8 = default (speed halves in about 0.09 s); higher values stop it sooner. Saved in the exported weapon recipe. The Attack Animation Editor previews your actual authored attacks.</p>
 </div>
 </div></div>
 <div id="layersTab" hidden>
@@ -149,8 +155,9 @@ h3{font-size:13px;margin:5px 0}
 <div class="grid3">
 <div><label for="fireRate">Motes/s</label><input id="fireRate" type="number" min="0" max="40"></div>
 <div><label for="fireLife">Life (s)</label><input id="fireLife" type="number" min=".1" max="5" step=".05"></div>
-<div><label for="fireSize">Size (world)</label><input id="fireSize" type="number" min=".001" max=".5" step=".005"></div>
+<div><label for="fireSize">Size (world)</label><input id="fireSize" type="number" min=".001" max="2" step=".005"></div>
 </div>
+<label for="fireSpeed">Rise speed (world/s)</label><input id="fireSpeed" type="number" min="0" max="5" step=".01">
 <label for="fireColors">Fire palette (comma-separated hex)</label><input id="fireColors" placeholder="#FFE6A5, #FFAA3E, #FF5F20">
 </div>
 </div>
@@ -167,16 +174,16 @@ h3{font-size:13px;margin:5px 0}
 <details><summary>Mobile debug log</summary><pre id="log"></pre></details>
 </section>
 <section id="stage" aria-label="Live weapon preview">
-<div class="row"><button id="play">⏸ Pause</button><label for="scrub">Animation progress</label><input id="scrub" type="range" min="0" max="1" step=".001" value="0"></div>
+<div class="row"><button id="play">⏸ Pause motion</button><button id="resetView">Reset 3D views</button><label for="scrub">Animation progress</label><input id="scrub" type="range" min="0" max="1" step=".001" value="0"></div>
 <section class="previewPanel" aria-label="Independent head preview">
 <div class="row"><h2>1 · Head / layered part close-up</h2><label class="previewSolo"><input id="soloLayer" type="checkbox"> Solo selected layer</label></div>
-<div class="previewCaption">Auto-fit to the visible opaque pixels. Live back-to-front layers, rag tint and interleaved fire.</div>
-<div id="headViewport" class="previewViewport"><canvas id="headPreview" width="900" height="450" aria-label="Magnified brazier head layers and fire"></canvas><span class="previewLegend">Head only · independently fitted</span></div>
+<div class="previewCaption">3D close-up of the actual gameplay head and particle emitter. Drag to orbit; pinch/scroll to zoom. Fire stays live when motion is paused.</div>
+<div id="headViewport" class="previewViewport"><canvas id="headPreview" width="900" height="450" aria-label="Magnified brazier head layers and fire"></canvas><span class="previewLegend">3D head · gameplay particles</span></div>
 </section>
 <section class="previewPanel" aria-label="Complete assembly preview">
 <h2>2 · Combined weapon preview</h2>
-<div class="previewCaption">Auto-fit around haft, chain and head together. Blue and amber dots show attachment joints.</div>
-<div id="viewport" class="previewViewport"><canvas id="preview" width="900" height="600" aria-label="Complete weapon assembly with visible hanging brazier"></canvas><span class="previewLegend">Full assembly · fitted to visible PNGs</span></div>
+<div class="previewCaption">Actual shared assembly, generated rope and pendulum physics at the game’s 0.5-unit handle width. Drag to orbit; pinch/scroll to zoom.</div>
+<div id="viewport" class="previewViewport"><canvas id="preview" width="900" height="600" aria-label="Complete weapon assembly with visible hanging brazier"></canvas><span class="previewLegend">3D assembly · gameplay scale</span></div>
 </section>
 <div id="status" role="status">Loading authored sprite assets…</div>
 <div id="pickPanel" class="panel" hidden>

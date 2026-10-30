@@ -162,6 +162,7 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.equal(node('chainScaleY').value,5.25,'the approved Grapple-Flail length loads from the committed registry');
   node('chainScaleX').value='3';node('chainScaleX').handlers.get('change')();
   node('chainScaleY').value='2';node('chainScaleY').handlers.get('change')();
+  node('angularDamping').value='12';node('angularDamping').handlers.get('change')();
   node('headScale').value='.5';node('headScale').handlers.get('change')();
   pickButtons.find(x=>x.dataset.pick==='head').click();
   assert.equal(pickerOptions.composite,true,'head picker must use shared composite coordinates');
@@ -174,6 +175,7 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.equal(draft.chain.scaleY,2);
   assert.equal(draft.chain.scale,undefined,'newly authored drafts export separate X/Y scales');
   assert.equal(draft.head.scale,.5);
+  assert.equal(draft.motion.angularDamping,12,'damping is saved with the actual weapon draft');
   assert.deepEqual(draft.head.anchor,{x:12,y:-14});
   assert.equal(draft.head.anchorSpace,'composite');
   node('importFile').files=[{name:'grapple-flail.json',text:async()=>JSON.stringify(savedDrafts.at(-1))}]; // Round-trip the real exported draft through the actual JSON import handler.

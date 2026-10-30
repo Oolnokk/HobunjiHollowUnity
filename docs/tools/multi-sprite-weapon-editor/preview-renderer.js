@@ -1,12 +1,10 @@
-// Shared, isolated Tool Hub 2D authoring renderer.
-// The live game uses HobunjiWeaponSpriteAssemblies; this renderer merely visualizes its PNG layout.
+// Shared Tool Hub 3D preview: actual gameplay assemblies and particle emitters.
+// Pure alpha/layout helpers also serve sprite fitting and regression checks.
 (function (global) {
   'use strict';
   if (global.HobunjiMultiSpritePreviewRenderer) return;
 
   const alphaCache = new WeakMap(); // Reuses the original PNG's opaque rectangle and contact-point scans across both previews.
-  const particles = new Map(); // Per-preview, per-layer ember pools; the head and combined panels cannot consume each other's particles.
-  const MAX_PARTICLES = 32; // Mobile-friendly cap for every individual layer in each preview.
   const ALPHA_MIN = 4; // Includes antialiasing when fitting the visible illustration.
   const CONTACT_ALPHA = 128; // Physical connection points use the same solid-pixel cutoff as the game.
   let lastLayout = null; // Latest measured artwork positions for in-editor diagnostics.
@@ -97,6 +95,7 @@
     const swing = progress > 0.001 && progress < .98;
     const shaftRotation = swing ? Math.sin(progress * Math.PI * 2) * .32 : 0;
     const model = {
+      definition: def, progress, // The 3D view uses the original recipe and real timeline rather than the layout helper's diagram pose.
       shaft, basePath, shaftRotation, baseLayers: def.layers || [],
       flail, parts: flail?.head?.layers || [], pivot: null,
       chain: null, chainTop: null, chainBottom: null, chainRotation: 0,
@@ -221,156 +220,187 @@
     };
   }
 
-  function drawSprite(ctx, img, x, y, angle = 0, part = null) {
-    if (!img) return;
-    const o = offset(part);
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(angle);
-    ctx.drawImage(img, -img.width / 2 + o.x, -img.height / 2 + o.y, img.width, img.height);
-    ctx.restore();
+  let live = null; // One real gameplay assembly is shared by the detail and combined WebGL cameras.
+  let generation = 0; // Explicit editing events invalidate assemblies without serializing recipes each frame.
+  const views = new Map(); // Two persistent WebGL renderers, cameras and orbit controls; no additional RAF.
+  const DURATION = 1 / .65; // Matches the existing authoring timeline speed in app.js.
+
+  function releaseAssembly() {
+    if (!live?.root) return;
+    global.HobunjiWeaponSpriteAssemblies.drop(live.root); // Shared cleanup owns all head/rope materials and particle pools.
+    live.root.parent?.remove(live.root);
+    live.plane.geometry.dispose(); live.plane.material.map?.dispose(); live.plane.material.dispose();
+    live.root = null;
   }
 
-  function emitFire(ctx, view, part, index, source, options) {
-    const spec = part.vfx;
-    if (!spec || spec.type !== 'fire' || !source) return;
-    const picks = options.effects?.sourcePixels?.(source, spec.sourceHex || part.sourceHex || '#7F00FF', 'marker') || [];
-    if (!picks.length) return;
-    const owner = view + ':' + options.weaponKey + ':' + part.id + ':' + index;
-    let pool = particles.get(owner);
-    if (!pool) { pool = { items: [], fraction: 0 }; particles.set(owner, pool); }
-    const dt = Math.max(0, Math.min(.05, Number(options.dt) || 0));
-    const color = spec.colors?.length ? spec.colors : ['#FFAA3E'];
-    for (let i = pool.items.length - 1; i >= 0; i--) {
-      const ember = pool.items[i]; ember.age += dt;
-      if (ember.age >= ember.life) { pool.items.splice(i, 1); continue; }
-      const t = ember.age / ember.life;
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, .9 * Math.sin(Math.PI * t));
-      ctx.fillStyle = ember.color;
-      ctx.beginPath();
-      ctx.arc(ember.x + Math.sin(t * 10 + ember.phase) * 2.5,
-        ember.y - ember.speed * ember.age, ember.radius * (.6 + t), 0, Math.PI * 2);
-      ctx.fill(); ctx.restore();
-    }
-    if (options.playing === false) return;
-    pool.fraction = Math.min(3, pool.fraction + dt * Math.min(40, Math.max(0, Number(spec.rate) || 0)));
-    const dim = sourceData(source); if (!dim) return;
-    while (pool.fraction >= 1 && pool.items.length < MAX_PARTICLES) {
-      pool.fraction--;
-      const pixel = picks[Math.floor(Math.random() * picks.length)];
-      const off = offset(part);
-      pool.items.push({
-        x: pixel % dim.width + .5 - dim.width / 2 + off.x,
-        y: Math.floor(pixel / dim.width) + .5 - dim.height / 2 + off.y,
-        age: 0, life: Math.max(.1, Number(spec.life) || .65),
-        speed: dim.height * Math.max(.01, Number(spec.speed) || .12),
-        radius: Math.max(1.5, (Number(spec.size) || .035) * dim.width * .55),
-        color: color[Math.floor(Math.random() * color.length)],
-        phase: Math.random() * Math.PI * 2,
-      });
-    }
+  function sceneState() {
+    if (live) return live;
+    const THREE = global.THREE; // Same Three.js release and sprite surface helpers as the Attack Animation Editor.
+    if (!THREE?.WebGLRenderer || !THREE.OrbitControls || !global.HobunjiWeaponSpriteAssemblies || !global.HobunjiSpritePngSurface) throw Error('3D preview dependencies did not load. Reload with a network connection.');
+    const scene = new THREE.Scene(); // The two canvases render the same scene, including the very same live particles.
+    scene.background = new THREE.Color('#0f1b29');
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x687580, 1)); // Generated rope uses the game's lit material; PNGs remain unlit.
+    live = {
+      THREE, scene, root: null, plane: null, head: null, nodes: [], headNodes: [],
+      generation: -1, revision: -1, weaponKey: '', baseSource: null, progress: 0, ready: false,
+      corner: new THREE.Vector3(), size: new THREE.Vector3(), center: new THREE.Vector3(), offset: new THREE.Vector3(),
+      ropeBounds: new THREE.Box3(), bounds: new THREE.Box3(), actor: new THREE.Vector3(), metalOptions: null,
+    }; // All reusable scene and framing scratch objects are allocated once.
+    return live;
   }
 
-  function drawLayers(ctx, view, parts, lookup, paint, options, soloIndex = -1) {
-    parts.forEach((part, i) => {
-      if (soloIndex >= 0 && soloIndex !== i) return;
-      drawSprite(ctx, paint(part), 0, 0, 0, part);
-      // Flames intentionally render AFTER their fuel sprite and BEFORE each
-      // subsequent opaque sprite; they do not get painted over the front.
-      emitFire(ctx, view, part, i, lookup(part.sprite), options);
-    });
+  function applyPreviewPose(t) {
+    const l = live, sample = global.SharedAttackPose?.fourPhaseLerp; // Reuse the game's exact four-stage pose sampler.
+    if (!sample) throw Error('Shared attack-pose sampler did not load');
+    l.plane.rotation.set(sample(t, .16, .42, .72, 0, -1.1, .85), sample(t, .16, .42, .72, 0, -.25, .35), 0, 'YXZ');
+    global.HobunjiWeaponSpriteAssemblies.setAction(l.root, {
+      attacking: t > .001 && t < .999, progress: t,
+      movementPosition: l.actor, windupFrac: .16, strikeFrac: .42, holdFrac: .72,
+    }); // Representative authoring swing; actual authored attacks remain available in the Attack Animation Editor.
+  }
+
+  function beginFrame(model, lookup, paint, options = {}) {
+    const l = sceneState(), api = global.HobunjiWeaponSpriteAssemblies; // Actual gameplay assembly authority drives motion and emitters.
+    const source = lookup(model.basePath); // Identity changes only once when a previously pending haft PNG finishes loading.
+    l.metalOptions = options.metalOptions;
+    if (!l.root || l.generation !== generation || l.revision !== options.revision || l.weaponKey !== options.weaponKey || l.baseSource !== source) {
+      releaseAssembly();
+      const base = source || document.createElement('canvas'); // A missing haft must not prevent inspection of already-loaded head layers.
+      if (!source) { base.width = 512; base.height = 512; }
+      const tex = global.HobunjiSpritePngSurface.makeCanvasTexture(l.THREE, base, 'weapon-preview-haft'); // Canonical PNG color/filter pipeline.
+      l.plane = new l.THREE.Mesh(new l.THREE.PlaneGeometry(.5, .5 * (base.naturalHeight || base.height) / (base.naturalWidth || base.width)), global.HobunjiSpritePngSurface.makeMaterial(l.THREE, tex, 'weapon-preview-haft', { side: l.THREE.DoubleSide, depthWrite: false }));
+      l.plane.renderOrder = 1.5; l.plane.visible = !!source;
+      l.root = new l.THREE.Group(); l.root.userData.toolPlane = l.plane;
+      l.root.add(l.plane); l.scene.add(l.root);
+      api.decorate(l.root, options.weaponKey, { sprite: model.basePath, weaponAssembly: model.definition }, { THREE: l.THREE, metalOptions: () => l.metalOptions });
+      l.baseSource = source; l.weaponKey = options.weaponKey; l.generation = generation; l.revision = options.revision;
+      l.head = null; l.ready = false; l.nodes.length = 0; l.headNodes.length = 0; l.progress = -1;
+      for (const view of views.values()) view.needsFit = true;
+    }
+    const paintedBase = paint({ sprite: model.basePath, material: 'metal' }); // Reuses the editor's cached metal-color canvas for the original rigid haft.
+    if (paintedBase && l.plane.material.map.image !== paintedBase) {
+      l.plane.material.map.image = paintedBase; l.plane.material.map.needsUpdate = true;
+    }
+    if (!l.ready) {
+      l.head = l.root.children.find(child => child.name === options.weaponKey + '_flail_head') || null;
+      let staticLayersReady = 0; // Pending ordinary-weapon overlays must finish before caching scene meshes.
+      for (const child of l.plane.children) if (child.isMesh && child.userData?.hobunjiWeaponAssemblyPart) staticLayersReady++;
+      if (l.head || !model.flail && staticLayersReady >= model.baseLayers.length) {
+        l.root.traverse(child => { if (child.isMesh) l.nodes.push(child); }); // One shallow assembly scan after async layer construction, never a per-frame scene traversal.
+        if (l.head) l.head.traverse(child => { if (child.isMesh) l.headNodes.push(child); });
+        l.ready = true;
+        applyPreviewPose(0); api.tick(0);
+        for (let step = 0; step < 80; step++) api.tick(1 / 120, true); // Prime the real fire so a paused edit immediately shows its full steady-state strength.
+      }
+    }
+    if (!options.playing && l.progress !== model.progress || l.progress < 0 && model.progress > 0) {
+      applyPreviewPose(0); api.tick(0);
+      const steps = Math.ceil(model.progress * DURATION * 120); // Reconstruct physical momentum on direct timeline seeks.
+      for (let step = 1; step <= steps; step++) {
+        applyPreviewPose(model.progress * step / steps);
+        api.tick(model.progress * DURATION / steps);
+      }
+    }
+    applyPreviewPose(model.progress);
+    api.tick(options.dt || 0, options.playing === false); // Motion may pause while the actual game fire continues to evolve.
+    l.progress = model.progress;
+  }
+
+  function viewFor(canvas) {
+    let view = views.get(canvas); // Preserve camera angle and user zoom through live recipe edits.
+    if (view) return view;
+    const THREE = live.THREE, renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false }); // Real perspective rendering and additive sprite blending.
+    renderer.setPixelRatio(Math.min(2, global.devicePixelRatio || 1));
+    const camera = new THREE.PerspectiveCamera(40, 1, .01, 1000), controls = new THREE.OrbitControls(camera, canvas); // Touch orbit/pinch and mouse orbit/wheel use the same controls as the attack editor.
+    controls.enableDamping = true; controls.enablePan = false; controls.minDistance = .01; controls.maxDistance = 100;
+    view = { renderer, camera, controls, needsFit: true, width: 0, height: 0, hidden: [], visibility: [], center: new THREE.Vector3() }; // Per-canvas scratch prevents temporary visibility changes from leaking to the combined view.
+    views.set(canvas, view);
+    return view;
+  }
+
+  function measureNodes(nodes) {
+    const l = live, box = l.bounds.makeEmpty(); // Compute world bounds from cached sprite alpha rectangles and current physical transforms.
+    l.scene.updateMatrixWorld(true);
+    for (const node of nodes) {
+      if (!node.visible) continue;
+      const image = node.material?.map?.image, params = node.geometry?.parameters; // Alpha bounds avoid fitting acres of transparent PNG margin.
+      if (node.userData?.hobunjiGeneratedRope) {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        box.union(l.ropeBounds.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld)); // Rope mesh bounds are tiny; image-based sprite bounds do not apply.
+        continue;
+      }
+      if (!image || !params?.width || !params?.height) continue;
+      const meta = sourceData(image); // Cached on the actual source/canvas identity.
+      if (!meta) continue;
+      for (let i = 0; i < 4; i++) {
+        const x = i & 1 ? meta.opaque.right : meta.opaque.left, y = i & 2 ? meta.opaque.bottom : meta.opaque.top; // Four original-image corners in world space.
+        l.corner.set((x / meta.width - .5) * params.width, (.5 - y / meta.height) * params.height, 0).applyMatrix4(node.matrixWorld);
+        box.expandByPoint(l.corner);
+      }
+    }
+    if (box.isEmpty()) { box.min.set(-.25, -.25, -.25); box.max.set(.25, .25, .25); }
+    return box;
+  }
+
+  function fireReach(model) {
+    let reach = 0; // Frame all of the actual world-sized motes, including inherited head scaling and lifetime travel.
+    for (const part of model.parts) {
+      if (part.vfx?.type !== 'fire') continue;
+      const scale = model.parts.includes(part) ? model.headScale : 1; // The gameplay emitter lives under the independently scaled head root.
+      const size = Math.max(.004, Number(part.vfx.size) || .035), life = Math.max(.1, Number(part.vfx.life) || .65), speed = Number.isFinite(part.vfx.speed) ? Math.max(0, part.vfx.speed) : .12; // Matches the shared emitter's local-world units.
+      reach = Math.max(reach, scale * (size * 2 + speed * life * 1.5));
+    }
+    for (const part of model.baseLayers) { // Ordinary overlays have no additional head multiplier.
+      if (part.vfx?.type === 'fire') reach = Math.max(reach, Math.max(.004, Number(part.vfx.size) || .035) * 2 + (Number(part.vfx.speed) || .12) * Math.max(.1, Number(part.vfx.life) || .65) * 1.5);
+    }
+    return reach;
   }
 
   function drawCanvas(canvas, kind, model, lookup, paint, options = {}) {
-    if (!canvas || !model) return null;
-    const width = Math.max(1, canvas.clientWidth || 640);
-    const height = Math.max(1, canvas.clientHeight || 320);
-    const dpr = Math.min(2, global.devicePixelRatio || 1);
-    const pixelWidth = Math.max(1, Math.round(width * dpr)), pixelHeight = Math.max(1, Math.round(height * dpr));
-    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-      canvas.width = pixelWidth; canvas.height = pixelHeight;
-    }
-    const ctx = canvas.getContext('2d'); if (!ctx) return null;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Logical CSS-pixel coordinate system on high DPI phones.
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#0f1b29'; ctx.fillRect(0, 0, width, height);
-    ctx.lineWidth = 1; ctx.strokeStyle = '#27384b';
-    for (let x = 0; x < width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
-    for (let y = 0; y < height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
-    const soloIndex = kind === 'head' && options.solo === true ? options.selected : -1;
-    const b = boundsFor(model, lookup, kind, soloIndex, options.stackTarget);
-    const transform = fit(b, width, height);
-    ctx.save();
-    ctx.translate(transform.x, transform.y); ctx.scale(transform.zoom, transform.zoom);
-    if (kind === 'head') {
-      if (model.flail && options.stackTarget === 'head') {
-        drawLayers(ctx, 'head', model.parts, lookup, paint, options, soloIndex);
-      } else {
-        if (soloIndex < 0) drawSprite(ctx, paint({ sprite: model.basePath, material: 'metal' }), 0, 0);
-        drawLayers(ctx, 'head', model.baseLayers, lookup, paint, options, soloIndex);
-      }
-    } else {
-      drawSprite(ctx, paint({ sprite: model.basePath, material: 'metal' }), 0, 0, model.shaftRotation);
-      for (const part of model.baseLayers) {
-        ctx.save(); ctx.rotate(model.shaftRotation);
-        drawSprite(ctx, paint(part), 0, 0, 0, part);
-        ctx.restore();
-      }
-      if (model.chain && model.pivot) {
-        if (model.rope) {
-          ctx.save();
-          ctx.strokeStyle = model.rope.color; ctx.lineWidth = model.rope.radius * 2 * model.chainScaleX; // Rope width follows X only.
-          ctx.lineCap = 'round';
-          ctx.beginPath();ctx.moveTo(model.pivot.x,model.pivot.y);
-          ctx.lineTo(model.headPosition.x,model.headPosition.y);ctx.stroke();
-          ctx.restore(); // Original rope connects the two independently scaled attachment points.
-        } else {
-          const dim = sourceData(model.chain);
-          const ct = model.chainTop;
-          ctx.save(); ctx.translate(model.pivot.x, model.pivot.y);
-          ctx.rotate(model.chainRotation); ctx.scale(model.chainScaleX, model.chainScaleY); // Match gameplay's per-axis stretched chain.
-          const chainTexture = paint({ ...model.flail.chain, sprite: model.flail.chain.sprite });
-          if (chainTexture) ctx.drawImage(chainTexture, -ct.x - .5, -ct.y - .5, dim.width, dim.height);
-          ctx.restore();
+    if (!canvas || !live?.root) return null;
+    const l = live, view = viewFor(canvas), headOnly = kind === 'head' && l.head && options.stackTarget === 'head'; // Both views render identical geometry and particle state.
+    view.hidden.length = 0; view.visibility.length = 0;
+    const hide = node => { view.hidden.push(node); view.visibility.push(node.visible); node.visible = false; }; // Temporary visibility is restored even when rendering fails.
+    try {
+      if (headOnly) for (const child of l.root.children) if (child !== l.head) hide(child);
+      if (kind === 'head' && options.solo) {
+        const owner = headOnly ? l.head : l.plane, parts = headOnly ? model.parts : model.baseLayers; // Solo supports head layers and ordinary weapon overlays.
+        const chosen = parts[options.selected]; // Emitter and selected source layer remain visible together.
+        let index = 0; // Sprite children retain authored ordering, while fire groups have their own tagged names.
+        for (const child of owner.children) {
+          if (child.userData?.weaponInterleavedVfx) { if (child.name !== 'weapon_interleaved_fire_' + chosen?.id) hide(child); }
+          else if (child.isMesh && child.userData?.hobunjiWeaponAssemblyPart && index++ !== options.selected) hide(child);
         }
       }
-      if (model.headOrigin) {
-        ctx.save();
-        ctx.translate(model.headOrigin.x, model.headOrigin.y);
-        ctx.rotate(model.headRotation);
-        ctx.scale(model.headScale, model.headScale); // Scale all head meshes, layer offsets and inset fire together.
-        drawLayers(ctx, 'combined', model.parts, lookup, paint, options);
-        ctx.restore();
+      const width = Math.max(1, canvas.clientWidth || 640), height = Math.max(1, canvas.clientHeight || 320); // Logical CSS size preserves mobile DPR.
+      if (width !== view.width || height !== view.height) {
+        view.renderer.setSize(width, height, false); view.camera.aspect = width / height; view.camera.updateProjectionMatrix();
+        view.width = width; view.height = height; view.needsFit = true;
       }
-      for (const [p, color] of [[model.pivot, '#83bcff'], [model.headPosition, '#ffc769']]) {
-        if (!p) continue;
-        ctx.fillStyle = color; ctx.beginPath();
-        ctx.arc(p.x, p.y, 3 / transform.zoom, 0, Math.PI * 2); ctx.fill();
+      const box = measureNodes(headOnly ? l.headNodes : l.nodes), reach = fireReach(model); // Visual framing includes steady-state fire, not just metal artwork.
+      box.getCenter(l.center); box.getSize(l.size);
+      if (view.needsFit && l.ready) {
+        const radius = Math.max(.05, l.size.length() * .5 + reach); // Enclose the entire 3D stack and its full emitter reach.
+        const fov = Math.min(view.camera.fov * Math.PI / 180, 2 * Math.atan(Math.tan(view.camera.fov * Math.PI / 360) * view.camera.aspect)); // Portrait canvases fit the narrow horizontal field too.
+        view.camera.position.copy(l.center).add(l.offset.set(0, radius * .15, radius / Math.sin(fov / 2) * 1.12));
+        view.controls.target.copy(l.center); view.center.copy(l.center); view.needsFit = false;
+      } else {
+        l.offset.copy(l.center).sub(view.center); view.camera.position.add(l.offset); view.controls.target.add(l.offset); view.center.copy(l.center); // Follow a moving head without replacing the author's orbit angle or zoom.
       }
+      view.controls.update();
+      view.renderer.render(l.scene, view.camera);
+      lastLayout ||= {};
+      lastLayout[kind] = { mode: 'gameplay-3d', ready: l.ready, partsReady: l.headNodes.length, partsExpected: model.parts.length, chainReady: !!l.head, haftReady: !!l.baseSource, fireReach: reach, worldHandleWidth: .5, cameraDistance: view.camera.position.distanceTo(view.controls.target) }; // Copy diagnostics includes actual world scale and framing.
+      return lastLayout[kind];
+    } finally {
+      for (let i = 0; i < view.hidden.length; i++) view.hidden[i].visible = view.visibility[i]; // Solo/head views never strip the combined view.
     }
-    ctx.restore();
-    if (b.empty) {
-      ctx.fillStyle = '#a9c5dc'; ctx.font = '12px sans-serif';
-      ctx.fillText(kind === 'head' ? 'Head layers have no loaded pixels yet.' : 'Weapon sprites are loading…', 12, height / 2);
-    }
-    lastLayout = lastLayout || {};
-    lastLayout[kind] = {
-      bounds: b, fit: transform,
-      partsReady: model.parts.filter(part => !!lookup(part.sprite)).length,
-      partsExpected: model.parts.length,
-      chainReady: !!model.chain, connectorType: model.rope ? 'rope' : 'chain', haftReady: !!model.shaft,
-      joint: model.headPosition,
-      chainScaleX: model.chainScaleX, chainScaleY: model.chainScaleY, headScale: model.headScale, // Mobile diagnostics expose thickness and reach separately.
-    };
-    return lastLayout[kind];
   }
 
-  function resetEffects() {
-    particles.clear(); // A weapon/layer change invalidates old ember pools in both previews.
-  }
-
+  function resetEffects() { generation++; } // Next frame rebuilds through the existing authority and disposes old particle pools.
+  function resetView() { for (const view of views.values()) view.needsFit = true; } // Explicit reset restores fitting after manual zoom/orbit.
   global.HobunjiMultiSpritePreviewRenderer = Object.freeze({
-    modelFor, boundsFor, fit, drawCanvas, resetEffects,
-    debugSnapshot: () => lastLayout ? JSON.parse(JSON.stringify(lastLayout)) : null,
+    modelFor, boundsFor, fit, beginFrame, drawCanvas, resetEffects, resetView, fireReach,
+    debugSnapshot: () => ({ ...lastLayout, physics: global.HobunjiWeaponSpriteAssemblies?.debugSnapshot(), renderer: 'shared-gameplay-3d' }),
   });
 })(window);

@@ -34,7 +34,7 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
           ],
           scale: 2.5,
         },
-        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
+        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15, angularDamping: 8 },
       },
     },
     grappleFlail: {
@@ -57,7 +57,7 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
             { id: 'front', sprite: 'assets/toolsprites/grapple-flail_grapple-front.png', material: 'metal' },
           ],
         },
-        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
+        motion: { lag: 0.065, idleFollow: 7, attackFollow: 15, angularDamping: 8 },
       },
     },
   },

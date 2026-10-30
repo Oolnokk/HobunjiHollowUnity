@@ -80,32 +80,59 @@ for (const t of [0,0.12,0.25,0.5,0.68,0.95]) {
   assertFitted(full,960,430); // Desktop.
   assertFitted(detail,960,360);
 }
-const model=renderer.modelFor(recipe,lookup,.25,1500);
-const kinds={head:[],combined:[],solo:[]};
-function makeCanvas(id) {
-  const events=kinds[id]; // Draw order identifies the actual source sprite (not just metadata).
-  const ctx={
-    setTransform(){},clearRect(){},fillRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},
-    save(){},restore(){},translate(){},scale(){},rotate(){},arc(){},fill(){},fillText(){},
-    drawImage(img){events.push(img.name);}
-  };
-  return {clientWidth:330,clientHeight:240,width:1,height:1,getContext:()=>ctx};
+const model=renderer.modelFor(recipe,lookup,.25,1500); // Pure fit fixtures above remain useful; live rendering below delegates to the real gameplay owner.
+assert(renderer.fireReach(model) > 2, '0.4-world-unit fire inherits 2.5x head scale, rather than an arbitrary 2D pixel radius');
+class Vector3 {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);} set(x,y,z){Object.assign(this,{x,y,z});return this;} copy(v){return this.set(v.x,v.y,v.z);} add(v){return this.set(this.x+v.x,this.y+v.y,this.z+v.z);} sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);} length(){return Math.hypot(this.x,this.y,this.z);} distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);} applyMatrix4(){return this;}
 }
-const options={
-  dt:.05,playing:false,weaponKey:'hachutuTorchFlail',
-  stackTarget:'head',solo:false,selected:2,effects:{sourcePixels(){return[];}},
+class Box3 {
+  constructor(){this.min=new Vector3();this.max=new Vector3();this.makeEmpty();} makeEmpty(){this.min.set(Infinity,Infinity,Infinity);this.max.set(-Infinity,-Infinity,-Infinity);return this;} expandByPoint(v){for(const axis of ['x','y','z']){this.min[axis]=Math.min(this.min[axis],v[axis]);this.max[axis]=Math.max(this.max[axis],v[axis]);}return this;} isEmpty(){return this.min.x>this.max.x;} getCenter(v){return v.set((this.min.x+this.max.x)/2,(this.min.y+this.max.y)/2,(this.min.z+this.max.z)/2);} getSize(v){return v.copy(this.max).sub(this.min);}
+}
+class Group {
+  constructor(){this.children=[];this.userData={};this.visible=true;this.position=new Vector3();this.rotation={set(){}};this.matrixWorld={};} add(...nodes){for(const node of nodes){node.parent=this;this.children.push(node);}return this;} remove(node){this.children=this.children.filter(child=>child!==node);} traverse(fn){fn(this);for(const node of this.children)node.traverse?.(fn);} updateMatrixWorld(){}
+}
+class Mesh extends Group {constructor(geometry,material){super();Object.assign(this,{isMesh:true,geometry,material});}}
+const renders=[], clocks=[], decorated=[]; // Observe actual production controller calls, rather than implementing replacement physics or emitters.
+let drops=0, currentRoot=null; // Detect unintended frame-by-frame rebuilds and resource leaks.
+window.THREE={Vector3,Box3,Scene:Group,Group,Mesh,Color:class{},HemisphereLight:class{},DoubleSide:2,
+  PlaneGeometry:class{constructor(width,height){this.parameters={width,height};}dispose(){}},
+  PerspectiveCamera:class{constructor(fov,aspect){Object.assign(this,{fov,aspect,position:new Vector3()});}updateProjectionMatrix(){}},
+  OrbitControls:class{constructor(){this.target=new Vector3();}update(){}},
+  WebGLRenderer:class{constructor({canvas}){this.canvas=canvas;}setPixelRatio(){}setSize(){}render(scene){renders.push({canvas:this.canvas.id,root:currentRoot,visible:currentRoot.children.filter(child=>child.visible).map(child=>child.name),head:currentRoot.children.find(child=>child.name?.endsWith('_flail_head'))?.children.filter(child=>child.visible).map(child=>child.name)});}},
 };
-const head=renderer.drawCanvas(makeCanvas('head'),'head',model,lookup,part=>lookup(part.sprite),options);
-const full=renderer.drawCanvas(makeCanvas('combined'),'combined',model,lookup,part=>lookup(part.sprite),options);
-assert.deepEqual(kinds.head,['back','handle','fuel','front']);
-assert.deepEqual(kinds.combined,['shaft','chain','back','handle','fuel','front']);
-assert.equal(head.partsReady,4);assert.equal(head.partsExpected,4);
-assert.equal(full.chainReady,true);assert.equal(full.haftReady,true);
-renderer.drawCanvas(makeCanvas('solo'),'head',model,lookup,part=>lookup(part.sprite),{...options,solo:true});
-assert.deepEqual(kinds.solo,['fuel'],'soloing fuel does not lose the separate full-assembly preview');
-const detached=renderer.modelFor(recipe,path=>path.includes('handle.png')?null:lookup(path),0,1500);
-assert.ok(renderer.boundsFor(detached,lookup,'head').maxY>100,'close-up can still draw loaded head sprites if haft is missing');
-const diagnostics=renderer.debugSnapshot();
-assert.ok(diagnostics.combined.fit.zoom>0 && diagnostics.head.partsReady===4);
+window.HobunjiSpritePngSurface={makeCanvasTexture(_THREE,image){return{image,dispose(){}};},makeMaterial(_THREE,map){return{map,dispose(){}};}};
+window.SharedAttackPose={fourPhaseLerp(){return 0;}};
+window.HobunjiWeaponSpriteAssemblies={
+  decorate(root,key,def){
+    decorated.push(def.weaponAssembly);currentRoot=root;root.userData.toolPlane.name='haft';
+    const head=new Group();head.name=key+'_flail_head';
+    for(const part of def.weaponAssembly.flail.head.layers){const mesh=new Mesh(new window.THREE.PlaneGeometry(.2,.3),{map:{image:lookup(part.sprite)}});mesh.name=part.id;mesh.userData.hobunjiWeaponAssemblyPart=true;head.add(mesh);}
+    const fire=new Group();fire.name='weapon_interleaved_fire_fuel';fire.userData.weaponInterleavedVfx=true;head.add(fire);root.add(head);
+  },
+  setAction(){},tick(dt,freeze){clocks.push({dt,freeze});},drop(){drops++;},debugSnapshot(){return[];},
+};
+const options={dt:1/60,playing:true,weaponKey:'hachutuTorchFlail',revision:0,stackTarget:'head',solo:false,selected:2}; // The same options sent by app.js's one RAF.
+const headCanvas={id:'head',clientWidth:330,clientHeight:240}, fullCanvas={id:'combined',clientWidth:330,clientHeight:240};
+renderer.beginFrame(model,lookup,part=>lookup(part.sprite),options);
+renderer.drawCanvas(headCanvas,'head',model,lookup,null,options);
+renderer.drawCanvas(fullCanvas,'combined',model,lookup,null,options);
+assert.equal(decorated.length,1,'both 3D cameras share a single gameplay assembly');
+assert.strictEqual(decorated[0],recipe,'the exact live recipe reaches gameplay assembly/effect construction');
+assert.strictEqual(renders[0].root,renders[1].root,'both panes render the exact same live particle scene');
+assert.deepEqual(renders[0].visible,['hachutuTorchFlail_flail_head'],'detail hides haft and chain without removing the head');
+assert.deepEqual(renders[1].visible,['haft','hachutuTorchFlail_flail_head'],'combined visibility is restored');
+renderer.drawCanvas(headCanvas,'head',model,lookup,null,{...options,solo:true});
+assert.deepEqual(renders.at(-1).head,['fuel','weapon_interleaved_fire_fuel'],'solo preserves the selected fuel and its real emitter');
+renderer.drawCanvas(fullCanvas,'combined',model,lookup,null,options);
+assert.equal(renders.at(-1).head.length,5,'soloing cannot remove layers/effects from the combined pane');
+const count=clocks.length; // Only the controller advances particle time; rendering both cameras adds no second clock tick.
+renderer.beginFrame(model,lookup,part=>lookup(part.sprite),{...options,playing:false});
+assert.equal(clocks.length,count+1,'a paused frame avoids replay when the timeline did not change');
+assert.deepEqual(clocks.at(-1),{dt:1/60,freeze:true},'paused motion freezes physics while actual particles remain live');
+assert.equal(decorated.length,1,'unchanged frames retain meshes and particle pools');
+renderer.beginFrame(model,lookup,part=>lookup(part.sprite),{...options,revision:1});
+assert.equal(decorated.length,2);assert.equal(drops,1,'recipe edits dispose the old assembly before rebuilding');
+assert.equal(renderer.debugSnapshot().renderer,'shared-gameplay-3d');
+assert(renderer.debugSnapshot().combined.cameraDistance>0);
 renderer.resetEffects();
-console.log('multi-sprite weapon preview: PASS (head, combined, solo, opacity bounds, long chain, mobile/desktop fitting, source draw order)');
+console.log('multi-sprite weapon preview: PASS (3D gameplay delegation, shared particles, solo isolation, physical scale, mobile bounds, pause and rebuild lifecycle)');

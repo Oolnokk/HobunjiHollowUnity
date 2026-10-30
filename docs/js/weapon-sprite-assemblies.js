@@ -324,10 +324,15 @@
       + ((Number(strike.bodyYaw) || 0) - (Number(windup.bodyYaw) || 0))) * power * dirSign;
   }
 
+  function flailDamping(motion) {
+    const value = motion?.angularDamping; // Per-weapon drag is exported by the assembler and read during every physical step.
+    return Number.isFinite(value) ? Math.max(0, Math.min(30, value)) : 8;
+  }
+
   // A point-mass head on a taut, massless connector: I = m L² and
   // torque = m L (direction × (gravity - pivotAcceleration)), so mass cancels.
   // Small fixed substeps integrate angular momentum without prescribing an angle.
-  function stepPendulum(body, acceleration, length, dt, gravity = 9.81, damping = 0.12) {
+  function stepPendulum(body, acceleration, length, dt, gravity = 9.81, damping = 8) {
     if (!(dt > 0) || !Number.isFinite(dt) || !(length > 0) || !Number.isFinite(length)) return;
     const d = body.direction, w = body.angularVelocity; // Mutated per-instance direction and angular velocity; no frame allocations.
     const steps = Math.ceil(Math.min(MAX_DT, dt) * 240), h = Math.min(MAX_DT, dt) / steps; // At most 20 substeps per render frame.
@@ -352,7 +357,7 @@
     }
   }
 
-  function updateOne(state, dt, now) {
+  function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
       if (!state.detachedAt) state.detachedAt = now;
@@ -361,7 +366,7 @@
     }
     state.detachedAt = 0;
     if (!state.chain || !state.headRoot) {
-      if (root.visible !== false) effects?.stepFire(state, dt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
+      if (root.visible !== false) effects?.stepFire(state, effectsDt); // Ordinary multi-layer tools can have interleaved VFX without a chain.
       return;
     }
     // Use the final holder+plane world pose, including the game's transient
@@ -464,7 +469,7 @@
     } else if (dt > 0) {
       // The handle may freeze at Strike; connector momentum remains free through
       // Hold and Recovery. Pivot deceleration contributes torque instead of a cap.
-      stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt);
+      stepPendulum(state, q.pivotAcceleration, state.physicsLength, dt, 9.81, flailDamping(motion));
     }
     if (dt > 0 && (!state.attacking || state.progress < state.sf)) {
       q.pitchCross.crossVectors(q.previousDirection, state.direction); // Real driven angular displacement includes simultaneous pitch, yaw, roll and body movement.
@@ -492,17 +497,17 @@
     const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Keep the independently scaled head contact at the scaled chain's end.
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
-    if (root.visible !== false) effects?.stepFire(state, dt); // Flame stays in the assembled head and behind later opaque sprites.
+    if (root.visible !== false) effects?.stepFire(state, effectsDt); // Flame stays in the assembled head and behind later opaque sprites.
   }
 
-  function tick(deltaS) {
+  function tick(deltaS, freezePhysics = false) {
     const now = performance.now();
     const dt = Math.min(MAX_DT, Math.max(0, Number.isFinite(deltaS) ? deltaS : 1 / 60));
     for (const state of records) {
       if (state.dead) { records.delete(state); continue; }
       try {
         effects?.refreshMetal(state, now); // Throttled tint updates share weapon plating and verdigris without creating a second animation loop.
-        updateOne(state, dt, now);
+        updateOne(state, freezePhysics ? 0 : dt, now, dt);
       }
       catch (error) {
         if (!state.lastErrorAt || now - state.lastErrorAt > 5000) {
@@ -521,7 +526,8 @@
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
-      physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
+      physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
+      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, size: fx.config.size, rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -554,7 +560,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
-    opaqueAt, anchor, definitionFor, stepPendulum, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
+    opaqueAt, anchor, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {

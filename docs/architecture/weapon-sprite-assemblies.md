@@ -101,14 +101,26 @@ supplies pivot acceleration. On release, gravity and pivot acceleration produce
 angular acceleration `direction × (gravity - pivotAcceleration) / length`.
 Mass cancels for the point-mass head approximation. The lever length is the
 rendered, scaled connector length. Kick/rotate/kick substeps at 240 Hz preserve
-rotation without prescribing a maximum angle; damping is 0.12 per second.
+rotation without prescribing a maximum angle. `flail.motion.angularDamping`
+sets drag in 1/s (0–30, default 8); zero retains free rotation and larger values
+settle sooner. The assembler exposes this control and exports it with the recipe.
 
 Early strike alignment and gravity-only windup retain their existing authored
 behavior. This is a taut, massless-connector approximation: no slack, individual
 chain-link collisions, or independent head inertia. Hit detection stays unchanged.
 Paused editor scrubbing replays the preceding swing at 120 Hz; zero-time draws
 freeze the result. `debugSnapshot().physics` reports the model, lever length,
-angular velocity in rad/s, and gravity (9.81 world units/s²).
+angular velocity in rad/s, damping, and gravity (9.81 world units/s²).
+
+The assembler now renders both previews through one real gameplay assembly,
+two perspective cameras and touch/mouse OrbitControls. Its head view and combined
+view share the exact same particle sprites and use the canonical PNG materials.
+The 0.5-world-unit handle width, inherited head scale, additive blending, emitter
+source pixels, layer occlusion, particle size, rise speed and lifetime are the
+gameplay implementation. Fire stays live when motion is paused. The camera fit
+includes expected particle reach; Reset 3D views restores framing after zooming.
+The fire size/speed controls are in world units; the old 2D emitter simulation
+has been removed. Copied diagnostics include live emitter settings/counts.
 
 ## Verification
 
