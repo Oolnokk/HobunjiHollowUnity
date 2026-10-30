@@ -70,6 +70,8 @@ h3{font-size:13px;margin:5px 0}
 <button data-tab="layers" aria-selected="false">2. Multi-layer Parts</button>
 </nav>
 <div id="flailsTab">
+<button id="enableFlail">Enable flail assembly for this weapon</button>
+<div id="flailFields">
 <div class="panel">
 <h2>Rigid haft and chain</h2>
 <label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
@@ -97,7 +99,7 @@ h3{font-size:13px;margin:5px 0}
 <div><label for="attackFollow">Swing follow rad/s</label><input id="attackFollow" type="number" min="0.1" max="60" step=".5"></div>
 </div><p class="help">The rigid haft keeps using the existing attack pose and hand grip. Only the chain and head use these presentation settings.</p>
 </div>
-</div>
+</div></div>
 <div id="layersTab" hidden>
 <div class="panel">
 <h2>Ordered sprite stack</h2>
