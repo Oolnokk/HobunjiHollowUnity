@@ -313,11 +313,12 @@
       // (window.ToastNotifications). These hoisted wrappers keep every
       // existing call site in this file unchanged.
       window.ToastNotifications.init({ toastEl, zoneBannerEl });
+      window.LocationArrival.init({ getCurrentArea: () => currentArea }); // Keeps stale arrival notices from showing after a map change.
       function showToast(msg, ok = true, silent = false) {
         return window.ToastNotifications.showToast(msg, ok, silent);
       }
       function showZoneBanner(text) {
-        return window.ToastNotifications.showZoneBanner(text);
+        return window.LocationArrival.announce(text);
       }
 
       // gameAudioConfig() and the whole footstep/one-shot SFX layer now live
@@ -11240,11 +11241,10 @@
           exitBuilding();
         } else if (t.target === 'building') {
           const proceduralMineTarget = !!window.TownMine?.floorFromMapId?.(t.targetMapId); // Used to let the generated floor choose its guaranteed-walkable entrance instead of stale 0,0 coordinates.
-          const mineDescentFloor = t.mineDynamicDescent && proceduralMineTarget ? window.TownMine.floorFromMapId(t.targetMapId) : null; // Used only for the discovered-hole loading cue/heading, never ladder or camp travel.
-          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '', mineDescentFloor ? `Floor ${mineDescentFloor}` : '');
-          if (mineDescentFloor) {
-            window.Music?.playGameplayCue?.('progressDeeper'); // The authored descent sting belongs only to a discovered hole, never ladder shortcuts or ordinary building entry.
-            window.__farmLog?.('[mine] descending through hole to floor ' + mineDescentFloor, 'mine');
+          enterBuilding(t.targetMapId, proceduralMineTarget ? undefined : t.targetCol, proceduralMineTarget ? undefined : t.targetRow, t.targetSpotId || '');
+          if (t.mineDynamicDescent && proceduralMineTarget) {
+            window.LocationArrival.mineDescent(t.targetMapId); // Shows the mine floor title and plays progressDeeper together after the loader closes.
+            window.__farmLog?.('[mine] descending through hole to floor ' + proceduralMineTarget, 'mine');
           }
         } else if (t.target === 'interior') {
           if (currentArea !== 'interior') enterInterior();
@@ -14571,7 +14571,7 @@
         window.__farmLog?.(`[map] ${label}: currentMap=${area} name="${mapDebugName(area)}" source=${source} fallback=${fallback}${loading ? ' loading=true' : ''}${target} heldObjects=${heldObjectAttachment}`, fallback ? 'warn' : 'info');
       }
 
-      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '', loadingContextText = '') {
+      function enterBuilding(mapId, defaultCol, defaultRow, targetSpotId = '') {
         const arrivalFromArea = currentArea; // Used to match the destination's reciprocal exit for cached and fresh scenes.
         if (window.TownMine?.floorFromMapId?.(mapId) && _buildingScenes.get(mapId)) discardGeneratedMineFloor(mapId);
         // A room visited earlier this session and still cached may no longer
@@ -14599,8 +14599,8 @@
         // a blank/frozen interior. Hidden from loadBuildingScene itself
         // once the scene it's building for THIS mapId actually lands.
         if (!bi) {
-          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Used only to label this as a mine load in diagnostics; the visible floor heading remains hole-descent-specific.
-          window.LoadingScreenRuntime?.show(loadingContextText ? { reason: loadingMineFloor ? 'mine-floor-load' : 'map-change', contextText: loadingContextText } : undefined);
+          const loadingMineFloor = window.TownMine?.floorFromMapId?.(mapId); // Mine loading remains distinguishable in diagnostics; the floor number appears in-world.
+          window.LoadingScreenRuntime?.show(loadingMineFloor ? { reason: 'mine-floor-load' } : undefined);
         }
         const bCols = bi?.cols || 20, bRows = bi?.rows || 20;
         // Default entry is one tile north of the building's exit. Explicit

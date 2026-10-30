@@ -67,7 +67,7 @@
     debugVisible: false,
     activeTip: '',
     activeTipTitle: '', // Used by the loading-screen header and diagnostics to preserve the selected Compendium feature context.
-    contextText: '', // Optional transition-specific heading such as the destination mine floor, rendered above the ordinary Compendium tip.
+    contextText: '', // Optional authored loading context; arrival titles are rendered after loading.
     reason: 'idle',
     tipPoolGeneration: 0, // Generation the cached tip pool/semantic rules below were built for; a mismatch forces one rebuild per loading session instead of one every ten-second tick.
     tipPoolCache: null,
@@ -76,6 +76,7 @@
     suppressedByOnboarding: false, // Exposed in mobile-visible diagnostics when the pre-world loader is intentionally hidden behind onboarding.
   }; // Used by rendering, transition coverage, real request progress, and the built-in mobile diagnostics panel.
 
+  const hiddenListeners = new Set(); // Signals location arrivals after a loading overlay genuinely finishes hiding.
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const nowMs = () => (window.performance?.now?.() ?? Date.now());
 
@@ -652,7 +653,7 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
   async function show(options = {}) {
     if (state.introduction) return; // The opening preset owns the foreground through map/boot loader races.
     const reason = typeof options === 'string' ? options : (options?.reason || 'map-change');
-    const contextText = typeof options === 'string' ? '' : (options?.contextText || ''); // Used by mine-floor loads to identify the destination without replacing the normal loading tip.
+    const contextText = typeof options === 'string' ? '' : (options?.contextText || ''); // Kept for authored loading context, not mine-floor announcements.
     const myGeneration = showImmediate(reason, contextText);
     setProgress(4, 'overlay-visible');
     await Promise.all([ensureFontsLoaded(), ensureConfigLoaded(), ensureCompendiumLoaded()]);
@@ -681,6 +682,10 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     state.hideTimer = null;
     resolveHideWaiters(generation);
     updateDebugPanel();
+    for (const listener of hiddenListeners) {
+      try { listener({ generation, reason: state.reason }); }
+      catch (error) { console.warn('[loading-screen] hidden listener failed', error); }
+    }
   }
 
   function hide(reason = 'map-ready') {
@@ -1023,6 +1028,11 @@ html.hobunji-onboarding-foreground #hlsScriptViewport{visibility:hidden!importan
     installed: true,
     show,
     hide,
+    onHidden(listener) {
+      if (typeof listener !== 'function') return () => {};
+      hiddenListeners.add(listener);
+      return () => hiddenListeners.delete(listener);
+    }, // Completed-loading event for HUD arrivals, rather than a guessed delay.
     coversWorld,
     beginIntroduction,
     skipIntroduction() { state.skipIntroduction = true; state.introduction?.skip?.(); return !!state.introduction; }, // Dev/test: also ?skipIntro=1. Skips the opening's holds and Continue prompts.
