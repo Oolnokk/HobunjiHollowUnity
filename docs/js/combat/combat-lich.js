@@ -325,7 +325,7 @@
       entity._specialWarhammerGlyph = special.glyph; // The boss's entropy pattern identifier for metadata and debugging.
       entity._specialWarhammerEnchanted = true; // Explicit magical weapon identity, separate from generic ranged spells.
     } else prepareEmptyCastWeapon(entity);
-    if (special) window.SpecialHarlyaoLiches?.init?.(entity, def.id);
+    if (special) window.SpecialHarlyaoLiches?.init?.(entity, def.id, deps);
     entity._lichCastAnimIndex = 0; // Cycles existing poke-combo steps so repeated spell casts do not all use one identical hand motion.
     entity._lichBaseGroundLift = Number(entity.groundLift ?? entity.halfHeight) || Number(entity.avatarRef?.modelHeight) * 0.5 || 0.45; // Original floor-to-center baseline restored while prone/dead.
     entity._lichHoverClockS = random() * HOVER_BOB_PERIOD_S; // Per-entity phase offset keeps groups of liches from bobbing in lockstep.

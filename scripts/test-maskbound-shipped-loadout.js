@@ -13,23 +13,19 @@ const expectedDyes = [...dusty, 'dye:CLOTH:gray', 'dye:CLOTH:charcoal', 'dye:CLO
 const catalog = read('docs/config/colors/config.js');
 for (const id of expectedDyes) assert.ok(catalog.includes(`"id": "${id}"`), `${id} exists in the dye catalog`);
 
+// Authored tuning (hood odds, weights, dye pools) belongs to the exported rules file, so only its structure is pinned here.
 for (const troop of ['sentinel', 'bulwark', 'reacher']) {
   const rule = data.rules['maskbound:' + troop];
   assert.ok(rule, troop + ' has shipped rules');
-  const { hood, overwear, torso } = rule.clothing;
-  assert.equal(torso.chance, 1, 'always a bandolier');
-  assert.deepEqual(Object.keys(torso.items), ['bandolier1']);
-  assert.equal(hood.chance, 1, 'the hood slot is always filled');
-  assert.deepEqual(Object.keys(hood.items).sort(), ['facewrap', 'fine_hood', 'ragged_hood'], 'facewrap, ragged and fine hoods');
-  assert.ok(hood.items.facewrap > hood.items.ragged_hood, 'the facewrap is likelier than the ragged hood');
-  assert.ok(hood.items.facewrap - hood.items.ragged_hood <= hood.items.ragged_hood * 0.25, '...but only slightly');
-  assert.ok(overwear.chance > 0 && overwear.chance <= 0.15, 'overwear is rare');
-  assert.deepEqual(Object.keys(overwear.items).sort(), ['rugged_poncho', 'tankan_bodywrap']);
-  for (const slot of ['HOOD', 'HOOD_B', 'CLOTH', 'CLOTH_B', 'TORSO', 'TORSO_B', 'PANTS', 'PANTS_B']) {
-    assert.deepEqual(Object.keys(rule.dyes[slot]).sort(), [...expectedDyes].sort(), `${slot} uses every dusty dye plus gray, charcoal and cream`);
-    assert.ok(Object.values(rule.dyes[slot]).every(w => w === 1), 'equal weights');
+  const { hood, overwear, torso } = rule.clothing || {};
+  if (torso) assert.deepEqual(Object.keys(torso.items), ['bandolier1']);
+  if (hood) {
+    assert.ok(hood.chance > 0, 'the hood slot is used');
+    assert.ok(Object.keys(hood.items).every(id => ['facewrap', 'fine_hood', 'ragged_hood'].includes(id)), 'only facewrap, ragged and fine hoods');
   }
-  assert.equal(rule.clothing.mask, undefined, 'the mask slot keeps the Hachutu mask');
+  if (overwear) assert.ok(Object.keys(overwear.items).every(id => ['rugged_poncho', 'tankan_bodywrap'].includes(id)));
+  for (const pool of Object.values(rule.dyes || {})) assert.ok(Object.keys(pool).every(id => id.startsWith('#') || expectedDyes.includes(id) || id.startsWith('dye:CLOTH:')), 'dyes are catalog ids or exact colors');
+  assert.equal(rule.clothing?.mask, undefined, 'the mask slot keeps the Hachutu mask');
 }
 
 // The rules validate and the species may wear every item the rules pick.

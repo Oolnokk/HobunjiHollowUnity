@@ -121,47 +121,24 @@
   }
 
   function patternWarhammer(actor) {
-    if (!actor?._specialWarhammerGlyph || actor._specialWarhammerPatternRequested || typeof document==='undefined' || typeof Image==='undefined') return;
+    if (!actor?._specialWarhammerGlyph || actor._specialWarhammerPatternRequested || typeof document==='undefined') return;
     const holder=actor._banditToolHolder; // The standard BanditCombat weapon holder already knows every grip, strike and two-handed scale.
     if (!holder?.parent) return;
     const mesh=holder.children?.[0]?.userData?.toolPlane; // Target the factory's actual painted weapon, never its shadow/outline or an empty grip placeholder.
-    const sourceImage=mesh?.material?.map?.image; // Live PNG or Workshop's asynchronous recolored canvas.
-    if(!mesh?.isMesh || !sourceImage || sourceImage.width<=2 || sourceImage.height<=2)return; // Wait for the real asset rather than stamping a 2×2 placeholder quad.
-    actor._specialWarhammerPatternRequested=true; // The asset loads once per guardian instead of spawning asynchronous work each frame.
-    const original=mesh.material, originalMap=original.map; // Keep game-owned weapon texture intact for all other warhammers.
-    const motif=new Image(); // Authored entropy-glyph PNG shared by wall engravings and crafted-armor verdigris.
-    motif.crossOrigin='anonymous'; // Must precede src: a non-CORS glyph taints the canvas below and WebGL then draws the weapon as a black plane (AGENTS.md CORS rule).
-    motif.onload=()=>{
-      if(!holder.parent || mesh.material!==original || !originalMap?.image)return;
-      try {
-        const canvas=document.createElement('canvas');
-        canvas.width=originalMap.image.naturalWidth || originalMap.image.width;
-        canvas.height=originalMap.image.naturalHeight || originalMap.image.height;
-        if(!canvas.width||!canvas.height)return;
-        const ctx=canvas.getContext('2d');if(!ctx)return;
-        ctx.drawImage(originalMap.image,0,0,canvas.width,canvas.height);
-        const stamp=document.createElement('canvas');stamp.width=stamp.height=70;
-        const sc=stamp.getContext('2d');if(!sc)return;
-        sc.drawImage(motif,0,0,70,70);
-        sc.globalCompositeOperation='source-in';
-        sc.fillStyle='#69c8ad';sc.fillRect(0,0,70,70); // Verdigris color from the Harlyao metal oxidation palette.
-        ctx.globalCompositeOperation='source-atop';ctx.globalAlpha=.9;
-        for(let y=0;y<canvas.height;y+=70)for(let x=0;x<canvas.width;x+=70)ctx.drawImage(stamp,x,y);
-        ctx.getImageData(0,0,1,1); // Throws SecurityError for a tainted canvas; bail out and keep the original warhammer instead of uploading a black texture.
-        const texture=window.HobunjiSpritePngSurface?.makeCanvasTexture?.(window.THREE,canvas,'special_warhammer_motif') || new window.THREE.CanvasTexture(canvas); // Shared PNG-plane texture settings, per AGENTS.md.
-        texture.colorSpace=originalMap.colorSpace;texture.flipY=originalMap.flipY;
-        texture.magFilter=originalMap.magFilter;texture.minFilter=originalMap.minFilter;
-        const material=original.clone();material.map=texture;
-        material.color?.set?.('#ffffff'); // The recolored PNG already supplies its own metal hue; a dark shader multiplier would blacken the entire plane.
-        material.transparent=true;material.alphaTest=Math.max(.01,Number(original.alphaTest)||0);material.depthWrite=false; // Keep transparent PNG pixels transparent in the Workshop and in combat.
-        material.needsUpdate=true;
-        mesh.material=material;
-        actor._specialWarhammerMaterial={mesh,original,material,texture}; // Restores/disposes this per-boss patina on clear.
-        lastEvent='azgarlu:entropy-verdigris';
-      }catch(error){window.__farmLog?.('[special-lich] warhammer motif: '+error.message,'warn');}
-    };
-    motif.onerror=()=>{actor._specialWarhammerPatternRequested=false;}; // Asset failure leaves the original functional warhammer alone.
-    motif.src='assets/patterns/motif_' + encodeURIComponent(actor._specialWarhammerGlyph) + '.png'; // Workshop glyph overrides follow the same image as the boss's garments.
+    const toolDef=actor._specialToolDeps?.TOOL_ITEM_DEFS?.[actor._specialWeaponKey], metal=actor._specialToolDeps?.METAL_DEFS?.[toolDef?.metalKey];
+    if(!mesh?.isMesh || !mesh.material?.map || !toolDef?.sprite || !metal || !window.ToolMetalRecolor?.getRecoloredCanvas)return; // Wait until the real weapon plane and game definitions exist.
+    actor._specialWarhammerPatternRequested=true; // The recolor is requested once per guardian instead of every frame.
+    const original=mesh.material, authored=glyphPattern(defFor(actor.lichType));
+    const motifUrl=authored.motifUrl, pattern=motifUrl && window.resolvePortraitAssetUrl ? {...authored,motifUrl:window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//,''))} : authored; // Same asset-root resolution metal armor uses for its authored patterns.
+    // The tool-metal recolorer is the game's own weapon pattern path: it paints the authored motif only onto the metal-keyed pixels (head), leaving the shaft and outline alone.
+    window.ToolMetalRecolor.getRecoloredCanvas(toolDef.sprite,{targetHex:metal.hex,verdigrisHex:metal.verdigrisHex,oxidationAmount:1,authoredPattern:pattern}).then(canvas=>{
+      if(!holder.parent || mesh.material!==original || actor._specialWarhammerMaterial)return;
+      const texture=window.HobunjiSpritePngSurface.makeCanvasTexture(window.THREE,canvas,'special_warhammer_pattern'); // Shared PNG-plane texture settings, per AGENTS.md.
+      const material=original.clone();material.map=texture;material.needsUpdate=true;
+      mesh.material=material;
+      actor._specialWarhammerMaterial={mesh,original,material,texture}; // Restores/disposes this per-boss patina on clear.
+      lastEvent='azgarlu:entropy-verdigris';
+    }).catch(error=>{actor._specialWarhammerPatternRequested=false;window.__farmLog?.('[special-lich] warhammer pattern: '+error.message,'warn');}); // Failure leaves the ordinary warhammer in place.
   }
   function releaseWarhammer(actor) {
     const entry=actor?._specialWarhammerMaterial;
@@ -170,9 +147,10 @@
     entry.texture.dispose?.();entry.material.dispose?.();
     actor._specialWarhammerMaterial=null;
   }
-  function init(entity, type) {
+  function init(entity, type, toolDeps) {
     const spec = defFor(type);
     if (!entity || !spec) return entity;
+    entity._specialToolDeps = toolDeps || null; // Tool/metal definitions the weapon pattern recolor reads.
     entity.isSpecialLich = true;
     entity.specialLichId = spec.id;
     entity.name = spec.name;
