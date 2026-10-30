@@ -49,7 +49,9 @@
     if (!images.has(url)) {
       images.set(url, new Promise((resolve, reject) => {
         new THREE.TextureLoader().load(url, tex => {
-          tex.magFilter = tex.minFilter = THREE.NearestFilter;
+          const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit;
+          if (surface?.configureTexture) surface.configureTexture(THREE, tex, url); // Shared authored PNG color-management and filtering policy.
+          else tex.magFilter = tex.minFilter = THREE.NearestFilter;
           resolve(tex);
         }, undefined, reject);
       }));
@@ -96,25 +98,25 @@
     return opaqueAt(image, spec?.opaque === 'top' || spec?.opaque === 'bottom' ? spec.opaque : fallbackEdge);
   }
 
-  function pixelPoint(THREE, image, point, unit, offset = null) {
+  function pixelPoint(image, point, unit, offset, out) {
     const width = image.naturalWidth || image.width;
     const height = image.naturalHeight || image.height;
-    return new THREE.Vector3(
+    return out.set(
       (point.x + 0.5 - width / 2 + (Number(offset?.x) || 0)) * unit,
       (height / 2 - point.y - 0.5 - (Number(offset?.y) || 0)) * unit,
       0,
     );
   }
 
-  function planeQuaternion(THREE, worldUp, preferredNormal) {
-    const up = worldUp.clone().normalize();
-    const normal = preferredNormal.clone().addScaledVector(up, -preferredNormal.dot(up));
+  function planeQuaternion(worldUp, preferredNormal, result, scratch) {
+    const up = scratch.up.copy(worldUp).normalize();
+    const normal = scratch.orientedNormal.copy(preferredNormal).addScaledVector(up, -preferredNormal.dot(up));
     if (normal.lengthSq() < 1e-5) normal.set(0, 0, 1).addScaledVector(up, -up.z);
     if (normal.lengthSq() < 1e-5) normal.set(1, 0, 0).addScaledVector(up, -up.x);
     normal.normalize();
-    const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+    const right = scratch.right.crossVectors(up, normal).normalize();
     normal.crossVectors(right, up).normalize();
-    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal));
+    return result.setFromRotationMatrix(scratch.basis.makeBasis(right, up, normal));
   }
 
   function buildPlane(THREE, image, tex, unit, order, offset = null) {
@@ -123,7 +125,10 @@
     const geometry = new THREE.PlaneGeometry(w * unit, h * unit);
     const map = tex.clone(); // Per-mesh map ownership keeps editor teardown safe.
     map.needsUpdate = true;
-    const material = new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
+    const surface = global.HobunjiSpritePngSurface || global.HobunjiPngPlaneUnlit; // Use the same unlit PNG material pipeline as the game's other sprites.
+    const material = surface?.makeMaterial
+      ? surface.makeMaterial(THREE, map, 'weapon-assembly-layer', { side: THREE.DoubleSide, depthWrite: false })
+      : new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, depthWrite: false });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set((Number(offset?.x) || 0) * unit, -(Number(offset?.y) || 0) * unit, 0);
     mesh.renderOrder = order;
@@ -165,7 +170,20 @@
     const state = {
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
       headRoot: null, headAnchorImage: null, chainImage: null,
-      direction: new THREE.Vector3(0, -1, 0), lastPivot: null,
+      direction: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false,
+      baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
+      scratch: {
+        pivotLocal: new THREE.Vector3(), pivot: new THREE.Vector3(), velocity: new THREE.Vector3(),
+        normal: new THREE.Vector3(), scale: new THREE.Vector3(), target: new THREE.Vector3(),
+        up: new THREE.Vector3(), orientedNormal: new THREE.Vector3(), right: new THREE.Vector3(),
+        axisUp: new THREE.Vector3(0, 1, 0), headUp: new THREE.Vector3(), span: new THREE.Vector3(),
+        topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
+        chainCenter: new THREE.Vector3(), endWorld: new THREE.Vector3(), headCenter: new THREE.Vector3(),
+        chainLocal: new THREE.Vector3(), headLocal: new THREE.Vector3(), tmp: new THREE.Vector3(),
+        baseQ: new THREE.Quaternion(), rootInverseQ: new THREE.Quaternion(),
+        worldQ: new THREE.Quaternion(), headQ: new THREE.Quaternion(), correction: new THREE.Quaternion(),
+        deltaQ: new THREE.Quaternion(), stepQ: new THREE.Quaternion(), basis: new THREE.Matrix4(),
+      }, // Reused by every animation frame, avoiding repeated vector/quaternion/matrix allocations.
       attacking: false, progress: 0, detachedAt: 0, dead: false,
     }; // Tracks per-instance lag, asset loading and render nodes without altering the original grip.
     states.set(root, state);
@@ -208,6 +226,10 @@
       state.headAnchorImage = headTextures[f.head.layers.findIndex(layer => layer.id === f.head.anchorLayer) >= 0
         ? f.head.layers.findIndex(layer => layer.id === f.head.anchorLayer) : 0].image;
       state.chainImage = chainImg;
+      state.chainTop = anchor(chainImg, f.chain.top, 'top'); // Cached alpha anchor shared by all animation frames.
+      state.chainBottom = anchor(chainImg, f.chain.bottom, 'bottom');
+      state.headAnchor = anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Head mounting point is fixed relative to its layer.
+      global.__farmLog?.('[weapon assembly] ' + itemKey + ' chain/head ready', 'info'); // Visible in the existing mobile game diagnostic log.
     };
     // The base PNG can still be loading while the equipment holder is built.
     const baseImage = plane.material?.map?.image;
@@ -234,7 +256,7 @@
   }
 
   function updateOne(state, dt, now) {
-    const { THREE, root, plane, config } = state;
+    const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
       if (!state.detachedAt) state.detachedAt = now;
       if (now - state.detachedAt > DETACHED_TIMEOUT) drop(root);
@@ -242,70 +264,63 @@
     }
     state.detachedAt = 0;
     if (!state.chain || !state.headRoot) return;
-    // Always use the final rendered world matrix; toolHolder may have a
-    // transient authored Neutral applied by WeaponToolStances this frame.
+    // Use the final holder+plane world pose, including the game's transient
+    // authored Neutral. The rigid haft never relinquishes animation authority.
     plane.updateWorldMatrix(true, false);
     const baseImage = plane.material?.map?.image;
     if (!baseImage) return;
-    const baseWidth = baseImage.naturalWidth || baseImage.width || 1;
-    const unit = (plane.geometry?.parameters?.width || 0.5) / baseWidth;
+    const unit = (plane.geometry?.parameters?.width || 0.5) / (baseImage.naturalWidth || baseImage.width || 1);
     const flail = config.flail;
-    const pivotPixel = anchor(baseImage, flail.haftAnchor, 'top');
-    if (!pivotPixel) return;
-    const pivot = plane.localToWorld(pixelPoint(THREE, baseImage, pivotPixel, unit));
-    const baseQ = plane.getWorldQuaternion(new THREE.Quaternion());
-    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(baseQ);
-    const scale = root.getWorldScale(new THREE.Vector3()); // Both mesh attachments inherit the grip-scaled tool parent.
-    const attachmentScale = Math.max(0.01, Math.abs(scale.x)); // Converts pixel-space offsets into world displacements without double-applying the parent scale.
-    const pixelWorld = unit * attachmentScale;
-    const chainTop = anchor(state.chainImage, flail.chain.top, 'top');
-    const chainBottom = anchor(state.chainImage, flail.chain.bottom, 'bottom');
-    if (!chainTop || !chainBottom) return;
-    const topLocal = pixelPoint(THREE, state.chainImage, chainTop, unit);
-    const bottomLocal = pixelPoint(THREE, state.chainImage, chainBottom, unit);
-    const chainSpan = topLocal.clone().sub(bottomLocal).normalize();
-    const chainLength = Math.hypot(chainTop.x - chainBottom.x, chainTop.y - chainBottom.y) * pixelWorld;
-    if (!(chainLength > 0)) return;
-
-    if (!state.lastPivot || pivot.distanceTo(state.lastPivot) > 3) {
-      state.direction.set(0, -1, 0);
-      state.lastPivot = pivot.clone();
+    if (state.baseAnchorImage !== baseImage) {
+      state.baseAnchor = anchor(baseImage, flail.haftAnchor, 'top');
+      state.baseAnchorImage = baseImage; // Re-scan only when an edited/recolored haft changes its source image.
     }
-    const velocity = pivot.clone().sub(state.lastPivot).divideScalar(Math.max(0.001, dt));
+    if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
+    const pivot = plane.localToWorld(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal));
+    q.pivot.copy(pivot);
+    const baseQ = plane.getWorldQuaternion(q.baseQ);
+    const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
+    root.getWorldScale(q.scale); // Layer geometry inherits the parent tool grip/height scaling.
+    const attachmentScale = Math.max(0.01, Math.abs(q.scale.x)); // Pixel offsets are scaled once in world, matching their visible meshes.
+    const topLocal = pixelPoint(state.chainImage, state.chainTop, unit, null, q.topLocal);
+    const bottomLocal = pixelPoint(state.chainImage, state.chainBottom, unit, null, q.bottomLocal);
+    const chainSpan = q.span.copy(topLocal).sub(bottomLocal);
+    if (chainSpan.lengthSq() < 1e-10) return; // Degenerate all-transparent/one-pixel chain cannot form a lever.
+    chainSpan.normalize();
+    if (!state.hasPivot || pivot.distanceToSquared(state.lastPivot) > 9) {
+      state.direction.set(0, -1, 0);
+      state.lastPivot.copy(pivot);
+      state.hasPivot = true;
+    }
+    const velocity = q.velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt));
     state.lastPivot.copy(pivot);
     const target = state.attacking
-      ? new THREE.Vector3(0, 1, 0).applyQuaternion(baseQ).normalize()
-      : new THREE.Vector3(-velocity.x * MOTION_LAG, -1, -velocity.z * MOTION_LAG).normalize();
-    // Angle-limited spherical interpolation handles even a full 180° direction
-    // reversal. Normalized linear interpolation gets stuck forever when a held
-    // haft points directly opposite gravity, and may generate a zero vector.
-    const turnAngle = state.direction.angleTo(target); // Current angular error drives bounded swing/idle follow.
+      ? q.target.set(0, 1, 0).applyQuaternion(baseQ).normalize()
+      : q.target.set(-velocity.x * MOTION_LAG, -1, -velocity.z * MOTION_LAG).normalize();
+    // Angular follow avoids the 180-degree deadlock of normalized linear lerp.
+    const turnAngle = state.direction.angleTo(target);
     if (turnAngle > 1e-6) {
-      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt)) * (state.attacking ? 15 : 7); // Radians per second; fast attack lever, softer travel lag.
-      const deltaQ = new THREE.Quaternion().setFromUnitVectors(state.direction, target); // Shortest spherical arc; Three.js supplies a stable 180° fallback axis.
-      state.direction.applyQuaternion(new THREE.Quaternion().slerp(deltaQ, Math.min(1, maxTurn / turnAngle))).normalize();
+      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt)) * (state.attacking ? 15 : 7); // Fast lever on attack, gentler travel lag at rest.
+      q.deltaQ.setFromUnitVectors(state.direction, target);
+      q.stepQ.identity().slerp(q.deltaQ, Math.min(1, maxTurn / turnAngle));
+      state.direction.applyQuaternion(q.stepQ).normalize();
     }
-    const worldQ = planeQuaternion(THREE, state.direction.clone().negate(), normal);
-    const correction = new THREE.Quaternion().setFromUnitVectors(chainSpan, new THREE.Vector3(0, 1, 0));
-    worldQ.multiply(correction); // Exactly aligns the two scanned opaque chain endpoints even if the PNG is slightly crooked.
-
-    const chainCenterWorld = pivot.clone().sub(topLocal.clone().multiplyScalar(attachmentScale).applyQuaternion(worldQ));
+    const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
+    worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
+    const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ));
     root.updateWorldMatrix(true, false);
-    const rootQInverse = root.getWorldQuaternion(new THREE.Quaternion()).invert();
-    state.chain.position.copy(root.worldToLocal(chainCenterWorld));
+    const rootQInverse = root.getWorldQuaternion(q.rootInverseQ).invert();
+    state.chain.position.copy(root.worldToLocal(q.chainLocal.copy(chainCenterWorld)));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
-    const endWorld = chainCenterWorld.add(bottomLocal.multiplyScalar(attachmentScale).applyQuaternion(worldQ));
-
+    const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ));
     const headSpec = flail.head;
-    const headPixel = anchor(state.headAnchorImage, headSpec.anchor, 'bottom');
-    if (!headPixel) return;
-    // Rest: gravity does not rotate the brazier. Attack: its long axis follows the chain.
-    const headUp = state.attacking ? state.direction.clone().negate() : new THREE.Vector3(0, 1, 0); // Top of the brazier faces back toward the haft rather than flipping upside-down as the swing starts.
-    const headQ = planeQuaternion(THREE, headUp, normal);
-    const headAnchorLocal = pixelPoint(THREE, state.headAnchorImage, headPixel, unit,
-      headSpec.layers.find(layer => layer.id === headSpec.anchorLayer)?.offsetPx);
-    const headCenterWorld = endWorld.sub(headAnchorLocal.multiplyScalar(attachmentScale).applyQuaternion(headQ));
-    state.headRoot.position.copy(root.worldToLocal(headCenterWorld));
+    // The brazier remains world-up at rest; in a swing its top faces the haft.
+    const headUp = state.attacking ? q.headUp.copy(state.direction).negate() : q.headUp.set(0, 1, 0);
+    const headQ = planeQuaternion(headUp, normal, q.headQ, q);
+    const layer = headSpec.layers.find(candidate => candidate.id === headSpec.anchorLayer); // Per-head authoring offset for the actual chain contact layer.
+    const headAnchorLocal = pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal);
+    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale).applyQuaternion(headQ));
+    state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
   }
 
