@@ -571,6 +571,7 @@ export class EnemyPreview {
       roster: copy(a.rosterRecord),
       definition: copy(a.def),
       rigScale: a.avatarRef.rigScale || null,
+      renderedBodyScale: a.avatarRef.group?.scale ? {x:a.avatarRef.group.scale.x,y:a.avatarRef.group.scale.y,z:a.avatarRef.group.scale.z} : null, // Mobile-readable verification of the real body planes' parent scale.
       poseOrbitAxes: a.avatarRef.poseOrbitAxes
         ? copy(a.avatarRef.poseOrbitAxes)
         : null,
@@ -632,15 +633,20 @@ export class EnemyPreview {
     if (bounds.isEmpty()) return;
     const size = bounds.getSize(new THREE.Vector3());
     const center = bounds.getCenter(new THREE.Vector3());
+    const scale = a.rigScale || {x:1,y:1}; // Actual authored rig multiplier on the visible hostile root.
+    const speciesBase = this.actor.isSpecialLich ? window.SpecialHarlyaoLiches?.rigScaleFor?.(this.actor.lichType)
+      : window.HobunjiCharacterRigScale?.scaleFor?.(a.speciesId,a.gender); // Baseline camera size must be stable when authored body scale changes.
+    const referenceX = (Number(speciesBase?.x)||1)/(Number(scale.x)||1); // Relative width for a constant reference camera, not an auto-zoom that hides body changes.
+    const referenceY = (Number(speciesBase?.y)||1)/(Number(scale.y)||1); // Relative height for the same comparison.
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
     const distance =
       Math.max(
-        size.y / (2 * tan),
-        size.x / (2 * tan * this.camera.aspect),
+        size.y * referenceY / (2 * tan),
+        size.x * referenceX / (2 * tan * this.camera.aspect),
         0.8,
       ) *
         1.25 +
-      size.z * 0.5;
+      size.z * referenceX * 0.5;
     this.currentFit = { center, distance };
     this.controls.target.copy(center);
     this.camera.position.set(
@@ -878,6 +884,9 @@ export class EnemyPreview {
       a.handRigAvatarRoot,
       move,
     );
+    window.CreatureGenetics?.applyCreatureBillboardScale?.(a.group, {
+      x:c.visualScaleX,y:c.visualScaleY,z:c.visualScaleZ
+    },c.scaleY); // Apply the exact gameplay billboard scale to the entire avatar root: portrait planes, pants, hands, and feet together.
     if(c.isSpecialLich) {
       window.SpecialHarlyaoLiches?.tick?.(c,dt); // Reuses authentic boss stance, kneel and drip animation controllers.
       window.SpecialHarlyaoLiches?.updateEffects?.(dt); // One bounded temporary effects tick in the viewport.
