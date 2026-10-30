@@ -1,88 +1,116 @@
-# Layered weapons and flail assemblies
+# Multi-sprite weapon authoring
 
-Runtime: [weapon-sprite-assemblies.js](../js/weapon-sprite-assemblies.js). The existing
-\`game.js/makeToolPlaneMesh\` remains authoritative for the **haft**: equipping,
-hand placement, weapon pose, combat timing, damage and hit detection are unchanged.
-The same factory builds held sprites for players and hostiles. The
-[Attack Animation Editor](../tools/attack-animation-editor/index.html) previews
-the new geometry using the same runtime module.
+The **Tool Hub → Combat → Multi-sprite Weapons** editor lives in
+[tools/multi-sprite-weapon-editor/](../tools/multi-sprite-weapon-editor/index.html).
+It has two tabs: **Flails** (haft, chain, attachment pixels, idle inertia and
+attack following) and **Multi-layer Parts** (ordered sprite layers and
+interleaved effects, usable on flails or ordinary weapons).
 
-## Static PNG layers (any weapon)
+Edits stay in a device-local draft until exported and committed. Use **Export JS
+config** to replace [config/weapon-sprite-assemblies.js](../config/weapon-sprite-assemblies.js)
+or **Export JSON** for a portable draft. The runtime never loads the author's
+localStorage draft. An authored key must resolve to an existing
+`TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
+weapon definitions or acquisitions.
 
-Add \`spriteLayers\` to a \`TOOL_ITEM_DEFS\` record, or to a shape's definition
-in \`HELD_SHAPE_DEFS\` for propagation to all generated metal variants:
+## Runtime architecture
 
-\`\`\`js
-spriteLayers: [
-  { id: 'ornament', sprite: 'assets/toolsprites/example-ornament.png' },
-  { id: 'glow', sprite: 'assets/toolsprites/example-glow.png', offsetPx: { x: 0, y: -4 } },
-]
-\`\`\`
+- [weapon-sprite-assemblies.js](../js/weapon-sprite-assemblies.js) uses the
+  existing game-held weapon plane as the rigid haft/pose authority. Player and
+  hostile attacks, grip, damage, and hit detection remain unchanged.
+- [weapon-layer-effects.js](../js/weapon-layer-effects.js) owns cached
+  source-alpha scans, material recoloring, the original marker recolor, and
+  ordered particle groups. Its updates run inside the existing assembly
+  pre-render subscriber, not a new gameplay animation loop.
+- [weapon-enchantment-vfx.js](../js/combat/weapon-enchantment-vfx.js) consumes
+  assembled **visible metal masks**. Every metal pixel hidden behind a later
+  opaque layer is excluded from the emitter. Flails source enchantments only
+  from their assembled **head** — never from the chain or haft.
+- [held-object-render-order.js](../js/held-object-render-order.js) preserves
+  the intentional render order of tagged assembly child meshes while retaining
+  ordinary held-weapon scissoring/occlusion.
 
-The normal \`sprite\` stays the attachment/grip authority; these are overlays
-on its plane, drawn in array order. \`offsetPx\` is measured in the **base
-sprite's pixel units**, +X right and +Y down. Layers have independent image
-dimensions but share the base's pixel-to-world scale.
+## Reusable authoring schema
 
-## Flails
+The committed `window.WEAPON_SPRITE_ASSEMBLY_CONFIG` has a
+`weapons: { [itemOrShapeKey]: recipe }` map. Each recipe can contain
+`layers: []` for ordinary weapon overlays, a `flail` declaration, or both.
+Base sprite and all authored layers follow the same pixels-to-world scale.
+Offsets are in PNG-pixel units, with positive X right and positive Y down.
 
-An optional \`weaponAssembly.flail\` attaches a chain and a layered head without
-rewriting the weapon's animation. The Hachutu default is registered in
-\`HobunjiWeaponSpriteAssemblies.definitions.hachutuTorchFlail\`.
-
-\`\`\`js
-weaponAssembly: {
+```js
+{
+  label: 'Example Flail',
   flail: {
-    haftAnchor: { x: 224, y: 18 }, // PNG pixel on the rigid haft; or { opaque: 'top' }
+    haftAnchor: { opaque: 'top' }, // or { x: 100, y: 26 }
     chain: {
       sprite: 'assets/toolsprites/example-chain.png',
-      top: { opaque: 'top' },
-      bottom: { opaque: 'bottom' },
+      top: { opaque: 'top' }, bottom: { opaque: 'bottom' },
+      material: 'metal',
     },
+    motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
     head: {
-      anchorLayer: 'handle',
-      anchor: { x: 220, y: 450 }, // PNG pixel on the named head layer; or { opaque: 'bottom' }
+      anchorLayer: 'handle', anchor: { opaque: 'bottom' },
       layers: [
-        { id: 'back', sprite: 'assets/toolsprites/example-head-back.png' },
-        { id: 'handle', sprite: 'assets/toolsprites/example-head-handle.png' },
-        { id: 'front', sprite: 'assets/toolsprites/example-head-front.png' },
+        { id: 'back', sprite: 'assets/toolsprites/example-back.png', material: 'metal' },
+        { id: 'handle', sprite: 'assets/toolsprites/example-handle.png', material: 'metal' },
+        {
+          id: 'fuel', sprite: 'assets/toolsprites/example-fuel.png',
+          material: 'marker', sourceHex: '#7F00FF', targetHex: '#E7DDC9',
+          vfx: {
+            type: 'fire', sourceHex: '#7F00FF', rate: 22, life: 0.65,
+            size: 0.035, speed: 0.12,
+            colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
+          },
+        },
+        { id: 'front', sprite: 'assets/toolsprites/example-front.png', material: 'metal' },
       ],
     },
   },
 }
-\`\`\`
+```
 
-The example coordinates are **illustrative only**, not measurements of the
-Hachutu art. The shipped Hachutu setup uses the opaque-pixel defaults until
-the artist calibrates its mount points. An edge anchor finds the highest
-(\`top\`) or lowest (\`bottom\`) scan line containing nontransparent pixels
-(alpha ≥128), then uses the horizontal mean of that row's opaque pixels.
-Explicit \`{x,y}\` coordinates override the scan and are clamped to the image.
+**Hachutu Torch-Flail:** Its committed order is precisely
+**brazier-back → brazier-handle → brazier-fuel → brazier-front**.
+The chain and all three metal brazier layers use the same
+`#5A8480` source-metal recognition, including the existing
+`ToolMetalRecolor.getRecoloredCanvas` plating/mastery/verdigris policy.
+The fuel's `#7F00FF` Hachutu Binding Mask eye-marker color family is tinted
+to off-white rag `#E7DDC9`; its *original* PNG pixels are still used as
+emission sources.
 
-Head layers share a common center frame, and \`offsetPx\` on each head layer
-can align images exported from different canvas origins. Use \`anchorLayer\`
-to specify which image's pixel space supplies the physical chain connection.
-All geometric offsets are scaled with the existing tool-grip scale.
+Fire is spawned in the fuel layer's local image space and drawn
+**between fuel and front**. Later layers with opaque pixels visually cover it
+rather than having the emitter painted over them. This is reusable for an
+ordinary multi-layer weapon, too. The fire stays active independently of the
+weapon's planar enchantment emissions. Enchantment particles radiate from
+post-assembly visible metal masks and are free to drift beyond the origin.
 
-At rest the chain hangs toward world −Y, trailing the velocity of its haft
-when moving; the head remains world-upright. An active attack steers the
-chain toward the authored haft's long axis with a bounded angular follow,
-and makes the head align with the chain. Physics are **presentation-only**;
-they don't change reach, attack hit checks, or weapon classifications.
+The Hachutu recipe uses automatic first/last opaque pixel anchors (alpha
+at least 128) until calibrated in the editor. An authored `{x,y}` always
+takes precedence. Head layers may individually author `offsetPx`.
+The chain hangs world-down at rest, trails movement, follows the haft's
+authored swing as a fixed-length lever, and rotates the head only during
+attacks. This is presentation-only: no additional hit detection or gameplay
+physics have been added.
 
-## Inspection and testing
+## Verification
 
-- \`node scripts/test-weapon-sprite-assemblies.js\` runs alpha-anchor and
-  integration tests, alongside existing weapon/dual-wield regression tests.
-- \`window.HobunjiWeaponSpriteAssemblies.debugSnapshot()\` returns the current
-  weapon key, asset-loaded state, attachment/attack status, progress, and chain
-  direction for every assembly.
-- Load/scan failures feed the existing in-game \`__farmLog\` diagnostics,
-  including on mobile.
-- The Attack Animation Editor has a **Hachutu Torch-Flail** dropdown choice.
-  Scrub Neutral→Windup→Strike to check the swing and use authored coordinate
-  overrides if opaque-edge defaults attach at the wrong location.
+Run:
 
-The Hachutu weapon definition and inventory metadata are registered, but it is
-**not automatically put in every character's starting inventory**. Its
-acquisition path can be added separately without changing these visuals.
+```sh
+node scripts/test-weapon-sprite-assemblies.js
+node scripts/test-weapon-layer-effects.js
+node scripts/run-tests.js weapon
+node scripts/check-cache-busts.js
+```
+
+The first two tests exercise registry integration, alpha anchors, ordered
+head layers, marker recoloring, source/upper-layer occlusion, head metal
+regions, fire draw order and chain enchantment exclusion. The game and Attack
+Animation Editor share the same assembled renderer. The existing mobile log
+reports load/alpha/material errors; the game exposes
+`window.HobunjiWeaponSpriteAssemblies.debugSnapshot()`.
+
+The unique weapon has an inventory definition but is not added to every
+player's starting gear. Acquisition is separate from sprite authoring.
