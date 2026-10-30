@@ -201,13 +201,17 @@
       }
       if (!config.flail) return;
       const f = config.flail;
-      const chainTex = await textureFor(THREE, f.chain.sprite);
+      const isRope = f.chain.type === 'rope'; // Generated suspension shares the same attachment animation as a raster chain.
+      const chainTex = isRope ? null : await textureFor(THREE, f.chain.sprite);
       if (state.dead) return;
       const headTextures = await Promise.all(f.head.layers.map(layer => textureFor(THREE, layer.sprite)));
       if (state.dead) return;
-      const chainImg = chainTex.image;
-      const chain = buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
-      effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating, but is deliberately excluded from head enchantment masks.
+      const ropePixels = Math.max(2, Math.min(2048, Number(f.chain.lengthPx) || 160));
+      const chainImg = isRope ? { width: 1, height: ropePixels + 1 } : chainTex.image; // Virtual raster frame puts rope endpoints at the geometric cylinder ends.
+      const chain = isRope
+        ? makeRope(THREE, f.chain, unit, order + 0.01)
+        : buildPlane(THREE, chainImg, chainTex, unit, order + 0.01);
+      if (!isRope) effects?.registerLayer(state, chain, f.chain, chainImg); // Chain shares verdigris/plating; generated natural rope keeps its authored bark-brown surface.
       const headRoot = new THREE.Group();
       headRoot.name = itemKey + '_flail_head';
       headRoot.userData.hobunjiWeaponAssemblyPart = false;
@@ -224,9 +228,11 @@
       state.headAnchorImage = headTextures[f.head.layers.findIndex(layer => layer.id === f.head.anchorLayer) >= 0
         ? f.head.layers.findIndex(layer => layer.id === f.head.anchorLayer) : 0].image;
       state.chainImage = chainImg;
-      state.chainTop = anchor(chainImg, f.chain.top, 'top'); // Cached alpha anchor shared by all animation frames.
-      state.chainBottom = anchor(chainImg, f.chain.bottom, 'bottom');
-      state.headAnchor = anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Head mounting point is fixed relative to its layer.
+      state.chainTop = isRope ? { x: 0, y: 0 } : anchor(chainImg, f.chain.top, 'top'); // For rope the top sits on the cylinder's geometric cap.
+      state.chainBottom = isRope ? { x: 0, y: ropePixels } : anchor(chainImg, f.chain.bottom, 'bottom');
+      state.headAnchor = f.head.anchorSpace === 'composite'
+        ? { x: Number(f.head.anchor?.x) || 0, y: Number(f.head.anchor?.y) || 0 }
+        : anchor(state.headAnchorImage, f.head.anchor, 'bottom'); // Composite coordinates may lie BETWEEN the two head sprites.
       effects?.activateHead(state, f.head, headTextures, unit); // Compute post-assembly visible-metal sources and fuel→front interleaved fire once.
       global.__farmLog?.('[weapon assembly] ' + itemKey + ' chain/head ready', 'info'); // Visible in the existing mobile game diagnostic log.
     };
@@ -252,6 +258,24 @@
     if (!state) return;
     state.attacking = options.attacking === true;
     state.progress = Number.isFinite(options.progress) ? options.progress : 0;
+  }
+
+  function makeRope(THREE, spec, unit, renderOrder) {
+    const length = Math.max(2, Math.min(2048, Number(spec.lengthPx) || 160)) * unit; // The rope length is expressed in the handle's original pixels, then inherits all handle size modifiers.
+    const radius = Math.max(0.25, Math.min(30, Number(spec.radiusPx) || 2.5)) * unit; // Root-totem style generated rope cylinder, never a flat PNG chain.
+    const geometry = new THREE.CylinderGeometry(radius, radius * 0.75, length, 6, 1, true);
+    const material = new THREE.MeshLambertMaterial({
+      color: spec.color || '#6B4728', side: THREE.FrontSide,
+      transparent: false,
+    }); // Matches the root totem's tapered volumetric rope and natural material behavior.
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'flail_generated_rope';
+    mesh.renderOrder = renderOrder;
+    mesh.userData.hobunjiWeaponAssemblyPart = true;
+    mesh.userData.hobunjiHeldObjectPlane = true; // Held objects obey the usual weapon occlusion handling.
+    mesh.userData.hobunjiGeneratedRope = true; // Allows diagnostics and selective texture upgrades.
+    mesh.userData.noOutline = false;
+    return mesh;
   }
 
   function relativePartScale(part) {
@@ -334,7 +358,9 @@
     const headUp = state.attacking ? q.headUp.copy(state.direction).negate() : q.headUp.set(0, 1, 0);
     const headQ = planeQuaternion(headUp, normal, q.headQ, q);
     const layer = headSpec.layers.find(candidate => candidate.id === headSpec.anchorLayer); // Per-head authoring offset for the actual chain contact layer.
-    const headAnchorLocal = pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal);
+    const headAnchorLocal = headSpec.anchorSpace === 'composite'
+      ? q.headAnchorLocal.set(state.headAnchor.x * unit, -state.headAnchor.y * unit, 0)
+      : pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal); // Shared center-frame contacts are allowed in the transparent gap between two sprite layers.
     const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Keep the independently scaled head contact at the scaled chain's end.
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
@@ -364,7 +390,8 @@
       itemKey: s.itemKey, loaded: !!(s.chain && s.headRoot),
       attached: !!s.root.parent, attacking: s.attacking,
       progress: s.progress, direction: s.direction.toArray(),
-      scale: s.config.flail ? { chain: relativePartScale(s.config.flail.chain), head: relativePartScale(s.config.flail.head) } : null, // Mobile diagnostics expose both handle-relative multipliers.
+      scale: s.config.flail ? { chain: relativePartScale(s.config.flail.chain), head: relativePartScale(s.config.flail.head) } : null,
+      connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
     }));
   }
 
