@@ -15,17 +15,27 @@
   let lastEvent = 'idle'; // Mobile diagnostic showing last special-lich action.
 
   function defFor(type) { return DATA[String(type || '').toLowerCase()] || null; }
+  function glyphPattern(def) {
+    const cached = window.RepoPatternLibrary?.getCachedById?.(def.glyph); // Uses the same authored Harlyao glyph definition as ruin decorations.
+    const fallback = 'assets/patterns/motif_' + def.glyph + '.png'; // Visible even when the pattern library has not loaded yet.
+    return cached?.pattern || {repoPatternId:def.glyph,motifUrl:fallback,motifScale:1,tiling:true};
+  }
   function specialRoster(type) {
     const def = defFor(type);
     if (!def) return null;
     const cosmetics = type === 'hronal'
       ? ['draped_pants','tankan_bodywrap','rounded_pauldron','tangedcirclet']
       : type === 'tothal' ? ['facewrap','tankan_bodywrap','draped_pants'] : ['tankan_bodywrap','draped_pants'];
-    const slots = {draped_pants:'pants',tankan_bodywrap:'overwear',rounded_pauldron:'pauldron',tangedcirclet:'hat',facewrap:'mask'};
-    const appliedDyes = {CLOTH:def.dye,HOOD:def.dye,PANTS:def.dye,MASK:def.dye};
+    const slots = {draped_pants:'pants',tankan_bodywrap:'overwear',rounded_pauldron:'pauldron',tangedcirclet:'hat',facewrap:'hood'}; // Facewrap is the existing face-covering hood-slot cosmetic, not a floating mask attachment.
+    const appliedDyes = {CLOTH:def.dye,HOOD:def.dye,PANTS:def.dye,MASK:def.dye}; // Existing authored dye channels, not shader-only cosmetic tint.
     const roster = { name:def.name, appearance:{speciesId:'harlyao-skeleton',gender:type==='tothal'?'female':'male',cosmetics:{}},
       equippedCosmetics:cosmetics, cosmeticSlots:Object.fromEntries(cosmetics.map(id=>[id,slots[id]])), appliedDyes,
-      lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph };
+      lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
+      clothingPatterns:{forcedOverpassBySlot:{
+        overwear:{pattern:glyphPattern(def),fallbackColorC:{hex:def.ink}}, // Garb is visibly woven with its own named Harlyao glyph.
+        ...(type==='hronal'?{pants:{pattern:glyphPattern(def),fallbackColorC:{hex:def.ink}}}:{}),
+      }},
+    };
     if (type==='hronal') {
       const armor = window.MetalArmorSystem; // Existing forged pauldron and circlet must follow the same rendering/loot rules as skeletal minions.
       roster.metalArmorItems = ['rounded_pauldron','tangedcirclet'].map(id => {
@@ -33,7 +43,8 @@
         if (item) {
           item.temperXp = armor.MAX_TEMPER_XP;
           item.sprite = armor.spriteForBlueprintAppearance?.(id,{speciesId:'harlyao-skeleton',gender:'male'});
-          item.verdigrisPatternId = def.glyph; // Shared metal pattern identifier is retained on the crafted article.
+          item.verdigrisPatternId = def.glyph; // Diagnostic identity for the weapon/armor entropy design.
+          item.smithTreatment={mode:'pattern',pattern:glyphPattern(def)}; // Existing crafted-metal patina renderer applies entropy as a verdigris removal motif.
         }
         return item;
       }).filter(Boolean);
