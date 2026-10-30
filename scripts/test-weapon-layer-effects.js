@@ -71,7 +71,7 @@ assert.equal(fuel.pixels[2*4],127,'source PNG pixels remain untouched');
 const grouped=api.visibleMetalTargets(layers).reduce((n,t)=>n+t.mask.matchedMetalPixels,0);
 assert.equal(grouped,3,'all visible metal pixels are available for the existing enchantment emitter');
 
-class Group {constructor(){this.children=[];this.layers={mask:1};}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);}}
+class Group {constructor(){this.children=[];this.layers={mask:1};this.userData={};}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);}}
 const THREE={
   Group,
   CanvasTexture: class{constructor(canvas){this.image=canvas;}},
