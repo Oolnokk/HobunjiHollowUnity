@@ -41,6 +41,23 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.equal(liches.specialRoster('tothal').cosmeticSlots.facewrap,'hood');
   assert.ok(liches.specialRoster('hronal').equippedCosmetics.includes('rounded_pauldron'));
   assert.ok(!liches.specialRoster('kanthic').equippedCosmetics.includes('ragged_hood'));
+  for (const [type, sprite] of [['hronal','hskel_eyeglow_m.png'],['tothal','hskel_eyeglow_f.png']]) {
+    const roster = liches.specialRoster(type);
+    assert.equal(roster.appearance.bodyColors.C.hex,liches.bodyColor3For(type),'Named body color C owns the wall/eye emission color');
+    const portrait = liches.decoratePortraitProfile({bodyColors:{A:{hex:'#D4D6C9'},C:{hex:'#D4D6C9'}}},roster);
+    assert.ok(portrait.eyes.layers[0].url.endsWith(sprite),'Eye appearance uses the new authored Harlyao Skeleton sprite');
+    assert.equal(portrait.eyes.layers[1].pixelDye.sourceHex,'#7F00FF','Same authored target hue as the binding-mask eye glow');
+    assert.equal(portrait.eyes.layers[1].pixelDye.paletteColorKey,'C');
+    assert.equal(portrait.eyes.layers[1].pixelDyeOnly,true);
+    assert.equal(portrait.bodyColors.C.hex,liches.bodyColor3For(type),'Fixed skeleton pigment does not override named lich eye hue');
+  }
+  const imlaoBare=liches.decoratePortraitProfile({
+    bodyColors:{C:{hex:'#D4D6C9'}},hat:{id:'randomhat'},hood:{id:'randomhood'},mask:{id:'randommask'},
+    eyes:{id:'randomEyes'},upperFace:{id:'randomFace'},facialHair:{id:'randomFacialHair'}
+  },liches.specialRoster('kanthic'));
+  for(const slot of ['hat','hood','mask','eyes','upperFace','facialHair'])
+    assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot);
+  assert.equal(imlaoBare.bodyColors.C.hex,liches.bodyColor3For('kanthic'));
   const nanahiWorn=window.NpcWardrobe.wornClothingItemsForRecord(liches.specialRoster('tothal'),true);
   assert.equal(nanahiWorn.find(item=>item.cosmeticId==='facewrap').slot,'hood','Explicit facewrap slot must survive NPC wardrobe processing');
   const nanahiRobe=nanahiWorn.find(item=>item.cosmeticId==='tankan_bodywrap');
@@ -66,6 +83,13 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.equal(liches.settingsFor('tothal').barrageIntervalSeconds,.3);
   assert.equal(liches.defFor('tothal').glyph,'harlyao_glyph_ignorance');
   assert.equal(liches.defFor('tothal').ink,'#a2b3c4');
+  assert.equal(liches.bodyColor3For('tothal'),'#a2b3c4','Signature ink is the fallback for body C');
+  rules.set({schema:rules.schema,rules:{[key]:{...docData.rules[key],dyes:{C:{'#12AABB':3,'#AABBCC':1}}}}});
+  assert.equal(liches.bodyColor3For('tothal'),'#12AABB','Named Color C resolves deterministically from the authored highest-weight pool');
+  const dyedRoster=liches.specialRoster('tothal');
+  assert.equal(dyedRoster.appearance.bodyColors.C.hex,'#12AABB');
+  assert.equal(liches.decoratePortraitProfile({bodyColors:{}},dyedRoster).bodyColors.C.hex,'#12AABB');
+  rules.set(docData);
   assert.equal(rules.ruleFor('lich:tothal').specialAttacks?.blizzard,undefined);
   assert.throws(()=>rules.set({schema:rules.schema,rules:{[key]:{bossSettings:{chargeCount:1.5}}}}));
   assert.throws(()=>rules.set({schema:rules.schema,rules:{'lich:tothal':{bossSettings:{chargeCount:4}}}}));
@@ -92,6 +116,11 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.ok(hostileRenderer.includes('originalHeadRigFront'),'Transparent head still retains the original neck skinning source');
   const map=read('docs/js/dev-random-ruin-interior-map.js');
   assert.ok(map.includes('specialBoss:!!specialDef'),'Ruin generation must pass named-boss marker to sanctum');
+  assert.ok(map.includes('specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex'),'Named ruin wall ink comes from the guardian roster Body Color C');
+  assert.ok(preview.includes('applyCreatureBillboardScale?.(a.group'),'Workshop scales the actual hostile avatar root like gameplay');
+  assert.ok(preview.includes('referenceX') && preview.includes('referenceY'),'Workshop camera preserves a stable body-size reference across re-rolls');
+  for (const filename of ['m','f'])
+    assert.ok(fs.existsSync(path.join(root,'docs/assets/cosmetics/appearance/harlyao_skeleton/hskel_eyeglow_'+filename+'.png')),'New eye sprites are committed to the repo');
   const sanctum=read('docs/js/dev-random-ruin-sanctum.js');
   assert.ok(sanctum.includes('SpecialHarlyaoLiches?.onDefeat'),'Guardian death must trigger its canonical key grant');
   console.log('Named Harlyao liches + Enemy Workshop: all smoke checks passed');
