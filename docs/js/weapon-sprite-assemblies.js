@@ -162,7 +162,7 @@
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
       scratch: {
         pivotLocal: new THREE.Vector3(), pivot: new THREE.Vector3(), velocity: new THREE.Vector3(),
-        normal: new THREE.Vector3(), scale: new THREE.Vector3(), target: new THREE.Vector3(),
+        normal: new THREE.Vector3(), scale: new THREE.Vector3(), rootScale: new THREE.Vector3(), target: new THREE.Vector3(), // Cached world scales measure the handle against the holder for independent chain/head ratios.
         up: new THREE.Vector3(), orientedNormal: new THREE.Vector3(), right: new THREE.Vector3(),
         axisUp: new THREE.Vector3(0, 1, 0), headUp: new THREE.Vector3(), span: new THREE.Vector3(),
         topLocal: new THREE.Vector3(), bottomLocal: new THREE.Vector3(), headAnchorLocal: new THREE.Vector3(),
@@ -254,6 +254,11 @@
     state.progress = Number.isFinite(options.progress) ? options.progress : 0;
   }
 
+  function relativePartScale(part) {
+    const n = Number(part?.scale ?? 1); // Reads the Tool Hub's chain/head scale in handle-relative units (1 = identical proportional scale).
+    return Number.isFinite(n) ? Math.max(0.05, Math.min(8, n)) : 1;
+  }
+
   function updateOne(state, dt, now) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -282,8 +287,14 @@
     q.pivot.copy(pivot);
     const baseQ = plane.getWorldQuaternion(q.baseQ);
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
-    root.getWorldScale(q.scale); // Layer geometry inherits the parent tool grip/height scaling.
-    const attachmentScale = Math.max(0.01, Math.abs(q.scale.x)); // Pixel offsets are scaled once in world, matching their visible meshes.
+    plane.getWorldScale(q.scale); // The current haft's rendered world scale includes pre-existing grips, stances and item-size modifiers.
+    root.getWorldScale(q.rootScale); // Both child parts live under root, not under the transformed haft plane.
+    const attachmentScale = Math.max(0.00001, Math.abs(q.scale.x)); // Authoritative world-space handle pixel scale, not a fixed weapon baseline.
+    const localHandleScale = attachmentScale / Math.max(0.00001, Math.abs(q.rootScale.x)); // Compensates for extra scale applied to the handle plane itself.
+    const chainScale = relativePartScale(flail.chain); // Chain is scaled relative to the handle, independent of head scale.
+    const headScale = relativePartScale(flail.head); // Head uses the same handle as its reference, not an already scaled chain.
+    state.chain.scale.setScalar(localHandleScale * chainScale);
+    state.headRoot.scale.setScalar(localHandleScale * headScale);
     const topLocal = pixelPoint(state.chainImage, state.chainTop, unit, null, q.topLocal);
     const bottomLocal = pixelPoint(state.chainImage, state.chainBottom, unit, null, q.bottomLocal);
     const chainSpan = q.span.copy(topLocal).sub(bottomLocal);
@@ -312,19 +323,19 @@
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
-    const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ));
+    const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale * chainScale).applyQuaternion(worldQ)); // Keep the scaled chain's top contact at the handle pivot.
     root.updateWorldMatrix(true, false);
     const rootQInverse = root.getWorldQuaternion(q.rootInverseQ).invert();
     state.chain.position.copy(root.worldToLocal(q.chainLocal.copy(chainCenterWorld)));
     state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
-    const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ));
+    const endWorld = q.endWorld.copy(chainCenterWorld).add(q.tmp.copy(bottomLocal).multiplyScalar(attachmentScale * chainScale).applyQuaternion(worldQ)); // End pivot moves with chain length; head size does not affect it.
     const headSpec = flail.head;
     // The brazier remains world-up at rest; in a swing its top faces the haft.
     const headUp = state.attacking ? q.headUp.copy(state.direction).negate() : q.headUp.set(0, 1, 0);
     const headQ = planeQuaternion(headUp, normal, q.headQ, q);
     const layer = headSpec.layers.find(candidate => candidate.id === headSpec.anchorLayer); // Per-head authoring offset for the actual chain contact layer.
     const headAnchorLocal = pixelPoint(state.headAnchorImage, state.headAnchor, unit, layer?.offsetPx, q.headAnchorLocal);
-    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale).applyQuaternion(headQ));
+    const headCenterWorld = q.headCenter.copy(endWorld).sub(q.tmp.copy(headAnchorLocal).multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Keep the independently scaled head contact at the scaled chain's end.
     state.headRoot.position.copy(root.worldToLocal(q.headLocal.copy(headCenterWorld)));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     if (root.visible !== false) effects?.stepFire(state, dt); // Flame stays in the assembled head and behind later opaque sprites.
@@ -353,6 +364,7 @@
       itemKey: s.itemKey, loaded: !!(s.chain && s.headRoot),
       attached: !!s.root.parent, attacking: s.attacking,
       progress: s.progress, direction: s.direction.toArray(),
+      scale: s.config.flail ? { chain: relativePartScale(s.config.flail.chain), head: relativePartScale(s.config.flail.head) } : null, // Mobile diagnostics expose both handle-relative multipliers.
     }));
   }
 
