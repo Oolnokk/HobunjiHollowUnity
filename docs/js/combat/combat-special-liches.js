@@ -52,6 +52,51 @@
     return roster;
   }
 
+  function patternWarhammer(actor) {
+    if (!actor?._specialWarhammerGlyph || actor._specialWarhammerPatternRequested || typeof document==='undefined' || typeof Image==='undefined') return;
+    const holder=actor._banditToolHolder; // The standard BanditCombat weapon holder already knows every grip, strike and two-handed scale.
+    if (!holder?.parent) return;
+    let mesh=null; // Real tool-plane mesh with a loaded PNG, rather than a second invented weapon model.
+    holder.traverse?.(obj=>{if(!mesh && obj.isMesh && obj.material?.map?.image?.width)mesh=obj;});
+    if(!mesh)return;
+    actor._specialWarhammerPatternRequested=true; // The asset loads once per guardian instead of spawning asynchronous work each frame.
+    const original=mesh.material, originalMap=original.map; // Keep game-owned weapon texture intact for all other warhammers.
+    const motif=new Image(); // Authored entropy-glyph PNG shared by wall engravings and crafted-armor verdigris.
+    motif.onload=()=>{
+      if(!holder.parent || mesh.material!==original || !originalMap?.image)return;
+      try {
+        const canvas=document.createElement('canvas');
+        canvas.width=originalMap.image.naturalWidth || originalMap.image.width;
+        canvas.height=originalMap.image.naturalHeight || originalMap.image.height;
+        if(!canvas.width||!canvas.height)return;
+        const ctx=canvas.getContext('2d');if(!ctx)return;
+        ctx.drawImage(originalMap.image,0,0,canvas.width,canvas.height);
+        const stamp=document.createElement('canvas');stamp.width=stamp.height=70;
+        const sc=stamp.getContext('2d');if(!sc)return;
+        sc.drawImage(motif,0,0,70,70);
+        sc.globalCompositeOperation='source-in';
+        sc.fillStyle='#69c8ad';sc.fillRect(0,0,70,70); // Verdigris color from the Harlyao metal oxidation palette.
+        ctx.globalCompositeOperation='source-atop';ctx.globalAlpha=.9;
+        for(let y=0;y<canvas.height;y+=70)for(let x=0;x<canvas.width;x+=70)ctx.drawImage(stamp,x,y);
+        const texture=new window.THREE.CanvasTexture(canvas);
+        texture.colorSpace=originalMap.colorSpace;texture.flipY=originalMap.flipY;
+        texture.magFilter=originalMap.magFilter;texture.minFilter=originalMap.minFilter;
+        const material=original.clone();material.map=texture;material.needsUpdate=true;
+        mesh.material=material;
+        actor._specialWarhammerMaterial={mesh,original,material,texture}; // Restores/disposes this per-boss patina on clear.
+        lastEvent='azgarlu:entropy-verdigris';
+      }catch(error){window.__farmLog?.('[special-lich] warhammer motif: '+error.message,'warn');}
+    };
+    motif.onerror=()=>{actor._specialWarhammerPatternRequested=false;}; // Asset failure leaves the original functional warhammer alone.
+    motif.src='assets/patterns/motif_harlyao_glyph_entropy.png';
+  }
+  function releaseWarhammer(actor) {
+    const entry=actor?._specialWarhammerMaterial;
+    if(!entry)return;
+    if(entry.mesh.material===entry.material)entry.mesh.material=entry.original;
+    entry.texture.dispose?.();entry.material.dispose?.();
+    actor._specialWarhammerMaterial=null;
+  }
   function init(entity, type) {
     const spec = defFor(type);
     if (!entity || !spec) return entity;
@@ -66,6 +111,10 @@
     entity._specialDripClock = 0; // Limits new droplet meshes to a low fixed rate.
     entity._specialPlasmLastTile = null; // Prevents repeated patches on the same crossed tile.
     entity._specialOriginalMaterials = null; // Restores all original silhouette/alpha materials after plasm transformation.
+    if (type==='hronal' && entity._banditToolHolder?.parent && window.THREE?.PointLight) {
+      const light=new window.THREE.PointLight(0xff8d37,.64,1.6); // One bounded weapon enchant glow, carried by the real warhammer holder.
+      entity._banditToolHolder.add(light);
+    }
     if (type==='kanthic') {
       for (const joint of [entity.avatarRef?.headScaleJoint?.front,entity.avatarRef?.headScaleJoint?.back]) {
         joint?.scale?.set?.(.001,.001,.001); // Hide the head itself, never the whole torso PNG.
@@ -208,13 +257,15 @@
     ctx.drawImage(image,0,0,width,height);
     ctx.globalCompositeOperation='source-atop'; // Preserve transparent body/clothing cutout outlines.
     const pattern=plasm?.image;
+    ctx.fillStyle='#2d2148';ctx.fillRect(0,0,width,height); // Preserve the dark indigo-violet base of the live Kanthic oil.
+    ctx.globalAlpha=.62;
     if(pattern?.width && pattern?.height) {
       for(let y=0;y<height;y+=80)for(let x=0;x<width;x+=80)ctx.drawImage(pattern,x,y,80,80);
     } else {
-      ctx.fillStyle='#343057';ctx.fillRect(0,0,width,height);
       ctx.fillStyle='rgba(147,112,190,.5)';
       for(let i=0;i<40;i++){const x=(i*71)%width,y=(i*109)%height;ctx.fillRect(x,y,2,18);}
     }
+    ctx.globalAlpha=1;
     const texture=new window.THREE.CanvasTexture(canvas);texture.colorSpace=source.colorSpace;
     return texture;
   }
@@ -261,7 +312,10 @@
       for(const joint of [avatar?.neckJoint?.front,avatar?.neckJoint?.back])if(joint?.rotation)joint.rotation.x=-.38*actor._specialKneelBlend;
       actor._specialHoverTarget=kneel?0:1;
     }
-    if(actor.lichType==='hronal')actor._specialHoverTarget=actor._specialMode==='melee'?0:1;
+    if(actor.lichType==='hronal') {
+      actor._specialHoverTarget=actor._specialMode==='melee'?0:1;
+      patternWarhammer(actor); // Actual verdigris-glyph texture follows the ordinary held warhammer.
+    }
     if(actor.lichType==='kanthic') {
       actor._specialHoverTarget=1;
       if(actor._specialStage?.kind==='charge')dropParticle(actor,dt);
@@ -289,6 +343,7 @@
   }
   window.SpecialHarlyaoLiches=Object.freeze({
     DATA,defFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear,
+    releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
   });
