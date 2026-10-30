@@ -409,11 +409,10 @@
       beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
-      maskUniforms: { uPantsBehind: { value: 0 }, uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
+      maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
     };
 
-    const pantsFacing = new THREE.Vector3(), pantsToCamera = new THREE.Vector3(); // Scratch for the per-draw front/back test below.
     const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
     handle.setDepthBiasLimit=(owner,limit=null)=>{
       if(!owner)return false;
@@ -428,7 +427,10 @@
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
-      const overrides = { side: DOUBLE_SIDE, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      // The garment is a real 3D plane like the portrait's own front/back planes: depth-tested AND depth-writing, so whatever is nearer the camera covers
+      // whatever is behind it, with no other rule (a leg turned behind the portrait is hidden by it; a turned leg's own faces occlude each other).
+      // The small polygon offset is only a tie-breaker for the coplanar rest pose.
+      const overrides = { side: DOUBLE_SIDE, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
       material.onBeforeCompile = shader => {
@@ -440,8 +442,8 @@
           // wins the depth test against the procedural feet, so it reads over (x-rays through) them.
           .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 pantsBiased = projectionMatrix * (mvPosition + vec4(0.0, 0.0, uPantsDepthBias, 0.0)); gl_Position.z = pantsBiased.z / pantsBiased.w * gl_Position.w; }');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform float uPantsBehind;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
-          .replace('#include <alphatest_fragment>', 'if ((uPantsBehind > 0.5) != gl_FrontFacing) discard;\nif (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
+          .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
       material.customProgramCacheKey = () => 'pantsOverlayMask';
       return { texture, material };
@@ -459,17 +461,6 @@
         mesh.name = MESH_NAME;
         mesh.renderOrder = 28;
         mesh.frustumCulled = false;
-        // The garment is one flat sheet drawn over the portrait with depth writes off, so both of its faces used to draw at once: seen from
-        // behind (or with a leg turned past edge-on) its front-view art x-rayed through the back portrait plane, and its own back face showed
-        // through its front. Each face now pairs with the portrait plane that is actually showing: front faces while the front plane faces the
-        // camera, back faces while the back plane does (the fragment discard above keys off uPantsBehind; the sheet is wound so its art-side triangles are the ones GL calls back-facing).
-        mesh.onBeforeRender = (_renderer, _scene, camera) => {
-          if (!plane || !camera) return;
-          pantsFacing.set(0, 0, 1).transformDirection(plane.matrixWorld);
-          pantsToCamera.setFromMatrixPosition(plane.matrixWorld);
-          pantsToCamera.subVectors(camera.position, pantsToCamera);
-          handle.maskUniforms.uPantsBehind.value = pantsFacing.dot(pantsToCamera) < 0 ? 1 : 0;
-        };
         mesh.userData.hobunjiPantsGarment = true;
         mesh.userData.hobunjiPantsPreview = true; // Also keeps the editor's Apply-to-NPC mesh builder from mistaking this for the portrait plane.
         avatarGroup.add(mesh);
@@ -725,8 +716,8 @@
 
     handle.model.updateMatrixWorld?.(true);
     const worldElements = handle.model.matrixWorld.elements;
-    handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]);
-    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // View-space distance to pull the garment's depth toward the camera.
+    handle.depthBiasBase = 0; // No garment-wide pull toward the camera (it let the pants x-ray through the avatar's own planes); depth is pure proximity. Scoped limits (setDepthBiasLimit) still work.
+    handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase;
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
