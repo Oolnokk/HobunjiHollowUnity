@@ -165,7 +165,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
         <label>Rock roughness <input id="rockRoughness" type="number" min="0" max="1" step="0.05" value="0.35"></label>
         <div class="g2"><button id="rockAllPieces" type="button">Turn all pieces into rocks</button><button id="restoreRockPieces" type="button">Restore original pieces</button></div>
         <p id="rockConversionStatus" class="muted" role="status">Uses the existing terrain rock generator. Conversion is saved in furniture JSON.</p>
-        <p id="rockContactStatus" class="muted" role="status">Touching faces are preserved so adjoining components stay connected.</p>
+        <p id="rockContactStatus" class="muted" role="status">Roughened faces remember their original surfaces; neighboring groups stretch to regain partial contact.</p>
       </div>
       <div class="section"><h2>Pieces</h2><div id="partList" class="list"></div></div>
     </div>
@@ -629,7 +629,7 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/authored-furniture-runtime.js?v=20261030hbbf6776"></script>
 <script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
-<script src="../../js/procedural-furniture.js?v=20261030h9994216" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
+<script src="../../js/procedural-furniture.js?v=20261030h50931d1" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
 <script src="../../js/furniture-vessel-runtime.js?v=20261030h33c4e64"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
@@ -1172,7 +1172,7 @@ function rebuildFurnitureMeshes() {
   state.parts=state.parts.filter(part=>part.kind!=='liquidSurface'||state.parts.some(cup=>cup.id===part.liquidContainerId&&cup.kind==='cup'));
   for(const object of meshes.values()){root.remove(object);disposeObject(object);}meshes.clear();surfaceGroups.clear();state.parts.forEach(buildPartMesh);
   if(state.parts.some(part=>part.rockShape?.enabled)){
-    const refreshRockContacts=()=>{const report=window.ProceduralFurniture.applyRockContacts(meshes,state.parts,{persist:true});$('rockContactStatus').textContent=`${report.protectedFaces} contact faces preserved; exposed faces remain rocky.`;}; // Save joint planes in the editor's owned recipe, including imports that finish asynchronously.
+    const refreshRockContacts=()=>{const report=window.ProceduralFurniture.applyRockContacts(meshes,state.parts,{persist:true});$('rockContactStatus').textContent=`${report.protectedFaces} surface groups reconnect through stretching; rough detail retained.`;}; // Save joint planes in the editor's owned recipe, including imports that finish asynchronously.
     for(const part of state.parts)if(part.kind==='glb')meshes.get(part.id).userData.onRockSourceReady=refreshRockContacts;
     refreshRockContacts();
   }
@@ -2252,7 +2252,7 @@ function convertFurnitureToRocks(enabled){
   for(const part of state.parts){if(enabled)part.rockShape={enabled:true,seed:part.rockShape?.seed||`${state.id}:${part.id}`,roughness};else delete part.rockShape;}
   rebuildFurnitureMeshes();queueUndoHistory(enabled?'convert all furniture pieces to rocks':'restore original furniture pieces');
   $('rockConversionStatus').textContent=enabled?`${state.parts.length} pieces converted to rock. Original transforms, pivots and animation links retained.`:'Original geometry and finishes restored.';
-  log($('rockConversionStatus').textContent,'ok');
+  log($('rockConversionStatus').textContent,'ok');if(enabled)log(window.ProceduralFurniture.latestChange,'info');
 }
 
 function setupEvents(){
