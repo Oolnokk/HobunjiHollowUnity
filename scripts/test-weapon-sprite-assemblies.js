@@ -57,7 +57,7 @@ assert.equal(api.anchor(image, { x: 5, y: 2 }, 'top').x, 5); // Explicit artist 
 assert.equal(api.anchor(image, { x: -100, y: 99 }, 'top').y, 5); // Out-of-bounds authored anchors clamp safely.
 assert.equal(api.definitionFor('plain', { spriteLayers: [{ sprite: 'assets/toolsprites/example.png' }] }).layers.length, 1);
 assert.equal(api.definitionFor('hachutuTorchFlail', {}).flail.head.layers.length, 4);
-assert.equal(api.definitionFor('unknown', {}).flail, undefined);
+assert.equal(api.definitionFor('unknown', {}), null);
 assert.equal(scheduler.id, 'weapon-sprite-assemblies');
 assert.equal(scheduler.options.phase, 'pre-render');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
