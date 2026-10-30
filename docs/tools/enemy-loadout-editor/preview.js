@@ -8,7 +8,7 @@ const files = [
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261028a',
   'js/color-fill.js?v=20261028a',
-  'js/portrait-utils.js?v=20261029maskSlots2',
+  'js/portrait-utils.js?v=20261030headMask1',
   'js/portrait-breathing.js?v=20261028a',
   'js/npc-avatar-preview-utils.js?v=20261029maskSlots2',
   'js/png-plane-avatar.js?v=20261029maskSlots2',
@@ -54,13 +54,13 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261029maskSlots2',
   'js/alchemy-system.js?v=20261028a',
   'js/combat/enemy-loadout-rules.js?v=20261029maskSlots2',
-  'js/combat/combat-bandit.js?v=20261029maskSlots2',
+  'js/combat/combat-bandit.js?v=20261030headMask1',
   'js/weapon-tool-stances.js?v=20261029a',
   'js/combat/enemy-weapon-stances.js?v=20261029a',
   'js/combat/combat-minion.js?v=20261028a',
   'js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2',
   'js/combat/combat-lich.js?v=20261030namedboss2',
-  'js/combat/combat-special-liches.js?v=20261030namedboss2', // Workshop loads the shipped boss runtime, not a copied test implementation.
+  'js/combat/combat-special-liches.js?v=20261030namedboss3', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/player-body-transform-composer.js?v=20261029a',
   'js/drunk-locomotion.js?v=20261029a',
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
@@ -378,7 +378,7 @@ export class EnemyPreview {
     }
     const plane = group.userData.toolPlane;
     const metal = this.data.metals[def.metalKey];
-    const spritePath = def.sprite || (key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png' : null); // The shipped warhammer PNG is an explicit fallback for the named relic holder.
+    const spritePath = key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png' : def.sprite; // The shipped warhammer PNG is an explicit fallback for the named relic holder.
     if (!plane || !spritePath) { // Never display an untextured black plane as a weapon.
       this.log('Missing workshop weapon image definition for ' + key);
       group.visible = false;
