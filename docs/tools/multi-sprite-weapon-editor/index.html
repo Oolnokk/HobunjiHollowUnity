@@ -57,6 +57,7 @@ h3{font-size:13px;margin:5px 0}
 <button id="exportJson">Export JSON</button><button id="exportJs">Export JS config</button>
 <button id="importBtn">Import JSON</button><input type="file" id="importFile" accept=".json,application/json" hidden>
 </header>
+<datalist id="repoSprites"></datalist>
 <div class="content">
 <section id="side" aria-label="Weapon assembly controls">
 <div class="panel">
@@ -74,8 +75,8 @@ h3{font-size:13px;margin:5px 0}
 <div id="flailFields">
 <div class="panel">
 <h2>Rigid haft and chain</h2>
-<label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
-<label for="chainSprite">Chain PNG</label><input id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png">
+<label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input list="repoSprites" id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
+<label for="chainSprite">Chain PNG</label><input list="repoSprites" id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png">
 <div class="grid2">
 <div><label>Haft contact</label><select id="haftMode"><option value="top">Highest opaque pixel</option><option value="bottom">Lowest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
 <div><label>Chain top</label><select id="chainTopMode"><option value="top">Highest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
@@ -110,7 +111,7 @@ h3{font-size:13px;margin:5px 0}
 <div class="panel" id="layerFields">
 <h3>Selected layer</h3>
 <label for="layerId">Layer ID</label><input id="layerId">
-<label for="layerSprite">Sprite PNG</label><input id="layerSprite">
+<label for="layerSprite">Sprite PNG</label><input list="repoSprites" id="layerSprite">
 <div class="grid2">
 <div><label for="layerOffsetX">Offset X (px)</label><input id="layerOffsetX" type="number" step="1"></div>
 <div><label for="layerOffsetY">Offset Y (px)</label><input id="layerOffsetY" type="number" step="1"></div>
