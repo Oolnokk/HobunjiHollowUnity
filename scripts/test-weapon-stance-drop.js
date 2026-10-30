@@ -86,6 +86,8 @@ const hips = {}; handle.group.traverse(o => { if (/_hip$/.test(o.name)) hips[o.n
 handle.setStanceYawDeg(40); settle();
 assert(Math.abs(hips.left.rotation.y - -40 * Math.PI / 180) < 1e-6, `yaw 40: left (lead) hip counter-rotates (${hips.left.rotation.y})`);
 assert(Math.abs(hips.right.rotation.y) < 1e-9, 'trailing hip keeps turning with the body');
+handle.setStanceYawDeg(120); settle();
+assert(Math.abs(hips.left.rotation.y - -Math.PI / 2) < 1e-6, `yaw 120: counter-rotation stops at 90 so the leg turns with the body (${hips.left.rotation.y})`);
 handle.setStanceYawDeg(-40); settle();
 assert(Math.abs(hips.right.rotation.y - 40 * Math.PI / 180) < 1e-6 && Math.abs(hips.left.rotation.y) < 1e-9, 'yaw -40: right leads and counter-rotates');
 handle.setStanceDrop(0); settle();
@@ -106,6 +108,16 @@ ABS.apply(actor, 0, 0, true);
 for (let i = 0; i < 60; i++) handle.update(1 / 30, 0, false, undefined, {});
 ABS.apply(actor, 0, 0, false);
 assert(Math.abs(plane.position.y - 0.5) < 1e-9 && Math.abs(rigRoot.position.y) < 1e-9, 'roots restored once the legs stand again');
+
+// The pants bind to getRestStance: it must describe the standing pose in the body's frame, so it must not move when the group is raised.
+handle.setStanceDrop(0); settle();
+const restStanceStanding = JSON.stringify(handle.getRestStance());
+handle.setStanceDrop(drop); settle();
+const rs = handle.getRestStance();
+const standing = JSON.parse(restStanceStanding);
+assert(Math.abs((rs.left.hip.y + handle.group.position.y) - standing.left.hip.y) < 1e-6, 'rest hip lands where the standing hip is, once the raised group is applied');
+assert(Math.abs((rs.left.ankle.y + handle.group.position.y) - standing.left.ankle.y) < 1e-6, 'rest ankle lands where the standing ankle is, once the raised group is applied');
+handle.setStanceDrop(0); settle();
 
 // The leg group is raised by the sink (persistent, so skinned garments see it); the body owner lowers the body by the same amount.
 handle.setStanceDrop(drop); settle();

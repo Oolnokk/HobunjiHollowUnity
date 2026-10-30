@@ -1067,12 +1067,14 @@
     // of sink) but never past the point where the hip-to-foot distance would exceed the bone length, so the fold still bends rather than stretches.
     // The offsets are added to the foot targets directly so they take effect immediately (the editor ticks with dt 0); applyPose keeps them in the gait target.
     // The leading leg swings about its hip (Y) against the body's twist, so its foot lands and points along the actor's forward direction instead
-    // of being dragged round with the torso; the trailing leg keeps turning with the body. Skipped while lunging (lunge footwork solves in world space).
+    // of being dragged round with the torso (up to ±90° of body yaw, beyond which it turns with the body); the trailing leg always turns with the body. Skipped while lunging (lunge footwork solves in world space).
+    const HIP_YAW_FOLLOW_LIMIT = Math.PI / 2;
     function syncHipYaw() {
       const active = state.stanceDropAllowed && !state.lungeActive && state.stanceDrop > 1e-6;
       const ramp = active ? Math.min(1, state.stanceDrop / Math.max(1e-6, modelHeight * 0.01)) : 0; // Fades in with the sink so standing legs never twist.
       const lead = { left: Math.max(0, -state.stanceSplitBias), right: Math.max(0, state.stanceSplitBias) };
-      for (const side of ['left', 'right']) legChains[side].hip.rotation.y = -state.stanceYawRad * lead[side] * ramp;
+      const counter = Math.max(-HIP_YAW_FOLLOW_LIMIT, Math.min(HIP_YAW_FOLLOW_LIMIT, state.stanceYawRad)); // Past ±90° of body yaw the leading leg stops countering and turns with the rest of the body.
+      for (const side of ['left', 'right']) legChains[side].hip.rotation.y = -counter * lead[side] * ramp;
     }
 
     function applyStanceSplit() {
@@ -1656,7 +1658,7 @@
         const stance = {};
         for (const side of ['left', 'right']) {
           const hip = legChains[side].hip.position;
-          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: side === 'left' ? state.leftContactY : state.rightContactY, z: 0 } };
+          stance[side] = { hip: { x: hip.x, y: hip.y, z: hip.z }, ankle: { x: side === 'left' ? state.idleLeftX : state.idleRightX, y: (side === 'left' ? state.leftContactY : state.rightContactY) - state.stanceDrop, z: 0 } }; // Minus the sink: the group is raised by it, so in the body's frame the standing ankle (and the pants' rest bind) never moves.
         }
         return stance;
       },

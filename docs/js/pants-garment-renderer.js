@@ -545,11 +545,20 @@
       return signature;
     };
     handle.restRecheckIn = REST_RECHECK_FRAMES;
+    // The roll amplification exaggerates a leg's sideways splay so face-on pants visibly follow it, but a sunk weapon stance splits the feet
+    // fore/aft under a body twist, which leans that split into the sideways axis and doubles it: the pant legs drift off the bones. Fade the
+    // exaggeration out as the stance sinks so the garment sits exactly on the real bones (legHandle.getStanceDrop, js/procedural-leg-animation.js).
+    const effectiveRollGain = () => {
+      const drop = Number(legHandle.getStanceDrop?.()) || 0;
+      if (drop <= 0) return handle.legRollGain;
+      const blend = Math.min(1, drop / Math.max(1e-6, (Number(legHandle.modelHeight) || 1) * 0.01));
+      return handle.legRollGain + (1 - handle.legRollGain) * blend;
+    };
     const aimAtLiveLegs = () => {
       const measured = readLiveBones(handle);
       const aim = handle.scratch.aim;
       for (const side of ['left', 'right']) {
-        Core.amplifyLegRoll(measured[side], handle.legRollGain, aim[side]);
+        Core.amplifyLegRoll(measured[side], effectiveRollGain(), aim[side]);
         for (const joint of ['hip', 'knee', 'ankle']) aim[side][joint].z += handle.bones2D[side][joint].z - handle.restRaw[side][joint].z;
       }
       return aim;
