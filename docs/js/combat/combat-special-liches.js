@@ -130,6 +130,7 @@
     actor._specialWarhammerPatternRequested=true; // The asset loads once per guardian instead of spawning asynchronous work each frame.
     const original=mesh.material, originalMap=original.map; // Keep game-owned weapon texture intact for all other warhammers.
     const motif=new Image(); // Authored entropy-glyph PNG shared by wall engravings and crafted-armor verdigris.
+    motif.crossOrigin='anonymous'; // Must precede src: a non-CORS glyph taints the canvas below and WebGL then draws the weapon as a black plane (AGENTS.md CORS rule).
     motif.onload=()=>{
       if(!holder.parent || mesh.material!==original || !originalMap?.image)return;
       try {
@@ -146,7 +147,8 @@
         sc.fillStyle='#69c8ad';sc.fillRect(0,0,70,70); // Verdigris color from the Harlyao metal oxidation palette.
         ctx.globalCompositeOperation='source-atop';ctx.globalAlpha=.9;
         for(let y=0;y<canvas.height;y+=70)for(let x=0;x<canvas.width;x+=70)ctx.drawImage(stamp,x,y);
-        const texture=new window.THREE.CanvasTexture(canvas);
+        ctx.getImageData(0,0,1,1); // Throws SecurityError for a tainted canvas; bail out and keep the original warhammer instead of uploading a black texture.
+        const texture=window.HobunjiSpritePngSurface?.makeCanvasTexture?.(window.THREE,canvas,'special_warhammer_motif') || new window.THREE.CanvasTexture(canvas); // Shared PNG-plane texture settings, per AGENTS.md.
         texture.colorSpace=originalMap.colorSpace;texture.flipY=originalMap.flipY;
         texture.magFilter=originalMap.magFilter;texture.minFilter=originalMap.minFilter;
         const material=original.clone();material.map=texture;
