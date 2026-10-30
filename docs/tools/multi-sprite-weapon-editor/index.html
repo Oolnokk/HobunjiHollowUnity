@@ -25,6 +25,8 @@ main>.content{display:grid;grid-template-columns:minmax(315px,415px) minmax(240p
 .previewPanel{display:flex;flex-direction:column;min-height:0;flex:1;gap:6px}
 .previewPanel h2{margin:0;font-size:12px;color:#e0edf9}
 .previewCaption{font-size:11px;color:var(--muted)}
+.previewSolo{white-space:nowrap;margin:0;color:#c4dcef}
+.previewSolo input{width:auto;margin:0 4px 0 0;vertical-align:middle}
 .previewViewport{flex:1;position:relative;min-height:220px}
 #headViewport{min-height:220px}
 #viewport{min-height:260px}
@@ -52,7 +54,8 @@ h3{font-size:13px;margin:5px 0}
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../config/weapon-sprite-assemblies.js?v=20261030layers1"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261030layerfx2"></script>
-<script defer src="app.js?v=20261030multisprite3"></script>
+<script src="preview-renderer.js?v=20261030headfit1"></script>
+<script defer src="app.js?v=20261030multisprite4"></script>
 </head>
 <body>
 <main>
@@ -153,7 +156,7 @@ h3{font-size:13px;margin:5px 0}
 <section id="stage" aria-label="Live weapon preview">
 <div class="row"><button id="play">⏸ Pause</button><label for="scrub">Animation progress</label><input id="scrub" type="range" min="0" max="1" step=".001" value="0"></div>
 <section class="previewPanel" aria-label="Independent head preview">
-<h2>1 · Head / layered part close-up</h2>
+<div class="row"><h2>1 · Head / layered part close-up</h2><label class="previewSolo"><input id="soloLayer" type="checkbox"> Solo selected layer</label></div>
 <div class="previewCaption">Auto-fit to the visible opaque pixels. Live back-to-front layers, rag tint and interleaved fire.</div>
 <div id="headViewport" class="previewViewport"><canvas id="headPreview" width="900" height="450" aria-label="Magnified brazier head layers and fire"></canvas><span class="previewLegend">Head only · independently fitted</span></div>
 </section>
