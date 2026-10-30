@@ -462,7 +462,7 @@
     // Reset particles when switching layer/reordering, leaving the original PNG fully visible.
     const fireKey=key+':'+part.id+':'+index;
     for(let i=fireParticles.length-1;i>=0;i--){
-      const p=fireParticles[i];if(p.key!==fireKey) {fireParticles.splice(i,1);continue;}
+      const p=fireParticles[i];if(p.key!==fireKey) continue; // Other interleaved emitters retain their own independent particle lifetimes.
       p.age+=dt;if(p.age>=p.life){fireParticles.splice(i,1);continue;}
       const t=p.age/p.life;ctx.globalAlpha=.85*Math.sin(Math.PI*t);
       ctx.fillStyle=p.color;ctx.beginPath();
