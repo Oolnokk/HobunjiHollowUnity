@@ -119,7 +119,7 @@
   }
 
   function setFlailFields() {
-    const def = entry(), f = def.flail;
+    const def = entry(), f = def.flail ? ensureFlail() : null; // Normalize only an existing flail, never invent one for ordinary layered weapons.
     $('weaponLabel').value = def.label || key;
     $('enableFlail').textContent = f ? 'Remove flail assembly' : '+ Enable flail assembly';
     $('flailFields').hidden = !f;
@@ -536,6 +536,8 @@
     }catch(e){log('Draft restore failed: '+e.message,true);}
     key=Object.keys(state.weapons)[0]||key;
     selectWeapon(key);installEvents();selectTab('flails');requestAnimationFrame(frame);
+    window.addEventListener('error', event => log('Browser error: ' + event.message, true)); // Visible on phones without devtools.
+    window.addEventListener('unhandledrejection', event => log('Async error: ' + (event.reason?.message || event.reason), true));
     suggestRepoSprites(); // Optional repo PNG suggestions; no credentials required.
     log('Multi-sprite editor ready. Layer order and interleaved fire share the game schema.');
   }
