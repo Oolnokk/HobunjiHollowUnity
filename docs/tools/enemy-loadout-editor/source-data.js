@@ -16,6 +16,9 @@
     ['lich:tothal', 'Tothal Lich', 'Liches'],
     ['lich:hronal', 'Hronal Lich', 'Liches'],
     ['lich:kanthic', 'Kanthic Lich', 'Liches'],
+    ['lich:hronal:azgarlu', 'Azgarlu of the Flame', 'Special Liches'], // Named key-stone guardian, independent of ordinary Hronal lich rules.
+    ['lich:tothal:nanahi', 'Nanahi the Unsleeping', 'Special Liches'],
+    ['lich:kanthic:imlao', 'Imlao the Sightless', 'Special Liches'],
     ['maskbound:sentinel', 'Maskbound Sentinel', 'Maskbound'],
     ['maskbound:bulwark', 'Maskbound Bulwark', 'Maskbound'],
     ['maskbound:reacher', 'Maskbound Reacher', 'Maskbound'],
@@ -172,6 +175,7 @@
       'harlyao-skeleton',
       'ghost-marcher',
     ].includes(kind);
+    const special = kind.split(':').length === 3 && kind.startsWith('lich:') ? window.SpecialHarlyaoLiches?.defFor?.(kind.split(':')[1]) : null; // Pulls editable boss defaults from the runtime, never a duplicated workshop table.
     const lich = kind.startsWith('lich:')
       ? window.HarlyaoLichCombat.TYPE_DEFS[kind.split(':')[1]]
       : null;
@@ -281,6 +285,7 @@
       dyes,
       rank,
       lich: !!lich,
+      special, // Used by weapons, appearance, tuning, and special-stage preview UI.
       tribe: !!tribe,
       mount:
         kind === 'porakaneki:avenger'
@@ -317,7 +322,8 @@
     if (kind.startsWith('lich:'))
       return window.HarlyaoLichCombat.makeEntity({
         ...shared,
-        type: kind.split(':')[1],
+        type:kind.split(':')[1],
+        special:kind.split(':').length===3, // Named boss presets use the shipped fixed identity/keystone setup.
       });
     if (
       ['mao-ao-skeleton', 'harlyao-skeleton', 'ghost-marcher'].includes(
