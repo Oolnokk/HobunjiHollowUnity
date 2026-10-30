@@ -302,7 +302,7 @@
       rosterOverride: roster,
       enemyClass: CLASS_ID,
       nameOverride: special?.name || def.label,
-      avatarRigScale: special?.scale || null, // Apply authored boss dimensions before collision, positioning and weapon attachment.
+      avatarRigScale: options.avatarRigScale || special?.scale || null, // Saved Workshop enemy snapshots may restore explicit body dimensions; normal named spawn uses its fixed preset.
       defOverride: {
         weaponKey: special?.weapon || LICH_CAST_WEAPON_KEY, // Azgarlu wields a visible warhammer; baseline liches keep invisible Light Weapon casting.
         rangedWeaponKey: null,
@@ -315,6 +315,7 @@
       extra: {
         homeX: x, homeY: y, state: 'chase',
         isHarlyaoLich: true, lichType: def.id, lichDyeId: roster.lichDyeId,
+        ...(special ? {enemyLoadoutKind:window.SpecialHarlyaoLiches?.kindFor?.(def.id)} : {}), // Workshop rules target the named variant instead of the ordinary tradition.
         ...(options.extra || {}),
       },
     });
