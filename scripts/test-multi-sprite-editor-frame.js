@@ -114,7 +114,7 @@ const window = {
   },
 };
 const savedDrafts=[]; // Captures the actual JSON persisted by the Tool Hub after editing a Grapple-Flail.
-const localStorage = {getItem:()=>null,removeItem(){},setItem(_key,value){savedDrafts.push(JSON.parse(value));}};
+const localStorage = {getItem:()=>null,removeItem(){},setItem(_key,value){if(_key === 'hobunji.multiSpriteWeapons.draft.v1') savedDrafts.push(JSON.parse(value));}};
 const sandbox = {
   window, document, Image, localStorage,
   URL, location:{href:'https://example.test/tools/multi-sprite-weapon-editor/index.html'},
@@ -181,5 +181,41 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   node('importFile').files=[{name:'grapple-flail.json',text:async()=>JSON.stringify(savedDrafts.at(-1))}]; // Round-trip the real exported draft through the actual JSON import handler.
   await node('importFile').handlers.get('change')();
   assert.match(node('log').textContent,/Imported grapple-flail\.json/,'a rope-only flail must re-import without a chain sprite');
+  function bootDraft(storage) {
+    const elements = new Map(); // Each simulated reload gets independent UI fields and source provenance.
+    const ui = id => { if (!elements.has(id)) elements.set(id, new Element(id)); return elements.get(id); }; // Resolves isolated controls for restore/save/reset tests.
+    const context = vm.createContext({ ...sandbox,
+      window: { ...window }, document: { ...document, getElementById: ui }, requestAnimationFrame() {},
+      localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
+    }); // Execute the real startup code for each browser-storage scenario.
+    vm.runInContext(config, context); vm.runInContext(app, context);
+    return { ui, fuel() { ui('layerList').children[2].children[0].onclick(); return Number(ui('fireSize').value); } };
+  }
+  const draftKey = 'hobunji.multiSpriteWeapons.draft.v1'; // Existing user drafts must remain recoverable under their original key.
+  const repository = JSON.parse(JSON.stringify(window.WEAPON_SPRITE_ASSEMBLY_CONFIG)); // Current committed recipe is the baseline for this regression.
+  const oldDraft = JSON.parse(JSON.stringify(repository)); // Reproduces the user's older saved 0.4 particle settings.
+  oldDraft.weapons.hachutuTorchFlail.flail.head.layers[2].vfx.size = .4;
+  oldDraft.weapons.hachutuTorchFlail.flail.head.layers[2].vfx.life = .65;
+  const oldText = JSON.stringify(oldDraft), storage = new Map([[draftKey, oldText]]); // Legacy drafts have no repository-baseline marker.
+  const legacy = bootDraft(storage); // A new commit must show its .02 setting even on a browser with a saved .4 draft.
+  assert.equal(legacy.fuel(), .02);
+  assert.match(legacy.ui('recipeSource').textContent, /Repository settings.*older saved draft/);
+  assert.equal(storage.get(draftKey), oldText, 'startup preserves the older draft rather than deleting user work');
+  legacy.ui('restoreDraft').click();
+  assert.equal(legacy.fuel(), .4, 'explicit recovery still restores every old authored value');
+  assert.match(legacy.ui('recipeSource').textContent, /Saved draft/);
+  legacy.ui('fireSize').value = '.07'; legacy.ui('fireSize').handlers.get('change')();
+  legacy.ui('save').click();
+  const resumed = bootDraft(storage); // Drafts saved against the current repository still auto-resume normally.
+  assert.equal(resumed.fuel(), .07);
+  assert.equal(resumed.ui('recipeSource').textContent, 'Saved draft');
+  storage.set(draftKey + '.repository', JSON.stringify(oldDraft)); // A later repository update invalidates auto-restore, while preserving the saved payload.
+  const outdated = bootDraft(storage);
+  assert.equal(outdated.fuel(), .02, 'drafts based on a different repository cannot override current values silently');
+  assert.equal(JSON.parse(storage.get(draftKey)).weapons.hachutuTorchFlail.flail.head.layers[2].vfx.size, .07);
+  outdated.ui('reset').click();
+  assert.equal(outdated.fuel(), .02);
+  assert.equal(storage.has(draftKey), false); assert.equal(storage.has(draftKey + '.repository'), false);
+  assert.equal(outdated.ui('recipeSource').textContent, 'Repository settings');
   console.log('multi-sprite editor frame: PASS (real startup, six PNGs, both canvases, metal palette, rag tint, recolor cache, deduplicated errors)');
 })().catch(error => { console.error(error); process.exitCode=1; });

@@ -64,13 +64,13 @@ h3{font-size:13px;margin:5px 0}
 <script src="../../js/weapon-sprite-assemblies.js?v=20261030h1493a02"></script>
 <script src="preview-renderer.js?v=20261030he301a26"></script>
 <script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
-<script defer src="app.js?v=20261030hfa63c25"></script>
+<script defer src="app.js?v=20261030he6ab9c0"></script>
 </head>
 <body>
 <main>
 <header>
 <strong>⛓ Multi-sprite Weapons</strong>
-<button id="save">Save draft</button><button id="reset">Reset draft</button>
+<button id="save">Save draft</button><button id="restoreDraft" hidden>Load saved draft</button><button id="reset">Reset to repository</button>
 <button id="exportJson">Export JSON</button><button id="exportJs">Export JS config</button>
 <button id="importBtn">Import JSON</button><input type="file" id="importFile" accept=".json,application/json" hidden>
 </header>
@@ -78,6 +78,7 @@ h3{font-size:13px;margin:5px 0}
 <div class="content">
 <section id="side" aria-label="Weapon assembly controls">
 <div class="panel">
+<p id="recipeSource" class="help" role="status">Repository settings</p>
 <label for="weapon">Weapon recipe</label>
 <div class="row"><select id="weapon"></select><button id="newWeapon">+ Existing weapon key</button></div>
 <label for="weaponLabel">Display label</label><input id="weaponLabel">

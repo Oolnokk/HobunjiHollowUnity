@@ -11,6 +11,8 @@
     motion: { lag: 0.065, idleFollow: 7, attackFollow: 15, angularDamping: 8 },
   }; // Starting values match the shared runtime's unconfigured behavior.
   const DRAFT_KEY = 'hobunji.multiSpriteWeapons.draft.v1'; // Local-only editing recovery; never read by gameplay.
+  const DRAFT_BASE_KEY = DRAFT_KEY + '.repository'; // Records which committed recipe a saved draft was edited against.
+  const repositoryBaseline = JSON.stringify(window.WEAPON_SPRITE_ASSEMBLY_CONFIG); // Compared only when saving/loading; formatting-only changes do not invalidate a draft.
   const assetImages = new Map(); // Source PNG image promises reused by preview renders.
   const painted = new Map(); // Stable preview material masks by sprite, hue and oxidation setting.
   const logs = []; // Visible diagnostics available without a browser console.
@@ -26,6 +28,8 @@
   let progress = 0; // 0..1 representation of the preview swing cycle.
   let lastTime = performance.now(); // Delta time for the tool's isolated canvas requestAnimationFrame.
   let revision = 0; // Recipe changes invalidate the shared 3D assembly once, outside the frame loop.
+  let savedDraft = null; // Retains stale drafts for explicit recovery without replacing newer repository settings.
+  let sourceLabel = 'Repository settings'; // Always-visible provenance distinguishes committed values from local edits.
   let latestError = ''; // Last failure exposed in status and copyable diagnostics.
 
   function log(message, failure = false) {
@@ -232,6 +236,7 @@
   function markChanged() {
     revision++; // Rebuild the shared visual only when authored settings actually change.
     warmImages();
+    $('recipeSource').textContent = sourceLabel + ' · unsaved edits';
     $('status').textContent = 'Unsaved changes · Export JS config to commit the recipe.';
   }
 
@@ -407,12 +412,30 @@
     on('play','click', () => { playing = !playing; $('play').textContent = playing ? '⏸ Pause' : '▶ Play'; });
     on('scrub','input', () => { progress = safeNum($('scrub').value, 0, 0, 1); playing = false; $('play').textContent = '▶ Play'; });
     on('save','click', () => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(state)); log('Local draft saved on this device. Export it to commit.'); }
+      try {
+        localStorage.removeItem(DRAFT_BASE_KEY); // A partial save must never mark an older draft as current.
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(state));
+        localStorage.setItem(DRAFT_BASE_KEY, repositoryBaseline);
+        savedDraft = clone(state); sourceLabel = 'Saved draft';
+        $('restoreDraft').hidden = false; $('recipeSource').textContent = sourceLabel;
+        log('Local draft saved on this device. Export it to commit.');
+      }
       catch (e) { log('Local draft save failed: ' + e.message, true); }
+    });
+    on('restoreDraft','click', () => {
+      if (!savedDraft) return;
+      if (!confirm('Load the saved draft? This replaces the settings currently shown, including unsaved edits.')) return;
+      state = clone(savedDraft); revision++; sourceLabel = 'Saved draft';
+      $('recipeSource').textContent = sourceLabel + ' · loaded explicitly';
+      selectWeapon(Object.keys(state.weapons)[0]);
+      log('Loaded saved draft explicitly. Reset to repository restores the committed settings.');
     });
     on('reset','click', () => {
       if (!confirm('Discard local changes and restore committed weapon recipes?')) return;
-      localStorage.removeItem(DRAFT_KEY); state = clone(window.WEAPON_SPRITE_ASSEMBLY_CONFIG); selectWeapon(Object.keys(state.weapons)[0]);
+      localStorage.removeItem(DRAFT_KEY); localStorage.removeItem(DRAFT_BASE_KEY);
+      savedDraft = null; sourceLabel = 'Repository settings';
+      $('restoreDraft').hidden = true; $('recipeSource').textContent = sourceLabel;
+      state = clone(window.WEAPON_SPRITE_ASSEMBLY_CONFIG); revision++; selectWeapon(Object.keys(state.weapons)[0]);
     });
     on('exportJson','click', () => download('weapon-sprite-assemblies.json', JSON.stringify(state, null, 2), 'application/json'));
     on('exportJs','click', () => download('weapon-sprite-assemblies.js', configJs(), 'text/javascript'));
@@ -427,7 +450,7 @@
           const all = [...(weapon.layers || []), ...(weapon.flail?.head?.layers || [])];
           if (all.length > 32 || all.some(part => !part.id || !part.sprite)) throw Error('Each sprite layer needs an ID and PNG path (limit 32).');
         }
-        state = clone(data); selectWeapon(Object.keys(state.weapons)[0]); log('Imported ' + file.name + ' (not yet saved to the repository).');
+        state = clone(data); sourceLabel = 'Imported JSON'; $('recipeSource').textContent = sourceLabel; revision++; selectWeapon(Object.keys(state.weapons)[0]); log('Imported ' + file.name + ' (not yet saved to the repository).');
       } catch (error) { log('Import rejected: ' + error.message, true); }
       $('importFile').value = '';
     });
@@ -562,10 +585,19 @@
     window.__farmLog = (message, level) => log(message, level === 'error' || level === 'warn'); // Shared gameplay loading/alpha errors stay visible on mobile.
     try {
       const stored=JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
-      if(stored?.schema===state.schema && stored.weapons && typeof stored.weapons==='object') {
-        state=stored;log('Restored local draft. Shipped game config remains untouched.');
+      if (stored?.schema === state.schema && stored.weapons && typeof stored.weapons === 'object' && !Array.isArray(stored.weapons) && Object.keys(stored.weapons).length) {
+        savedDraft = stored;
+        $('restoreDraft').hidden = false;
+        if (localStorage.getItem(DRAFT_BASE_KEY) === repositoryBaseline) {
+          state = clone(stored); sourceLabel = 'Saved draft';
+          log('Restored saved draft for the current repository settings.');
+        } else {
+          sourceLabel = 'Repository settings · older saved draft available';
+          log('Loaded updated repository settings. Older saved draft preserved; choose Load saved draft to recover it.');
+        }
       }
     }catch(e){log('Draft restore failed: '+e.message,true);}
+    $('recipeSource').textContent = sourceLabel;
     key=Object.keys(state.weapons)[0]||key;
     selectWeapon(key);installEvents();selectTab('flails');requestAnimationFrame(frame);
     window.addEventListener('error', event => log('Browser error: ' + event.message, true)); // Visible on phones without devtools.
