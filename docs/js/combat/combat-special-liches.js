@@ -14,7 +14,24 @@
   const droplets = new Set(); // Reused bounded drip particles for Imlao's plasm transformation.
   let lastEvent = 'idle'; // Mobile diagnostic showing last special-lich action.
 
-  function defFor(type) { return DATA[String(type || '').toLowerCase()] || null; }
+  const BOSS_DEFAULTS = Object.freeze({ // Single runtime fallback values exposed in the Workshop; authored overrides are optional.
+    hronal:Object.freeze({switchSeconds:3.4,meleeCooldownSeconds:1.45,meleeDamage:21}),
+    tothal:Object.freeze({specialCooldownSeconds:13,kneelDurationSeconds:4.8,barrageIntervalSeconds:.62}),
+    kanthic:Object.freeze({specialCooldownSeconds:18,chargeSpeedTiles:10,chargeCount:4,chargeMaxTiles:8,blastRadiusTiles:2.4,blastDamage:22,plasmDurationSeconds:12}),
+  });
+  function kindFor(type) {
+    const name = DATA[String(type || '').toLowerCase()];
+    return name ? 'lich:' + type + ':' + name.id : null; // Full workshop kind distinguishes a named boss from the ordinary tradition.
+  }
+  function ruleFor(type) { return window.EnemyLoadoutRules?.ruleFor?.(kindFor(type)) || {}; } // Shared exported enemy-loadouts.json is the only tuning store.
+  function defFor(type) {
+    const key = String(type || '').toLowerCase(), base = DATA[key];
+    if (!base) return null;
+    const appearance = ruleFor(key).bossAppearance || {}; // Optional Workshop appearance overrides are applied at spawn and map decoration time.
+    return {...base,glyph:appearance.glyphId || base.glyph,ink:appearance.ink || base.ink,dye:appearance.robeDye || base.dye,weapon:appearance.weaponKey || base.weapon};
+  }
+  function settingsFor(type) { return {...BOSS_DEFAULTS[type],...(ruleFor(type).bossSettings || {})}; } // Per-actor snapshot prevents mid-fight editor edits changing live timing.
+  function setting(actor,key,fallback) { return Number(actor?._specialBossSettings?.[key]) || fallback; } // Validated nonzero numeric fields, defaulting safely in isolated tools.
   function glyphPattern(def) {
     const cached = window.RepoPatternLibrary?.getCachedById?.(def.glyph); // Uses the same authored Harlyao glyph definition as ruin decorations.
     const fallback = 'assets/patterns/motif_' + def.glyph + '.png'; // Visible even when the pattern library has not loaded yet.
@@ -103,6 +120,7 @@
     entity.isSpecialLich = true;
     entity.specialLichId = spec.id;
     entity.name = spec.name;
+    entity._specialBossSettings = settingsFor(type); // Workshop attack sliders govern the live boss, not just its preview.
     entity._specialMode = type==='hronal'?'magic':null;
     entity._specialModeClock = 0; // Hronal switches stance and hover on this independent cadence.
     entity._specialHoverBlend = 1; // Lerp target is zero while fighting on foot.
@@ -139,7 +157,7 @@
       actor.telegraphState='windup';
       actor._banditSwingAnim='chop';
       actor._banditSwingPose = null;
-      actor._specialMeleeCooldown = 1.45;
+      actor._specialMeleeCooldown = setting(actor,'meleeCooldownSeconds',1.45);
       actor._banditAction=window.Combat.beginStagedAction({
         windupS:.29,strikeS:.16,recoverS:.18,
         data:{isBandit:true,attacker:actor,voiceCategory:'heavyAttack'},
@@ -150,7 +168,7 @@
           if (Math.abs(Math.atan2(Math.sin(a-actor.facing),Math.cos(a-actor.facing)))>1.1) return;
           if (window.Combat?.meleeHit && !window.Combat.meleeHit(actor,target,{rangePx:tile*2.35,halfConeRad:1.1,yaw:actor.facing})) return;
           const sourceX=actor.x===target.x?actor.x-1:actor.x;
-          const damage=Math.max(14,Math.round((Number(actor.def?.damage)||14)*1.5));
+          const damage=setting(actor,'meleeDamage',21); // Workshop-authored magical warhammer damage.
           const impact={tag:'blunt',attacker:actor,footingDamageMultiplier:2};
           if (target===deps?.player) deps?.damagePlayer?.(damage,sourceX,actor.y,tile*6,impact);
           else deps?.damageCreature?.(target,damage,sourceX,actor.y,tile*6,impact);
@@ -164,11 +182,12 @@
   }
   function shockwave(actor,deps) {
     const tile=deps?.TILE||TILE_FALLBACK;
+    const radius=setting(actor,'blastRadiusTiles',2.4), baseDamage=setting(actor,'blastDamage',22); // Concussive blast tuning uses the same authored settings as the editor.
     for(const victim of [deps?.player,...(deps?.hostileObjects||[])]) {
       if(!victim||victim===actor||Number(victim.health)<=0||victim.areaId && victim.areaId!==actor.areaId)continue;
       const dist=Math.hypot(victim.x-actor.x,victim.y-actor.y);
-      if(dist>tile*2.4)continue;
-      const damage=Math.max(1,Math.round(22*(1-dist/(tile*3))));
+      if(dist>tile*radius)continue;
+      const damage=Math.max(1,Math.round(baseDamage*(1-dist/(tile*(radius+.6)))));
       const sx=dist<1?actor.x-1:actor.x;
       if(victim===deps?.player)deps?.damagePlayer?.(damage,sx,actor.y,tile*12,{footingDamageMultiplier:2,attacker:actor});
       else deps?.damageCreature?.(victim,damage,sx,actor.y,tile*12,{footingDamageMultiplier:2,attacker:actor});
@@ -182,7 +201,7 @@
     activePatches.add(record);
   }
   function beginKanthic(actor,target) {
-    actor._specialStage={kind:'charge',remaining:4,travel:0,targetX:target.x,targetY:target.y};
+    actor._specialStage={kind:'charge',remaining:setting(actor,'chargeCount',4),travel:0,targetX:target.x,targetY:target.y}; // Per-fight charge count comes from authored boss rules.
     actor._specialPlasmLastTile=null;
     applyPlasmSkin(actor,true);
     lastEvent='imlao:plasm-charge';
@@ -191,29 +210,31 @@
     const stage=actor._specialStage, tile=deps?.TILE||TILE_FALLBACK;
     if(!stage||stage.kind!=='charge')return null;
     const dx=stage.targetX-actor.x,dy=stage.targetY-actor.y,dist=Math.hypot(dx,dy);
-    if(dist>tile*.45 && stage.travel<tile*8) {
-      const step=Math.min(dist,CHARGE_SPEED_TILES*tile*dt);
+    if(dist>tile*.45 && stage.travel<tile*setting(actor,'chargeMaxTiles',8)) {
+      const speed=setting(actor,'chargeSpeedTiles',CHARGE_SPEED_TILES); // Tiles per second, adjustable per guardian.
+      const step=Math.min(dist,speed*tile*dt);
       const direction=Math.atan2(dy,dx);
       actor.facing=direction;
-      const moved=deps?.moveCreatureToward?.(actor,actor.x+Math.cos(direction)*step,actor.y+Math.sin(direction)*step,CHARGE_SPEED_TILES*tile,dt);
+      const moved=deps?.moveCreatureToward?.(actor,actor.x+Math.cos(direction)*step,actor.y+Math.sin(direction)*step,speed*tile,dt);
       stage.travel+=step;
       const tx=Math.floor(actor.x/tile),ty=Math.floor(actor.y/tile),key=tx+','+ty;
       if(key!==actor._specialPlasmLastTile) {
         actor._specialPlasmLastTile=key;
-        rememberPlasm(window.DevRandomRuinLichThemes?.createSpellPlasm?.(tx+.5,ty+.5));
+        rememberPlasm(window.DevRandomRuinLichThemes?.createSpellPlasm?.(tx+.5,ty+.5),setting(actor,'plasmDurationSeconds',12));
       }
       return {aimAngle:direction,moving:!!moved,handled:true};
     }
     shockwave(actor,deps);stage.remaining--;
-    if(stage.remaining<=0){actor._specialStage=null;applyPlasmSkin(actor,false);actor._specialCooldown=CHARGE_INTERVAL;}
+    if(stage.remaining<=0){actor._specialStage=null;applyPlasmSkin(actor,false);actor._specialCooldown=setting(actor,'specialCooldownSeconds',CHARGE_INTERVAL);}
     else {stage.travel=0;stage.targetX=target.x;stage.targetY=target.y;actor._specialPlasmLastTile=null;}
     return {aimAngle:angle,moving:false,handled:true};
   }
   function handleAI(actor,dt,target,deps,angle,dist) {
     if(!actor?.isSpecialLich || !target || Number(target.health)<=0)return null;
     if(actor.lichType==='hronal') {
+      if (ruleFor('hronal').specialAttacks?.melee === false) {actor._specialMode='magic';return null;} // Disable boss-specific melee without affecting the underlying Hronal spell.
       actor._specialModeClock+=dt;
-      if(actor._specialModeClock>=3.4&&!actor._banditAction) {
+      if(actor._specialModeClock>=setting(actor,'switchSeconds',3.4)&&!actor._banditAction) {
         actor._specialModeClock=0;
         actor._specialMode=actor._specialMode==='magic'?'melee':'magic';
         lastEvent='azgarlu:stance-'+actor._specialMode;
@@ -222,24 +243,26 @@
     }
     actor._specialCooldown=Math.max(0,actor._specialCooldown-dt);
     if(actor.lichType==='tothal') {
+      if (ruleFor('tothal').specialAttacks?.blizzard === false) return null; // Workshop toggle excludes Nanahi's barrage without switching off other Tothal spells.
       if(actor._specialStage?.kind==='kneel') {
         const stage=actor._specialStage;
         stage.time-=dt;stage.wave-=dt;
         if(stage.wave<=0) {
-          stage.wave=.62;
+          stage.wave=setting(actor,'barrageIntervalSeconds',.62);
           window.DevRandomRuinLichThemes?.triggerBossBlizzard?.(actor);
           lastEvent='nanahi:ceiling-barrage';
         }
-        if(stage.time<=0) {actor._specialStage=null;actor._specialCooldown=KNEEL_INTERVAL;lastEvent='nanahi:stand';}
+        if(stage.time<=0) {actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL);lastEvent='nanahi:stand';}
         return {aimAngle:angle,moving:false,handled:true};
       }
       if(actor._specialCooldown<=0&&!actor._banditAction) {
-        actor._specialStage={kind:'kneel',time:4.8,wave:0}; // A stationary vulnerable 4.8-second window.
+        actor._specialStage={kind:'kneel',time:setting(actor,'kneelDurationSeconds',4.8),wave:0}; // A stationary vulnerable 4.8-second window.
         lastEvent='nanahi:kneel';
         return {aimAngle:angle,moving:false,handled:true};
       }
     }
     if(actor.lichType==='kanthic') {
+      if (ruleFor('kanthic').specialAttacks?.plasmCharge === false) return null; // Ordinary Kanthic attacks remain active when the named burst is disabled.
       if(actor._specialStage?.kind==='charge')return chargeAI(actor,dt,target,deps,angle);
       if(actor._specialCooldown<=0&&!actor._banditAction) {
         beginKanthic(actor,target);
@@ -342,7 +365,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,defFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear,
+    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
