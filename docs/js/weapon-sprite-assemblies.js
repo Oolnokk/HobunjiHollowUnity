@@ -276,10 +276,15 @@
     const target = state.attacking
       ? new THREE.Vector3(0, 1, 0).applyQuaternion(baseQ).normalize()
       : new THREE.Vector3(-velocity.x * MOTION_LAG, -1, -velocity.z * MOTION_LAG).normalize();
-    // Temporal follow is deliberately faster during a swing, slower at rest,
-    // and never teleports the endpoint between rendered animation frames.
-    const follow = 1 - Math.exp(-Math.max(0, Math.min(MAX_DT, dt)) * (state.attacking ? 23 : 9));
-    state.direction.lerp(target, follow).normalize();
+    // Angle-limited spherical interpolation handles even a full 180° direction
+    // reversal. Normalized linear interpolation gets stuck forever when a held
+    // haft points directly opposite gravity, and may generate a zero vector.
+    const turnAngle = state.direction.angleTo(target); // Current angular error drives bounded swing/idle follow.
+    if (turnAngle > 1e-6) {
+      const maxTurn = Math.max(0.001, Math.min(MAX_DT, dt)) * (state.attacking ? 15 : 7); // Radians per second; fast attack lever, softer travel lag.
+      const deltaQ = new THREE.Quaternion().setFromUnitVectors(state.direction, target); // Shortest spherical arc; Three.js supplies a stable 180° fallback axis.
+      state.direction.applyQuaternion(new THREE.Quaternion().slerp(deltaQ, Math.min(1, maxTurn / turnAngle))).normalize();
+    }
     const worldQ = planeQuaternion(THREE, state.direction.clone().negate(), normal);
     const correction = new THREE.Quaternion().setFromUnitVectors(chainSpan, new THREE.Vector3(0, 1, 0));
     worldQ.multiply(correction); // Exactly aligns the two scanned opaque chain endpoints even if the PNG is slightly crooked.
