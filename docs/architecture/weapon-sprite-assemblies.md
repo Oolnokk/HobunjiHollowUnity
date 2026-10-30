@@ -56,7 +56,7 @@ The example coordinates are **illustrative only**, not measurements of the
 Hachutu art. The shipped Hachutu setup uses the opaque-pixel defaults until
 the artist calibrates its mount points. An edge anchor finds the highest
 (\`top\`) or lowest (\`bottom\`) scan line containing nontransparent pixels
-(alpha ≥16), then uses the horizontal mean of that row's opaque pixels.
+(alpha ≥128), then uses the horizontal mean of that row's opaque pixels.
 Explicit \`{x,y}\` coordinates override the scan and are clamped to the image.
 
 Head layers share a common center frame, and \`offsetPx\` on each head layer
