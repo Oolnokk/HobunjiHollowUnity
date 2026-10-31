@@ -28,7 +28,7 @@
     'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
     'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
   ]); // Always load the anatomical tail and optional spectacles just once for every swarm.
-  const EYE_URL = 'assets/creaturesprites/honeyfuzzle_eye.png'; // Untinted anatomy shared by every flight pose and genotype.
+  const EYE_URL = 'assets/creaturesprites/honeyfuzzle_eyes.png'; // Untinted anatomy shared by every flight pose and genotype.
   const ATLAS_COLS = 3, ATLAS_ROWS = 2; // Packs six aligned 478x399 sprites into 1434x798 instead of a too-wide 2390x399 mobile texture.
   const FRAME_UP = 0, FRAME_MID = 1, FRAME_DOWN = 2;
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
