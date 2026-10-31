@@ -46,21 +46,58 @@ const server=http.createServer((request,response)=>{
       assert(anchorsA.length>0,'actual root surface rings must yield hidden wall nodes');
       assert(JSON.stringify(anchorsA.map(a=>a.point.toArray()))===JSON.stringify(anchorsB.map(a=>a.point.toArray())),
         'the same authored roots and seed must retain identical waiting nodes');
-      const hands=window.RootSnareHands.create({THREE:T,room,wallRootLayers:[layer],seed:'exact-fixed-seed',
-        count:6,triggerRadius:2.4,reach:1.6});
-      assert(hands.diagnostics().active===0,'wall hands must be concealed while no target is nearby');
-      const target=new T.Group();target.position.copy(hands.anchors[0].point);
-      target.position.y-=.9;target.position.z+=.65;
-      for(let i=0;i<100;i++)hands.update(.033,target);
-      const active=hands.diagnostics();
-      assert(active.active>0&&active.lungeCount>0,'wall hands must reach when a character crosses the trigger zone');
-      target.position.set(100,0,100);
-      for(let i=0;i<180;i++)hands.update(.033,target);
-      assert(hands.diagnostics().active===0,'all wall hands must retract without relocating hidden nodes');
+      // Floor-root nodes are real generator surface nodes as well; their sprouts
+      // can point up or diagonally, not just horizontally away from wall faces.
+      const floorLayer=new T.Group(),floorRoot=layer.children[0].clone();
+      floorRoot.position.y=-1.065;floorRoot.position.z=3.95;floorLayer.add(floorRoot);
+      const both=window.RootSnareHands.sourceNodes(T,room,
+        [{layer,role:'wall'},{layer:floorLayer,role:'floor'}],'two-surface-test');
+      assert(both.some(n=>n.role==='wall')&&both.some(n=>n.role==='floor'),
+        'actual wall AND floor root nodes should both provide fixed snare anchors');
+
+      const hands=window.RootSnareHands.create({THREE:T,room,rootLayers:[{layer,role:'wall'}],
+        seed:'exact-fixed-seed',count:6,triggerRadius:2.4,reach:1.6});
+      assert(hands.diagnostics().active===0,'hands start hidden inside the fixed roots');
+      assert(hands.diagnostics().states.every(s=>s.digits===3&&
+        s.digitRoles.filter(role=>role==='finger').length===2&&s.digitRoles.includes('thumb')),
+        'each wooden fork has precisely two foliage-branch fingers and one opposed thumb');
+      const actor=new T.Group(),captured={group:actor,running:true,
+        setRunning(value){this.running=value;},
+        chooseTarget(){this.rerouted=true;}};
+      const anchor=hands.anchors[0];
+      actor.position.copy(anchor.point).addScaledVector(anchor.direction,.95);
+      actor.position.y-=1; // The collider checks the runner's chest in world/room space.
+      const initialScale=actor.scale.clone();
+      for(let i=0;i<3;i++)hands.update(.033,captured);
+      assert(hands.diagnostics().states.some(s=>s.state==='approaching'&&!s.wrapped),
+        'the three branches must approach the runner with their palm open');
+      // Turn the target halfway through growth: the branch ARM has to reroute.
+      actor.position.copy(anchor.point).addScaledVector(anchor.direction,.5);
+      actor.position.x+=.42;actor.position.y-=1;
+      for(let i=0;i<230;i++)hands.update(.033,captured);
+      const held=hands.diagnostics();
+      assert(held.caught&&held.held===1,'the actual palm collider must grip, pull and keep holding the runner');
+      assert(held.states.some(s=>s.state==='held'&&s.wrapped&&s.digits===3),
+        'the held pose preserves the curled three-finger branch fork');
+      assert(held.states.some(s=>s.reroutes>0),
+        'the organic branch arm must steer in-flight as the runner changes direction');
+      assert(!captured.running,'captured runner must stop its procedural walking controller');
+      assert(actor.visible!==false&&actor.scale.distanceTo(initialScale)<.001,
+        'holding must never hide, swallow or shrink the runner');
+      assert(actor.position.distanceTo(anchor.point)<1.25,'the arm must carry its captive back to its original root node');
+      const heldPosition=actor.position.clone();
+      for(let i=0;i<120;i++)hands.update(.033,captured);
+      assert(hands.diagnostics().held===1&&actor.position.distanceTo(heldPosition)<.02,
+        'the captive stays held indefinitely at the original node');
+      assert(hands.releaseCaptured()&&captured.running,'only explicit author release frees the runner');
+      actor.position.set(100,0,100);
+      for(let i=0;i<120;i++)hands.update(.033,captured);
+      assert(!hands.diagnostics().caught&&!hands.diagnostics().held,
+        'released hands withdraw to their unchanged hidden nodes');
       hands.setNodeVisibility(true);
       assert(hands.group.children.some(x=>x.name.startsWith('Show hidden branch node')&&x.visible),
-        'revealing anchor nodes is an author-only diagnostic');
-      hands.dispose();assert(!hands.group.parent,'disposed wall hands must not remain attached');
+        'the author may reveal otherwise concealed fixed root nodes');
+      hands.dispose();assert(!hands.group.parent,'disposed hands must release their resources');
 
       const runner=window.RootSnareRunner.create({THREE:T,room,speed:2.5,seed:'runner-test'});
       assert(runner.diagnostics().authenticFeet,'the simulation must use the procedural walking rig');
@@ -96,7 +133,7 @@ const server=http.createServer((request,response)=>{
       assert(layerStats?.perSurface===true&&layerStats.surfaces===16,
         'real surface-growth must assign the author’s per-region root budget to all sixteen cloned floor guides');
       actual.dispose();sectors.dispose();
-      return {nodes:anchorsA.length,lunges:active.lungeCount,runnerTurns:traveled.turns,regions:16,triangles:count,
+      return {nodes:anchorsA.length,lunges:held.lungeCount,held:held.held,runnerTurns:traveled.turns,regions:16,triangles:count,
         mappedFoliageRegions:layerStats.surfaces};
 
     });
