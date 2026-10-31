@@ -7,9 +7,13 @@ const repo=path.resolve(__dirname,'..'),three=path.join(repo,'node_modules/three
 const scripts=['config/scratchbones-config.js','js/color-fill.js','js/portrait-utils.js','js/portrait-breathing.js','js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','config/pants-rigs.js','js/pants-rig-core.js','js/pants-garment-renderer.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
 const server=http.createServer((request,response)=>{
   const route=decodeURIComponent((request.url||'/').split('?')[0]);
-  if(route==='/snare-fixture'){
+  if(route==='/tools/live-root-growth/snare-fixture'){
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html><head><script src="/vendor-three.js"></script>'+scripts.map(s=>'<script src="/'+s+'"></script>').join('')+'</head><body></body></html>');return;
+    // Intentionally serve the test at the REAL nested tool pathname; the
+    // href base affects HTML fetches but does NOT affect window.location.href.
+    // This catches species JSON accidentally being resolved under tools/.
+    response.end('<!doctype html><html><head><base href="../../"><script src="/vendor-three.js"></script>'+
+      scripts.map(s=>'<script src="'+s+'"></script>').join('')+'</head><body></body></html>');return;
   }
   if(route==='/vendor-three.js'){response.setHeader('Content-Type','text/javascript');response.end(fs.readFileSync(three));return;}
   const file=path.resolve(repo,'docs',route.replace(/^\/+/,''));
@@ -23,7 +27,7 @@ const server=http.createServer((request,response)=>{
   try{
     browser=await chromium.launch({headless:true});const page=await browser.newPage(),pageErrors=[];
     page.on('pageerror',error=>pageErrors.push(String(error)));
-    await page.goto('http://127.0.0.1:'+server.address().port+'/snare-fixture',{waitUntil:'domcontentloaded'});
+    await page.goto('http://127.0.0.1:'+server.address().port+'/tools/live-root-growth/snare-fixture',{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>!!(window.RootSnareHands?.create&&window.RootSnareRunner?.create&&window.ProceduralLegAnimation?.attach&&window.StoneAgeRuinScenery?.buildFloorCoverSectors));
     const result=await page.evaluate(async()=>{
       const T=window.THREE;
@@ -146,6 +150,8 @@ const server=http.createServer((request,response)=>{
 
       // Exercise the same REAL repository data + portrait render pipeline as
       // the Animation Author, not merely a fake THREE humanoid fixture.
+      assert(document.baseURI.endsWith('/')&&location.pathname.startsWith('/tools/live-root-growth/'),
+        'real author nested document base is exercised by actual repository NPC loader');
       const rendered=await window.RootSnareRunner.loadNpcPortrait({seed:'browser-repository-npc'});
       assert(rendered.npc&&rendered.front.width>0&&rendered.back.height>0,
         'real NPC database record must produce both painted portrait views');
