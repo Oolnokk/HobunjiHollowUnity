@@ -94,6 +94,8 @@ const server=http.createServer((request,response)=>{
       for(let i=0;i<120;i++)hands.update(.033,captured);
       assert(!hands.diagnostics().caught&&!hands.diagnostics().held,
         'released hands withdraw to their unchanged hidden nodes');
+      assert(hands.group.children.filter(x=>x.name.startsWith('Hidden root snare')).every(x=>!x.visible),
+        'released arm and fingers must become indistinguishable from the source root again');
       hands.setNodeVisibility(true);
       assert(hands.group.children.some(x=>x.name.startsWith('Show hidden branch node')&&x.visible),
         'the author may reveal otherwise concealed fixed root nodes');
