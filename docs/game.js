@@ -1785,6 +1785,7 @@
         // he visibly has his instrument out while playing.
         grappleFlail: { label: 'Grapple-Flail', icon: '🪝', sprite: 'assets/toolsprites/grapple-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'grappleFlail', metalKey: 'tinBronze' }, // Unique rope flail; reuses the same shaft-attached weapon assembly and hit logic.
         hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
+        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', shapeKey: 'hachutuTorchStaff' }, // B'shuakauitl melee stance/attacks; no metalKey, so mastery never grows verdigris.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -16225,6 +16226,7 @@
       // 5 hand-authored tool keys just above.
       ITEM_DEFS.grappleFlail = { icon: '🪝', label: 'Grapple-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Flail', 'Grapple'], desc: 'A two-part metal grapple head suspended on a generated rope.' }; // Inventory metadata only; acquisition remains authored separately.
       ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Unique, non-smithing weapon registered for inventory lookups without unlocking it by default.
+      ITEM_DEFS.hachutuTorchStaff = { icon: '🔥', label: 'Hachutu Torch-Staff', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Staff'], desc: 'An ancient double-ended torch-staff. Mastery brings its little flames together into two blazes.' }; // Weapon-only relic metadata; acquisition remains a separate authoring decision.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
@@ -22958,7 +22960,7 @@
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
         _markPngPlane(g);
-        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
+        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey), masteryLevel: () => toolMasteryLevel(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
         return g;
       }
 
