@@ -339,6 +339,70 @@ async function run() {
   const recolorSource = fs.readFileSync('docs/js/tool-metal-recolor.js','utf8');
   assert(recolorSource.includes('spritePath, modularRevision'),
     'modular head textures must be keyed by composition revision, not stale before the rig moves');
+  // THE PREVIOUS MISSING CHILDREN: Dagger, Spear and Dagger-Sword have 20–26
+  // operation steps per pair. Recipes are expanded before the parent's affine
+  // transform; junction sprites and masks must be included with the heads.
+  vm.runInContext(fs.readFileSync('docs/js/modular-weapon-bridge-fill.js','utf8'), ctx);
+  const sourceConfig = JSON.parse(JSON.stringify(api.getConfig()));
+  const originalStaff = sourceConfig.shafts.hachutuTorchStaff;
+  const daggerRecipe = originalStaff.overrides.dagger.bridges.strokes;
+  const flatRecipe = api.expandOps(daggerRecipe); // 2 placed recipes expand into 20 actual brush/junction children.
+  assert.equal(flatRecipe.length, 20, 'two placed Torch-Staff dagger recipes have 20 child operations');
+  const identityOps = api.rigBridgeOperations(originalStaff, daggerRecipe);
+  assert.equal(identityOps.length, flatRecipe.length);
+  const riggedDraft = JSON.parse(JSON.stringify(sourceConfig));
+  riggedDraft.shafts.hachutuTorchStaff.attachmentRigTransform =
+    { scaleX: 1.8, scaleY: .65, x: 124, y: -168 };
+  api.replace(riggedDraft);
+  const rigShaft = api.getConfig().shafts.hachutuTorchStaff;
+  const movedOps = api.rigBridgeOperations(rigShaft, daggerRecipe);
+  assert.equal(movedOps.length, 20, 'recipe expansion never loses its original children');
+  for (let i = 0; i < flatRecipe.length; i++) {
+    const oldOp = flatRecipe[i], moved = movedOps[i];
+    if (oldOp.junction) {
+      assert.equal(moved.x, oldOp.x, 'junction local origin is untouched; canvas parent moves the sprite');
+      assert.equal(moved._rigJunction, true);
+      continue;
+    }
+    if (!oldOp.points) continue; // Global cleanup/shading steps affect changed regions, not coordinate lines.
+    for (let j = 0; j < oldOp.points.length; j++) {
+      const expected = api.duplicatePoint({x:oldOp.points[j][0],y:oldOp.points[j][1]},
+        api.shaftRigTransform(rigShaft));
+      assert(Math.abs(moved.points[j][0]-expected.x)<1e-7 && Math.abs(moved.points[j][1]-expected.y)<1e-7,
+        'EVERY expanded recipe stroke point must inherit the parent rig before replay');
+    }
+    assert(Math.abs(moved.rX-oldOp.r*1.8)<1e-8
+      && Math.abs(moved.rY-oldOp.r*.65)<1e-8,
+      'bridge-fill masks must inherit nonuniform X/Y scale, not only move their centre');
+  }
+  const swordOps = originalStaff.overrides['dagger-sword'].bridges.strokes;
+  const swordLocal = api.rigBridgeOperations(originalStaff, swordOps);
+  const swordMoved = api.rigBridgeOperations(rigShaft, swordOps);
+  assert.equal(swordLocal.length, 26, 'directly authored Dagger-Sword junction and brush sequence is intact');
+  assert.equal(swordMoved.filter(op=>op.junction).length, 4);
+  for(let i=0;i<swordLocal.length;i++){
+    if(swordLocal[i].junction){
+      assert.equal(swordMoved[i].x,swordLocal[i].x,
+        'junction coordinates stay local so the parent transform is applied once during painting');
+    } else if(swordLocal[i].points?.length){
+      assert.notDeepEqual(swordMoved[i].points,swordLocal[i].points,
+        'manual bridge/smudge points also move with rig, not just recipe operations');
+    }
+  }
+  const junctions = {band:{width:20,height:12},block:{width:22,height:14},sphere:{width:18,height:18}};
+  const headBounds = {left:180,top:70,right:225,bottom:300};
+  const withoutBridge = api.compositionFrame(rigShaft,api.getConfig().heads['dagger-sword'],
+    headBounds,api.settings('hachutuTorchStaff','dagger-sword'));
+  const withBridge = api.compositionFrame(rigShaft,api.getConfig().heads['dagger-sword'],
+    headBounds,api.settings('hachutuTorchStaff','dagger-sword'),swordMoved,junctions);
+  assert(withBridge.width>=withoutBridge.width && withBridge.height>=withoutBridge.height,
+    'composite output bounds include scaled/translated operations in addition to the head');
+  const stamped=new Uint8Array(120*120), fill=window.ModularWeaponBridgeFill;
+  fill.stampStroke(stamped,120,120,{r:5,rX:18,rY:3,points:[[55,55],[65,55]]});
+  assert.equal(stamped[55*120+80],1,'X radius visibly expands with X rig scale');
+  assert.equal(stamped[65*120+60],0,'Y radius stays compact under reduced Y rig scale');
+  assert.deepEqual(api.getConfig().recipes,riggedDraft.recipes,
+    'scaling rig must never modify shared authored recipe source data');
   console.log('Modular layering: transformed actual raster sample positions, original and cloned rig controls, saved drafts, revision cache and editor preview passed.');
 }
 
