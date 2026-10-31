@@ -16,7 +16,7 @@ const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Extracts only the
 const renderStart = gameSource.indexOf('        c.pngRot ??= c.groupRot;'); // Start of the live creature plane-facing block.
 const renderEnd = gameSource.indexOf('        const planeDelta =', renderStart); // End before material/rig rendering dependencies.
 assert.ok(renderStart >= 0 && renderEnd > renderStart);
-const render = new Function('window', 'c', 'grp', 'rawTargetRotY', 'cameraRelativeCreaturePerps', 'dt', 'angleDiff', 'kickPoseHeld', gameSource.slice(renderStart, renderEnd)); // Executes the real branch used by wildlife, mounts and companions.
+const render = new Function('window', 'c', 'grp', 'rawTargetRotY', 'cameraRelativeCreaturePerps', 'dt', 'angleDiff', 'kickPoseHeld', 'const headtakerOwnsFacing = false;\n' + gameSource.slice(renderStart, renderEnd)); // This fixture tests animals outside the scoped Headtaker grapple.
 function step(c, raw = 0, travel = true) {
   if (travel && Number.isFinite(c.x) && Number.isFinite(c.y)) { c.x += (c.vx || 0) / 60; c.y += (c.vy || 0) / 60; }
   clockMs += 1000 / 60;
