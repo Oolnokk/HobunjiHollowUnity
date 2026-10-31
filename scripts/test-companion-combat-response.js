@@ -42,14 +42,24 @@ assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), far, 'hidden a
 far._downed = true;
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), null, 'downed, out-of-range and herbivore targets are excluded');
 assert.equal(R.debugSnapshot(pet).target, null, 'mobile diagnostics clear after disengaging');
+const defender = { id: 'self-threat', x: 245, y: 0, health: 20, areaId: 'forest', targetCreature: pet };
+pet.x = 240; // Companion is temporarily far from the master, so only a nearby attack should trigger self-defense.
+enemies.add(defender);
+assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), defender, 'pet responds to an attacker on itself even beyond master alert radius');
+defender.targetCreature = null;
+assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), null, 'pet disengages if the distant enemy stops threatening it');
+pet.x = 0;
+
 
 assert.equal(R.shouldRestartApproach({ mode: 'backingUp' }, 105, 100), false, 'minor range drift keeps a timed retreat');
 assert.equal(R.shouldRestartApproach({ mode: 'backingUp' }, 110, 100), true, 'escaped enemy immediately restarts pursuit');
 assert.equal(R.shouldRestartApproach({ mode: 'active' }, 150, 100), false, 'only backup-phase movement is interrupted');
+assert.equal(R.shouldRestartApproach({ mode: 'backingUp' }, 50, 100, true), true, 'owner attacked during backup causes an immediate response');
+
 
 assert.match(game, /CompanionCombatResponse\.chooseTarget\(c, master, hostileObjects, currentArea, ALERT_RANGE_PX\)/,
   'live AI uses the shared priority selector');
-assert.match(game, /CompanionCombatResponse\?\.shouldRestartApproach\?\.\(st, dist, def\.attackRangePx\)/,
+assert.match(game, /CompanionCombatResponse\?\.shouldRestartApproach\?\.\(st, dist, def\.attackRangePx,/,
   'live AI abandons unproductive backup movement');
 assert.match(game, /rescueActive[\s\S]{0,1000}c\._stage = null/,
   'stale rescue targeting does not cause ordinary combat state to be abandoned');
