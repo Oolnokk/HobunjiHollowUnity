@@ -1,158 +1,335 @@
-// Authored wall-root ambush preview. Anchors are picked once from generated root tube nodes;
-// update() never searches scenery, moves anchors, or mutates the source vegetation.
+// Root Growth Author: fixed hiding places in real wall/floor roots. Root-like
+// branch geometry, three rigged digits, steerable arm and an author-only capture.
 ((root)=>{
   'use strict';
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function seeded(seed){
     let state=2166136261;for(const ch of String(seed))state=Math.imul(state^ch.charCodeAt(0),16777619)>>>0;
     return ()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
   }
-  function findWallRootNodes(THREE,room,rootLayers,seed,count=6){
-    if(!room?.model||!Array.isArray(rootLayers))return [];
-    const rng=seeded(seed),worldCenter=new THREE.Box3().setFromObject(room.model).getCenter(new THREE.Vector3());
-    const wallBoxes=[];room.model.updateWorldMatrix(true,true);
-    room.model.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.ruinPreviewRole==='wall'){
-      const bounds=new THREE.Box3().setFromObject(mesh);
-      if(!bounds.isEmpty())wallBoxes.push(bounds);
-    }});
-    const candidates=[];const point=new THREE.Vector3(),center=new THREE.Vector3(),seen=new Set();
-    for(const layer of rootLayers){
-      layer?.updateWorldMatrix?.(true,true);
-      layer?.traverse?.(mesh=>{
+  function sourceNodes(T,room,layers,seed){
+    if(!room?.model||!Array.isArray(layers))return [];
+    room.model.updateWorldMatrix(true,true);
+    const center=new T.Box3().setFromObject(room.model).getCenter(new T.Vector3());
+    const walls=[],floors=[];
+    room.model.traverse(mesh=>{
+      if(!mesh.isMesh)return;
+      if(mesh.userData?.ruinPreviewRole==='wall')walls.push(new T.Box3().setFromObject(mesh));
+      if(mesh.userData?.ruinPreviewRole==='floor')floors.push(new T.Box3().setFromObject(mesh));
+    });
+    const random=seeded(seed),seen=new Set(),results=[];
+    const point=new T.Vector3(),world=new T.Vector3(),future=new T.Vector3(),prior=new T.Vector3();
+    const ringPoint=(attr,index,target)=>{
+      target.set(0,0,0);
+      for(let side=0;side<5;side++){
+        const i=index*6+side;
+        target.x+=attr.getX(i)*.2;target.y+=attr.getY(i)*.2;target.z+=attr.getZ(i)*.2;
+      }
+      return target;
+    };
+    for(const item of layers){
+      const layer=item?.layer||item,role=item?.role==='floor'?'floor':'wall';
+      if(!layer?.traverse)continue;
+      layer.updateWorldMatrix(true,true);
+      layer.traverse(mesh=>{
         if(!mesh.isMesh||!mesh.geometry)return;
-        const position=mesh.geometry.getAttribute('position');
-        if(!position||position.count<12||position.count%6)return; // Native root Wrap tubes have six vertices per ring.
-        for(let ring=2;ring<position.count/6-2;ring+=18){
-          point.set(0,0,0);
-          for(let spoke=0;spoke<5;spoke++){
-            const id=ring*6+spoke;
-            point.x+=position.getX(id)*.2;point.y+=position.getY(id)*.2;point.z+=position.getZ(id)*.2;
-          }
-          mesh.localToWorld(point);room.model.worldToLocal(point);
-          if(point.y<room.floorY+.65||point.y>room.floorY+2.5)continue;
-          let distance=Infinity;for(const bounds of wallBoxes){
-            const worldPoint=room.model.localToWorld(point.clone());
-            distance=Math.min(distance,bounds.distanceToPoint(worldPoint));
-          }
-          if(distance>.46)continue; // A hand must have an actual wall-root node as its origin.
-          const key=Math.round(point.x*3)+','+Math.round(point.y*3)+','+Math.round(point.z*3);
+        const attr=mesh.geometry.getAttribute('position'),rings=attr?.count/6;
+        if(!attr||attr.count%6||rings<8)return; // Existing Temple root tubes are five-sided, sixth seam vertex.
+        const step=Math.max(7,Math.floor(rings/70));
+        for(let ring=3;ring<rings-3;ring+=step){
+          ringPoint(attr,ring,point);
+          mesh.localToWorld(world.copy(point));
+          const local=room.model.worldToLocal(world.clone());
+          if(local.y<(Number(room.floorY)||0)-.15||local.y>(Number(room.floorY)||0)+2.95)continue;
+          const surfaces=role==='floor'?floors:walls;
+          let nearest=Infinity;
+          for(const bounds of surfaces)nearest=Math.min(nearest,bounds.distanceToPoint(world));
+          if(nearest>(role==='floor'?.45:.48))continue;
+          const key=role+':'+Math.round(local.x*4)+','+Math.round(local.y*4)+','+Math.round(local.z*4);
           if(seen.has(key))continue;seen.add(key);
-          const direction=new THREE.Vector3(worldCenter.x-point.x,0,worldCenter.z-point.z);
-          if(direction.lengthSq()<.01)continue;
-          candidates.push({point:point.clone(),direction:direction.normalize(),key,rank:rng()});
+          const tangent=ringPoint(attr,ring+2,future).sub(ringPoint(attr,ring-2,prior)).transformDirection(mesh.matrixWorld);
+          const normal=role==='floor'?new T.Vector3(0,1,0):new T.Vector3(center.x-world.x,0,center.z-world.z).normalize();
+          if(normal.lengthSq()<.0001)normal.set(0,1,0);
+          const direction=normal.multiplyScalar(.84).addScaledVector(tangent,(random()-.45)*.58).normalize();
+          if(direction.lengthSq()<.0001)continue;
+          results.push({point:local,direction,role,sourceKey:key,rank:random()});
         }
       });
     }
-    candidates.sort((a,b)=>a.rank-b.rank);
-    const chosen=[];
-    for(const item of candidates){
-      if(chosen.some(other=>other.point.distanceToSquared(item.point)<3.24))continue;
-      chosen.push(item);
-      if(chosen.length>=Math.min(14,Math.max(1,Math.round(count))))break;
-    }
-    return chosen.map((node,i)=>({id:'hidden_root_node_'+(i+1),point:node.point,direction:node.direction,sourceKey:node.key}));
+    return results.sort((a,b)=>a.rank-b.rank);
   }
-  function makeSegment(T,material,radius,name){
-    const mesh=new T.Mesh(new T.CylinderGeometry(radius*.66,radius,1,6,1),material);
-    mesh.name=name;mesh.castShadow=false;mesh.receiveShadow=false;return mesh;
-  }
-  function createHand(T,anchor,material){
-    const group=new T.Group();group.name='Hidden branch snare · '+anchor.id;
-    group.userData={hiddenRootNode:anchor.sourceKey,rootSnareId:anchor.id};
-    const stem=[0,1,2].map(i=>{const mesh=makeSegment(T,material,[.07,.056,.042][i],'Growing wooden arm '+i);group.add(mesh);return mesh;});
-    const palm=new T.Group();palm.name='Creeping palm';
-    const palmShape=new T.Mesh(new T.SphereGeometry(1,7,5),material);
-    palmShape.scale.set(.23,.17,.085);palm.add(palmShape);group.add(palm);
-    const fingers=[];
-    for(let i=0;i<5;i++){
-      const fingerRoot=new T.Group();fingerRoot.name=i===4?'Hooking thumb':'Root finger '+(i+1);
-      const x=i===4?-.23:(i-1.5)*.115;
-      fingerRoot.position.set(x,i===4?-.04:.13,0);
-      const bone=makeSegment(T,material,i===4?.044:.035,'Finger branch');
-      bone.position.y=i===4?.09:.16;bone.scale.y=i===4?.20:.34;fingerRoot.add(bone);
-      const joint=new T.Group();joint.position.y=i===4?.19:.31;
-      const tip=makeSegment(T,material,.022,'Claw tip');
-      tip.position.y=.10;tip.scale.y=.20;joint.add(tip);fingerRoot.add(joint);
-      palm.add(fingerRoot);fingers.push({fingerRoot,joint,index:i});
+  function findWallRootNodes(T,room,layers,seed,count=6){
+    const candidates=sourceNodes(T,room,layers,seed),chosen=[];
+    for(const candidate of candidates){
+      if(chosen.some(other=>other.point.distanceToSquared(candidate.point)<1.65))continue;
+      chosen.push(candidate);
+      if(chosen.length>=clamp(Math.round(Number(count)||6),1,14))break;
     }
-    const aim=new T.Vector3(),a=new T.Vector3(),b=new T.Vector3(),c=new T.Vector3(),
-      temp=new T.Vector3(),up=new T.Vector3(0,1,0);
-    function draw(progress,target,reach,curl){
-      if(progress<=.001){group.visible=false;return;}
-      group.visible=true;const outward=anchor.direction;
-      const toward=temp.copy(target).sub(anchor.point);
-      toward.y=0;if(toward.lengthSq()>.001)toward.normalize();
-      const direction=aim.copy(outward).multiplyScalar(.62).addScaledVector(toward,.38).normalize();
-      const distance=Math.max(0,reach)*progress;
-      a.copy(anchor.point);b.copy(a).addScaledVector(direction,distance*.46);b.y+=Math.sin(progress*Math.PI)*.12;
-      c.copy(a).addScaledVector(direction,distance);c.y+=Math.sin(progress*Math.PI)*.07;
-      const elbow=new T.Vector3().lerpVectors(b,c,.48);elbow.y+=.055*Math.sin(progress*Math.PI);
-      const points=[a,b,elbow,c];
+    return chosen.map((p,index)=>({id:'hidden_root_node_'+(index+1),point:p.point,direction:p.direction,
+      role:p.role,sourceKey:p.sourceKey}));
+  }
+  function branchMesh(T,foliage,material,length,diameter,seed,name){
+    if(!foliage?.buildLogMesh)throw new Error('Shared FoliageGenerator.buildLogMesh is required for branch hands.');
+    // Build at final length with the game's wonky branch spine and bark noise.
+    const mesh=foliage.buildLogMesh({length,logDiameter:diameter,radialSegments:6,ringSegments:8,
+      trunkWonk:.14,trunkWonkScale:1.5,trunkTaper:.67,trunkNoise:.2,trunkNoiseOctaves:2,
+      useWoodAtlas:false,material,seed});
+    mesh.name=name;mesh.castShadow=false;mesh.receiveShadow=false;mesh.layers.enable(1);
+    return mesh;
+  }
+  function makeHand(T,foliage,anchor,material,seed){
+    const group=new T.Group();group.name='Hidden root snare '+anchor.id;
+    group.userData={hiddenRootNode:anchor.sourceKey,rootSnareId:anchor.id,origin:anchor.role};
+    const axis=new T.Vector3(1,0,0),up=new T.Vector3(0,1,0);
+    const arm=[];
+    for(let i=0;i<3;i++){
+      const length=[.6,.51,.4][i],pivot=new T.Group();
+      pivot.name='Steerable natural arm joint '+i;group.add(pivot);
+      const mesh=branchMesh(T,foliage,material,length,[.145,.11,.083][i],seed+':arm:'+i,'Branch arm '+i);
+      pivot.add(mesh);arm.push({pivot,mesh,length});
+    }
+    const palm=new T.Group();palm.name='Palm fork (branch node)';group.add(palm);
+    const knot=branchMesh(T,foliage,material,.25,.14,seed+':fork','Small palm branch cluster');
+    knot.position.x=.04;palm.add(knot);
+    const fingers=[],specs=[
+      {role:'finger',x:-.062,z:-.03,length:.38,tip:.22,spread:-.4},
+      {role:'finger',x:.073,z:.027,length:.36,tip:.21,spread:.38},
+      {role:'thumb',x:-.055,z:.085,length:.29,tip:.18,spread:-1.08},
+    ]; // One junction forks into precisely two fingers and one opposing thumb.
+    for(let i=0;i<specs.length;i++){
+      const spec=specs[i],knuckle=new T.Group();knuckle.name=spec.role+' base hinge '+i;
+      knuckle.position.set(.135,spec.x,spec.z);palm.add(knuckle);
+      const first=branchMesh(T,foliage,material,spec.length,.065-i*.006,seed+':digit:'+i+':1','Natural '+spec.role+' segment');
+      first.position.x=spec.length*.5;knuckle.add(first);
+      const bend=new T.Group();bend.name=spec.role+' flexible branch joint';bend.position.x=spec.length;knuckle.add(bend);
+      const tip=branchMesh(T,foliage,material,spec.tip,.037-i*.003,seed+':digit:'+i+':2','Tapered '+spec.role+' tip');
+      tip.position.x=spec.tip*.5;bend.add(tip);
+      fingers.push({knuckle,bend,spec});
+    }
+    const lastAim=anchor.direction.clone(),palmPosition=anchor.point.clone();
+    const collider=new T.Sphere(palmPosition.clone(),.35); // Authored grasp trigger around the open branch fork.
+    const scratch=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()];
+    const delta=new T.Vector3(),desired=new T.Vector3(),side=new T.Vector3();
+    let curlAmount=0,hasDrawn=false;
+    function draw(dt,progress,target,reach,curl,locked=false){
+      if(progress<=.0001&&!locked){group.visible=false;return;}
+      group.visible=true;hasDrawn=true;
+      if(!locked){
+        desired.copy(target).sub(anchor.point);
+        if(desired.lengthSq()<.00001)desired.copy(anchor.direction);
+        desired.normalize();
+        // Reroute *all three* arm joints toward the target even halfway
+        // through extension, retaining a bias toward the original root.
+        desired.multiplyScalar(.91).addScaledVector(anchor.direction,.09).normalize();
+        lastAim.lerp(desired,clamp(dt*11,0,1)).normalize();
+      }
+      const distance=clamp(reach,0,4)*progress,curve=.15*Math.sin(Math.PI*progress);
+      side.crossVectors(lastAim,up);if(side.lengthSq()<.001)side.set(1,0,0);side.normalize();
+      scratch[0].copy(anchor.point);
+      scratch[1].copy(anchor.point).addScaledVector(lastAim,distance*.36).addScaledVector(side,curve);
+      scratch[2].copy(anchor.point).addScaledVector(lastAim,distance*.71).addScaledVector(side,curve*.6);
+      scratch[3].copy(anchor.point).addScaledVector(lastAim,distance);
       for(let i=0;i<3;i++){
-        const from=points[i],to=points[i+1],delta=new T.Vector3().subVectors(to,from);
-        stem[i].position.copy(from).add(to).multiplyScalar(.5);
-        stem[i].quaternion.setFromUnitVectors(up,delta.clone().normalize());
-        stem[i].scale.y=Math.max(.001,delta.length());
-        stem[i].visible=delta.lengthSq()>.00001;
+        const part=arm[i],a=scratch[i],b=scratch[i+1];
+        delta.subVectors(b,a);const length=delta.length();
+        part.pivot.position.copy(a);
+        if(length>.00001){
+          part.pivot.quaternion.setFromUnitVectors(axis,delta.multiplyScalar(1/length));
+          // Root segments are generated once with real foliage noise; the
+          // bone length changes only during the growth/retraction animation.
+          part.mesh.position.x=length*.5;part.mesh.scale.x=Math.max(.001,length/part.length);
+        }
+        part.pivot.visible=length>.002;
       }
-      palm.position.copy(c);palm.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),direction);
-      palm.scale.setScalar(.25+.75*Math.min(1,progress*2));
+      palmPosition.copy(scratch[3]);collider.center.copy(palmPosition);
+      palm.position.copy(palmPosition);
+      palm.quaternion.setFromUnitVectors(axis,lastAim);
+      palm.scale.setScalar(.32+.68*clamp(progress*4,0,1));
+      curlAmount=clamp(curl,0,1);
       for(const finger of fingers){
-        const t=finger.index===4?-1:1;
-        finger.fingerRoot.rotation.z=t*(.12+curl*(finger.index===4?.78:.48));
-        finger.joint.rotation.x=-curl*1.12;
+        const {spec,knuckle,bend}=finger;
+        const sign=spec.role==='thumb'?-1:1;
+        // Approach = open; after an actual collider hit = full wrap.
+        knuckle.rotation.y=spec.spread*(1-curlAmount)+sign*curlAmount*.16;
+        knuckle.rotation.z=sign*curlAmount*.72;
+        bend.rotation.z=sign*curlAmount*1.14;
       }
     }
-    group.visible=false;return {group,draw,anchor};
+    group.visible=false;
+    return {group,draw,collider,anchor,palmPosition,get hasDrawn(){return hasDrawn;},
+      get digitCount(){return fingers.length;},get digitRoles(){return fingers.map(f=>f.spec.role);},
+      get fingerCurl(){return fingers.map(f=>Math.abs(f.bend.rotation.z));},
+      get aim(){return lastAim.clone();}};
   }
-  function create({THREE,room,wallRootLayers,seed='root-snare',count=6,triggerRadius=2.5,reach=1.45,extendSpeed=2.4,retractSpeed=1.1,showNodes=false}={}){
-    if(!THREE||!room?.model)throw new TypeError('Root snare preview requires THREE and a prepared author ruin room.');
-    const anchors=findWallRootNodes(THREE,room,wallRootLayers,seed,count);
-    const group=new THREE.Group();group.name='Wall-bound root snare hands';
-    let sourceMaterial=null; // Match the exact authored Temple root texture and tint, including custom root colour edits.
-    for(const layer of wallRootLayers||[]){layer?.traverse?.(mesh=>{if(!sourceMaterial&&mesh.isMesh&&mesh.material)sourceMaterial=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;});if(sourceMaterial)break;}
-    const material=sourceMaterial?.clone?.()||new THREE.MeshBasicMaterial({color:0x24211d,side:THREE.DoubleSide});
-    material.side=THREE.DoubleSide;
-    const markerMaterial=new THREE.MeshBasicMaterial({color:0xffae6b,depthTest:false});
-    const entries=anchors.map(anchor=>{
-      const hand=createHand(THREE,anchor,material);hand.group.traverse(mesh=>{if(mesh.isMesh)mesh.layers.enable(1);});group.add(hand.group); // Share the editor's root silhouette outline pass.
-      const marker=new THREE.Mesh(new THREE.SphereGeometry(.065,7,5),markerMaterial);
-      marker.position.copy(anchor.point);marker.visible=!!showNodes;marker.name='Show hidden branch node '+anchor.id;group.add(marker);
-      return {hand,marker,progress:0,cooldown:0,lunges:0,state:'dormant'};
+  function makeFeedingRoots(T,foliage,anchor,sourceNodes,material,seed){
+    const roots=new T.Group();roots.name='Feeding roots closing around captured character';
+    const nearby=sourceNodes.filter(x=>x.point.distanceToSquared(anchor.point)<4.8 && x.sourceKey!==anchor.sourceKey)
+      .sort((a,b)=>a.point.distanceToSquared(anchor.point)-b.point.distanceToSquared(anchor.point));
+    const sources=(nearby.length?nearby:[anchor]).slice(0,3),strands=[];
+    for(let index=0;index<3;index++){
+      const source=sources[index%sources.length],segments=[];
+      for(let s=0;s<5;s++){
+        const length=.35,pivot=new T.Group();roots.add(pivot);
+        const mesh=branchMesh(T,foliage,material,length,.072-s*.009,seed+':feed:'+index+':'+s,'Closing natural root '+index+' segment '+s);
+        pivot.add(mesh);segments.push({pivot,mesh,length});
+      }
+      strands.push({source,segments,phase:index*2*Math.PI/3});
+    }
+    const axis=new T.Vector3(1,0,0),delta=new T.Vector3(),a=new T.Vector3(),b=new T.Vector3();
+    function update(progress,center){
+      roots.visible=progress>.002;
+      const grow=clamp(progress,0,1);
+      for(const strand of strands){
+        const start=strand.source.point;
+        for(let i=0;i<strand.segments.length;i++){
+          const t0=i/5,t1=(i+1)/5;
+          const point=(t,out)=>{const arc=t*1.65*Math.PI*grow+strand.phase;
+            const radius=.57*(1-.66*grow)*(1-t*.2);
+            const blend=clamp(t*grow*2.5,0,1);
+            out.copy(start).lerp(center,blend);
+            out.x+=Math.cos(arc)*radius*blend;out.z+=Math.sin(arc)*radius*blend;
+            out.y+=(t-.5)*.75*grow*blend;
+            return out;};
+          point(t0,a);point(t1,b);delta.subVectors(b,a);
+          const length=delta.length(),part=strand.segments[i];
+          part.pivot.position.copy(a);part.pivot.visible=length>.004&&grow>.002;
+          if(length>.0001){
+            part.pivot.quaternion.setFromUnitVectors(axis,delta.multiplyScalar(1/length));
+            part.mesh.position.x=length*.5;part.mesh.scale.x=Math.max(.001,length/part.length);
+          }
+        }
+      }
+    }
+    roots.visible=false;return {group:roots,update,sourceCount:sources.length};
+  }
+  function create({THREE,room,rootLayers,wallRootLayers,seed='root-snare',count=6,triggerRadius=2.5,
+    reach=1.45,extendSpeed=2.4,retractSpeed=1.1,showNodes=false,foliage}={}){
+    const T=THREE;
+    if(!T||!room?.model)throw new TypeError('A prepared ruin is required.');
+    const sources=rootLayers||wallRootLayers||[],builder=foliage||root.FoliageGenerator;
+    if(!builder?.buildLogMesh)throw new Error('Root snare needs FoliageGenerator.buildLogMesh.');
+    const nodes=sourceNodes(T,room,sources,seed),anchors=findWallRootNodes(T,room,sources,seed,count);
+    const group=new T.Group();group.name='Wall and floor root snares';
+    let sourceMaterial=null;
+    for(const item of sources){
+      (item?.layer||item)?.traverse?.(mesh=>{
+        if(!sourceMaterial&&mesh.isMesh&&mesh.material)sourceMaterial=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
+      });
+      if(sourceMaterial)break;
+    }
+    const material=sourceMaterial?.clone?.()||new T.MeshBasicMaterial({color:0x24211d});
+    material.side=T.DoubleSide;
+    const markerMat=new T.MeshBasicMaterial({color:0xffae6b,depthTest:false});
+    const rng=seeded(seed+':hands');
+    const entries=anchors.map((anchor,index)=>{
+      const hand=makeHand(T,builder,anchor,material,seed+':'+index);group.add(hand.group);
+      const marker=new T.Mesh(new T.SphereGeometry(.062,7,5),markerMat);
+      marker.name='Show hidden branch node '+anchor.id;marker.position.copy(anchor.point);marker.visible=!!showNodes;group.add(marker);
+      return {hand,marker,feeding:null,progress:0,reach:0,cooldown:0,state:'dormant',
+        timer:0,lunges:0,aims:0,previousAim:hand.aim,consumed:0,swallowCenter:anchor.point.clone()};
     });
-    let activated=0,closed=false;
-    const targetPoint=new THREE.Vector3();
-    const bound=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-    const settings={count,triggerRadius:bound(Number(triggerRadius)||2.5,.5,7),reach:bound(Number(reach)||1.45,.3,4),
-      extendSpeed:bound(Number(extendSpeed)||2.4,.15,12),retractSpeed:bound(Number(retractSpeed)||1.1,.15,12)};
-    return {group,anchors,settings,update(dt,target){
+    const settings={triggerRadius:clamp(Number(triggerRadius)||2.5,.5,7),
+      reach:clamp(Number(reach)||1.45,.3,4),extendSpeed:clamp(Number(extendSpeed)||2.4,.15,12),
+      retractSpeed:clamp(Number(retractSpeed)||1.1,.15,12)};
+    const targetPoint=new T.Vector3(),scratch=new T.Vector3(),carry=new T.Vector3();
+    let caught=null,closed=false,lunges=0,consumed=0;
+    function actorOf(target){return target?.group||target;}
+    function capture(entry,target,actor){
+      caught={entry,target,actor,startingScale:actor.scale.clone(),startingPosition:actor.position.clone(),
+        startingVisibility:actor.visible,elapsed:0};
+      target.setRunning?.(false); // Stop the procedural walker while the palm owns its trajectory.
+      entry.state='captured';entry.timer=0;entry.progress=Math.max(entry.progress,.15);
+      if(!entry.feeding){
+        entry.feeding=makeFeedingRoots(T,builder,entry.hand.anchor,nodes,material,seed+':feed:'+entry.hand.anchor.id);
+        group.add(entry.feeding.group);
+      }
+    }
+    function release(){
+      if(!caught)return;
+      const {actor,target,startingScale,startingVisibility}=caught;
+      actor.scale.copy(startingScale);actor.visible=startingVisibility;
+      target.resetAfterSnare?.() || target.chooseTarget?.(); // Give the author a repeatable prey after consumption.
+      target.setRunning?.(true);
+      caught=null;
+    }
+    function update(dt,target){
       if(closed||!target)return false;
-      dt=bound(Number(dt)||0,0,.05);if(!dt)return false;
-      targetPoint.copy(target.position||target);targetPoint.y=targetPoint.y+1.0;
+      const actor=actorOf(target);if(!actor?.position)return false;
+      dt=clamp(Number(dt)||0,0,.05);if(!dt)return false;
+      targetPoint.copy(actor.position).add(new T.Vector3(0,1,0));
       let changed=false;
       for(const entry of entries){
-        const {hand}=entry,anchor=hand.anchor;
-        const delta=targetPoint.clone().sub(anchor.point),horizontal=Math.hypot(delta.x,delta.z);
-        const inFront=delta.x*anchor.direction.x+delta.z*anchor.direction.z>-.1;
-        const near=inFront&&horizontal<settings.triggerRadius&&Math.abs(delta.y)<1.85;
-        const remain=inFront&&horizontal<settings.triggerRadius+.55&&Math.abs(delta.y)<2.1;
-        entry.cooldown=Math.max(0,entry.cooldown-dt);
-        if(near&&entry.cooldown<=0&&entry.progress<.02){entry.lunges++;activated++;entry.cooldown=2.3;entry.state='snatching';}
-        const targetProgress=near||(remain&&entry.progress>.02)?1:0;
-        const previous=entry.progress;
-        entry.progress=bound(entry.progress+(targetProgress?settings.extendSpeed:-settings.retractSpeed)*dt,0,1);
-        if(entry.progress<=.01&&!remain)entry.state='dormant';
-        else if(!remain)entry.state='retracting';
-        else if(entry.progress>=.99)entry.state='grasping';
-        const curl=bound((settings.reach-horizontal)*1.6+.35,0,1)*entry.progress;
-        if(entry.progress>.001||previous>.001){hand.draw(entry.progress,targetPoint,Math.min(settings.reach,Math.max(.22,horizontal+.24)),curl);changed=true;}
+        const hand=entry.hand,anchor=hand.anchor;
+        entry.timer+=dt;entry.cooldown=Math.max(0,entry.cooldown-dt);
+        if(caught&&caught.entry!==entry)continue;
+        const nearDistance=scratch.subVectors(targetPoint,anchor.point).length();
+        const near=nearDistance<settings.triggerRadius;
+        if(!caught && (entry.state==='dormant'||entry.state==='retracting') &&near&&entry.cooldown===0){
+          entry.state='approaching';entry.lunges++;lunges++;entry.timer=0;entry.reach=Math.max(.35,nearDistance);
+        }
+        if(entry.state==='approaching'){
+          const priorAim=hand.aim;
+          entry.progress=clamp(entry.progress+dt*settings.extendSpeed,0,1);
+          entry.reach=Math.min(settings.reach,Math.max(.2,nearDistance));
+          hand.draw(dt,entry.progress,targetPoint,entry.reach,0,false);
+          if(hand.aim.distanceToSquared(priorAim)>.0001)entry.aims++;
+          // Actual collision, not merely coming within the detection radius.
+          if(nearDistance<=settings.reach+.58 &&
+            hand.collider.center.distanceTo(targetPoint)<=hand.collider.radius+.28){
+            capture(entry,target,actor);
+          }else if(nearDistance>settings.triggerRadius+.55){
+            entry.state='retracting';entry.cooldown=.8;
+          }
+        }
+        if(entry.state==='retracting'){
+          entry.progress=clamp(entry.progress-dt*settings.retractSpeed,0,1);
+          hand.draw(dt,entry.progress,targetPoint,entry.reach,0,true);
+          if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;}
+        }else if(entry.state==='captured'&&caught?.entry===entry){
+          // The branch closes its three digits, then draws the captive home.
+          entry.progress=clamp(entry.progress-dt*settings.retractSpeed*.72,0,1);
+          hand.draw(dt,entry.progress,targetPoint,entry.reach,1,true);
+          carry.copy(hand.palmPosition).addScaledVector(hand.aim,.18);
+          carry.y-=.85; // Character's standing root is below the captured torso.
+          actor.position.lerp(carry,clamp(dt*13,0,1));
+          if(entry.progress<=.06 && actor.position.distanceToSquared(carry)<.05){
+            entry.state='devouring';entry.timer=0;
+            entry.swallowCenter.copy(anchor.point);entry.swallowCenter.y+=.2;
+          }
+        }else if(entry.state==='devouring'&&caught?.entry===entry){
+          // Neighboring *existing* root nodes seed a curling enclosure; prey
+          // disappears only once hidden inside the roots, never on contact.
+          const swallow=clamp(entry.timer/1.65,0,1);
+          entry.feeding?.update(swallow,entry.swallowCenter);
+          actor.position.lerp(entry.swallowCenter,clamp(dt*6,0,1));
+          const eased=swallow*swallow*(3-2*swallow);
+          actor.scale.copy(caught.startingScale).multiplyScalar(Math.max(.001,1-eased));
+          hand.draw(dt,.06,entry.swallowCenter,entry.reach,1,true);
+          if(swallow>=1){
+            actor.visible=false;entry.state='digesting';entry.timer=0;consumed++;entry.consumed++;
+          }
+        }else if(entry.state==='digesting'){
+          if(entry.timer>=.8){
+            entry.feeding?.update(0,entry.swallowCenter);
+            hand.draw(dt,0,entry.swallowCenter,0,0,true);hand.group.visible=false;
+            entry.progress=0;entry.cooldown=2.4;entry.state='dormant';entry.timer=0;
+            release();
+          }
+        }
+        changed=true;
       }
       return changed;
-    },setNodeVisibility(value){for(const entry of entries)entry.marker.visible=!!value;},
-      diagnostics(){return {anchors:anchors.map(a=>({id:a.id,sourceRootNode:a.sourceKey,position:a.point.toArray()})),
-        active:entries.filter(e=>e.progress>.03).length,lungeCount:activated,
-        states:entries.map(e=>({node:e.hand.anchor.id,state:e.state,progress:+e.progress.toFixed(3),lunges:e.lunges})),settings:{...settings}};},
-      dispose(){if(closed)return;closed=true;group.parent?.remove(group);group.traverse(o=>{if(o.geometry)o.geometry.dispose();});material.dispose();markerMaterial.dispose();}
-    };
+    }
+    return {group,anchors,settings,update,setNodeVisibility(v){for(const e of entries)e.marker.visible=!!v;},
+      diagnostics(){return {anchors:anchors.map(a=>({id:a.id,role:a.role,sourceRootNode:a.sourceKey,position:a.point.toArray()})),
+        active:entries.filter(e=>e.progress>.03).length,lungeCount:lunges,consumed,
+        caught:!!caught,states:entries.map(e=>({node:e.hand.anchor.id,role:e.hand.anchor.role,state:e.state,
+          progress:+e.progress.toFixed(3),lunges:e.lunges,reroutes:e.aims,digits:e.hand.digitCount,
+          digitRoles:e.hand.digitRoles,wrapped:e.hand.fingerCurl.every(v=>v>.7),consumed:e.consumed})),settings:{...settings}};},
+      dispose(){if(closed)return;closed=true;release();group.parent?.remove(group);
+        group.traverse(mesh=>{if(mesh.geometry)mesh.geometry.dispose();});
+        material.dispose();markerMat.dispose();
+      }};
   }
-  root.RootSnareHands=Object.freeze({version:1,seeded,findWallRootNodes,create});
+  root.RootSnareHands=Object.freeze({version:2,seeded,sourceNodes,findWallRootNodes,create});
 })(typeof window!=='undefined'?window:globalThis);
