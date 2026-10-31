@@ -17,8 +17,7 @@ const ctx={window:{THREE:{}},console};
 vm.createContext(ctx);
 vm.runInContext(terrain,ctx,{filename:'zone-terrain-features.js'});
 const wilderness=ctx.window.ZoneTerrainFeatures;
-wilderness.init({NORMAL_TOP:13,PLATEAU_UNIT:3,TileType:{ROCK:'rock'}});
-wilderness.init=()=>{throw new Error('Ruin generation must never reinitialize live wilderness dependencies.');};
+wilderness.init=()=>{throw new Error('Ruin generation must never initialize wilderness dependencies.');}; // Standalone preview starts without a terrain scene or init call.
 vm.runInContext(shared,ctx,{filename:'stone-age-ruin-scenery.js'});
 const scenery=ctx.window.StoneAgeRuinScenery;
 const layers=temple.surfaceGrowth.filter(layer=>layer.kind==='roots'||layer.kind==='vines');
