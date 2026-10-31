@@ -119,8 +119,22 @@ assert.equal(pants.cursed, undefined);
 assert.deepEqual({ ...circlet.cursed }, { kind: 'circlet', dispelBy: 'garanki', originalLabel: 'Tanged Circlet' }, 'lich circlets are looted cursed, to be dispelled by Garanki');
 assert.equal(circlet.label, 'Cursed Tanged Circlet');
 assert.equal(circlet.smithTreatment.paintHex, '#1a8cff', 'the painted plating is retained');
-assert.deepEqual({ ...wrap.cursed, originalLabel: undefined }, { kind: 'mask', dispelBy: 'hunundi', originalLabel: undefined }, 'face coverings are looted cursed, for Father Hunundi later');
-assert.match(wrap.label, /^Cursed /);
+assert.equal(wrap.cursed, undefined, 'a lich\u2019s face wrap is an ordinary garment: only circlets (and Maskbound masks) are cursed');
+assert.equal(wrap.label.startsWith('Cursed'), false);
+// Maskbound masks are the cursed masks (Father Hunundi, later) and keep the exact random pattern they were generated with.
+lootWindow.isPortraitMaskCosmeticId = (id) => id === 'hachutu_binding_mask_ii';
+const maskPatterns = [{ frameScale: 0.3, frameRotationDeg: 77.7, inkColorHex: '#33ddaa', repoPatternId: 'hachutu_a' }, { frameScale: 0.6, frameRotationDeg: 301.2, inkColorHex: '#aa44ff', repoPatternId: 'hachutu_b' }];
+const maskbound = lootContext.loot({
+  maskboundTroop: 'sentinel', equippedCosmetics: ['hachutu_binding_mask_ii', 'ragged_hood'],
+  cosmeticSlots: { hachutu_binding_mask_ii: 'mask', ragged_hood: 'hood' }, appliedDyes: {},
+}, { avatarRef: { profile: { bodyColors: { __hobunjiWovenClothing: [{ slot: 'mask', baseCosmeticId: 'hachutu_binding_mask_ii', weaving: { patterns: maskPatterns } }] } } } });
+const bindingMask = maskbound.find(item => item.cosmeticId === 'hachutu_binding_mask_ii'), maskHood = maskbound.find(item => item.cosmeticId === 'ragged_hood');
+assert.deepEqual({ ...bindingMask.cursed, originalLabel: undefined }, { kind: 'mask', dispelBy: 'hunundi', originalLabel: undefined }, 'a Maskbound\u2019s mask loots cursed, to be lifted by Father Hunundi');
+assert.match(bindingMask.label, /^Cursed /);
+assert.deepEqual(JSON.parse(JSON.stringify(bindingMask.weaving.patterns)), maskPatterns, 'the looted mask keeps its exact random patterns, frames and ink colors');
+assert.equal(maskHood.cursed, undefined, 'a Maskbound\u2019s hood is ordinary');
+const wornByBandit = lootContext.loot({ equippedCosmetics: ['hachutu_binding_mask_ii'], cosmeticSlots: { hachutu_binding_mask_ii: 'mask' }, appliedDyes: {} });
+assert.equal(wornByBandit[0].cursed, undefined, 'only Maskbound masks are cursed');
 const bandit = lootContext.loot({ equippedCosmetics: ['tangedcirclet'], cosmeticSlots: { tangedcirclet: 'hat' }, appliedDyes: {} });
 assert.equal(bandit[0].cursed, undefined, 'ordinary enemies’ circlets are not cursed');
 

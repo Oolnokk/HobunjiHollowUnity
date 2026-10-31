@@ -1279,7 +1279,8 @@
     return parts;
   }
 
-  function banditWornClothingItems(roster) {
+  // `source` (optional, the dead entity) lets a Maskbound's mask keep the exact random procedural pattern it was generated with.
+  function banditWornClothingItems(roster, source = null) {
     const catalog = deps.getDyeCatalog();
     const items = [];
     const forcedBySlot = roster?.clothingPatterns?.forcedOverpassBySlot || {};
@@ -1306,17 +1307,18 @@
         sprite: deps.clothingSpriteForCosmetic(piece.id),
       };
       applyLootPattern(lootItem, forcedBySlot[slot], slot);
+      const maskPattern = slot === 'mask' ? (source?.avatarRef?.profile?.bodyColors?.__hobunjiWovenClothing || []).find(descriptor => descriptor?.slot === 'mask' && descriptor?.weaving) : null;
+      if (maskPattern) lootItem.weaving = JSON.parse(JSON.stringify(maskPattern.weaving)); // The worn mask's own generated primary + overpass patterns and ink colors.
       items.push(applyLootCurse(lootItem, lootCurseFor(roster, cosmeticId, slot)));
     }
     return items;
   }
 
-  // Liches' circlets and face coverings are cursed when looted: they cannot be worn until dispelled (Garanki for circlets, Father Hunundi for
-  // masks later). Mirrors how enchanted relic weapons are looted bound.
+  // Cursed on loot (cannot be worn until dispelled), like enchanted relic weapons looted bound: a lich's tanged circlet (Garanki dispels it) and a
+  // Maskbound's mask (Father Hunundi, later). A lich's other garments, including face wraps, are ordinary.
   function lootCurseFor(roster, cosmeticId, slot) {
-    if (!roster?.lichType && !roster?.specialLichId) return null;
-    if (/circlet/i.test(cosmeticId)) return { kind: 'circlet', dispelBy: 'garanki' };
-    if (slot === 'mask' || /facewrap|(^|::|_)mask/i.test(cosmeticId)) return { kind: 'mask', dispelBy: 'hunundi' };
+    if ((roster?.lichType || roster?.specialLichId) && /circlet/i.test(cosmeticId)) return { kind: 'circlet', dispelBy: 'garanki' };
+    if (roster?.maskboundTroop && (slot === 'mask' || window.isPortraitMaskCosmeticId?.(cosmeticId))) return { kind: 'mask', dispelBy: 'hunundi' };
     return null;
   }
   function applyLootCurse(item, curse) {
@@ -1360,7 +1362,7 @@
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
-        for (const item of banditWornClothingItems(c.rosterRecord)) {
+        for (const item of banditWornClothingItems(c.rosterRecord, c)) {
           deps.getPackClothing().push(item);
           window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.
           parts.push('👘 ' + item.label);
