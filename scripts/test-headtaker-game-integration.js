@@ -15,6 +15,9 @@ assert(locks.includes('function isLocked(participantId, channel)'),'game shares 
 assert(playerComposer.includes('maskboundHeadtakerNeckControlled'),'player renderer skips overriding scripted neck yaw');
 assert(bandits.includes("if (c?._maskboundHeadtakerNeckControlled) return;"),'victim bandits can walk but not independently aim their neck');
 assert(head.includes('detachOnHostDodge: true'),'player can still dodge to escape the grapple');
+assert(head.includes("'player-portrait-rebuilt'"),'rebuilding a player avatar clears stale neck/joint ownership instead of writing disposed skin bones');
+assert(game.includes("cancel?.(entity, 'area-changed')"),'area transition cleans up the old-area Headtaker even though it cannot chase into the new map');
+assert(game.includes("cancel?.(c, 'despawn')"),'despawn releases the scoped player neck lock before disposing the attacker');
 assert(head.includes('immuneToHost: false'),'player attacks can still damage the Headtaker');
 assert(head.includes('staggerImmune: true'),'other incoming damage does not automatically break the grip');
 assert(game.includes('player.dodging = true;'),'game dodge input still functions normally');
