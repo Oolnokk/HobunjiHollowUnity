@@ -200,6 +200,90 @@
     return nearest||destination.clone();
   }
 
+  function smoothFurnitureStrands(THREE,mesh){
+    const source=mesh.geometry,position=source?.getAttribute?.('position'),uv=source?.getAttribute?.('uv'); // Foliage tubes retain six vertices per ring and restart their length UV for every strand.
+    if(!position||!uv||!source.index?.array||position.count%6)return false;
+    const boundaries=[0],rings=position.count/6; // Recover independent strands without guessing from spatial proximity or joining unrelated furniture parts.
+    for(let ring=1;ring<rings;ring++)if(uv.getY(ring*6)<uv.getY((ring-1)*6)-.5)boundaries.push(ring);
+    boundaries.push(rings);
+    const plans=[];let vertexCount=0,indexCount=0; // Bound reconstruction to 128 smooth segments per original strand.
+    for(let strand=0;strand<boundaries.length-1;strand++){
+      const points=[],radii=[]; // Read the final inward-shrinkwrapped centerline, rather than the original exterior guide.
+      for(let ring=boundaries[strand];ring<boundaries[strand+1];ring++){
+        const center=new THREE.Vector3();for(let spoke=0;spoke<5;spoke++)center.add(new THREE.Vector3().fromBufferAttribute(position,ring*6+spoke));center.multiplyScalar(.2);
+        let radius=0;for(let spoke=0;spoke<5;spoke++)radius+=center.distanceTo(new THREE.Vector3().fromBufferAttribute(position,ring*6+spoke))/5;
+        if(!points.length||center.distanceToSquared(points[points.length-1])>1e-10){points.push(center);radii.push(radius);}
+      }
+      if(points.length<2)continue;
+      if(points[0].y>points[points.length-1].y){points.reverse();radii.reverse();} // A strand grows from its lower end within the existing support-first part stages.
+      const softened=points.map((point,i)=>i===0||i===points.length-1?point:point.clone().multiplyScalar(.6).addScaledVector(points[i-1],.2).addScaledVector(points[i+1],.2)); // Soften shrinkwrap corner jumps before transporting the cross sections again.
+      const curve=new THREE.CatmullRomCurve3(softened,false,'centripetal'),length=curve.getLength(),segments=Math.min(128,Math.max(12,Math.ceil(length/.06))); // Fine, bounded spacing removes the old polygonal spine.
+      plans.push({curve,radii,length,segments,vertexStart:vertexCount,indexStart:indexCount,radial:5,ringCount:segments+1});vertexCount+=(segments+1)*6;indexCount+=segments*30;
+    }
+    if(!plans.length)return false;
+    const positions=new Float32Array(vertexCount*3),uvs=new Float32Array(vertexCount*2),indices=new (vertexCount>65535?Uint32Array:Uint16Array)(indexCount); // One batched geometry preserves the existing draw-call count.
+    for(const plan of plans){
+      const tube=new THREE.TubeGeometry(plan.curve,plan.segments,1,5,false),tubePositions=tube.getAttribute('position'); // Rebuild ring orientation along the finished spine instead of translating stale exterior rings.
+      for(let ring=0;ring<=plan.segments;ring++){
+        const t=ring/plan.segments,center=plan.curve.getPointAt(t),sample=t*(plan.radii.length-1),left=Math.floor(sample),right=Math.min(plan.radii.length-1,left+1); // Interpolate the authored radius variation along the strand.
+        const fade=Math.min(.2,Math.max(.06,.10/Math.max(.01,plan.length))),radius=(plan.radii[left]+(plan.radii[right]-plan.radii[left])*(sample-left))*smooth(t/fade)*smooth((1-t)/fade); // Both ends finish at a point instead of leaving open saw-cut tubes.
+        for(let spoke=0;spoke<6;spoke++){
+          const local=ring*6+spoke,index=plan.vertexStart+local; // TubeGeometry uses the same seam-duplicated six-vertex ring as the source foliage.
+          positions[index*3]=center.x+(tubePositions.getX(local)-center.x)*radius;positions[index*3+1]=center.y+(tubePositions.getY(local)-center.y)*radius;positions[index*3+2]=center.z+(tubePositions.getZ(local)-center.z)*radius;
+          uvs[index*2]=spoke/5;uvs[index*2+1]=t;
+        }
+      }
+      for(let i=0;i<tube.index.count;i++)indices[plan.indexStart+i]=tube.index.array[i]+plan.vertexStart;
+      tube.dispose();
+    }
+    const geometry=new THREE.BufferGeometry(); // Only live furniture receives this finish; pre-grown vegetation remains caller-owned and untouched.
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();geometry.computeBoundingSphere();
+    mesh.geometry=geometry;source.dispose();
+    prepareStrandReveal(mesh,plans);return true;
+  }
+  function prepareStrandReveal(mesh,strands){
+    const geometry=mesh.geometry,position=geometry?.getAttribute?.('position'),index=geometry?.index; // Reveal complete consecutive tube sections, never horizontal slices through arbitrary triangles.
+    if(!position?.array||!index?.array)return false;
+    const sections=[],centers=new Float32Array(position.count*3); // Static ring centres let a growing tip taper without modifying its completed neighbours.
+    for(const strand of strands){
+      const stride=strand.radial+1,segments=strand.ringCount-1; // TubeGeometry and foliage both duplicate the circumferential UV seam.
+      for(let ring=0;ring<strand.ringCount;ring++){
+        const start=strand.vertexStart+ring*stride;let x=0,y=0,z=0; // Average unique spokes, excluding the duplicated seam vertex.
+        for(let spoke=0;spoke<strand.radial;spoke++){x+=position.getX(start+spoke)/strand.radial;y+=position.getY(start+spoke)/strand.radial;z+=position.getZ(start+spoke)/strand.radial;}
+        for(let spoke=0;spoke<stride;spoke++){centers[(start+spoke)*3]=x;centers[(start+spoke)*3+1]=y;centers[(start+spoke)*3+2]=z;}
+      }
+      for(let segment=0;segment<segments;segment++)sections.push({time:(segment+1)/segments,start:strand.indexStart+segment*strand.radial*6,count:strand.radial*6});
+      strand.front=-1;
+    }
+    sections.sort((a,b)=>a.time-b.time||a.start-b.start);
+    const original=index.array.slice(),times=new Float64Array(sections.length),ends=new Uint32Array(sections.length);let offset=0; // Immutable thresholds make both scrubbing and retraction deterministic.
+    sections.forEach((section,i)=>{index.array.set(original.subarray(section.start,section.start+section.count),offset);offset+=section.count;times[i]=section.time;ends[i]=offset;});index.needsUpdate=true;
+    mesh.userData.strandReveal={strands,centers,rest:position.array.slice(),times,ends,progress:-1};
+    return true;
+  }
+  function revealStrands(mesh,progress){
+    const data=mesh.userData.strandReveal;if(!data)return false;
+    if(data.progress===progress)return true;data.progress=progress;
+    const position=mesh.geometry.getAttribute('position'),array=position.array; // Only the last three rings per strand move; completed tube geometry stays unchanged.
+    for(const strand of data.strands){
+      const stride=strand.radial+1,segments=strand.ringCount-1,restoreStart=Math.max(0,strand.front-2); // Restore the previous moving tip before applying a new progress value in either direction.
+      if(strand.front>=0){const from=(strand.vertexStart+restoreStart*stride)*3,to=(strand.vertexStart+(strand.front+1)*stride)*3;array.set(data.rest.subarray(from,to),from);}
+      strand.front=-1;
+      if(progress<=0||progress>=1)continue;
+      const amount=progress*segments,front=Math.min(segments,Math.floor(amount+1e-10)),fraction=amount-front;strand.front=front; // Sub-ring interpolation gives the terminal point continuous forward motion.
+      for(let ring=Math.max(0,front-2);ring<=front;ring++){
+        const scale=ring===front?0:smooth((front-ring+fraction)/3); // The current tip is closed and gently widens into its two preceding rings.
+        for(let spoke=0;spoke<stride;spoke++){
+          const vertex=strand.vertexStart+ring*stride+spoke,base=vertex*3; // Reuse static typed arrays; no vectors or geometry allocations occur during animation.
+          for(let axis=0;axis<3;axis++){let center=data.centers[base+axis];if(ring===front&&front<segments)center+=(data.centers[base+stride*3+axis]-center)*fraction;array[base+axis]=center+(data.rest[base+axis]-data.centers[base+axis])*scale;}
+        }
+      }
+    }
+    let lo=0,hi=data.times.length;while(lo<hi){const mid=(lo+hi)>>>1;if(data.times[mid]<=progress+1e-10)lo=mid+1;else hi=mid;}
+    mesh.geometry.setDrawRange(0,lo?data.ends[lo-1]:0);position.needsUpdate=true;
+    return true;
+  }
+
   // Indexed triangles are grouped into ascending-height buckets, retaining
   // topology and UVs. Draw ranges can then grow up a leg/post rather than
   // revealing arbitrarily ordered whole strands along its length.
@@ -386,6 +470,7 @@
     mesh.userData.noOutline = false; // Same outline eligibility as FoliageGenerator surface roots.
     mesh.layers?.enable?.(1); // Runtime shell pass already selects layer 1; editor preview uses the same layer.
     mesh.userData.fullDrawCount = geometry.index ? geometry.index.count : position.count;
+    prepareStrandReveal(mesh,[{vertexStart:0,indexStart:0,radial:6,ringCount:segments+1}]);
     mesh.geometry.setDrawRange(0, 0);
     return mesh;
   }
@@ -531,7 +616,7 @@
     }));
     const shapeMeshes=growthMeshes(targetGrowth);
     for(const mesh of shapeMeshes){
-      orderGrowthByHeight(mesh);
+      if(!smoothFurnitureStrands(THREE,mesh))orderGrowthByHeight(mesh); // Minimal external geometry adapters retain the legacy fallback.
       mesh.userData.fullDrawCount=mesh.geometry.index?
         mesh.geometry.index.count:mesh.geometry.attributes.position.count;
     }
@@ -567,14 +652,14 @@
         // Small per-branch offsets keep the growth organic without changing the authored final pose.
         const phase = clamp((extent - (i % 4) * .065) / (1 - (i % 4) * .065), 0, 1);
         const count = Math.floor(branches[i].userData.fullDrawCount * phase / 3) * 3;
-        branches[i].geometry.setDrawRange(0, count);
+        if(!revealStrands(branches[i],phase))branches[i].geometry.setDrawRange(0, count);
         branches[i].visible = count > 0;
       }
       for(const part of partPlan){
         const window=partWindows[part.index],local=smooth((progress-window.start)/(window.end-window.start));
         for(const mesh of growthMeshes(partGrowths[part.index])){
           const count=Math.floor(mesh.userData.fullDrawCount*local/3)*3;
-          mesh.geometry.setDrawRange(0,count);
+          if(!revealStrands(mesh,local))mesh.geometry.setDrawRange(0,count);
         }
       }
       for(const connector of connectors){
@@ -582,7 +667,7 @@
         const span=Math.min(.08,stageLength*.32);
         const start=childWindow.start-span,end=childWindow.start+span;
         const local=smooth((progress-start)/(end-start));
-        connector.geometry.setDrawRange(0,Math.floor(connector.userData.fullDrawCount*local/3)*3);
+        if(!revealStrands(connector,local))connector.geometry.setDrawRange(0,Math.floor(connector.userData.fullDrawCount*local/3)*3);
         connector.visible=local>0;
       }
     };
@@ -620,6 +705,7 @@
               partWindows[part.index].start)/stageLength,0,1),gap:part.linkGap})),
           floorDensityPasses:floorGrowth.userData?.densityPasses || 1,
           shapeDensityPasses:targetGrowth.userData?.densityPasses || 1,
+          smoothFurnitureStrands:shapeMeshes.reduce((count,mesh)=>count+(mesh.userData.strandReveal?.strands.length||0),0),continuousStrandReveal:shapeMeshes.some(mesh=>!!mesh.userData.strandReveal),
           insideShrinkwrap:true, shapeInset:recipe.shapeInset, volumeFillDepth:recipe.volumeFillDepth,
           shrinkwrapRays:partGrowths.reduce((n,part)=>n+
             (part.userData?.surfaceGrowthStats?.shrinkwrapRays||0)+

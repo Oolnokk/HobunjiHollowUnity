@@ -414,7 +414,7 @@
     $('scrub').value = String(percent); $('progressLabel').textContent = percent+'%';
     const message = (info.substrate==='ruin'?'Temple-covered ruin + ':'') + source.name + ' · ' + percent + '% grown\n' +
       info.branchCount + ' branches · ' + info.floorStrands + (info.preparedVegetation?' existing vegetation strands · ':' floor wraps · ') +
-      info.shapeStrands + ' shape wraps · ' + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
+      info.shapeStrands + (info.continuousStrandReveal?' smooth, tapered shape strands · ':' shape wraps · ') + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
       ' inward hits\n' + info.groundedParts.length + ' grounded parts → ' +
       (info.partCount-info.groundedParts.length) + ' raised parts (' +
       info.rootTransferCount + ' connecting shoots, depth ' + info.maxPartDepth + ')';

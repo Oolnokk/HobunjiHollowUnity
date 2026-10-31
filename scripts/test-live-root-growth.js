@@ -465,6 +465,26 @@ assert(editor.includes('git/trees/'));
 assert(editor.includes('function importRepoFurniture('));
 assert(editor.includes('scene.overrideMaterial = shellOutlineMaterial'));
 assert(editor.includes('camera.layers.set(1)'));
+const strandHelpers=fs.readFileSync('docs/js/live-root-growth.js','utf8'); // Execute the same whole-ring reveal used by real furniture geometry.
+const revealContext={smooth:t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);}};vm.createContext(revealContext);
+vm.runInContext(strandHelpers.slice(strandHelpers.indexOf('  function prepareStrandReveal('),strandHelpers.indexOf('  // Indexed triangles are grouped')),revealContext);
+const revealPositions=[],revealIndices=[],revealStrands=[]; // Different strand lengths must reveal contiguous sections independently.
+for(const segments of [4,6]){
+  const vertexStart=revealPositions.length/3,indexStart=revealIndices.length;
+  for(let ring=0;ring<=segments;ring++)for(let spoke=0;spoke<4;spoke++){const angle=(spoke%3)*Math.PI*2/3;revealPositions.push(Math.cos(angle)*.1,ring*.2,Math.sin(angle)*.1);}
+  for(let ring=0;ring<segments;ring++)for(let spoke=0;spoke<3;spoke++){const a=vertexStart+ring*4+spoke,b=a+4;revealIndices.push(a,a+1,b,b,a+1,b+1);}
+  revealStrands.push({vertexStart,indexStart,radial:3,ringCount:segments+1});
+}
+const revealAttribute={array:new Float32Array(revealPositions),count:revealPositions.length/3,getX(i){return this.array[i*3];},getY(i){return this.array[i*3+1];},getZ(i){return this.array[i*3+2];}};
+const revealMesh={userData:{},geometry:{index:{array:new Uint16Array(revealIndices)},getAttribute:()=>revealAttribute,setDrawRange(start,count){this.drawRange={start,count};}}};
+revealContext.mesh=revealMesh;revealContext.strands=revealStrands;
+assert(vm.runInContext('prepareStrandReveal(mesh,strands)',revealContext));
+vm.runInContext('revealStrands(mesh,.625)',revealContext);assert.equal(revealMesh.geometry.drawRange.count,5*18,'only complete consecutive ring sections may be visible');
+for(const strand of revealStrands){const tip=(strand.vertexStart+strand.front*4)*3;for(let spoke=1;spoke<4;spoke++)for(let axis=0;axis<3;axis++)assert(Math.abs(revealAttribute.array[tip+axis]-revealAttribute.array[tip+spoke*3+axis])<1e-7,'each moving tip must close at one point');}
+const partialReveal=revealAttribute.array.slice(); // Returning to a previous scrub position must not accumulate deformations.
+vm.runInContext('revealStrands(mesh,.2);revealStrands(mesh,.625)',revealContext);assert.deepEqual(revealAttribute.array,partialReveal);
+vm.runInContext('revealStrands(mesh,1)',revealContext);assert.equal(revealMesh.geometry.drawRange.count,revealIndices.length);assert.deepEqual(revealAttribute.array,new Float32Array(revealPositions),'completion must restore the exact finished root geometry');
+vm.runInContext('revealStrands(mesh,0)',revealContext);assert.equal(revealMesh.geometry.drawRange.count,0);assert.deepEqual(revealAttribute.array,new Float32Array(revealPositions));
 const roughnessHelper=editor.slice(editor.indexOf('  function readRuinRoughness('),editor.indexOf('  function disposeRoomModel(')); // Execute the preview's saved-setting validator without creating WebGL.
 const roughnessContext={$:()=>({value:'.3'})};vm.createContext(roughnessContext);vm.runInContext(roughnessHelper,roughnessContext);
 for(const [value,expected] of [[0,0],[1,1],[-2,0],[4,1],['.25',.25],[NaN,.3],[undefined,.3],[Infinity,.3]]){

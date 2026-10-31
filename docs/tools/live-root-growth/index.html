@@ -19,7 +19,7 @@
 <script src="js/terrain-preview.js?v=20261013he41c002"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
-<script src="js/live-root-growth.js?v=20261030h5b1709a"></script>
+<script src="js/live-root-growth.js?v=20261031hc8e1ec8"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -102,10 +102,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Root construction now yields between layers, displays its current stage, and can be cancelled. Stalled ruin downloads time out so Rebuild can retry.</p></section>
+<section><h2>Latest change</h2><p>Live-grown furniture now has smoothed root paths and pointed, closed ends. Growth follows complete strands with tapered moving tips, including when scrubbing or retracting. The pre-grown ruin cover is preserved.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031h87172cf"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031h54c1327"></script>
 </body></html>
