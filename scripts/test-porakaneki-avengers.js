@@ -183,14 +183,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
   // Ride through the day: travelling Omgurku get chased down and slain off-screen.
   const zoneId = ZONES[0];
-  let sawPursuit = false;
-  for (let i = 0; i < 400 && pora.debugSnapshot().avengerKills === 0; i++) {
-    tick(4.1);
-    const band = pora.debugSnapshot().zones[zoneId].camps.find(camp => camp.avengers)?.avengers;
-    if (band?.quarryId) sawPursuit = true;
-  }
-  debug = pora.debugSnapshot();
-  assert(sawPursuit, 'the band picks a travelling Omgurku quarry');
+  for (let i = 0; i < 400 && pora.debugSnapshot().avengerKills === 0; i++) tick(4.1);
+  debug = pora.debugSnapshot(); // Any of the four single-camp maps may produce the first catch; don't require one selected zone.
   assert(debug.avengerKills > 0, 'Avengers kill a travelling Omgurku');
   const slain = Object.values(omg.debugSnapshot().zones).flatMap(zone => zone.camps.flatMap(camp => camp.hunters)).filter(h => h.activity === 'slain');
   assert(slain.length >= 1, 'the slain Omgurku is marked dead in its own camp runtime');
@@ -211,16 +205,18 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
   // Outnumbered: if the quarry's group is bigger than the band, the riders
   // break off and ride home to regroup instead of engaging.
+  const groupRadius = cfg.avengers.groupRadiusTiles;
+  cfg.avengers.groupRadiusTiles = 0; // Give a band a target before broadening the group's radius; otherwise it correctly refuses outnumbering upfront.
   let pursuing = null;
   for (let i = 0; i < 400 && !pursuing; i++) {
-    tick(4.1);
-    pursuing = ZONES.find(zone => pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.quarryId);
+    tick(0.21);
+    pursuing = ZONES.find(zone => omg.huntersNear(zone, 48, 48, 500) > cfg.avengers.riders
+      && pora.debugSnapshot().zones[zone].camps.find(camp => camp.avengers).avengers.quarryId);
   }
-  assert(pursuing, 'a band is riding at a quarry');
+  assert(pursuing, 'a band can lock a quarry in a zone with more rival hunters than its riders');
   const pursuer = () => pora.debugSnapshot().zones[pursuing].camps.find(camp => camp.avengers);
   const withdrawalsBefore = pora.debugSnapshot().avengerWithdrawals;
-  const groupRadius = cfg.avengers.groupRadiusTiles;
-  cfg.avengers.groupRadiusTiles = 500; // Every Omgurku on the map now counts as the quarry's group: far more than three riders.
+  cfg.avengers.groupRadiusTiles = 500; // The entire zone becomes the quarry's group, now larger than the selected band.
   tick(0.21);
   assert(pora.debugSnapshot().avengerWithdrawals > withdrawalsBefore, 'an outnumbered band withdraws');
   assert.equal(pursuer().avengers.retreating, true);
