@@ -29,7 +29,7 @@ const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
 assert.deepEqual(staffCompatible, originalCompatible, 'staff accepts exactly the same heads as B\'shuakauitl');
 const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
-copyDraft.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
+copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
 const originalMount = blowgunShaft.mounts[0];
@@ -43,7 +43,7 @@ extraCopy.shafts.hachutuTorchStaffCopy = { ...plain(extraCopy.shafts.hachutuTorc
 api.replace(extraCopy);
 assert.equal(api.getConfig().shafts.hachutuTorchStaffCopy.fireAssembly, 'hachutuTorchStaff',
   'new editor-created shaft copies retain attached flame assemblies');
-assert.equal(api.getConfig().shafts.hachutuTorchStaffCopy.duplicateTransform.scaleX, 1.5);
+assert.equal(api.getConfig().shafts.hachutuTorchStaffCopy.attachmentRigTransform.scaleX, 1.5);
 api.replace(plain(window.MODULAR_WEAPON_CONFIG)); // Other baseline tests below must retain their committed source geometry.
 const staleKylieDraft = JSON.parse(JSON.stringify(api.getConfig())); // Simulates a player-authored attachment draft saved before Kylies became blunt.
 staleKylieDraft.heads.kylie.dmgType = 'sharp';
