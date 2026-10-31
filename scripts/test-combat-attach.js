@@ -56,9 +56,9 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   host.x = 360; host.y = 260; host.facing = 1.2;
   run(w, swarm, 0.05);
   assert.deepEqual([swarm.x, swarm.y, swarm.facing], [360, 260, 1.2]);
-  assert(Math.abs(swarm._banditLungeHopCurrent - 0.41) < 1e-9, 'body center minus the swarm floor lift and hover pivot');
-  assert(Math.abs(swarm.avatarRef.group.position.y - 2.71) < 1e-9, 'visible wing cloud sits exactly at host world-Y center');
-  assert.equal(swarm._attachVisualSpread, 0.42, 'attachment is visibly much denser than ordinary flight');
+  assert(Math.abs(swarm._banditLungeHopCurrent - 1.085) < 1e-9, 'upper-quarter target minus swarm lift and wing pivot');
+  assert(Math.abs(swarm.avatarRef.group.position.y - 3.385) < 1e-9, 'wing cloud sits at 87.5% of host height');
+  assert.equal(swarm._attachVisualSpread, 0.71, 'attachment contracts 29% instead of 58%');
   host.y += 40; run(w, swarm, 0.05);
   assert.equal(swarm.y, host.y, 'swarm tracks the target as it moves');
   // Ticks: little direct damage, a heavy poison multiplier, no stagger or knockback.
@@ -119,15 +119,15 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.start(swarm, 'swarm', { target: host });
   run(w, swarm, 0.05);
   assert.equal(w.Combat.attach.isAttached(swarm), true, 'attaches on the first contact frame');
-  assert(Math.abs(swarm._banditLungeHopCurrent - 0.82) < 1e-9, 'authored zero ground lift is preserved');
-  assert(Math.abs(swarm.avatarRef.group.position.y + 0.12 * 1.5 - centerY) < 1e-9,
+  assert(Math.abs(swarm._banditLungeHopCurrent - 1.4575) < 1e-9, 'authored zero lift and upper-quarter target are preserved');
+  assert(Math.abs(swarm.avatarRef.group.position.y + 0.12 * 1.5 - centerY - 0.6375) < 1e-9,
     'visible cloud, not avatar root, is centered on host on initial contact');
-  assert.equal(swarm._attachVisualSpread, 0.42, 'dense state applies on the first attached frame');
+  assert.equal(swarm._attachVisualSpread, 0.71, 'reduced contraction applies on first attached frame');
   centerY = 5.5; groundY = 3.5; host.x = 200;
   run(w, swarm, 0.05);
   assert.equal(swarm.x, host.x, 'tracks moving target immediately');
-  assert(Math.abs(swarm._banditLungeHopCurrent - 1.82) < 1e-9, 'tracks changing vertical world elevation');
-  assert(Math.abs(swarm.avatarRef.group.position.y + 0.18 - centerY) < 1e-9,
+  assert(Math.abs(swarm._banditLungeHopCurrent - 2.4575) < 1e-9, 'tracks the upper quarter during terrain elevation changes');
+  assert(Math.abs(swarm.avatarRef.group.position.y + 0.18 - centerY - 0.6375) < 1e-9,
     'tracks the updated rendered center despite a terrain-height change');
   w.Combat.animalAttacks.cancel(swarm);
   assert.equal(swarm._banditLungeHopCurrent, 0, 'returns to ordinary floor height when detached');
@@ -178,7 +178,7 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }); run(w, swarm, 0.5);
   assert.equal(w.Combat.attach.isAttached(swarm), true);
   assert.deepEqual([swarm.x, swarm.y], [400, 400], 'sits on the player');
-  assert(Math.abs(swarm.avatarRef.group.position.y + 0.12 - 1.25) < 1e-9,
+  assert(Math.abs(swarm.avatarRef.group.position.y + 0.12 - 1.25 - 0.6375) < 1e-9,
     'swarm overlays the actual player avatar center instead of their head');
   w.calls.player.length = 0; run(w, swarm, 1.2);
   assert(w.calls.player.length >= 2);
@@ -228,8 +228,8 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.applyConfig(authored.creatureAttacks);
   const loaded = w.Combat.attach.config('swarm');
   assert.equal(loaded.durationS, 6); assert.equal(loaded.hostReaction.kind, 'flail'); assert.equal(loaded.tick.playerScale, 0.6);
-  assert.equal(loaded.verticalAnchor, 'center'); assert.equal(loaded.heightAboveHost, 0);
-  assert.equal(loaded.visualSpreadScale, 0.42, 'authoring keeps the compact attached-state visual');
+  assert.equal(loaded.verticalAnchor, 'center'); assert.equal(loaded.heightAboveHost, 0); assert.equal(loaded.verticalFraction, 0.875);
+  assert.equal(loaded.visualSpreadScale, 0.71, 'authoring uses half the old contraction');
 }
 
 // Companion Swarm must use its own flying approach rather than taking an
@@ -247,5 +247,51 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.update(flyer, 0.12);
   assert(flyer.x >= TILE * 2.5, 'companion swarm flies most of the gap in a single weapon-speed burst');
   w.Combat.animalAttacks.cancel(flyer);
+}
+// Rescue attacks are ordinary ally telegraphs but only permitted while the
+// victim has a swarmer. The pet's output channels are all 25% on the victim,
+// and 100% on the swarm (no team-wide friendly-fire rule is enabled).
+{
+  const w = world();
+  const swarm = w.make({ x: 407, y: 400, def: { attackDamage: 5, attackTag: 'poison' } });
+  const pet = w.make({ x: 395, y: 400, master: w.player, isCompanion: true,
+    stableRole: 'companion', def: { attackDamage: 12, attackTag: 'poison', attackRangePx: 50 } });
+  w.companionObjects.add(pet);
+  w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player });
+  run(w, swarm, 0.2);
+  assert.equal(w.Combat.attach.isAttached(swarm), true);
+  assert.equal(w.Combat.attach.rescueHostFor(pet), w.player);
+  const outsider = w.make({ x: 395, y: 400, master: w.make(), isCompanion: true, stableRole: 'companion' });
+  assert.equal(w.Combat.attach.rescueHostFor(outsider), null, 'other owners cannot attack the player as a rescue');
+  w.Combat.attach.updateRescuer(pet, 0.1);
+  w.Combat.attach.updateRescuer(pet, 0.11);
+  assert.equal(w.Combat.attach.isAttached(swarm), false, 'one rescue hit immediately dislodges the surviving swarm');
+  const swarmHit = w.calls.creature.find(hit => hit.target === swarm && hit.opts.swarmRescue);
+  const ownerHit = w.calls.player.find(hit => hit.opts.swarmRescue);
+  assert(swarmHit && ownerHit, 'one rescue strike has two damage destinations');
+  assert.equal(swarmHit.amount, 12, 'swarm receives all the pet normal Health damage');
+  assert.equal(ownerHit.amount, 3, 'owner receives 25% Health damage');
+  assert.equal(swarmHit.kb, 220); assert.equal(ownerHit.kb, 55, 'owner knockback is exactly 25%');
+  assert.equal(ownerHit.opts.afflictionBonuses.poisonedHealth, swarmHit.opts.afflictionBonuses.poisonedHealth,
+    'affliction coefficient stays normal, so buildup follows the quarter-size damage payload');
+  assert.equal(w.Combat.attach.rescueHostFor(pet), null, 'ordinary ally target selection resumes once detached');
+}
+{
+  const w = world();
+  const host = w.make({ x: 100, y: 100, isBandit: true, banditCampInstanceId: 'camp-A' });
+  const ally = w.make({ x: 110, y: 100, isBandit: true, banditCampInstanceId: 'camp-A',
+    def: { attackDamage: 20, attackTag: 'poison', attackRangePx: 50 } });
+  const enemy = w.make({ x: 111, y: 100, isBandit: true, banditCampInstanceId: 'camp-B' });
+  const swarm = w.make({ x: 104, y: 100 });
+  w.hostileObjects.add(host); w.hostileObjects.add(ally); w.hostileObjects.add(enemy);
+  w.Combat.animalAttacks.start(swarm, 'swarm', { target: host }); run(w, swarm, 0.2);
+  assert.equal(w.Combat.attach.rescueHostFor(enemy), null, 'an unrelated camp does not become friendly');
+  assert.equal(w.Combat.attach.rescueHostFor(ally), host);
+  w.Combat.attach.updateRescuer(ally, 0.3);
+  assert.equal(w.Combat.attach.isAttached(swarm), false);
+  assert.equal(w.calls.creature.find(hit => hit.target === swarm && hit.opts.swarmRescue)?.amount, 20);
+  const friendly = w.calls.creature.find(hit => hit.target === host && hit.opts.swarmRescue);
+  assert.equal(friendly.amount, 5);
+  assert.equal(friendly.kb, 55);
 }
 console.log('combat attach: ok');
