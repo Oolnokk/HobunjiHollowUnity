@@ -213,11 +213,14 @@
     // Source-PNG pixels determine stable, per-end ignition sites; never cluster recolored images.
     if (count !== 2 || pixels.length < 2) return null;
     const coords = pixels.map(index => ({ index, x: index % width, y: Math.floor(index / width) }));
-    const xs = coords.map(point => point.x), ys = coords.map(point => point.y);
-    const vertical = Math.max(...ys) - Math.min(...ys) >= Math.max(...xs) - Math.min(...xs);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Single pass avoids massive spread-argument lists on large source PNGs.
+    for (const point of coords) {
+      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+    }
+    const vertical = maxY - minY >= maxX - minX;
     const axis = point => vertical ? point.y : point.x;
-    const extent = coords.map(axis);
-    const middle = (Math.min(...extent) + Math.max(...extent)) / 2;
+    const middle = vertical ? (minY + maxY) / 2 : (minX + maxX) / 2;
     let halves = [coords.filter(point => axis(point) <= middle), coords.filter(point => axis(point) > middle)];
     if (!halves[0].length || !halves[1].length) {
       const sorted = coords.slice().sort((a, b) => axis(a) - axis(b));
@@ -273,6 +276,10 @@
   }
 
   function activateStatic(state, base, layers, meshes, sourceImage, unit) {
+    if (Array.isArray(base)) {
+      // Preserve old five-argument callers (including existing flail regression fixtures).
+      unit = sourceImage; sourceImage = meshes; meshes = layers; layers = base; base = null;
+    }
     const all = [
       { config: base || { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
       ...layers.map((config, index) => ({
