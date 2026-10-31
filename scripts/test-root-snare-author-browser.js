@@ -55,59 +55,83 @@ const server=http.createServer((request,response)=>{
       assert(both.some(n=>n.role==='wall')&&both.some(n=>n.role==='floor'),
         'actual wall AND floor root nodes should both provide fixed snare anchors');
 
-      const hands=window.RootSnareHands.create({THREE:T,room,rootLayers:[{layer,role:'wall'}],
-        seed:'exact-fixed-seed',count:6,triggerRadius:2.4,reach:1.6});
-      assert(hands.diagnostics().active===0,'hands start hidden inside the fixed roots');
-      assert(hands.diagnostics().states.every(s=>s.digits===3&&
-        s.digitRoles.filter(role=>role==='finger').length===2&&s.digitRoles.includes('thumb')),
-        'each wooden fork has precisely two foliage-branch fingers and one opposed thumb');
-      const actor=new T.Group(),captured={group:actor,running:true,
-        setRunning(value){this.running=value;},
-        chooseTarget(){this.rerouted=true;}};
-      const anchor=hands.anchors[0];
-      actor.position.copy(anchor.point).addScaledVector(anchor.direction,.95);
-      actor.position.y-=1; // The collider checks the runner's chest in world/room space.
-      const initialScale=actor.scale.clone();
-      for(let i=0;i<3;i++)hands.update(.033,captured);
-      assert(hands.diagnostics().states.some(s=>s.state==='approaching'&&!s.wrapped),
-        'the three branches must approach the runner with their palm open');
-      // Turn the target halfway through growth: the branch ARM has to reroute.
-      actor.position.copy(anchor.point).addScaledVector(anchor.direction,.5);
-      actor.position.x+=.42;actor.position.y-=1;
-      for(let i=0;i<230;i++)hands.update(.033,captured);
-      const held=hands.diagnostics();
-      assert(held.caught&&held.held===1,'the actual palm collider must grip, pull and keep holding the runner');
-      assert(held.states.some(s=>s.state==='held'&&s.wrapped&&s.digits===3),
-        'the held pose preserves the curled three-finger branch fork');
-      assert(held.states.some(s=>s.reroutes>0),
-        'the organic branch arm must steer in-flight as the runner changes direction');
-      assert(!captured.running,'captured runner must stop its procedural walking controller');
-      assert(actor.visible!==false&&actor.scale.distanceTo(initialScale)<.001,
-        'holding must never hide, swallow or shrink the runner');
-      assert(actor.position.distanceTo(anchor.point)<1.25,'the arm must carry its captive back to its original root node');
-      const heldPosition=actor.position.clone();
-      for(let i=0;i<120;i++)hands.update(.033,captured);
-      assert(hands.diagnostics().held===1&&actor.position.distanceTo(heldPosition)<.02,
-        'the captive stays held indefinitely at the original node');
-      assert(hands.releaseCaptured()&&captured.running,'only explicit author release frees the runner');
+      const maths=window.RootSnareRunner.tugMultiplier,front=new T.Vector3(1,0,0);
+      assert(Math.abs(maths(front,front)-2)<1e-8,'toward source must double movement speed');
+      assert(Math.abs(maths(front,front.clone().negate())-.5)<1e-8,'away from source must halve movement speed');
+      assert(Math.abs(maths(front,new T.Vector3(0,0,1))-1.25)<1e-8,'90 degree tug must blend endpoints');
+      const one=window.RootSnareHands.create({THREE:T,room,rootLayers:[{layer,role:'wall'}],
+        seed:'exact-fixed-seed',count:1,triggerRadius:15,reach:15,extendSpeed:.2});
+      assert(one.settings.triggerRadius===15&&one.settings.reach===15&&one.settings.extendSpeed===.2,
+        'requested slow 15-unit defaults must be active');
+      assert(one.diagnostics().states[0].digits===3&&
+        one.diagnostics().states[0].digitRoles.join(',')==='finger,finger,thumb',
+        'each woody branch fork must keep exactly two articulated fingers and one thumb');
+      const actor=new T.Group(),captured={group:actor,running:true,neck:null,freed:false,
+        setNeckGrip(node){this.neck=node;},clearNeckGrip(){this.neck=null;},
+        setRunning(v){this.running=v;},chooseTarget(){this.freed=true;}};
+      const anchor=one.anchors[0];
+      actor.position.copy(anchor.point).addScaledVector(anchor.direction,.67);
+      actor.position.y-=1.38; // The actual sphere is compared with the neck in this preview.
+      for(let i=0;i<3;i++)one.update(.033,captured);
+      assert(one.diagnostics().states.some(x=>x.state==='approaching'&&!x.wrapped),
+        'branches should remain open during initial extension');
+      actor.position.x+=.18; // Change course while the *arm* is still growing.
+      for(let i=0;i<340;i++)one.update(.033,captured);
+      assert(one.diagnostics().neckGrip&&captured.neck,
+        'the first true collider contact must attach to the neck');
+      assert(captured.running,'one neck grip must NOT freeze the procedural runner');
+      assert(one.diagnostics().states[0].reroutes>0,'the arm branch must steer its segments in-flight');
+      assert(one.releaseCaptured()&&!captured.neck,'manual release must clear the directional neck tug');
       actor.position.set(100,0,100);
-      for(let i=0;i<120;i++)hands.update(.033,captured);
-      assert(!hands.diagnostics().caught&&!hands.diagnostics().held,
-        'released hands withdraw to their unchanged hidden nodes');
-      assert(hands.group.children.filter(x=>x.name.startsWith('Hidden root snare')).every(x=>!x.visible),
-        'released arm and fingers must become indistinguishable from the source root again');
-      hands.setNodeVisibility(true);
-      assert(hands.group.children.some(x=>x.name.startsWith('Show hidden branch node')&&x.visible),
-        'the author may reveal otherwise concealed fixed root nodes');
-      hands.dispose();assert(!hands.group.parent,'disposed hands must release their resources');
+      for(let i=0;i<120;i++)one.update(.033,captured);
+      assert(one.group.children.filter(x=>x.name.startsWith('Hidden root snare')).every(x=>!x.visible),
+        'released branch hands must fully conceal again');
+      one.setNodeVisibility(true);
+      assert(one.group.children.some(x=>x.name.startsWith('Show hidden branch node')&&x.visible),
+        'author markers reveal the original fixed branches');
+      one.dispose();
 
-      const runner=window.RootSnareRunner.create({THREE:T,room,speed:2.5,seed:'runner-test'});
-      assert(runner.diagnostics().authenticFeet,'the simulation must use the procedural walking rig');
+      const runner=window.RootSnareRunner.create({THREE:T,room,speed:5,seed:'runner-test'});
+      assert(runner.diagnostics().authenticFeet,'NPC must use the shared procedural gait');
+      assert(runner.diagnostics().speed===5,'runner must default to five units per second');
       const initial=runner.group.position.clone();
       for(let i=0;i<120;i++)runner.update(.033);
-      assert(initial.distanceTo(runner.group.position)>.1,'runner must move under procedural gait control');
-      const traveled=runner.diagnostics();
-      runner.dispose();
+      assert(initial.distanceTo(runner.group.position)>.1,'running NPC should navigate the room');
+      runner.setNeckGrip({point:runner.group.position.clone().add(new T.Vector3(-1,0,0))});
+      runner.headToAnchor(true);runner.update(.04);
+      const away=runner.diagnostics().movementMultiplier;
+      runner.headToAnchor(false);runner.update(.04);
+      const toward=runner.diagnostics().movementMultiplier;
+      assert(Math.abs(away-.5)<.02&&Math.abs(toward-2)<.02,
+        'directional movement must yield 0.5× away and 2× toward a captured hand');
+      runner.clearNeckGrip();assert(runner.diagnostics().neckTether===false,'tug must clear at release');
+
+      const pair=window.RootSnareHands.create({THREE:T,room,rootLayers:[{layer,role:'wall'}],
+        seed:'exact-fixed-seed',count:6,triggerRadius:15,reach:15,extendSpeed:.2});
+      assert(pair.anchors.length>=2,'test room needs at least two hidden branch nodes');
+      assert(pair.previewDoubleGrip(runner),'author preview must provide a reproducible two-grip trigger');
+      assert(pair.diagnostics().neckGrip&&pair.diagnostics().feetGrip&&pair.diagnostics().dual,
+        'first hand binds the neck and second binds the feet');
+      assert(!runner.running&&runner.diagnostics().dual,
+        'two actual grip roles should immobilize the runner');
+      let lifted=false,stretched=false;
+      for(let i=0;i<74;i++){
+        runner.update(.05);pair.update(.05,runner);
+        if(runner.group.position.y>.5)lifted=true;
+        if(runner.diagnostics().stretchDistance>.6)stretched=true;
+      }
+      const split=runner.diagnostics(),bothGrips=pair.diagnostics();
+      assert(lifted&&stretched,'both hands must lift the runner before extending its body');
+      assert(split.separated&&split.splitCount===1&&split.stretchSeconds>=3.5,
+        'after three seconds of stretching, pants/feet must separate with one particle burst');
+      assert(bothGrips.split&&bothGrips.neckGrip&&bothGrips.feetGrip,
+        'both branch hands continue gripping their own anatomy points after the split');
+      assert(runner.group.children.some(x=>x.name==='Stylized blood particle splurt'&&
+        x.children.some(p=>p.visible)),'splurt particles must be emitted at cartoon separation');
+      assert(pair.releaseCaptured(),'the two-hand scene can be reset explicitly');
+      assert(!runner.diagnostics().dual&&!runner.diagnostics().separated&&runner.running,
+        'author release must restore the playable walking preview without residual stretched parts');
+      const traveled=runner.diagnostics();pair.dispose();runner.dispose();
 
       // A complete 8 × 8 flat floor should partition into all sixteen quarters;
       // a hole must remain missing from the emitted floor guide triangles.
@@ -135,7 +159,7 @@ const server=http.createServer((request,response)=>{
       assert(layerStats?.perSurface===true&&layerStats.surfaces===16,
         'real surface-growth must assign the author’s per-region root budget to all sixteen cloned floor guides');
       actual.dispose();sectors.dispose();
-      return {nodes:anchorsA.length,lunges:held.lungeCount,held:held.held,runnerTurns:traveled.turns,regions:16,triangles:count,
+      return {nodes:anchorsA.length,lunges:1,doubleGrabs:bothGrips.doubleGrabs,splitCount:split.splitCount,runnerTurns:traveled.turns,regions:16,triangles:count,
         mappedFoliageRegions:layerStats.surfaces};
 
     });
