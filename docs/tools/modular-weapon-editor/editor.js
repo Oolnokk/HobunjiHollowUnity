@@ -139,7 +139,7 @@
         const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
-          duplicateFrom: shaft.duplicateFrom || null, duplicateTransform: shaft.duplicateFrom ? api.duplicateTransform(shaft.duplicateTransform) : null,
+          duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: shaft.duplicateFrom ? api.duplicateTransform(shaft.duplicateTransform) : null,
           effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
@@ -223,7 +223,7 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
-    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Only copies expose the whole-shaft transform.
+    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
     const layout = api.duplicateTransform(shaft.duplicateTransform);
     for (const [id, value] of [['duplicate-scale-x', layout.scaleX],['duplicate-scale-y', layout.scaleY],
       ['duplicate-x',layout.x],['duplicate-y',layout.y]]) {
@@ -231,8 +231,8 @@
     }
     byId('duplicate-sprite').value = shaft.sprite || ''; byId('duplicate-sprite').disabled = !duplicated;
     byId('duplicate-note').textContent = duplicated
-      ? 'Copied from ' + duplicated.label + '. Original shaft mounting coordinates are shown at left; final scaled/translated positions appear in the assembled preview.'
-      : 'This is an original shaft. Choose "Duplicate selected shaft" above to create an independently editable whole-shaft copy.';
+      ? 'Rig copied from ' + duplicated.label + '. Scaling/translation affects fitted head primitives and tang/sleeve mounts only; the shaft PNG and flames remain fixed.'
+      : 'This is an original shaft. Choose "Duplicate selected shaft" to copy it, then adjust its mounting rig independently.';
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
@@ -382,9 +382,9 @@
     }
     const clone = JSON.parse(JSON.stringify(source)); // Keep pair-specific exclusions and sockets independent from donor edits.
     clone.label = label.slice(0,96); clone.sprite = sprite; clone.duplicateFrom = from;
-    clone.duplicateTransform = { ...api.duplicateTransform(source.duplicateTransform) }; // Independent whole-shaft scale/translation for this copy.
+    clone.duplicateTransform = { ...api.duplicateTransform(source.duplicateTransform) }; // Independent scale/translation of mounting rig and attached heads only.
     data.shafts[id] = clone; updateShaftList(id); mountIndex = 0; save();
-    msg('Duplicated '+source.label+' into '+clone.label+'. Artwork, mounts and any living fire use one transform.');
+    msg('Duplicated '+source.label+' into '+clone.label+'. Attachment rig and fitted heads can move/scale; shaft artwork and fire stay fixed.');
   };
   for (const [id, key, fallback, min, max] of [
     ['duplicate-scale-x','scaleX',1,.05,8],['duplicate-scale-y','scaleY',1,.05,8],
@@ -393,7 +393,7 @@
     const shaft = chosenShaft(); if (!shaft.duplicateFrom) return;
     const n = Number(byId(id).value);
     (shaft.duplicateTransform ||= {})[key] = Number.isFinite(n) ? Math.max(min, Math.min(max,n)) : fallback;
-    save(); // One update rescales the entire shaft, its four (or more) mounts and the attached heads.
+    save(); // Apply to mounting primitive and every eye/tang line; never to the shaft PNG or source fire.
   };
   byId('duplicate-sprite').onchange = () => {
     const shaft = chosenShaft(), sprite = byId('duplicate-sprite').value.trim();
