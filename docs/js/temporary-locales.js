@@ -182,6 +182,15 @@
       const j = Math.floor(rng() * (i + 1));
       const tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp;
     }
+    // Optional positional preference ranks viable sites by closeness; it never
+    // overrides blocked terrain, entry buffers, rival camps or stream chunks.
+    const preferred = opts.preferredPoint; // A requesting camp may nominate the map edge it should occupy.
+    if (preferred && Number.isFinite(Number(preferred.col)) && Number.isFinite(Number(preferred.row))) {
+      const targetX = Number(preferred.col) - w * 0.5; // Candidate rectangle origin nearest the desired world-space center.
+      const targetY = Number(preferred.row) - h * 0.5; // Same distance calculation for the row axis.
+      candidates.sort((a, b) => ((a.x - targetX) ** 2 + (a.y - targetY) ** 2)
+        - ((b.x - targetX) ** 2 + (b.y - targetY) ** 2));
+    }
     for (const c of candidates) {
       if (touchesAvoidedChunk(c.x, c.y)) continue;
       if (minDistFromEntry > 0 && zone.entry) {
