@@ -686,6 +686,81 @@ function renderBossAppearance(special, tab) {
   box.append(patternRow);
   $('poolPanel').append(box);
 }
+const PATTERN_SLOT_LABELS = { overwear: 'Overwear (robes, ponchos, wraps)', pants: 'Pants', torso: 'Torso clothing', hat: 'Hats and circlets', hood: 'Hoods and face wraps', mask: 'Face masks' };
+// Woven pattern and per-piece scale for any enemy kind. Stored as clothingPatterns.<slot> in the rule; the game weaves it onto that worn piece.
+function renderClothingPatterns() {
+  const box = el('section', 'pool');
+  box.append(
+    el('h3', null, 'Clothing patterns'),
+    el('p', 'help', 'Weave an authored pattern onto a worn piece of this enemy, with its own size. Patterns are baked before the body is scaled, so they are pre-compensated for this enemy’s Body proportions and keep the same line weight across sprite sizes. A named guardian’s built-in patterns are the starting point and can be replaced here.'),
+  );
+  for (const slot of window.EnemyLoadoutRules.patternSlots) {
+    const entry = rule().clothingPatterns?.[slot];
+    const row = el('div', 'chance');
+    row.append(el('strong', null, PATTERN_SLOT_LABELS[slot] + ': '));
+    row.append(el('span', 'muted', entry ? (entry.patternLibraryId ? 'library ' + entry.patternLibraryId : 'custom drawing') : 'game default'));
+    const edit = el('button', null, entry ? 'Edit pattern…' : 'Author pattern…');
+    edit.onclick = () => openClothingPatternEditor(slot);
+    row.append(edit);
+    if (entry) {
+      const clear = el('button', null, 'Clear');
+      clear.onclick = () => { mutate((r) => { delete r.clothingPatterns[slot]; if (!Object.keys(r.clothingPatterns).length) delete r.clothingPatterns; }); queueProportionPreview(); renderPools(); };
+      row.append(clear);
+      const scaleLabel = el('label', 'chance', 'Pattern scale ×');
+      const scale = el('input');
+      scale.type = 'number'; scale.step = '0.05'; scale.min = '0.1'; scale.max = '20';
+      scale.value = String(entry.scale ?? 1);
+      scale.onchange = () => { try { mutate((r) => { const v = Number(scale.value); if (v === 1) delete r.clothingPatterns[slot].scale; else r.clothingPatterns[slot].scale = v; }); queueProportionPreview(); } catch (_) { renderPools(); } };
+      scaleLabel.append(scale);
+      const colorLabel = el('label', 'chance', 'Pattern color ');
+      const colorOn = el('input'); colorOn.type = 'checkbox'; colorOn.checked = entry.color != null;
+      const color = el('input'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : '#7fd0ff'; color.disabled = !colorOn.checked;
+      const commitColor = () => { try { mutate((r) => { if (colorOn.checked) r.clothingPatterns[slot].color = color.value; else delete r.clothingPatterns[slot].color; }); queueProportionPreview(); renderPools(); } catch (_) { renderPools(); } };
+      colorOn.onchange = commitColor; color.onchange = commitColor;
+      colorLabel.prepend(colorOn); colorLabel.append(color);
+      row.append(scaleLabel, colorLabel);
+      if (slot === 'pants') {
+        const drapeLabel = el('label', 'chance', 'Draped pants: pattern the drape, base takes the pattern color');
+        const drape = el('input'); drape.type = 'checkbox'; drape.checked = entry.baseUsesPatternColor === true;
+        drape.onchange = () => { try { mutate((r) => { const e = r.clothingPatterns[slot]; if (drape.checked) { e.roles = ['DRAPE']; e.baseUsesPatternColor = true; } else { delete e.roles; delete e.baseUsesPatternColor; } }); queueProportionPreview(); } catch (_) { renderPools(); } };
+        drapeLabel.prepend(drape);
+        row.append(drapeLabel);
+      }
+    }
+    box.append(row);
+  }
+  $('poolPanel').append(box);
+}
+async function openClothingPatternEditor(slot) {
+  if (!window.PatternAuthoring?.openEditor) { toast('Pattern editor is not loaded.'); return; }
+  await window.RepoPatternLibrary?.load?.().catch(() => {});
+  const entry = rule().clothingPatterns?.[slot];
+  const special = state.kind.split(':').length === 3 ? window.SpecialHarlyaoLiches?.patternFor?.(state.kind.split(':')[1], 'clothingPattern') : null;
+  const existing = entry?.pattern || (entry?.patternLibraryId && window.PatternLibrary?.getById?.(entry.patternLibraryId)) || special || null;
+  const defaults = { frameShape: 'triangle', frameScale: 1, frameRotationDeg: 0, frameX: 0, frameY: 0, motifScale: 1, tiling: true };
+  const initialPattern = existing ? { ...defaults, ...((await window.FurniturePatternSurfaces?.editablePattern?.({ pattern: existing })) || existing) } : undefined;
+  const ink = /^#[0-9a-f]{6}$/i.test(entry?.color || '') ? entry.color : '#7fd0ff';
+  window.PatternAuthoring.openEditor({
+    title: 'Pattern — ' + PATTERN_SLOT_LABELS[slot] + ' — ' + (document.getElementById('enemyTitle')?.textContent || state.kind),
+    motifHint: 'Draw the motif woven into this piece. Its size is set per piece (Pattern scale) after saving.',
+    initialPattern,
+    initialPatternLibraryId: entry?.patternLibraryId || null,
+    library: window.PatternLibrary ? {
+      list: () => window.PatternLibrary.listAvailable(),
+      get: (id) => window.PatternLibrary.getById(id),
+      save: (label, data) => window.PatternLibrary.saveToLibrary(label, data),
+      remove: (id) => window.PatternLibrary.removeSaved(id),
+    } : null,
+    renderPreview: (data) => window.FurniturePatternSurfaces.renderTile({ solid: false, palette: ['#8a7f6c', ink, ink] }, data),
+    onSave: async (data, libraryId) => {
+      mutate((r) => pathSet(r, ['clothingPatterns', slot], { ...(r.clothingPatterns?.[slot] || {}), ...(libraryId ? { patternLibraryId: libraryId, pattern: undefined } : { pattern: JSON.parse(JSON.stringify(data)), patternLibraryId: undefined }) }));
+      mutate((r) => { const e = r.clothingPatterns?.[slot]; if (e) { if (e.pattern === undefined) delete e.pattern; if (e.patternLibraryId === undefined) delete e.patternLibraryId; } });
+      queueProportionPreview();
+      renderPools();
+      return true;
+    },
+  });
+}
 // Opens the shared Pattern editor (the same UI the game, Pattern Editor and house/furniture tools use) for one named guardian.
 async function openBossPatternEditor(special, patternKind) {
   if (!window.PatternAuthoring?.openEditor) { toast('Pattern editor is not loaded.'); return; }
@@ -753,6 +828,11 @@ function renderPools() {
       : 'Native clothing rolls retain species restrictions, forced headwear, armor and pants rules. Overriding a slot deliberately replaces that slot’s native roll.';
   if (state.tab === 'body') {
     renderBodyProportions(species, gender);
+    updateRuleJson();
+    return;
+  }
+  if (state.tab === 'patterns') {
+    renderClothingPatterns();
     updateRuleJson();
     return;
   }

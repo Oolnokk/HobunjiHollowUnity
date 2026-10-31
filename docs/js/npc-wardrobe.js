@@ -104,13 +104,32 @@
     }; // Default NPC clothing can carry the same full weaving/colorC shape as player clothing.
   }
 
+  const HEAD_PATTERN_SLOTS = new Set(['hood', 'mask', 'hat', 'upperFace', 'facialHair']); // Head-weighted portrait pieces stretch by Head scale, everything else by body width/height.
+  const PATTERN_OUTLINE_REFERENCE_SHORT_SIDE = 173; // Short side of the standard garment sprite (234x173); larger rasters such as 500px pants keep the same apparent line weight.
+  // One owner for how a forced pattern is prepared for rendering, shared by the portrait garments and the separate pants renderer:
+  // the piece's own size multiplier, raw-size outline math, and pre-compensation for the body scale the rig applies after the pattern is baked.
+  function forcedPatternForRender(rec, slot, forced) {
+    if (!forced?.pattern) return null;
+    const scale = Number(forced.scale) > 0 ? Number(forced.scale) : null;
+    const body = rec?.patternBodyScale;
+    const head = Number(body?.head) > 0 ? Number(body.head) : 1;
+    const sx = HEAD_PATTERN_SLOTS.has(slot) ? head : (Number(body?.x) > 0 ? Number(body.x) : 1);
+    const sy = HEAD_PATTERN_SLOTS.has(slot) ? head : (Number(body?.y) > 0 ? Number(body.y) : 1);
+    return {
+      ...clone(forced.pattern),
+      outlineReferenceShortSide: PATTERN_OUTLINE_REFERENCE_SHORT_SIDE,
+      ...(scale ? { usageScaleMultiplier: scale } : {}),
+      ...(body ? { usageStretchX: 1 / sx, usageStretchY: 1 / sy } : {}), // The texture is stretched by (sx, sy) afterwards, so the motif is pre-shrunk by the inverse.
+    };
+  }
+
   function effectiveWornClothingItem(rec, rawItem) {
     if (!rec || !rawItem) return rawItem;
     const forced = clothingPatternPolicy(rec)?.forcedOverpassBySlot?.[rawItem.slot];
     if (!forced?.pattern) return clone(rawItem);
     const weaving = {
       ...(clone(rawItem.weaving) || {}),
-      forcedOverpassPattern: { ...clone(forced.pattern), ...(Number(forced.scale) > 0 ? { usageScaleMultiplier: Number(forced.scale) } : {}) }, // Per-piece pattern size: the weaving renderer's existing transient usage multiplier.
+      forcedOverpassPattern: forcedPatternForRender(rec, rawItem.slot, forced), // Per-piece size, raw-size outline and body-scale compensation.
       ...(Array.isArray(forced.roles) && forced.roles.length ? { forcedOverpassRoles: clone(forced.roles) } : {}),
     }; // Render-only override; raw gifted slot 2 remains untouched, and optional roles limit the emblem to exact authored sprite layers.
     return {
@@ -549,6 +568,7 @@
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
     wornClothingItemsForRecord,
+    forcedPatternForRender,
     clothingColorsForSlot: clothingColorsFromWorn, // Lets the editor keep pattern-bearing garment colors synchronized with ordinary dye controls.
     serialize,
     restore,

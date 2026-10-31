@@ -106,8 +106,8 @@ assert.match(armorSource, /cannot be re-patterned/, 'painted plating cannot be r
   assert.match(bandit, /appearance: pantsAppearanceWithForcedPattern\(window\.PantsGarmentRenderer\.appearanceFromBodyColors\(profile\.bodyColors\), roster\)/, 'the hostile pants renderer receives the forced woven pattern');
   assert.match(bandit, /forced\.baseUsesPatternColor \? \{ primaryHex: patternHex, secondaryHex: appearance\.primaryHex/, 'the base takes the pattern color and the drape the main color');
   assert.match(bandit, /roster\.clothingPatterns\?\.forcedOverpassBySlot\) \{ \/\/ Woven pattern config/, 'patterned enemies warm the weave caches before their real portraits');
-  assert.match(bandit, /forcedOverpassPattern: \{ \.\.\.JSON\.parse\(JSON\.stringify\(forced\.pattern\)\), \.\.\.\(Number\(forced\.scale\) > 0 \? \{ usageScaleMultiplier/, 'pants weave data carries the guardian pattern at its per-piece scale');
-  assert.match(fs.readFileSync('docs/js/npc-wardrobe.js', 'utf8'), /usageScaleMultiplier: Number\(forced\.scale\)/, 'the NPC wardrobe policy applies the same per-piece scale');
+  assert.match(bandit, /forcedOverpassPattern: window\.NpcWardrobe\?\.forcedPatternForRender\?\.\(roster, 'pants', forced\)/, 'pants weave data comes from the shared per-piece pattern policy');
+  assert.match(fs.readFileSync('docs/js/npc-wardrobe.js', 'utf8'), /forcedOverpassPattern: forcedPatternForRender\(rec, rawItem\.slot, forced\)/, 'the NPC wardrobe policy uses the same per-piece pattern helper');
   assert.match(fs.readFileSync('docs/js/combat/combat-special-liches.js', 'utf8'), /trackPortraitTexture\?\.\(THREE,texture,'front'\)/, 'the circlet overlay follows the portrait flip setting');
   assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/weapon-layer-effects\.js\?v=/, 'the Workshop loads the marker-pixel scanner');
   console.log('Flame headband: emitter pixels, hidden headband and circlet overlay verified');

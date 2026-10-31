@@ -356,7 +356,7 @@
   function pantsAppearanceWithForcedPattern(appearance, roster) {
     const forced = roster?.clothingPatterns?.forcedOverpassBySlot?.pants;
     if (!forced?.pattern) return appearance;
-    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: { ...JSON.parse(JSON.stringify(forced.pattern)), ...(Number(forced.scale) > 0 ? { usageScaleMultiplier: Number(forced.scale) } : {}) } }; // Per-piece pattern size (e.g. 4x pants) via the weaving renderer's usage multiplier.
+    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: window.NpcWardrobe?.forcedPatternForRender?.(roster, 'pants', forced) || JSON.parse(JSON.stringify(forced.pattern)) }; // Same per-piece size, raw-size outline (500px pants vs 234x173 body sprites) and body-scale compensation as every other garment.
     if (Array.isArray(forced.roles) && forced.roles.length) weaving.forcedOverpassRoles = [...forced.roles];
     const patternHex = appearance.patternHex && appearance.patternHex !== '#ffffff' ? appearance.patternHex : (forced.fallbackColorC?.hex || appearance.patternHex);
     // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3). With baseUsesPatternColor the BASE layer (dye A) is
@@ -2831,6 +2831,10 @@
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
+    if (!roster?.mountSpecies) { // Patterns are baked into the portrait before the rig stretches it, so the final body scale must be known up front (rider mounts are exempt from rig scaling).
+      const earlyScale = { ...(opts.avatarRigScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...(loadoutRules?.rigScaleFor?.(loadoutKind) || {}) };
+      roster.patternBodyScale = { x: Number(earlyScale.x) > 0 ? Number(earlyScale.x) : 1, y: Number(earlyScale.y) > 0 ? Number(earlyScale.y) : 1, head: Number(earlyScale.head) > 0 ? Number(earlyScale.head) : 1 };
+    }
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
     const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
