@@ -51,7 +51,16 @@
     if (!held) interrupted = false;
     const target = held && !interrupted && deps.getActiveAction() === HOLD_ACTION ? deps.getAimedHoldCorpse() : null;
     if (!target) { if (holdId !== null || hudVisible) reset(); return; }
-    if (holdId !== target.id) { holdId = target.id; holdT = 0; hideHud(); }
+    if (holdId !== target.id) {
+      holdId = target.id; holdT = 0; hideHud();
+      const onStartResult = target.onHoldStart?.(); // Optional one-time hold-start interception; ordinary corpses have no such hook.
+      if (onStartResult?.interrupt) {
+        lastResult = onStartResult;
+        interrupted = true; reset(); // A nighttime hive assault interrupts harvesting until the button is released.
+        if (onStartResult.message) deps.showToast?.(onStartResult.message, !!onStartResult.ok);
+        return;
+      }
+    }
     holdT += dt;
     const holdSeconds = Math.max(0.1, Number(target.holdSeconds) || 2);
     showHud(target.holdLabel || 'Looting...', (holdT / holdSeconds) * 100);
