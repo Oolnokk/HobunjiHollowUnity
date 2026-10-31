@@ -144,7 +144,7 @@
       palmPosition.copy(scratch[3]);collider.center.copy(palmPosition);
       palm.position.copy(palmPosition);
       palm.quaternion.setFromUnitVectors(axis,lastAim);
-      palm.scale.setScalar(.32+.68*clamp(progress*4,0,1));
+      palm.scale.setScalar(curl>.9?1:(.32+.68*clamp(progress*4,0,1))); // Keep the captured three-digit fork full-size at its hidden node.
       curlAmount=clamp(curl,0,1);
       for(const finger of fingers){
         const {spec,knuckle,bend}=finger;
@@ -161,54 +161,13 @@
       get fingerCurl(){return fingers.map(f=>Math.abs(f.bend.rotation.z));},
       get aim(){return lastAim.clone();}};
   }
-  function makeFeedingRoots(T,foliage,anchor,sourceNodes,material,seed){
-    const roots=new T.Group();roots.name='Feeding roots closing around captured character';
-    const nearby=sourceNodes.filter(x=>x.point.distanceToSquared(anchor.point)<4.8 && x.sourceKey!==anchor.sourceKey)
-      .sort((a,b)=>a.point.distanceToSquared(anchor.point)-b.point.distanceToSquared(anchor.point));
-    const sources=(nearby.length?nearby:[anchor]).slice(0,3),strands=[];
-    for(let index=0;index<3;index++){
-      const source=sources[index%sources.length],segments=[];
-      for(let s=0;s<5;s++){
-        const length=.35,pivot=new T.Group();roots.add(pivot);
-        const mesh=branchMesh(T,foliage,material,length,.072-s*.009,seed+':feed:'+index+':'+s,'Closing natural root '+index+' segment '+s);
-        pivot.add(mesh);segments.push({pivot,mesh,length});
-      }
-      strands.push({source,segments,phase:index*2*Math.PI/3});
-    }
-    const axis=new T.Vector3(1,0,0),delta=new T.Vector3(),a=new T.Vector3(),b=new T.Vector3();
-    function update(progress,center){
-      roots.visible=progress>.002;
-      const grow=clamp(progress,0,1);
-      for(const strand of strands){
-        const start=strand.source.point;
-        for(let i=0;i<strand.segments.length;i++){
-          const t0=i/5,t1=(i+1)/5;
-          const point=(t,out)=>{const arc=t*1.65*Math.PI*grow+strand.phase;
-            const radius=.57*(1-.66*grow)*(1-t*.2);
-            const blend=clamp(t*grow*2.5,0,1);
-            out.copy(start).lerp(center,blend);
-            out.x+=Math.cos(arc)*radius*blend;out.z+=Math.sin(arc)*radius*blend;
-            out.y+=(t-.5)*.75*grow*blend;
-            return out;};
-          point(t0,a);point(t1,b);delta.subVectors(b,a);
-          const length=delta.length(),part=strand.segments[i];
-          part.pivot.position.copy(a);part.pivot.visible=length>.004&&grow>.002;
-          if(length>.0001){
-            part.pivot.quaternion.setFromUnitVectors(axis,delta.multiplyScalar(1/length));
-            part.mesh.position.x=length*.5;part.mesh.scale.x=Math.max(.001,length/part.length);
-          }
-        }
-      }
-    }
-    roots.visible=false;return {group:roots,update,sourceCount:sources.length};
-  }
   function create({THREE,room,rootLayers,wallRootLayers,seed='root-snare',count=6,triggerRadius=2.5,
     reach=1.45,extendSpeed=2.4,retractSpeed=1.1,showNodes=false,foliage}={}){
     const T=THREE;
     if(!T||!room?.model)throw new TypeError('A prepared ruin is required.');
     const sources=rootLayers||wallRootLayers||[],builder=foliage||root.FoliageGenerator;
     if(!builder?.buildLogMesh)throw new Error('Root snare needs FoliageGenerator.buildLogMesh.');
-    const nodes=sourceNodes(T,room,sources,seed),anchors=findWallRootNodes(T,room,sources,seed,count);
+    const anchors=findWallRootNodes(T,room,sources,seed,count);
     const group=new T.Group();group.name='Wall and floor root snares';
     let sourceMaterial=null;
     for(const item of sources){
@@ -220,43 +179,38 @@
     const material=sourceMaterial?.clone?.()||new T.MeshBasicMaterial({color:0x24211d});
     material.side=T.DoubleSide;
     const markerMat=new T.MeshBasicMaterial({color:0xffae6b,depthTest:false});
-    const rng=seeded(seed+':hands');
     const entries=anchors.map((anchor,index)=>{
       const hand=makeHand(T,builder,anchor,material,seed+':'+index);group.add(hand.group);
       const marker=new T.Mesh(new T.SphereGeometry(.062,7,5),markerMat);
       marker.name='Show hidden branch node '+anchor.id;marker.position.copy(anchor.point);marker.visible=!!showNodes;group.add(marker);
-      return {hand,marker,feeding:null,progress:0,reach:0,cooldown:0,state:'dormant',
-        timer:0,lunges:0,aims:0,previousAim:hand.aim,consumed:0,swallowCenter:anchor.point.clone()};
+      return {hand,marker,progress:0,reach:0,cooldown:0,state:'dormant',
+        timer:0,lunges:0,aims:0}; // The root node remains fixed and the capture stays held until manually released.
     });
     const settings={triggerRadius:clamp(Number(triggerRadius)||2.5,.5,7),
       reach:clamp(Number(reach)||1.45,.3,4),extendSpeed:clamp(Number(extendSpeed)||2.4,.15,12),
       retractSpeed:clamp(Number(retractSpeed)||1.1,.15,12)};
     const targetPoint=new T.Vector3(),scratch=new T.Vector3(),carry=new T.Vector3();
-    let caught=null,closed=false,lunges=0,consumed=0;
+    let caught=null,closed=false,lunges=0;
     function actorOf(target){return target?.group||target;}
     function capture(entry,target,actor){
-      caught={entry,target,actor,startingScale:actor.scale.clone(),startingPosition:actor.position.clone(),
-        startingVisibility:actor.visible,elapsed:0};
-      target.setRunning?.(false); // Stop the procedural walker while the palm owns its trajectory.
-      entry.state='captured';entry.timer=0;entry.progress=Math.max(entry.progress,.15);
-      if(!entry.feeding){
-        entry.feeding=makeFeedingRoots(T,builder,entry.hand.anchor,nodes,material,seed+':feed:'+entry.hand.anchor.id);
-        group.add(entry.feeding.group);
-      }
+      caught={entry,target,actor}; // The grasp owns the runner until the author explicitly releases it.
+      target.setRunning?.(false); // Stop the shared procedural-walk driver, not the render loop.
+      entry.state='pulling';entry.timer=0;entry.progress=Math.max(entry.progress,.15);
     }
-    function release(){
-      if(!caught)return;
-      const {actor,target,startingScale,startingVisibility}=caught;
-      actor.scale.copy(startingScale);actor.visible=startingVisibility;
-      target.resetAfterSnare?.() || target.chooseTarget?.(); // Give the author a repeatable prey after consumption.
-      target.setRunning?.(true);
+    function releaseCaptured(){
+      if(!caught)return false;
+      const {target,entry}=caught;
       caught=null;
+      entry.state='retracting';entry.cooldown=1;
+      target.setRunning?.(true);
+      target.chooseTarget?.();
+      return true;
     }
     function update(dt,target){
       if(closed||!target)return false;
       const actor=actorOf(target);if(!actor?.position)return false;
       dt=clamp(Number(dt)||0,0,.05);if(!dt)return false;
-      targetPoint.copy(actor.position).add(new T.Vector3(0,1,0));
+      targetPoint.copy(actor.position);targetPoint.y+=1; // Character's chest position drives the spherical palm collider.
       let changed=false;
       for(const entry of entries){
         const hand=entry.hand,anchor=hand.anchor;
@@ -285,48 +239,37 @@
           entry.progress=clamp(entry.progress-dt*settings.retractSpeed,0,1);
           hand.draw(dt,entry.progress,targetPoint,entry.reach,0,true);
           if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;}
-        }else if(entry.state==='captured'&&caught?.entry===entry){
-          // The branch closes its three digits, then draws the captive home.
+        }else if(entry.state==='pulling'&&caught?.entry===entry){
+          // The entire arm retreats along its own branch path while the hand
+          // stays closed; the captive is lerped into that moving palm.
           entry.progress=clamp(entry.progress-dt*settings.retractSpeed*.72,0,1);
           hand.draw(dt,entry.progress,targetPoint,entry.reach,1,true);
           carry.copy(hand.palmPosition).addScaledVector(hand.aim,.18);
-          carry.y-=.85; // Character's standing root is below the captured torso.
+          carry.y-=.85; // NPC root remains beneath the center of its trapped torso.
           actor.position.lerp(carry,clamp(dt*13,0,1));
-          if(entry.progress<=.06 && actor.position.distanceToSquared(carry)<.05){
-            entry.state='devouring';entry.timer=0;
-            entry.swallowCenter.copy(anchor.point);entry.swallowCenter.y+=.2;
+          if(entry.progress<=.001&&actor.position.distanceToSquared(carry)<.01){
+            entry.state='held';entry.timer=0;
           }
-        }else if(entry.state==='devouring'&&caught?.entry===entry){
-          // Neighboring *existing* root nodes seed a curling enclosure; prey
-          // disappears only once hidden inside the roots, never on contact.
-          const swallow=clamp(entry.timer/1.65,0,1);
-          entry.feeding?.update(swallow,entry.swallowCenter);
-          actor.position.lerp(entry.swallowCenter,clamp(dt*6,0,1));
-          const eased=swallow*swallow*(3-2*swallow);
-          actor.scale.copy(caught.startingScale).multiplyScalar(Math.max(.001,1-eased));
-          hand.draw(dt,.06,entry.swallowCenter,entry.reach,1,true);
-          if(swallow>=1){
-            actor.visible=false;entry.state='digesting';entry.timer=0;consumed++;entry.consumed++;
-          }
-        }else if(entry.state==='digesting'){
-          if(entry.timer>=.8){
-            entry.feeding?.update(0,entry.swallowCenter);
-            hand.draw(dt,0,entry.swallowCenter,0,0,true);hand.group.visible=false;
-            entry.progress=0;entry.cooldown=2.4;entry.state='dormant';entry.timer=0;
-            release();
-          }
+        }else if(entry.state==='held'&&caught?.entry===entry){
+          // Intentionally terminal for now: no devouring, shrinking, removal
+          // or automatic release until the rest of the encounter is designed.
+          hand.draw(dt,0,targetPoint,0,1,true);
+          carry.copy(hand.palmPosition).addScaledVector(hand.aim,.18);
+          carry.y-=.85;
+          actor.position.lerp(carry,clamp(dt*13,0,1));
         }
         changed=true;
       }
       return changed;
     }
-    return {group,anchors,settings,update,setNodeVisibility(v){for(const e of entries)e.marker.visible=!!v;},
+    return {group,anchors,settings,update,releaseCaptured,setNodeVisibility(v){for(const e of entries)e.marker.visible=!!v;},
       diagnostics(){return {anchors:anchors.map(a=>({id:a.id,role:a.role,sourceRootNode:a.sourceKey,position:a.point.toArray()})),
-        active:entries.filter(e=>e.progress>.03).length,lungeCount:lunges,consumed,
-        caught:!!caught,states:entries.map(e=>({node:e.hand.anchor.id,role:e.hand.anchor.role,state:e.state,
+        active:entries.filter(e=>e.progress>.03||e.state==='held').length,lungeCount:lunges,
+        caught:!!caught,held:entries.filter(e=>e.state==='held').length,
+        states:entries.map(e=>({node:e.hand.anchor.id,role:e.hand.anchor.role,state:e.state,
           progress:+e.progress.toFixed(3),lunges:e.lunges,reroutes:e.aims,digits:e.hand.digitCount,
-          digitRoles:e.hand.digitRoles,wrapped:e.hand.fingerCurl.every(v=>v>.7),consumed:e.consumed})),settings:{...settings}};},
-      dispose(){if(closed)return;closed=true;release();group.parent?.remove(group);
+          digitRoles:e.hand.digitRoles,wrapped:e.hand.fingerCurl.every(v=>v>.7)})),settings:{...settings}};},
+      dispose(){if(closed)return;closed=true;releaseCaptured();group.parent?.remove(group);
         group.traverse(mesh=>{if(mesh.geometry)mesh.geometry.dispose();});
         material.dispose();markerMat.dispose();
       }};
