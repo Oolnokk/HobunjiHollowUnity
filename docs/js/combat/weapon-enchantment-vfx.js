@@ -286,14 +286,25 @@
     const handDeps = window.ProceduralHandAttachments?.gameDeps; // Shares the live held visual with procedural hands and dual wield.
     const holder = handDeps?.toolHolder; // A player-owned holder is mandatory; a free-standing mesh or NPC must never inherit the aura.
     if (!holder?.children) return null;
-    const meshMap = handDeps?.toolMeshMap; // Some integrations expose an equipment map; the shipped hand dependencies expose only toolHolder.
+    const meshMap = handDeps?.toolMeshMap; // Optional authoritative slot map; the shipped hand runtime can omit it.
+    const belongsToHolder = candidate => {
+      for (let ancestor = candidate?.parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor === holder) return true; // Nested attachment/shaft rigs still belong to the exact player-held tool.
+        if (ancestor.visible === false) return false; // A hidden intermediate rig cannot be the currently drawn weapon.
+      }
+      return false; // Never search the scene or accept an enemy/free-standing matching weapon.
+    };
     const isHeldWeapon = candidate => candidate?.visible !== false
       && candidate?.userData?.itemKey === key
       && candidate?.userData?.toolPlane?.isObject3D
-      && (candidate.parent === holder || holder.children.includes(candidate)); // Both the literal key and attachment must agree.
-    const weaponVisual = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // If present, the authoritative melee slot wins over same-key ranged duplicates.
-    if (weaponVisual) return isHeldWeapon(weaponVisual) ? weaponVisual : null;
-    return holder.children.find(isHeldWeapon) || null;
+      && belongsToHolder(candidate); // Exact item identity and player-holder ancestry must both agree.
+    const mapped = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // Prefer the designated melee-slot visual when attached.
+    if (isHeldWeapon(mapped)) return mapped;
+    let held = null; // Fallback for nested attachments or a stale slot map during equipment rebuilds.
+    holder.traverse?.(candidate => {
+      if (!held && candidate !== holder && isHeldWeapon(candidate)) held = candidate;
+    });
+    return held || holder.children.find(isHeldWeapon) || null;
   }
 
   function heldVisualForWeapon(key) {
@@ -449,6 +460,15 @@
     return def?.effects?.find(effect => effect.id === state?.effectId) || def?.effects?.[0] || null;
   }
 
+  function syncParticleRenderLayers(sprite, plane) {
+    if (!sprite?.layers) return;
+    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Used to share the held-weapon selective replay without losing ordinary room rendering.
+    const overlays = Number.isInteger(overlayLayer) && overlayLayer > 0 && overlayLayer < 32
+      && ((Number(plane?.layers?.mask) >>> overlayLayer) & 1);
+    const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Layer 0 is the safe fallback when replay is skipped.
+    if ((Number(sprite.layers.mask) >>> 0) !== wantedMask) sprite.layers.mask = wantedMask;
+  }
+
   function spawnParticle(emitter, mask, snapshot) {
     if (!emitter || !mask?.indices?.length || emitter.particles.length >= MAX_PARTICLES_PER_PLANE || typeof THREE === 'undefined') return;
     const state = snapshot.visual; // Used to resolve player-selected plane/color/effect for this spawn.
@@ -479,13 +499,12 @@
     }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
-    // HeldObjectRenderOrder hides held planes from the base colour pass and
-    // redraws them in its own overlay pass, which painted the blade over any
-    // particle drawn earlier. Particles on such a plane render only in that
-    // same pass, after (renderOrder) and in front of the blade.
-    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
-    if (Number.isInteger(overlayLayer) && ((Number(emitter.plane.layers?.mask) >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer); // r128 Layers has no isEnabled().
-    else sprite.layers?.set?.(0);
+    // The held-object renderer hides the parent plane (and its children) in
+    // the base pass, then redraws it on the overlay layer. Retain layer 0 as
+    // well: rooms without ground replay still use the ordinary world pass.
+    // Recheck existing sprites each frame as the held renderer may mark a mesh
+    // after its first particle spawned (notably during scene/equipment rebuilds).
+    syncParticleRenderLayers(sprite, emitter.plane);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
     const origin = metalPixelToLocal(index, mask, emitter.plane); // Pixel emission follows even offset/expanded modular weapon geometry.
@@ -603,6 +622,7 @@
     for (const emitter of emitters) {
       for (let index = emitter.particles.length - 1; index >= 0; index--) {
         const particle = emitter.particles[index]; // Used as the current pooled particle advanced this frame.
+        syncParticleRenderLayers(particle.sprite, emitter.plane); // Live weapons can acquire their replay layer after the first emission.
         if (updateParticle(particle, dt)) continue;
         retireParticle(emitter, particle);
         emitter.particles.splice(index, 1);
