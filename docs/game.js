@@ -8303,6 +8303,12 @@
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
+            // An interrupted animal must not resume a stale lunge after recovering.
+            // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
+            if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+            if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          }
           if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
