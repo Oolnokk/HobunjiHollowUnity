@@ -862,8 +862,10 @@
     const authoredPatterns = normalizeAuthoredPatterns(opts); // Cache identity includes both optional slots while legacy callers still pass authoredPattern.
     const authoredPattern = authoredPatterns[0] || null;
     const authoredPatternKey = authoredPatterns.length ? JSON.stringify(authoredPatterns) : '';
+    const modular = window.ModularWeapons?.decode?.(spritePath); // Modular pixels must refresh when the authoring rig changes.
+    const modularRevision = modular ? (window.ModularWeapons.diagnostics(spritePath)?.revision || 0) : 0; // Cache identity tracks composed shaft/head geometry.
     const requestInfo = {
-      spritePath,
+      spritePath, modularRevision,
       sourceHex,
       targetHex: opts.targetHex || null,
       verdigrisHex: opts.verdigrisHex || null,
@@ -877,7 +879,7 @@
       saturationMode,
     };
     const cacheKey = [
-      spritePath,
+      spritePath, modularRevision, // Never serve a pre-transform weapon when the Foundry's shaft rig or primitive fits have changed.
       sourceHex,
       opts.targetHex,
       opts.verdigrisHex || '',
