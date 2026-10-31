@@ -137,11 +137,35 @@ the Foundry revision in its composite canvas cache key, preventing stale head
 pixels after editing rig settings and recomposition.
 
 The original donor is unaffected and old saved `duplicateTransform`
-values are retained but interpreted as rig-only adjustments. The editor's
-**shaft arrow** view continues to show original untransformed source
-pixels for precise editing; the **combined preview** shows a stationary
-shaft with the transformed heads. The 2D modular preview does not bake
-live flames into a PNG.
+values are retained but interpreted as rig-only adjustments. The editor
+draws transformed arrow overlays above the **unmoved shaft bitmap**;
+touch gestures invert the parent transform before altering local mount
+records. The **combined preview** shows a stationary shaft with the
+transformed head, junctions, bridges, smudge strokes and recipe results.
+The 2D modular preview does not bake live flames into a PNG.
+
+**Bridge and recipe children:** the compositor first expands saved
+`{ recipe, box }` operations using the existing recipe mapping, then
+applies the same parent attachment transform to every resulting spatial
+step. Direct bridge strokes, smudge/plow/puff/clean strokes and their
+X/Y coordinates follow the parent. Painted fill strokes use separate
+elliptical X/Y radii so nonuniform rig scales do not leave their masks
+behind; algorithms with a single radial parameter use the geometric-mean
+scale. Junction images remain in rig-local coordinates and render under
+the full Canvas parent matrix, so their position, rotation and nonuniform
+X/Y geometry transform with the rest of the rig. Cleanup and separate-
+shading operations remain ordered after their associated brush work and
+operate on the resulting changed region. Composite bounds now include
+the transformed bridge masks and junction sprite envelopes, preventing
+clipping when a rig moves away from the source shaft. Recipes themselves
+are never rewritten when the parent moves.
+
+The editor stores bridge strokes, junction placement and recipe boxes
+in the same local coordinate frame as the head primitives, converts
+pointer interactions back from screen coordinates, and projects recipe
+boxes and junction ghosts through the rig parent. The mobile diagnostic
+tree now shows saved versus expanded bridge/recipe operations, junction
+count and brush count alongside the mount/head children.
 
 The modular compositor recolors the original `#7F00FF` fuel markers
 off-white and records which source-shaft pixels are visible. The metal
