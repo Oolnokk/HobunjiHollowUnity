@@ -201,8 +201,8 @@
       detach(c, state, 'rescued');
       d.damageCreature(c, fullDamage, ally.x, ally.y, fullKnockback, normal.opts);
       const reducedDamage = fullDamage * 0.25; // ResourceSystem derives afflictions and Footing from hit amount, so do NOT scale their coefficients twice.
-      const reducedOpts = { ...normal.opts, noStagger: true, footingDamageMultiplier:
-        (Number.isFinite(normal.opts?.footingDamageMultiplier) ? normal.opts.footingDamageMultiplier : 1) };
+      const reducedOpts = { ...normal.opts, footingDamageMultiplier:
+        (Number.isFinite(normal.opts?.footingDamageMultiplier) ? normal.opts.footingDamageMultiplier : 1) }; // Do not set noStagger: that would suppress the requested quarter-strength knockback.
       if (isPlayer(host)) d.damagePlayer(reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       else d.damageCreature(host, reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       ally.attackCooldownT = Math.max(Number(ally.attackCooldownT) || 0, Number(ally.def?.attackCooldownS) || 1.1);
