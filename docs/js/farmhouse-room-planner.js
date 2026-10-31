@@ -213,10 +213,18 @@
         let chosen = null;
         for (const candidate of candidates) {
           const k = key(candidate.c, candidate.r);
-          if (examined.has(k) || hardObstacles.has(k) || reservedDoors.has(k) || floorSet.has(k)) continue;
+          const withinGrid = p => Number.isInteger(p.c) && Number.isInteger(p.r)
+            && p.c >= 0 && p.r >= 0
+            && p.c < (deps?.interiorCols ?? Infinity) && p.r < (deps?.interiorRows ?? Infinity);
+          // A fallback corridor near the farm boundary must never create
+          // unrenderable negative/out-of-grid tiles or an unreachable door.
+          if (examined.has(k) || !withinGrid(candidate)
+            || hardObstacles.has(k) || reservedDoors.has(k) || floorSet.has(k)) continue;
           examined.add(k);
           const route = corridorForJoin(segment, candidate, hardObstacles);
-          if (route && !route.some(p => exitSet.has(key(p.c, p.r)))) { chosen = { candidate, route }; break; }
+          if (route && route.every(withinGrid) && !route.some(p => exitSet.has(key(p.c, p.r)))) {
+            chosen = { candidate, route }; break;
+          }
         }
         if (!chosen) {
           skipped.push({ id: segment.id, reason: 'No distinct unobstructed doorway across the indoor-only gap' });
