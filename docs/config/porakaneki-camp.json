@@ -10,9 +10,9 @@
     "localeId": "locale_porakaneki_camp_small",
     "minPerZone": 1,
     "maxPerZone": 1,
-    "minResidents": 4,
-    "maxResidents": 5,
-    "notes": "Each wilderness map contains exactly one persistent Porakaneki hunting camp, positioned near the opposite end from the Omgurku camp. Its 4-5 procedural hunters average 4.5 per map, roughly half the earlier 2-4 camps with 2-4 residents each (9 on average). The separate two-rider Avenger band is unchanged; ordinary hunters do not migrate with the chief."
+    "minResidents": 2,
+    "maxResidents": 4,
+    "notes": "Each wilderness map contains exactly one persistent Porakaneki hunting camp, positioned near the opposite end from the Omgurku camp. Its procedural residents do not migrate with the chief."
   },
   "chiefCamp": {
     "localeId": "locale_porakaneki_camp_chief",
