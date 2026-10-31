@@ -609,6 +609,7 @@
         yield {part:'Build '+part.label,layer:part.index+1,layers:partPlan.length};
       }
     }
+    if(network){network.fields.length=0;for(const part of network.parts){delete part.field;delete part.ports;delete part.paths;}} // Multiple mechanism states retain finished geometry and diagnostics, not the large temporary sampling fields.
     const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
     const groundedPartPlan=partPlan.filter(part=>part.grounded);
     const groundGrowth=groundedPartPlan.map(part=>partGrowths[part.index]);

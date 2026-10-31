@@ -7,7 +7,7 @@
   const status = $('hud'), diagnostics = $('debug'), errorBox = $('errors');
   const trackedFields = ['seed','floorWidth','floorDepth','branchCount','strandLimit','radius',
     'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','shapeInset','volumeFillDepth','detailPreservation','knotDensity','minRootRadius','duration','showGuide'];
-  const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
+  const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null,mechanism:null }; // Imported shape and serializable source metadata.
   const PREVIEW_COLORS={stoneColor:'#363733',rootColor:'#24211d'}; // Picker defaults and legacy-recipe fallback: user-selected stone and root palette.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
@@ -15,13 +15,14 @@
   let colorRebuildTimer=null; // Debounce root texture/cover rebuilds while HSL sliders are being dragged.
   let repoRequestId = 0; // Ignores stale results from overlapping catalog refresh requests.
   let buildRequestId = 0, ruinFrame = null, ruinLoader = null, ruinQueue = Promise.resolve(), ruinRoom = null; // Serialize generator ownership and discard obsolete preview requests.
+  let activeMechanismSource=null,mechanismLoadId=0; // Keep authored pose guides alive until their rendered controller is replaced.
   let preparedRuin=null; // Completed vegetation remains separate from the interactive Grow/Reset instance.
   let framedEnvironment = 'flat'; // Reframe once per room/seed so rebuilds preserve the user's orbit and zoom.
   let buildController=null,roomCancel=null; // Cancel obsolete Wrap work and release a stalled generator instead of blocking future rebuilds.
   const buildState={running:false,stage:'idle',message:'Ready'}; // Mobile-visible construction progress is distinct from animation progress.
   function buildMessage(stage,message){
     buildState.stage=stage;buildState.message=message;
-    $('buildStatus').textContent=message;$('cancelBuild').disabled=!buildState.running;
+    $('buildStatus').textContent=message;$('cancelBuild').disabled=!buildState.running;syncMechanismControls();
     for(const id of ['extend','retract','pause','reset','full','scrub'])if($(id).disabled!==buildState.running)$(id).disabled=buildState.running; // Do not silently send a Grow press to the previous instance while its replacement is being built.
     if(buildState.running)status.textContent=message;
   }
@@ -96,7 +97,7 @@
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   $('render').appendChild(renderer.domElement);
   const orbit = new T.OrbitControls(camera, renderer.domElement);
-  const watchedTextures=new Map();let renderedActive=null,renderedProgress=-1; // Redraw a static preview only for changed geometry, camera or asynchronously loaded texture pixels.
+  const watchedTextures=new Map();let renderedActive=null,renderedProgress=-1,renderedVersion=-1; // Redraw a static preview only for changed geometry, camera or asynchronously loaded texture pixels.
   let previewDirty=true;orbit.addEventListener('change',()=>{previewDirty=true;}); // Keep orbit responsive during construction without redrawing a static dense scene between every layer.
   orbit.enableDamping = true; orbit.dampingFactor = .1; orbit.target.set(0, 1, 0);
   scene.add(new T.HemisphereLight(0xdcecff,0x33462d,1.5));
@@ -442,13 +443,15 @@
       pendingCover=room?await prepareRuin(room,request,controller.signal):null;
       if(request!==buildRequestId)return;
       const progress = keepProgress ? active?.getProgress() ?? 0 : 0;
-      const placed = source.model.clone(true); // Never mutate the reusable imported source's local geometry.
-      placed.position.copy(readPosition()); // Purpose-agnostic target transform for platform, bridge or future door shapes.
-      next=await growth.createAsync({THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},target:placed,
+      const place=model=>{const placed=model.clone(true);placed.position.copy(readPosition());return placed;}; // Static guide poses retain the user's placement without mutating their templates.
+      const options={THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},
         ...(pendingCover?{growthSource:pendingCover.cover.targetGrowth}:{}),progress,rootFinish:rootFinishForPreview(),signal:controller.signal,
-        onProgress:step=>{if(request===buildRequestId)buildMessage('roots','Building roots: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
+        onProgress:step=>{if(request===buildRequestId)buildMessage('roots','Building roots: '+step.part+' · layer '+step.layer+'/'+step.layers);}};
+      next=source.mechanism?await window.LiveRootMechanisms.createAsync({...options,type:source.mechanism.type,name:source.name,
+        states:source.mechanism.states.map(state=>({...state,target:place(state.target)})),keyframes:source.mechanism.keyframes,poseProgress:Number($('mechanismPose').value)/100,transitionDuration:readMechanismDuration()}):
+        await growth.createAsync({...options,target:place(source.model)});
       if(request!==buildRequestId)return;
-      active?.dispose();active=next;next=null;
+      active?.dispose();active=next;next=null;const previousMechanism=activeMechanismSource;activeMechanismSource=source.mechanism;if(previousMechanism&&previousMechanism!==activeMechanismSource)previousMechanism.dispose();
       if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
       if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
       if(room)$('ruinStatus').textContent=`1 room · ${room.walls} solid walls · ${room.roomWidth} × ${room.roomDepth} room · ${room.floorStones} quarter-scale floor stones (4 × 4 tiles) · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Farm cliff texture fitted after rockification. Denser Temple roots (60–150%) + woven vines (100–150%) cover walls and floor; Grow/Reset affects only the new shape.`;
@@ -481,6 +484,7 @@
       (info.partCount-info.groundedParts.length) + ' raised parts (' +
       info.rootTransferCount + ' connecting shoots, depth ' + info.maxPartDepth + ')';
     if (force || message !== lastStatus) { status.textContent = message; lastStatus = message; }
+    if(info.mechanism){const pose=Math.round(info.mechanism.poseProgress*100),label=pose+'%',message=info.mechanism.keyframeCount+' keyframes · '+info.mechanism.uniqueStates+' rooted states · growth/retraction only';if($('mechanismPose').value!==String(pose))$('mechanismPose').value=String(pose);if($('mechanismPoseValue').textContent!==label)$('mechanismPoseValue').textContent=label;if($('mechanismStatus').textContent!==message)$('mechanismStatus').textContent=message;}
     const details = JSON.stringify({
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,appearance:readPreviewColors(),
       environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
@@ -488,6 +492,23 @@
       targetPosition:readPosition().toArray(), ...info
     }, null, 2);
     if (force || details !== lastDebug) { diagnostics.textContent = details; lastDebug = details; }
+  }
+  function syncMechanismControls(){
+    const disabled=buildState.running||!active?.setPoseProgress||source.kind!=='ruin-mechanism'; // Existing furniture imports retain their normal Grow/Reset behaviour.
+    for(const id of ['mechanismPose','mechanismActivate','mechanismReset'])if($(id)&&$(id).disabled!==disabled)$(id).disabled=disabled;
+  }
+  function readMechanismDuration(){const value=Number($('mechanismDuration').value);return Number.isFinite(value)?Math.max(.15,Math.min(30,value)):.65;}
+  function clearMechanismSource(invalidate=true){if(invalidate){mechanismLoadId++;$('loadMechanism').disabled=false;}const previous=source.mechanism;source.mechanism=null;if(previous&&previous!==activeMechanismSource)previous.dispose();syncMechanismControls();} // Rendered poses retain their guide resources until the next successful rebuild.
+  async function loadMechanism(type,seed=null,rebuildNow=true){
+    const request=++mechanismLoadId,button=$('loadMechanism');button.disabled=true;$('mechanismStatus').textContent='Loading existing ruin keyframes…'; // Ignore obsolete preset requests while the hidden generator loads.
+    let specification=null;
+    try{
+      const api=await ruinGenerator();api.pausePreviewLoop();specification=api.createRootMechanismKeyframes(type,seed||readRecipe().seed+':'+type);
+      if(request!==mechanismLoadId){specification.dispose();return;}
+      clearMechanismSource(false);source.mechanism=specification;source.kind='ruin-mechanism';source.name='Root '+specification.name;source.file=type;source.data=null;source.model=specification.states[0].target;$('mechanismType').value=type;
+      if(rebuildNow){$('mechanismPose').value='0';$('targetX').value='0';$('targetY').value=String(ruinRoom?.floorY??.06);$('targetZ').value='0';$('previewEnvironment').value='ruin';await rebuild(false);if(active?.setPoseProgress){active.setProgress(1);previewDirty=true;updateStatus(true);}}
+    }catch(error){if(specification&&source.mechanism!==specification)specification.dispose();throw error;}
+    finally{if(request===mechanismLoadId)button.disabled=false;syncMechanismControls();}
   }
   function humanizeKey(key) { return String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_-]+/g,' ').replace(/\b\w/g, c => c.toUpperCase()); }
 
@@ -618,7 +639,7 @@
       }
       await waitForFurnitureGlbs(model); // Growth must use real imported geometry, never a 1-mm GLB placeholder.
       // Only swap the model after its actual geometry was successfully generated.
-      source.kind = entry.kind === 'procedural' ? 'repo-procedural' : 'repo-authored';
+      clearMechanismSource();source.kind = entry.kind === 'procedural' ? 'repo-procedural' : 'repo-authored';
       source.name = entry.name; source.data = json; source.file = entry.path || entry.key; source.model = model;
       $('targetY').value = '0'; // Repo furniture's authored part coordinates normally already start at floor level.
       rebuild(false); $('repoFurnitureStatus').textContent = 'Imported ' + entry.name + ' from repository.';
@@ -657,12 +678,12 @@
       const gltf = await new Promise((resolve, reject) =>
         new T.GLTFLoader().parse(buffer, '', resolve, reject));
       if (!gltf.scene?.isObject3D) throw new Error('The GLB has no scene.');
-      source.kind = 'glb'; source.name = file.name; source.data = null; source.file = file.name; source.model = gltf.scene;
+      clearMechanismSource();source.kind = 'glb'; source.name = file.name; source.data = null; source.file = file.name; source.model = gltf.scene;
     } else if (ext === 'json') {
       const json = JSON.parse(await file.text());
       const model = buildAuthoredFurniture(json);
       await waitForFurnitureGlbs(model);
-      source.kind = 'authored-furniture'; source.name = file.name; source.data = json; source.file = file.name; source.model = model;
+      clearMechanismSource();source.kind = 'authored-furniture'; source.name = file.name; source.data = json; source.file = file.name; source.model = model;
     } else throw new Error('Choose a GLB or Furniture + Avatar Author JSON.');
     $('targetY').value = source.kind === 'glb' ? '1.5' : '0.6';
     rebuild(false);
@@ -671,7 +692,7 @@
     return {schema:'hobunji_live_root_growth.v1',
       environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),appearance:readPreviewColors(),
       recipe:readRecipe(), position:readPosition().toArray(),
-      target:{kind:source.kind,file:source.file,
+      target:{kind:source.kind,file:source.file,...(source.mechanism?{mechanism:{type:source.mechanism.type,seed:source.mechanism.seed,pose:active?.getPoseProgress?.()??Number($('mechanismPose').value)/100,duration:readMechanismDuration()}}:{}),
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
           ? {furniture:source.data} : {})}
     }; // Repo snapshots and authored JSON are self-contained; external GLB remains separate.
@@ -700,11 +721,15 @@
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
       const n = Number(json.position[i]); if (Number.isFinite(n)) $(id).value = String(n);
     });
-    if (['authored-furniture','repo-authored','repo-procedural'].includes(json.target?.kind) &&
+    if(json.target?.kind==='demo'){clearMechanismSource();source.model=demoModel();source.kind='demo';source.name='Raised platform (demo)';source.data=null;source.file=null;}
+    else if(json.target?.kind==='ruin-mechanism'&&json.target.mechanism){
+      $('mechanismDuration').value=String(Number(json.target.mechanism.duration)||.65);$('mechanismPose').value=String(Math.max(0,Math.min(1,Number(json.target.mechanism.pose)||0))*100);
+      await loadMechanism(json.target.mechanism.type,json.target.mechanism.seed,false);
+    }else if (['authored-furniture','repo-authored','repo-procedural'].includes(json.target?.kind) &&
         Array.isArray(json.target.furniture?.parts)) {
       const model = buildAuthoredFurniture(json.target.furniture);
       await waitForFurnitureGlbs(model);
-      source.model=model;source.data=json.target.furniture;source.kind=json.target.kind;
+      clearMechanismSource();source.model=model;source.data=json.target.furniture;source.kind=json.target.kind;
       source.name=json.target.file ? humanizeKey(json.target.file.split('/').pop().replace(/\.json$/,'')) : 'Embedded furniture';
       source.file=json.target.file||null;
     } else if (json.target?.kind === 'glb') {
@@ -714,7 +739,7 @@
         return;
       }
     }
-    pendingRecipe=null;await rebuild(false);
+    pendingRecipe=null;await rebuild(false);if(source.mechanism){active?.setProgress(1);previewDirty=true;updateStatus(true);}
   }
   function resize() {
     const rect=$('render').getBoundingClientRect(), w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));
@@ -729,6 +754,11 @@
       $(id+axis).onchange=()=>{if(updateColorHsl(id))scheduleColorPreview(id,true);};
     }
   }
+  $('loadMechanism').onclick=()=>loadMechanism($('mechanismType').value).catch(reportError);
+  $('mechanismActivate').onclick=()=>{active?.setPoseTarget?.(1);};
+  $('mechanismReset').onclick=()=>{active?.setPoseTarget?.(0);};
+  $('mechanismPose').oninput=()=>{active?.setPoseProgress?.(Number($('mechanismPose').value)/100);previewDirty=true;updateStatus(true);};
+  $('mechanismDuration').onchange=()=>{$('mechanismDuration').value=String(readMechanismDuration());if(source.mechanism)rebuild();};
   $('copyColors').onclick=()=>copyColors().catch(reportError);
   $('rebuild').onclick=()=>rebuild();
   $('cancelBuild').onclick=cancelBuild;
@@ -754,7 +784,7 @@
   $('download').onclick=saveJson;$('copy').onclick=()=>copyJson().catch(reportError);
   window._liveRootGrowthAuthorBridge = {getRecipe:exportedRecipe, rebuild,
     getBuildState:()=>({...buildState}),cancelBuild, // Report loading versus geometry work even before an animated instance exists.
-    getPreparedRuin:()=>preparedRuin,getInstance:()=>active, // Allows exact hidden geometry, growth stages and disposal checks without renderer interception.
+    getPreparedRuin:()=>preparedRuin,getInstance:()=>active,loadMechanism,setMechanismProgress:value=>{active?.setPoseProgress?.(value);previewDirty=true;}, // Allows exact hidden geometry, growth stages and disposal checks without renderer interception.
     diagnostics:()=>active?.getDiagnostics(), refreshRepoFurniture, getRepoCount:()=>repoCatalog.size}; // Built-in mobile diagnostic hook for the Tools Hub.
   if (window.ResizeObserver) new ResizeObserver(resize).observe($('render'));else window.addEventListener('resize',resize);
   function watchSceneTextures(){
@@ -780,9 +810,9 @@
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
     lastTimestamp=timestamp;if(!buildState.running)active?.update(delta);orbit.update();
     const progress=active?.getProgress()??0; // Growth and particle playback still render while static repeated floor meshes can rest.
-    if(active!==renderedActive||progress!==renderedProgress)previewDirty=true;
+    const version=active?.getRenderVersion?.()??0;if(active!==renderedActive||progress!==renderedProgress||version!==renderedVersion)previewDirty=true;
     for(const [texture,version] of watchedTextures)if(texture.version!==version){watchedTextures.set(texture,texture.version);previewDirty=true;}
-    if(previewDirty||(!buildState.running&&progress>=1&&active?.emitterVisuals?.length)){renderSceneWithShellOutlines();previewDirty=false;renderedActive=active;renderedProgress=progress;}
+    if(previewDirty||(!buildState.running&&progress>=1&&active?.emitterVisuals?.length)){renderSceneWithShellOutlines();previewDirty=false;renderedActive=active;renderedProgress=progress;renderedVersion=version;}
     if (active && (timestamp % 220 < 18)) updateStatus();
   }
   syncPreviewColors();

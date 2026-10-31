@@ -20,7 +20,8 @@
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
 <script src="js/live-root-network.js?v=1"></script>
-<script src="js/live-root-growth.js?v=20261031h2fa53a0"></script>
+<script src="js/live-root-mechanisms.js?v=1"></script>
+<script src="js/live-root-growth.js?v=20261031hf6e1475"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -70,6 +71,14 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p id="sourceName">Demo: raised rectangular platform. Replace with any furniture export or GLB.</p>
 <div class="controls"><label>Shape X <input id="targetX" type="number" step=".25" value="0"></label><label>Shape Y <input id="targetY" type="number" step=".25" value="1.5"></label><label>Shape Z <input id="targetZ" type="number" step=".25" value="0"></label><label>Show guide <input id="showGuide" type="checkbox"></label></div>
 </section>
+<section><h2>Ruin mechanisms · rooted keyframes</h2>
+<label for="mechanismType">Existing ruin mechanism</label><select id="mechanismType"><option value="stoneDoor">Stone door</option><option value="bridge">Retracting bridge</option><option value="bridgeSequence">Timed bridge</option><option value="movingDais">Rising platform</option><option value="collapsingStairs">Collapsing stairs</option><option value="rotatingObelisk">Rotating obelisk</option><option value="linkedCubePair">Linked cube solution</option><option value="pushPuzzleBlock">Push-block route</option><option value="elevatorPushBlock">Lifted push block</option><option value="pressurePlate">Pressure plate</option></select>
+<button id="loadMechanism" type="button" style="width:100%;margin-top:8px">Build rooted mechanism</button>
+<label for="mechanismDuration">Transition duration (seconds)</label><input id="mechanismDuration" type="number" min=".15" max="30" step=".05" value=".65">
+<label for="mechanismPose">Mechanism progress · <output id="mechanismPoseValue">0%</output></label><input id="mechanismPose" type="range" min="0" max="100" step="1" value="0" disabled>
+<div class="controls"><button id="mechanismActivate" type="button" disabled>Activate</button><button id="mechanismReset" type="button" disabled>Reset state</button></div>
+<p id="mechanismStatus" role="status">Keyframe shapes use the existing ruin geometry. Transitions retract one rooted shape and grow the next; the rooted poses do not translate, rotate, or stretch. Grow/Reset below controls the whole mechanism.</p>
+</section>
 <section><h2>2 · Root growth settings</h2>
 <label for="seed">Deterministic branch seed</label><input id="seed" type="text" value="ruin-root-growth-1" maxlength="128">
 <div class="controls">
@@ -106,10 +115,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>The finished stone floor, roots and vines now scale uniformly to 25% and repeat in 4 × 4 tiles across the same room. Wall vegetation and live-grown furniture keep their original scale.</p></section>
+<section><h2>Latest change</h2><p>The quarter-scale stone/root/vine floor is tiled across the room. Ruin mechanisms now use their existing keyframe shapes as independent rooted states, transitioning through growth and retraction alone.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031h8051a67"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031hf4090dd"></script>
 </body></html>

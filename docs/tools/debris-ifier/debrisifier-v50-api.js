@@ -312,6 +312,52 @@
     }
   }
 
+  function createRootMechanismKeyframes(type,seed='root-mechanism'){
+    const material=new THREE.MeshBasicMaterial({color:0x808080}),rng=seededRng(seed),labels={bridge:'Retracting bridge',bridgeSequence:'Timed bridge',stoneDoor:'Stone door',movingDais:'Rising platform',collapsingStairs:'Collapsing stairs',rotatingObelisk:'Rotating obelisk',linkedCubePair:'Linked cube solution',pushPuzzleBlock:'Push-block route',elevatorPushBlock:'Lifted push block',pressurePlate:'Pressure plate'}; // Reuse the existing V50 constructors and motion evaluator, never a parallel mechanism shape implementation.
+    if(!labels[type]){material.dispose();throw new Error('Unknown ruin mechanism: '+type);}
+    let prototype,samples=[{progress:0,label:'Initial'},{progress:1,label:'Activated'}]; // Authored progress knots are sampled only during construction; rendered rooted poses never move.
+    if(type==='bridge'||type==='bridgeSequence'){prototype=createRetractingStoneBridge(material,3.6,1.1,.22);prototype.position.y=.14;if(type==='bridgeSequence'){prototype.userData.previewMotion.type=type;samples=[{progress:0,label:'Retracted'},{progress:.22,label:'Extended'},{progress:.76,label:'Hold'},{progress:1,label:'Retracted'}];}}
+    else if(type==='stoneDoor'){prototype=new THREE.Group();const frame=createStoneArchFrame(material,2,2.5,.38),door=createVerticalStoneDoor(material,1.35,2.2,.2);door.position.y=2.2;prototype.add(frame,door);}
+    else if(type==='movingDais')prototype=createRisingCollapsingDais(material,1.5,1.5,1.1,false);
+    else if(type==='collapsingStairs')prototype=createCollapsingStoneStairway(material,1.2,1.2,2,5,true);
+    else if(type==='rotatingObelisk')prototype=createStackedRotatingObeliskActivator(material,rng);
+    else if(type==='linkedCubePair'){
+      prototype=createLinkedDoorCubePair(material,rng);const moves=findLinkedCubeSolution(prototype.userData.states)||[],states=[prototype.userData.states.slice()]; // Keep the prototype's actual 2x2 linkage and solve path.
+      for(const move of moves)states.push(linkedCubeApplyMoveState(states.at(-1),move.control,move.direction));
+      samples=states.map((states,index)=>({progress:index/Math.max(1,moves.length),states,label:index?'Turn '+LINKED_CUBE_LABELS[moves[index-1].control]+(moves[index-1].direction>0?' clockwise':' counter-clockwise'):'Scrambled'}));
+      if(samples.length===1)samples.push({progress:1,states:states[0],label:'Solved'});
+    }else if(type==='pushPuzzleBlock'||type==='elevatorPushBlock'){
+      prototype=createPushPuzzleBlock(material);const path=[{x:-1,y:0,z:-.5},{x:0,y:0,z:-.5},{x:0,y:0,z:.5},{x:1,y:0,z:.5}]; // Illustrative route uses the generator's existing per-push and lift timing.
+      prototype.userData.pushPath=path;prototype.userData.pushStart=path[0];prototype.userData.pushTarget=path.at(-1);
+      if(type==='elevatorPushBlock'){prototype.userData.previewMotion.type=type;prototype.userData.elevatorHighY=.9;prototype.userData.pushPath=path.map(point=>({...point,y:.9}));samples=[{progress:0,label:'Low'},{progress:.45,label:'Lifted'},...path.slice(1).map((_,index)=>({progress:.45+.55*(index+1)/3,label:'Route '+(index+1)}))];}
+      else samples=path.map((_,index)=>({progress:index/3,label:'Push '+index}));
+    }else{
+      prototype=createPressurePlateActivator(material);prototype.userData.linkedWeightBlock={position:new THREE.Vector3(1.2,0,0),userData:{pushBlockSize:.62}};
+    }
+    const states=[],keyframes=[],signatures=new Map(),geometries=new Map(),guideMaterial=new THREE.MeshBasicMaterial({color:0x808080}); // Shared immutable guide buffers remain separate from the native prototype's lifetime.
+    let complete=false;
+    try{
+      for(const sample of samples){
+        if(sample.states)setLinkedCubePuzzleState(prototype,sample.states,false);
+        else{if(type==='pressurePlate')prototype.userData.linkedWeightBlock.position.x=1.2*(1-sample.progress);applyMechanismProgress(prototype,sample.progress);}
+        prototype.updateWorldMatrix(true,true);const meshes=[]; // Flatten poses into plain guides; native userData contains live references unsuitable for cloning/serialization.
+        prototype.traverse(mesh=>{if(!mesh.isMesh||!mesh.geometry?.getAttribute('position'))return;let node=mesh;while(node){if(node.visible===false)return;node=node.parent;}const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];if(materials.every(material=>material?.transparent||material?.depthWrite===false))return;meshes.push(mesh);});
+        const signature=meshes.map(mesh=>mesh.geometry.uuid+':'+mesh.matrixWorld.elements.map(value=>value.toFixed(7)).join(',')).join('|'); // Exact holds and return-to-start frames reuse the same rooted state.
+        let state=signatures.get(signature);
+        if(state==null){
+          state=states.length;const target=new THREE.Group();target.name=labels[type]+' / '+sample.label;
+          meshes.forEach((mesh,index)=>{let geometry=geometries.get(mesh.geometry);if(!geometry){geometry=mesh.geometry.clone();geometries.set(mesh.geometry,geometry);}const copy=new THREE.Mesh(geometry,guideMaterial);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.name=mesh.name||labels[type]+' piece '+(index+1);copy.userData.authoredPartId='mechanism-piece-'+index;target.add(copy);});
+          if(!target.children.length)throw new Error('The mechanism has no physical guide meshes.');states.push({target,label:sample.label});signatures.set(signature,state);
+        }
+        keyframes.push({progress:sample.progress,state,label:sample.label});
+      }
+      let disposed=false;complete=true;return {type,name:labels[type],seed:String(seed),states,keyframes,dispose(){if(disposed)return;disposed=true;for(const geometry of geometries.values())geometry.dispose();guideMaterial.dispose();}};
+    }finally{
+      linkedCubePuzzleRoots.delete(prototype);prototype.traverse(mesh=>{if(linkedCubeHitTargets.get(mesh)?.root===prototype)linkedCubeHitTargets.delete(mesh);});
+      disposeObject(prototype);material.dispose();if(!complete){for(const geometry of geometries.values())geometry.dispose();guideMaterial.dispose();}
+    }
+  }
+
   function syncPressurePlates(root) {
     if (!root?.traverse) return;
     root.traverse(plateRoot => {
@@ -465,6 +511,7 @@
     setMechanismTarget,
     snapMechanismState,
     applyProgress,
+    createRootMechanismKeyframes,
     syncPressurePlates,
     rotateLinkedCube,
     tickRuntime,
