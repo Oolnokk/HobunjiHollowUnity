@@ -278,6 +278,10 @@
     return {
       id: hive.key, type: 'honeyfuzzle_hive', promptRoot: hive.promptRoot,
       holdSeconds: HOLD_SECONDS, holdLabel: 'Harvesting hive stump...',
+      onHoldStart: () => isNight() ? {
+        ...harvest(hive.zoneId, hive.col, hive.row),
+        interrupt: true,
+      } : null, // The attempt wakes the hive immediately, not five seconds after the hold succeeds.
       onAction: () => harvest(hive.zoneId, hive.col, hive.row),
     };
   }
