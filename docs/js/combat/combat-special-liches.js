@@ -55,7 +55,29 @@
     const authored = choices[0]?.[0]; // Highest-weight authored Color C swatch wins for a named guardian, rather than changing each spawn.
     if (/^#[0-9a-f]{6}$/i.test(authored || '')) return authored;
     const dye = authored && (window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []).find(item=>item.id===authored);
-    return /^#[0-9a-f]{6}$/i.test(dye?.hex || '') ? dye.hex : (defFor(type)?.ink || '#ffffff');
+    if (/^#[0-9a-f]{6}$/i.test(dye?.hex || '')) return dye.hex;
+    const explicit = ruleFor(type).bossAppearance?.ink; // Workshop "Body Color 3" override.
+    return /^#[0-9a-fA-F]{6}$/.test(explicit || '') ? explicit : inverseRobeColor(type);
+  }
+  function dyeHex(dyeId) {
+    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    const hex = catalog.find(item => item.id === dyeId)?.hex;
+    return /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : null;
+  }
+  // Body Color 3 defaults to the hue opposite the guardian's primary cloth color, so glow, glyph inlays and flames never share the robe's color family.
+  // Lightness/saturation are lifted into a readable emissive range, so a pale or dark robe still gives a vivid glow.
+  function inverseRobeColor(type) {
+    const robe = dyeHex(defFor(type)?.dye) || '#808080';
+    const n = parseInt(robe.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = ((h * 60 + 180) % 360 + 360) % 360; // Opposite hue.
+    const l0 = (max + min) / 2, s0 = d ? d / (1 - Math.abs(2 * l0 - 1)) : 0;
+    const s = Math.min(1, Math.max(0.7, s0)), l = Math.min(0.68, Math.max(0.55, 1 - l0)); // Light robes give a deeper glow, dark robes a brighter one.
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    const [rr, gg, bb] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return '#' + [rr, gg, bb].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
   }
   function applyBodyColor3ToRoster(roster,type) {
     if (!roster || !DATA[type]) return roster;
@@ -107,7 +129,7 @@
       lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
       clothingPatterns:{forcedOverpassBySlot:{
         overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
-        ...(type==='hronal'?{pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}}:{}),
+        pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Every named guardian's pants carry the same woven glyph as the robe.
       }},
     };
     if (type==='hronal') {
@@ -403,7 +425,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,patternFor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),

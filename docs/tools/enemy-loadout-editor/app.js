@@ -652,7 +652,7 @@ function renderBossAppearance(special, tab) {
     el('p','help','The guardian’s Body Color C is shared by eye glow, robe motif and ruin walls. An authored Body Color C swatch takes priority over this fallback; unchecked fields keep the canonical preset.'));
   const settings=tab==='weapons'
     ? [['weaponKey','Warhammer tool key',special.weapon || 'warhammer_nativeCopper','text']]
-    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Body Color 3 fallback / eye and wall glow (hex)',special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
+    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Body Color 3 override (hex); default is the inverse of the robe color',window.SpecialHarlyaoLiches.inverseRobeColor(state.kind.split(':')[1]) || special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
   for(const [key,labelText,fallback,type] of settings) {
     const row=el('label','chance',labelText);
     const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossAppearance?.[key]!=null;
@@ -695,7 +695,7 @@ async function openBossPatternEditor(special, patternKind) {
   const current = window.SpecialHarlyaoLiches.patternFor(type, patternKind); // Authored pattern, else the canonical glyph.
   const dye = (id) => window.ScratchbonesAccount?.getDyeCatalog?.().find((entry) => entry.id === id)?.hex;
   const cloth = dye(rule().bossAppearance?.robeDye || special.dye) || '#c76a1f';
-  const ink = rule().bossAppearance?.ink || special.ink || '#ff8526';
+  const ink = window.SpecialHarlyaoLiches.bodyColor3For(type); // Authored C swatch, Workshop override, else the inverse of the robe color.
   const toolKey = rule().bossAppearance?.weaponKey || special.weapon || 'warhammer_nativeCopper';
   const sprite = state.data?.shapes?.[toolKey.split('_')[0]]?.baseSprite || 'assets/toolsprites/warhammer.png';
   const metalHex = '#B87333';
