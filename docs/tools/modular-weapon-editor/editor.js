@@ -287,8 +287,11 @@
     const count=regions.length, countOps=api.rigBridgeOperations(shaft,
       api.settings(byId('shaft').value,byId('head').value).bridges?.strokes || [])
       .filter(op=>op._rigRegionId===activeRegionId).length;
+    const selectedHeads=api.attachmentRig(shaft,chosenHead(),
+      api.settings(byId('shaft').value,byId('head').value)).children
+      .filter(mount=>mount.regionId===activeRegionId).length;
     byId('region-status').textContent=count+' region(s). '+(region?
-      'Selected '+region.label+' — '+countOps+' bridge/recipe children. Draw another rectangle or edit its X/Y controls.'
+      'Selected '+region.label+' — '+selectedHeads+' head mount(s), '+countOps+' bridge/recipe steps. Draw another rectangle or edit its X/Y controls.'
       :'Draw a rectangle on the assembled preview to create a region.');
   }
   function render() {
@@ -750,9 +753,12 @@
       const stroke = mode === 'smudge' ? { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] }
         : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0,
           ...(mode === 'clean' ? cleanSettings('pair') : {}) };
-      const rig = api.shaftRigTransform(chosenShaft()); // Live smudge radius follows the same area scaling as replayed operations.
+      const rig = api.shaftRigTransform(chosenShaft()); // Live smudge radius includes any selected local region.
+      const p=logicalPoint(event),region=api.regionAt(chosenShaft(),{x:p[0],y:p[1]});
+      const local=region?api.duplicateTransform(region.transform):{scaleX:1,scaleY:1};
       bridgePaint = { pointer: event.pointerId, stroke, smudge: { image, stepper: window.ModularWeaponBridgeFill.toolStepper(
-        image.data, image.width, image.height, stroke, { scale: image.width / frame.width * Math.sqrt(rig.scaleX * rig.scaleY),
+        image.data, image.width, image.height, stroke, { scale: image.width / frame.width *
+          Math.sqrt(rig.scaleX * rig.scaleY * local.scaleX * local.scaleY),
           reference: canvas.modularReference || null }) } };
     } else {
       const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
