@@ -11,7 +11,7 @@
   // members run ahead of the swarm's heading and others trail it.
   //
   // Cost model: one InstancedMesh (= one draw call) per swarm and a shared
-  // five-cell atlas (three fly poses, tail, spectacles). The fragment shader
+  // six-cell atlas (three fly poses, tail, spectacles, and untinted eyes). The fragment shader
   // blends the wing poses and composites/tints tail BELOW body, spectacles
   // ABOVE it. Only one time uniform and the existing N pose matrices change
   // per frame; no per-member canvas or texture uploads. The avatarRef returned by buildAvatar is shaped like the one
@@ -28,7 +28,8 @@
     'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
     'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
   ]); // Always load the anatomical tail and optional spectacles just once for every swarm.
-  const ATLAS_COLS = 3, ATLAS_ROWS = 2; // Packs five authored 478x399 sprites into 1434x798 instead of a too-wide 2390x399 mobile texture.
+  const EYE_URL = 'assets/creaturesprites/honeyfuzzle_eye.png'; // Untinted anatomy shared by every flight pose and genotype.
+  const ATLAS_COLS = 3, ATLAS_ROWS = 2; // Packs six aligned 478x399 sprites into 1434x798 instead of a too-wide 2390x399 mobile texture.
   const FRAME_UP = 0, FRAME_MID = 1, FRAME_DOWN = 2;
   const WING_CYCLE = Object.freeze([FRAME_UP, FRAME_MID, FRAME_DOWN, FRAME_MID]); // up -> mid -> down -> mid
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
@@ -150,7 +151,8 @@
       assetWarnings.push(String(error?.message || error));
       return null; // Missing spectacles/tail art must not turn every honeyfuzzle invisible.
     }));
-    _atlasPromise = Promise.all([...baseImages, ...patternImages]).then(images => {
+    const eyeImage = loadImage(EYE_URL); // Eyes are required, unlike optional genetic markings.
+    _atlasPromise = Promise.all([...baseImages, ...patternImages, eyeImage]).then(images => {
       const canvas = document.createElement('canvas');
       canvas.width = CROP.w * ATLAS_COLS;
       canvas.height = CROP.h * ATLAS_ROWS;
@@ -159,10 +161,10 @@
       images.forEach((img, index) => {
         if (!img) return; // Transparent placeholder for an unavailable optional overlay.
         if (img.width < CROP.x + CROP.w || img.height < CROP.y + CROP.h) {
-          throw new Error('honeyfuzzle sprite too small for common crop: ' + [...FRAME_URLS, ...PATTERN_URLS][index]);
+          throw new Error('honeyfuzzle sprite too small for common crop: ' + [...FRAME_URLS, ...PATTERN_URLS, EYE_URL][index]);
         }
         // The three flight bodies occupy canvas row 1 (GPU UV bottom).
-        // The tail and spectacles occupy row 0 (GPU UV top).
+        // The tail, spectacles, and untinted eyes occupy row 0 (GPU UV top).
         const atlasCol = index < FRAME_URLS.length ? index : index - FRAME_URLS.length;
         const atlasRow = index < FRAME_URLS.length ? 1 : 0;
         ctx.drawImage(img, CROP.x, CROP.y, CROP.w, CROP.h, atlasCol * CROP.w, atlasRow * CROP.h, CROP.w, CROP.h);
@@ -182,7 +184,7 @@
     return _atlasPromise;
   }
 
-  // Recolor and layer expression are per-swarm uniforms; all five sprites
+  // Recolor and layer expression are per-swarm uniforms; all six sprites
   // stay in the shared atlas, including the always-visible tail under the
   // bird. Unexpressed tail genes use the primary body color, never vanish.
   const BODY_LUMINANCE = 0.62;
@@ -221,6 +223,8 @@
       mapTexelToLinear( texture2D( map, uv + vec2( 0.3333333, 0.5 ) ) ), uSpectaclesColor, 1.0 );
     composed = overlayHoneyfuzzle( spectacles, composed );
   }
+  vec4 eyes = mapTexelToLinear( texture2D( map, uv + vec2( 0.6666667, 0.5 ) ) );
+  composed = overlayHoneyfuzzle( eyes, composed ); // Eyes are always visible above body coloration and spectacles.
   diffuseColor *= composed;
 #endif
 `;
@@ -277,7 +281,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         .replace('#include <common>', '#include <common>\n' + HONEYFUZZLE_SHADER_HELPERS)
         .replace('#include <map_fragment>', MAP_FRAGMENT);
     };
-    material.customProgramCacheKey = () => 'honeyfuzzle_five_layer_blur_v1';
+    material.customProgramCacheKey = () => 'honeyfuzzle_six_layer_blur_eyes_v2';
     if (!_atlas) _pendingMaterials.add(material);
     return material;
   }
@@ -397,9 +401,9 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
   }
 
   window.HoneyfuzzleSwarm = {
-    FRAME_URLS, PATTERN_URLS, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
+    FRAME_URLS, PATTERN_URLS, EYE_URL, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
-    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, assetWarnings: [..._atlasWarnings], linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
+    debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, assetWarnings: [..._atlasWarnings], linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS, EYE_URL], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
   };
 })();
