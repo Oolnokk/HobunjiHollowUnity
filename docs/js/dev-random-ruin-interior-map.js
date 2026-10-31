@@ -855,7 +855,8 @@
     cover.attach();scenery.activate();
     // The native geometry remains authoritative for navigation and puzzle collision, but only the visible roughened walls occlude the camera.
     const occlusion=owner.occlusionMeshes; // This is the same mutable array referenced by the registered building scene.
-    for(let i=occlusion.length-1;i>=0;i--)if(!occlusion[i].visible)occlusion.splice(i,1);
+    const replaced=new Set(scenery.nativeMeshes.map(item=>item.mesh)); // Remove visually suppressed V50 walls, but keep protected native puzzle objects.
+    for(let i=occlusion.length-1;i>=0;i--)if(replaced.has(occlusion[i]))occlusion.splice(i,1);
     scenery.room.model.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.ruinPreviewRole==='wall')occlusion.push(mesh);});
     owner.stoneAge=true;
     owner.stoneAgeStats={pieceSet:'stoneAge',rooms:owner.meta?.rooms?.length||0,walls:scenery.room.walls,pillars:scenery.room.pillars,
