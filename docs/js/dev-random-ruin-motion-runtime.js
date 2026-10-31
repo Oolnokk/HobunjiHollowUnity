@@ -222,6 +222,7 @@
   function carryMovingDaisRiders() {
     const player = playerWorld();
     for (const record of daises) {
+      if(record.root.rootGrowthBinding)continue; // Stationary rooted keyframes cannot carry riders using the hidden native moving deck.
       const state = platformState(record);
       if (!state) continue;
       const delta = state.center.clone().sub(record.lastCenter);

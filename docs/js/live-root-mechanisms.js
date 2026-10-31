@@ -9,18 +9,18 @@
     if(result[0].progress!==0||result.at(-1).progress!==1)throw new TypeError('Root mechanism keyframes must cover progress 0 to 1.');
     return result;
   }
-  function stateWeights(frames,progress,count){
+  function stateWeights(frames,progress,count,overlap=false){
     const weights=new Array(count).fill(0),p=clamp(progress); // Only the two surrounding rooted poses contribute to a transition.
     let right=1;while(right<frames.length-1&&p>frames[right].progress)right++;
     const a=frames[right-1],b=frames[right],t=(p-a.progress)/(b.progress-a.progress); // Repeated states form true holds rather than retracting/regrowing identical geometry.
-    weights[a.state]+=1-t;weights[b.state]+=t;return weights;
+    if(a.state===b.state){weights[a.state]=1;return weights;}weights[a.state]=overlap?Math.min(1,2*(1-t)):1-t;weights[b.state]=overlap?Math.min(1,2*t):t;return weights;
   }
   function splitGuides(T,states){
     if(!T.Mesh||states.some(state=>!state.target?.traverse))return {common:null,states}; // Lightweight external adapters keep their existing state contract.
     const maps=states.map(state=>{state.target.updateWorldMatrix(true,true);const entries=new Map();let index=0;state.target.traverse(mesh=>{if(mesh.isMesh){entries.set(String(mesh.userData?.authoredPartId||index++),mesh);}});return entries;}); // V50 snapshots retain stable part IDs across all keyframes.
     const commonKeys=new Set();for(const [key,mesh] of maps[0])if(maps.every(map=>{const other=map.get(key);return other&&other.geometry===mesh.geometry&&other.matrixWorld.elements.every((value,i)=>Math.abs(value-mesh.matrixWorld.elements[i])<1e-8);}))commonKeys.add(key);
     if(!commonKeys.size||commonKeys.size===maps[0].size)return {common:null,states}; // A completely static mechanism is already handled by repeated-state holds.
-    const flatten=(entries,common)=>{const group=new T.Group();for(const [key,mesh] of entries)if(commonKeys.has(key)===common){const copy=new T.Mesh(mesh.geometry,mesh.material);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.name=mesh.name;copy.userData.authoredPartId=key;group.add(copy);}return group;}; // These plain guides borrow immutable buffers and never receive runtime pose interpolation.
+    const flatten=(entries,common)=>{const group=new T.Group();for(const [key,mesh] of entries)if(commonKeys.has(key)===common){const copy=new T.Mesh(mesh.geometry,mesh.material);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.name=mesh.name;copy.userData={...mesh.userData,authoredPartId:key};group.add(copy);}return group;}; // These plain guides borrow immutable buffers and never receive runtime pose interpolation.
     return {common:flatten(maps[0],true),states:states.map((state,index)=>({...state,target:flatten(maps[index],false)}))};
   }
   function samplingSource(T,sources){
@@ -45,7 +45,7 @@
       }
       const duration=Number.isFinite(Number(options.transitionDuration))?Math.max(.15,Math.min(30,Number(options.transitionDuration))):.65; // Default matches the existing ruin progress cadence closely.
       let progress=clamp(options.progress),direction=0,pose=clamp(options.poseProgress),poseTarget=pose,version=0,disposed=false,weights=[]; // Presence and mechanism progress are separate, so Grow/Reset still controls the whole object.
-      const apply=()=>{const supportChanged=common&&common.getProgress()!==clamp(progress/.55);if(common)common.setProgress(clamp(progress/.55));const presence=common?clamp((progress-.2)/.8):progress;const next=stateWeights(frames,pose,instances.length);let changed=supportChanged||weights.length!==next.length;instances.forEach((api,index)=>{const amount=presence*next[index];if(api.getProgress()!==amount){api.setProgress(amount);changed=true;}if(weights[index]!==next[index])changed=true;for(const part of api.partPlan){const visible=api.recipe.showGuide&&next[index]>0;if(part.mesh.visible!==visible)part.mesh.visible=visible;}});weights=next;if(changed)version++;};
+      const apply=()=>{const supportChanged=common&&common.getProgress()!==clamp(progress/.55);if(common)common.setProgress(clamp(progress/.55));const presence=common?clamp((progress-.2)/.8):progress;const next=stateWeights(frames,pose,instances.length,options.supportOverlap===true);let changed=supportChanged||weights.length!==next.length;instances.forEach((api,index)=>{const amount=presence*next[index];if(api.getProgress()!==amount){api.setProgress(amount);changed=true;}if(weights[index]!==next[index])changed=true;for(const part of api.partPlan){const visible=api.recipe.showGuide&&next[index]>0;if(part.mesh.visible!==visible)part.mesh.visible=visible;}});weights=next;if(changed)version++;};
       const nearest=()=>{let best=0;for(let i=1;i<weights.length;i++)if(weights[i]>weights[best])best=i;return instances[best];};
       const api={group,states:instances,commonState:common,keyframes:frames,recipe:instances[0].recipe,rootFinish:instances[0].rootFinish,
         setProgress(value){if(!disposed){progress=clamp(value);apply();}return progress;},getProgress:()=>progress,
@@ -65,5 +65,28 @@
       apply();complete=true;return api;
     }finally{if(!complete){for(let i=instances.length-1;i>=0;i--)instances[i].dispose();common?.dispose();}}
   }
-  root.LiveRootMechanisms={createAsync,normalizeFrames,stateWeights};
+  async function bindRuntimeAsync(options){
+    const {THREE:T,specification:spec,scene,surfaces,scope,id}=options;
+    let controller=null,complete=false,disposed=false;const ids=[],hidden=[];
+    try{
+      controller=await createAsync({...options,states:spec.states,keyframes:spec.keyframes,progress:1,supportOverlap:true});
+      controller.group.position.copy(spec.anchor);scene.add(controller.group);controller.group.updateWorldMatrix(true,true);
+      if(options.type!=='stoneDoor'&&options.type!=='transitDoor'){
+        for(const state of [...(controller.commonState?[controller.commonState]:[]),...controller.states])for(const part of state.partPlan){
+          // Capture fixed keyframe envelopes once. Native moving-guide bounds never enter collision.
+          if(part.mesh.userData.rootSupportEligible===false)continue;const box=new T.Box3().setFromObject(part.mesh),surfaceId=id+':root:'+ids.length;
+          if(box.isEmpty())continue;ids.push(surfaceId);
+          surfaces.registerSurface({id:surfaceId,scope,priority:12,bounds:{minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z},topY:box.max.y,
+            enabled:()=>!disposed&&state.getPartProgress(part.index)>=.85});
+        }
+      }
+      const source=options.source;
+      source.traverse(mesh=>{if(mesh.isMesh){const original=mesh.material;if((Array.isArray(original)?original:[original]).every(material=>material?.transparent||material?.depthWrite===false))return;const materials=(Array.isArray(original)?original:[original]).map(material=>{const copy=material.clone();copy.visible=false;return copy;});hidden.push({mesh,original,materials});mesh.material=Array.isArray(original)?materials:materials[0];}});
+      const binding={controller,setProgress(value){const pose=clamp(value);if(pose<controller.getPoseProgress()&&options.isOccupied?.())return;if(controller.getPoseProgress()!==pose)controller.setPoseProgress(pose);},
+        isDoorClosed:()=>{const state=controller.states[spec.keyframes[0].state];return state.partPlan.some(part=>state.getPartProgress(part.index)>.35);},
+        dispose(){if(disposed)return;disposed=true;for(const key of ids)surfaces.remove(key);for(const item of hidden){item.mesh.material=item.original;for(const material of item.materials)material.dispose();}if(source.rootGrowthBinding===binding)delete source.rootGrowthBinding;source.traverse(node=>{delete node.userData.rootGrowthSurfaceSuppressed;});controller.dispose();spec.dispose();}};
+      source.rootGrowthBinding=binding;source.traverse(node=>{node.userData.rootGrowthSurfaceSuppressed=true;});complete=true;return binding;
+    }finally{if(!complete){for(const key of ids)surfaces.remove(key);for(const item of hidden){item.mesh.material=item.original;for(const material of item.materials)material.dispose();}controller?.dispose();spec.dispose();}}
+  }
+  root.LiveRootMechanisms={createAsync,bindRuntimeAsync,normalizeFrames,stateWeights};
 })(typeof window!=='undefined'?window:globalThis);

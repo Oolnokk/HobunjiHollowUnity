@@ -34,6 +34,7 @@ const BROWSER = new Set([
   'test-farmwork-controller-browser.js', // Real-browser Farmwork controller and stepper test.
   'test-controller-mastery-inventory-browser.js', // Runs in the existing Chromium workflow step.
   'test-interior-editor-exit-browser.js', // Runs after Chromium installation in regression-suite.yml.
+  'test-root-mechanism-runtime-browser.js', // Actual V50/root growth and gameplay collision browser regression.
   'test-surface-foliage-styles-browser.js', // Real THREE and shared editor growth-style browser smoke.
   'test-omgurku-gameplay-browser.js', // Full game NPC spawn/transfer/despawn coverage.
   'test-omgurku-calibration-browser.js', // Runs in the existing browser workflow step.

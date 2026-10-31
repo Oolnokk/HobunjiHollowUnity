@@ -431,7 +431,7 @@
   }
   function registerSurface(id, object, priority = 5) {
     DS.registerSurface({ id, scope:SCOPE, bounds:() => boundsFor(object), topY:() => boxFor(object)?.max.y ?? 0,
-      enabled:() => object.visible !== false, priority });
+      enabled:() => object.visible !== false&&!object.userData?.rootGrowthSurfaceSuppressed, priority });
   }
   // A moving dais deck without whatever V50 grounded on it (the goal
   // pedestal/coffin and its brazier): measuring the whole subtree put the
@@ -455,7 +455,7 @@
   }
   function registerDaisSurface(id, platform, priority) {
     DS.registerSurface({ id, scope:SCOPE, bounds:() => { const b = deckBoxFor(platform); return b ? { minX:b.min.x,maxX:b.max.x,minZ:b.min.z,maxZ:b.max.z } : {minX:0,maxX:0,minZ:0,maxZ:0}; },
-      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false, priority });
+      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false&&!platform.userData?.rootGrowthSurfaceSuppressed, priority });
   }
   // Real floor height per V50 cell (basins, plateaus). Grid tiles stay flat
   // (camera/presentation assume that), so this is published separately for
@@ -834,6 +834,27 @@
   // opts.site: a wilderness ruin site (js/ruin-sites.js) is generating this
   // ruin for ordinary play, so Dev Mode is not required; opts.returnAnchor is
   // where the entrance exit puts the player back.
+  async function prepareRootMechanisms(owner,options={}){
+    if(!window.LiveRootMechanisms||!owner.api.captureRootMechanismKeyframes)throw new Error('Root mechanism runtime is unavailable.');
+    owner.rootGrowthAbort=new AbortController();owner.rootGrowthBindings=[];
+    const entries=[...owner.mechanisms.values()].map(mechanism=>({id:mechanism.id,type:mechanism.type,source:mechanism.root}));
+    for(const state of owner.transitDoorStates)entries.push({id:'transit-'+state.door.id,type:'transitDoor',source:state.door,applyPose:progress=>{const eased=progress*progress*(3-2*progress);state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;}});
+    for(const entry of entries){
+      if(ruin!==owner)throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});
+      const specification=owner.api.captureRootMechanismKeyframes(entry.source,{applyPose:entry.applyPose}),anchor=specification.anchor;
+      const floor=DS.sampleSupport(anchor.x,anchor.z,{minY:-12,maxY:anchor.y+.2,pad:.02}),closedBounds=new THREE.Box3().setFromObject(entry.source);
+      const isDoor=entry.type==='stoneDoor'||entry.type==='transitDoor';
+      const binding=await window.LiveRootMechanisms.bindRuntimeAsync({THREE,foliage:window.FoliageGenerator,specification,source:entry.source,scene:owner.scene,surfaces:DS,scope:SCOPE,id:'devruin-'+entry.id,type:entry.type,
+        isOccupied:isDoor?()=>{const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE;return x+PLAYER_RADIUS>closedBounds.min.x&&x-PLAYER_RADIUS<closedBounds.max.x&&z+PLAYER_RADIUS>closedBounds.min.z&&z-PLAYER_RADIUS<closedBounds.max.z;}:null,
+        signal:owner.rootGrowthAbort.signal,recipe:{...options,seed:owner.sourceSeed+':'+entry.id,floorY:(floor?.y??0)-anchor.y,floorWidth:6,floorDepth:6,showGuide:false},rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+      if(ruin!==owner){binding.dispose();throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});}owner.rootGrowthBindings.push(binding);
+    }
+    const occlusion=owner.occlusionMeshes; // Keep the same array referenced by the building map record.
+    for(let index=occlusion.length-1;index>=0;index--)if(occlusion[index].userData?.rootGrowthSurfaceSuppressed)occlusion.splice(index,1);
+    for(const binding of owner.rootGrowthBindings){const controller=binding.controller,guides=new Set();for(const state of [...(controller.commonState?[controller.commonState]:[]),...controller.states])for(const part of state.partPlan)guides.add(part.mesh);controller.group.traverse(mesh=>{if(mesh.isMesh&&!guides.has(mesh))occlusion.push(mesh);});}
+    owner.rootedMechanisms=true;owner.occupancy?.refresh();
+  }
+
   async function generate(seed=randomSeed(),opts={}) {
     if ((!devModeEnabled()&&!opts.site) || !deps || !buildingScenes) return false;
     generationLabel=opts.label||null;
@@ -874,6 +895,7 @@
         await window.RepoPatternLibrary?.load?.(); // Author-exported collectible definitions must be ready before deterministic ruin selection.
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed);
+        if(typeof opts.rootMechanisms==='boolean'?opts.rootMechanisms:cfg('generation.rootMechanisms',false)===true)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
         const retryCount=attempt;
@@ -940,6 +962,7 @@
   }
 
   function clearRuntime(removeMap=true) {
+    ruin?.rootGrowthAbort?.abort();for(const binding of ruin?.rootGrowthBindings||[])binding.dispose();
     ruin?.occupancy?.destroy?.();
     DS.clearScope(SCOPE);
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
@@ -1013,7 +1036,8 @@
       state.open+=clamp(state.target-state.open,-dt*2.4,dt*2.4);
       if(Math.abs(state.open-state.target)<.001)state.open=state.target;
       const eased=state.open*state.open*(3-2*state.open);
-      state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
+      if(state.door.rootGrowthBinding)state.door.rootGrowthBinding.setProgress(state.open);
+      else state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
       if(state.target>.5&&state.open>.9&&player&&state.openingSide){
         const center=centerFor(state.door),signed=(state.crossingAxis==='x'?player.x-center.x:player.z-center.z);
         if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
@@ -1128,9 +1152,9 @@
     const row=document.createElement('div'); // Used for the existing Generate action.
     row.className='settings-row';
     row.setAttribute('data-dev-only','');
-    row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';
+    row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="devRandomRuinRootMechanisms">Rooted mechanisms</label><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';
     arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);
-    row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));
+    row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed(),{rootMechanisms:document.getElementById('devRandomRuinRootMechanisms')?.checked===true}));
 
     const optionsRow=document.createElement('div'); // Used to host the collapsed per-generator puzzle controls directly beneath Generate.
     optionsRow.className='settings-row';
@@ -1150,5 +1174,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,theme:ruin.theme,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed(),{rootMechanisms:ruin?.rootedMechanisms===true}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,theme:ruin.theme,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,rootedMechanisms:!!ruin.rootedMechanisms,rootedMechanismCount:ruin.rootGrowthBindings?.length||0,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

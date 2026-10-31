@@ -305,10 +305,46 @@
 
   function applyProgress(root, progress) {
     const normalizedProgress = clamp(Number(progress) || 0, 0, 1); // Used by both the general V50 mechanism animation and direct leaf-activator visual synchronization.
+    if(root?.rootGrowthBinding){applyMechanismProgress(root,normalizedProgress);root.rootGrowthBinding.setProgress(normalizedProgress);return;} // Hidden logical anchors still position glyphs/effects; only rooted keyframes render or provide support.
     applyMechanismProgress(root, normalizedProgress);
     if (root?.userData?.activatorType === 'glyphObelisk' && root.userData?.decalMaterials) {
       setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress);
       if (root.userData.glowLight) root.userData.glowLight.intensity = 3.2 * normalizedProgress;
+    }
+  }
+
+  function captureRootMechanismKeyframes(object,options={}){
+    const saved=[],signals=[],meshes=[],anchor=object.getWorldPosition(new THREE.Vector3()),states=[],keyframes=[],geometries=new Map(),material=new THREE.MeshBasicMaterial({color:0x808080});
+    object.traverse(node=>{saved.push({node,position:node.position.clone(),quaternion:node.quaternion.clone(),scale:node.scale.clone(),visible:node.visible});if(node.isMesh&&node.geometry?.getAttribute('position'))meshes.push(node);});
+    for(const signal of [object.userData?.linkedCubePuzzleRoot,object.userData?.linkedPressurePlateRoot])if(signal&&!signals.some(entry=>entry.signal===signal))signals.push({signal,solve:signal.userData.solveProgress,weight:signal.userData.weightProgress});
+    let frames=object.userData?.previewMotion?.type==='bridgeSequence'?[0,.22,.76,1]:[0,1];const signatures=new Map();let complete=false;
+    const pose=progress=>{for(const {signal} of signals){signal.userData.solveProgress=progress;signal.userData.weightProgress=progress;}if(options.applyPose)options.applyPose(progress);else applyMechanismProgress(object,progress);object.updateWorldMatrix(true,true);};
+    try{
+      if(['movingDais','collapsingStairs'].includes(object.userData?.previewMotion?.type)){
+        pose(0);const initial=meshes.map(mesh=>new THREE.Box3().setFromObject(mesh));pose(1);let distance=0;
+        meshes.forEach((mesh,index)=>{const box=new THREE.Box3().setFromObject(mesh);distance=Math.max(distance,Math.abs(box.min.y-initial[index].min.y),Math.abs(box.max.y-initial[index].max.y));});
+        const steps=Math.max(1,Math.ceil(distance/.25));if(steps>15)throw new Error('Root mechanism elevation exceeds the safe keyframe budget.');
+        frames=Array.from({length:steps+1},(_,index)=>index/steps); // Stationary growth steps keep elevation changes below ordinary walking clearance without moving invisible riders.
+      }
+      for(const progress of frames){
+        pose(progress);
+        const signature=meshes.map(mesh=>mesh.matrixWorld.elements.map(value=>value.toFixed(7)).join(',')).join('|');let state=signatures.get(signature);
+        if(state==null){state=states.length;const target=new THREE.Group();
+          for(let index=0;index<meshes.length;index++){const mesh=meshes[index];if((Array.isArray(mesh.material)?mesh.material:[mesh.material]).every(m=>m?.transparent||m?.depthWrite===false))continue;
+            let geometry=geometries.get(mesh.geometry);if(!geometry){geometry=mesh.geometry.clone();geometries.set(mesh.geometry,geometry);}
+            const copy=new THREE.Mesh(geometry,material);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.position.sub(anchor);copy.name=mesh.name;copy.userData.authoredPartId='runtime-piece-'+index;
+            const type=object.userData?.previewMotion?.type;let eligible=true;
+            if(type==='movingDais'){eligible=false;for(let node=mesh;node&&node!==object;node=node.parent){if(node.userData?.groundedToMovingPlatform)break;if(node===object.userData.movingDaisPlatform){eligible=true;break;}}}
+            if(type==='collapsingStairs'){eligible=false;for(let node=mesh;node&&node!==object;node=node.parent)if(object.userData.stairTreads?.includes(node)){eligible=true;break;}}
+            copy.userData.rootSupportEligible=eligible;target.add(copy);
+          }if(!target.children.length)throw new Error('Root mechanism has no physical pieces.');states.push({target});signatures.set(signature,state);
+        }keyframes.push({progress,state});
+      }
+      let disposed=false;complete=true;return {anchor,states,keyframes,dispose(){if(disposed)return;disposed=true;for(const geometry of geometries.values())geometry.dispose();material.dispose();}};
+    }finally{
+      for(const entry of saved){entry.node.position.copy(entry.position);entry.node.quaternion.copy(entry.quaternion);entry.node.scale.copy(entry.scale);entry.node.visible=entry.visible;}object.updateWorldMatrix(true,true);
+      for(const entry of signals){if(entry.solve===undefined)delete entry.signal.userData.solveProgress;else entry.signal.userData.solveProgress=entry.solve;if(entry.weight===undefined)delete entry.signal.userData.weightProgress;else entry.signal.userData.weightProgress=entry.weight;}
+      if(!complete){for(const geometry of geometries.values())geometry.dispose();material.dispose();}
     }
   }
 
@@ -511,7 +547,7 @@
     setMechanismTarget,
     snapMechanismState,
     applyProgress,
-    createRootMechanismKeyframes,
+    createRootMechanismKeyframes,captureRootMechanismKeyframes,
     syncPressurePlates,
     rotateLinkedCube,
     tickRuntime,

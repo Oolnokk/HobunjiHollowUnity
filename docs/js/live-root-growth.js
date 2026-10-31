@@ -693,6 +693,7 @@
     const api = {
       group, target, floorGrowth, targetGrowth, branches, connectors, partPlan, partGrowths,
       recipe, rootFinish, emitterVisuals,
+      getPartProgress(index){const window=partWindows[index];return window?smooth((progress-window.start)/(window.end-window.start)):0;},
       setProgress(value) { if (!disposed) { progress = number(value, progress, 0, 1); apply(); } return progress; },
       getProgress() { return progress; },
       extend() { if (!disposed) direction = 1; },
