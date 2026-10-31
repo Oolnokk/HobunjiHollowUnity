@@ -43,7 +43,7 @@
       grid[r][c]={type:'rock',rockKind:'undiggableBoulder',boulderId:'stone:'+nearest,elevTier:0};
     }
     const wilderness=window.ZoneTerrainFeatures; // Reuse the actual wilderness boulder shell owner in this standalone preview realm.
-    const shell=wilderness.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1}); // Build with explicit floor datum; never overwrite the live wilderness scene's dependencies. // One welded batch contains separate natural boulder crowns with no tiny bricks.
+    const shell=wilderness.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}}); // Build with explicit floor datum; never overwrite the live wilderness scene's dependencies. // One welded batch contains separate natural boulder crowns with no tiny bricks.
     const pieceIds=new Float32Array(shell.pos.length/3); // One identity per original wilderness boulder keeps its texture separate even where floor stones touch.
     for(let i=0;i<shell.idx.length;i+=3){
       const indices=shell.idx.slice(i,i+3),c=Math.floor(indices.reduce((sum,index)=>sum+shell.pos[index*3],0)/3),r=Math.floor(indices.reduce((sum,index)=>sum+shell.pos[index*3+2],0)/3); // Each source triangle stays inside its generated floor cell.
