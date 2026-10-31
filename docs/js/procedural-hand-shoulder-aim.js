@@ -220,19 +220,21 @@
       return spineLowered(shoulderParent);
     }
 
-    // Shoulder anchors keep their 2D portrait coordinates; a hunched spine (js/character-spine.js, bound on the avatar root) carries
-    // them through the same deformation the portrait skin gets: the point is taken into the plane's frame, lowered by the spine's
-    // follow at its own height, and brought back to the parent frame.
+    // Shoulder anchors keep their 2D portrait coordinates; a hunched spine (js/character-spine.js, bound on the avatar root) carries them along
+    // the same curve the portrait skin follows: the point is taken into the avatar's frame, displaced (down, forward and sideways, off the local
+    // root's x = 0, z = 0) by the curve at its own height, and brought back to the parent frame.
     const spineScratch = new THREE.Vector3();
+    const spineDisplacement = { x: 0, y: 0, z: 0 };
     function spineLowered(point) {
       const spine = avatarRoot.userData?.hobunjiSpine;
-      if (!(spine?.dropLocal > 0)) return point;
+      if (!spine?.curve) return point;
       parent.updateWorldMatrix?.(true, false);
       avatarRoot.updateWorldMatrix?.(true, false);
       spineScratch.copy(point);
       parent.localToWorld(spineScratch);
       avatarRoot.worldToLocal(spineScratch);
-      spineScratch.y -= window.HobunjiCharacterSpine.deformDrop(spine, spineScratch.y - assemblyY);
+      const d = window.HobunjiCharacterSpine.deformAt(spine, spineScratch.y - assemblyY, spineDisplacement);
+      spineScratch.x += d.x; spineScratch.y += d.y; spineScratch.z += d.z;
       avatarRoot.localToWorld(spineScratch);
       parent.worldToLocal(spineScratch);
       return point.copy(spineScratch);

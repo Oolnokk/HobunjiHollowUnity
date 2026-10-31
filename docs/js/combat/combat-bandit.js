@@ -631,7 +631,7 @@
     characterBuildStatus.stage = 'leg-rig';
     const spine = roster.spine ? window.HobunjiCharacterSpine?.bind(portrait, { spine: roster.spine }) : null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
-      window.HobunjiCharacterSpine.applyToRig({ spineJoint: { front: frontNeckSkin.spineBone, back: backNeckSkin?.spineBone }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY }, spine, modelHeight);
+      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY }, spine, modelHeight);
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
@@ -640,7 +640,7 @@
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
-      portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, spineJoint: { front: frontNeckSkin.spineBone }, neckJoint: frontNeckSkin.neckBone, torsoBone: frontNeckSkin.torsoBone, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
+      portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, splineNodes: frontNeckSkin.splineNodes, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
@@ -2735,7 +2735,7 @@
         cx: group.position.x, cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: poseYawRad,
-        orbitDropY: window.HobunjiCharacterSpine?.orbitDropWorld(avatarRef.spine, poseModelHeight, rigScaleY) || 0, // Hunched enemies swing about their stooped shoulders.
+        orbitOffset: window.HobunjiCharacterSpine?.orbitOffsetWorld(avatarRef.spine, avatarRef.rigScale?.x, rigScaleY) || null, // Hunched enemies swing about their curled shoulders: down, forward and sideways.
       });
     } else {
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, poseYawRad);
@@ -2871,7 +2871,7 @@
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
     const spineRule = loadoutRules?.spineFor?.(loadoutKind);
-    if (spineRule && !roster.spine) roster = { ...roster, spine: { hunch: spineRule.hunch } }; // Authored hunchback (old, skeletal, Maskbound): read by the portrait's legs, shoulders, neck and weapon orbit.
+    if (spineRule && !roster.spine) roster = { ...roster, spine: { hunch: spineRule.hunch, ...(spineRule.sway ? { sway: spineRule.sway } : {}) } }; // Authored hunchback (old, skeletal, Maskbound): read by the portrait's legs, shoulders, neck and weapon orbit.
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
     if (!roster?.mountSpecies) { // Patterns are baked into the portrait before the rig stretches it, so the final body scale must be known up front (rider mounts are exempt from rig scaling).
       const earlyScale = { ...(opts.avatarRigScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...(loadoutRules?.rigScaleFor?.(loadoutKind) || {}) };

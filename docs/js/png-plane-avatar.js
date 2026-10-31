@@ -516,12 +516,29 @@
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
   // therefore deformed by one coherent rig instead of becoming disconnected
   // alpha-shaped islands.
-  // Spine-bone skin weight at plane-local height y (js/character-spine.js). Every skinned portrait carries the bone, so a hunch can be applied after build.
-  // Bind-pose bone offsets for the torso -> spine -> neck chain (js/character-spine.js): the torso bone covers the lower half of the waist-to-neck
-  // span and the spine bone the upper half. Without the module the bones keep their legacy layout (torso and spine at the plane origin).
+  // The character spline (js/character-spine.js): SPLINE_NODE_COUNT node bones from the posterior (node 0, the root) to the neck pivot (the last
+  // node), chained by offset, with the head-turn bone (index NECK_BONE) and head-scale bone (HEAD_BONE) hanging off the last node. They are the
+  // only body bones: no torso bone, no spine bone. Every skinned portrait carries them at rest so a hunch can be applied after build; without the
+  // module they collapse to the plane origin and carry no weight.
+  const SPLINE_NODE_COUNT = 7, NECK_BONE = SPLINE_NODE_COUNT, HEAD_BONE = SPLINE_NODE_COUNT + 1;
   const spineLayoutFor = (neckX, neckY, modelHeight, posteriorY) => window.HobunjiCharacterSpine?.layoutFor?.(neckX, neckY, modelHeight, posteriorY)
-    || { torso: { x: 0, y: 0, z: 0 }, spine: { x: 0, y: 0, z: 0 }, neck: { x: neckX, y: neckY, z: 0 } };
-  const spineWeightAt = (y, neckY, modelHeight, posteriorY) => window.HobunjiCharacterSpine?.weightAt?.(y, neckY, modelHeight, posteriorY) || 0;
+    || { nodes: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), offsets: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), neck: { x: neckX, y: neckY, z: 0 } };
+  const spineWeightScratch = { a: 0, b: 0, wb: 0 };
+  const spineNodeWeightsAt = (y, neckY, modelHeight, posteriorY, out = spineWeightScratch) => window.HobunjiCharacterSpine?.nodeWeightsAt?.(y, neckY, modelHeight, posteriorY, out)
+    || Object.assign(out, { a: 0, b: 0, wb: 0 }); // Skin weights of the two neighbouring spline nodes at plane-local height y.
+  function makeSplineNodes(THREE, name, layout) {
+    const nodes = [];
+    for (let k = 0; k < SPLINE_NODE_COUNT; k++) {
+      const node = new THREE.Bone();
+      node.name = `${name}_spline_node_${k}`;
+      const at = k === 0 ? layout.nodes[0] : layout.offsets[k]; // Node 0 sits at the posterior in the plane's frame; the rest chain by offset.
+      node.position.set(at.x, at.y, at.z);
+      node.userData.hobunjiSplineRest = { x: at.x, y: at.y, z: at.z };
+      if (k > 0) nodes[k - 1].add(node);
+      nodes.push(node);
+    }
+    return nodes;
+  }
   // The posterior (hip) anchor in the skinned plane's frame, where the spine chain starts (js/character-spine.js); null when unknown (the spine module then estimates).
   const spinePosteriorLocalY = (speciesId, gender, modelHeight, placementRatio, handAttachY) => window.HobunjiCharacterSpine?.posteriorLocalY?.({ speciesId, gender, modelHeight, placementRatio, handAttachY }) ?? null;
 
@@ -566,9 +583,10 @@
       const headScaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight);
       const headWeight = Math.max(turnWeight, headScaleWeight);
       const headRotateWeight = headWeight - headScaleWeight;
-      const spineWeight = (1 - headWeight) * spineWeightAt(y, neckLocal.y, modelHeight, options.posteriorY); // The spine bone (index 3) takes this share of the body weight; 0 until HobunjiCharacterSpine loads.
-      skinIndices.push(0, 1, 2, 3);
-      skinWeights.push((1 - headWeight) - spineWeight, headRotateWeight, headScaleWeight, spineWeight);
+      const spline = spineNodeWeightsAt(y, neckLocal.y, modelHeight, options.posteriorY); // Body weight (what the head doesn't take) goes to the two neighbouring spline nodes.
+      const bodyWeight = 1 - headWeight;
+      skinIndices.push(spline.a, NECK_BONE, HEAD_BONE, spline.b);
+      skinWeights.push(bodyWeight * (1 - spline.wb), headRotateWeight, headScaleWeight, bodyWeight * spline.wb);
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -658,18 +676,12 @@
     backMaterial.skinning = true;
 
     const layout = spineLayoutFor(neckLocal.x, neckLocal.y, modelHeight, posteriorY);
-    const torsoBone = new THREE.Bone();
-    torsoBone.name = `${config.name}_torso_bone`;
-    torsoBone.position.set(layout.torso.x, layout.torso.y, layout.torso.z); // The waist; the bone now spans only the lower half of the torso.
+    const splineNodes = makeSplineNodes(THREE, config.name, layout);
     const neckJoint = new THREE.Bone();
     neckJoint.name = `${config.name}_neck_bone`;
-    neckJoint.position.set(layout.neck.x, layout.neck.y, layout.neck.z); // Relative to the spine bone, ending at the plane-space neck pivot (neckLocal).
-    const spineJoint = new THREE.Bone(); // Hunchback bone (js/character-spine.js): rest pose is identity; a hunch translates it down, and the neck/head bones below inherit that.
-    spineJoint.name = `${config.name}_spine_bone`;
-    spineJoint.position.set(layout.spine.x, layout.spine.y, layout.spine.z); // Starts at the torso's midpoint and takes the freed upper half.
-    torsoBone.add(spineJoint);
-    spineJoint.add(neckJoint);
-    // Child of neckJoint, not a torsoBone sibling: it inherits head-turn
+    neckJoint.position.set(layout.neck.x, layout.neck.y, layout.neck.z); // On the last spline node, i.e. at the plane-space neck pivot (neckLocal).
+    splineNodes[SPLINE_NODE_COUNT - 1].add(neckJoint);
+    // Child of neckJoint, not a spline sibling: it inherits head-turn
     // rotation for free, while its OWN local scale/position (untouched by
     // rotation) is what HobunjiCharacterRigScale's head scale/offset drives —
     // see applyHeadCompensation in character-rig-scale.js. Only vertices
@@ -685,15 +697,15 @@
     skinnedPlane.position.z = anchorZ;
     skinnedPlane.renderOrder = 2;
     skinnedPlane.frustumCulled = false;
-    skinnedPlane.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckJoint, headScaleJoint, spineJoint]);
+    skinnedPlane.add(splineNodes[0]);
+    const skeleton = new THREE.Skeleton([...splineNodes, neckJoint, headScaleJoint]);
     skinnedPlane.bind(skeleton);
 
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
     return {
-      group, neckJoint, torsoBone, headScaleJoint, spineJoint, spinePosteriorY: posteriorY, skinnedPlane, skeleton, neckLocal, pivotPx,
+      group, neckJoint, headScaleJoint, splineNodes, spinePosteriorY: posteriorY, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: gatedHeadBounds,
       detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
       planeBoundsPx: geometry.userData.planeBoundsPx,
@@ -778,17 +790,11 @@
     material.needsUpdate = true;
 
     const layout = spineLayoutFor(pivotLocalX, pivotLocalY, planeHeight, posteriorY);
-    const torsoBone = new THREE.Bone();
-    torsoBone.name = `${plane.name}_torso_bone`;
-    torsoBone.position.set(layout.torso.x, layout.torso.y, layout.torso.z); // See buildSkinnedSinglePlaneAssembly: the torso covers the lower half, the spine the upper.
+    const splineNodes = makeSplineNodes(THREE, plane.name, layout);
     const neckBone = new THREE.Bone();
     neckBone.name = `${plane.name}_neck_bone`;
     neckBone.position.set(layout.neck.x, layout.neck.y, layout.neck.z);
-    const spineBone = new THREE.Bone(); // Hunchback bone between torso and neck; see buildSkinnedSinglePlaneAssembly.
-    spineBone.name = `${plane.name}_spine_bone`;
-    spineBone.position.set(layout.spine.x, layout.spine.y, layout.spine.z);
-    torsoBone.add(spineBone);
-    spineBone.add(neckBone);
+    splineNodes[SPLINE_NODE_COUNT - 1].add(neckBone);
     const headScaleBone = new THREE.Bone();
     headScaleBone.name = `${plane.name}_head_scale_bone`;
     neckBone.add(headScaleBone);
@@ -803,10 +809,10 @@
     skinned.frustumCulled = false;
     skinned.userData = { ...plane.userData };
     skinned.onBeforeRender = plane.onBeforeRender;
-    skinned.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone, spineBone]);
+    skinned.add(splineNodes[0]);
+    const skeleton = new THREE.Skeleton([...splineNodes, neckBone, headScaleBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, spineBone, torsoBone, spinePosteriorY: posteriorY, neckLocal: { x: pivotLocalX, y: pivotLocalY, z: 0 } };
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, neckLocal: { x: pivotLocalX, y: pivotLocalY, z: 0 } };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1124,12 +1130,14 @@
     const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
-    const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
+    const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > HEAD_BONE
       ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
     headWeight = Math.max(headWeight, headScaleWeight);
-    const spineWeight = skeleton.bones.length >= 4 ? (1 - headWeight) * spineWeightAt(localPoint.y, neckY, modelHeight, rig.spinePosteriorY) : 0; // Same spine share the geometry was skinned with.
-    for (let i = 0; i < Math.min(4, skeleton.bones.length); i++) {
-      const weight = i === 0 ? 1 - headWeight - spineWeight : i === 1 ? headWeight - headScaleWeight : i === 2 ? headScaleWeight : spineWeight; // Same torso/neck/head/spine weights without a per-query array.
+    const spline = spineNodeWeightsAt(localPoint.y, neckY, modelHeight, rig.spinePosteriorY); // Same spline-node shares the geometry was skinned with.
+    const bodyWeight = 1 - headWeight;
+    for (let i = 0; i < Math.min(HEAD_BONE + 1, skeleton.bones.length); i++) {
+      const weight = i === NECK_BONE ? headWeight - headScaleWeight : i === HEAD_BONE ? headScaleWeight
+        : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0); // Spline nodes / neck / head weights without a per-query array.
       if (!weight) continue;
       if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
         boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
@@ -1310,7 +1318,7 @@
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
       ? {
-          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, headScaleJoint: skinnedRig.headScaleJoint, spineJoint: skinnedRig.spineJoint, spinePosteriorY: skinnedRig.spinePosteriorY,
+          available: true, neckJoint: skinnedRig.neckJoint, headScaleJoint: skinnedRig.headScaleJoint, splineNodes: skinnedRig.splineNodes, spinePosteriorY: skinnedRig.spinePosteriorY,
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,

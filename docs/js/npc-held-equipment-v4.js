@@ -195,7 +195,7 @@
             cx: centroid.x, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
             speciesId, gender, modelHeight, rigScaleY: 1,
             armLength, poseOrbitScale, yawRad: poseYawRad,
-            orbitDropY: spine ? window.HobunjiCharacterSpine?.orbitDropWorld(spine, modelHeight, sourceParent.localToWorld(new three.Vector3(0, 1, 0)).y - floorWorld.y) || 0 : 0, // sourceParent already carries the body scale, so measure its world Y unit.
+            orbitOffset: spine ? window.HobunjiCharacterSpine?.orbitOffsetWorld(spine, sourceParent.localToWorld(new three.Vector3(1, 0, 0)).sub(floorWorld).length(), sourceParent.localToWorld(new three.Vector3(0, 1, 0)).y - floorWorld.y) || null : null, // sourceParent already carries the body scale, so measure its world X and Y units.
           });
         } else {
           scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale, poseYawRad);

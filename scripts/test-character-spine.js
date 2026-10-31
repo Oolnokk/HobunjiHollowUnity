@@ -1,6 +1,7 @@
 'use strict';
 // Static hunchback ("spine"): one 0-1 hunch value (enemy-loadouts.json rule `spine`, or an NPC's authored
-// appearance.aging.hunch) becomes a neck drop, shoulder drop, attack-orbit drop and a wider stance/stride.
+// appearance.aging.hunch) becomes a 7-node spline from the posterior to the neck that curls the portrait, carries the shoulders and attack
+// orbit centre off the local root, and widens the stance/stride.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -18,78 +19,142 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   const spine = window.HobunjiCharacterSpine;
   const rigScale = window.HobunjiCharacterRigScale;
 
-  // Profile: scales linearly with hunch. The spine bone's shoulder drop plus the head bone's extra drop equal the rig-scale
-  // age hunch, so an aged NPC's head ends up exactly where it did before the spine existed.
+  // Profile: scales linearly with hunch. The spline's vertical drop plus the head bone's extra drop equal the rig-scale age hunch, so an
+  // aged NPC's head ends up exactly where it did before the spine existed.
   const full = spine.profileFor(1), half = spine.profileFor(0.5), upright = spine.profileFor(0);
-  near(full.shoulderDrop + full.neckDrop, -rigScale.ageHunchFraction(1), 'spine + head bone equal the rig-scale age hunch');
+  near(full.shoulderDrop + full.neckDrop, -rigScale.ageHunchFraction(1), 'spline + head bone equal the rig-scale age hunch');
   near(full.totalNeckDrop, -rigScale.ageHunchFraction(1), 'total neck drop equals the rig-scale age hunch');
   near(half.shoulderDrop, full.shoulderDrop / 2, 'shoulder drop is linear');
-  near(full.shoulderDrop, full.totalNeckDrop * spine.shoulderDropRatio, 'shoulders carry their share of the head drop');
-  assert.ok(full.shoulderDrop > 0 && full.neckDrop > 0, 'both the spine and the head bone contribute');
-  near(full.orbitDrop, full.shoulderDrop, 'the attack orbit moves precisely with the shoulders');
+  near(full.shoulderDrop, full.totalNeckDrop * spine.shoulderDropRatio, 'the spline carries its share of the head drop');
+  assert.ok(full.shoulderDrop > 0 && full.neckDrop > 0, 'both the spline and the head bone contribute');
   near(full.stanceScale, 1 + spine.stanceWiden, 'stance widens at full hunch');
   near(full.strideScale, 1 + spine.strideWiden, 'stride lengthens at full hunch');
-  assert.deepEqual([upright.neckDrop, upright.shoulderDrop, upright.orbitDrop, upright.stanceScale, upright.strideScale], [0, 0, 0, 1, 1], 'upright characters are untouched');
+  assert.deepEqual([upright.neckDrop, upright.shoulderDrop, upright.sway, upright.stanceScale, upright.strideScale], [0, 0, 0, 1, 1], 'upright characters are untouched');
   near(spine.profileFor(7).hunch, 1, 'hunch clamps to 1');
+  near(spine.profileFor(1, 9).sway, 1, 'sway clamps to 1');
+  near(spine.swayFor({ spine: { hunch: 0.5, sway: -0.4 } }), -0.4, 'sway is read from an authored spine');
+  assert.equal(spine.swayFor({ spine: 0.5 }), 0, 'and defaults to none');
+  assert.equal(spine.splineNodes, 7, 'seven spline nodes');
 
-  // Skin weight: nothing below the waist moves, everything from just under the shoulders up rides the spine, monotonic between.
-  const H = 0.9, neckY = 0.2;
-  near(spine.weightAt(neckY - 0.5 * H, neckY, H), 0, 'legs/hips are not weighted to the spine');
-  near(spine.weightAt(neckY - 0.21 * H, neckY, H), 1, 'everything from mid-torso up rides the spine');
-  near(spine.weightAt(neckY - 0.04 * H, neckY, H), 1, 'the shoulder line is fully weighted');
-  near(spine.weightAt(neckY + 0.3 * H, neckY, H), 1, 'the head region is fully weighted');
-  let last = -1;
-  for (let y = neckY - 0.4 * H; y <= neckY + 0.1 * H; y += 0.01) {
-    const w = spine.weightAt(y, neckY, H);
-    assert.ok(w >= last - 1e-12 && w >= 0 && w <= 1, 'weight rises smoothly from 0 to 1');
-    last = w;
+  // Layout: 7 nodes evenly spaced from the posterior (pinned to the local root, x = 0 and z = 0) to the neck pivot, chained by offset.
+  const H = 0.9, neckY = 0.2, neckX = 0.05, posterior = neckY - 0.5 * H; // A realistic posterior-to-neck span: the shipped skeleton's is half its height.
+  const layout = spine.layoutFor(neckX, neckY, H, posterior);
+  assert.equal(layout.nodes.length, 7);
+  assert.deepEqual([layout.nodes[0].x, layout.nodes[0].z], [0, 0], 'the posterior sits on the root in x and z');
+  near(layout.nodes[0].y, posterior, 'the spline starts at the posterior');
+  near(layout.nodes[6].x, neckX, 'and ends at the neck pivot X');
+  near(layout.nodes[6].y, neckY, 'and Y');
+  for (let k = 1; k < 7; k++) {
+    near(layout.nodes[k].y - layout.nodes[k - 1].y, (neckY - posterior) / 6, 'evenly spaced');
+    near(layout.nodes[k - 1].x + layout.offsets[k].x, layout.nodes[k].x, 'offsets chain to the nodes (x)');
+    near(layout.nodes[k - 1].y + layout.offsets[k].y, layout.nodes[k].y, 'offsets chain to the nodes (y)');
   }
-  // Bind-pose layout: the torso bone covers only the lower half of the waist-to-neck span, the spine bone takes the freed upper half,
-  // and the chain still ends exactly on the plane-space neck pivot, so the skin weights (plane coordinates) are unaffected.
-  const layout = spine.layoutFor(0.05, neckY, H);
-  const span = layout.spine.y + layout.neck.y;
-  near(span, 0.42 * H, 'the chain covers the whole waist-to-neck stretch');
-  near(layout.spine.y, 0.25 * span, 'the bend sits low: the torso bone is only the lower quarter');
-  near(layout.neck.y, 0.75 * span, 'the spine bone takes the freed length up to the neck');
-  assert.ok(layout.spine.y < span / 2, 'the bend is well below the midpoint');
-  near(layout.torso.y + layout.spine.y + layout.neck.y, neckY, 'the chain ends exactly at the neck pivot');
-  near(layout.torso.x + layout.spine.x + layout.neck.x, 0.05, 'and at the neck pivot X');
-  // With an authored posterior the torso bone starts exactly there and the bend lies strictly between the posterior and the neck.
-  const posterior = neckY - 0.3 * H;
-  const anchored = spine.layoutFor(0.05, neckY, H, posterior);
-  near(anchored.torso.y, posterior, 'the torso bone starts at the posterior');
-  const bendY = anchored.torso.y + anchored.spine.y;
-  assert.ok(bendY > posterior && bendY < neckY, 'the bend is between the posterior and the neck');
-  near(anchored.torso.y + anchored.spine.y + anchored.neck.y, neckY, 'the anchored chain still ends at the neck pivot');
-  near(spine.weightAt(posterior, neckY, H, posterior), 0, 'nothing at the posterior moves');
-  near(spine.weightAt(posterior + 0.5 * (neckY - posterior), neckY, H, posterior), 1, 'halfway from the posterior to the neck rides the spine');
-  near(spine.weightAt(-H / 2, neckY, H, -H), 0, 'a posterior below the painted art never moves the art\'s bottom edge');
-  assert.equal(spine.layoutFor(0, neckY, H, neckY + 1).torso.y, neckY - 0.42 * H, 'an implausible posterior falls back to the neck-relative estimate');
+  near(layout.neck.x + layout.neck.y + layout.neck.z, 0, 'the head-turn bone sits right on the last node');
+  assert.equal(spine.layoutFor(0, neckY, H, neckY + 1).nodes[0].y, neckY - 0.42 * H, 'an implausible posterior falls back to the neck-relative estimate');
+  assert.equal(spine.layoutFor(0, neckY, H).nodes[0].y, neckY - 0.42 * H, 'and so does a missing one');
+
+  // Skin weights: the two neighbouring nodes by height; below the posterior rides node 0, above the neck rides the last node.
+  const w = {};
+  let at = spine.nodeWeightsAt(posterior - 1, neckY, H, posterior, w);
+  assert.deepEqual([at.a, at.b, at.wb], [0, 1, 0], 'below the posterior everything rides node 0');
+  at = spine.nodeWeightsAt(neckY + 1, neckY, H, posterior, w);
+  assert.deepEqual([at.a, at.b, at.wb], [5, 6, 1], 'above the neck everything rides the last node');
+  for (let k = 0; k < 6; k++) {
+    const y = posterior + (neckY - posterior) * (k + 0.5) / 6;
+    at = spine.nodeWeightsAt(y, neckY, H, posterior, w);
+    assert.equal(at.a, k); assert.equal(at.b, k + 1); near(at.wb, 0.5, 'halfway between two nodes shares them equally');
+  }
+  let lastBlend = -1;
+  for (let y = posterior; y <= neckY; y += 0.002) {
+    at = spine.nodeWeightsAt(y, neckY, H, posterior, w);
+    const blend = at.a + at.wb;
+    assert.ok(blend >= lastBlend - 1e-12, 'the blended node position rises monotonically with height');
+    lastBlend = blend;
+  }
+
   // Plane-space posterior, resolved like the legs' hip: authored percent-of-height-from-floor (mao-ao male is 25%), shifted into the plane's
   // frame (floor = modelHeight/2 + assemblyY + planeY), else the hand-anchor fallback for species without a rule (e.g. the skeletons).
   near(spine.posteriorLocalY({ speciesId: 'mao-ao', gender: 'male', modelHeight: 1, placementRatio: 0.5 }), 0.25 - 0.5, 'authored posterior in plane space');
   near(spine.posteriorLocalY({ speciesId: 'mao-ao', gender: 'male', modelHeight: 1, placementRatio: 0.6 }), 0.25 - 0.5 - 0.1, 'shifted by the portrait vertical placement');
   near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1, placementRatio: 0.5, handAttachY: 0.6 }), 0.6 - 0.18 - 0.5, 'no rule: 18% below the hand anchor, like the legs');
   near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1 }), 0.5 - 0.18 - 0.5, 'no rule and no hand anchor: 18% below the plane middle');
-  const spineRest = { position: { y: layout.spine.y }, updateMatrix() {}, userData: {} };
-  spine.applyToRig({ spineJoint: spineRest, neckLocal: { y: neckY } }, spine.profileFor(1), H);
-  near(spineRest.position.y, layout.spine.y - spine.profileFor(1).shoulderDrop * H, 'a hunch lowers the spine bone from its bind-pose offset');
-  spine.applyToRig({ spineJoint: spineRest, neckLocal: { y: neckY } }, spine.profileFor(0.5), H);
-  near(spineRest.position.y, layout.spine.y - spine.profileFor(0.5).shoulderDrop * H, 'reapplying is relative to the bind pose, never cumulative');
 
-  // Deformation: anchors keep their 2D coordinates and are carried down by the follow at their own height.
+  // The curl: node 0 is pinned to the root; the neck node drops by exactly the profile's drop; the spline sweeps forward (+z) and, with a sway,
+  // sideways, off the root; segment lengths are preserved; the cumulative pitch eases out so the curvature sits low in the back.
+  const lengthOf = (nodes, k) => Math.hypot(nodes[k].x - nodes[k - 1].x, nodes[k].y - nodes[k - 1].y);
   const stooped = spine.profileFor(1);
-  const rig = { spineJoint: { position: { y: 0 }, updateMatrix() {} }, neckLocal: { y: neckY } };
-  assert.ok(spine.applyToRig(rig, stooped, H));
-  near(rig.spineJoint.position.y, -stooped.shoulderDrop * H, 'the spine bone is lowered by the shoulder drop');
-  near(spine.deformDrop(stooped, neckY + 0.3 * H), stooped.shoulderDrop * H, 'the head region drops by the full spine drop');
-  near(spine.deformDrop(stooped, neckY - 0.5 * H), 0, 'the hips stay put');
-  const shoulderDrop = spine.deformDrop(stooped, neckY - 0.06 * H);
-  assert.ok(shoulderDrop > 0.8 * stooped.shoulderDrop * H && shoulderDrop <= stooped.shoulderDrop * H + 1e-12, 'shoulders drop nearly the full amount');
-  near(spine.deformDrop(spine.profileFor(0), neckY), 0, 'an upright profile deforms nothing');
-  const pair = { spineJoint: { front: { position: { y: 0 } }, back: { position: { y: 0 } } }, neckLocal: { y: neckY } };
-  spine.applyToRig(pair, spine.profileFor(0.5), H);
-  near(pair.spineJoint.back.position.y, pair.spineJoint.front.position.y, 'front and rear skins stoop together');
+  const curve = spine.solveCurve(stooped, layout, H);
+  assert.deepEqual([curve[0].x, curve[0].y, curve[0].z], [0, 0, 0], 'the posterior never leaves the root');
+  near(curve[6].y, -stooped.shoulderDrop * H, 'the neck node drops by exactly the profile drop');
+  assert.ok(curve[6].z > 0, 'the neck swings forward');
+  assert.ok(curve.every(node => Math.abs(node.x) < 1e-12), 'no sway, no sideways travel');
+  let previousPitch = Infinity, previousDrop = 0, previousZ = 0;
+  for (let k = 1; k < 7; k++) {
+    const dx = layout.offsets[k].x + curve[k].x - curve[k - 1].x, dy = layout.offsets[k].y + curve[k].y - curve[k - 1].y, dz = (curve[k].z - curve[k - 1].z) / spine.depthScale;
+    near(Math.hypot(dx, dy, dz), lengthOf(layout.nodes, k), 'each segment keeps its length');
+    const pitch = Math.atan2(dz, dy);
+    assert.ok(pitch > 0 && pitch >= (k > 1 ? 0 : 0), 'every segment is pitched forward');
+    assert.ok(curve[k].y <= previousDrop + 1e-12 && curve[k].z >= previousZ - 1e-12, 'the nodes sweep down and forward');
+    previousDrop = curve[k].y; previousZ = curve[k].z;
+  }
+  const cumulative = [];
+  for (let k = 1; k < 7; k++) cumulative.push(Math.atan2((curve[k].z - curve[k - 1].z) / spine.depthScale, layout.offsets[k].y + curve[k].y - curve[k - 1].y));
+  for (let k = 1; k < cumulative.length; k++) assert.ok(cumulative[k] >= cumulative[k - 1], 'pitch accumulates up the spline');
+  for (let k = 2; k < cumulative.length; k++) assert.ok(cumulative[k] - cumulative[k - 1] <= cumulative[k - 1] - cumulative[k - 2] + 1e-12, 'with the curvature easing out (low in the back)');
+  const swayed = spine.solveCurve(spine.profileFor(1, 0.6), layout, H);
+  assert.ok(swayed[6].x > 0 && swayed[3].x > 0 && swayed[6].x > swayed[3].x, 'a sway carries the spline sideways, off the root');
+  near(swayed[6].y, -stooped.shoulderDrop * H, 'with the same vertical drop');
+  assert.ok(spine.solveCurve(spine.profileFor(1, -0.6), layout, H)[6].x < 0, 'a negative sway goes the other way');
+  assert.ok(spine.solveCurve(upright, layout, H).every(node => node.x === 0 && node.y === 0 && node.z === 0), 'an upright character does not move at all');
+  const capped = spine.solveCurve({ ...stooped, shoulderDrop: 5 }, layout, H);
+  assert.ok(capped[6].y > -5 * H && capped[6].y < 0, 'an impossible drop is capped by the maximum curl');
+
+  // Applying it to a rig: each node bone moves by its step along the curve from its bind-pose offset (never accumulating); the rear skin is the
+  // same card turned around, so its x and z run the other way.
+  const fakeBones = () => layout.offsets.map((offset, k) => ({
+    userData: {}, updateMatrix() {},
+    position: { x: k === 0 ? layout.nodes[0].x : offset.x, y: k === 0 ? layout.nodes[0].y : offset.y, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } },
+  }));
+  const chain = bones => { const points = [{ ...bones[0].position }]; for (let k = 1; k < 7; k++) points.push({ x: points[k - 1].x + bones[k].position.x, y: points[k - 1].y + bones[k].position.y, z: points[k - 1].z + bones[k].position.z }); return points; };
+  const front = fakeBones(), rear = fakeBones();
+  const profile = spine.profileFor(1, 0.3);
+  assert.ok(spine.applyToRig({ splineNodes: { front, back: rear }, neckLocal: { x: neckX, y: neckY }, spinePosteriorY: posterior }, profile, H));
+  const frontPoints = chain(front), rearPoints = chain(rear);
+  const solved = spine.solveCurve(profile, layout, H);
+  for (let k = 0; k < 7; k++) {
+    near(frontPoints[k].x, layout.nodes[k].x + solved[k].x, 'front nodes follow the curve (x)');
+    near(frontPoints[k].y, layout.nodes[k].y + solved[k].y, 'front nodes follow the curve (y)');
+    near(frontPoints[k].z, solved[k].z, 'front nodes follow the curve (z)');
+    near(rearPoints[k].y, frontPoints[k].y, 'the rear skin drops the same');
+    near(rearPoints[k].z, -frontPoints[k].z, 'but its z runs the other way');
+    near(rearPoints[k].x - layout.nodes[k].x, -(frontPoints[k].x - layout.nodes[k].x), 'and so does its sideways travel');
+  }
+  assert.deepEqual([front[0].position.x, front[0].position.y, front[0].position.z], [0, posterior, 0], 'the posterior node never moves off the root');
+  spine.applyToRig({ splineNodes: front, neckLocal: { x: neckX, y: neckY }, spinePosteriorY: posterior }, spine.profileFor(0.5), H);
+  near(chain(front)[6].y, layout.nodes[6].y + spine.solveCurve(spine.profileFor(0.5), layout, H)[6].y, 'reapplying is relative to the bind pose, never cumulative');
+
+  // Point deformation: anchors keep their 2D coordinates and ride the same curve at their own height.
+  const bound = spine.profileFor(1, 0.3);
+  spine.applyToRig({ splineNodes: fakeBones(), neckLocal: { x: neckX, y: neckY }, spinePosteriorY: posterior }, bound, H);
+  const head = spine.deformAt(bound, neckY + 0.3 * H, {});
+  near(head.y, bound.curve[6].y, 'the head region rides the neck node (y)');
+  near(head.z, bound.curve[6].z, 'and (z)');
+  near(head.x, bound.curve[6].x, 'and (x)');
+  const hips = spine.deformAt(bound, posterior - 0.1, {});
+  assert.deepEqual([hips.x, hips.y, hips.z], [0, 0, 0], 'below the posterior nothing moves');
+  const shoulders = spine.deformAt(bound, neckY - 0.08 * H, {});
+  assert.ok(shoulders.y < 0 && shoulders.z > 0 && shoulders.x > 0, 'the shoulders are carried down, forward and sideways, off the local root');
+  assert.ok(Math.abs(shoulders.y) <= Math.abs(head.y) + 1e-9, 'by no more than the neck');
+  const none = spine.deformAt(spine.profileFor(0), neckY, {});
+  assert.deepEqual([none.x, none.y, none.z], [0, 0, 0], 'an upright profile deforms nothing');
+  near(bound.orbitOffset.y, shoulders.y, 'the orbit centre moves precisely with the shoulders (y)');
+  near(bound.orbitOffset.z, shoulders.z, 'and (z)');
+  near(bound.orbitOffset.x, shoulders.x, 'and (x)');
+  assert.equal(spine.orbitOffsetWorld(upright, 1, 1), null, 'no hunch, no orbit offset');
+  const worldOffset = spine.orbitOffsetWorld(bound, 2, 3);
+  near(worldOffset.x, bound.orbitOffset.x * 2, 'the world orbit offset follows the width scale (x)');
+  near(worldOffset.y, bound.orbitOffset.y * 3, 'the height scale (y)');
+  near(worldOffset.z, bound.orbitOffset.z * 2, 'and depth tracks width (z)');
 
   // Sources: an explicit spine wins; otherwise the NPC database's appearance.aging.hunch (what 4 shipped elders author).
   near(spine.hunchFor({ spine: { hunch: 0.4 }, profile: { aging: { hunch: 0.9 } } }), 0.4, 'explicit spine wins over aging');
@@ -116,21 +181,26 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   spine.bind(root, {});
   assert.equal(spine.fromRoot(child), null, 'rebinding upright clears it');
 
-  // Orbit centre: transformPosePoint lowers the whole orbit by orbitDropY; untransform is its exact inverse.
+  // Orbit centre: transformPosePoint moves the whole orbit by orbitOffset (in the pose frame, turned by its facing); untransform is its exact inverse.
   const pose = window.HobunjiSpeciesPoseScale;
   const options = extra => ({ cx: 0.1, cz: -0.2, floorY: 0, baseY: 0.4, speciesId: 'mao-ao', gender: 'male', modelHeight: 0.9, rigScaleY: 1.2, armLength: 99, poseOrbitScale: { x: 0.8, y: 0.9, z: 0.7 }, ...extra });
   const raw = { x: 0.6, y: 0.7, z: -0.5 };
   const upright1 = pose.transformPosePoint({ ...raw }, options());
-  const drop = spine.orbitDropWorld(full, 0.9, 1.2);
-  assert.ok(drop > 0);
-  const hunched = pose.transformPosePoint({ ...raw }, options({ orbitDropY: drop }));
-  near(upright1.y - hunched.y, drop, 'orbit sits exactly orbitDropY lower');
-  near(upright1.x, hunched.x, 'X unaffected');
-  near(upright1.z, hunched.z, 'Z unaffected');
-  const back = pose.untransformPosePoint({ ...hunched }, options({ orbitDropY: drop }));
+  const offset = { x: 0.03, y: -0.15, z: 0.12 };
+  const moved = pose.transformPosePoint({ ...raw }, options({ orbitOffset: offset }));
+  near(moved.y - upright1.y, offset.y, 'the orbit sits exactly orbitOffset.y lower');
+  near(moved.x - upright1.x, offset.x, 'and sideways by orbitOffset.x');
+  near(moved.z - upright1.z, offset.z, 'and forward by orbitOffset.z');
+  const back = pose.untransformPosePoint({ ...moved }, options({ orbitOffset: offset }));
   for (const axis of ['x', 'y', 'z']) near(back[axis], raw[axis], `untransform round-trips ${axis}`);
-  const noDrop = pose.transformPosePoint({ ...raw }, options({ orbitDropY: -5 }));
-  near(noDrop.y, upright1.y, 'a negative drop is ignored');
+  const turned = pose.transformPosePoint({ ...raw }, options({ orbitOffset: { x: 0, y: 0, z: 1 }, yawRad: Math.PI / 2 }));
+  const turnedUpright = pose.transformPosePoint({ ...raw }, options({ yawRad: Math.PI / 2 }));
+  near(turned.x - turnedUpright.x, 1, 'forward follows the pose frame: a quarter turn points it along world X');
+  near(turned.z - turnedUpright.z, 0, 'and not along Z');
+  const backTurned = pose.untransformPosePoint({ ...turned }, options({ orbitOffset: { x: 0, y: 0, z: 1 }, yawRad: Math.PI / 2 }));
+  for (const axis of ['x', 'y', 'z']) near(backTurned[axis], raw[axis], `turned untransform round-trips ${axis}`);
+  const ignored = pose.transformPosePoint({ ...raw }, options({ orbitOffset: { x: NaN, y: 1, z: 1 } }));
+  near(ignored.y, upright1.y, 'a malformed offset is ignored');
 
   // Loadout rules: the shipped config hunches skeletons and Maskbound; the schema validates the value.
   const rulesWindow = {};
@@ -155,6 +225,8 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   assert.throws(() => rules.validate(doc({ hunch: -0.1 })), /spine\.hunch/);
   assert.throws(() => rules.validate(doc({ hunch: '0.5' })), /spine\.hunch/);
   assert.throws(() => rules.validate(doc({ lean: 0.5 })), /unknown field/);
+  assert.doesNotThrow(() => rules.validate(doc({ hunch: 0.5, sway: -0.5 })), 'a sway rolls the curl sideways');
+  assert.throws(() => rules.validate(doc({ hunch: 0.5, sway: 1.5 })), /spine\.sway/);
   assert.throws(() => rules.validate(doc([0.5])), /spine/);
 
   console.log('character spine OK');

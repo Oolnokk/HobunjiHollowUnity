@@ -1711,7 +1711,7 @@
         cx: group.position.x, cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: vθ,
-        orbitDropY: window.HobunjiCharacterSpine?.orbitDropWorld(c.avatarRef?.spine, poseModelHeight, rigScaleY) || 0, // Same stooped orbit centre as the melee swing.
+        orbitOffset: window.HobunjiCharacterSpine?.orbitOffsetWorld(c.avatarRef?.spine, c.avatarRef?.rigScale?.x, rigScaleY) || null, // Same curled orbit centre as the melee swing.
       });
     } else {
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, vθ);

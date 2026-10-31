@@ -85,14 +85,18 @@
         bindPoint: localPoint.clone(), deformed: localPoint.clone(), bonePoint: localPoint.clone(), boneMatrix: skinnedPlane.bindMatrix.clone(),
       };
       const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
+      const splineScratch = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 };
       bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
       deformed.set(0, 0, 0);
-      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
+      const NECK_BONE = 7, HEAD_BONE = 8; // Spline nodes 0-6, then the head-turn and head-scale bones (png-plane-avatar.js).
+      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > HEAD_BONE
         ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
       headWeight = Math.max(headWeight, headScaleWeight);
-      const spineWeight = skeleton.bones.length >= 4 ? (1 - headWeight) * (window.HobunjiCharacterSpine?.weightAt?.(localPoint.y, neckY, modelHeight, rig.spinePosteriorY) || 0) : 0; // Same spine share the portrait skin uses.
-      for (let i = 0; i < Math.min(4, skeleton.bones.length); i++) {
-        const weight = i === 0 ? 1 - headWeight - spineWeight : i === 1 ? headWeight - headScaleWeight : i === 2 ? headScaleWeight : spineWeight; // Same torso/neck/head/spine weights without a per-query array.
+      const spline = window.HobunjiCharacterSpine?.nodeWeightsAt?.(localPoint.y, neckY, modelHeight, rig.spinePosteriorY, splineScratch) || Object.assign(splineScratch, { a: 0, b: 0, wb: 0 }); // Same spline-node shares the portrait skin uses.
+      const bodyWeight = 1 - headWeight;
+      for (let i = 0; i < Math.min(HEAD_BONE + 1, skeleton.bones.length); i++) {
+        const weight = i === NECK_BONE ? headWeight - headScaleWeight : i === HEAD_BONE ? headScaleWeight
+          : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0);
         if (!weight) continue;
         if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
           boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
