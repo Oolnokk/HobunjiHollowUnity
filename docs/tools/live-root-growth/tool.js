@@ -354,7 +354,7 @@
       window.RootSnareRunner.loadNpcPortrait({id:$('snareNpc').value||null,seed:room.seed+':walker'}).then(rendered=>{
         if(revision!==snareNpcRevision||roamingNpc!==runner)return;
         runner.installAvatar(rendered);
-        $('snareNpcStatus').textContent='Loaded '+(rendered.npc.name||rendered.npc.id)+' · '+rendered.portraitNpc.appearance.speciesId+' · neck bone '+(runner.diagnostics().neckBone?'yes':'unavailable')+' · legs '+(runner.diagnostics().authenticFeet?'yes':'missing');
+        $('snareNpcStatus').textContent='Loaded '+(rendered.npc.name||rendered.npc.id)+' · '+rendered.portraitNpc.appearance.speciesId+' · neck bone '+(runner.diagnostics().neckBone?'yes':'unavailable')+' · legs '+(runner.diagnostics().authenticFeet?'yes':'missing')+' · pants '+(runner.diagnostics().authenticPants?'real rig':'none equipped');
         previewDirty=true;
       }).catch(error=>{if(revision!==snareNpcRevision||roamingNpc!==runner)return;
         $('snareNpcStatus').textContent='Actual NPC load FAILED: '+error.message+' (no dummy substitute)';
