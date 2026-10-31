@@ -125,6 +125,18 @@ const tick = at => { now = at; registeredFrame(at); }; // Runs the production up
   assert.equal(snapshot().emitters, 1);
   assert.equal(third.userData.toolPlane.children.length, 1, 'cached-mask rebuild remounts on the actual live mesh');
 
+  const wristRig = new Object3D(); // Nested arm/shaft carriers can be inserted between the player holder and the weapon.
+  holder.remove(third); holder.add(wristRig); wristRig.add(third);
+  context.window.ProceduralHandAttachments.gameDeps.toolMeshMap = { weapon: first }; // A stale slot-map entry must not override the visibly attached weapon.
+  api.forceRefresh(); tick(1040);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshot().heldVisualFound, true, 'nested current player weapon is found by holder ancestry');
+  assert.equal(snapshot().emitters, 1, 'nested held weapon retains exactly one emitter');
+  assert.equal(third.userData.toolPlane.children.length, 1, 'nested weapon owns the live aura instead of the stale mapped weapon');
+  assert.equal(first.userData.toolPlane.children.length, 0, 'detached stale mapped weapon stays particle-free');
+  delete context.window.ProceduralHandAttachments.gameDeps.toolMeshMap;
+  wristRig.remove(third); holder.remove(wristRig); holder.add(third);
+
   const ranged = new Object3D(); // An unenchanted ranged weapon can never inherit the melee item's particles.
   ranged.userData = { itemKey: 'bow', toolPlane: plane() };
   activeSlot = 'ranged'; holder.remove(third); holder.add(ranged);

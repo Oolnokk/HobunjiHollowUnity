@@ -286,14 +286,26 @@
     const handDeps = window.ProceduralHandAttachments?.gameDeps; // Shares the live held visual with procedural hands and dual wield.
     const holder = handDeps?.toolHolder; // A player-owned holder is mandatory; a free-standing mesh or NPC must never inherit the aura.
     if (!holder?.children) return null;
-    const meshMap = handDeps?.toolMeshMap; // Some integrations expose an equipment map; the shipped hand dependencies expose only toolHolder.
+    const meshMap = handDeps?.toolMeshMap; // Optional authoritative slot map; the shipped hand runtime can omit it.
+    const belongsToHolder = candidate => {
+      if (holder.children.includes(candidate)) return true; // Preserve the direct-child runtime and lightweight tool-holder contract even when the caller omits parent back-pointers.
+      for (let ancestor = candidate?.parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor === holder) return true; // Nested attachment/shaft rigs still belong to the exact player-held tool.
+        if (ancestor.visible === false) return false; // A hidden intermediate rig cannot be the currently drawn weapon.
+      }
+      return false; // Never search the scene or accept an enemy/free-standing matching weapon.
+    };
     const isHeldWeapon = candidate => candidate?.visible !== false
       && candidate?.userData?.itemKey === key
       && candidate?.userData?.toolPlane?.isObject3D
-      && (candidate.parent === holder || holder.children.includes(candidate)); // Both the literal key and attachment must agree.
-    const weaponVisual = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // If present, the authoritative melee slot wins over same-key ranged duplicates.
-    if (weaponVisual) return isHeldWeapon(weaponVisual) ? weaponVisual : null;
-    return holder.children.find(isHeldWeapon) || null;
+      && belongsToHolder(candidate); // Exact item identity and player-holder ancestry must both agree.
+    const mapped = meshMap instanceof Map ? meshMap.get('weapon') : meshMap?.weapon; // Prefer the designated melee-slot visual when attached.
+    if (isHeldWeapon(mapped)) return mapped;
+    let held = null; // Fallback for nested attachments or a stale slot map during equipment rebuilds.
+    holder.traverse?.(candidate => {
+      if (!held && candidate !== holder && isHeldWeapon(candidate)) held = candidate;
+    });
+    return held || holder.children.find(isHeldWeapon) || null;
   }
 
   function heldVisualForWeapon(key) {
@@ -432,7 +444,7 @@
     if (emitter.plane?.userData) delete emitter.plane.userData.hobunjiHeldOverlayVfxPadding; // No stale scissor enlargement after unequipping.
   }
 
-  function makeEmitter(plane) {
+  function makeEmitter(plane, playerHeld = false) {
     if (typeof THREE === 'undefined' || !plane?.add) return null;
     const group = new THREE.Group(); // Used as the plane-local owner for all transient particles on this exact visible weapon copy.
     group.name = 'weapon_enchantment_metal_particles';
@@ -441,12 +453,23 @@
     plane.add(group);
     plane.userData = plane.userData || {};
     plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Read by HeldObjectRenderOrder's scissor bounds for only this emitting weapon plane.
-    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now() };
+    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now(), playerHeld }; // Only the actual player's held sprite may bypass replay culling; NPC and preview motes retain the draw-call optimization.
   }
 
   function styleFor(state) {
     const def = ALIGNMENTS[state?.alignment]; // Used to resolve the chosen plane-specific particle vocabulary.
     return def?.effects?.find(effect => effect.id === state?.effectId) || def?.effects?.[0] || null;
+  }
+
+  function syncParticleRenderLayers(sprite, plane, playerHeld = false) {
+    if (!sprite?.layers) return;
+    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Used to share the held-weapon selective replay without losing ordinary room rendering.
+    const overlays = Number.isInteger(overlayLayer) && overlayLayer > 0 && overlayLayer < 32
+      && ((Number(plane?.layers?.mask) >>> overlayLayer) & 1);
+    const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Normal rendering stays available if the selective depth replay skips this scene.
+    if ((Number(sprite.layers.mask) >>> 0) !== wantedMask) sprite.layers.mask = wantedMask;
+    sprite.userData = sprite.userData || {};
+    sprite.userData.hobunjiHeldOverlayParticle = !!overlays && playerHeld; // Only player-held motes are protected from the source-blade scissor's extra frustum cull.
   }
 
   function spawnParticle(emitter, mask, snapshot) {
@@ -479,13 +502,12 @@
     }
     sprite.name = `weapon_enchantment_${effect.id}`;
     sprite.renderOrder = Number(emitter.plane.renderOrder || 0) + 4;
-    // HeldObjectRenderOrder hides held planes from the base colour pass and
-    // redraws them in its own overlay pass, which painted the blade over any
-    // particle drawn earlier. Particles on such a plane render only in that
-    // same pass, after (renderOrder) and in front of the blade.
-    const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
-    if (Number.isInteger(overlayLayer) && ((Number(emitter.plane.layers?.mask) >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer); // r128 Layers has no isEnabled().
-    else sprite.layers?.set?.(0);
+    // The held-object renderer hides the parent plane (and its children) in
+    // the base pass, then redraws it on the overlay layer. Retain layer 0 as
+    // well: rooms without ground replay still use the ordinary world pass.
+    // Recheck existing sprites each frame as the held renderer may mark a mesh
+    // after its first particle spawned (notably during scene/equipment rebuilds).
+    syncParticleRenderLayers(sprite, emitter.plane, emitter.playerHeld);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
     const origin = metalPixelToLocal(index, mask, emitter.plane); // Pixel emission follows even offset/expanded modular weapon geometry.
@@ -581,7 +603,7 @@
     }
     for (const plane of wanted) {
       if (!EMITTERS.has(plane)) {
-        const emitter = makeEmitter(plane); // Used as the persistent particle pool for this visible blade copy.
+        const emitter = makeEmitter(plane, true); // Only these world-held player emitters bypass the replay's additional sprite cull.
         if (emitter) EMITTERS.set(plane, emitter);
       }
     }
@@ -603,6 +625,7 @@
     for (const emitter of emitters) {
       for (let index = emitter.particles.length - 1; index >= 0; index--) {
         const particle = emitter.particles[index]; // Used as the current pooled particle advanced this frame.
+        syncParticleRenderLayers(particle.sprite, emitter.plane, emitter.playerHeld); // Live weapons can acquire their replay layer after the first emission.
         if (updateParticle(particle, dt)) continue;
         retireParticle(emitter, particle);
         emitter.particles.splice(index, 1);
