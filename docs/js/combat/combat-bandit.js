@@ -2897,7 +2897,8 @@
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
     const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
-    let def = Object.assign({ ...rolledDefinition }, opts.defOverride || {});
+    const unarmedWitch = !!window.GhoulSpecialVariants?.isUnarmedWitch?.(opts.extra); // Shadow-wind Wyrm-witches cast bare-handed like liches: the lich casting pose weapon, no visible mesh.
+    let def = Object.assign({ ...rolledDefinition }, unarmedWitch ? { weaponKey: window.GhoulSpecialVariants.castWeaponKey(), rangedWeaponKey: null } : {}, opts.defOverride || {});
     // Special enemies supply fixed weapons through defOverride. Explicit authored
     // weapon pools replace those fields too, using the same stats/ability factory.
     if (authoredRule?.weapons || authoredRule?.metals) {
@@ -3003,6 +3004,7 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }

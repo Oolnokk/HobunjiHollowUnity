@@ -118,6 +118,17 @@
     return roster;
   }
 
+  // Shadow-wind Wyrm-witches are unarmed and cast with their bare hands, exactly like the liches: the lich casting pose weapon, rendered as an empty
+  // socket. Rend-water witches (and Shadowknights) keep ordinary weapons.
+  const isUnarmedWitch = extra => extra?.mineWyrmWitchType === 'shadow-wind';
+  const castWeaponKey = () => window.HarlyaoLichCombat?.LICH_CAST_WEAPON_KEY || 'pickshovel_nativeCopper';
+  function unarm(entity) {
+    if (!entity) return entity;
+    window.HarlyaoLichCombat?.prepareEmptyCastWeapon?.(entity); // Drops the visible weapon mesh and any ranged holder, keeping the animated hand socket.
+    entity.isUnarmedCaster = true;
+    return entity;
+  }
+
   // Per-frame: attach and drive the enchantment particles on a knight's held weapon (the same emitter as the player's enchanted weapons).
   function tick(entity, toolDefs) {
     const enchanted = entity?.rosterRecord?.enchantedWeapon;
@@ -148,5 +159,5 @@
     return key ? { key, label: relics.SHAPES[relic.shape].label } : null;
   }
 
-  window.GhoulSpecialVariants = Object.freeze({ GLYPHS, WITCH_MAGIC_DYES, KNIGHT_PATTERN_DYE, PATTERN_SCALE, style, tick, rollEnchantedWeapon, lootEnchantedWeapon, framedPattern, tierMetal });
+  window.GhoulSpecialVariants = Object.freeze({ isUnarmedWitch, castWeaponKey, unarm, GLYPHS, WITCH_MAGIC_DYES, KNIGHT_PATTERN_DYE, PATTERN_SCALE, style, tick, rollEnchantedWeapon, lootEnchantedWeapon, framedPattern, tierMetal });
 })();

@@ -2019,7 +2019,7 @@
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
     installWrappers, makeEntity, rosterFor, rollDye,
-    lichCastStep, updateLichHoverPresentation, // Shared animation/presentation authority for isolated loadout previews.
+    lichCastStep, updateLichHoverPresentation, prepareEmptyCastWeapon, LICH_CAST_WEAPON_KEY, // Also used by unarmed shadow-wind Wyrm-witches (ghoul-special-variants.js). // Shared animation/presentation authority for isolated loadout previews.
     updateLichAI, applyEntranced, addGooSlow, clearExpiredSlow, makeGasolinePuddle, makeEruptingEarth,
     debugSnapshot,
     formatDebug() {

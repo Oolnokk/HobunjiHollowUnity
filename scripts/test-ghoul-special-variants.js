@@ -141,6 +141,24 @@ const baseRoster = (gender = 'female') => ({ appearance: { speciesId: 'ghoul', g
   assert.equal(codec.enc({ ...relic, visual: undefined }), 'harlyaoBound_longsword_abc123_Bburning_Ftap1.sicced', 'relics without a visual encode exactly as before');
   assert.match(relics, /g\.weaponEnchantmentVisuals\[toolKey\] = \{ \.\.\.relic\.visual \}/, 'unbinding hands the visual to the weapon');
 
+  // ── Unarmed shadow-wind witches (rend-water witches and knights keep weapons) ────────────────────────────────────────────────────────
+  assert.equal(variants.isUnarmedWitch({ mineWyrmWitchType: 'shadow-wind' }), true, 'shadow-wind witches cast bare-handed');
+  assert.equal(variants.isUnarmedWitch({ mineWyrmWitchType: 'rend-water' }), false, 'rend-water witches carry weapons');
+  assert.equal(variants.isUnarmedWitch({ isGhoulShadowknight: true }), false);
+  assert.equal(variants.isUnarmedWitch(undefined), false);
+  assert.equal(variants.castWeaponKey(), 'pickshovel_nativeCopper', 'the lich casting pose weapon by default');
+  window.HarlyaoLichCombat = { LICH_CAST_WEAPON_KEY: 'castkey', prepareEmptyCastWeapon: (entity) => { entity.emptied = true; } };
+  assert.equal(variants.castWeaponKey(), 'castkey', 'the liches’ own key is the authority');
+  const witch = {};
+  assert.equal(variants.unarm(witch), witch);
+  assert.deepEqual({ ...witch }, { emptied: true, isUnarmedCaster: true }, 'unarming reuses the lich empty-hand socket');
+  assert.equal(variants.unarm(null), null);
+  const lichSource = fs.readFileSync('docs/js/combat/combat-lich.js', 'utf8');
+  assert.match(lichSource, /prepareEmptyCastWeapon, LICH_CAST_WEAPON_KEY,/, 'the lich module shares its empty-hand casting weapon');
+  const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
+  assert.match(banditSource, /unarmedWitch \? \{ weaponKey: window\.GhoulSpecialVariants\.castWeaponKey\(\), rangedWeaponKey: null \} : \{\}/, 'the witch’s weapon is the casting pose weapon');
+  assert.match(banditSource, /if \(unarmedWitch\) window\.GhoulSpecialVariants\.unarm\(c\)/, 'its visible weapon is removed after the entity exists');
+
   // ── Wiring ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
   assert.match(bandit, /await window\.GhoulSpecialVariants\?\.style\?\.\(roster, \{ rnd: deps\.rnd, tier,/, 'the roster builder dresses the variants');
