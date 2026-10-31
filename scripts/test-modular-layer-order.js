@@ -84,13 +84,38 @@ async function run() {
   const staffIdentity = await api.compose('hachutuTorchStaff', 'warhammer'); // Original head fit and fixed nonmetal shaft.
   const initialHeadTransforms = staffIdentity.operations.filter(op => op.startsWith('head-transform:'));
   assert.equal(initialHeadTransforms.length, 2, 'Torch-Staff uses both mirrored B\'shuakauitl sleeve mounts');
+  const originalRig = api.attachmentRig(api.getConfig().shafts.hachutuTorchStaff,
+    api.getConfig().heads.warhammer, api.settings('hachutuTorchStaff', 'warhammer')); // Actual source hierarchy, not just modified world mount coordinates.
+  assert.equal(originalRig.children.length, 2, 'both mounting lines are children of the scaling rig');
+  assert.deepEqual(originalRig.children.map(mount => mount.children.map(child => child.kind)),
+    [['primitive'], ['primitive']], 'head primitives are nested under each mount, not under the shaft bitmap');
   const staffEdited = JSON.parse(JSON.stringify(api.getConfig()));
   staffEdited.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.75, scaleY: 0.65, x: 125, y: -200 }; // Intentionally large attachment-only motion.
   api.replace(staffEdited);
   const transformed = await api.compose('hachutuTorchStaff', 'warhammer');
   assert.deepEqual(paints(transformed), paints(staffIdentity), 'rig movement never removes or duplicates the staff PNG or the heads');
-  assert.notDeepEqual(transformed.operations.filter(op => op.startsWith('head-transform:')), initialHeadTransforms,
-    'fitted head primitive matrices must follow the transformed tang/sleeve rig');
+  const transformedRig = api.attachmentRig(api.getConfig().shafts.hachutuTorchStaff,
+    api.getConfig().heads.warhammer, api.settings('hachutuTorchStaff', 'warhammer')); // Parent/child hierarchy must survive saved nonuniform edits.
+  assert.equal(transformedRig.kind, 'attachmentRig');
+  assert.equal(transformedRig.shaftOutsideRig, true);
+  assert.equal(transformedRig.children.length, 2);
+  assert.deepEqual(transformedRig.children.map(m => m.children[0].localMatrix),
+    originalRig.children.map(m => m.children[0].localMatrix),
+    'parent rig movement must not change each primitive\'s local placement');
+  assert.notDeepEqual(transformedRig.children.map(m => m.children[0].worldMatrix),
+    originalRig.children.map(m => m.children[0].worldMatrix),
+    'both child primitives inherit the parent\'s X/Y scale and translation');
+  for (const mount of transformedRig.children) {
+    assert.deepEqual(mount.children[0].worldMatrix,
+      api.multiplyAffine(transformedRig.parent, mount.children[0].localMatrix),
+      'rendered primitive world transform must be rig-parent multiplied by child local fit');
+  }
+  const actualTransforms = transformed.operations.filter(op => op.startsWith('head-transform:'));
+  assert.equal(actualTransforms.length, 3, 'one explicit parent rig transform wraps exactly two child head transforms');
+  assert.deepEqual(actualTransforms.slice(1), initialHeadTransforms,
+    'the canvas renders the same primitive-local matrices inside the transformed parent');
+  assert.notDeepEqual(actualTransforms[0], initialHeadTransforms[0],
+    'the rig transform is a separate parent, not an additional child-primitive adjustment');
   const globalFrameTransformCount = transformed.operations.filter(op => op.startsWith('scale:') || op.startsWith('translate:')).length;
   assert.equal(globalFrameTransformCount, 2,
     'shaft rendering only uses output-frame scale/translation, with no duplicate-rig transform on the shaft PNG');
