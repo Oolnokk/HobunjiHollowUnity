@@ -7,7 +7,7 @@ const html=read('docs/tools/live-root-growth/index.html'),author=read('docs/tool
   bootstrap=read('docs/js/dev-random-ruin-bootstrap.js');
 for(const [name,source] of [['Root Growth Author',author],['Wall snare',hands],['Runner',runner],['Shared scenery',scene],['Static cover',staticCover]])
   assert.doesNotThrow(()=>new Function(source),'javascript syntax: '+name);
-const required=['snareEnabled','snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed','snareReveal','snareBuild','snareReroute','snareRunPast','snareRelease','snareStatus'];
+const required=['snareEnabled','snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed','snareReveal','snareBuild','snareReroute','snareRunPast','snareRelease','snareRunAway','snareRunToward','snareDoubleGrip','snareStatus'];
 for(const id of required)assert(html.includes('id="'+id+'"'),'mobile preview is missing '+id);
 for(const script of ['js/leg-bones.js','js/procedural-leg-animation.js','js/root-snare-hands.js','js/root-snare-runner.js','tools/live-root-growth/tool.js'])
   assert(html.includes(script+'?v='),'versioned preview script missing: '+script);
@@ -19,10 +19,15 @@ assert(author.includes('snare:{enabled:')&&author.includes('fixedNodes:rootHands
 assert(author.includes("json.snare.settings"),'import must restore authored trigger/retraction settings');
 assert(author.includes('wallRootLayers,rootLayers')&&author.includes("role:'floor'")&&author.includes("role:'wall'"),'author must pass actual wall AND floor root meshes');
 assert(hands.includes('sourceKey:p.sourceKey')&&hands.includes('hiddenRootNode:anchor.sourceKey'),'anchors must preserve a fixed original tube-node identity');
-assert(hands.includes("entry.state='held'")&&hands.includes('releaseCaptured'),'the captured runner must remain held after retraction until explicit release');
+assert(hands.includes("'neck-grip'")&&hands.includes("'feet-grip'")&&hands.includes('releaseCaptured'),'first neck grasp must be nonlocking, second must target feet');
 assert(hands.includes('digitRoles')&&hands.includes("role:'thumb'")&&hands.includes("role:'finger'"),'branch hand must have two fingers and an opposing thumb');
 assert(hands.includes('buildLogMesh')&&hands.includes('lastAim.lerp'),'arms must use natural foliage branches and steer while extending');
-assert(!hands.includes('makeFeedingRoots')&&!hands.includes("state='devouring'")&&!hands.includes("state='digesting'")&&!hands.includes('actor.scale.copy'),'no swallowing, disappearance or size-changing sequence exists');
+assert(hands.includes('previewDoubleGrip')&&hands.includes('double-grip'),'second grip must start two-hand stretch sequence');
+assert(runner.includes('tugMultiplier')&&runner.includes('setNeckGrip')&&runner.includes('getGripPoint'),'runner must own directional tug and anatomical neck/feet grip points');
+assert(runner.includes('startDualCapture')&&runner.includes('stretchTime:3')&&runner.includes('pants')&&runner.includes('spawnSplurt'),'three-second cartoon separation must preserve separate pants/feet and generate red particles');
+assert(!hands.includes('makeFeedingRoots')&&!hands.includes("state='devouring'"),'hands must not reintroduce the abandoned root-devouring sequence');
+assert(html.includes('value="15"')&&html.includes('value="0.2"')&&html.includes('value="5"'),'requested large-reach and low-growth settings must load by default');
+assert(author.includes("numeric('snareExtend',.05,12,.2)")&&author.includes("numeric('snareRadius',.5,15,15)"),'author settings must normalize to the new defaults');
 assert(runner.includes('ProceduralLegAnimation?.attach')&&runner.includes('legs?.update?.'),'the walker must borrow the authentic procedural gait, not fake steps');
 assert(scene.includes('buildFloorCoverSectors(room.floorPattern)')&&scene.includes('perSurface:true'),'multiroom floor coverage must reuse author-like sixteen independent strand budgets');
 assert(scene.includes("surfaceFoliageRole:'growthPlanOnly'")&&scene.includes('guide.userData?.surfaceFoliageGuide'),'floor planning authority must not contribute visible root geometry');
