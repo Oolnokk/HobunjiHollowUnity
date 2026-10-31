@@ -111,19 +111,20 @@
     const scratch=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()];
     const delta=new T.Vector3(),desired=new T.Vector3(),side=new T.Vector3();
     let curlAmount=0,hasDrawn=false;
-    function draw(dt,progress,target,reach,curl,locked=false){
+    function draw(dt,progress,target,reach,curl,locked=false,track=false){
       if(progress<=.0001&&!locked){group.visible=false;return;}
       group.visible=true;hasDrawn=true;
-      if(!locked){
+      if(!locked||track){
         desired.copy(target).sub(anchor.point);
         if(desired.lengthSq()<.00001)desired.copy(anchor.direction);
         desired.normalize();
         // Reroute *all three* arm joints toward the target even halfway
         // through extension, retaining a bias toward the original root.
-        desired.multiplyScalar(.91).addScaledVector(anchor.direction,.09).normalize();
-        lastAim.lerp(desired,clamp(dt*11,0,1)).normalize();
+        if(track)lastAim.copy(desired); // Both caught fingers track their actual anatomy anchor exactly.
+        else{desired.multiplyScalar(.91).addScaledVector(anchor.direction,.09).normalize();
+          lastAim.lerp(desired,clamp(dt*11,0,1)).normalize();}
       }
-      const distance=clamp(reach,0,4)*progress,curve=.15*Math.sin(Math.PI*progress);
+      const distance=clamp(reach,0,15)*progress,curve=.15*Math.sin(Math.PI*progress);
       side.crossVectors(lastAim,up);if(side.lengthSq()<.001)side.set(1,0,0);side.normalize();
       scratch[0].copy(anchor.point);
       scratch[1].copy(anchor.point).addScaledVector(lastAim,distance*.36).addScaledVector(side,curve);
@@ -161,8 +162,8 @@
       get fingerCurl(){return fingers.map(f=>Math.abs(f.bend.rotation.z));},
       get aim(){return lastAim.clone();}};
   }
-  function create({THREE,room,rootLayers,wallRootLayers,seed='root-snare',count=6,triggerRadius=2.5,
-    reach=1.45,extendSpeed=2.4,retractSpeed=1.1,showNodes=false,foliage}={}){
+  function create({THREE,room,rootLayers,wallRootLayers,seed='root-snare',count=6,
+    triggerRadius=15,reach=15,extendSpeed=.2,retractSpeed=1.1,showNodes=false,foliage}={}){
     const T=THREE;
     if(!T||!room?.model)throw new TypeError('A prepared ruin is required.');
     const sources=rootLayers||wallRootLayers||[],builder=foliage||root.FoliageGenerator;
@@ -182,97 +183,125 @@
     const entries=anchors.map((anchor,index)=>{
       const hand=makeHand(T,builder,anchor,material,seed+':'+index);group.add(hand.group);
       const marker=new T.Mesh(new T.SphereGeometry(.062,7,5),markerMat);
-      marker.name='Show hidden branch node '+anchor.id;marker.position.copy(anchor.point);marker.visible=!!showNodes;group.add(marker);
+      marker.name='Show hidden branch node '+anchor.id;marker.position.copy(anchor.point);
+      marker.visible=!!showNodes;group.add(marker);
       return {hand,marker,progress:0,reach:0,cooldown:0,state:'dormant',
-        timer:0,lunges:0,aims:0}; // The root node remains fixed and the capture stays held until manually released.
+        timer:0,lunges:0,aims:0,role:null};
     });
-    const settings={triggerRadius:clamp(Number(triggerRadius)||2.5,.5,7),
-      reach:clamp(Number(reach)||1.45,.3,4),extendSpeed:clamp(Number(extendSpeed)||2.4,.15,12),
+    const settings={count:anchors.length,triggerRadius:clamp(Number(triggerRadius)||15,.5,15),
+      reach:clamp(Number(reach)||15,.3,15),extendSpeed:clamp(Number(extendSpeed)||.2,.05,12),
       retractSpeed:clamp(Number(retractSpeed)||1.1,.15,12)};
-    const targetPoint=new T.Vector3(),scratch=new T.Vector3(),carry=new T.Vector3();
-    let caught=null,closed=false,lunges=0;
+    const targetPoint=new T.Vector3(),neckPoint=new T.Vector3(),feetPoint=new T.Vector3();
+    const delta=new T.Vector3(),toward=new T.Vector3();
+    let neckGrip=null,feetGrip=null,captive=null,closed=false,lunges=0,doubleGrabs=0;
     function actorOf(target){return target?.group||target;}
-    function capture(entry,target,actor){
-      caught={entry,target,actor}; // The grasp owns the runner until the author explicitly releases it.
-      target.setRunning?.(false); // Stop the shared procedural-walk driver, not the render loop.
-      entry.state='pulling';entry.timer=0;entry.progress=Math.max(entry.progress,.15);
+    function gripPoint(target,which,out){
+      if(target?.getGripPoint)return target.getGripPoint(which,out);
+      const actor=actorOf(target);out.copy(actor.position);out.y+=which==='neck'?1.38:.18;return out;
+    }
+    function assignGrip(entry,role,target){
+      if(!entry||entry.role||!target)return false;
+      entry.role=role;entry.state=role+'-grip';entry.progress=1;entry.timer=0;
+      captive=target;
+      if(role==='neck'){
+        neckGrip=entry;
+        target.setNeckGrip?.(entry.hand.anchor); // Unlike the previous fully trapped runner, walking continues at directional tug speed.
+      }else{
+        feetGrip=entry;
+        target.startDualCapture?.(neckGrip.hand.anchor,entry.hand.anchor);
+        for(const grip of [neckGrip,feetGrip]){grip.state='double-grip';grip.timer=0;}
+        doubleGrabs++;
+      }
+      return true;
     }
     function releaseCaptured(){
-      if(!caught)return false;
-      const {target,entry}=caught;
-      caught=null;
-      entry.state='retracting';entry.cooldown=1;
-      target.setRunning?.(true);
-      target.chooseTarget?.();
+      if(!neckGrip&&!feetGrip)return false;
+      const target=captive;
+      for(const entry of [neckGrip,feetGrip]){
+        if(!entry)continue;
+        entry.role=null;entry.state='retracting';entry.cooldown=1;
+      }
+      neckGrip=null;feetGrip=null;captive=null;
+      if(target?.resetAfterSnare)target.resetAfterSnare();
+      else{target?.clearNeckGrip?.();target?.setRunning?.(true);target?.chooseTarget?.();}
+      return true;
+    }
+    function previewDoubleGrip(target){
+      // Author-only reproducible visual trigger: fast-forward actual root hands
+      // into their two collider-grip roles without modifying game behavior.
+      if(entries.length<2||!target)return false;
+      releaseCaptured();
+      assignGrip(entries[0],'neck',target);
+      assignGrip(entries[1],'feet',target);
       return true;
     }
     function update(dt,target){
       if(closed||!target)return false;
       const actor=actorOf(target);if(!actor?.position)return false;
       dt=clamp(Number(dt)||0,0,.05);if(!dt)return false;
-      targetPoint.copy(actor.position);targetPoint.y+=1; // Character's chest position drives the spherical palm collider.
+      gripPoint(target,'neck',neckPoint);gripPoint(target,'feet',feetPoint);
       let changed=false;
       for(const entry of entries){
         const hand=entry.hand,anchor=hand.anchor;
         entry.timer+=dt;entry.cooldown=Math.max(0,entry.cooldown-dt);
-        if(caught&&caught.entry!==entry)continue;
-        const nearDistance=scratch.subVectors(targetPoint,anchor.point).length();
-        const near=nearDistance<settings.triggerRadius;
-        if(!caught && (entry.state==='dormant'||entry.state==='retracting') &&near&&entry.cooldown===0){
-          entry.state='approaching';entry.lunges++;lunges++;entry.timer=0;entry.reach=Math.max(.35,nearDistance);
+        if(entry.role){
+          const grip=entry.role==='neck'?neckPoint:feetPoint;
+          const distance=delta.subVectors(grip,anchor.point).length();
+          const oldAim=hand.aim;
+          hand.draw(dt,1,grip,Math.min(settings.reach,distance),1,false,true);
+          if(oldAim.distanceToSquared(hand.aim)>.0001)entry.aims++;
+          if(feetGrip&&target?.diagnostics?.()?.separated)entry.state='split-held';
+          changed=true;continue;
+        }
+        if(feetGrip){ // A third root cannot independently grab an already suspended victim.
+          if(entry.state==='approaching')entry.state='retracting';
+        }
+        const aim=neckGrip?feetPoint:neckPoint;
+        const distance=delta.subVectors(aim,anchor.point).length();
+        const near=distance<settings.triggerRadius;
+        if(!feetGrip&&(entry.state==='dormant'||entry.state==='retracting')&&near&&entry.cooldown===0){
+          entry.state='approaching';entry.lunges++;lunges++;entry.timer=0;
         }
         if(entry.state==='approaching'){
-          const priorAim=hand.aim;
+          const oldAim=hand.aim;
           entry.progress=clamp(entry.progress+dt*settings.extendSpeed,0,1);
-          entry.reach=Math.min(settings.reach,Math.max(.2,nearDistance));
-          hand.draw(dt,entry.progress,targetPoint,entry.reach,0,false);
-          if(hand.aim.distanceToSquared(priorAim)>.0001)entry.aims++;
-          // Actual collision, not merely coming within the detection radius.
-          if(entry.progress>=.58 && nearDistance<=settings.reach+.58 &&
-            hand.collider.center.distanceTo(targetPoint)<=hand.collider.radius+.25){ // Approach visibly opens before contact can wrap the digits.
-            capture(entry,target,actor);
-          }else if(nearDistance>settings.triggerRadius+.55){
+          entry.reach=Math.min(settings.reach,Math.max(.2,distance));
+          hand.draw(dt,entry.progress,aim,entry.reach,0,false);
+          if(hand.aim.distanceToSquared(oldAim)>.0001)entry.aims++;
+          // A palm sphere against the actual anatomical neck / feet anchor,
+          // not the general detection radius, initiates a grip.
+          if(entry.progress>=.58&&distance<=settings.reach+.58&&
+            hand.collider.center.distanceTo(aim)<=hand.collider.radius+.28){
+            assignGrip(entry,neckGrip?'feet':'neck',target);
+          }else if(distance>settings.triggerRadius+.55){
             entry.state='retracting';entry.cooldown=.8;
           }
         }
         if(entry.state==='retracting'){
           entry.progress=clamp(entry.progress-dt*settings.retractSpeed,0,1);
-          hand.draw(dt,entry.progress,targetPoint,entry.reach,0,true);
-          if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;hand.group.visible=false;} // A manually released captive must not leave an exposed palm knot.
-        }else if(entry.state==='pulling'&&caught?.entry===entry){
-          // The entire arm retreats along its own branch path while the hand
-          // stays closed; the captive is lerped into that moving palm.
-          entry.progress=clamp(entry.progress-dt*settings.retractSpeed*.72,0,1);
-          hand.draw(dt,entry.progress,targetPoint,entry.reach,1,true);
-          carry.copy(hand.palmPosition).addScaledVector(hand.aim,.18);
-          carry.y-=.85; // NPC root remains beneath the center of its trapped torso.
-          actor.position.lerp(carry,clamp(dt*13,0,1));
-          if(entry.progress<=.001&&actor.position.distanceToSquared(carry)<.01){
-            entry.state='held';entry.timer=0;
-          }
-        }else if(entry.state==='held'&&caught?.entry===entry){
-          // Intentionally terminal for now: no devouring, shrinking, removal
-          // or automatic release until the rest of the encounter is designed.
-          hand.draw(dt,0,targetPoint,0,1,true);
-          carry.copy(hand.palmPosition).addScaledVector(hand.aim,.18);
-          carry.y-=.85;
-          actor.position.lerp(carry,clamp(dt*13,0,1));
+          hand.draw(dt,entry.progress,aim,entry.reach,0,true);
+          if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;hand.group.visible=false;}
         }
-        if(entry.state!=='dormant')changed=true; // Dormant hidden roots do not force a redundant preview render each frame.
+        if(entry.state!=='dormant')changed=true;
       }
       return changed;
     }
-    return {group,anchors,settings,update,releaseCaptured,setNodeVisibility(v){for(const e of entries)e.marker.visible=!!v;},
-      diagnostics(){return {anchors:anchors.map(a=>({id:a.id,role:a.role,sourceRootNode:a.sourceKey,position:a.point.toArray()})),
-        active:entries.filter(e=>e.progress>.03||e.state==='held').length,lungeCount:lunges,
-        caught:!!caught,held:entries.filter(e=>e.state==='held').length,
-        states:entries.map(e=>({node:e.hand.anchor.id,role:e.hand.anchor.role,state:e.state,
-          progress:+e.progress.toFixed(3),lunges:e.lunges,reroutes:e.aims,digits:e.hand.digitCount,
-          digitRoles:e.hand.digitRoles,wrapped:e.hand.fingerCurl.every(v=>v>.7)})),settings:{...settings}};},
+    return {group,anchors,settings,update,releaseCaptured,previewDoubleGrip,
+      setNodeVisibility(v){for(const e of entries)e.marker.visible=!!v;},
+      diagnostics(){const victim=captive?.diagnostics?.()||null;
+        return {anchors:anchors.map(a=>({id:a.id,role:a.role,sourceRootNode:a.sourceKey,position:a.point.toArray()})),
+          active:entries.filter(e=>e.state!=='dormant').length,lungeCount:lunges,
+          caught:!!neckGrip,neckGrip:neckGrip?.hand.anchor.id||null,feetGrip:feetGrip?.hand.anchor.id||null,
+          doubleGrabs,dual:!!feetGrip,split:!!victim?.separated,stretchSeconds:victim?.stretchSeconds||0,
+          tugMultiplier:victim?.movementMultiplier??1,
+          states:entries.map(e=>({node:e.hand.anchor.id,role:e.role||e.hand.anchor.role,state:e.state,
+            progress:+e.progress.toFixed(3),lunges:e.lunges,reroutes:e.aims,
+            digits:e.hand.digitCount,digitRoles:e.hand.digitRoles,
+            wrapped:e.hand.fingerCurl.every(v=>v>.7)})),settings:{...settings}};},
       dispose(){if(closed)return;closed=true;releaseCaptured();group.parent?.remove(group);
         group.traverse(mesh=>{if(mesh.geometry)mesh.geometry.dispose();});
         material.dispose();markerMat.dispose();
       }};
   }
-  root.RootSnareHands=Object.freeze({version:2,seeded,sourceNodes,findWallRootNodes,create});
+  root.RootSnareHands=Object.freeze({version:3,seeded,sourceNodes,findWallRootNodes,create});
 })(typeof window!=='undefined'?window:globalThis);
