@@ -315,7 +315,8 @@ function hiveWorld({ night = false } = {}) {
   grid[8][2] = { type: TileType.SHRUB, floraKind: 'bush' };
   const tiles = [];
   grid.forEach((row, r) => row.forEach((tile, c) => tiles.push({ c, r, ...tile })));
-  const state = { night, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
+  const state = { night, nowMs: 0, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
+  context.performance.now = () => state.nowMs; // Monotonic active-game clock used to verify the precise 15-second hive respawn.
   const player = { x: 5.5 * 40, y: 6.5 * 40 };
   context.HoneyfuzzleHives.init({
     TILE: 40, TileType, player, calendar: state.calendar, inventory: state.inventory, hostileObjects: state.hostile, rnd: () => 0.5,
@@ -409,6 +410,53 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(west.context.HoneyfuzzleHives.getHoldTarget(5, 4), null);
   assert.equal(west.context.HoneyfuzzleHives.senseTargets({}).length, 0, 'excluded Western Slope scenery is never a hive highlight');
   assert.equal(west.context.HoneyfuzzleColors.zonePalette('map_western_slope').length, 0);
+}
+
+// ---- Swarm replacement and nighttime hive theft ---------------------------
+{
+  const { H, state } = hiveWorld();
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 1);
+  state.created[0].health = 0; // Ordinary combat defeats the current defender.
+  assert.equal(H.recordDefeat(state.created[0]), true, 'first observed death starts the countdown');
+  state.nowMs = 14999; H.ensureCurrentZone();
+  assert.equal(state.created.length, 1, 'no replacement before 15 seconds');
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'replaced after exactly 15 seconds while stump stands');
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'one replacement, no duplicates');
+  state.created[1].health = 0; H.recordDefeat(state.created[1]);
+  H.harvest('map_test', 5, 4); // Removes the hive permanently until regrowth.
+  state.nowMs = 31000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a collapsed hive cannot respawn its defender');
+}
+{
+  const { H, state, context } = hiveWorld({ night: true });
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 0, 'ordinary nocturnal hive never creates a daytime defender');
+  const target = H.getHoldTarget(5, 4);
+  let holdStarts = 0;
+  const originalHoldStart = target.onHoldStart;
+  target.onHoldStart = () => { holdStarts++; return originalHoldStart(); };
+  load(context, 'docs/js/corpse-hold-loot.js');
+  context.CorpseHoldLoot.init({
+    getActionHeldDown: () => true, getActiveAction: () => 'corpse_hold_loot',
+    getAimedHoldCorpse: () => target, showToast() {},
+  });
+  context.CorpseHoldLoot.update(0.1); context.CorpseHoldLoot.update(0.1);
+  assert.equal(holdStarts, 1, 'night harvest provokes exactly once when the hold begins');
+  assert.equal(state.created.length, 1, 'the night harvest attempt spawns a defending swarm before any honey is taken');
+  const defender = state.created[0];
+  assert.equal(defender.state, 'chase');
+  assert.equal(defender._hiveNightProvoked, true);
+  assert.equal(H.control(defender, 0.1), false, 'night defender stays engaged instead of returning to hive');
+  assert.equal(defender.avatarRef.group.visible, true, 'night defender remains visible');
+  target.onHoldStart(); // Repeat attempts use the existing swarm.
+  assert.equal(state.created.length, 1);
+  defender.health = 0; H.recordDefeat(defender);
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a defeated nighttime defender also respawns after 15 seconds');
+  assert.equal(state.created[1]._hiveNightProvoked, true);
 }
 
 // ---- Honeyfuzzle House (FarmProduction building) --------------------------------------------
