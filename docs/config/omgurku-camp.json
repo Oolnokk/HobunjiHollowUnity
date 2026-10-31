@@ -8,11 +8,11 @@
   ],
   "smallCamps": {
     "localeId": "locale_porakaneki_camp_small",
-    "minPerZone": 2,
-    "maxPerZone": 4,
+    "minPerZone": 1,
+    "maxPerZone": 1,
     "minResidents": 2,
     "maxResidents": 4,
-    "notes": "Each wilderness generation rolls 2-4 persistent little Omgurku camps on every wilderness map, placed after (and never in the same stream chunk as) the Porakaneki camps. Procedural Omgurku only; they do not migrate with the chief."
+    "notes": "Each wilderness map contains exactly one persistent Omgurku hunting camp, placed near the opposite end from the Porakaneki camp without sharing a stream chunk. Its procedural residents do not migrate with the chief."
   },
   "chiefCamp": {
     "localeId": "locale_porakaneki_camp_chief",
