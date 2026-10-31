@@ -172,7 +172,11 @@
         }
       },
       "spine": {
-        "hunch": 0.3
+        "hunch": 0.75,
+        "kyphosis": 0.75
+      },
+      "rigScale": {
+        "y": 1.5
       }
     },
     "maskbound:bulwark": {
@@ -346,7 +350,14 @@
         }
       },
       "spine": {
-        "hunch": 0.5
+        "hunch": 0.3,
+        "kyphosis": 0.75
+      },
+      "rigScale": {
+        "head": 1.125,
+        "y": 1.05,
+        "x": 1.75,
+        "offsetY": -0.06
       }
     },
     "maskbound:reacher": {
@@ -519,8 +530,12 @@
           "dye:CLOTH:cream": 1
         }
       },
+      "rigScale": {
+        "offsetY": 0.12
+      },
       "spine": {
-        "hunch": 0.65
+        "hunch": 0.3,
+        "kyphosis": 1
       }
     },
     "lich:tothal:nanahi": {
@@ -560,14 +575,19 @@
         "y": 1.15
       }
     },
-    "mao-ao-skeleton": {
-      "spine": {
-        "hunch": 0.45
-      }
-    },
     "harlyao-skeleton": {
       "spine": {
-        "hunch": 0.45
+        "hunch": 0.1,
+        "kyphosis": 1
+      }
+    },
+    "mao-ao-skeleton": {
+      "spine": {
+        "hunch": 0.3,
+        "kyphosis": 1
+      },
+      "rigScale": {
+        "offsetY": -0.025
       }
     }
   }

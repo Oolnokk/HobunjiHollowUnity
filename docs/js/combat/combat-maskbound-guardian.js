@@ -23,21 +23,21 @@
       anatomy: Object.freeze({ rigScaleX: 1.0, rigScaleY: 1.34, headScale: 1, headOffsetY: -0.07 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.82, stance: 0.65, dragLift: 0.13, lurchDegrees: 13 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: SMOKY_YELLOW_ORANGE,
-      weapons: Object.freeze(['fishingspear', 'harlyaoLongsword']),
+      weapons: Object.freeze(['hachutuTorchStaff', 'hachutuTorchFlail']), // The Hachutu torch weapons were made for the Maskbound; the Sentinel carries either one.
     }),
     bulwark: Object.freeze({
       label: 'Maskbound Bulwark',
       anatomy: Object.freeze({ rigScaleX: 1.62, rigScaleY: 1.02, headScale: 1, headOffsetY: -0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: SMOKY_YELLOW_ORANGE,
-      weapons: Object.freeze(['warhammer', 'hatchet']),
+      weapons: Object.freeze(['hachutuTorchFlail']), // The Bulwark swings the torch-flail.
     }),
     reacher: Object.freeze({
       label: 'Maskbound Reacher',
       anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.82, headScale: 1, headOffsetY: 0.12 }),
       gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.92, stance: 0.62, dragLift: 0.22, lurchDegrees: 16 }), // Per-troop asymmetric foot timing, drag and torso lean.
       wood: SMOKY_YELLOW_ORANGE,
-      weapons: Object.freeze(['fishingspear', 'daggerSword']),
+      weapons: Object.freeze(['hachutuTorchStaff']), // The Reacher wields the torch-staff.
     }),
   }); // Distinct shapes and heights used by spawn, portrait tint, world collisions and in-game debugging.
 
