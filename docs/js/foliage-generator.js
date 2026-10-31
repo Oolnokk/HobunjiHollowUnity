@@ -1869,6 +1869,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     value = value && typeof value === 'object' ? value : {}; // Malformed imported layers use safe defaults.
     const defaults = surfaceGrowthDefaults(value.kind); // Also fills missing texture fields on existing saved layers.
     const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
+    const radiusScaleMin=finite('radiusScaleMin',1,.1,3),radiusScaleMax=Math.max(radiusScaleMin,finite('radiusScaleMax',1,.1,3)); // Optional per-strand thickness bounds leave existing layers unchanged by default.
     return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       style: ['cornerFill','wrap'].includes(value.style) ? value.style : 'natural', // Absent styles keep legacy recipes unchanged.
       density: finite('density',.45,.05,1), // Wrap density determines requested strands as a fraction of the per-surface limit.
@@ -1880,6 +1881,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       targetMeshId: typeof value.targetMeshId === 'string' ? value.targetMeshId.slice(0,128) : '', // Transient per-piece root staging scope.
       inset: finite('inset',0,-.5,.5), // Signed placement relative to the simplified surface, independent of positive clearance.
       length: finite('length', 3, .05, 30),
+      radiusScaleMin,radiusScaleMax,
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
@@ -2579,6 +2581,24 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // Optional finishing pass: leave path planning on the clean, authored surface
   // and displace complete tube rings onto the outermost visible cladding. Sampling
   // is budgeted and interpolated along each strand, avoiding per-vertex raycasts.
+  function varySurfaceStrandRadii(geometries,settings,seed){
+    let radiusMin=Infinity,radiusMax=0; // Record actual strand base radii for on-device cover diagnostics.
+    for(const [index,geometry] of geometries.entries()){
+      const amount=index===0?0:index===1?1:hash3(index,0,0,seed),scale=lerp(settings.radiusScaleMin,settings.radiusScaleMax,amount); // Separate seeded sampling does not change existing path planning.
+      const radius=settings.radius*scale,position=geometry.getAttribute('position');
+      geometry.userData=geometry.userData||{};geometry.userData.surfaceGrowthRadius=radius;
+      radiusMin=Math.min(radiusMin,radius);radiusMax=Math.max(radiusMax,radius);
+      if(scale===1)continue;
+      for(let start=0;start+5<position.count;start+=6){
+        let x=0,y=0,z=0; // Shared five-sided tube center; the sixth vertex closes the seam.
+        for(let side=0;side<5;side++){x+=position.getX(start+side)/5;y+=position.getY(start+side)/5;z+=position.getZ(start+side)/5;}
+        for(let side=0;side<6;side++){const vertex=start+side;position.setXYZ(vertex,x+(position.getX(vertex)-x)*scale,y+(position.getY(vertex)-y)*scale,z+(position.getZ(vertex)-z)*scale);}
+      }
+      position.needsUpdate=true;geometry.computeBoundingSphere();
+    }
+    return {strandRadiusMin:Number.isFinite(radiusMin)?radiusMin:settings.radius,strandRadiusMax:radiusMax||settings.radius};
+  }
+
   function shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize) {
     if(!settings.shrinkwrapFinal||!geometries.length)return {rays:0,hits:0};
     parent.updateWorldMatrix(true,true);
@@ -2611,7 +2631,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const budget=1200, totalRings=geometries.reduce((n,g)=>n+Math.floor(g.getAttribute('position').count/6),0);
     const stride=Math.max(1,Math.ceil(totalRings/budget));let rays=0,hits=0;
     for(const geometry of geometries){
-      const pos=geometry.getAttribute('position'),rings=Math.floor(pos.count/6),movements=new Array(rings);
+      const pos=geometry.getAttribute('position'),rings=Math.floor(pos.count/6),movements=new Array(rings),strandRadius=geometry.userData?.surfaceGrowthRadius??settings.radius; // Shrinkwrap clearance follows each strand's actual thickness.
       const centers=[];
       for(let i=0;i<rings;i++){
         const center=new T.Vector3();
@@ -2645,7 +2665,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         // For inward shrinkwrap, the first face is the guide's real exterior
         // and the next opposite-facing face on the same mesh is the interior
         // thickness limit. Keep the entire strand inside even on thin parts.
-        let depth=settings.radius+settings.offset+settings.inset;
+        let depth=strandRadius+settings.offset+settings.inset;
         if(settings.shrinkwrapInside){
           const exit=intersections.find(next=>next.distance>hit.distance+0.0001 &&
             next.object===hit.object &&
@@ -2655,8 +2675,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             const thickness=exit.distance-hit.distance;
             // At narrow sections, the tube itself may be wider than the part.
             // Center the strand within that thickness instead of crossing the far side.
-            depth=Math.min(Math.max(settings.radius,depth),thickness*.5);
-          } else depth=Math.max(settings.radius,depth);
+            depth=Math.min(Math.max(strandRadius,depth),thickness*.5);
+          } else depth=Math.max(strandRadius,depth);
         }
         const physicalPoint=hit.point.clone().addScaledVector(direction,
           settings.shrinkwrapInside?-depth:depth);
@@ -2861,6 +2881,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
     if(geometries.length){
+      Object.assign(group.userData.surfaceGrowthStats,varySurfaceStrandRadii(geometries,settings,seed));
       const shrinkReport=shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize);
       group.userData.surfaceGrowthStats.shrinkwrapRays=shrinkReport.rays;
       group.userData.surfaceGrowthStats.shrinkwrapHits=shrinkReport.hits;

@@ -168,6 +168,17 @@
     const number=Number(value??.85); // Saved recipes and the editable control share one finite, bounded roughness value.
     return Number.isFinite(number)?Math.max(0,Math.min(1,number)):.85;
   }
+  function ruinRockGeometry(mesh,settings){
+    let sourceGeometry=mesh.geometry; // Keep caller-owned stone sources intact; only wall prisms are temporary build inputs.
+    if(mesh.userData?.ruinInteriorWall){
+      sourceGeometry.computeBoundingBox();
+      const size=sourceGeometry.boundingBox.getSize(new T.Vector3()),center=sourceGeometry.boundingBox.getCenter(new T.Vector3()); // Generated wall panels use their local XY footprint and original center.
+      sourceGeometry=new T.BoxGeometry(Math.max(.01,size.x),Math.max(.01,size.y),Math.max(.45,size.z));
+      sourceGeometry.translate(center.x,center.y,center.z); // Extrude equally on both sides without shifting walls or bridging doorway gaps.
+    }
+    try{return window.ProceduralFurniture.createRockGeometry(sourceGeometry,settings);}
+    finally{if(sourceGeometry!==mesh.geometry)sourceGeometry.dispose();}
+  }
   function disposeRoomModel(room){
     if(!room||room.disposed)return;room.disposed=true;
     const materials=new Set(); // Instanced and ordinary room pieces share one stone finish.
@@ -200,7 +211,7 @@
       const roots=api.takePreviewRoots(),model=new T.Group(); // Keep the generated architecture and furniture; the selected growth target is added later.
       roots.localeRoot.updateWorldMatrix(true,true);
       const stoneMaterial=window.ProceduralFurniture.makePartMaterial({color:'#808080',materialRole:'stone'},0x808080); // All generated pieces use the same grey, lit stone finish.
-      stoneMaterial.side=T.DoubleSide; // Open wall planes remain visible from inside the ruin.
+      stoneMaterial.side=T.DoubleSide; // Keep both sides of the solid scenery visible from inside and outside the ruin.
       let walls=0,floors=0,pieces=0,pillars=0; // On-device evidence that both real architectural surface types were imported.
       roots.localeRoot.traverse(mesh=>{
         if(!mesh.isMesh)return;
@@ -211,7 +222,7 @@
         let node=mesh;while(node&&node!==roots.localeRoot){if(node.visible===false||node.userData?.surfaceFoliage||node.userData?.surfaceFoliageGuide)return;node=node.parent;}
         if(!mesh.geometry?.getAttribute('position')||mesh.userData?.furnitureGlbPart)return;
         const copy=mesh.clone(false); // Clone owned buffers: the generator disposes its originals on the next seed.
-        copy.geometry=window.ProceduralFurniture.createRockGeometry(mesh.geometry,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness,contactArea:.35}); // Reuse the furniture rock solver; instanced brick batches retain their placement matrices.
+        copy.geometry=ruinRockGeometry(mesh,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness,contactArea:.35}); // Reuse the furniture rock solver; instanced brick batches retain their placement matrices.
         pieces+=mesh.isInstancedMesh?mesh.count:1;
         copy.userData.rockShape={enabled:true,roughness};
         copy.material=stoneMaterial;
@@ -225,18 +236,24 @@
       model.updateWorldMatrix(true,true);
       const floorY=Number(meta.floorSurfaceY)||0; // Keep furniture placement and floor-node sampling in the generated room's own coordinate system.
       if(ruinRoom!==preparedRuin?.room)disposeRoomModel(ruinRoom); // Keep the previous visible stone alive until its replacement has finished building.
-      ruinRoom={key,model,stoneMaterial,floorY,walls,floors,rooms:1,seed,size,pieces,pillars,rockRoughness:roughness,pieceSet:'stoneAge',floorProps:'pillars-only'};
-      $('ruinStatus').textContent=`1 room · ${walls} walls · ${floors} floor · ${pieces} Stone Age pieces (${Math.round(roughness*100)}% roughness). Preparing vegetation…`;
+      ruinRoom={key,model,stoneMaterial,floorY,walls,floors,rooms:1,seed,size,pieces,pillars,rockRoughness:roughness,pieceSet:'stoneAge',floorProps:'pillars-only',wallPrismDepth:.45};
+      $('ruinStatus').textContent=`1 room · ${walls} solid walls · ${floors} floor · ${pieces} Stone Age pieces (${Math.round(roughness*100)}% roughness). Preparing vegetation…`;
       return ruinRoom;
     });
     return ruinQueue;
   }
+  function ruinCoverRecipes(){
+    const recipes=templeCoverRecipes.map(recipe=>({...recipe,radiusScaleMin:recipe.kind==='roots'?.6:1,radiusScaleMax:1.5})); // Keep the authored base widths; only initial-cover strands gain thickness variation.
+    const wallVines=recipes.find(recipe=>recipe.kind==='vines'&&recipe.target==='walls'); // An extra green wall layer weaves among the darker roots at the normal vine width or larger.
+    if(wallVines)recipes.push({...wallVines,seed:wallVines.seed+':root-weave',density:Math.max(.35,wallVines.density)});
+    return recipes;
+  }
   async function prepareRuin(room,request,signal){
     if(!templeCoverRecipes)await (templeSettingsLoad ||= loadTempleRootFinish());
     if(!templeCoverRecipes)throw new Error('Life Temple vegetation settings could not be loaded. Rebuild to retry.');
-    const key=JSON.stringify([room.key,templeCoverRecipes]); // Editing a new structure must not regenerate the initial vegetation.
+    const recipes=ruinCoverRecipes(),key=JSON.stringify([room.key,recipes]); // Editing a new structure must not regenerate the initial vegetation.
     if(preparedRuin?.key===key)return preparedRuin;
-    const cover=await growth.createCoverAsync({THREE:T,foliage,target:room.model,recipes:templeCoverRecipes,seed:room.seed+':ruin-cover',floorY:room.floorY,
+    const cover=await growth.createCoverAsync({THREE:T,foliage,target:room.model,recipes,seed:room.seed+':ruin-cover',floorY:room.floorY,
       signal,onProgress:step=>{if(request===buildRequestId)buildMessage('cover','Life Temple cover: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
     return {key,cover,room};
   }
@@ -274,7 +291,7 @@
       active?.dispose();active=next;next=null;
       if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
       if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
-      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} walls · ${room.floors} floor · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Life Temple root + vine cover is ready; Grow/Reset affects only the new shape.`;
+      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} solid walls · ${room.floors} floor · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Temple cover: varied roots (60–150%) + woven vines (100–150%); Grow/Reset affects only the new shape.`;
       buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
       scene.add(active.group); rebuildMarkers();
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
@@ -307,7 +324,7 @@
     const details = JSON.stringify({
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,
       environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
-        {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,cover:preparedRuin?.cover.getDiagnostics()}:null,
+        {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,wallPrismDepth:ruinRoom?.wallPrismDepth,cover:preparedRuin?.cover.getDiagnostics()}:null,
       targetPosition:readPosition().toArray(), ...info
     }, null, 2);
     if (force || details !== lastDebug) { diagnostics.textContent = details; lastDebug = details; }

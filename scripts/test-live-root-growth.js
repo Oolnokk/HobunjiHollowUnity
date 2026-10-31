@@ -470,6 +470,21 @@ const roughnessContext={$:()=>({value:'.85'})};vm.createContext(roughnessContext
 for(const [value,expected] of [[0,0],[1,1],[-2,0],[4,1],['.25',.25],[NaN,.85],[undefined,.85],[Infinity,.85]]){
   roughnessContext.value=value;assert.equal(vm.runInContext('readRuinRoughness(value)',roughnessContext),expected);
 }
+const prismHelper=editor.slice(editor.indexOf('  function ruinRockGeometry('),editor.indexOf('  function disposeRoomModel(')); // Exercise extrusion before roughening, including caller/temporary geometry ownership.
+const prismSource={computeBoundingBox(){},boundingBox:{getSize:out=>out.copy(new Vector3(4,3,0)),getCenter:out=>out.copy(new Vector3(1,2,.1))}};
+const prismContext={T:{Vector3,BoxGeometry:class{constructor(x,y,z){this.dimensions=[x,y,z];}translate(x,y,z){this.center=[x,y,z];}dispose(){this.disposed=true;}}},mesh:{geometry:prismSource,userData:{ruinInteriorWall:true}},window:{ProceduralFurniture:{createRockGeometry(input,settings){prismContext.input=input;prismContext.settings=settings;return 'rock';}}}};
+vm.createContext(prismContext);vm.runInContext(prismHelper,prismContext);
+assert.equal(vm.runInContext('ruinRockGeometry(mesh,{roughness:.8})',prismContext),'rock');
+assert.deepEqual(prismContext.input.dimensions,[4,3,.45]);assert.deepEqual(prismContext.input.center,[1,2,.1]);assert(prismContext.input.disposed);assert.equal(prismContext.settings.roughness,.8);
+prismContext.mesh={geometry:prismSource,userData:{}};vm.runInContext('ruinRockGeometry(mesh,{})',prismContext);assert.equal(prismContext.input,prismSource,'floor and pillar geometry must not be extruded');
+const foliageRadiusHelper=foliageSource.slice(foliageSource.indexOf('  function varySurfaceStrandRadii('),foliageSource.indexOf('  function shrinkwrapSurfaceStrands(')); // Execute the same cross-section scaler used by all initial-cover strands.
+const radiusContext={lerp:(a,b,t)=>a+(b-a)*t,hash3:()=>.4};vm.createContext(radiusContext);vm.runInContext(foliageRadiusHelper,radiusContext);
+const makeRadiusGeometry=()=>{const points=[];for(let ring=0;ring<2;ring++)for(let side=0;side<6;side++){const angle=(side%5)*Math.PI*2/5;points.push(new Vector3(Math.cos(angle),ring,Math.sin(angle)));}const g=new Geometry(points);g.computeBoundingSphere=()=>{};return g;};
+radiusContext.geometries=[makeRadiusGeometry(),makeRadiusGeometry(),makeRadiusGeometry()];
+const radiusReport=vm.runInContext('varySurfaceStrandRadii(geometries,{radius:.2,radiusScaleMin:.6,radiusScaleMax:1.5},123)',radiusContext);
+assert.equal(radiusReport.strandRadiusMin,.12);assert(Math.abs(radiusReport.strandRadiusMax-.3)<1e-10);
+for(const [index,expected] of [[0,.6],[1,1.5]]){const p=radiusContext.geometries[index].getAttribute('position');assert(Math.abs(Math.hypot(p.getX(0),p.getZ(0))-expected)<1e-9);assert.equal(p.getY(0),0);assert.equal(p.getY(6),1);}
+radiusContext.geometries=[makeRadiusGeometry()];vm.runInContext('varySurfaceStrandRadii(geometries,{radius:.1,radiusScaleMin:1,radiusScaleMax:1.5},123)',radiusContext);assert.equal(radiusContext.geometries[0].getAttribute('position').getX(0),1,'normal vine width must be the minimum');
 console.log('Live root growth: wrap reuse, source preservation, deterministic nodes, controls, retraction, disposal and Tools Hub wiring passed.');
 (async()=>{
   let turns=0;const progress=[]; // Cooperative creation must pause between layers while preserving the synchronous geometry.
@@ -491,6 +506,11 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
     foliage:{...foliage,buildSurfaceGrowth(parent,recipe){staticCalls.push(recipe);return fakeGrowth(parent,recipe);}}});
   assert.equal(staticCalls.length,templeRecipes.length,'each authored Temple layer must run exactly once');
   staticCalls.forEach((actual,index)=>{for(const [key,value] of Object.entries(templeRecipes[index]))if(key!=='seed')assert.deepEqual(actual[key],value,'Temple '+key+' must remain independent of structure settings');});
+  const coverRecipeHelper=editor.slice(editor.indexOf('  function ruinCoverRecipes('),editor.indexOf('  async function prepareRuin(')),coverRecipeContext={templeCoverRecipes:templeRecipes};
+  vm.createContext(coverRecipeContext);vm.runInContext(coverRecipeHelper,coverRecipeContext);const varied=vm.runInContext('ruinCoverRecipes()',coverRecipeContext);
+  assert.equal(varied.length,5,'initial cover must add a green vine weave to the four Temple layers');
+  assert(varied.filter(r=>r.kind==='roots').every(r=>r.radiusScaleMin===.6&&r.radiusScaleMax===1.5));
+  assert(varied.filter(r=>r.kind==='vines').every(r=>r.radiusScaleMin===1&&r.radiusScaleMax===1.5));
   assert.equal(JSON.stringify(templeRecipes),templeSnapshot,'preparing cover must not mutate the authored Temple configuration');
   assert.equal(templeCover.getProgress(),1);assert.equal(templeCover.getDiagnostics().recipeCount,4);
   const templeGeometry=templeCover.targetGrowth.children[0].children[0].geometry;templeCover.dispose();assert(templeGeometry.disposed);assert.equal(roomFloor.geometry.disposed,undefined);
