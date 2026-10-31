@@ -316,7 +316,7 @@
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
     new URL('js/hand-tool-grips.js?v=20261031h07ffcb3', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261030flailmerged1', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261031h84160bf', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261028hfirearmsync1', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
@@ -333,7 +333,7 @@
     // The editor starts its first avatar rebuild immediately after these parser-time
     // scripts. Repair the shared NpcAvatarPreview dependency before any hand/editor
     // adapters run so a missed/cached helper request cannot strand the preview.
-    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261031haa2d891', docsBase).href);
+    handScripts.push(new URL('js/attack-editor-npc-preview-guard.js?v=20261031hdec6834', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-inverse-configurator.js?v=20260919handreview1', docsBase).href);
     handScripts.push(new URL('js/attack-editor-hand-mirror-toggle.js?v=20260817a', docsBase).href);

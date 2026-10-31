@@ -56,10 +56,12 @@ assert.equal(weapon.flail.head.layers[2].targetHex,'#E7DDC9');
 const images=[back,handle,fuel,front];
 const layers=images.map((image,index)=>({image,config:weapon.flail.head.layers[index],mesh:{renderOrder:1.52+index*.001}}));
 const targets=api.visibleMetalTargets(layers); // Uses source metal hues, subtracting later opaque head layers.
-assert.equal(targets.length,3,'back, handle, and front emit; fuel does not');
+assert.equal(targets.length,4,'back, handle, front (metal hue) and fuel (fire-marker hue) all emit: enchantments target both source colors');
+assert.deepEqual(Array.from(targets,t=>t.plane.renderOrder),[1.52,1.521,1.522,1.523],'targets stay in head-layer order');
 assert.deepEqual(Array.from(targets[0].mask.indices),[0],'back metal hidden by fuel and front must not spawn enchantments');
 assert.deepEqual(Array.from(targets[1].mask.indices),[3],'visible handle metal remains eligible');
-assert.deepEqual(Array.from(targets[2].mask.indices),[1],'frontmost metal remains eligible');
+assert.deepEqual(Array.from(targets[2].mask.indices),[2],'visible fuel marker pixel is an enchantment source too');
+assert.deepEqual(Array.from(targets[3].mask.indices),[1],'frontmost metal remains eligible');
 const markers=api.sourcePixels(fuel,'#7F00FF','marker');
 assert.deepEqual(Array.from(markers),[2], 'fire starts from original violet rag pixels, not the recolored render texture');
 assert.strictEqual(markers,api.sourcePixels(fuel,'#7F00FF','marker'),'source alpha masks must be cached between frames');
@@ -69,7 +71,7 @@ const colored=api.recolorMarker(fuel,'#7F00FF','#E7DDC9');
 assert(colored && colored.width===2 && colored.height===2,'marker recolor outputs its own canvas');
 assert.equal(fuel.pixels[2*4],127,'source PNG pixels remain untouched');
 const grouped=api.visibleMetalTargets(layers).reduce((n,t)=>n+t.mask.matchedMetalPixels,0);
-assert.equal(grouped,3,'all visible metal pixels are available for the existing enchantment emitter');
+assert.equal(grouped,4,'all visible metal and fire-marker pixels are available for the existing enchantment emitter');
 
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z);}
@@ -121,7 +123,7 @@ assert.equal(state.fireEmitters.length,1);
 const emitter=state.fireEmitters[0];
 assert(emitter.renderOrder>layers[2].mesh.renderOrder && emitter.renderOrder<layers[3].mesh.renderOrder,
   'fire is drawn after fuel but before front; front alpha masks flames');
-assert.deepEqual(Array.from(state.metalTargets,t=>t.mask.matchedMetalPixels),[1,1,1]);
+assert.deepEqual(Array.from(state.metalTargets,t=>t.mask.matchedMetalPixels),[1,1,1,1]);
 api.stepFire(state,0.1);
 assert(emitter.particles.length>0,'fire emits from the fuel marker mask');
 assert(emitter.particles.every(p=>p.sprite.renderOrder<layers[3].mesh.renderOrder));
@@ -146,7 +148,7 @@ const shaftMesh = { renderOrder:1.501 }; // Source mesh for the new shaft emitte
 state.materialLayers = [{ mesh:shaftMesh, image:fuel }]; // Match decorate()'s registration contract before activating the rigid stack.
 api.activateStatic(state,[shaftLayer],[shaftMesh],back,0.002);
 assert.equal(state.fireEmitters.length,2,'shaft and head emitters remain owned by the same weapon');
-assert.equal(state.metalTargets.length,oldHeadTargets+1,'head enchantment masks survive activation of rigid shaft');
+assert.equal(state.metalTargets.length,oldHeadTargets+2,'head enchantment masks survive activation of rigid shaft, which adds its metal base and its fire-marker fuel layer');
 assert.strictEqual(state.fireEmitters[0],emitter,'head emitter identity survives rigid stack activation');
 api.stepFire(state,.1);
 assert(state.fireEmitters.every(fx=>fx.particles.length>0),'both independent particle stacks continue to emit');
@@ -171,7 +173,9 @@ let rank = 0; // Live mastery callback exercises both ends of the rank progressi
 const staffPlane = new Group(); staffPlane.renderOrder = 1.5;
 const staffState = { THREE, plane: staffPlane, masteryLevel: () => rank };
 api.activateStatic(staffState, staffRecipe.base, [], [], staffSource, .002);
-assert.equal(staffState.metalTargets.length, 0, 'marker-only staff is not a source of verdigris or metal enchantment motes');
+assert.equal(staffState.metalTargets.length, 1, 'marker-only staff still emits enchantment motes: enchantments target the fire-marker hue as well as metal');
+assert.equal(staffState.metalTargets[0].plane, staffPlane, 'staff motes spawn on the rigid staff plane');
+assert.equal(staffState.metalTargets[0].mask.matchedMetalPixels, 4, 'all four visible violet pixels (both tips) are sources');
 assert.equal(staffState.fireEmitters.length, 1, 'both tips share one bounded pooled emitter');
 const staffFx = staffState.fireEmitters[0];
 assert.equal(staffFx.clusters.length, 2, 'fuel pixels are divided between the two ends');

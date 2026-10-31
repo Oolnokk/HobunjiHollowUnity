@@ -273,7 +273,7 @@
     if (npc.id !== 'player' && npc.maskPatterns !== false && window.ProceduralMaskPatterns?.enabled && profile.mask?.id) {
       const marker = '__hobunjiWovenClothing';
       const existing = Array.isArray(profile.bodyColors?.[marker]) ? profile.bodyColors[marker] : [];
-      if (!existing.some(descriptor => descriptor?.slot === 'mask')) {
+      if (!existing.some(descriptor => descriptor?.slot === 'mask' && descriptor.weaving)) { // An exorcised-mask descriptor carries only a flag (no weaving) and must not suppress the generated glyph pattern.
         const descriptor = window.ProceduralMaskPatterns.descriptorFor(profile.mask.id, profile.pixelDyeSeed || profileSeed, { scale: npc.maskPatternScale || null });
         if (descriptor) profile.bodyColors = { ...(profile.bodyColors || {}), [marker]: [...existing, descriptor] };
       }
