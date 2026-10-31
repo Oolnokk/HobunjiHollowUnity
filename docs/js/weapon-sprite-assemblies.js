@@ -209,11 +209,15 @@
         const image = raw.image;
         const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
         if (!(width > 0 && height > 0)) throw new Error('Modular fire shaft sprite missing dimensions.');
-        const sourceUnit = 0.5 / width; // Source image pixels map to the fixed 450x1204 shaft reference, independent of its attachment rig.
-        const carrier = new THREE.Group(); // Holds only living shaft flames; the separate mount/primitive transform must never affect these.
+        const sourceUnit = 0.5 / width; // Original shaft source image pixels use the canonical 450-unit world width.
+        const art = global.ModularWeapons?.shaftArtTransform?.(modularShaft)
+          || {enabled:false,scaleX:1,scaleY:1,x:0,y:0}; // Only optional shaft-art control can affect living fuel and flames.
+        const carrier = new THREE.Group(); // Shaft fire remains outside the overall rig and area groups.
         carrier.name = itemKey + '_modular_shaft_fire';
-        carrier.position.set(0, 0, 0); // The shaft and ignition points always retain their original pose and position.
-        carrier.scale.set(1, (1204 / 450) * (width / height), 1); // Normalize source-image aspect, NOT the rig's X/Y scales.
+        carrier.position.set(art.enabled ? art.x * (0.5 / 450) : 0,
+          art.enabled ? -art.y * (0.5 / 450) : 0, 0); // Source-frame center is the art-transform pivot.
+        carrier.scale.set(art.enabled ? art.scaleX : 1,
+          (1204 / 450) * (width / height) * (art.enabled ? art.scaleY : 1), 1); // Fire mirrors the opt-in shaft bitmap, not any head or region adjustments.
         carrier.renderOrder = order + 0.005;
         plane.add(carrier); state.owned.push(carrier);
         const visiblePlane = state.plane;
