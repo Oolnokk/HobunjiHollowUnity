@@ -7,7 +7,7 @@ const html=read('docs/tools/live-root-growth/index.html'),author=read('docs/tool
   bootstrap=read('docs/js/dev-random-ruin-bootstrap.js');
 for(const [name,source] of [['Root Growth Author',author],['Wall snare',hands],['Runner',runner],['Shared scenery',scene],['Static cover',staticCover]])
   assert.doesNotThrow(()=>new Function(source),'javascript syntax: '+name);
-const required=['snareEnabled','snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed','snareReveal','snareBuild','snareReroute','snareStatus'];
+const required=['snareEnabled','snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed','snareReveal','snareBuild','snareReroute','snareRunPast','snareStatus'];
 for(const id of required)assert(html.includes('id="'+id+'"'),'mobile preview is missing '+id);
 for(const script of ['js/leg-bones.js','js/procedural-leg-animation.js','js/root-snare-hands.js','js/root-snare-runner.js','tools/live-root-growth/tool.js'])
   assert(html.includes(script+'?v='),'versioned preview script missing: '+script);
