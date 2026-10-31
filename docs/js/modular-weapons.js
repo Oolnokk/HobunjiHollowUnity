@@ -198,13 +198,16 @@
     return { x: (point.x - 225) * layout.scaleX + 225 + layout.x,
       y: (point.y - 602) * layout.scaleY + 602 + layout.y };
   }
+  function shaftRigTransform(shaft) {
+    return duplicateTransform(shaft?.attachmentRigTransform || shaft?.duplicateTransform);
+  } // All shafts, not only duplicates, have an independent attachment parent; old duplicateTransform drafts still work.
   function shaftMounts(shaft) {
     const mounts = shaft?.mounts || [];
-    if (!shaft?.duplicateFrom) return mounts;
-    const layout = duplicateTransform(shaft.duplicateTransform);
+    const layout = shaftRigTransform(shaft);
+    if (layout.scaleX === 1 && layout.scaleY === 1 && !layout.x && !layout.y) return mounts;
     return mounts.map(mount => ({
       type: mount.type, start: duplicatePoint(mount.start, layout), end: duplicatePoint(mount.end, layout),
-    })); // Transformed rig drives head geometry; original shaft art and live effects never inherit the adjustment.
+    })); // Parent rig moves every tang/sleeve child; shaft artwork and live fire are outside it.
   }
   function matchingMounts(shaft, head) {
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
@@ -296,8 +299,11 @@
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
       if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
-      if (shaft.duplicateFrom && raw.duplicateFrom === shaft.duplicateFrom) {
-        shaft.duplicateTransform = duplicateTransform(raw.duplicateTransform); // Adjust ONLY the attachment primitive and tang/eye rig; shaft artwork/fire remain stationary.
+      if (raw.attachmentRigTransform || raw.duplicateTransform || shaft.attachmentRigTransform || shaft.duplicateTransform) {
+        // Apply to both original and cloned shafts. Older browser drafts use duplicateTransform;
+        // newer edits store attachmentRigTransform without changing the shaft sprite itself.
+        shaft.attachmentRigTransform = duplicateTransform(
+          raw.attachmentRigTransform || raw.duplicateTransform || shaft.attachmentRigTransform || shaft.duplicateTransform);
       }
       shaft.mounts = (Array.isArray(raw.mounts) && raw.mounts.length ? raw.mounts : shaft.mounts)
         .slice(0, shaft.maxAttachments || 8).map((mount, index) => line(mount, 'shaft', shaft.mounts[Math.min(index, shaft.mounts.length - 1)]));
@@ -391,7 +397,7 @@
     };
   }
   function attachmentRig(shaft, head, values) {
-    const layout = shaft?.duplicateFrom ? duplicateTransform(shaft.duplicateTransform) : duplicateTransform();
+    const layout = shaftRigTransform(shaft);
     const parent = {
       a: layout.scaleX, b: 0, c: 0, d: layout.scaleY,
       e: 225 + layout.x - 225 * layout.scaleX,
@@ -587,6 +593,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftMounts, attachmentRig, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftMounts, attachmentRig, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);
