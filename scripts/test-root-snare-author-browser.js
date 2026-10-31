@@ -26,6 +26,8 @@ const server=http.createServer((request,response)=>{
   await new Promise(ok=>server.listen(0,'127.0.0.1',ok));let browser;
   try{
     browser=await chromium.launch({headless:true});const page=await browser.newPage(),pageErrors=[];
+    const speciesRequests=[]; // Real network URLs prove that the species registry lives at docs/config.
+    page.on('request',request=>{if(request.url().includes('species/index.json'))speciesRequests.push(new URL(request.url()).pathname);});
     page.on('pageerror',error=>pageErrors.push(String(error)));
     await page.goto('http://127.0.0.1:'+server.address().port+'/tools/live-root-growth/snare-fixture',{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>!!(window.RootSnareHands?.create&&window.RootSnareRunner?.create&&window.ProceduralLegAnimation?.attach&&window.StoneAgeRuinScenery?.buildFloorCoverSectors));
@@ -211,6 +213,10 @@ const server=http.createServer((request,response)=>{
 
     });
     assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
+    assert(speciesRequests.includes('/config/species/index.json'),
+      'real NPC must fetch config/species/index.json from docs root; fetched '+speciesRequests.join(', '));
+    assert(!speciesRequests.some(p=>p.includes('/tools/live-root-growth/config/species/')),
+      'nested author must never fetch species index from its own tool folder');
     console.log('Wall-root hands and procedural walker author browser passed:',JSON.stringify(result));
   }finally{await browser?.close();await new Promise(ok=>server.close(ok));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
