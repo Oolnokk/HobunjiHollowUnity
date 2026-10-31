@@ -8353,7 +8353,8 @@
               // separated from the next by a tempo-scaled backup beat.
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
-              if (window.CompanionCombatResponse?.shouldRestartApproach?.(st, dist, def.attackRangePx)) {
+              if (window.CompanionCombatResponse?.shouldRestartApproach?.(st, dist, def.attackRangePx,
+                target.targetPlayer === master || target.targetCreature === master)) {
                 st.mode = 'active'; st.t = 0; // Enemy escaped the backup circle: resume pursuit rather than finishing a retreat away from the fight.
               }
               const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
