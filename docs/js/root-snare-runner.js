@@ -46,7 +46,14 @@
     if(!root.NpcAvatarPreview||!root.PNGPlaneAvatar||!root.renderPortraitProfile)
       throw Error('Load the Animation Author NPC portrait and PNGPlaneAvatar runtimes before generating a snare NPC.');
     const records=await npcDatabase();
-    await root.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'assets/',configBase:'config/'});
+    // portrait-utils uses window.location.href (not document.baseURI) when
+    // resolving configBase. The author is nested under tools/live-root-growth/,
+    // so pass complete docs-root URLs exactly as Animation Author does.
+    const docsBase=new URL('../../',document.location.href);
+    await root.NpcAvatarPreview.ensurePortraitCosmetics({
+      assetBase:new URL('assets/',docsBase).href,
+      configBase:new URL('config/',docsBase).href
+    });
     const rng=root.RootSnareHands?.seeded?.(seed)||Math.random;
     const supported=root.getPortraitFighters?.()||[]; // The Animation Author's own portrait fighter list is authoritative.
     const eligible=records.filter(n=>{const a=appearanceFor(n);
