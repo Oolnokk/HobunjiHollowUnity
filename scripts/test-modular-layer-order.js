@@ -458,6 +458,35 @@ async function run() {
   const movedChild=api.rigPoint(fixture,{x:190,y:265},existingArea);
   assert.deepEqual(bridgeHelpers.logicalPoint({clientX:movedChild.x,clientY:movedChild.y}),rootSelectionPoint,
     'editing an existing selected child still inverts its local area before editing coordinates');
+  // Regress the recipe resize handle that lies OUTSIDE its assigned region.
+  // Its artwork is moved as a whole, but hit-testing must use the recipe's
+  // own region parent rather than the region under the pointer.
+  const recipeHelpersStart=editor.indexOf('  function recipeRegion(box, isDraft=false) {');
+  const recipeHelpersEnd=editor.indexOf('  function recipePointerDown(event) {',recipeHelpersStart);
+  assert(recipeHelpersStart>=0&&recipeHelpersEnd>recipeHelpersStart);
+  const editableRecipe={box:{x0:100,y0:165,x1:230,y1:315}}; // Center inside region; top-left corner outside.
+  const boxHandles=box=>{
+    const cx=(box.x0+box.x1)/2,cy=(box.y0+box.y1)/2;
+    return [[-1,-1,box.x0,box.y0],[0,-1,cx,box.y0],[1,-1,box.x1,box.y0],
+      [-1,0,box.x0,cy],[1,0,box.x1,cy],[-1,1,box.x0,box.y1],[0,1,cx,box.y1],[1,1,box.x1,box.y1]];
+  };
+  const recipeHelpers=new Function('api','chosenShaft','selectedOp','recipeSel','recipeDraft',
+    'placedBoxes','boxHandles','bridgeView','byId','contentRect',
+    editor.slice(recipeHelpersStart,recipeHelpersEnd)+
+    '\nreturn {recipeRegion,recipeBoxInRoot,recipePointInLocal,recipeHit};')(
+      api,()=>fixture,()=>editableRecipe,0,null,
+      ()=>[{index:0,op:editableRecipe}],boxHandles,
+      {frame:{left:0,top:0,width:450,height:1204}},()=>bridgeCanvas,
+      ()=>({left:0,top:0,scale:1}));
+  const projectedCorner=api.affinePoint(api.regionAffine(existingArea),
+    {x:editableRecipe.box.x0,y:editableRecipe.box.y0});
+  const hit=recipeHelpers.recipeHit([projectedCorner.x,projectedCorner.y]);
+  assert.equal(hit?.mode,'resize','a displayed recipe corner remains resizeable even if outside the assigned region');
+  assert.equal(hit?.regionId,'movedBand','resize handle inherits recipe group ownership');
+  assert.deepEqual(hit.handle,[-1,-1],'the correct recipe corner is selected');
+  const editingLocal=recipeHelpers.recipePointInLocal([projectedCorner.x,projectedCorner.y],existingArea);
+  assert(Math.hypot(editingLocal[0]-editableRecipe.box.x0,editingLocal[1]-editableRecipe.box.y0)<1e-8,
+    'dragging the handle changes original local recipe geometry rather than baking parent scale');
   delete fixture.rigRegions; // Later editor mount tests use the original unselected shaft fixture.
   assert(editor.includes('const [x0,y0]=bridgeVisual([box.x0,box.y0],area)'),
     'saved recipe boxes are rendered under their region and overall parent in the mobile preview');
