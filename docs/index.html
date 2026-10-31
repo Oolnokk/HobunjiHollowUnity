@@ -155,7 +155,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261029maskSlots2"></script>
+  <script src="config/scratchbones-config.js?v=20261030h3882d51"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -190,7 +190,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261029maskSlots2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261030flailbootstrap3"></script>
+  <script src="js/held-action-animations.js?v=20261030flailmerged1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -206,7 +206,8 @@
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
-  <script src="js/procedural-leg-animation.js?v=20261028masklurch1"></script>
+  <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
+  <script src="js/procedural-leg-animation.js?v=20261030h2d6073a"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -310,7 +311,7 @@
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
-  <script src="js/combat/shared-attack-pose.js?v=20261027h6ae7521"></script>
+  <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261030chainaxes1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261030layerfx2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
   <script src="js/weapon-sprite-assemblies.js?v=20261030gravitywindup1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
@@ -328,7 +329,7 @@
   <script src="js/combat/combat-animal-attacks.js?v=20261028hfurycombat1"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261028hattachaudit2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
-  <script src="js/combat/combat-loadout.js?v=20261027hcarryload1"></script>
+  <script src="js/combat/combat-loadout.js?v=20261030h5bdb79c"></script>
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
@@ -370,7 +371,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261028a"></script>
-  <script src="js/combat/combat-bandit.js?v=20261030gravitywindup1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261030flailmerged1"></script>
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261027maskbound1"></script>
@@ -391,7 +392,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261029enemyParity1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261030hcacd5bc"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2864,7 +2865,7 @@
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
-  <script src="game.js?v=20261030gravitywindup1"></script>
+  <script src="game.js?v=20261030flailmerged1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

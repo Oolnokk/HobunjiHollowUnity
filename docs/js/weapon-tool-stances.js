@@ -310,6 +310,8 @@
       meleeSpacing: rawOpts.meleeSpacing !== false,
     });
 
+    const idleSink = SAP.idleBodySinkPct(); // The swing eases out of and back into the stance's rest sink (weapon-stance-drop-runtime.js); Windup/Strike may author their own.
+
     return {
       ...rawOpts,
       anim,
@@ -318,8 +320,8 @@
       // would have reached. power=1 prevents a changed Neutral from rescaling them.
       power: 1,
       pose: {
-        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral },
-        returnNeutral: sequence.returnNeutral,
+        neutral: { dualWield: { enabled: true }, ...authoredPose?.neutral, secondaryGrip: { ...authoredPose?.neutral?.secondaryGrip, enabled: false }, ...sequence.neutral, bodySink: idleSink },
+        returnNeutral: { ...sequence.returnNeutral, bodySink: idleSink },
         neutralMirrorSign: sequence.startNeutralSign,
         returnNeutralMirrorSign: sequence.returnNeutralSign,
         windup: { secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: true }, ...sequence.windup },
@@ -689,6 +691,19 @@
     return target;
   }
 
+  // True while the player holds a weapon in its Light/Heavy idle stance or is mid-attack with it: the poses the stance-drop runtime
+  // (weapon-stance-drop-runtime.js) lowers the whole body for. Allocation-free; same put-away/seated gates as idleBodyYawSnapshot.
+  function stanceEngaged() {
+    if (window.__hobunjiFurnitureDebug?.sitInteraction && window.__hobunjiFurnitureDebug.sitInteraction.phase !== 'out') return false;
+    const heldMode = deps?.getHeldMode?.();
+    if (heldMode != null && heldMode !== 'tool') return false;
+    if (deps?.getActiveTool?.() !== 'weapon') return false;
+    if (combatVisualState) return true;
+    const itemKey = deps?.equipmentSlots?.weapon || null;
+    const idleClass = itemKey ? weaponIdleClass(itemKey, deps?.TOOL_ITEM_DEFS?.[itemKey]) : null;
+    return idleClass === 'light' || idleClass === 'heavy';
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     augmentToolDefinitions();
@@ -713,6 +728,7 @@
     prepareCombatOptions,
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
+    stanceEngaged,
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
     debugSnapshot,

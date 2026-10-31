@@ -352,6 +352,29 @@
     return true;
   }
 
+  // A watchman's free hand holds an INVISIBLE copy of the weapon at the dual-wield offhand stance (js/dual-wield-weapon-visuals.js invisibleOffhandSocket)
+  // instead of the locomotion idle. The NPC owns its own hands, so this claims the left hand and places it exactly like attachPrimaryHand does the right.
+  function attachOffhandIdle(state, walker, holder, key, pose) {
+    const visuals = window.HobunjiDualWieldWeaponVisuals, rig = rigFor(walker), hand = handFrame(walker), socket = worldFrame(holder);
+    const plane = findToolPlane(holder), body = avatarRootFor(walker);
+    if (!visuals?.invisibleOffhandSocket || !rig?.placeHandWorld || !hand || !socket || !plane || !body || !pose) return false;
+    const claims = ensureClaims(rig);
+    if (claims) claims.left = 'offhand-idle';
+    const grip = grips()?.offhandPrimaryGripForTool?.(key, 'melee', gripIdentity(walker)) || primaryGrip(key);
+    const gripP = grip.position || {}, gripQ = gripQuaternion(grip), scale = gripScale(key, walker);
+    const target = grips()?.itemPointToHolder?.(key, gripP, 'melee', gripIdentity(walker))
+      || { x: (Number(gripP.x) || 0) * scale, y: (Number(gripP.y) || 0) * scale, z: (Number(gripP.z) || 0) * scale };
+    socket.position.add(new (T().Vector3)(target.x, target.y, target.z).applyQuaternion(socket.quaternion));
+    if (gripQ) socket.quaternion.multiply(gripQ);
+    const ctx = state.offhandCtx || (state.offhandCtx = {});
+    ctx.plane = plane; ctx.holder = holder; ctx.bodyRoot = body; ctx.carriedPose = pose; ctx.offhandPose = null; // The watchman's carried pose IS its stance pose.
+    const off = visuals.invisibleOffhandSocket(ctx, socket);
+    if (off === socket) return false;
+    rig.setSideVisible?.('left', true);
+    rig.placeHandWorld('left', off.position.clone().add(hand.position.clone().applyQuaternion(off.quaternion)), off.quaternion.clone().multiply(hand.quaternion));
+    return true;
+  }
+
   function findToolPlane(root) {
     if (!root) return null;
     if (root.userData?.toolPlane?.isObject3D) return root.userData.toolPlane;
@@ -497,6 +520,19 @@
     return !!state.walker?.area && state.walker.area !== area;
   }
 
+  // A watchman holds its weapon in the Light/Heavy idle stance, so it rests at the stance's idle body sink like the player and enemies
+  // (js/actor-body-sink.js). The NPC's body is its floor-anchored rig root, scaled by the species rig scale, which the legs live under.
+  function applyWatchmanSink(state, walker, pose) {
+    const sink = window.ActorBodySink;
+    if (!sink?.enabled() || !walker?.legs) return;
+    if (!state.sinkActor) {
+      const rigRoot = walker.root?.getObjectByName?.('npc_character_rig_root');
+      if (!rigRoot) return;
+      state.sinkActor = { legs: walker.legs, lower: [{ obj: rigRoot, factor: () => rigRoot.scale?.y || 1 }] };
+    }
+    sink.apply(state.sinkActor, window.SharedAttackPose?.idleBodySinkPct?.() ?? 0, Number(pose?.bodyYaw) || 0, false);
+  }
+
   function updateState(state) {
     const walker = state.walker;
     state.lastUpdateAt = performance.now();
@@ -513,14 +549,17 @@
       if (parent && state.holder.parent !== parent) parent.add(state.holder);
       const pose = watchmanPose(loadout);
       if (pose) setHolderPose(state, state.holder, pose);
+      applyWatchmanSink(state, walker, pose);
       state.holder.visible = walker?.root?.visible !== false;
       applyGripScale(state.holder.userData?.npcGripVisualV4, loadout.toolKey, walker);
       state.handsAttached = attachPrimaryHand(walker, state.holder, loadout.toolKey, `watchman:${loadout.toolKey}`);
+      attachOffhandIdle(state, walker, state.holder, loadout.toolKey, pose); // The free hand holds an invisible tool at the dual-wield offhand pose.
       state.mode = 'watchman'; state.key = loadout.toolKey; state.loadout = loadout;
       return;
     }
 
     state.loadout = null;
+    if (state.sinkActor) window.ActorBodySink?.release(state.sinkActor); // Off watch: stand up again.
     if (state.holder) state.holder.visible = false; // An existing outdoor holder must disappear immediately on interior entry.
     const target = walker?.currentScheduleTarget || null;
     const key = normalizeToolKey(target?.toolKey || walker?.stationToolKey);
