@@ -99,6 +99,12 @@ async function run() {
   assert.equal(transformedRig.kind, 'attachmentRig');
   assert.equal(transformedRig.shaftOutsideRig, true);
   assert.equal(transformedRig.children.length, 2);
+  assert(transformedRig.children.every(mount => mount.type === 'eye'), 'warhammer head primitives are children of sleeve mount nodes');
+  const tangRig = api.attachmentRig(api.getConfig().shafts.hachutuTorchStaff,
+    api.getConfig().heads['fishing-spear'], api.settings('hachutuTorchStaff', 'fishing-spear')); // Check blade/tang descendants independently.
+  assert.equal(tangRig.children.length, 2, 'both tang mounts inherit the same shared parent rig');
+  assert(tangRig.children.every(mount => mount.type === 'tang' && mount.children[0].kind === 'primitive'),
+    'tang-based heads remain nested child primitives, not independently transformed heads');
   assert.deepEqual(transformedRig.children.map(m => m.children[0].localMatrix),
     originalRig.children.map(m => m.children[0].localMatrix),
     'parent rig movement must not change each primitive\'s local placement');
@@ -181,6 +187,8 @@ async function run() {
     && html.includes('value="head-over-haft"'), 'Editor exposes both order options.');
   assert(editor.includes("byId('layer-order').onchange"), 'Layer select has active change handler.');
   assert(editor.includes("pair.layerOrder = byId('layer-order').value"), 'Both manual choices are saved explicitly and survive curated default fallback.');
+  assert(html.includes('id="rig-tree"') && editor.includes('api.attachmentRig('),
+    'Mobile editor exposes the actual parent rig and primitive child hierarchy rather than only flattened transforms.');
   console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
 }
 
