@@ -31,7 +31,7 @@ const shopCatalog = [
 const classList = () => ({ add() {}, remove() {}, toggle() {}, contains() { return false; } });
 const documentListeners = new Map();
 const documentStub = {
-  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=20261031h39d1dc0' },
+  currentScript: { src: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/js/clothing-weaving-system.js?v=20261031he412c8f' },
   documentElement: { dataset: {} },
   body: { appendChild() {}, dataset: {} },
   head: { appendChild() {} },
