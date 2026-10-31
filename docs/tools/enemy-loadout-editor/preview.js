@@ -8,10 +8,10 @@ const files = [
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261028a',
   'js/color-fill.js?v=20261028a',
-  'js/portrait-utils.js?v=20261029maskSlots2',
+  'js/portrait-utils.js?v=20261030headMask1',
   'js/portrait-breathing.js?v=20261028a',
-  'js/npc-avatar-preview-utils.js?v=20261029maskSlots2',
-  'js/png-plane-avatar.js?v=20261029maskSlots2',
+  'js/npc-avatar-preview-utils.js?v=20261031he74eb11',
+  'js/png-plane-avatar.js?v=20261031hacbff47',
   'js/species-pose-scaling.js?v=20261029maskSlots2',
   'js/character-dimensions.js?v=20261007he86e7d1', // Species heights drive the held weapon's height factor and grip offset, exactly as in the game and Attack Animation Editor.
   'js/transform-dump-utils.js?v=20261017h3ce7f8d',
@@ -19,7 +19,13 @@ const files = [
   'config/portrait-mouth-points.js?v=20261029a',
   'js/furniture-light-registry.js?v=20261028a',
   'js/tool-metal-recolor.js?v=20261028a',
-  'js/metal-armor-system.js?v=20261028a',
+  'js/weapon-layer-effects.js?v=20261030flailmerged2', // Marker-pixel scanning shared with the flail fuel sprites (the guardians' flame headband emitters).
+  'js/motif-store.js?v=20261026templepatterns1', // The shared Pattern editor and libraries, so clothing and weapon patterns are authored with the same UI as the game and other tools.
+  'js/pattern-library.js?v=20261026hPlayerDefaults5',
+  'js/repo-pattern-library.js?v=20261030lichPatterns3',
+  'js/pattern-authoring.js?v=20261026templepatterns1',
+  'js/furniture-pattern-surfaces.js?v=20261030lichWalls3',
+  'js/metal-armor-system.js?v=20261031he182dd9',
   'js/town-mine.js?v=20261028a',
   'js/npc-movement-head-target.js?v=20261028a',
   'js/leg-bones.js?v=20261028a',
@@ -30,17 +36,18 @@ const files = [
   'js/emissive-light-orbs.js?v=20261029orbs1',
   'js/sprite-recolor.js?v=20261028hspriterecoloraudit2', // Garment tint (pants/clothing dye) needs SpriteRecolor.recolorImageData.
   'js/procedural-mask-patterns.js?v=20261029maskpat1', // Per-wearer procedural glyph patterns for masks.
-  'js/clothing-weaving-system.js?v=20261029orbs1', // Garment dye/weave renderer: without it every garment falls back to its plain undyed art (pants never showed their dye).
+  'js/clothing-weaving-system.js?v=20261031h39d1dc0', // Garment dye/weave renderer: without it every garment falls back to its plain undyed art (pants never showed their dye).
+  'js/npc-wardrobe.js?v=20261030lichWardrobe4', // Applies the live NPC forced-overpass garment policy before the portrait is baked; required for named lich glyphs.
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',
-  'js/pants-garment-renderer.js?v=20261028a',
+  'js/pants-garment-renderer.js?v=20261030h4b26b8d',
   'js/perp-rotation.js?v=20261026h7f6f691', // Mounts turn like creature cards (dead-zone facing); without it the Nazgraku card stays edge-on.
   'js/creature-texture-cache.js?v=20261011h0a4170f',
   'js/creature-genetics.js?v=20261029h86f0973', // makeDefaultGenotype: the same coat roll wild Nazgraku get.
   'js/creature-genetics-render.js?v=20261028a',
   'config/modular-weapons.js?v=20261028a',
   'js/modular-weapons.js?v=20261028a',
-  'js/held-action-animations.js?v=20261030flailmerged2',
+  'js/held-action-animations.js?v=20261031h7d8c7a0',
   'js/combat/shared-attack-pose.js?v=20261030h12f55f4',
   'js/combat/attack-pose-templates.js?v=20261028a',
   'js/combat/melee-pose-spacing.js?v=20261028a',
@@ -52,20 +59,25 @@ const files = [
   'js/combat/combat-counter-shield.js?v=20261028a',
   'js/combat/ranged-weapons.js?v=20261029maskSlots2',
   'js/alchemy-system.js?v=20261028a',
-  'js/combat/enemy-loadout-rules.js?v=20261029maskSlots2',
-  'js/combat/combat-bandit.js?v=20261030flailmerged2',
+  'js/combat/enemy-loadout-rules.js?v=20261030lichRules3',
+  'js/combat/combat-bandit.js?v=20261030lichEyeglow4',
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
   'js/combat/combat-minion.js?v=20261028a',
   'js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2',
-  'js/combat/combat-lich.js?v=20261029enemyParity1',
+  'js/combat/combat-lich.js?v=20261030namedboss2',
+  'js/combat/combat-enchantments.js?v=20261031ghoulvar1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
+  'js/combat/weapon-enchantment-vfx.js?v=20261031ghoulvar1',
+  'js/combat/ghoul-special-variants.js?v=20261031ghoulvar1',
+  'js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1',
+  'js/combat/combat-special-liches.js?v=20261030lichEyeglow5', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/player-body-transform-composer.js?v=20261030hff4c1d3',
   'js/drunk-locomotion.js?v=20261029a',
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261029maskSlots2',
+  'tools/enemy-loadout-editor/source-data.js?v=20261030lichSource3',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -376,6 +388,12 @@ export class EnemyPreview {
     }
     const plane = group.userData.toolPlane;
     const metal = this.data.metals[def.metalKey];
+    const spritePath = key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png' : def.sprite; // The shipped warhammer PNG is an explicit fallback for the named relic holder.
+    if (!plane || !spritePath) { // Never display an untextured black plane as a weapon.
+      this.log('Missing workshop weapon image definition for ' + key);
+      group.visible = false;
+      return group;
+    }
     let disposed = false;
     texture.addEventListener('dispose', () => {
       disposed = true;
@@ -400,13 +418,14 @@ export class EnemyPreview {
       });
     };
     const task = Promise.all([
-      load(def.sprite, !!metal),
+      load(spritePath, !!metal),
       def.loadedSprite ? load(def.loadedSprite, false) : null,
     ])
       .then(([image, loadedImage]) => {
         if (disposed) return;
         texture.image = image;
         texture.needsUpdate = true;
+        if (group.visible === false) group.visible = true; // A successful image load may recover a previously hidden placeholder.
         def._imgW = image.naturalWidth || image.width;
         def._imgH = image.naturalHeight || image.height;
         plane.geometry.dispose();
@@ -562,11 +581,16 @@ export class EnemyPreview {
       roster: copy(a.rosterRecord),
       definition: copy(a.def),
       rigScale: a.avatarRef.rigScale || null,
+      renderedBodyScale: a.avatarRef.group?.scale ? {x:a.avatarRef.group.scale.x,y:a.avatarRef.group.scale.y,z:a.avatarRef.group.scale.z} : null, // Mobile-readable verification of the real body planes' parent scale.
+      bodyColor3: a.rosterRecord?.appearance?.bodyColors?.C?.hex || a.avatarRef.profile?.bodyColors?.C?.hex || null, // The same color the generated tomb consumes.
+      eyeGlowSources: (a.avatarRef.frontCanvas?.hobunjiPortraitGlows || []).map(glow=>({color:glow.color,radius:glow.radius})), // Mobile report proves the eye mask produced actual emissive masses rather than merely loading the PNG.
       poseOrbitAxes: a.avatarRef.poseOrbitAxes
         ? copy(a.avatarRef.poseOrbitAxes)
         : null,
       mountSpecies: a.rosterRecord.mountSpecies || null,
       lichType: a.lichType || null,
+      specialLichId: a.specialLichId || null, // History records the named guardian's identity.
+      bossSettings: a._specialBossSettings ? copy(a._specialBossSettings) : null, // Instantiated boss timing and damage values, visible on mobile.
       maskboundTroop: a.maskboundTroop || null,
       thumbnail:
         a.avatarRef.frontCanvas?.toDataURL?.() ||
@@ -621,15 +645,20 @@ export class EnemyPreview {
     if (bounds.isEmpty()) return;
     const size = bounds.getSize(new THREE.Vector3());
     const center = bounds.getCenter(new THREE.Vector3());
+    const scale = a.rigScale || {x:1,y:1}; // Actual authored rig multiplier on the visible hostile root.
+    const speciesBase = this.actor.isSpecialLich ? window.SpecialHarlyaoLiches?.rigScaleFor?.(this.actor.lichType)
+      : window.HobunjiCharacterRigScale?.scaleFor?.(a.speciesId,a.gender); // Baseline camera size must be stable when authored body scale changes.
+    const referenceX = (Number(speciesBase?.x)||1)/(Number(scale.x)||1); // Relative width for a constant reference camera, not an auto-zoom that hides body changes.
+    const referenceY = (Number(speciesBase?.y)||1)/(Number(scale.y)||1); // Relative height for the same comparison.
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
     const distance =
       Math.max(
-        size.y / (2 * tan),
-        size.x / (2 * tan * this.camera.aspect),
+        size.y * referenceY / (2 * tan),
+        size.x * referenceX / (2 * tan * this.camera.aspect),
         0.8,
       ) *
         1.25 +
-      size.z * 0.5;
+      size.z * referenceX * 0.5;
     this.currentFit = { center, distance };
     this.controls.target.copy(center);
     this.camera.position.set(
@@ -680,18 +709,21 @@ export class EnemyPreview {
         id: 'throwFlask',
         label: 'Throw flask · ' + actor.def.banditFlaskLoadout.join(', '),
       });
-    if (actor.lichType)
+    if (actor.lichType) {
+      const kind = actor.isSpecialLich ? window.SpecialHarlyaoLiches.kindFor(actor.lichType) : 'lich:'+actor.lichType; // Named and ordinary spell toggles are independent.
+      const extra=actor.isSpecialLich
+        ? actor.lichType==='hronal' ? [{id:'melee',label:'Azgarlu · warhammer melee stance'}]
+        : actor.lichType==='tothal' ? [{id:'blizzard',label:'Nanahi · kneeling barrage pose'}]
+        : [{id:'plasmCharge',label:'Imlao · plasm charge transformation'}]
+        : [];
       return [
         {
           id: 'primary',
           label: actor.lichType + ' · primary spell gesture',
         },
-        { id: 'summon', label: 'Summon · casting gesture' },
-      ].filter(
-        (entry) =>
-          window.EnemyLoadoutRules.ruleFor('lich:' + actor.lichType)
-            ?.specialAttacks?.[entry.id] !== false,
-      );
+        { id: 'summon', label: 'Summon · casting gesture' },...extra,
+      ].filter(entry=>window.EnemyLoadoutRules.ruleFor(kind)?.specialAttacks?.[entry.id] !== false);
+    }
     return list;
   }
   play(id, progress = 0, frozen = false) {
@@ -710,6 +742,19 @@ export class EnemyPreview {
     let castStep = null;
     let power = 1;
     const shapeSpeed = Number(c.def.weaponShapeStats?.speed) || 1;
+    if (id === 'melee') {
+      c._specialMode='melee';c._specialHoverTarget=0; // Real hover blend transitions into Azgarlu's melee stance.
+      steps=window.Combat.comboData?.swingCombo?.slice?.(0,1) || [];
+      anim='chop';windup=.3;strike=.2;
+    } else if (id === 'blizzard') {
+      c._specialStage={kind:'kneel'};c._specialHoverTarget=0;
+      steps=[window.HarlyaoLichCombat.lichCastStep(c,'summon')];anim='thrust';
+      windup=Number(c._specialBossSettings?.kneelDurationSeconds)||4.8;strike=.2;
+    } else if (id === 'plasmCharge') {
+      c._specialStage={kind:'charge',remaining:1};c._specialHoverTarget=1;
+      window.SpecialHarlyaoLiches?.applyPlasmSkin?.(c,true); // Reuse the live oil-material transformation.
+      steps=[window.HarlyaoLichCombat.lichCastStep(c,'primary')];anim='thrust';windup=.2;strike=.42;
+    }
     if (id === 'primary' || id === 'summon') {
       castStep = window.HarlyaoLichCombat.lichCastStep(c, id);
       steps = [castStep];
@@ -719,7 +764,7 @@ export class EnemyPreview {
       const step = steps[stepIndex % steps.length];
       pose =
         window.Combat.comboStepPose?.(
-          id === 'primary' || id === 'summon' ? 'pokeCombo' : id,
+          id === 'primary' || id === 'summon' || id === 'blizzard' || id === 'plasmCharge' ? 'pokeCombo' : id === 'melee' ? 'swingCombo' : id,
           step,
         ) ||
         step.pose ||
@@ -733,6 +778,7 @@ export class EnemyPreview {
         strike /= shapeSpeed;
       }
     }
+    if(id==='blizzard') {windup=Math.max(0.6,(c._specialBossSettings?.kneelDurationSeconds||4.8)-.2);strike=.2;} // Preview timeline matches the authored kneeling duration, not the short casting gesture.
     const quick = window.Combat.quickAttackData;
     if (quick?.TECHNIQUES?.[id]) {
       pose = quick.quickAttackPose?.();
@@ -837,7 +883,7 @@ export class EnemyPreview {
         : this.motion === 'sprint'
           ? c.def.chaseSpeed / this.dependencies.TILE
           : 0;
-    const hover = this.motion === 'hover' || !!c.lichType;
+    const hover = this.motion === 'hover' || (!!c.lichType && (!c.isSpecialLich || c._specialHoverTarget !== 0)); // Named boss hover is not forced while walking or kneeling.
     a.legs?.setHoverMode(hover);
     a.legs?.update(dt, move, false, null, {
       speed: move,
@@ -850,6 +896,13 @@ export class EnemyPreview {
       a.handRigAvatarRoot,
       move,
     );
+    window.CreatureGenetics?.applyCreatureBillboardScale?.(a.group, {
+      x:c.visualScaleX,y:c.visualScaleY,z:c.visualScaleZ
+    },c.scaleY); // Apply the exact gameplay billboard scale to the entire avatar root: portrait planes, pants, hands, and feet together.
+    if(c.isSpecialLich) {
+      window.SpecialHarlyaoLiches?.tick?.(c,dt); // Reuses authentic boss stance, kneel and drip animation controllers.
+      window.SpecialHarlyaoLiches?.updateEffects?.(dt); // One bounded temporary effects tick in the viewport.
+    }
     window.HarlyaoLichCombat.updateLichHoverPresentation(c, dt);
     const base = c.halfHeight || 0.45;
     a.group.position.y = c.lichType
@@ -888,6 +941,12 @@ export class EnemyPreview {
         const id = attack.id;
         this.attack = null;
         c._banditAction = null;
+        if (c.isSpecialLich) {
+          c._specialStage=null;
+          if (id==='plasmCharge') window.SpecialHarlyaoLiches?.applyPlasmSkin?.(c,false);
+          if (id==='melee') c._specialMode='magic';
+          c._specialHoverTarget=1;
+        }
         c._banditFlaskActionActive = false;
         c._rangedMode = false;
         c._rangedAction = null;
@@ -900,6 +959,11 @@ export class EnemyPreview {
     if (!travelGaze) window.BanditCombat.restNeckLook(c, dt); // Same idle neck update the game's hostile loop runs; applies the body-yaw counter-turn.
   }
   discard(actor) {
+    if(actor?.isSpecialLich) {
+      window.SpecialHarlyaoLiches?.applyPlasmSkin?.(actor,false);
+      window.SpecialHarlyaoLiches?.releaseWarhammer?.(actor);
+      window.SpecialHarlyaoLiches?.clear?.();
+    } // Each temporary boss-owned material and particle is disposed before re-rolling.
     // Gameplay caches these maps globally; the workshop owns per-roll textures.
     const textures = new Set();
     for (const holder of [

@@ -263,6 +263,16 @@
       const wearable = slots.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
       if (wearable.length) fillSlot(wearable[Math.floor(deps.rnd() * wearable.length)]);
     }
+    // A captain always wears overwear (BanditRankWardrobe patterns it): force-fill the slot when the independent rolls left it empty.
+    if (rank === 'captain' && !Object.values(cosmeticSlots).includes('overwear')) fillSlot('overwear');
+    // A flasker always wears a face mask against its own noxious fumes: the hood slot is a facewrap, replacing any other hood it rolled.
+    if (rank === 'flasker' && candidatesBySlot.hood?.facewrap && !equippedCosmetics.includes('facewrap')) {
+      for (const id of [...equippedCosmetics]) if (cosmeticSlots[id] === 'hood') { equippedCosmetics.splice(equippedCosmetics.indexOf(id), 1); delete cosmeticSlots[id]; }
+      equippedCosmetics.push('facewrap');
+      cosmeticSlots.facewrap = 'hood';
+      const hoodDye = _banditRollDyeId(cfg);
+      if (hoodDye) appliedDyes.HOOD = hoodDye;
+    }
     // Head covering is never left to chance: every bandit wears a fine_hood,
     // a facewrap, or a headband. The independent per-slot rolls above already
     // land one most of the time -- this only force-fills hat or hood when
@@ -352,6 +362,18 @@
     return resolved;
   }
 
+  // Authored enemies (named liches) can force a woven pattern onto their pants, the same render-only seam NPC wardrobe uses for other slots.
+  function pantsAppearanceWithForcedPattern(appearance, roster) {
+    const forced = roster?.clothingPatterns?.forcedOverpassBySlot?.pants;
+    if (!forced?.pattern) return appearance;
+    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: window.NpcWardrobe?.forcedPatternForRender?.(roster, 'pants', forced) || JSON.parse(JSON.stringify(forced.pattern)) }; // Same per-piece size, raw-size outline (500px pants vs 234x173 body sprites) and body-scale compensation as every other garment.
+    if (Array.isArray(forced.roles) && forced.roles.length) weaving.forcedOverpassRoles = [...forced.roles];
+    const patternHex = appearance.patternHex && appearance.patternHex !== '#ffffff' ? appearance.patternHex : (forced.fallbackColorC?.hex || appearance.patternHex);
+    // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3). With baseUsesPatternColor the BASE layer (dye A) is
+    // dyed that color as a whole and the DRAPE layer (dye B) takes the garment's main color, so the pattern (scoped to DRAPE) sits on the main color.
+    return { ...appearance, weaving, patternHex, ...(forced.baseUsesPatternColor ? { primaryHex: patternHex, secondaryHex: appearance.primaryHex || appearance.secondaryHex } : {}) };
+  }
+
   function ensureEnemyPants(roster) {
     const speciesId = String(roster?.appearance?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Both excluded lower-body anatomies bypass the hostile garment fallback.
     if (!roster || roster.enemyLoadoutAuthoredPants || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
@@ -378,6 +400,7 @@
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');
+    window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -388,6 +411,11 @@
     const frontCanvas = document.createElement('canvas');
     frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'front-portrait';
+    if (roster.clothingPatterns?.forcedOverpassBySlot) { // Woven pattern config and motif composites are cold on a first spawn and its retry can miss them, leaving the garment plain; one throwaway render warms them before the real portraits.
+      const warmCanvas = document.createElement('canvas');
+      warmCanvas.width = warmCanvas.height = PORTRAIT_SIZE;
+      await window.NpcAvatarPreview.renderProfileToCanvas(warmCanvas, profile, { forceEyesOpen: true });
+    }
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
@@ -404,6 +432,31 @@
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
+    // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
+    // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
+    const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the headless render to this named boss.
+    const headCanvas = document.createElement('canvas'); // Shared front head-only portrait also locates every humanoid's neck pivot.
+    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
+    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
+    const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Skull-bearing pixels retain correct head-skin weights.
+    const originalHeadRigBack = transparentLichSkull ? document.createElement('canvas') : backCanvas; // The rear neck shares the same true head proportions.
+    if (transparentLichSkull) {
+      for (const [source, original] of [[frontCanvas, originalHeadRigFront], [backCanvas, originalHeadRigBack]]) {
+        original.width = source.width; original.height = source.height;
+        original.getContext('2d').drawImage(source, 0, 0);
+      }
+      const redraw = async (canvas, options) => {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        await window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, { forceEyesOpen: true, skipHeadSprite: true, ...options });
+      };
+      await redraw(frontCanvas, {});
+      const neutralContext = neutralFrontCanvas.getContext('2d');
+      neutralContext.clearRect(0, 0, neutralFrontCanvas.width, neutralFrontCanvas.height);
+      neutralContext.drawImage(frontCanvas, 0, 0);
+      await redraw(combatFrownCanvas, { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'bandit-combat-frown' });
+      await redraw(backCanvas, { portraitView: 'behind' });
+    }
     characterBuildStatus.stage = 'portrait-model';
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(
       THREE, frontCanvas,
@@ -460,19 +513,23 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
-    const headCanvas = document.createElement('canvas');
-    headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, {forceEyesOpen:true,onlyHeadSprite:true});
-    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12)?.pivotPx
-      || window.PNGPlaneAvatar.detectNeckPivotPx?.(frontCanvas, 12);
+    let headMaskCanvas = null; // Only the opt-in 'mask' gate needs a head + head-cosmetics alpha render.
+    if (roster.headGate === 'mask') {
+      headMaskCanvas = document.createElement('canvas');
+      headMaskCanvas.width = headMaskCanvas.height = PORTRAIT_SIZE;
+      await window.NpcAvatarPreview.renderProfileToCanvas(headMaskCanvas, profile, { forceEyesOpen: true, headCosmeticsOnly: true });
+    }
+    const headGate = roster.headGate; // An enemy rule's gate; unset uses the rig's species default (PNGPlaneAvatar.defaultHeadGateFor): tight, or legacy for Mashtzarr/Mammakhbuur.
+    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:frontCanvas, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, cosmeticIds: roster.equippedCosmetics })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:backCanvas, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, cosmeticIds: roster.equippedCosmetics })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -516,16 +573,25 @@
     group.userData.portraitModelWidth = modelWidth;
     group.userData.portraitModelHeight = modelHeight;
     if (frontNeckSkin) {
-      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, frontCanvas, 12);
-      group.userData.sourceCanvas = frontCanvas;
+      const headPixels = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12);
+      group.userData.sourceCanvas = originalHeadRigFront;
       group.userData.neckRig = {
         available:true, skinnedPlane:frontNeckSkin.mesh,
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
         neckLocal:{...frontNeckSkin.neckBone.position},
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
-        headBoundsPx:headPixels?.boundsPx || null,
+        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false, roster.equippedCosmetics) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
+    if (roster.specialLichId && window.SpecialHarlyaoLiches?.prepareHeadFire) { // Named guardians: hidden flame headband emitter pixels + circlet overlay (see combat-special-liches.js).
+      group.userData.specialHeadFire = await window.SpecialHarlyaoLiches.prepareHeadFire(profile, roster, async (renderProfile, renderOptions) => {
+        const fireCanvas = document.createElement('canvas');
+        fireCanvas.width = fireCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(fireCanvas, renderProfile, renderOptions);
+        return fireCanvas;
+      }, PORTRAIT_SIZE).catch(error => { window.__farmLog?.('[special-lich] head fire setup failed: ' + (error?.message || error), 'warn'); return null; });
+    }
+    group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;
     group.userData.armLength = portrait.userData?.armLength ?? null; // Anatomical reach retained independently from weapon pose scaling.
@@ -577,7 +643,7 @@
       const pants = window.PantsGarmentRenderer.attachToLegs(THREE, legs, { // Finish creating the mesh before downstream ghost/ghoul material conversion.
         avatarGroup: frontPivot, speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, // Follow the portrait's facing/death pivot while sampling the sibling leg rig in world space.
         name: roster.name || 'enemy', garmentId: enemyPants,
-        appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors),
+        appearance: pantsAppearanceWithForcedPattern(window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors), roster),
         overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
       });
       characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
@@ -788,17 +854,23 @@
     const filtered = [...allowed].filter(shapeKey => deps.HELD_SHAPE_DEFS[shapeKey]?.slots?.includes('weapon')); // Explicit minion pools validate definitions directly, without the ordinary bandit enumeration filter. // Final validated melee pool consumed by banditWeaponFor().
     return filtered.length ? filtered : allWeaponShapes;
   }
-  function banditWeaponFor(cfg, rank, tier) {
-    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
-    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
-    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
-    const configuredMetalKey = typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers; null preserves rank/tier metal rolling.
+  // The rank/tier weapon material roll, shared by the weapon itself and by rank metal armor (which must match it before the portrait is baked).
+  function rollBanditWeaponMetalKey(cfg, rank, tier) {
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
-    const rolledMetalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+    return (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+  }
+  const configuredWeaponMetalKey = cfg => typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers.
+
+  function banditWeaponFor(cfg, rank, tier) {
+    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
+    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
+    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
+    const configuredMetalKey = configuredWeaponMetalKey(cfg); // Null preserves rank/tier metal rolling.
+    const rolledMetalKey = configuredMetalKey ? null : rollBanditWeaponMetalKey(cfg, rank, tier);
     const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
@@ -2415,6 +2487,7 @@
   }
 
   function updateBanditToolMesh(c) {
+    window.GhoulSpecialVariants?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Enchanted-weapon particles for the mine's Shadowknights.
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
     const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
     const useRanged = !flaskActive && !!c._rangedMode && !!c._banditRangedToolHolder;
@@ -2723,6 +2796,13 @@
     } finally { characterBuildPending--; unlock(); }
   }
 
+  // Multiplies a body scale ({ x, y, head, offsetY }) by { x, y, head } factors; missing fields are untouched and a missing scale counts as 1.
+  function applyRigScaleMultiplier(scale, multiplier) {
+    if (!multiplier) return scale;
+    const base = value => (Number(value) > 0 ? Number(value) : 1);
+    return { ...scale, x: base(scale?.x) * base(multiplier.x), y: base(scale?.y) * base(multiplier.y), head: base(scale?.head) * base(multiplier.head) };
+  }
+
   function applyAuthoredHostileRigScale(avatarRef, explicitScale) {
     if (!avatarRef?.group || !explicitScale) return false;
     const positive = value => Number.isFinite(Number(value)) && Number(value) > 0; // Validate caller-authored scale fields before mutating live meshes.
@@ -2758,6 +2838,8 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
+    if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
     const legacyMask = (roster.equippedCosmetics || []).find(id=>window.isPortraitMaskCosmeticId?.(id) && roster.cosmeticSlots?.[id] === 'hood');
     if (legacyMask) {
@@ -2769,15 +2851,30 @@
     }
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
     if (roster?.mountSpecies && !roster.mountGenotype) roster.mountGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(roster.mountSpecies) || null; // Same coat/pattern roll a wild specimen gets; kept on the roster so a rebuilt avatar keeps its mount.
-    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
+    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster);
+    if (loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster) { // Bandit rank is worn: pauldrons, circlets, patterned pants/overwear.
+      window.BanditRankWardrobe?.style?.(roster, { rank, rnd: deps.rnd, rollDyeId: () => _banditRollDyeId(cfg), metalKey: wearsRankMetal ? configuredWeaponMetalKey(cfg) : null, mastery: banditMasteryFor(cfg, rank, tier) });
+    }
+    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster && (opts.extra?.isGhoulShadowknight || opts.extra?.mineWyrmWitchType)) { // Mine variants: own wardrobe, patterns, and (knights) an enchanted weapon.
+      await window.GhoulSpecialVariants?.style?.(roster, { rnd: deps.rnd, tier, shadowknight: !!opts.extra.isGhoulShadowknight, witchType: opts.extra.mineWyrmWitchType || null, mastery: banditMasteryFor(cfg, rank, tier) });
+    } // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
+    if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
+    if (!roster?.mountSpecies) { // Patterns are baked into the portrait before the rig stretches it, so the final body scale must be known up front (rider mounts are exempt from rig scaling).
+      const earlyScale = { ...(opts.avatarRigScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...(loadoutRules?.rigScaleFor?.(loadoutKind) || {}) };
+      const multiplied = applyRigScaleMultiplier(earlyScale, loadoutRules?.rigScaleMultiplierFor?.(loadoutKind)); // Rank multipliers (e.g. captains 15% wider and taller) on top of the species/override scale.
+      earlyScale.x = multiplied.x; earlyScale.y = multiplied.y; earlyScale.head = multiplied.head;
+      roster.patternBodyScale = { x: Number(earlyScale.x) > 0 ? Number(earlyScale.x) : 1, y: Number(earlyScale.y) > 0 ? Number(earlyScale.y) : 1, head: Number(earlyScale.head) > 0 ? Number(earlyScale.head) : 1 };
+    }
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
     const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
     if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
+    const rigMultiplier = !avatarRef?.riderMount ? loadoutRules?.rigScaleMultiplierFor?.(loadoutKind) : null; // Multipliers apply last, on top of the species-derived scale and any absolute override.
+    if (rigMultiplier) characterScale = applyRigScaleMultiplier(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}, rigMultiplier);
     if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {
@@ -2800,7 +2897,8 @@
     }
     const mastery = banditMasteryFor(cfg, rank, tier);
     const rolledDefinition = makeBanditDef(cfg, rank, tier, mastery, avatarRef.modelWidth);
-    let def = Object.assign({ ...rolledDefinition }, opts.defOverride || {});
+    const unarmedWitch = !!window.GhoulSpecialVariants?.isUnarmedWitch?.(opts.extra); // Shadow-wind Wyrm-witches cast bare-handed like liches: the lich casting pose weapon, no visible mesh.
+    let def = Object.assign({ ...rolledDefinition }, unarmedWitch ? { weaponKey: window.GhoulSpecialVariants.castWeaponKey(), rangedWeaponKey: null } : {}, opts.defOverride || {});
     // Special enemies supply fixed weapons through defOverride. Explicit authored
     // weapon pools replace those fields too, using the same stats/ability factory.
     if (authoredRule?.weapons || authoredRule?.metals) {
@@ -2906,6 +3004,7 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }

@@ -513,6 +513,43 @@
           "dye:CLOTH:cream": 1
         }
       }
+    },
+    "lich:tothal:nanahi": {
+      "rigScale": {
+        "y": 2.5,
+        "x": 0.5
+      }
+    },
+    "lich:kanthic:imlao": {
+      "rigScale": {
+        "x": 0.7,
+        "y": 2
+      }
+    },
+    "lich:hronal:azgarlu": {
+      "rigScale": {
+        "x": 1.5,
+        "y": 1.75,
+        "head": 1.1
+      },
+      "headGate": "tight"
+    },
+    "bandit:lieutenant": {
+      "rigScaleMultiplier": {
+        "x": 1.05,
+        "y": 1.05
+      }
+    },
+    "bandit:flasker": {
+      "rigScaleMultiplier": {
+        "y": 1.1
+      }
+    },
+    "bandit:captain": {
+      "rigScaleMultiplier": {
+        "x": 1.15,
+        "y": 1.15
+      }
     }
   }
 }

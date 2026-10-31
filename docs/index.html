@@ -161,7 +161,7 @@
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-  <script src="js/metal-armor-system.js?v=20261024haceb249"></script>
+  <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
   <link rel="stylesheet" href="style.css?v=20261029maskSlots2">
@@ -177,10 +177,10 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261029maskSlots2"></script>
+  <script src="js/portrait-utils.js?v=20261030headMask1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261029maskSlots2"></script>
-  <script src="js/png-plane-avatar.js?v=20261029maskSlots2"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261031he74eb11"></script>
+  <script src="js/png-plane-avatar.js?v=20261031hacbff47"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261029maskSlots2"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -190,7 +190,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261029maskSlots2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261030flailmerged1"></script>
+  <script src="js/held-action-animations.js?v=20261031h7d8c7a0"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -211,7 +211,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261026hghoulpantsnorm"></script>
+  <script src="js/pants-garment-renderer.js?v=20261030h4b26b8d"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -252,7 +252,7 @@
   <script src="js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261027h02f64e7"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261030lichWalls3"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -370,8 +370,10 @@
        (at fight time, not load time), so exact ordering against those two
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
-  <script src="js/combat/enemy-loadout-rules.js?v=20261028a"></script>
-  <script src="js/combat/combat-bandit.js?v=20261030flailmerged2"></script>
+  <script src="js/combat/enemy-loadout-rules.js?v=20261030lichRules3"></script>
+  <script src="js/combat/combat-bandit.js?v=20261030lichEyeglow4"></script>
+  <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
+  <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
   <!-- Distinct Minion humanoid category: independent roster/dye/Shambling Footing rules over the shared BanditCombat executor. -->
   <script src="js/combat/combat-minion.js?v=20261027maskbound1"></script>
@@ -379,12 +381,13 @@
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles and static Kanthic spell-plasm puddles, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261028h66c69cd"></script>
+  <script src="js/combat/combat-special-liches.js?v=20261030lichEyeglow5"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261026h05e01fb"></script>
+  <script src="js/bandit-camps.js?v=20261031h78ef714"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -392,7 +395,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261030hcacd5bc"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261030lichLoader4"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -507,7 +510,7 @@
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261029hguild3"></script>
-  <script src="js/harlyao-relics.js?v=20261029hguild2"></script>
+  <script src="js/harlyao-relics.js?v=20261031hb6118e3"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261022h0605f09"></script>
@@ -620,7 +623,7 @@
   <script src="js/pattern-library-dev-export.js?v=20260920export1"></script>
   <!-- Repo-authored reusable patterns (JSON + motif PNG). Runtime animal/NPC
        paint can reference a small repoPatternId instead of embedding motif bytes. -->
-  <script src="js/repo-pattern-library.js?v=20261026hRepoDefaults5"></script>
+  <script src="js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
   <!-- Banubu Color Pools: max-level Stable animal paint UI + cave pool visuals.
        Uses PatternAuthoring/PatternLibrary now; the shared weaving compositor
        is resolved at interaction/render time after combat-config-loader loads it. -->
@@ -780,7 +783,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261030h5d56939"></script>
+  <script src="js/equipment-panel.js?v=20261031h3736442"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -859,7 +862,7 @@
   <script src="js/shattercasks.js?v=20261028hfruitburst2"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
-  <script src="js/ruin-sites.js?v=20261029hguild2"></script>
+  <script src="js/ruin-sites.js?v=20261030lichSites3"></script>
   <script src="js/zone-den-totem-features.js?v=20261028localeopen2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
@@ -2824,7 +2827,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261028h34c94f9"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261030lichBodyC4"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2864,8 +2867,8 @@
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261029guild3"></script>
-  <script src="game.js?v=20261030flailmerged2"></script>
+  <script src="js/delvers-guild-story.js?v=20261030lichQuest3"></script>
+  <script src="game.js?v=20261030harrivalreview1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

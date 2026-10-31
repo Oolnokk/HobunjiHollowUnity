@@ -1428,6 +1428,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const bodyColors = profile.bodyColors || {};
   const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
+  const headCosmeticsOnly = renderOptions?.headCosmeticsOnly === true; // Front-view alpha source for the 'mask' head gate: the head sprite plus every head-slot cosmetic, without arms, torso, clothing or pauldrons.
+  const skipHeadSprite = renderOptions?.skipHeadSprite === true; // Headless characters (Imlao): the head sprite is simply not drawn, so everything it would have hidden shows through.
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
   const breathingComposer   = renderOptions?.breathingComposer ?? window.portraitBreathingComposer ?? null;
@@ -1894,7 +1896,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (onlyHeadSprite) {
     if (headUrl) {
       const image = imgMap.get(headUrl);
-      if (image) drawLayerWithEmote(image, getPortraitXformPreset('B'), tintA, 1, headUrl);
+      if (image) {
+        const headPreset = getPortraitXformPreset('B'); // Match the behind-view head's mirrored transform when generating rear alpha masks.
+        drawLayerWithEmote(image, renderBehindView ? { ...headPreset, sx: -headPreset.sx } : headPreset, tintA, 1, headUrl);
+      }
     }
     if (_needsScale) ctx.restore();
     return;
@@ -1912,7 +1917,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // front while hair/hood/cosmetics and the arms/torso are not.
       head:          () => {
         drawEmoteLayers(maskLayers); // The far-side face mask must remain behind the rear skull.
-        if (headUrl) {
+        if (headUrl && !skipHeadSprite) {
           const img = imgMap.get(headUrl);
           if (img) drawLayerWithEmote(img, { ...getPortraitXformPreset('B'), sx: -getPortraitXformPreset('B').sx }, tintA, 1, headUrl);
         }
@@ -1949,16 +1954,18 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
 
   drawEmoteLayers(preBackLayers);
-  drawBreathingLayers(baseLeftArmLayers);
-  drawBreathingLayers(baseTorsoLayers);
-  drawBreathingLayers(baseRightArmLayers);
-  drawBreathingLayers(torsoClothingLayers);
-  drawBreathingLayers(overwearLayers);
+  if (!headCosmeticsOnly) {
+    drawBreathingLayers(baseLeftArmLayers);
+    drawBreathingLayers(baseTorsoLayers);
+    drawBreathingLayers(baseRightArmLayers);
+    drawBreathingLayers(torsoClothingLayers);
+    drawBreathingLayers(overwearLayers);
+  }
   drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
-  if (headUrl) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); }
+  if (headUrl && !skipHeadSprite) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);
   if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
@@ -2021,7 +2028,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(elevatedEyeAccessoryLayers);
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
-  drawEmoteLayers(pauldronLayers);
+  if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
     const img = imgMap.get(activeUrl) || imgMap.get(mid.url);

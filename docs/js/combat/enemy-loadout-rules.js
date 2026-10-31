@@ -16,6 +16,15 @@
     hold2: ['none', 'counterShield'],
   });
   const rigScaleRanges = Object.freeze({ x: [0.1, 4], y: [0.1, 4], head: [0.1, 4], offsetY: [-0.5, 0.5] }); // Mirrors HobunjiCharacterRigScale's clamps.
+  const bossRanges = Object.freeze({ // Named lich attack tuning, read by SpecialHarlyaoLiches at runtime and drawn in the workshop.
+    switchSeconds:[0.5,30], meleeCooldownSeconds:[0.25,12], meleeDamage:[1,200],
+    specialCooldownSeconds:[1,90], kneelDurationSeconds:[1,15], barrageIntervalSeconds:[0.15,5],
+    chargeSpeedTiles:[2,35], chargeCount:[1,12], chargeMaxTiles:[1,20],
+    blastRadiusTiles:[0.5,8], blastDamage:[1,200], plasmDurationSeconds:[1,90],
+  });
+  const bossGlyphIds = Object.freeze(['harlyao_glyph_entropy','harlyao_glyph_servitude','harlyao_glyph_ignorance']); // Only existing authored motifs are allowed for a boss's symbolic inscription.
+  const patternSlots = Object.freeze(['overwear', 'pants', 'torso', 'hat', 'hood', 'mask']); // Slots whose worn garment can be forced to carry a woven pattern.
+  const headGates = Object.freeze(['tight', 'legacy', 'mask']); // Portrait head-scale gate: box just below the skull, the original wide box, or (opt-in) the head plus its equipped head cosmetics. Unset uses the species default (tight; legacy for Mashtzarr/Mammakhbuur).
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
@@ -55,6 +64,10 @@
         throw Error('Invalid enemy rule');
       if (rule.enabled != null && typeof rule.enabled !== 'boolean')
         throw Error('Enemy rule enabled must be true/false');
+      if (rule.tightHeadGate === true) rule.headGate ||= 'tight'; // Migration of the first experimental checkbox.
+      delete rule.tightHeadGate;
+      if (rule.headGate != null && !headGates.includes(rule.headGate))
+        throw Error(kind + '.headGate must be one of ' + headGates.join(', '));
       if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
         throw Error(kind + '.maskPatterns must be true/false');
       if (rule.maskPatternScale != null) {
@@ -70,6 +83,16 @@
         if (range.min != null && range.max != null && Number(range.min) > Number(range.max))
           throw Error(kind + '.maskPatternScale: min cannot exceed max');
       }
+      if (rule.rigScaleMultiplier != null) {
+        // Multipliers applied ON TOP of the species-derived (and any absolute override) body scale, e.g. a lieutenant 5% wider and taller.
+        const multiplier = rule.rigScaleMultiplier;
+        if (typeof multiplier !== 'object' || Array.isArray(multiplier)) throw Error(kind + '.rigScaleMultiplier: expected { x, y, head }');
+        for (const [field, value] of Object.entries(multiplier)) {
+          if (!['x', 'y', 'head'].includes(field)) throw Error(kind + '.rigScaleMultiplier: unknown field ' + field);
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.1 || value > 4) throw Error(kind + '.rigScaleMultiplier.' + field + ' must be between 0.1 and 4');
+        }
+        if (!Object.keys(multiplier).length) delete rule.rigScaleMultiplier;
+      }
       if (rule.rigScale != null) {
         // Same four values (and units: scale multipliers / fraction of model height) as the Animation Author's Character Rig Scale section.
         if (typeof rule.rigScale !== 'object' || Array.isArray(rule.rigScale))
@@ -82,11 +105,67 @@
         }
         if (!Object.keys(rule.rigScale).length) delete rule.rigScale;
       }
+      if (rule.bossSettings != null) {
+        if (!kind.startsWith('lich:') || kind.split(':').length !== 3 || typeof rule.bossSettings !== 'object' || Array.isArray(rule.bossSettings))
+          throw Error(kind + '.bossSettings: only named liches may use numeric boss tuning');
+        for (const [key,value] of Object.entries(rule.bossSettings)) {
+          const bounds = bossRanges[key];
+          if (!bounds || typeof value !== 'number' || !Number.isFinite(value) || value < bounds[0] || value > bounds[1] || (key==='chargeCount' && !Number.isInteger(value)))
+            throw Error(kind + '.bossSettings.' + key + ' outside allowed range');
+        }
+      }
+      if (rule.clothingPatterns != null) {
+        // Woven pattern per clothing slot for ANY enemy kind, authored with the shared Pattern editor in the Workshop's Patterns tab.
+        if (typeof rule.clothingPatterns !== 'object' || Array.isArray(rule.clothingPatterns)) throw Error(kind + '.clothingPatterns must be an object keyed by slot');
+        for (const [slot, entry] of Object.entries(rule.clothingPatterns)) {
+          const label = kind + '.clothingPatterns.' + slot;
+          if (!patternSlots.includes(slot)) throw Error(label + ' is not a patternable clothing slot');
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw Error(label + ' must be an object');
+          for (const key of Object.keys(entry)) if (!['patternLibraryId', 'pattern', 'scale', 'roles', 'color', 'baseUsesPatternColor', 'randomFrame', 'inheritFrom'].includes(key)) throw Error(label + '.' + key + ' is unknown');
+          if (entry.patternLibraryId != null && !/^[A-Za-z0-9_:.-]{1,120}$/.test(String(entry.patternLibraryId))) throw Error(label + '.patternLibraryId is not a library id');
+          if (entry.pattern != null && (typeof entry.pattern !== 'object' || Array.isArray(entry.pattern) || JSON.stringify(entry.pattern).length > 900000)) throw Error(label + '.pattern must be a pattern object under 900 KB');
+          if (entry.inheritFrom != null && (!patternSlots.includes(entry.inheritFrom) || entry.inheritFrom === slot)) throw Error(label + '.inheritFrom must be another patternable slot');
+          if (entry.pattern == null && entry.patternLibraryId == null && entry.inheritFrom == null) throw Error(label + ' needs a pattern, a library id or a slot to inherit from');
+          if (entry.scale != null && !(typeof entry.scale === 'number' && entry.scale >= 0.1 && entry.scale <= 20)) throw Error(label + '.scale must be 0.1-20');
+          if (entry.roles != null && (!Array.isArray(entry.roles) || entry.roles.length > 8 || entry.roles.some(role => typeof role !== 'string' || !/^[A-Za-z0-9_]{1,24}$/.test(role)))) throw Error(label + '.roles must list garment layer roles such as BASE or DRAPE');
+          if (entry.color != null && !/^(#[0-9a-fA-F]{6}|dye:[A-Za-z0-9_:]{1,80})$/.test(String(entry.color))) throw Error(label + '.color needs #RRGGBB or a dye id');
+          if (entry.baseUsesPatternColor != null && typeof entry.baseUsesPatternColor !== 'boolean') throw Error(label + '.baseUsesPatternColor must be true/false');
+          if (entry.randomFrame != null) { // Per-spawn random frame, like the Maskbound masks: rotate the frame and/or shrink it by a random factor.
+            const frame = entry.randomFrame;
+            if (typeof frame !== 'object' || Array.isArray(frame)) throw Error(label + '.randomFrame must be { rotate, shrink }');
+            for (const key of Object.keys(frame)) if (!['rotate', 'shrink'].includes(key)) throw Error(label + '.randomFrame.' + key + ' is unknown');
+            if (frame.rotate != null && typeof frame.rotate !== 'boolean') throw Error(label + '.randomFrame.rotate must be true/false');
+            if (frame.shrink != null) {
+              const range = frame.shrink;
+              if (typeof range !== 'object' || Array.isArray(range) || !(Number(range.min) >= 0.05) || !(Number(range.max) <= 1) || !(Number(range.min) <= Number(range.max))) throw Error(label + '.randomFrame.shrink needs { min, max } within 0.05-1 with min <= max');
+            }
+          }
+        }
+      }
+      if (rule.bossAppearance != null) {
+        const appearance = rule.bossAppearance;
+        if (!kind.startsWith('lich:') || kind.split(':').length !== 3 || typeof appearance !== 'object' || Array.isArray(appearance))
+          throw Error(kind + '.bossAppearance: named liches only');
+        for (const [field,value] of Object.entries(appearance)) {
+          if (field === 'glyphId' && !bossGlyphIds.includes(value)) throw Error(kind + '.bossAppearance.glyphId is unknown');
+          else if (field === 'ink' && !/^#[0-9a-fA-F]{6}$/.test(value)) throw Error(kind + '.bossAppearance.ink needs #RRGGBB');
+          else if (field === 'robeDye' && (typeof value !== 'string' || !/^dye:CLOTH:[a-z0-9_]+$/.test(value))) throw Error(kind + '.bossAppearance.robeDye requires a cloth dye ID');
+          else if (field === 'weaponKey' && (typeof value !== 'string' || !/^[a-zA-Z0-9_:-]{1,80}$/.test(value))) throw Error(kind + '.bossAppearance.weaponKey is not a tool key');
+          else if (field === 'clothingPattern' || field === 'weaponPattern') {
+            // Authored with the shared Pattern editor: a library reference and/or a full pattern snapshot.
+            if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(kind + '.bossAppearance.' + field + ' must be an object');
+            for (const key of Object.keys(value)) if (!['patternLibraryId', 'pattern'].includes(key)) throw Error(kind + '.bossAppearance.' + field + '.' + key + ' is unknown');
+            if (value.patternLibraryId != null && !/^[A-Za-z0-9_:.-]{1,120}$/.test(String(value.patternLibraryId))) throw Error(kind + '.bossAppearance.' + field + '.patternLibraryId is not a library id');
+            if (value.pattern != null && (typeof value.pattern !== 'object' || Array.isArray(value.pattern) || JSON.stringify(value.pattern).length > 900000)) throw Error(kind + '.bossAppearance.' + field + '.pattern must be a pattern object under 900 KB');
+            if (value.pattern == null && value.patternLibraryId == null) throw Error(kind + '.bossAppearance.' + field + ' needs a pattern or a library id');
+          } else if (!['glyphId','ink','robeDye','weaponKey'].includes(field)) throw Error(kind + '.bossAppearance.' + field + ' is unknown');
+        }
+      }
       for (const [ability, allowed] of Object.entries(
         rule.specialAttacks || {},
       ))
         if (
-          !['primary', 'summon'].includes(ability) ||
+          !['primary', 'summon', ...(kind.split(':').length === 3 && kind.startsWith('lich:') ? ['melee','blizzard','plasmCharge'] : [])].includes(ability) ||
           typeof allowed !== 'boolean'
         )
           throw Error('Invalid special attack toggle');
@@ -191,6 +270,8 @@
     if (opts.enemyLoadoutKind || opts.extra?.enemyLoadoutKind)
       return opts.enemyLoadoutKind || opts.extra.enemyLoadoutKind;
     const extra = opts.extra || {};
+    if (extra.isGhoulShadowknight) return 'ghoul:shadowknight'; // Special mine ghouls have their own Workshop rule; with none, they inherit the base Ghoul rule (see ruleFor).
+    if (extra.mineWyrmWitchType) return 'ghoul:wyrm-witch:' + extra.mineWyrmWitchType;
     if (extra.maskboundTroop) return 'maskbound:' + extra.maskboundTroop;
     if (extra.lichType || roster?.lichType)
       return 'lich:' + (extra.lichType || roster.lichType);
@@ -215,15 +296,22 @@
       return species;
     return 'bandit:' + rank;
   }
+  // Optional body-scale multipliers (applied on top of the species/override scale); only the fields the rule sets, null when none.
+  function rigScaleMultiplierFor(kind) {
+    const multiplier = ruleFor(kind).rigScaleMultiplier;
+    return multiplier && Object.keys(multiplier).length ? { ...multiplier } : null;
+  }
   // Optional authored body proportions for one enemy kind: only the fields the rule sets, null when none.
   function rigScaleFor(kind) {
-    const scale = documentData.rules[kind]?.enabled === false ? null : documentData.rules[kind]?.rigScale;
+    const scale = ruleFor(kind).rigScale; // Inherits the base Ghoul rule for special ghoul variants.
     return scale && Object.keys(scale).length ? { ...scale } : null;
   }
-  const ruleFor = (kind) =>
-    documentData.rules[kind]?.enabled === false
-      ? {}
-      : documentData.rules[kind] || {};
+  const ruleFor = (kind) => {
+    const own = documentData.rules[kind];
+    if (own) return own.enabled === false ? {} : own;
+    const base = String(kind).startsWith('ghoul:') ? documentData.rules.ghoul : null; // Special ghoul variants inherit the base Ghoul rule until they get their own.
+    return base && base.enabled !== false ? base : {};
+  };
   function configFor(kind, config, rank, random) {
     const rule = ruleFor(kind);
     if (!Object.keys(rule).length) return config;
@@ -275,6 +363,46 @@
     roster.cosmeticSlots ||= {};
     roster.appliedDyes ||= {};
     if (rule.maskPatternScale) roster.maskPatternScale = { ...rule.maskPatternScale }; // Override of the procedural mask pattern scale range.
+    for (const [slot, entry] of Object.entries(rule.clothingPatterns || {})) { // Authored per-slot woven patterns (any enemy kind); merged over any built-in policy such as the named liches'.
+      const pattern = entry.pattern || window.PatternLibrary?.getById?.(entry.patternLibraryId) || null;
+      if (!pattern) continue; // An unresolved library id leaves the garment as authored.
+      const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+      const colorHex = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : (entry.color ? catalog.find(dye => dye.id === entry.color)?.hex : null);
+      const framed = clone(pattern);
+      if (entry.randomFrame) { // Same method as the Maskbound masks' procedural patterns: random frame rotation, and a frame only ever shrunk from the authored one.
+        const lerp = (a, b, t) => a + (b - a) * t;
+        if (!framed.frameShape) framed.frameShape = framed.repeatMode === 'grid' ? 'square' : 'triangle'; // Frame fields are ignored (legacy path) unless the pattern declares a frame shape.
+        if (entry.randomFrame.shrink) framed.frameScale = Number((Math.max(0.05, Number(framed.frameScale) || 1) * lerp(Number(entry.randomFrame.shrink.min), Number(entry.randomFrame.shrink.max), random())).toFixed(4));
+        if (entry.randomFrame.rotate) framed.frameRotationDeg = Math.round(random() * 3600) / 10;
+      }
+      roster.clothingPatterns ||= {};
+      roster.clothingPatterns.forcedOverpassBySlot ||= {};
+      roster.clothingPatterns.forcedOverpassBySlot[slot] = {
+        ...(roster.clothingPatterns.forcedOverpassBySlot[slot] || {}),
+        pattern: framed, // The randomized frame lives on the roster, so a looted piece keeps the exact pattern.
+        ...(entry.scale ? { scale: entry.scale } : {}),
+        ...(entry.roles?.length ? { roles: [...entry.roles] } : {}),
+        ...(/^#[0-9a-f]{6}$/i.test(colorHex || '') ? { fallbackColorC: { hex: colorHex } } : {}),
+        ...(entry.baseUsesPatternColor != null ? { baseUsesPatternColor: entry.baseUsesPatternColor } : {}),
+      };
+    }
+    for (const [slot, entry] of Object.entries(rule.clothingPatterns || {})) { // "Inherit pattern & framing from" another slot: a piece shares its source's exact pattern, random frame and (unless it sets its own) color.
+      if (!entry.inheritFrom) continue;
+      const forcedBySlot = roster.clothingPatterns?.forcedOverpassBySlot || {};
+      const source = forcedBySlot[entry.inheritFrom];
+      if (!source?.pattern) continue;
+      const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+      const ownHex = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : (entry.color ? catalog.find(dye => dye.id === entry.color)?.hex : null);
+      roster.clothingPatterns.forcedOverpassBySlot[slot] = {
+        ...(forcedBySlot[slot] || {}),
+        pattern: clone(source.pattern),
+        ...(/^#[0-9a-f]{6}$/i.test(ownHex || '') ? { fallbackColorC: { hex: ownHex } } : (source.fallbackColorC && !forcedBySlot[slot]?.fallbackColorC ? { fallbackColorC: clone(source.fallbackColorC) } : {})),
+        ...(entry.scale ? { scale: entry.scale } : (forcedBySlot[slot]?.scale ? {} : (source.scale ? { scale: source.scale } : {}))),
+        ...(entry.roles?.length ? { roles: [...entry.roles] } : {}),
+        ...(entry.baseUsesPatternColor != null ? { baseUsesPatternColor: entry.baseUsesPatternColor } : {}),
+      };
+    }
+    if (rule.headGate) roster.headGate = rule.headGate; // Portrait rig head gate for this enemy; unset keeps the global default.
     if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
       if (roster.metalArmorItems)
@@ -355,7 +483,11 @@
     seedRandom,
     ruleFor,
     rigScaleFor,
+    rigScaleMultiplierFor,
     rigScaleRanges,
+    headGates,
+    patternSlots,
+    bossRanges,bossGlyphIds, // Workshop uses the same validated fields as gameplay, including safe ranges.
     status: () => ({ error }),
   });
 })();

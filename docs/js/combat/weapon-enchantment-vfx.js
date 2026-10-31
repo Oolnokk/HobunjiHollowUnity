@@ -957,6 +957,34 @@
     };
   }
 
+  // Particles for a weapon the player does not own (an enemy's enchanted weapon): the same emitter, mask and integrator as the held weapon, with a
+  // fixed visual choice and planar counts supplied by the caller instead of the gear inventory. `config` = { visual, counts, spritePath }.
+  function createFixedEmitter(plane, config) {
+    const visual = config?.visual && ALIGNMENTS[config.visual.alignment] && ALIGNMENTS[config.visual.colorAlignment] ? config.visual : null;
+    if (!plane?.isObject3D || !visual || !config.spritePath) return null;
+    const emitter = makeEmitter(plane);
+    if (!emitter) return null;
+    let disposed = false;
+    let snapshot = null;
+    const counts = config.counts && typeof config.counts === 'object' ? config.counts : { [visual.alignment]: 1 };
+    metalMaskForSprite(config.spritePath).then(mask => {
+      if (!disposed) snapshot = { weaponKey: 'enemy:' + config.spritePath, visual, counts, spritePath: config.spritePath, mask };
+    }).catch(error => { lastEvent = 'enemy mask failed: ' + (error?.message || error); });
+    return {
+      update(dt) {
+        if (disposed || !snapshot?.mask?.indices?.length) return;
+        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, [emitter]);
+        faceEmittersTowardCamera([emitter]); // The live combat camera, exactly like the held weapon.
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        disposeEmitter(emitter);
+      },
+      debugSnapshot() { return { active: !disposed, visual, matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0, particles: emitter.particles.length }; },
+    };
+  }
+
   function bootstrap() {
     installUpdateLoop();
   }
@@ -970,6 +998,7 @@
     buildMetalMask,
     renderControls,
     createPreviewEmitter,
+    createFixedEmitter,
     debugSnapshot,
     copyDebug,
     forceRefresh() { scanGeneration++; lastScanAt = -Infinity; activeSnapshot = null; clearAllEmitters(); },

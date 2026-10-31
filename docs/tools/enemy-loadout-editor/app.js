@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261030flailmerged2';
+import { EnemyPreview } from './preview.js?v=20261030revertedFacing9';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -55,6 +55,7 @@ function setBusy(value) {
     'replayBtn',
     'batchBtn',
     'importBtn',
+    'resetRepoBtn',
     'applyRuleBtn',
     'resetRuleBtn',
   ])
@@ -475,10 +476,74 @@ function bodyDefaults(species, gender) {
       head: troop.anatomy.headScale,
       offsetY: troop.anatomy.headOffsetY,
     };
+  const special = window.SpecialHarlyaoLiches?.DATA?.[state.kind.split(':')[1]]; // Named bosses start from their exact custom stature, not normal skeleton proportions.
+  if (state.kind.split(':').length === 3 && special?.scale) return window.SpecialHarlyaoLiches?.rigScaleFor?.(state.kind.split(':')[1]) || {x:1,y:1,head:1,offsetY:0}; // Editor controls are the exact relative-to-species boss body dimensions applied in game.
   const base = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender);
   return base
     ? { x: base.x, y: base.y, head: base.head, offsetY: base.offsetY }
     : { x: 1, y: 1, head: 1, offsetY: 0 };
+}
+let proportionPreviewTimer = null;
+// Body edits only change the saved rule; the enemy is built from it, so replay the current seed (debounced, and retried while a build is running) to show the new head/torso proportions without a manual roll.
+function queueProportionPreview() {
+  clearTimeout(proportionPreviewTimer);
+  proportionPreviewTimer = setTimeout(() => {
+    if (state.busy) queueProportionPreview();
+    else if (state.ready) roll(false);
+  }, 350);
+}
+let bodyScaleMode = null; // 'override' (absolute rigScale) or 'multiplier' (rigScaleMultiplier on top of the species scale); inferred from the rule until chosen.
+const SCALE_MULTIPLIER_PRESETS = [
+  ['lieutenant', 'Lieutenant — 5% wider and taller', { x: 1.05, y: 1.05 }],
+  ['flasker', 'Flasker — 10% taller', { y: 1.1 }],
+  ['captain', 'Captain — 15% wider and taller', { x: 1.15, y: 1.15 }],
+  ['none', 'No multiplier', null],
+];
+function currentBodyScaleMode() {
+  return bodyScaleMode || (rule().rigScaleMultiplier && !rule().rigScale ? 'multiplier' : 'override');
+}
+// Multipliers applied on top of the species-derived body scale (and any absolute override), shipped for the bandit ranks.
+function renderScaleMultipliers(box) {
+  const preset = el('label', 'chance', 'Preset ');
+  const presetSelect = el('select');
+  presetSelect.append(Object.assign(el('option', null, 'Choose a preset…'), { value: '' }));
+  for (const [id, text] of SCALE_MULTIPLIER_PRESETS) presetSelect.append(Object.assign(el('option', null, text), { value: id }));
+  presetSelect.onchange = () => {
+    const chosen = SCALE_MULTIPLIER_PRESETS.find(([id]) => id === presetSelect.value);
+    if (!chosen) return;
+    mutate((r) => { if (chosen[2]) r.rigScaleMultiplier = { ...chosen[2] }; else delete r.rigScaleMultiplier; });
+    queueProportionPreview();
+    renderPools();
+  };
+  preset.append(presetSelect);
+  box.append(preset);
+  for (const [key, title] of [['x', 'Body width multiplier (%)'], ['y', 'Body height multiplier (%)'], ['head', 'Head scale multiplier (%)']]) {
+    const label = el('label', 'chance', title);
+    const check = el('input');
+    check.type = 'checkbox';
+    check.checked = rule().rigScaleMultiplier?.[key] != null;
+    const input = el('input');
+    input.type = 'number';
+    input.step = '1';
+    input.min = '10';
+    input.max = '400';
+    input.value = String(Math.round((rule().rigScaleMultiplier?.[key] ?? 1) * 100));
+    input.disabled = !check.checked;
+    const write = () => {
+      try {
+        mutate((r) => {
+          if (check.checked) { r.rigScaleMultiplier ||= {}; r.rigScaleMultiplier[key] = Math.min(4, Math.max(0.1, Number(input.value) / 100)); }
+          else if (r.rigScaleMultiplier) { delete r.rigScaleMultiplier[key]; if (!Object.keys(r.rigScaleMultiplier).length) delete r.rigScaleMultiplier; }
+        });
+        queueProportionPreview();
+      } catch (_) { renderPools(); }
+    };
+    check.onchange = () => { write(); renderPools(); };
+    input.onchange = write;
+    label.prepend(check);
+    label.append(input, el('span', 'muted', ' 100 = the species scale'));
+    box.append(label);
+  }
 }
 function renderBodyProportions(species, gender) {
   const defaults = bodyDefaults(species, gender);
@@ -494,12 +559,21 @@ function renderBodyProportions(species, gender) {
     el(
       'p',
       'help',
-      'Same four values as Character Rig Scale in the Multi-Avatar Animation Author. Tick a value to override ' +
+      'Same four values as Character Rig Scale in the Multi-Avatar Animation Author. Camera framing stays at the unmodified species size so changing body width/height visibly resizes the actual portrait, not just hands and pants. Tick a value to override ' +
         (state.kind.startsWith('maskbound:') ? 'this troop’s' : 'the species') +
         ' default for this enemy; unticked values keep the default. Overrides are saved with the spawn rules and used in game.',
     ),
   );
-  for (const [key, title, step] of fields) {
+  const scaleMode = currentBodyScaleMode();
+  const modeLabel = el('label', 'chance', 'Scale mode ');
+  const modeSelect = el('select');
+  modeSelect.append(Object.assign(el('option', null, 'Override — absolute body scale'), { value: 'override' }), Object.assign(el('option', null, 'Multiplier — on top of the species scale'), { value: 'multiplier' }));
+  modeSelect.value = scaleMode;
+  modeSelect.onchange = () => { bodyScaleMode = modeSelect.value; renderPools(); };
+  modeLabel.append(modeSelect);
+  box.append(modeLabel);
+  if (scaleMode === 'multiplier') renderScaleMultipliers(box);
+  for (const [key, title, step] of (scaleMode === 'override' ? fields : [])) {
     const label = el('label', 'chance', title);
     const check = el('input');
     check.type = 'checkbox';
@@ -514,7 +588,7 @@ function renderBodyProportions(species, gender) {
     ).toFixed(1);
     input.disabled = !check.checked;
     const hint = el('span', 'muted', ' default ' + (defaults[key] * 100).toFixed(1));
-    const write = () =>
+    const write = () => {
       mutate((r) => {
         if (check.checked) {
           const [lo, hi] = ranges[key];
@@ -525,6 +599,8 @@ function renderBodyProportions(species, gender) {
           if (!Object.keys(r.rigScale).length) delete r.rigScale;
         }
       });
+      queueProportionPreview();
+    };
     check.onchange = () => {
       write();
       renderPools();
@@ -540,6 +616,31 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
+  const gate = el('label', 'chance', 'Head gate');
+  const gateSelect = el('select');
+  for (const [value, text] of [
+    ['', 'Game default (tight; legacy for Mashtzarr/Mammakhbuur)'],
+    ['tight', 'Tight box — ends just below the skull'],
+    ['legacy', 'Legacy — wide box, long fade'],
+    ['mask', 'Head + head cosmetics mask (experimental)'],
+  ]) {
+    const option = el('option', null, text);
+    option.value = value;
+    gateSelect.append(option);
+  }
+  gateSelect.value = rule().headGate || '';
+  gateSelect.onchange = () => {
+    mutate((r) => {
+      if (gateSelect.value) r.headGate = gateSelect.value;
+      else delete r.headGate;
+    });
+    queueProportionPreview();
+  };
+  gate.append(
+    gateSelect,
+    el('span', 'muted', ' which part of the portrait head scale controls; the rest (hood, shoulders, vest) follows body width/height'),
+  );
+  box.append(gate);
   const patterns = el('label', 'chance', 'Procedural mask patterns');
   const patternsCheck = el('input');
   patternsCheck.type = 'checkbox';
@@ -582,6 +683,219 @@ function renderBodyProportions(species, gender) {
   box.append(apply);
   $('poolPanel').append(box);
 }
+function renderBossSettings(special) {
+  const type=state.kind.split(':')[1]; // Runtime boss tradition selects the ability set rather than hand-entered editor copies.
+  const names=type==='hronal'
+    ? {switchSeconds:'Seconds between magic and melee',meleeCooldownSeconds:'Warhammer attack cooldown (seconds)',meleeDamage:'Warhammer damage'}
+    : type==='tothal'
+      ? {specialCooldownSeconds:'Seconds between kneeling barrages',kneelDurationSeconds:'Time kneeling and vulnerable (seconds)',barrageIntervalSeconds:'Seconds between overlapping icicle waves'}
+      : {specialCooldownSeconds:'Seconds between charge sequences',chargeSpeedTiles:'Charge speed (tiles/second)',chargeCount:'Consecutive charges',chargeMaxTiles:'Maximum tiles per charge',blastRadiusTiles:'Concussive blast radius (tiles)',blastDamage:'Concussive blast damage',plasmDurationSeconds:'Trail plasm lifetime (seconds)'};
+  const defaults=window.SpecialHarlyaoLiches.BOSS_DEFAULTS[type]; // Same constants as the actual boss combat module.
+  const ranges=window.EnemyLoadoutRules.bossRanges; // Shared validation used by import, export, and runtime.
+  const container=el('section','pool');
+  container.append(el('h3',null,'Named-boss combat tuning'),el('p','help','Check a value to override the shipped boss default. These values affect the real encounter after you export the rule file.'));
+  for(const [key,labelText] of Object.entries(names)) {
+    const row=el('label','chance',labelText);
+    const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossSettings?.[key]!=null;
+    const input=el('input');input.type='number';input.min=ranges[key][0];input.max=ranges[key][1];input.step=key==='chargeCount'?'1':'0.05';input.value=rule().bossSettings?.[key] ?? defaults[key];input.disabled=!enabled.checked;
+    const hint=el('small','muted',' default '+defaults[key]);
+    const commit=()=>{
+      try { mutate(r=>pathSet(r,['bossSettings',key],enabled.checked?Number(input.value):undefined));renderPools(); }
+      catch(_) {renderPools();}
+    };
+    enabled.onchange=commit;input.onchange=commit;
+    row.prepend(enabled);row.append(input,hint);container.append(row);
+  }
+  $('poolPanel').append(container);
+}
+function renderBossAppearance(special, tab) {
+  const box=el('section','pool');
+  box.append(el('h3',null,tab==='weapons'?'Signature weapon':'Signature colors and glyph'),
+    el('p','help','The guardian’s Body Color C is shared by eye glow, robe motif and ruin walls. An authored Body Color C swatch takes priority over this fallback; unchecked fields keep the canonical preset.'));
+  const settings=tab==='weapons'
+    ? [['weaponKey','Warhammer tool key',special.weapon || 'warhammer_nativeCopper','text']]
+    : [['glyphId','Harlyao glyph',special.glyph,'glyph'],['ink','Body Color 3 override (hex); default is the inverse of the robe color',window.SpecialHarlyaoLiches.inverseRobeColor(state.kind.split(':')[1]) || special.ink,'color'],['robeDye','Robe dye ID',special.dye,'text']];
+  for(const [key,labelText,fallback,type] of settings) {
+    const row=el('label','chance',labelText);
+    const enabled=el('input');enabled.type='checkbox';enabled.checked=rule().bossAppearance?.[key]!=null;
+    let input;
+    if(type==='glyph') {
+      input=el('select');
+      for(const id of window.EnemyLoadoutRules.bossGlyphIds) {
+        const option=el('option',null,id.replace('harlyao_glyph_',''));option.value=id;input.append(option);
+      }
+    } else {input=el('input');input.type=type==='color'?'color':'text';input.style.maxWidth='13rem';}
+    input.value=rule().bossAppearance?.[key] || fallback;input.disabled=!enabled.checked;
+    const commit=()=>{try{mutate(r=>pathSet(r,['bossAppearance',key],enabled.checked?input.value:undefined));renderPools();}catch(_){renderPools();}};
+    enabled.onchange=commit;input.onchange=commit;
+    row.prepend(enabled);row.append(input);box.append(row);
+  }
+  const patternKind = tab === 'weapons' ? 'weaponPattern' : 'clothingPattern';
+  const patternRow = el('div', 'chance');
+  const authored = rule().bossAppearance?.[patternKind];
+  patternRow.append(
+    el('span', 'muted', tab === 'weapons' ? 'Hammer metal pattern: ' : 'Robe and pants pattern: '),
+    el('span', 'muted', authored ? (authored.patternLibraryId ? 'library ' + authored.patternLibraryId : 'custom drawing') : 'canonical glyph '),
+  );
+  const open = el('button', null, authored ? 'Edit pattern…' : 'Author pattern…');
+  open.onclick = () => openBossPatternEditor(special, patternKind);
+  patternRow.append(open);
+  if (authored) {
+    const clear = el('button', null, 'Use canonical glyph');
+    clear.onclick = () => { mutate((r) => pathSet(r, ['bossAppearance', patternKind], undefined)); queueProportionPreview(); renderPools(); };
+    patternRow.append(clear);
+  }
+  box.append(patternRow);
+  $('poolPanel').append(box);
+}
+const PATTERN_SLOT_LABELS = { overwear: 'Overwear (robes, ponchos, wraps)', pants: 'Pants', torso: 'Torso clothing', hat: 'Hats and circlets', hood: 'Hoods and face wraps', mask: 'Face masks' };
+// Woven pattern and per-piece scale for any enemy kind. Stored as clothingPatterns.<slot> in the rule; the game weaves it onto that worn piece.
+function renderClothingPatterns() {
+  const box = el('section', 'pool');
+  box.append(
+    el('h3', null, 'Clothing patterns'),
+    el('p', 'help', 'Weave an authored pattern onto a worn piece of this enemy, with its own size. Patterns are baked before the body is scaled, so they are pre-compensated for this enemy’s Body proportions and keep the same line weight across sprite sizes. A named guardian’s built-in patterns are the starting point and can be replaced here.'),
+  );
+  for (const slot of window.EnemyLoadoutRules.patternSlots) {
+    const entry = rule().clothingPatterns?.[slot];
+    const row = el('div', 'chance');
+    row.append(el('strong', null, PATTERN_SLOT_LABELS[slot] + ': '));
+    row.append(el('span', 'muted', entry ? (entry.patternLibraryId ? 'library ' + entry.patternLibraryId : entry.pattern ? 'custom drawing' : entry.inheritFrom ? 'inherits ' + PATTERN_SLOT_LABELS[entry.inheritFrom] : 'game default') : 'game default'));
+    const edit = el('button', null, entry?.pattern || entry?.patternLibraryId ? 'Edit pattern…' : 'Author pattern…');
+    edit.onclick = () => openClothingPatternEditor(slot);
+    row.append(edit);
+    // Share another piece's exact pattern and framing (e.g. a face mask matching the overwear's pattern).
+    const inheritLabel = el('label', 'chance', 'Inherit pattern & framing from ');
+    const inherit = el('select');
+    inherit.append(Object.assign(el('option', null, 'None (own pattern)'), { value: '' }));
+    for (const other of window.EnemyLoadoutRules.patternSlots) if (other !== slot) inherit.append(Object.assign(el('option', null, PATTERN_SLOT_LABELS[other]), { value: other }));
+    inherit.value = entry?.inheritFrom || '';
+    inherit.onchange = () => {
+      try {
+        mutate((r) => {
+          r.clothingPatterns ||= {};
+          const e = (r.clothingPatterns[slot] ||= {});
+          if (inherit.value) e.inheritFrom = inherit.value; else delete e.inheritFrom;
+          if (!Object.keys(e).length) delete r.clothingPatterns[slot];
+          if (!Object.keys(r.clothingPatterns).length) delete r.clothingPatterns;
+        });
+        queueProportionPreview();
+        renderPools();
+      } catch (_) { renderPools(); }
+    };
+    inheritLabel.append(inherit);
+    row.append(inheritLabel);
+    if (entry) {
+      const clear = el('button', null, 'Clear');
+      clear.onclick = () => { mutate((r) => { delete r.clothingPatterns[slot]; if (!Object.keys(r.clothingPatterns).length) delete r.clothingPatterns; }); queueProportionPreview(); renderPools(); };
+      row.append(clear);
+      const scaleLabel = el('label', 'chance', 'Pattern scale ×');
+      const scale = el('input');
+      scale.type = 'number'; scale.step = '0.05'; scale.min = '0.1'; scale.max = '20';
+      scale.value = String(entry.scale ?? 1);
+      scale.onchange = () => { try { mutate((r) => { const v = Number(scale.value); if (v === 1) delete r.clothingPatterns[slot].scale; else r.clothingPatterns[slot].scale = v; }); queueProportionPreview(); } catch (_) { renderPools(); } };
+      scaleLabel.append(scale);
+      const colorLabel = el('label', 'chance', 'Pattern color ');
+      const colorOn = el('input'); colorOn.type = 'checkbox'; colorOn.checked = entry.color != null;
+      const color = el('input'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : '#7fd0ff'; color.disabled = !colorOn.checked;
+      const commitColor = () => { try { mutate((r) => { if (colorOn.checked) r.clothingPatterns[slot].color = color.value; else delete r.clothingPatterns[slot].color; }); queueProportionPreview(); renderPools(); } catch (_) { renderPools(); } };
+      colorOn.onchange = commitColor; color.onchange = commitColor;
+      colorLabel.prepend(colorOn); colorLabel.append(color);
+      row.append(scaleLabel, colorLabel);
+      // Like the Maskbound masks: each spawn rotates and/or shrinks the pattern's frame at random (the result is kept on the enemy and in its loot).
+      const frameOf = () => rule().clothingPatterns?.[slot]?.randomFrame || {};
+      const writeFrame = (patch) => { try { mutate((r) => { const next = { ...(r.clothingPatterns[slot].randomFrame || {}), ...patch }; if (!next.rotate) delete next.rotate; if (!next.shrink) delete next.shrink; if (Object.keys(next).length) r.clothingPatterns[slot].randomFrame = next; else delete r.clothingPatterns[slot].randomFrame; }); queueProportionPreview(); renderPools(); } catch (_) { renderPools(); } };
+      const rotateLabel = el('label', 'chance', 'Random rotation each spawn');
+      const rotate = el('input'); rotate.type = 'checkbox'; rotate.checked = frameOf().rotate === true;
+      rotate.onchange = () => writeFrame({ rotate: rotate.checked });
+      rotateLabel.prepend(rotate);
+      const shrinkLabel = el('label', 'chance', 'Random shrink each spawn (% of frame)');
+      const shrink = el('input'); shrink.type = 'checkbox'; shrink.checked = !!frameOf().shrink;
+      const shrinkMin = el('input'), shrinkMax = el('input');
+      for (const input of [shrinkMin, shrinkMax]) { input.type = 'number'; input.min = '5'; input.max = '100'; input.step = '5'; input.disabled = !shrink.checked; }
+      shrinkMin.value = String(Math.round((frameOf().shrink?.min ?? 0.25) * 100)); shrinkMax.value = String(Math.round((frameOf().shrink?.max ?? 1) * 100));
+      const commitShrink = () => writeFrame({ shrink: shrink.checked ? { min: Math.min(1, Math.max(0.05, Number(shrinkMin.value) / 100)), max: Math.min(1, Math.max(Math.max(0.05, Number(shrinkMin.value) / 100), Number(shrinkMax.value) / 100)) } : null });
+      shrink.onchange = commitShrink; shrinkMin.onchange = commitShrink; shrinkMax.onchange = commitShrink;
+      shrinkLabel.prepend(shrink); shrinkLabel.append(shrinkMin, ' – ', shrinkMax);
+      row.append(rotateLabel, shrinkLabel);
+      if (slot === 'pants') {
+        const drapeLabel = el('label', 'chance', 'Draped pants: pattern the drape, base takes the pattern color');
+        const drape = el('input'); drape.type = 'checkbox'; drape.checked = entry.baseUsesPatternColor === true;
+        drape.onchange = () => { try { mutate((r) => { const e = r.clothingPatterns[slot]; if (drape.checked) { e.roles = ['DRAPE']; e.baseUsesPatternColor = true; } else { delete e.roles; delete e.baseUsesPatternColor; } }); queueProportionPreview(); } catch (_) { renderPools(); } };
+        drapeLabel.prepend(drape);
+        row.append(drapeLabel);
+      }
+    }
+    box.append(row);
+  }
+  $('poolPanel').append(box);
+}
+async function openClothingPatternEditor(slot) {
+  if (!window.PatternAuthoring?.openEditor) { toast('Pattern editor is not loaded.'); return; }
+  await window.RepoPatternLibrary?.load?.().catch(() => {});
+  const entry = rule().clothingPatterns?.[slot];
+  const special = state.kind.split(':').length === 3 ? window.SpecialHarlyaoLiches?.patternFor?.(state.kind.split(':')[1], 'clothingPattern') : null;
+  const existing = entry?.pattern || (entry?.patternLibraryId && window.PatternLibrary?.getById?.(entry.patternLibraryId)) || special || null;
+  const defaults = { frameShape: 'triangle', frameScale: 1, frameRotationDeg: 0, frameX: 0, frameY: 0, motifScale: 1, tiling: true };
+  const initialPattern = existing ? { ...defaults, ...((await window.FurniturePatternSurfaces?.editablePattern?.({ pattern: existing })) || existing) } : undefined;
+  const ink = /^#[0-9a-f]{6}$/i.test(entry?.color || '') ? entry.color : '#7fd0ff';
+  window.PatternAuthoring.openEditor({
+    title: 'Pattern — ' + PATTERN_SLOT_LABELS[slot] + ' — ' + (document.getElementById('enemyTitle')?.textContent || state.kind),
+    motifHint: 'Draw the motif woven into this piece. Its size is set per piece (Pattern scale) after saving.',
+    initialPattern,
+    initialPatternLibraryId: entry?.patternLibraryId || null,
+    library: window.PatternLibrary ? {
+      list: () => window.PatternLibrary.listAvailable(),
+      get: (id) => window.PatternLibrary.getById(id),
+      save: (label, data) => window.PatternLibrary.saveToLibrary(label, data),
+      remove: (id) => window.PatternLibrary.removeSaved(id),
+    } : null,
+    renderPreview: (data) => window.FurniturePatternSurfaces.renderTile({ solid: false, palette: ['#8a7f6c', ink, ink] }, data),
+    onSave: async (data, libraryId) => {
+      mutate((r) => pathSet(r, ['clothingPatterns', slot], { ...(r.clothingPatterns?.[slot] || {}), ...(libraryId ? { patternLibraryId: libraryId, pattern: undefined } : { pattern: JSON.parse(JSON.stringify(data)), patternLibraryId: undefined }) }));
+      mutate((r) => { const e = r.clothingPatterns?.[slot]; if (e) { if (e.pattern === undefined) delete e.pattern; if (e.patternLibraryId === undefined) delete e.patternLibraryId; } });
+      queueProportionPreview();
+      renderPools();
+      return true;
+    },
+  });
+}
+// Opens the shared Pattern editor (the same UI the game, Pattern Editor and house/furniture tools use) for one named guardian.
+async function openBossPatternEditor(special, patternKind) {
+  if (!window.PatternAuthoring?.openEditor) { toast('Pattern editor is not loaded.'); return; }
+  await window.RepoPatternLibrary?.load?.().catch(() => {});
+  const type = state.kind.split(':')[1];
+  const weapon = patternKind === 'weaponPattern';
+  const current = window.SpecialHarlyaoLiches.patternFor(type, patternKind); // Authored pattern, else the canonical glyph.
+  const dye = (id) => window.ScratchbonesAccount?.getDyeCatalog?.().find((entry) => entry.id === id)?.hex;
+  const cloth = dye(rule().bossAppearance?.robeDye || special.dye) || '#c76a1f';
+  const ink = window.SpecialHarlyaoLiches.bodyColor3For(type); // Authored C swatch, Workshop override, else the inverse of the robe color.
+  const toolKey = rule().bossAppearance?.weaponKey || special.weapon || 'warhammer_nativeCopper';
+  const sprite = state.data?.shapes?.[toolKey.split('_')[0]]?.baseSprite || 'assets/toolsprites/warhammer.png';
+  const editable = { frameShape: 'triangle', frameScale: 1, frameRotationDeg: 0, frameX: 0, frameY: 0, motifScale: 1, tiling: true, ...((await window.FurniturePatternSurfaces?.editablePattern?.({ pattern: current })) || current) }; // The canonical glyph carries no frame fields; give the editor sane starting values.
+  const authored = rule().bossAppearance?.[patternKind];
+  window.PatternAuthoring.openEditor({
+    title: (weapon ? 'Weapon pattern — ' : 'Robe and pants pattern — ') + special.name,
+    motifHint: weapon ? 'Draw the motif painted in Body Color 3 onto the hammer’s silver plating.' : 'Draw the motif woven into the robe and pants (it uses the guardian’s Body Color C).',
+    initialPattern: editable,
+    initialPatternLibraryId: authored?.patternLibraryId || null,
+    library: window.PatternLibrary ? {
+      list: () => window.PatternLibrary.listAvailable(),
+      get: (id) => window.PatternLibrary.getById(id),
+      save: (label, data) => window.PatternLibrary.saveToLibrary(label, data),
+      remove: (id) => window.PatternLibrary.removeSaved(id),
+    } : null,
+    renderPreview: (data) => weapon
+      ? window.ToolMetalRecolor.getRecoloredCanvas(sprite, { targetHex: ink, verdigrisHex: '#C0C0C0', oxidationAmount: 1, authoredPattern: data }) // Silver plating painted in Body Color 3.
+      : window.FurniturePatternSurfaces.renderTile({ solid: false, palette: [cloth, ink, ink] }, data),
+    onSave: async (data, libraryId) => {
+      mutate((r) => pathSet(r, ['bossAppearance', patternKind], libraryId ? { patternLibraryId: libraryId } : { pattern: JSON.parse(JSON.stringify(data)) }));
+      queueProportionPreview();
+      renderPools();
+      return true;
+    },
+  });
+}
 function renderPools() {
   if (!state.ready) return;
   $('poolPanel').replaceChildren();
@@ -602,8 +916,10 @@ function renderPools() {
     window.ScratchbonesAccount?.getDyeCatalog?.().map((dye) => dye.id) ||
     Object.keys(d.dyes);
   const note = $('specialNote');
-  note.textContent = d.lich
-    ? 'Liches keep their tradition’s spell AI. Primary/summon toggles affect that AI; the viewport previews the shared casting gesture.'
+  note.textContent = d.special
+    ? d.special.name + ' · exclusive key-stone guardian. Body proportions, combat cadence, colors, signature glyphs and attacks are editable; export enemy-loadouts.json to use changes in game.'
+    : d.lich
+      ? 'Ordinary liches keep their tradition’s spell AI. Primary/summon toggles affect that AI; the viewport previews the shared casting gesture.'
     : d.mount
       ? 'Mount: ' +
         d.mount +
@@ -614,13 +930,21 @@ function renderPools() {
     updateRuleJson();
     return;
   }
+  if (state.tab === 'patterns') {
+    renderClothingPatterns();
+    updateRuleJson();
+    return;
+  }
   if (state.tab === 'weapons') {
     if (d.lich) {
+      if(d.special?.weapon) renderBossAppearance(d.special,'weapons'); // Azgarlu's visible enchanted hammer has its own editable authored tool key.
       $('poolPanel').append(
         el(
           'p',
           'help',
-          'Liches carry an invisible casting tool, rather than a visible melee weapon. Their tradition’s primary spell and summon can be enabled in Attacks. Use Clothing and Species & dyes to author the caster’s appearance.',
+          d.special
+            ? (d.special.weapon ? 'This boss holds an enchanted warhammer for melee, then alternates to magic. Signature glyph and robe color are under Species & dyes.' : 'This boss uses spellcasting poses and its exclusive attack phase; edit its combat cadence in Attacks.')
+            : 'Ordinary liches carry an invisible casting tool. Primary/summon toggles affect its spell AI.',
         ),
       );
       updateRuleJson();
@@ -820,6 +1144,7 @@ function renderPools() {
       ['male', 'female'],
       'Species with one authored gender retain that restriction.',
     );
+    if (d.special) renderBossAppearance(d.special,'identity'); // Authored robe dye and glyph color/pattern are independent of ordinary random-dye weights.
     for (const slot of [
       'A',
       'B',
@@ -841,7 +1166,7 @@ function renderPools() {
     ])
       pool(
         slot.startsWith('A') || ['B', 'C'].includes(slot)
-          ? 'Body color ' + slot
+          ? (slot==='C' && d.special ? 'Body color C · eye / walls / robe glyph' : 'Body color ' + slot)
           : slot === 'MASK_C'
             ? 'Mask · glow (color 3)'
             : slot === 'MASK'
@@ -854,11 +1179,14 @@ function renderPools() {
           ? { '#7F00FF': 1 }
           : d.dyes,
         [...dyeIds, ...Object.keys(d.dyes)],
-        'Dye IDs or an exact #RRGGBB color. MASK_C is mask dye color 3; HOOD colors are independent.',
+        'Dye IDs or an exact #RRGGBB color. On named liches, the highest-weight Body C swatch is fixed per guardian and drives its eyes, robe pattern and ruin walls. MASK_C is independent mask dye color 3.',
       );
   } else if (state.tab === 'attacks') {
     if (d.lich) {
-      for (const ability of ['primary', 'summon']) {
+      const exclusive = d.special
+        ? [state.kind.includes('hronal')?'melee':state.kind.includes('tothal')?'blizzard':'plasmCharge']
+        : []; // Per-boss toggles appear in addition to the existing primary spell and resurrection.
+      for (const ability of ['primary', 'summon', ...exclusive]) {
         const line = el('label', 'toggle-line');
         const input = el('input');
         input.type = 'checkbox';
@@ -873,11 +1201,15 @@ function renderPools() {
           document.createTextNode(
             ability === 'primary'
               ? 'Allow tradition’s primary spell'
-              : 'Allow skeleton summoning',
+              : ability === 'summon' ? 'Allow skeleton summoning / reanimation'
+                : ability === 'melee' ? 'Allow Azgarlu’s warhammer melee stance'
+                : ability === 'blizzard' ? 'Allow Nanahi’s kneeling ceiling barrage'
+                : 'Allow Imlao’s plasm-covered charging sequence',
           ),
         );
         $('poolPanel').append(line);
       }
+      if(d.special) renderBossSettings(d.special); // Dedicated numeric controls persist into the shared spawn-rule JSON.
     } else
       for (const slot of ['tap1', 'tap2', 'hold1', 'hold2'])
         pool(
@@ -898,6 +1230,7 @@ function renderPools() {
 async function selectKind(kind) {
   if (state.busy) return;
   state.kind = kind;
+  bodyScaleMode = null; // Re-inferred from the new enemy's rule.
   const type = window.EnemyLoadoutSourceData.types.find(
     (t) => t.id === kind,
   );
@@ -958,6 +1291,10 @@ function showRecord(record) {
       true,
     ),
   );
+  if (record.specialLichId) facts.append(
+    fact('Named lich guardian',record.specialLichId + ' · ' + (record.bossSettings ? JSON.stringify(record.bossSettings) : 'game defaults'),true),
+    fact('Signature glyph',record.roster.glyphPatternId || 'none',true),
+  ); // Roll summary is readable without devtools on mobile.
   if (record.roster.metalArmorItems?.length)
     facts.append(
       fact(
@@ -1171,6 +1508,38 @@ $('exportBtn').onclick = async () => {
   toast(
     'Exported spawn rules. Install the file at docs/config/combat/enemy-loadouts.json.',
   );
+};
+
+async function readUncachedRepoRules() {
+  const url = new URL('config/combat/enemy-loadouts.json', document.baseURI); // The actual repository rules file served by this commit; never a device-stored Workshop draft.
+  url.searchParams.set('workshopReset', String(Date.now())); // Unique URL also bypasses stale CDN responses for the JSON.
+  const response = await fetch(url.href, {cache:'no-store'}); // Verify fetch and schema before touching the local draft.
+  if (!response.ok) throw new Error('Repository rules HTTP ' + response.status);
+  return window.EnemyLoadoutRules.validate(await response.json());
+}
+$('resetRepoBtn').onclick = async () => {
+  if (state.busy || !state.ready) return;
+  if (!window.confirm('Discard ALL locally edited Enemy Workshop rules and restore the repository copy? Export any changes you want to keep first.')) return;
+  setBusy(true);
+  try {
+    const repositoryRules = await readUncachedRepoRules();
+    localStorage.removeItem(DRAFT_KEY); // Unlike persist(), reset must not immediately write the old draft back.
+    window.EnemyLoadoutRules.set(repositoryRules); // Use the freshly fetched bytes now; a page reload could independently retrieve stale cached JSON.
+    state.history = []; // Old previews were built with the discarded rules, so their snapshots cannot be treated as current.
+    state.selected = null;
+    renderHistory();
+    updateRuleJson();
+    renderPools();
+    $('draftState').textContent = 'Repository rules loaded · local draft cleared';
+    log('Reset to fresh repository rules; discarded saved draft and prior preview history.');
+    setBusy(false); // The normal roll path owns its own busy state.
+    await roll(false); // Build the real avatar again from freshly fetched repository rules.
+    toast('Repository rules restored and enemy preview rebuilt.');
+  } catch (error) {
+    log('Reset to repo failed: ' + (error.stack || error.message)); // A failed fetch or storage clear leaves the old draft intact; a failed roll has its own visible diagnostics.
+    toast('Reset failed: ' + error.message);
+    setBusy(false);
+  }
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async () => {

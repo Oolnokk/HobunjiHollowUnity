@@ -15,7 +15,7 @@
 
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('../../', location.href);
-  const adapterUrl = new URL('js/npc-avatar-preview-utils.js?v=20261029maskSlots2', docsBase).href;
+  const adapterUrl = new URL('js/npc-avatar-preview-utils.js?v=20261031he74eb11', docsBase).href;
   const prior = global.NpcAvatarPreview && typeof global.NpcAvatarPreview === 'object'
     ? global.NpcAvatarPreview
     : null;

@@ -11,7 +11,7 @@
     { id: 'azgarlu_key_stone', name: 'Azgarlu of the Flame', label: "Azgarlu's Key-Stone" },
     { id: 'nanahi_key_stone', name: 'Nanahi the Unsleeping', label: "Nanahi's Key-Stone" },
     { id: 'imlao_key_stone', name: 'Imlao the Sightless', label: "Imlao's Key-Stone" },
-  ]); // Quest items have definitions, but intentionally no loot, spawn or boss sources.
+  ]); // Quest items are now carried by their named Harlyao lich guardians.
   const progress = { running: false, phase: 'idle', lastError: null, lastChange: "Garanki's two tent scenes, membership stone, licensed ruin doors, and unseeded Three Key-Stones quest." }; // Mobile-friendly status.
   let inventoryDeps = null; // ArtifactCollection's existing inventory/save adapter, reused for item grants.
   let questDeps = null; // TasksPanel's live getQuestProgress adapter, reused instead of a second quest store.
@@ -44,7 +44,7 @@
     if (!defs || !Array.isArray(catalog)) return false;
     const items = [
       { key: 'delversStone', label: "Delver's Stone", icon: '🔴', desc: "A stone-priest's enchanted Guild amulet. Unlocks sealed Harlyao ruins and detects uncatalogued magic. Its signal can be traced by the Guild.", important: true },
-      ...KEY_STONES.map(key => ({ key: key.id, label: key.label, icon: '🗝️', desc: 'One of three ancient stone keys entombed with a powerful early-Harlyao mage. No known source has been discovered.', important: true })),
+      ...KEY_STONES.map(key => ({ key: key.id, label: key.label, icon: '🗝️', desc: 'One of three ancient stone keys recovered from a named Harlyao lich tomb.', important: true })),
     ]; // Used by inventory definitions only; no automatic grants for the three ancient keys.
     for (const item of items) {
       defs[item.key] = { icon: item.icon, label: item.label, desc: item.desc, cat: 'material', tags: ['Harlyao', 'Quest'], sellPrice: 0, quest: true, important: true };
@@ -65,6 +65,20 @@
     inventoryDeps = deps; // Used for physical Stone/Key-Stone definitions and canonical save calls.
     registerItems(); // Do not write the player's save while game.js may still be restoring their inventory.
   }
+  function grantKeyStone(bossId) {
+    const stone = KEY_STONES.find(item => item.id === bossId || item.id === bossId + '_key_stone');
+    if (!stone || !inventoryDeps?.inventory) return false;
+    registerItems(); // The same catalog and definitions the normal Pack uses.
+    if ((Number(inventoryDeps.inventory[stone.id]) || 0) >= 1) return false;
+    inventoryDeps.inventory[stone.id] = 1; // A single physical quest key per lich, saved with ordinary inventory.
+    inventoryDeps.saveMemberWorldData?.();
+    inventoryDeps.buildInventoryGrid?.();
+    syncQuest();
+    window.TasksPanel?.render?.();
+    inventoryDeps.showToast?.('Recovered ' + stone.label + '!', true);
+    return true;
+  }
+
   function bindQuestDeps(deps) {
     questDeps = deps; // Used to mutate the exact live questProgress object TasksPanel renders; TasksPanel.render/PlayerReady refresh the quest later.
   }
@@ -83,7 +97,7 @@
     const count = KEY_STONES.filter(key => (Number(inventoryDeps?.inventory?.[key.id]) || 0) > 0).length; // Counts only actually owned quest keys.
     const remaining = KEY_STONES.filter(key => !(Number(inventoryDeps?.inventory?.[key.id]) > 0)).map(key => key.name); // Used in the task's current objective.
     const objective = remaining.length ? 'Find, defeat and retrieve the key-stones of ' + remaining.join(', ') + '.' : 'All three key-stones recovered. Return to Garanki Gabu.';
-    const detail = count + '/3 key-stones. They belonged to early-Harlyao mages; their graves are unknown and no loot sources have been assigned yet.';
+    const detail = count + '/3 key-stones. Azgarlu guards a Hronal ruin, Nanahi a Tothal ruin, and Imlao a Kanthic ruin.';
     const old = store[QUEST_ID];
     if (old?.status === 'complete') return old; // A future hand-in implementation owns completion, not the absence of sources.
     if (old?.status === 'active' && old.progress?.objective === objective && old.progress?.detail === detail) return old;
@@ -258,7 +272,7 @@
 
   const api = Object.freeze({
     INVITATION_KEY, QUEST_ID, KEY_STONES, hasStone, isMember, canEnchant,
-    bindInventoryDeps, bindQuestDeps, registerItems, restoreMembershipItem, syncQuest,
+    bindInventoryDeps, bindQuestDeps, registerItems, restoreMembershipItem, syncQuest, grantKeyStone,
     invitationReady, nextInvitation, onInvitationComplete, dialogueTree, onDialogueNode,
     introScene, trustScene, playIntro: () => run('intro'), playTrust: () => run('trust'),
     debugSnapshot: () => ({
