@@ -27,8 +27,8 @@ assert.equal(cfg.avengers.retreatHours, 1);
 assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
 assert.equal(omgurkuCfg.avengers, undefined, 'only the Porakaneki keep an Avenger band');
-assert.deepEqual([cfg.smallCamps.minResidents, cfg.smallCamps.maxResidents], [4, 5], 'Porakaneki ordinary hunting camp has 4-5 residents');
-assert.deepEqual([omgurkuCfg.smallCamps.minResidents, omgurkuCfg.smallCamps.maxResidents], [4, 5], 'Omgurku ordinary hunting camp has 4-5 residents');
+assert.deepEqual([cfg.smallCamps.minResidents, cfg.smallCamps.maxResidents], [2, 4], 'Porakaneki ordinary hunting camp retains its original 2–4 residents');
+assert.deepEqual([omgurkuCfg.smallCamps.minResidents, omgurkuCfg.smallCamps.maxResidents], [2, 4], 'Omgurku ordinary hunting camp retains its original 2–4 residents');
 
 let currentArea = 'town'; // Player stays off every wilderness map, so the whole hunt runs abstractly.
 let hour = 12;
@@ -130,7 +130,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     const poraResidents = pora.debugSnapshot().zones[zoneId].camps.find(camp => camp.kind === 'small'); // Single-camp baseline used for ordinary residents, excluding the separate Avenger band.
     const omgResidents = omg.debugSnapshot().zones[zoneId].camps.find(camp => camp.kind === 'small'); // Rival single-camp baseline, independent of the Porakaneki chief.
     for (const camp of [poraResidents, omgResidents]) {
-      assert(camp.residents >= 4 && camp.residents <= 5, `${zoneId} ordinary hunting population stays in the intended 4-5 range`);
+      assert(camp.residents >= 2 && camp.residents <= 4, `${zoneId} ordinary hunting population retains its original 2–4 range`);
       assert.equal(camp.hunters.filter(hunter => hunter.role === 'resident').length, camp.residents,
         `${zoneId} spawns each ordinary hunter exactly once without counting Avengers as residents`);
     }
