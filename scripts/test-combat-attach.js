@@ -233,6 +233,45 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.calls.creature.find(hit => hit.target === swarm).opts.attacker, ally, 'only same-camp ally attacks');
 }
 
+// ---- rescue priority: available fighters must beat mounts, interrupted or cooling allies ----
+{
+  const w = world();
+  const mount = w.make({ x: 401, y: 400, isCompanion: true, master: w.player, stableRole: 'mount' });
+  const prone = w.make({ x: 402, y: 400, isCompanion: true, master: w.player, stableRole: 'companion', prone: true });
+  const cooling = w.make({ x: 403, y: 400, isCompanion: true, master: w.player, stableRole: 'companion', attackCooldownT: 3 });
+  const ready = w.make({ x: 435, y: 400, isCompanion: true, master: w.player, stableRole: 'companion', def: { attackDamage: 14, attackTag: 'sharp' } });
+  const swarm = w.make({ x: 407, y: 400 });
+  for (const ally of [mount, prone, cooling, ready]) w.companionObjects.add(ally);
+  assert.equal(w.Combat.attach.isRescueAlly(w.player, mount), false, 'a ridden mount cannot rescue through the companion movement system');
+  assert.equal(w.Combat.attach.isRescueAlly(w.player, prone), false, 'a prone pet cannot launch a rescue strike');
+  assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
+  run(w, swarm, 0.15);
+  assert(!w.Combat.attach.isAttached(swarm), 'a ready pet rescues despite closer unavailable companions');
+  assert.equal(w.calls.creature[0].opts.attacker, ready, 'the ready fighter, not a mount or cooling pet, lands the rescue');
+  assert(!mount._honeyfuzzleRescueTarget && !prone._honeyfuzzleRescueTarget && !cooling._honeyfuzzleRescueTarget,
+    'ineligible companions never receive a temporary friendly-fire target');
+}
+{
+  const w = world();
+  const blocked = w.make({ x: 456, y: 400, isCompanion: true, master: w.player, stableRole: 'companion', def: { moveSpeed: 70, attackRangePx: 20 } });
+  const alternate = w.make({ x: 467, y: 400, isCompanion: true, master: w.player, stableRole: 'companion', def: { moveSpeed: 90, attackRangePx: 20 } });
+  const swarm = w.make({ x: 407, y: 400 });
+  w.companionObjects.add(blocked); w.companionObjects.add(alternate);
+  const startAlternate = alternate.x; // Measures whether the second available pet advances when the first is terrain-blocked.
+  w.deps.canOccupyAt = x => x >= 457;
+  assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
+  run(w, swarm, 0.15);
+  assert(alternate.x < startAlternate, 'second companion approaches when the first rescuer cannot move');
+  assert.equal(swarm._attachment?.host, w.player, 'swarm remains attached until a real rescue strike');
+  assert(!blocked._honeyfuzzleRescueTarget && alternate._honeyfuzzleRescueTarget === w.player,
+    'switching rescue actors clears the previous pet\'s friendly target');
+  alternate.prone = true;
+  blocked.prone = true;
+  run(w, swarm, 0.1);
+  assert(!alternate._honeyfuzzleRescueTarget && !blocked._honeyfuzzleRescueTarget,
+    'rescuer status clears when no able-bodied ally remains');
+}
+
 // ---- reusable: a second, different attach attack ------------------------------------------
 {
   const w = world();
