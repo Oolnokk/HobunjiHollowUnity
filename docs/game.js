@@ -8375,7 +8375,9 @@
               } else {
                 const companionAttackCost = def.attackStaminaCost * (companionTempo?.stamina || 1); // Same scaled amount is checked and paid, including empty Stamina edge cases.
                 const companionEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Attack selection includes one short, collision-checked lunge instead of requiring ordinary chase into melee range.
-                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina >= companionAttackCost && !isCreatureSwimming(c); // A prepared companion stops jogging before launching its burst.
+                const taxedStaminaFactor = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed affects the actual attack payment, not just the displayed base cost.
+                const readyStamina = companionAttackCost * (Number.isFinite(taxedStaminaFactor) && taxedStaminaFactor >= 0 ? taxedStaminaFactor : 1); // Keeps the AI's affordability check aligned with ResourceSystem.
+                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina + 0.0001 >= readyStamina && !isCreatureSwimming(c); // Don't begin attacks that would immediately exhaust a pet.
                 if (!companionCanCommit && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
                 if (companionCanCommit) {
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
