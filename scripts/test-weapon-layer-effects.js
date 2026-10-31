@@ -179,7 +179,7 @@ assert.deepEqual(Array.from(staffFx.clusters, cluster => cluster.pixels.length),
 assert.equal(staffFx.worldRise,true,'both Torch-Staff tips rise in world space while the staff rotates');
 assert.equal(staffFx.visualScale, 4);
 assert.equal(staffFx.anchors.length, 2, 'staff has two independent scaled groups at the original ignition sites');
-assert.deepEqual(staffFx.anchors.map(anchor => anchor.group.scale.x), [4,4]);
+assert.deepEqual(Array.from(staffFx.anchors, anchor => anchor.group.scale.x), [4,4]);
 assert(Math.abs(staffFx.anchors[0].y - .018) < 1e-6);
 assert(Math.abs(staffFx.anchors[1].y + .018) < 1e-6);
 assert.equal(staffFx.group.scale.x, 1, 'the emitter root is not scaled; only individual tip pivots are');

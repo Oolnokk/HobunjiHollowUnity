@@ -111,7 +111,7 @@ async function run() {
   const originalRig = api.attachmentRig(api.getConfig().shafts.hachutuTorchStaff,
     api.getConfig().heads.warhammer, api.settings('hachutuTorchStaff', 'warhammer')); // Actual source hierarchy, not just modified world mount coordinates.
   assert.equal(originalRig.children.length, 2, 'both mounting lines are children of the scaling rig');
-  assert.deepEqual(originalRig.children.map(mount => mount.children.map(child => child.kind)),
+  assert.deepEqual(Array.from(originalRig.children, mount => Array.from(mount.children, child => child.kind)),
     [['primitive'], ['primitive']], 'head primitives are nested under each mount, not under the shaft bitmap');
   const staffEdited = JSON.parse(JSON.stringify(api.getConfig()));
   staffEdited.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.75, scaleY: 0.65, x: 125, y: -200 }; // Intentionally large attachment-only motion.
@@ -151,7 +151,9 @@ async function run() {
     'shaft rendering only uses output-frame scale/translation, with no duplicate-rig transform on the shaft PNG');
   assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
-  assert(transformed.modularNonMetalMask instanceof Uint8Array, 'the fixed shaft still preserves its independent nonmetal recolor mask');
+  assert(ArrayBuffer.isView(transformed.modularNonMetalMask)
+    && Object.prototype.toString.call(transformed.modularNonMetalMask) === '[object Uint8Array]',
+    'the fixed shaft still preserves its independent nonmetal recolor mask');
   const sampleRelativeToShaft = canvas => {
     const frame = canvas.modularFrame; // Recover real source pixels from potentially resized/compressed canvas coordinates.
     const toOriginal = pixel => ({
@@ -189,7 +191,7 @@ async function run() {
   const oldDraft = JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
   oldDraft.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 };
   api.replace(oldDraft);
-  assert.deepEqual(api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff),
+  assert.deepEqual({ ...api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff) },
     { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 },
     'existing exported duplicateTransform drafts migrate to the canonical rig transform');
 
@@ -265,7 +267,7 @@ async function run() {
     transform:{scaleX:1.6,scaleY:1.3,x:-50,y:70}
   }];
   api.replace(extendedDraft);
-  assert.deepEqual(api.getConfig().shafts.hachutuTorchStaff.rigRegions[0].box,
+  assert.deepEqual({ ...api.getConfig().shafts.hachutuTorchStaff.rigRegions[0].box },
     extendedDraft.shafts.hachutuTorchStaff.rigRegions[0].box,
     'rectangle selections beyond the donor PNG survive validation without being clipped to 450×1204');
   // Hostile and stale imported region data must not corrupt the shaft rig.
@@ -280,7 +282,7 @@ async function run() {
   api.replace(JSON.parse(JSON.stringify(invalidRegions)));
   const sanitized=api.getConfig().shafts.hachutuTorchStaff.rigRegions;
   assert.equal(sanitized.length,1,'duplicate IDs and invalid rectangles do not enter the compositor');
-  assert.deepEqual(sanitized[0].transform,{scaleX:8,scaleY:.05,x:2400,y:-2400},
+  assert.deepEqual({ ...sanitized[0].transform },{scaleX:8,scaleY:.05,x:2400,y:-2400},
     'malformed or extreme rig values are clamped before rendering');
   api.replace(areaDraft); // Restore selected upper-region configuration for existing round-trip tests.
   const regionReload=JSON.parse(JSON.stringify(api.getConfig()));
@@ -667,7 +669,7 @@ async function run() {
   fill.stampStroke(stamped,120,120,{r:5,rX:18,rY:3,points:[[55,55],[65,55]]});
   assert.equal(stamped[55*120+80],1,'X radius visibly expands with X rig scale');
   assert.equal(stamped[65*120+60],0,'Y radius stays compact under reduced Y rig scale');
-  assert.deepEqual(api.getConfig().recipes,riggedDraft.recipes,
+  assert.deepEqual(JSON.parse(JSON.stringify(api.getConfig().recipes)),riggedDraft.recipes,
     'scaling rig must never modify shared authored recipe source data');
   // End-to-end compositing: a junction sprite must be rendered under its own
   // picture transform AND the rig parent, not left behind after head scaling.
