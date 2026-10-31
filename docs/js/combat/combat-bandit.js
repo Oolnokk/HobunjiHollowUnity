@@ -628,12 +628,14 @@
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
+    const spine = roster.spine ? window.HobunjiCharacterSpine?.bind(portrait, { spine: roster.spine }) : null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
       modelWidth, modelHeight, handAttachY: portrait.userData?.handAttachY,
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
+      spine: spine || undefined, // Wider stance and stride for a hunched enemy.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
@@ -652,7 +654,7 @@
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
-      handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes,
+      handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
       combatExpressionActive: false,
       modelWidth, modelHeight,
@@ -2728,6 +2730,7 @@
         cx: group.position.x, cz: group.position.z, floorY, baseY,
         speciesId, gender, modelHeight:poseModelHeight, rigScaleY,
         armLength, poseOrbitScale, yawRad: poseYawRad,
+        orbitDropY: window.HobunjiCharacterSpine?.orbitDropWorld(avatarRef.spine, poseModelHeight, rigScaleY) || 0, // Hunched enemies swing about their stooped shoulders.
       });
     } else {
       scaler?.scalePointAroundCentroid?.(holder.position, group.position.x, group.position.y, group.position.z, armLength, poseOrbitScale, poseYawRad);
@@ -2862,6 +2865,8 @@
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
+    const spineRule = loadoutRules?.spineFor?.(loadoutKind);
+    if (spineRule && !roster.spine) roster = { ...roster, spine: { hunch: spineRule.hunch } }; // Authored hunchback (old, skeletal, Maskbound): read by the portrait's legs, shoulders, neck and weapon orbit.
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
     if (!roster?.mountSpecies) { // Patterns are baked into the portrait before the rig stretches it, so the final body scale must be known up front (rider mounts are exempt from rig scaling).
       const earlyScale = { ...(opts.avatarRigScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...(loadoutRules?.rigScaleFor?.(loadoutKind) || {}) };
@@ -2875,6 +2880,10 @@
     if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
     const rigMultiplier = !avatarRef?.riderMount ? loadoutRules?.rigScaleMultiplierFor?.(loadoutKind) : null; // Multipliers apply last, on top of the species-derived scale and any absolute override.
     if (rigMultiplier) characterScale = applyRigScaleMultiplier(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}, rigMultiplier);
+    if (avatarRef?.spine?.neckDrop > 0 && !avatarRef.riderMount) { // The neck sinks with the spine: the same head drop an aged NPC gets (HobunjiCharacterRigScale.ageHunchFraction).
+      characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}) };
+      characterScale.offsetY = (Number(characterScale.offsetY) || 0) - avatarRef.spine.neckDrop;
+    }
     if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {

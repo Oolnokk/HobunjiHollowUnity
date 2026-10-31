@@ -27,7 +27,9 @@
         || appearance.gender
         || options.profile?.gender
         || 'male',
-      age: typeof window.HobunjiCharacterRigScale?.ageFor === 'function'
+      age: typeof window.HobunjiCharacterSpine?.hunchFor === 'function'
+        ? window.HobunjiCharacterSpine.hunchFor(options) // An explicit spine.hunch wins, else the shared age resolver below.
+        : typeof window.HobunjiCharacterRigScale?.ageFor === 'function'
         ? window.HobunjiCharacterRigScale.ageFor(options) // Shared resolver: explicit age, then the NPC's authored appearance.aging.hunch.
         : (options.age ?? options.profile?.age ?? options.npcRecord?.age ?? 0),
     };
@@ -60,6 +62,7 @@
       );
 
       root.userData ||= {};
+      window.HobunjiCharacterSpine?.bind(root, { age: identity.age }); // Shoulder aim and the weapon orbit read the same hunch the neck just dropped by.
       root.userData.hobunjiCharacterRigHeadRuntime = {
         applied: !!applied,
         species: identity.speciesId,

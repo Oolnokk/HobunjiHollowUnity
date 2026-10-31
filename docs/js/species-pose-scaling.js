@@ -241,6 +241,12 @@
     return point;
   }
 
+  // World units the orbit centre is lowered by a hunched spine (options.orbitDropY, from HobunjiCharacterSpine.orbitDropWorld); 0 when upright.
+  function orbitDropY(options) {
+    const drop = Number(options?.orbitDropY);
+    return Number.isFinite(drop) && drop > 0 ? drop : 0;
+  }
+
   // Applies the complete weapon-position mapping. baseY is the UNSCALED
   // floor-relative hand/tool anchor produced by PNGPlaneAvatar. That anchor
   // already includes portrait scale, vertical placement, and real opaque-art
@@ -261,7 +267,7 @@
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, options.yawRad);
-    const nextY = scaledBaseY + (y - baseY) * metrics.heightRatio * axes.y;
+    const nextY = scaledBaseY - orbitDropY(options) + (y - baseY) * metrics.heightRatio * axes.y; // A hunched spine (HobunjiCharacterSpine) lowers the whole orbit centre, not just the hand.
     if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
     else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;
@@ -280,7 +286,7 @@
     if (!(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0) || !(metrics.heightRatio > 0)) return point;
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const [dx, dz] = scaleHorizontal(x - cx, z - cz, 1 / axes.x, 1 / axes.z, options.yawRad);
-    const nextY = baseY + (y - scaledBaseY) / (metrics.heightRatio * axes.y);
+    const nextY = baseY + (y - scaledBaseY + orbitDropY(options)) / (metrics.heightRatio * axes.y);
     if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
     else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;

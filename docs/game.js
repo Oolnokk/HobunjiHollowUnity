@@ -12356,6 +12356,7 @@
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
+          spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
         }) || null;
         // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
         // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).

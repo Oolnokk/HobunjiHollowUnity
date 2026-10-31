@@ -170,6 +170,9 @@
           "dye:CLOTH:charcoal": 1,
           "dye:CLOTH:cream": 1
         }
+      },
+      "spine": {
+        "hunch": 0.3
       }
     },
     "maskbound:bulwark": {
@@ -341,6 +344,9 @@
           "dye:CLOTH:charcoal": 1,
           "dye:CLOTH:cream": 1
         }
+      },
+      "spine": {
+        "hunch": 0.5
       }
     },
     "maskbound:reacher": {
@@ -512,6 +518,9 @@
           "dye:CLOTH:charcoal": 1,
           "dye:CLOTH:cream": 1
         }
+      },
+      "spine": {
+        "hunch": 0.65
       }
     },
     "lich:tothal:nanahi": {
@@ -549,6 +558,16 @@
       "rigScaleMultiplier": {
         "x": 1.15,
         "y": 1.15
+      }
+    },
+    "mao-ao-skeleton": {
+      "spine": {
+        "hunch": 0.45
+      }
+    },
+    "harlyao-skeleton": {
+      "spine": {
+        "hunch": 0.45
       }
     }
   }

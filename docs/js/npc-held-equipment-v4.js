@@ -169,7 +169,8 @@
     // rigScaleY=1 below avoids applying that body scale twice; the world-space
     // authored delta already carries the target rigScaleY once through the hierarchy.
     const height = scaler?.heightMetrics?.(speciesId, gender, modelHeight, 1) || null;
-    const needsPoseMap = Math.abs(orbitAxes.x - 1) > 1e-9 || Math.abs(orbitAxes.y - 1) > 1e-9 || Math.abs(orbitAxes.z - 1) > 1e-9 || Math.abs((height?.heightRatio ?? 1) - 1) > 1e-9;
+    const spine = avatar?.userData?.hobunjiSpine || null; // Hunched elders swing about lowered shoulders (js/character-spine.js).
+    const needsPoseMap = !!spine || Math.abs(orbitAxes.x - 1) > 1e-9 || Math.abs(orbitAxes.y - 1) > 1e-9 || Math.abs(orbitAxes.z - 1) > 1e-9 || Math.abs((height?.heightRatio ?? 1) - 1) > 1e-9;
     if (sourceParent === holderParent && !needsPoseMap) {
       holder.position.copy(p); // Preserve the exact identity path without unnecessary world/local round-trips.
       holder.quaternion.copy(q);
@@ -194,6 +195,7 @@
             cx: centroid.x, cz: centroid.z, floorY: floorWorld.y, baseY: baseWorld.y,
             speciesId, gender, modelHeight, rigScaleY: 1,
             armLength, poseOrbitScale, yawRad: poseYawRad,
+            orbitDropY: spine ? window.HobunjiCharacterSpine?.orbitDropWorld(spine, modelHeight, sourceParent.localToWorld(new three.Vector3(0, 1, 0)).y - floorWorld.y) || 0 : 0, // sourceParent already carries the body scale, so measure its world Y unit.
           });
         } else {
           scaler?.scalePointAroundCentroid?.(worldP, centroid.x, centroid.y, centroid.z, armLength, poseOrbitScale, poseYawRad);

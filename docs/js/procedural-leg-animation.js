@@ -834,8 +834,12 @@
 
     const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
     const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
-    const initialIdleLeftX = -stanceWidthFraction * modelWidth * 0.5;
-    const initialIdleRightX = stanceWidthFraction * modelWidth * 0.5;
+    // Hunched characters (js/character-spine.js) plant their feet farther apart and take longer strides to carry the stooped upper body. Fixed per avatar.
+    const spineGait = window.HobunjiCharacterSpine?.resolve({ spine: options.spine }) || null;
+    const spineStance = spineGait?.stanceScale > 1 ? spineGait.stanceScale : 1;
+    const spineStride = spineGait?.strideScale > 1 ? spineGait.strideScale : 1;
+    const initialIdleLeftX = -stanceWidthFraction * modelWidth * 0.5 * spineStance;
+    const initialIdleRightX = stanceWidthFraction * modelWidth * 0.5 * spineStance;
 
     // Invisible hip -> thigh -> calf chain per leg (see docs/js/leg-bones.js)
     // — each leg gets its OWN hip anchor, at that leg's own idle stance X
@@ -1235,8 +1239,8 @@
         // both legs by the same shift so the posterior attach point's X ends
         // up exactly midway between them rather than inheriting that skew.
         const recenterShift = posteriorX - (scannedLeftX + scannedRightX) / 2;
-        state.idleLeftX = scannedLeftX + recenterShift;
-        state.idleRightX = scannedRightX + recenterShift;
+        state.idleLeftX = posteriorX + (scannedLeftX + recenterShift - posteriorX) * spineStance; // Widen each foot's offset from the centreline (spineStance is 1 for an upright character).
+        state.idleRightX = posteriorX + (scannedRightX + recenterShift - posteriorX) * spineStance;
         state.anatomyRevision++;
         syncHipX('left');
         syncHipX('right');
@@ -1561,7 +1565,7 @@
         : isGaiting ? 30 * Math.PI / 180 * state.runBlend * Math.min(1, Math.sqrt(speedRatio)) || 0 : 0; // Existing torso lean composer consumes this for both players and NPCs.
       const stanceFraction = lurch ? lurch.stance : STANCE_FRACTION + (0.38 - STANCE_FRACTION) * state.runBlend; // Lurching feet keep one planted longer than an ordinary runner.
       const strideCurve = 0.85 + 0.45 * Math.sqrt(speedRatio); // Walking reach stays proportional to leg anatomy instead of stretching the bones to sprite-height strides.
-      const fullStride = gaitLegLength * strideCurve * (lurch ? 0.82 : 1 + state.runBlend * 0.5); // Shuffling puppets take smaller steps for the same movement speed.
+      const fullStride = gaitLegLength * strideCurve * spineStride * (lurch ? 0.82 : 1 + state.runBlend * 0.5); // Shuffling puppets take smaller steps for the same movement speed.
       const strideLength = fullStride * state.gaitStrength;
       const baseCadenceHz = isGaiting && fullStride > 0.001
         ? Math.max(0.55, Math.min(3.2, (speed * stanceFraction) / Math.max(0.001, strideLength)))

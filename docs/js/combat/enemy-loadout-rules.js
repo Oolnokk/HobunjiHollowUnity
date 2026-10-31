@@ -105,6 +105,15 @@
         }
         if (!Object.keys(rule.rigScale).length) delete rule.rigScale;
       }
+      if (rule.spine != null) {
+        // Static hunchback (js/character-spine.js): 0 = upright, 1 = fully stooped. Lowers the neck, shoulders and attack-orbit centre and widens the walk.
+        if (typeof rule.spine !== 'object' || Array.isArray(rule.spine)) throw Error(kind + '.spine: expected { hunch }');
+        for (const [field, value] of Object.entries(rule.spine)) {
+          if (field !== 'hunch') throw Error(kind + '.spine: unknown field ' + field);
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw Error(kind + '.spine.hunch must be between 0 and 1');
+        }
+        if (!Object.keys(rule.spine).length) delete rule.spine;
+      }
       if (rule.bossSettings != null) {
         if (!kind.startsWith('lich:') || kind.split(':').length !== 3 || typeof rule.bossSettings !== 'object' || Array.isArray(rule.bossSettings))
           throw Error(kind + '.bossSettings: only named liches may use numeric boss tuning');
@@ -306,6 +315,11 @@
     const scale = ruleFor(kind).rigScale; // Inherits the base Ghoul rule for special ghoul variants.
     return scale && Object.keys(scale).length ? { ...scale } : null;
   }
+  // Optional static hunchback for one enemy kind: { hunch } when the rule sets a positive one, else null.
+  function spineFor(kind) {
+    const hunch = Number(ruleFor(kind).spine?.hunch);
+    return hunch > 0 ? { hunch: Math.min(1, hunch) } : null;
+  }
   const ruleFor = (kind) => {
     const own = documentData.rules[kind];
     if (own) return own.enabled === false ? {} : own;
@@ -484,6 +498,7 @@
     ruleFor,
     rigScaleFor,
     rigScaleMultiplierFor,
+    spineFor,
     rigScaleRanges,
     headGates,
     patternSlots,

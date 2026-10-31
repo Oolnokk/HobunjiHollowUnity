@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261031h61cad87';
+import { EnemyPreview } from './preview.js?v=20261031h1c61eb5';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -616,6 +616,22 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
+  const spineLabel = el('label', 'chance', 'Spine hunch (%)'); // Static hunchback: lowers neck, shoulders and attack-orbit centre, widens stance and stride (js/character-spine.js).
+  const spineInput = el('input');
+  spineInput.type = 'number';
+  spineInput.min = '0';
+  spineInput.max = '100';
+  spineInput.step = '5';
+  spineInput.value = String(Math.round((Number(rule().spine?.hunch) || 0) * 100));
+  spineInput.onchange = () => {
+    mutate((r) => {
+      const hunch = Math.min(1, Math.max(0, (Number(spineInput.value) || 0) / 100));
+      if (hunch > 0) r.spine = { hunch };
+      else delete r.spine;
+    });
+  };
+  spineLabel.append(spineInput, el('span', 'muted', ' 0 = upright, 100 = fully stooped; saved with the spawn rules and used in game'));
+  box.append(spineLabel);
   const gate = el('label', 'chance', 'Head gate');
   const gateSelect = el('select');
   for (const [value, text] of [

@@ -208,7 +208,7 @@
 
     function shoulderInParent(side) {
       const profileShoulder = profileShoulderInParent(side); // Attachment-rig coordinates already share the floor-relative hand-parent space.
-      if (profileShoulder) return shoulderParent.copy(profileShoulder);
+      if (profileShoulder) return spineLowered(shoulderParent.copy(profileShoulder));
       const source = shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
@@ -217,7 +217,14 @@
       shoulderParent.copy(shoulderWorld);
       parent.updateWorldMatrix?.(true, false);
       parent.worldToLocal(shoulderParent);
-      return shoulderParent;
+      return spineLowered(shoulderParent);
+    }
+
+    // A hunched spine (js/character-spine.js, bound on the avatar root) sinks both shoulders by a fraction of the portrait's own height, in the same parent-local frame the point is already in.
+    function spineLowered(point) {
+      const drop = avatarRoot.userData?.hobunjiSpine?.shoulderDrop;
+      if (drop > 0) point.y -= drop * modelHeight;
+      return point;
     }
 
     rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.

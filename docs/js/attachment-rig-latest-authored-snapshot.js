@@ -22,7 +22,7 @@
     new URL('maskbound-guardian-species-runtime.js?v=20261029maskSlots2', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261007h0c4d7d9', base).href,
-    new URL('character-rig-scale-avatar-runtime.js?v=20261007hde9f0b3', base).href,
+    new URL('character-rig-scale-avatar-runtime.js?v=20261031hbf28f8b', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
     new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
