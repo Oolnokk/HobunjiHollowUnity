@@ -533,11 +533,20 @@
     const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
     return { left: rect.left + (rect.width - canvas.width * scale) / 2, top: rect.top + (rect.height - canvas.height * scale) / 2, scale };
   }
+  function bridgeVisual(point) {
+    const p = api.duplicatePoint({ x: point[0], y: point[1] }, api.shaftRigTransform(chosenShaft()));
+    return [p.x, p.y]; // World/composed coordinates of every bridge, junction, recipe and mask point.
+  }
+  function bridgeLocal(point) {
+    const rig = api.shaftRigTransform(chosenShaft()); // Inverse parent, so existing saved authoring strokes remain editable and unmodified.
+    return [(point[0] - 225 - rig.x) / rig.scaleX + 225, (point[1] - 602 - rig.y) / rig.scaleY + 602];
+  }
   function logicalPoint(event) {
     const canvas = byId('preview'), box = contentRect(canvas), frame = bridgeView.frame;
     const bx = (event.clientX - box.left) / box.scale, by = (event.clientY - box.top) / box.scale; // Bitmap pixels.
-    return [Math.round((frame.left + bx * frame.width / canvas.width) * 2) / 2,
-      Math.round((frame.top + by * frame.height / canvas.height) * 2) / 2];
+    const local = bridgeLocal([frame.left + bx * frame.width / canvas.width,
+      frame.top + by * frame.height / canvas.height]);
+    return local.map(v => Math.round(v * 2) / 2); // Store gestures in rig-local coordinates, just like the source head/mount fittings.
   }
   function drawBridgeOverlay() {
     if (!bridgeView) return;
@@ -548,19 +557,27 @@
     else ctx.drawImage(bridgeView.composed, 0, 0);
     ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = '#000';
     for (const stroke of pendingStrokes) {
-      const pts = stroke.points.map(([x, y]) => [(x - frame.left) * sx, (y - frame.top) * sy]);
-      ctx.lineWidth = stroke.r * 2 * sx;
+      const pts = stroke.points.map(point => {
+        const [x,y] = bridgeVisual(point); return [(x - frame.left) * sx, (y - frame.top) * sy];
+      });
+      const rig = api.shaftRigTransform(chosenShaft());
+      ctx.lineWidth = stroke.r * 2 * sx * Math.sqrt(rig.scaleX * rig.scaleY);
       ctx.beginPath(); ctx.moveTo(...pts[0]);
       for (const pt of pts.slice(1)) ctx.lineTo(...pt);
-      if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], stroke.r * sx, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
+      if (pts.length === 1) { ctx.beginPath(); ctx.ellipse(pts[0][0], pts[0][1],
+        stroke.r * sx * rig.scaleX, stroke.r * sy * rig.scaleY, 0, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
     }
     drawRecipeBoxes(ctx, sx, sy, frame);
     if (bridgeHover && byId('pair-bridge-on').checked && byId('pair-brush-mode').value === 'junction') {
-      ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy); // Ghost of the piece, in source pixels.
+      ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+      const t = api.attachmentRig(chosenShaft()).parent;
+      ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f); // Ghost junction has the same parent scale as the final composed PNG.
       window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
     } else if (bridgeHover && byId('pair-bridge-on').checked) {
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
-      const hx = (bridgeHover[0] - frame.left) * sx, hy = (bridgeHover[1] - frame.top) * sy, r = bridgeRadius() * sx;
+      const [wx, wy] = bridgeVisual(bridgeHover);
+      const hx = (wx - frame.left) * sx, hy = (wy - frame.top) * sy;
+      const rig = api.shaftRigTransform(chosenShaft()), r = bridgeRadius() * sx * Math.sqrt(rig.scaleX * rig.scaleY);
       if (byId('pair-brush-mode').value === 'plow') { // The blade: 2r long across the drag direction.
         const depth = Math.max(2, Math.round(bridgeRadius() / 4)) * sx;
         ctx.translate(hx, hy); ctx.rotate(plowAngle); ctx.strokeRect(-depth / 2, -r, depth, 2 * r);
@@ -584,8 +601,10 @@
       const stroke = mode === 'smudge' ? { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] }
         : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0,
           ...(mode === 'clean' ? cleanSettings('pair') : {}) };
+      const rig = api.shaftRigTransform(chosenShaft()); // Live smudge radius follows the same area scaling as replayed operations.
       bridgePaint = { pointer: event.pointerId, stroke, smudge: { image, stepper: window.ModularWeaponBridgeFill.toolStepper(
-        image.data, image.width, image.height, stroke, { scale: image.width / frame.width, reference: canvas.modularReference || null }) } };
+        image.data, image.width, image.height, stroke, { scale: image.width / frame.width * Math.sqrt(rig.scaleX * rig.scaleY),
+          reference: canvas.modularReference || null }) } };
     } else {
       const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
       pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
@@ -636,7 +655,10 @@
   }
   function smudgeLive(from, to, paint = bridgePaint) {
     const { image, stepper } = paint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
-    const toPixel = ([x, y]) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height });
+    const toPixel = point => {
+      const [x, y] = bridgeVisual(point);
+      return { x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height };
+    };
     stepper.step(toPixel(from), toPixel(to));
   }
   function applyStrokes(strokes, label = '') {
@@ -645,9 +667,14 @@
     const canvas = bridgeView.composed, frame = bridgeView.frame, fill = window.ModularWeaponBridgeFill;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
-    const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
+    const toPixel = (x, y) => {
+      const [wx,wy] = bridgeVisual([x,y]); return { x: (wx - frame.left) * sx, y: (wy - frame.top) * sy };
+    };
+    const rig = api.shaftRigTransform(chosenShaft());
     const fills = strokes.filter(stroke => stroke.points && !stroke.smudge && !stroke.tool && !stroke.junction); // Only bridge fills can fail.
-    for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+    for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, {
+      ...stroke, rX: stroke.r * rig.scaleX, rY: stroke.r * rig.scaleY,
+    }, toPixel, sx);
     if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
         { outlineThickness: 0, shadeWidth: 0 });
@@ -684,7 +711,10 @@
   function drawRecipeBoxes(ctx, sx, sy, frame) {
     if (byId('pair-brush-mode').value !== 'recipe' && !recipeDraft && !placedBoxes().length) return;
     const showing = byId('pair-brush-mode').value === 'recipe', scale = contentRect(byId('preview')).scale || 1, hs = 5 / scale; // Handle half-size in bitmap px.
-    const rect = box => [(box.x0 - frame.left) * sx, (box.y0 - frame.top) * sy, (box.x1 - box.x0) * sx, (box.y1 - box.y0) * sy];
+    const rect = box => {
+      const [x0,y0] = bridgeVisual([box.x0,box.y0]), [x1,y1] = bridgeVisual([box.x1,box.y1]);
+      return [(x0 - frame.left) * sx, (y0 - frame.top) * sy, (x1-x0)*sx, (y1-y0)*sy];
+    };
     ctx.save(); ctx.lineWidth = 1.5 / scale; ctx.font = (11 / scale) + 'px system-ui'; ctx.textBaseline = 'top';
     const boxes = placedBoxes().map(({ op, index }) => ({ box: op.box, label: op.recipe, selected: index === recipeSel, color: '#75e9ed' }));
     if (recipeDraft) boxes.push({ box: recipeDraft, label: 'new box', selected: recipeSel < 0, color: '#ffce64' });
@@ -692,7 +722,7 @@
       if (!showing && !entry.selected && entry.color !== '#ffce64') continue;
       ctx.strokeStyle = entry.selected ? '#fff' : entry.color; ctx.fillStyle = entry.color; ctx.setLineDash(entry.selected ? [] : [6 / scale, 4 / scale]);
       const [x, y, w, h] = rect(entry.box); ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
-      if (entry.selected && showing) { ctx.setLineDash([]); ctx.fillStyle = '#fff'; for (const [, , hx, hy] of boxHandles(entry.box)) ctx.fillRect((hx - frame.left) * sx - hs, (hy - frame.top) * sy - hs, 2 * hs, 2 * hs); }
+      if (entry.selected && showing) { ctx.setLineDash([]); ctx.fillStyle = '#fff'; for (const [, , hx, hy] of boxHandles(entry.box)) { const [wx,wy] = bridgeVisual([hx,hy]); ctx.fillRect((wx - frame.left) * sx - hs, (wy - frame.top) * sy - hs, 2 * hs, 2 * hs); } }
     }
     ctx.restore();
   }
@@ -755,7 +785,9 @@
   // The haft's mounts that a head attaches to, as frames { x, y, ax, ay, len } (midpoint, unit direction, length),
   // ordered along the haft (rank 0 = the topmost). A recipe's box is anchored to one of these.
   function mountFrames(shaftKey, headKey) {
-    const list = api.matchingMounts(data.shafts[shaftKey], data.heads[headKey]).map(mount => {
+    const list = api.attachmentRig(data.shafts[shaftKey], data.heads[headKey],
+      api.settings(shaftKey, headKey)).children.map(entry => entry.localMount).map(mount => {
+      // Recipes remain local to the same mounting rig as their source primitive, not to the already transformed image.
       const dx = mount.end.x - mount.start.x, dy = mount.end.y - mount.start.y, len = Math.hypot(dx, dy) || 1;
       return { x: (mount.start.x + mount.end.x) / 2, y: (mount.start.y + mount.end.y) / 2, ax: dx / len, ay: dy / len, len };
     }).sort((u, v) => u.y - v.y);
