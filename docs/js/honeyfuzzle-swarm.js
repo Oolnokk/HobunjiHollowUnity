@@ -384,6 +384,9 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         const targetSpread = Number.isFinite(spreadScale) && spreadScale > 0 ? spreadScale : 1; // Attached Swarm uses a dense cloud; ordinary flight uses the authored normal spread.
         const spreadCatchup = targetSpread < smoothSpread ? 16 : 9; // Tighten rapidly on contact, then unfurl into normal flight after detaching.
         smoothSpread += (targetSpread - smoothSpread) * Math.min(1, dt * spreadCatchup);
+        // Contract the actual front/back layer separation on every frame, even between 8 Hz bird-pose refreshes.
+        sideMeshes[0].position.z = -depthOffset * smoothSpread;
+        sideMeshes[1].position.z = depthOffset * smoothSpread;
         material.userData.honeyfuzzle.uWingPhase.value = ((Math.max(0, now) * 0.001 * FLUTTER_HZ) % 1) * TAU; // Bounded phase prevents float-precision loss after long browser sessions.
         if (now >= lastPoseNow && now - lastPoseNow < POSE_UPDATE_MS) return; // Shared wing-phase uniform continues animating each rendered frame.
         lastPoseNow = now;
@@ -396,7 +399,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
             arr[o] = c * pose.flip; arr[o + 1] = si * pose.flip; arr[o + 2] = 0; arr[o + 3] = 0;
             arr[o + 4] = -si; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;
             arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = pose.scale; arr[o + 11] = 0;
-            arr[o + 12] = pose.x; arr[o + 13] = pose.y; arr[o + 14] = (i - members / 2) * zStep; arr[o + 15] = 1;
+            arr[o + 12] = pose.x; arr[o + 13] = pose.y; arr[o + 14] = (i - members / 2) * zStep * smoothSpread; arr[o + 15] = 1; // Per-bird depth scatter tightens with the rest of the cloud.
           }
           layer.instanceMatrix.needsUpdate = true;
         }
