@@ -21,6 +21,8 @@ const files = [
   'js/furniture-light-registry.js?v=20261028a',
   'js/tool-metal-recolor.js?v=20261028a',
   'js/weapon-layer-effects.js?v=20261030flailmerged2', // Marker-pixel scanning shared with the flail fuel sprites (the guardians' flame headband emitters).
+  'config/weapon-sprite-assemblies.js?v=20261030worldrise1', // Layered weapon recipes (the Torch-Flail chain and brazier, the Torch-Staff's marker recolor and fire), shared with the game.
+  'js/weapon-sprite-assemblies.js?v=20261030regions7', // Their runtime: held weapons get the same layers, recolor and fire as in the game.
   'js/motif-store.js?v=20261026templepatterns1', // The shared Pattern editor and libraries, so clothing and weapon patterns are authored with the same UI as the game and other tools.
   'js/pattern-library.js?v=20261026hPlayerDefaults5',
   'js/repo-pattern-library.js?v=20261030lichPatterns3',
@@ -78,7 +80,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261030lichSource3',
+  'tools/enemy-loadout-editor/source-data.js?v=20261031h3fcdd3d',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -251,6 +253,11 @@ export class EnemyPreview {
       this.weaponTextures,
       d.heldObjectRenderOrder,
       (root) => window.PngPlaneOutlineOccluder.markPngPlane(root),
+      (itemKey) => { // The same recolor the plain weapon sprite gets below, for the assembly runtime's marker/fire pass.
+        const metal = this.items[itemKey]?.metalKey && this.data.metals[this.items[itemKey].metalKey];
+        return metal ? { targetHex: metal.hex, verdigrisHex: metal.verdigrisHex || '#3FAF9F', oxidationAmount: 0 } : null;
+      },
+      () => 0, // Preview weapons are unmastered.
     );
     this.dependencies = {
       rnd: () => this.random(),
@@ -864,6 +871,7 @@ export class EnemyPreview {
       if (this.actor) this.update(dt);
     }
     this.controls.update();
+    window.HobunjiWeaponSpriteAssemblies?.tick?.(this.paused ? 0 : dt); // The game ticks this from its frame scheduler's pre-render phase.
     this.headUndo.length = 0;
     window.HobunjiDrunkProneCompositionBridge.prepareBanditSwayForRender(
       this.headUndo,
