@@ -421,16 +421,17 @@
   }
 
   // Stamps a filled disc into a brush mask, interpolating from the previous point so fast strokes stay solid.
-  function stampLine(mask, width, height, from, to, radius, value = 1) {
-    const r = Math.max(0.5, radius), r2 = r * r;
+  function stampLine(mask, width, height, from, to, radius, value = 1, radiusY = radius) {
+    const r = Math.max(0.5, radius), ry = Math.max(0.5, radiusY); // X/Y radii allow an entire bridge stroke to inherit nonuniform parent rig scaling.
+    const r2 = r * r;
     const dist = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
-    const steps = Math.max(1, Math.ceil(dist / Math.max(1, r / 3)));
+    const steps = Math.max(1, Math.ceil(dist / Math.max(1, Math.min(r, ry) / 3)));
     for (let s = from ? 1 : 0; s <= steps; s++) {
       const t = from ? s / steps : 1;
       const cx = from ? from.x + (to.x - from.x) * t : to.x, cy = from ? from.y + (to.y - from.y) * t : to.y;
-      const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(height - 1, Math.ceil(cy + r));
+      const y0 = Math.max(0, Math.floor(cy - ry)), y1 = Math.min(height - 1, Math.ceil(cy + ry));
       for (let y = y0; y <= y1; y++) {
-        const dy = y + 0.5 - cy, span = r2 - dy * dy;
+        const dy = y + 0.5 - cy, span = r2 * (1 - (dy * dy) / (ry * ry));
         if (span < 0) continue;
         const half = Math.sqrt(span);
         const x0 = Math.max(0, Math.ceil(cx - half - 0.5)), x1 = Math.min(width - 1, Math.floor(cx + half - 0.5));
@@ -451,7 +452,8 @@
   // Stamps one saved stroke: an open polyline of discs, or (closed) a filled polygon with a disc-wide border.
   // `toPixel` maps stored coordinates into the mask and `scale` converts the radius the same way.
   function stampStroke(mask, width, height, stroke, toPixel = (x, y) => ({ x, y }), scale = 1) {
-    const pts = stroke.points.map(([x, y]) => toPixel(x, y)), r = stroke.r * scale;
+    const pts = stroke.points.map(([x, y]) => toPixel(x, y)), r = (stroke.rX || stroke.r) * scale;
+    const ry = (stroke.rY || stroke.r) * scale; // Elliptical stamping exactly follows separate X and Y rig scales.
     if (stroke.closed && pts.length >= 3) {
       const top = Math.max(0, Math.floor(Math.min(...pts.map(p => p.y)))), bottom = Math.min(height - 1, Math.ceil(Math.max(...pts.map(p => p.y))));
       for (let y = top; y <= bottom; y++) { // Even-odd scanline fill at pixel centres.
@@ -466,11 +468,11 @@
           if (x1 >= x0) mask.fill(1, y * width + x0, y * width + x1 + 1);
         }
       }
-      for (let i = 0; i < pts.length; i++) stampLine(mask, width, height, pts[i], pts[(i + 1) % pts.length], r);
+      for (let i = 0; i < pts.length; i++) stampLine(mask, width, height, pts[i], pts[(i + 1) % pts.length], r, 1, ry);
       return;
     }
     let previous = null;
-    for (const point of pts) { stampLine(mask, width, height, previous, point, r); previous = point; }
+    for (const point of pts) { stampLine(mask, width, height, previous, point, r, 1, ry); previous = point; }
   }
 
   // Finds visible pieces of the sprite that don't touch (a head floating off its haft) and proposes one straight
