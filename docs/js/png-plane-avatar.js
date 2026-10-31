@@ -516,6 +516,9 @@
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
   // therefore deformed by one coherent rig instead of becoming disconnected
   // alpha-shaped islands.
+  // Spine-bone skin weight at plane-local height y (js/character-spine.js). Every skinned portrait carries the bone, so a hunch can be applied after build.
+  const spineWeightAt = (y, neckY, modelHeight) => window.HobunjiCharacterSpine?.weightAt?.(y, neckY, modelHeight) || 0;
+
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
     const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
@@ -557,8 +560,9 @@
       const headScaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight);
       const headWeight = Math.max(turnWeight, headScaleWeight);
       const headRotateWeight = headWeight - headScaleWeight;
-      skinIndices.push(0, 1, 2, 0);
-      skinWeights.push(1 - headWeight, headRotateWeight, headScaleWeight, 0);
+      const spineWeight = (1 - headWeight) * spineWeightAt(y, neckLocal.y, modelHeight); // The spine bone (index 3) takes this share of the body weight; 0 until HobunjiCharacterSpine loads.
+      skinIndices.push(0, 1, 2, 3);
+      skinWeights.push((1 - headWeight) - spineWeight, headRotateWeight, headScaleWeight, spineWeight);
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -650,7 +654,10 @@
     const neckJoint = new THREE.Bone();
     neckJoint.name = `${config.name}_neck_bone`;
     neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
-    torsoBone.add(neckJoint);
+    const spineJoint = new THREE.Bone(); // Hunchback bone (js/character-spine.js): rest pose is identity; a hunch translates it down, and the neck/head bones below inherit that.
+    spineJoint.name = `${config.name}_spine_bone`;
+    torsoBone.add(spineJoint);
+    spineJoint.add(neckJoint);
     // Child of neckJoint, not a torsoBone sibling: it inherits head-turn
     // rotation for free, while its OWN local scale/position (untouched by
     // rotation) is what HobunjiCharacterRigScale's head scale/offset drives —
@@ -668,14 +675,14 @@
     skinnedPlane.renderOrder = 2;
     skinnedPlane.frustumCulled = false;
     skinnedPlane.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckJoint, headScaleJoint]);
+    const skeleton = new THREE.Skeleton([torsoBone, neckJoint, headScaleJoint, spineJoint]);
     skinnedPlane.bind(skeleton);
 
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
     return {
-      group, neckJoint, torsoBone, headScaleJoint, skinnedPlane, skeleton, neckLocal, pivotPx,
+      group, neckJoint, torsoBone, headScaleJoint, spineJoint, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: gatedHeadBounds,
       detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
       planeBoundsPx: geometry.userData.planeBoundsPx,
@@ -763,7 +770,10 @@
     const neckBone = new THREE.Bone();
     neckBone.name = `${plane.name}_neck_bone`;
     neckBone.position.set(pivotLocalX, pivotLocalY, 0);
-    torsoBone.add(neckBone);
+    const spineBone = new THREE.Bone(); // Hunchback bone between torso and neck; see buildSkinnedSinglePlaneAssembly.
+    spineBone.name = `${plane.name}_spine_bone`;
+    torsoBone.add(spineBone);
+    spineBone.add(neckBone);
     const headScaleBone = new THREE.Bone();
     headScaleBone.name = `${plane.name}_head_scale_bone`;
     neckBone.add(headScaleBone);
@@ -779,9 +789,9 @@
     skinned.userData = { ...plane.userData };
     skinned.onBeforeRender = plane.onBeforeRender;
     skinned.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone]);
+    const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone, spineBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone };
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, spineBone };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1102,8 +1112,9 @@
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
       ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
     headWeight = Math.max(headWeight, headScaleWeight);
-    for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
-      const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
+    const spineWeight = skeleton.bones.length >= 4 ? (1 - headWeight) * spineWeightAt(localPoint.y, neckY, modelHeight) : 0; // Same spine share the geometry was skinned with.
+    for (let i = 0; i < Math.min(4, skeleton.bones.length); i++) {
+      const weight = i === 0 ? 1 - headWeight - spineWeight : i === 1 ? headWeight - headScaleWeight : i === 2 ? headScaleWeight : spineWeight; // Same torso/neck/head/spine weights without a per-query array.
       if (!weight) continue;
       if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
         boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
@@ -1280,7 +1291,7 @@
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
       ? {
-          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, headScaleJoint: skinnedRig.headScaleJoint,
+          available: true, neckJoint: skinnedRig.neckJoint, torsoBone: skinnedRig.torsoBone, headScaleJoint: skinnedRig.headScaleJoint, spineJoint: skinnedRig.spineJoint,
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,

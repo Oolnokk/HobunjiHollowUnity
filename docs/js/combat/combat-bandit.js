@@ -629,6 +629,9 @@
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
     const spine = roster.spine ? window.HobunjiCharacterSpine?.bind(portrait, { spine: roster.spine }) : null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
+    if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
+      window.HobunjiCharacterSpine.applyToRig({ spineJoint: { front: frontNeckSkin.spineBone, back: backNeckSkin?.spineBone }, neckLocal: { y: frontNeckSkin.neckBone.position.y } }, spine, modelHeight);
+    }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
       bodyColors: profile?.bodyColors || roster.appearance.bodyColors,
@@ -2880,7 +2883,7 @@
     if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
     const rigMultiplier = !avatarRef?.riderMount ? loadoutRules?.rigScaleMultiplierFor?.(loadoutKind) : null; // Multipliers apply last, on top of the species-derived scale and any absolute override.
     if (rigMultiplier) characterScale = applyRigScaleMultiplier(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}, rigMultiplier);
-    if (avatarRef?.spine?.neckDrop > 0 && !avatarRef.riderMount) { // The neck sinks with the spine: the same head drop an aged NPC gets (HobunjiCharacterRigScale.ageHunchFraction).
+    if (avatarRef?.spine?.neckDrop > 0 && !avatarRef.riderMount) { // The spine bone carries the head down by the shoulders' share; the head bone supplies the rest so the total matches an aged NPC (HobunjiCharacterRigScale.ageHunchFraction).
       characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}) };
       characterScale.offsetY = (Number(characterScale.offsetY) || 0) - avatarRef.spine.neckDrop;
     }

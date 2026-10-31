@@ -220,11 +220,22 @@
       return spineLowered(shoulderParent);
     }
 
-    // A hunched spine (js/character-spine.js, bound on the avatar root) sinks both shoulders by a fraction of the portrait's own height, in the same parent-local frame the point is already in.
+    // Shoulder anchors keep their 2D portrait coordinates; a hunched spine (js/character-spine.js, bound on the avatar root) carries
+    // them through the same deformation the portrait skin gets: the point is taken into the plane's frame, lowered by the spine's
+    // follow at its own height, and brought back to the parent frame.
+    const spineScratch = new THREE.Vector3();
     function spineLowered(point) {
-      const drop = avatarRoot.userData?.hobunjiSpine?.shoulderDrop;
-      if (drop > 0) point.y -= drop * modelHeight;
-      return point;
+      const spine = avatarRoot.userData?.hobunjiSpine;
+      if (!(spine?.dropLocal > 0)) return point;
+      parent.updateWorldMatrix?.(true, false);
+      avatarRoot.updateWorldMatrix?.(true, false);
+      spineScratch.copy(point);
+      parent.localToWorld(spineScratch);
+      avatarRoot.worldToLocal(spineScratch);
+      spineScratch.y -= window.HobunjiCharacterSpine.deformDrop(spine, spineScratch.y - assemblyY);
+      avatarRoot.localToWorld(spineScratch);
+      parent.worldToLocal(spineScratch);
+      return point.copy(spineScratch);
     }
 
     rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.

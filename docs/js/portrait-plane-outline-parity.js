@@ -90,8 +90,9 @@
       const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
         ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
       headWeight = Math.max(headWeight, headScaleWeight);
-      for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
-        const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
+      const spineWeight = skeleton.bones.length >= 4 ? (1 - headWeight) * (window.HobunjiCharacterSpine?.weightAt?.(localPoint.y, neckY, modelHeight) || 0) : 0; // Same spine share the portrait skin uses.
+      for (let i = 0; i < Math.min(4, skeleton.bones.length); i++) {
+        const weight = i === 0 ? 1 - headWeight - spineWeight : i === 1 ? headWeight - headScaleWeight : i === 2 ? headScaleWeight : spineWeight; // Same torso/neck/head/spine weights without a per-query array.
         if (!weight) continue;
         if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
           boneMatrix.fromArray(skeleton.boneMatrices, i * 16);

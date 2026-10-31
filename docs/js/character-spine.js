@@ -3,14 +3,20 @@
 // module turns it into the numbers each rig layer needs, so every layer bends
 // the same amount without any of them knowing about the others:
 //
-//   neckDrop       head/neck bone lowered (fraction of model height) — this is
-//                  HobunjiCharacterRigScale's age hunch, so an NPC's existing
-//                  appearance.aging.hunch keeps its exact head position.
-//   shoulderDrop   shoulder anchors lowered (procedural-hand-shoulder-aim.js),
-//                  so arms hang and aim from the stooped shoulders.
-//   orbitDrop      centre of the weapon/attack orbit lowered
-//                  (HobunjiSpeciesPoseScale.transformPosePoint `orbitDropY`),
-//                  so swings pivot about the stooped upper body.
+//   spine bone     a bone between the portrait's torso and neck bones
+//                  (png-plane-avatar.js). Vertices from the waist up are
+//                  weighted to it (`weightAt`), so the PNG itself stoops: the
+//                  torso compresses and the shoulders, neck and head ride down.
+//   shoulderDrop   how far that bone lowers the upper body (fraction of model
+//                  height). Shoulder and neck anchors keep their 2D portrait
+//                  coordinates, so they are carried through the same
+//                  deformation (`deformDrop`) rather than offset by hand.
+//   orbitDrop      the weapon/attack orbit centre moves precisely with the
+//                  shoulders: it IS the shoulder drop
+//                  (HobunjiSpeciesPoseScale.transformPosePoint `orbitDropY`).
+//   neckDrop       extra head drop on top of the spine (the head bone), so
+//                  spine + head equal HobunjiCharacterRigScale's age hunch and
+//                  an NPC's authored aging.hunch keeps its head position.
 //   stanceScale    multiplier on idle foot X (ProceduralLegAnimation), a wider
 //                  base to carry the forward-heavy torso.
 //   strideScale    multiplier on stride length (ProceduralLegAnimation).
@@ -26,8 +32,9 @@
   'use strict';
 
   const FALLBACK_NECK_DROP = 0.15; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
-  const SHOULDER_DROP_RATIO = 0.6; // Shoulders sink less than the head: the collar stays, the skull falls forward.
-  const ORBIT_DROP_RATIO = 0.6; // The attack orbit is centred on the shoulders, so it tracks them.
+  const SHOULDER_DROP_RATIO = 0.7; // The spine lowers the shoulders by this share of the total head drop; the head bone supplies the rest.
+  const WAIST_BELOW_NECK = 0.34; // The spine bone's weight starts this far (fraction of model height) below the neck pivot...
+  const FULL_BELOW_NECK = 0.04; // ...and is complete by here, just under the shoulder line, so everything above rides the spine.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.
 
@@ -70,16 +77,56 @@
   // Every derived number for a hunch. Drops are positive fractions of model height.
   function profileFor(hunch) {
     const h = clamp01(Number(hunch) || 0);
-    const neckDrop = h * neckDropMax();
+    const totalDrop = h * neckDropMax(); // Where the head ends up: the NPC age-hunch amount.
+    const shoulderDrop = totalDrop * SHOULDER_DROP_RATIO;
     return {
       hunch: h,
-      neckDrop,
-      shoulderDrop: neckDrop * SHOULDER_DROP_RATIO,
-      orbitDrop: neckDrop * ORBIT_DROP_RATIO,
+      neckDrop: totalDrop - shoulderDrop, // Extra head drop applied at the head bone, on top of the spine bone's.
+      totalNeckDrop: totalDrop,
+      shoulderDrop,
+      orbitDrop: shoulderDrop, // The orbit moves precisely with the shoulders.
       stanceScale: 1 + h * STANCE_WIDEN,
       strideScale: 1 + h * STRIDE_WIDEN,
     };
   }
+
+  const smoothstep01 = t => { const x = clamp01(t); return x * x * (3 - 2 * x); };
+
+  // The spine bone's skin weight at plane-local height y (0 below the waist, 1 from just under the shoulders up).
+  // buildSkinnedPlaneGeometry weights vertices with it and every CPU skinning resolver reuses it, so they all agree.
+  const weightAt = (y, neckY, modelHeight) => {
+    const lo = neckY - WAIST_BELOW_NECK * modelHeight, hi = neckY - FULL_BELOW_NECK * modelHeight;
+    return hi > lo ? smoothstep01((y - lo) / (hi - lo)) : 0;
+  };
+
+  // Total follow of a rest-pose point at plane-local height y: the spine bone's share plus whatever the head/neck bones
+  // (which inherit the spine) carry on top, i.e. spine + turn - spine*turn, using the same broad head-turn falloff as the skin.
+  function followAt(y, neckY, modelHeight, blendHeight) {
+    const spineWeight = weightAt(y, neckY, modelHeight);
+    const blend = Math.max(modelHeight * 0.012, Number(blendHeight) || modelHeight * 0.3);
+    const turn = smoothstep01((y - (neckY - blend * 0.55)) / blend);
+    return spineWeight + turn * (1 - spineWeight);
+  }
+
+  // Lowers the spine bone of a neck rig (or of each { front, back } pair) by the profile's shoulder drop, and remembers the
+  // geometry numbers a later point-deformation needs on the profile. `modelHeight` is the unscaled plane height.
+  function applyToRig(rig, profile, modelHeight) {
+    const joints = rig?.spineJoint;
+    if (!joints || !(modelHeight > 0)) return false;
+    const drop = (profile?.shoulderDrop || 0) * modelHeight;
+    for (const joint of [joints.position ? joints : joints.front, joints.back]) {
+      if (!joint?.position) continue;
+      joint.position.y = -drop; // Pure translation: the weight ramp between waist and shoulders turns it into a stoop.
+      joint.updateMatrix?.();
+    }
+    if (profile) Object.assign(profile, { dropLocal: drop, neckY: Number(rig.neckLocal?.y) || 0, modelHeight, blendHeight: rig.blendHeight || null });
+    return true;
+  }
+
+  // How far a rest-pose point at plane-local height y is carried down by the spine, in plane-local units (0 for an upright character).
+  const deformDrop = (profile, y) => profile?.dropLocal > 0
+    ? profile.dropLocal * followAt(y, profile.neckY, profile.modelHeight, profile.blendHeight)
+    : 0;
 
   const resolve = source => profileFor(hunchFor(source));
 
@@ -106,7 +153,10 @@
 
   window.HobunjiCharacterSpine = Object.freeze({
     shoulderDropRatio: SHOULDER_DROP_RATIO,
-    orbitDropRatio: ORBIT_DROP_RATIO,
+    weightAt,
+    followAt,
+    applyToRig,
+    deformDrop,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,
     hunchFor,

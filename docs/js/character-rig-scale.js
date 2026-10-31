@@ -259,7 +259,8 @@
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction), modelHeight);
+    const spineShare = rig.spineJoint ? window.HobunjiCharacterSpine?.profileFor?.(ageFraction)?.shoulderDrop || 0 : 0; // The spine bone already lowers the head by this much (the head bone sits under it); only the rest comes from the head bone.
+    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction) + spineShare, modelHeight);
     return true;
   }
 

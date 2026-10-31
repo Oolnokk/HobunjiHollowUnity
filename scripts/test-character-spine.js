@@ -18,16 +18,44 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   const spine = window.HobunjiCharacterSpine;
   const rigScale = window.HobunjiCharacterRigScale;
 
-  // Profile: scales linearly with hunch; the neck drop IS the rig-scale age hunch so aged NPCs keep their head position.
+  // Profile: scales linearly with hunch. The spine bone's shoulder drop plus the head bone's extra drop equal the rig-scale
+  // age hunch, so an aged NPC's head ends up exactly where it did before the spine existed.
   const full = spine.profileFor(1), half = spine.profileFor(0.5), upright = spine.profileFor(0);
-  near(full.neckDrop, -rigScale.ageHunchFraction(1), 'neck drop equals the rig-scale age hunch');
-  near(half.neckDrop, full.neckDrop / 2, 'neck drop is linear');
-  near(full.shoulderDrop, full.neckDrop * spine.shoulderDropRatio, 'shoulders sink by a share of the neck drop');
-  assert.ok(full.shoulderDrop < full.neckDrop && full.orbitDrop > 0, 'shoulders sink less than the head; orbit follows them');
+  near(full.shoulderDrop + full.neckDrop, -rigScale.ageHunchFraction(1), 'spine + head bone equal the rig-scale age hunch');
+  near(full.totalNeckDrop, -rigScale.ageHunchFraction(1), 'total neck drop equals the rig-scale age hunch');
+  near(half.shoulderDrop, full.shoulderDrop / 2, 'shoulder drop is linear');
+  near(full.shoulderDrop, full.totalNeckDrop * spine.shoulderDropRatio, 'shoulders carry their share of the head drop');
+  assert.ok(full.shoulderDrop > 0 && full.neckDrop > 0, 'both the spine and the head bone contribute');
+  near(full.orbitDrop, full.shoulderDrop, 'the attack orbit moves precisely with the shoulders');
   near(full.stanceScale, 1 + spine.stanceWiden, 'stance widens at full hunch');
   near(full.strideScale, 1 + spine.strideWiden, 'stride lengthens at full hunch');
   assert.deepEqual([upright.neckDrop, upright.shoulderDrop, upright.orbitDrop, upright.stanceScale, upright.strideScale], [0, 0, 0, 1, 1], 'upright characters are untouched');
   near(spine.profileFor(7).hunch, 1, 'hunch clamps to 1');
+
+  // Skin weight: nothing below the waist moves, everything from just under the shoulders up rides the spine, monotonic between.
+  const H = 0.9, neckY = 0.2;
+  near(spine.weightAt(neckY - 0.5 * H, neckY, H), 0, 'legs/hips are not weighted to the spine');
+  near(spine.weightAt(neckY - 0.04 * H, neckY, H), 1, 'the shoulder line is fully weighted');
+  near(spine.weightAt(neckY + 0.3 * H, neckY, H), 1, 'the head region is fully weighted');
+  let last = -1;
+  for (let y = neckY - 0.4 * H; y <= neckY + 0.1 * H; y += 0.01) {
+    const w = spine.weightAt(y, neckY, H);
+    assert.ok(w >= last - 1e-12 && w >= 0 && w <= 1, 'weight rises smoothly from 0 to 1');
+    last = w;
+  }
+  // Deformation: anchors keep their 2D coordinates and are carried down by the follow at their own height.
+  const stooped = spine.profileFor(1);
+  const rig = { spineJoint: { position: { y: 0 }, updateMatrix() {} }, neckLocal: { y: neckY } };
+  assert.ok(spine.applyToRig(rig, stooped, H));
+  near(rig.spineJoint.position.y, -stooped.shoulderDrop * H, 'the spine bone is lowered by the shoulder drop');
+  near(spine.deformDrop(stooped, neckY + 0.3 * H), stooped.shoulderDrop * H, 'the head region drops by the full spine drop');
+  near(spine.deformDrop(stooped, neckY - 0.5 * H), 0, 'the hips stay put');
+  const shoulderDrop = spine.deformDrop(stooped, neckY - 0.06 * H);
+  assert.ok(shoulderDrop > 0.8 * stooped.shoulderDrop * H && shoulderDrop <= stooped.shoulderDrop * H + 1e-12, 'shoulders drop nearly the full amount');
+  near(spine.deformDrop(spine.profileFor(0), neckY), 0, 'an upright profile deforms nothing');
+  const pair = { spineJoint: { front: { position: { y: 0 } }, back: { position: { y: 0 } } }, neckLocal: { y: neckY } };
+  spine.applyToRig(pair, spine.profileFor(0.5), H);
+  near(pair.spineJoint.back.position.y, pair.spineJoint.front.position.y, 'front and rear skins stoop together');
 
   // Sources: an explicit spine wins; otherwise the NPC database's appearance.aging.hunch (what 4 shipped elders author).
   near(spine.hunchFor({ spine: { hunch: 0.4 }, profile: { aging: { hunch: 0.9 } } }), 0.4, 'explicit spine wins over aging');

@@ -62,7 +62,8 @@
       );
 
       root.userData ||= {};
-      window.HobunjiCharacterSpine?.bind(root, { age: identity.age }); // Shoulder aim and the weapon orbit read the same hunch the neck just dropped by.
+      const spineProfile = window.HobunjiCharacterSpine?.bind(root, { age: identity.age }); // Shoulder aim and the weapon orbit read the same hunch the neck just dropped by.
+      if (spineProfile?.hunch > 0) window.HobunjiCharacterSpine.applyToRig(root.userData.neckRig, spineProfile, Number(root.userData.portraitModelHeight)); // Stoops the portrait itself.
       root.userData.hobunjiCharacterRigHeadRuntime = {
         applied: !!applied,
         species: identity.speciesId,

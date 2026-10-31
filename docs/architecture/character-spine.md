@@ -13,16 +13,19 @@
 
 ## What it moves
 
+The portrait is a skinned plane (`png-plane-avatar.js`): torso → **spine** → neck → head-scale bones. Every skinned portrait carries the spine bone at identity; a hunch translates it down. Vertices are weighted to it by `HobunjiCharacterSpine.weightAt` — 0 below the waist, ramping to 1 just under the shoulders — so the PNG itself stoops: the torso compresses and the shoulders, neck and head ride down together. The head bone adds the remainder of the age-hunch head drop (spine + head = `HobunjiCharacterRigScale.ageHunchFraction`, so an NPC's authored head position is unchanged).
+
 `HobunjiCharacterSpine.profileFor(hunch)` returns the numbers; drops are fractions of the avatar's own unscaled model height (the unit of `headOffsetY`), so they ride the whole-rig scale.
 
 | Layer | Field | Consumer |
 | --- | --- | --- |
-| Neck / head | `neckDrop` (= `HobunjiCharacterRigScale.ageHunchFraction`) | NPCs: `character-rig-scale.js` via `ageFor`; enemies: `applyAuthoredHostileRigScale` offsetY in `combat-bandit.js` |
-| Shoulders | `shoulderDrop` (60% of the neck drop) | `procedural-hand-shoulder-aim.js` `shoulderInParent`, reads `avatarRoot.userData.hobunjiSpine` live |
-| Attack orbit centre | `orbitDrop` (60% of the neck drop) | `HobunjiSpeciesPoseScale.transformPosePoint` option `orbitDropY` (world units, from `orbitDropWorld`), passed by the enemy melee swing, enemy ranged hold and watchman NPC held weapons |
+| Portrait torso / shoulders / neck | `shoulderDrop` (70% of the total head drop) | spine bone in both skeleton builders (`buildSkinnedSinglePlaneAssembly`, `upgradePlaneToAutoNeckSkin`), weights in `buildSkinnedPlaneGeometry`; the pixel resolvers (`resolveSkinnedPixelWorldPosition`, `portrait-plane-outline-parity.js`) use the same weights |
+| Head | `neckDrop` (the other 30%) | NPCs: `character-rig-scale.js` `applyHeadCompensation`; enemies: `applyAuthoredHostileRigScale` offsetY in `combat-bandit.js` |
+| Shoulder anchors | `deformDrop` | `procedural-hand-shoulder-aim.js`: anchors keep their 2D portrait coordinates and are carried through the same deformation at their own height |
+| Attack orbit centre | `orbitDrop` = `shoulderDrop` | `HobunjiSpeciesPoseScale.transformPosePoint` option `orbitDropY`: it moves precisely with the shoulders (enemy melee swing, enemy ranged hold, watchman held weapons) |
 | Feet | `stanceScale` (up to ×1.5 foot X) | `ProceduralLegAnimation.attach` option `spine`; hips, rest stance and pants follow the idle X |
 | Stride | `strideScale` (up to ×1.3) | same option; scales `fullStride` in the gait |
 
-Not moved: the portrait's own shoulder/collar pixels. The portrait is a flat PNG, so the stoop is carried by the head bone, the arm anchors, the weapon orbit and the legs, not by deforming the torso.
+`character-spine.js` must load before `png-plane-avatar.js` (the skin weights are baked at build time); pages that don't load it get a normal upright portrait. The Enemy Loadout Workshop lists it in `preview.js`.
 
-Tune the five ratios at the top of `character-spine.js`; tests: `node scripts/run-tests.js character-spine`.
+Tune the ratios and the waist/shoulder band at the top of `character-spine.js`; tests: `node scripts/run-tests.js character-spine`.
