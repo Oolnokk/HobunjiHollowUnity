@@ -71,7 +71,10 @@ assert.equal(fuel.pixels[2*4],127,'source PNG pixels remain untouched');
 const grouped=api.visibleMetalTargets(layers).reduce((n,t)=>n+t.mask.matchedMetalPixels,0);
 assert.equal(grouped,3,'all visible metal pixels are available for the existing enchantment emitter');
 
-class Group {constructor(){this.children=[];this.layers={mask:1};this.userData={};}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}}
+class Group {constructor(){this.children=[];this.layers={mask:1};this.userData={};
+  this.position={set(x,y,z){this.x=x;this.y=y;this.z=z;}}; // Stub the real Three.js pivot transform for geometry-scale checks.
+  this.scale={setScalar(v){this.x=v;this.y=v;this.z=v;}}; // Separate source anchor and scale, exactly like the brazier head.
+}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}}
 const THREE={
   Group,
   CanvasTexture: class{constructor(canvas){this.image=canvas;}},
@@ -79,7 +82,7 @@ const THREE={
   Sprite:class{
     constructor(material){this.material=material;this.layers={mask:1,set(index){this.mask=1<<index;}};this.position={set(x,y,z){this.x=x;this.y=y;this.z=z;}};this.scale={setScalar(v){this.x=v;this.y=v;}};}
   },
-  AdditiveBlending:2
+  AdditiveBlending:2, NormalBlending:1
 };
 const root=new Group(); // Fake head: interleaved emitter inserted into this same ordered stack.
 const state={THREE,headRoot:root,headParts:layers.map(l=>l.mesh)};
@@ -119,7 +122,10 @@ const staffRecipe = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.hachutuTorchSta
 assert.equal(staffRecipe.flail, undefined);
 assert.equal(staffRecipe.base.material, 'marker');
 assert.equal(staffRecipe.base.vfx.masteryClusters, 2);
-assert.equal(staffRecipe.base.vfx.size, weapon.flail.head.layers[2].vfx.size * weapon.flail.head.scale, 'rank-5 staff fire matches the Torch-Flail brazier after its 2.5x head scale');
+assert.equal(staffRecipe.base.vfx.size, weapon.flail.head.layers[2].vfx.size, 'staff retains the Torch-Flail mote size instead of enlarging individual glows');
+assert(staffRecipe.base.vfx.visualScale > weapon.flail.head.scale, 'whole staff-tip flame assembly scales larger than the 2.5x brazier head');
+assert.equal(staffRecipe.base.vfx.blendMode, 'normal', 'staff avoids additive overdraw that turns big flames into a uniform glow');
+assert(staffRecipe.base.vfx.masteryFocus < 1, 'rank-5 source keeps a visible ignition footprint instead of collapsing onto a pixel');
 const staffSource = pixels(2, 20, [[0,0,rag],[0,1,rag],[0,18,rag],[0,19,rag]]); // Four opaque violet pixels form two staff tips.
 let rank = 0; // Live mastery callback exercises both ends of the rank progression.
 const staffPlane = new Group(); staffPlane.renderOrder = 1.5;
@@ -130,14 +136,24 @@ assert.equal(staffState.fireEmitters.length, 1, 'both tips share one bounded poo
 const staffFx = staffState.fireEmitters[0];
 assert.equal(staffFx.clusters.length, 2, 'fuel pixels are divided between the two ends');
 assert.deepEqual(Array.from(staffFx.clusters, cluster => cluster.pixels.length), [2,2]);
+assert.equal(staffFx.visualScale, 4);
+assert.equal(staffFx.anchors.length, 2, 'staff has two independent scaled groups at the original ignition sites');
+assert.deepEqual(staffFx.anchors.map(anchor => anchor.group.scale.x), [4,4]);
+assert(Math.abs(staffFx.anchors[0].y - .018) < 1e-6);
+assert(Math.abs(staffFx.anchors[1].y + .018) < 1e-6);
+assert.equal(staffFx.group.scale.x, undefined, 'the overall weapon and its attachment points are not scaled');
 api.stepFire(staffState, .1);
 assert(staffFx.particles.length > 0);
-assert(staffFx.particles.every(p => Math.abs(p.size - .011) < 1e-6), 'rank 0 uses many tiny flames');
+assert(staffFx.particles.every(p => Math.abs(p.size - .0044) < 1e-6), 'rank 0 uses small individual motes in the parent geometry scale');
+assert(staffFx.particles.every(p => p.sprite.material.blending === THREE.NormalBlending), 'large staff fire retains color under overlap');
+assert(staffFx.particles.every(p => staffFx.anchors.some(anchor => p.sprite.parent === anchor.group)), 'sprites are attached under their own tip pivot');
 rank = 5;
 api.stepFire(staffState, .5); // Retire existing rank-0 particles and replace them at rank-5 size.
 assert(staffFx.particles.length > 0);
-assert(staffFx.particles.every(p => Math.abs(p.size - .05) < 1e-6), 'rank 5 matches the torch-flail fire at its rendered head scale');
-assert(staffFx.particles.every(p => Math.abs(Math.abs(p.y) - .018) < 1e-6), 'rank-5 ignition sites converge on two individual end centers');
+assert(staffFx.particles.every(p => Math.abs(p.size - .02) < 1e-6), 'rank 5 uses the original sharp torch-flail particle size locally');
+assert(staffFx.particles.every(p => Math.abs(p.sprite.parent.scale.x * p.size - .08) < 1e-6), 'rank 5 renders larger by scaling the whole flame assembly, not additive glow strength');
+assert(staffFx.particles.some(p => p.y !== 0), 'mastery 5 retains nonzero fuel spread instead of stacking flames exactly on one pixel');
+assert(staffFx.particles.every(p => Math.abs(p.y) < .001), 'local coordinates stay near each ignition pivot');
 api.dispose(staffState);
 assert.equal(staffFx.group.parent, null);
 assert.match(game, /hachutuTorchStaff: \{[^\n]*shapeKey: 'hachutuTorchStaff'/);
