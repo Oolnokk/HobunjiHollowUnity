@@ -10,7 +10,7 @@
   // of swarm seed + time + speed), and a per-member "lead" value makes some
   // members run ahead of the swarm's heading and others trail it.
   //
-  // Cost model: one InstancedMesh (= one draw call) per swarm and a shared
+  // Cost model: three lightweight InstancedMeshes sharing the same texture and geometry and a shared
   // six-cell atlas (three fly poses, tail, spectacles, and untinted eyes). The fragment shader
   // blends the wing poses and composites/tints tail BELOW body, spectacles
   // ABOVE it. Only one time uniform and the existing N pose matrices change
@@ -35,7 +35,11 @@
   const THIRD_STEP_OFFSETS = Object.freeze([0, 1, 2]); // Each third of the swarm sits at a different point of the 4-step cycle.
   const WING_TICK_MS = 55; // Legacy wing-step helper retained for older callers/tests.
   const FLUTTER_HZ = 7; // Gentle opacity shimmer remains below the 15 Hz Nyquist limit of 30 FPS devices; the ghosted fly poses imply the faster actual wingbeat.
-  const DEFAULT_MEMBER_COUNT = 24; // Many small members read as a swarm rather than a flock; a multiple of 3 keeps the wing-cycle thirds exactly even.
+  const DEFAULT_MEMBER_COUNT = 24; // Legacy nominal single-layer count, used to derive the reduced three-layer population.
+  const POSE_UPDATE_MS = 125; // Refresh the per-bird matrices only 8 times per second instead of per frame.
+  const CENTRAL_DENSITY = 1 / 3; // Main plane uses one third the former density.
+  const SIDE_DENSITY = 1 / 3; // Each visual-only side plane uses one third the main plane's density.
+  const SIDE_DEPTH_FACTOR = 0.65; // Side plane local ±Z separation in bird-width units.
   // The new fly1/2/3 and both authored patterns are already cropped to the
   // SAME 478x399 coordinates. Cropping with the legacy 500x500 inset would
   // cut off wings and tails and even make the atlas load fail.
@@ -302,34 +306,43 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
   // `color` is the zone/egg primary coat, and expressed genotype patterns provide their own secondary tint.
   // modelWidth is the swarm's overall footprint; memberWidth one bird's width.
   function buildAvatar(THREE, options = {}) {
-    const count = Math.max(3, Math.floor(options.count || DEFAULT_MEMBER_COUNT));
+    const count = Math.max(3, Math.floor(options.count || DEFAULT_MEMBER_COUNT)); // Prior nominal population, for original memberCount API.
+    const centerCount = Math.max(3, Math.round(count * CENTRAL_DENSITY)); // Only this mesh remains the central gameplay-linked visual.
+    const sideCount = Math.max(1, Math.round(centerCount * SIDE_DENSITY)); // Each side holds a third of the central birds.
     const modelWidth = options.modelWidth || 1.3;
     const memberWidth = options.memberWidth || modelWidth * 0.3;
     const seed = Number.isFinite(options.seed) ? options.seed | 0 : seedFromString(options.name);
     const spread = modelWidth * 0.3;
     const geometry = new THREE.PlaneGeometry(memberWidth, memberWidth * MEMBER_ASPECT);
-    const framePhases = new Float32Array(count); // Permanent 0/1/2 member offsets stagger the wing-blur weights.
-    for (let i = 0; i < count; i++) framePhases[i] = i % 3;
-    const frameAttr = new THREE.InstancedBufferAttribute(framePhases, 1);
-    geometry.setAttribute('aFrame', frameAttr);
+    const framePhases = new Float32Array(centerCount); // Side meshes reuse the leading wing-phase attribute entries.
+    for (let i = 0; i < centerCount; i++) framePhases[i] = i % 3;
+    geometry.setAttribute('aFrame', new THREE.InstancedBufferAttribute(framePhases, 1));
     const material = makeSwarmMaterial(THREE, (options.name || 'honeyfuzzle') + '_swarm_mat', appearanceColors(options.color, options.genotype));
-    const mesh = new THREE.InstancedMesh(geometry, material, count);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.frustumCulled = false; // Members drift outside the single-plane bounding sphere.
-    mesh.renderOrder = 2;
-    mesh.name = (options.name || 'honeyfuzzle') + '_swarm';
-    const pivot = new THREE.Group(); // Yawed by the creature loop exactly like an animal front plane.
+    function makeLayer(label, members, depth) {
+      const layer = new THREE.InstancedMesh(geometry, material, members); // Render-only mesh; no separate actor, health or hitbox.
+      layer.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      layer.frustumCulled = false;
+      layer.renderOrder = 2;
+      layer.name = (options.name || 'honeyfuzzle') + '_' + label;
+      layer.position.z = depth;
+      layer.userData = { ...(layer.userData || {}), honeyfuzzleVisualOnly: label !== 'swarm' };
+      return layer;
+    }
+    const mesh = makeLayer('swarm', centerCount, 0); // Preserve avatar.swarm's central-plane reference.
+    const depthOffset = Math.max(0.08, memberWidth * SIDE_DEPTH_FACTOR); // Depth gives the cloud a 3D silhouette.
+    const sideMeshes = [makeLayer('back', sideCount, -depthOffset), makeLayer('front', sideCount, depthOffset)];
+    const layers = [mesh, ...sideMeshes]; // All three live under the same creature renderer and die with it.
+    const pivot = new THREE.Group();
     pivot.name = mesh.name + '_pivot';
     pivot.rotation.y = Math.PI / 2;
-    pivot.position.y = Number.isFinite(options.hoverY) ? options.hoverY : 0.35; // Hummingbirds hover above the ground the creature entity stands on.
-    pivot.add(mesh);
+    pivot.position.y = Number.isFinite(options.hoverY) ? options.hoverY : 0.35;
+    for (const layer of layers) pivot.add(layer);
     const group = new THREE.Group();
     group.name = (options.name || 'honeyfuzzle') + '_group';
     group.add(pivot);
-
     const pose = { x: 0, y: 0, roll: 0, scale: 1, flip: 1 };
-    const zStep = 0.003; // Tiny per-member depth separation so overlapping alpha-tested cards never z-fight.
-    let smoothSpeed = 0, smoothSpread = 1, lastNow = 0, disposed = false;
+    const zStep = 0.003; // Small per-bird separation to avoid z fighting within one plane.
+    let smoothSpeed = 0, smoothSpread = 1, lastNow = 0, lastPoseNow = -Infinity, disposed = false; // lastPoseNow gates 8 Hz instance-matrix work.
     let baseColor = options.color || options.genotype?.base?.color || null; // The current primary dye, used when setColor() is called after spawning.
     let genotype = options.genotype || null; // Optional inherited secondary tint and spectacles; null is valid for old saves.
     let linkedCreature = null; // Used only to pick up genotype on wild/companion spawn, whose main renderer forwards color but not genes.
@@ -346,7 +359,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
       if (colors.spectaclesColor) u.uSpectaclesColor.value.set(colors.spectaclesColor);
     };
     const avatar = {
-      group, frontPlane: pivot, backPlane: null, swarm: mesh, memberCount: count, seed,
+      group, frontPlane: pivot, backPlane: null, swarm: mesh, sideSwarms: sideMeshes, memberCount: count, centerMemberCount: centerCount, sideMemberCount: sideCount, renderedMemberCount: centerCount + sideCount * 2, seed,
       update(speedPxPerS, nowMs, dtSeconds, moveSpeedPx, spreadScale) {
         if (disposed) return;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
@@ -372,16 +385,21 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         const spreadCatchup = targetSpread < smoothSpread ? 16 : 9; // Tighten rapidly on contact, then unfurl into normal flight after detaching.
         smoothSpread += (targetSpread - smoothSpread) * Math.min(1, dt * spreadCatchup);
         material.userData.honeyfuzzle.uWingPhase.value = ((Math.max(0, now) * 0.001 * FLUTTER_HZ) % 1) * TAU; // Bounded phase prevents float-precision loss after long browser sessions.
-        const arr = mesh.instanceMatrix.array;
-        for (let i = 0; i < count; i++) {
-          memberPose(seed, i, count, now, smoothSpeed, spread * smoothSpread, pose);
-          const c = Math.cos(pose.roll) * pose.scale, s = Math.sin(pose.roll) * pose.scale, o = i * 16;
-          arr[o] = c * pose.flip; arr[o + 1] = s * pose.flip; arr[o + 2] = 0; arr[o + 3] = 0; // flip mirrors the member to face right
-          arr[o + 4] = -s; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;
-          arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = pose.scale; arr[o + 11] = 0;
-          arr[o + 12] = pose.x; arr[o + 13] = pose.y; arr[o + 14] = (i - count / 2) * zStep; arr[o + 15] = 1;
+        if (now >= lastPoseNow && now - lastPoseNow < POSE_UPDATE_MS) return; // Shared wing-phase uniform continues animating each rendered frame.
+        lastPoseNow = now;
+        for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+          const layer = layers[layerIndex], arr = layer.instanceMatrix.array, members = layer.count;
+          const layerSeed = layerIndex ? seed ^ Math.imul(layerIndex, 0x45d9f3b) : seed; // Outer birds dart independently.
+          for (let i = 0; i < members; i++) {
+            memberPose(layerSeed, i, members, now, smoothSpeed, spread * smoothSpread, pose);
+            const c = Math.cos(pose.roll) * pose.scale, si = Math.sin(pose.roll) * pose.scale, o = i * 16;
+            arr[o] = c * pose.flip; arr[o + 1] = si * pose.flip; arr[o + 2] = 0; arr[o + 3] = 0;
+            arr[o + 4] = -si; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;
+            arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = pose.scale; arr[o + 11] = 0;
+            arr[o + 12] = pose.x; arr[o + 13] = pose.y; arr[o + 14] = (i - members / 2) * zStep; arr[o + 15] = 1;
+          }
+          layer.instanceMatrix.needsUpdate = true;
         }
-        mesh.instanceMatrix.needsUpdate = true;
       },
       setColor(color) { baseColor = color || null; applyColors(); }, // Keeps default tail synchronized with primary color.
       setGenotype(next) { genotype = next || null; applyColors(); }, // Allows stable/wild appearance updates without rebuilding the swarm.
@@ -391,7 +409,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
         geometry.dispose();
         _pendingMaterials.delete(material);
         material.dispose(); // The shared atlas texture stays alive for the next swarm.
-        mesh.dispose?.();
+        for (const layer of layers) layer.dispose?.(); // Shared geometry/material are disposed once above.
       },
     };
     applyColors();
@@ -401,7 +419,7 @@ vec4 overlayHoneyfuzzle( vec4 foreground, vec4 background ) {
   }
 
   window.HoneyfuzzleSwarm = {
-    FRAME_URLS, PATTERN_URLS, EYE_URL, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, CROP,
+    FRAME_URLS, PATTERN_URLS, EYE_URL, ATLAS_COLS, ATLAS_ROWS, WING_CYCLE, WING_TICK_MS, FLUTTER_HZ, DEFAULT_MEMBER_COUNT, POSE_UPDATE_MS, CENTRAL_DENSITY, SIDE_DENSITY, SIDE_DEPTH_FACTOR, CROP,
     hashUnit, seedFromString, wingStep, memberFrame, memberPose, appearanceColors,
     buildAvatar, ensureAtlas,
     debugSnapshot: () => ({ atlasReady: !!_atlas, atlasPending: !!_atlasPromise, error: _lastAtlasError, assetWarnings: [..._atlasWarnings], linkedActors: _linkedWildOrCompanions, assets: [...FRAME_URLS, ...PATTERN_URLS, EYE_URL], atlasSize: _atlas ? [_atlas.canvas.width, _atlas.canvas.height] : null }),
