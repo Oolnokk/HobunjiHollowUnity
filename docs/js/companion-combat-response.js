@@ -72,7 +72,9 @@
   function debugSnapshot(companion) {
     return { target: companion?._companionCombatTarget?.id || companion?._companionCombatTarget?.creatureKey || null,
       priority: companion?._companionCombatPriority ?? null,
-      rescuing: companion?._honeyfuzzleRescueTarget?.id || null,
+      rescuing: companion?._honeyfuzzleRescueTarget?.id ||
+        (companion?._honeyfuzzleRescueTarget === window.Combat?.deps?.player ? 'player' :
+          companion?._honeyfuzzleRescueTarget?.creatureKey || companion?._honeyfuzzleRescueTarget?.name || null), // The player actor has no creature ID; show 'player' during an actual rescue.
       backingUp: companion?._stage?.mode === 'backingUp',
       cooldown: companion?.attackCooldownT ?? null };
   }
