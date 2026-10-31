@@ -38,7 +38,7 @@ const context = {
   },
   document: { createElement: () => ({ getContext: () => ({ drawImage() {} }) }) },
   THREE: { Group }, COMBAT_FROWN_COMPOSER: {}, characterBuildStatus: {},
-  ensureEnemyPants: () => 'draped_pants', applyRosterDyesToProfile: () => ({}),
+  ensureEnemyPants: () => 'draped_pants', applyRosterDyesToProfile: () => ({}), pantsAppearanceWithForcedPattern: (appearance) => appearance,
 }; // Minimal host retains all real factory assembly logic.
 vm.runInNewContext(factory + ';this.build = buildBanditAvatar;', context);
 (async () => {

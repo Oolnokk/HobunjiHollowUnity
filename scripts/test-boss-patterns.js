@@ -100,6 +100,9 @@ assert.match(armorSource, /cannot be re-patterned/, 'painted plating cannot be r
   assert.equal(await liches.prepareHeadFire(profile, { name: 'bandit' }, render, 200), null, 'only named guardians');
   const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
   assert.match(bandit, /group\.userData\.specialHeadFire = await window\.SpecialHarlyaoLiches\.prepareHeadFire/, 'the hostile builder requests the emitter data');
+  assert.match(bandit, /appearance: pantsAppearanceWithForcedPattern\(window\.PantsGarmentRenderer\.appearanceFromBodyColors\(profile\.bodyColors\), roster\)/, 'the hostile pants renderer receives the forced woven pattern');
+  assert.match(bandit, /forcedOverpassPattern: JSON\.parse\(JSON\.stringify\(forced\.pattern\)\)/, 'pants weave data carries the guardian pattern');
+  assert.match(fs.readFileSync('docs/js/combat/combat-special-liches.js', 'utf8'), /trackPortraitTexture\?\.\(THREE,texture,'front'\)/, 'the circlet overlay follows the portrait flip setting');
   assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/weapon-layer-effects\.js\?v=/, 'the Workshop loads the marker-pixel scanner');
   console.log('Flame headband: emitter pixels, hidden headband and circlet overlay verified');
 })().catch(error => { console.error(error); process.exit(1); });

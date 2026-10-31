@@ -439,6 +439,7 @@
     if(data.overlayCanvas) {
       const surface=window.HobunjiSpritePngSurface;
       const texture=surface?.makeCanvasTexture?.(THREE,data.overlayCanvas,'special_lich_circlet') || new THREE.CanvasTexture(data.overlayCanvas);
+      window.PNGPlaneAvatar?.trackPortraitTexture?.(THREE,texture,'front'); // Same portrait-flip setting as the base plane, so the circlet is never mirrored against the head it sits on.
       const material=surface?.makeMaterial?.(THREE,texture,'special_lich_circlet',{side:THREE.FrontSide}) || new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.05});
       overlay=new THREE.Mesh(new THREE.PlaneGeometry(width,height),material);
       overlay.name='special_lich_circlet_overlay';overlay.position.set(-neck.x,-neck.y,.003);overlay.renderOrder=circletOrder;overlay.frustumCulled=false;
@@ -480,7 +481,8 @@
         if(!sprite)sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:fireSpriteTexture(),transparent:true,opacity:0,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending}));
         sprite.material.color.set(fire.color); // Tinted Body Color 3.
         sprite.renderOrder=fire.flameOrder; // Above the head, beneath the circlet overlay.
-        const x=(source.x-.5)*fire.width-fire.neck.x, y=(.5-source.y)*fire.height-fire.neck.y;
+        const flipped=window.PNGPlaneAvatar?.getPortraitsFlipped?.()===true; // Emitters mirror with the portrait, exactly like the portrait glow lights.
+        const x=((flipped?1-source.x:source.x)-.5)*fire.width-fire.neck.x, y=(.5-source.y)*fire.height-fire.neck.y;
         sprite.position.set(x,y,.0015);sprite.visible=true;
         fire.group.add(sprite);
         fire.particles.push({sprite,age:0,life:FIRE.life,x,y,speed:FIRE.speed*(.5+Math.random()),phase:Math.random()*6.283,size:FIRE.size});

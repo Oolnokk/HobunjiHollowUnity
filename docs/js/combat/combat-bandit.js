@@ -352,6 +352,16 @@
     return resolved;
   }
 
+  // Authored enemies (named liches) can force a woven pattern onto their pants, the same render-only seam NPC wardrobe uses for other slots.
+  function pantsAppearanceWithForcedPattern(appearance, roster) {
+    const forced = roster?.clothingPatterns?.forcedOverpassBySlot?.pants;
+    if (!forced?.pattern) return appearance;
+    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: JSON.parse(JSON.stringify(forced.pattern)) };
+    if (Array.isArray(forced.roles) && forced.roles.length) weaving.forcedOverpassRoles = [...forced.roles];
+    const patternHex = appearance.patternHex && appearance.patternHex !== '#ffffff' ? appearance.patternHex : (forced.fallbackColorC?.hex || appearance.patternHex);
+    return { ...appearance, weaving, patternHex }; // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3).
+  }
+
   function ensureEnemyPants(roster) {
     const speciesId = String(roster?.appearance?.speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Both excluded lower-body anatomies bypass the hostile garment fallback.
     if (!roster || roster.enemyLoadoutAuthoredPants || speciesId === 'omgurku' || speciesId === 'porakaneki') return null;
@@ -616,7 +626,7 @@
       const pants = window.PantsGarmentRenderer.attachToLegs(THREE, legs, { // Finish creating the mesh before downstream ghost/ghoul material conversion.
         avatarGroup: frontPivot, speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, // Follow the portrait's facing/death pivot while sampling the sibling leg rig in world space.
         name: roster.name || 'enemy', garmentId: enemyPants,
-        appearance: window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors),
+        appearance: pantsAppearanceWithForcedPattern(window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors), roster),
         overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
       });
       characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
