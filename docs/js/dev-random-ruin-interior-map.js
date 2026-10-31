@@ -834,7 +834,32 @@
   // opts.site: a wilderness ruin site (js/ruin-sites.js) is generating this
   // ruin for ordinary play, so Dev Mode is not required; opts.returnAnchor is
   // where the entrance exit puts the player back.
+  let stoneAgeDependencies=null; // Single-flight lazy loader; normal Harlyao ruins never install additional stone-surface hooks.
+  async function ensureStoneAgeSceneryDependencies(){
+    if(window.NaturalSurfaceMaterials?.naturalizeMesh&&window.HobunjiSurfaceStretchUV?.mapMesh)return;
+    if(!stoneAgeDependencies)stoneAgeDependencies=(async()=>{
+      const libraries=[ // Shared preview versions; preserve ordering so the UV patch can wrap the natural material factory.
+        ['config/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterialConfig],
+        ['js/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterials?.naturalizeMesh],
+        ['js/surface-stretch-uv-furniture.js?v=20261031h5856d5a',()=>!!window.HobunjiSurfaceStretchUV?.mapMesh],
+      ];
+      for(const [path,ready] of libraries){
+        if(ready())continue;
+        await new Promise((resolve,reject)=>{
+          const element=document.createElement('script'); // Loaded only for this opt-in ruin, keeping default worlds free of extra surface hooks.
+          const timeout=setTimeout(()=>{element.remove();reject(new Error('Timed out loading '+path));},30000);
+          element.src=new URL(path,document.baseURI).href;
+          element.onload=()=>{clearTimeout(timeout);ready()?resolve():reject(new Error('Stone surface module did not initialize: '+path));};
+          element.onerror=()=>{clearTimeout(timeout);element.remove();reject(new Error('Stone surface module unavailable: '+path));};
+          document.head.appendChild(element);
+        });
+      }
+    })().catch(error=>{stoneAgeDependencies=null;throw error;});
+    await stoneAgeDependencies;
+  }
+
   async function prepareStoneAgeScenery(owner){
+    await ensureStoneAgeSceneryDependencies(); // The real game does not normally load author-only natural stone UV tools.
     const builder=window.StoneAgeRuinScenery; // Shared with the preview: authored rock walls/pillars, quarter-scale wilderness floor, Temple cover.
     if(!builder?.buildRoom||!builder?.prepareCover)throw new Error('Stone Age ruin scenery module is unavailable.');
     owner.stoneAgeAbort=new AbortController(); // Cancels Temple downloads and long vegetation builds when a generation is replaced.
