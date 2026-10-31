@@ -119,7 +119,7 @@
       },
       patterns: ['tailfeathers', 'spectacles'],
       underlayPatterns: ['tailfeathers'], // The anatomical tail is always visible BELOW the body, even with no expressed allele.
-      eyes: { open: 'assets/creaturesprites/honeyfuzzle_eye.png', blink: 'assets/creaturesprites/honeyfuzzle_blink.png' }, // Untinted eyes are composited last, above spectacles, in every portrait.
+      eyes: { open: 'assets/creaturesprites/honeyfuzzle_eyes.png', blink: 'assets/creaturesprites/honeyfuzzle_eyes.png' }, // Reuse the authored eyes for all portrait frames without inventing a blink asset.
     },
     nazgraku: {
       prefix: 'nzg',
