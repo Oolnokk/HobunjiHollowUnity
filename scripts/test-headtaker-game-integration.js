@@ -18,6 +18,18 @@ assert(head.includes('detachOnHostDodge: true'),'player can still dodge to escap
 assert(head.includes("'player-portrait-rebuilt'"),'rebuilding a player avatar clears stale neck/joint ownership instead of writing disposed skin bones');
 assert(game.includes("cancel?.(entity, 'area-changed')"),'area transition cleans up the old-area Headtaker even though it cannot chase into the new map');
 assert(game.includes("cancel?.(c, 'despawn')"),'despawn releases the scoped player neck lock before disposing the attacker');
+assert(head.includes('isActive: attacker =>'),'active committed attacks are detectable independently from hostile AI state');
+assert(game.includes("c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)"),'search/flee transitions cannot freeze a committed Headtaker grapple');
+const specialStart=game.indexOf("          } else if (c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)) {");
+const specialEnd=game.indexOf("          } else if (c.state === 'fleeing-low-health')",specialStart);
+assert(specialStart>0&&specialEnd>specialStart,'committed Headtaker branch precedes ordinary searching/fleeing');
+const priorityCode=game.slice(specialStart, specialEnd).replace(/^\s*}\s*else if[^\n]+\n/,'').replace(/\n\s*}\s*$/,'');
+const priorityTest=new Function('c','window','entityDt','targetPlayer','distToPlayer','let aimAngle=0,moving=false;'+priorityCode+';return {aimAngle,moving};');
+const carried={maskboundTroop:'headtaker',_attachment:{host:{id:'live-player'}}};
+let calledTarget=null;
+const actualPriority=priorityTest(carried,{BanditCombat:{updateCombatAI(_attacker,_dt,target){calledTarget=target;return {aimAngle:1.2,moving:false};}}},.05,{id:'unrelated-search-target'},7);
+assert.equal(calledTarget,carried._attachment.host,'committed grapple follows its original player even when ordinary aggro changes');
+assert.equal(actualPriority.aimAngle,1.2,'active combat controller continues ticking after AI search state changes');
 assert(head.includes('immuneToHost: false'),'player attacks can still damage the Headtaker');
 assert(head.includes('staggerImmune: true'),'other incoming damage does not automatically break the grip');
 assert(game.includes('player.dodging = true;'),'game dodge input still functions normally');
