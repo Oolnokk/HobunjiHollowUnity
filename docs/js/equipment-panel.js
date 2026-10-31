@@ -506,8 +506,8 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing?.[slot]; // Used to reconnect equipped slots to their retained canonical clothing record.
       if (!worn?.cosmeticId) continue;
-      const canonical = canonicalByCollectionKey.get(clothingGearCollectionKey(worn))
-        || (worn.uid && gearInventory.clothingItems.find(item => item?.uid === worn.uid)); // Reconnect a legacy worn snapshot by UID even if its weaving metadata was absent.
+      const canonical = (worn.uid && gearInventory.clothingItems.find(item => item?.uid === worn.uid))
+        || canonicalByCollectionKey.get(clothingGearCollectionKey(worn)); // Prefer exact UID when a legacy worn snapshot lacks its article's weaving metadata.
       if (canonical && gearInventory.clothing[slot] !== canonical) {
         gearInventory.clothing[slot] = canonical;
         changed = true;
