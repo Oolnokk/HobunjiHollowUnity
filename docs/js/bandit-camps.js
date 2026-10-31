@@ -892,11 +892,14 @@
     // same-chunk rule never does: every retry still carries avoidChunks.
     if (!instance && avoidPoints.length) instance = tryStampBanditCamp(view, localeDef, placement, [], avoidChunks);
 
-    // Bandit placement may consume surplus Porakaneki hunting camps when
-    // chunk space is constrained, but PorakanekiCamps enforces a hard one-camp
-    // floor per wilderness zone. The seasonal chief reservation is also never
-    // sacrificed, so a constrained seed places fewer bandit camps rather than
-    // erasing Porakaneki from the zone or violating the hard chunk rule.
+    // Bandit placement may consume *surplus* Porakaneki hunting camps when chunk
+    // space is constrained, but PorakanekiCamps enforces a hard one-camp floor per
+    // tribe and zone, and since every tribe now gets exactly one hunting camp there
+    // is no surplus: reduceHuntingCampsForBandit() returns null and this loop is a
+    // no-op. It stays so a future config with several camps per tribe keeps working.
+    // The seasonal chief reservation is never sacrificed either, so a constrained
+    // seed places fewer bandit camps rather than erasing Porakaneki from the zone
+    // or violating the hard chunk rule.
     while (!instance && (window.TribeCamps || window.PorakanekiCamps)?.reduceHuntingCampsForBandit?.(zoneId)) {
       avoidPoints = porakanekiAvoidPoints(zoneId, placement.minDistanceFromPorakanekiCamp ?? 12);
       avoidChunks = porakanekiAvoidChunks(zoneId);
