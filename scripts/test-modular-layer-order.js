@@ -209,7 +209,7 @@ async function run() {
   const editorDrawnGizmos = [];
   const editorHelpers = new Function('api', 'chosenShaft', 'chosenHead', 'cachedImages', 'byId',
     'lineMarker', 'drawGizmo', 'mountIndex', rigHelperSource +
-    '\\nreturn { rigLayout, displayMounts, rigToLocal, drawLines };')(
+    '\nreturn { rigLayout, displayMounts, rigToLocal, drawLines };')(
     api, () => fixture, () => api.getConfig().heads.warhammer, { 'shaft-canvas': {} },
     () => authorCanvas,
     (_ctx, mount) => editorDrawnMounts.push(mount),
