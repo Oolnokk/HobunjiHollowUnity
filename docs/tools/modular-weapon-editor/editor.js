@@ -459,7 +459,7 @@
     byId('shaft').value = selected.shaft; byId('head').value = selected.head; mountIndex = 0;
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
-  byId('shaft').onchange = () => { mountIndex = 0; render(); };
+  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;render(); };
   byId('duplicate-shaft').onclick = () => {
     const from = byId('shaft').value, source = chosenShaft(); // Copy ALL source mount lines, pair overrides and optional living-shaft fire.
     const id = prompt('New shaft key (letters/numbers, e.g. myTorchShaft):', from + 'Copy');
@@ -498,6 +498,61 @@
     };
     field.addEventListener('input', () => applyRig(false));
     field.onchange = () => applyRig(true);
+  }
+  function refreshRigPreview() {
+    api.replace(data); // Update cached composed textures, but do not discard a numeric field mid-typing on mobile.
+    drawLines('shaft-canvas');updateRigTree();preview();
+  }
+  byId('shaft-art-enabled').onchange = () => {
+    chosenShaft().shaftArtTransform={
+      ...api.shaftArtTransform(chosenShaft()),enabled:byId('shaft-art-enabled').checked
+    }; // Explicit enable keeps older/default shaft PNG and flame sources unchanged.
+    save();
+  };
+  for(const [id,key,min,max] of [
+    ['shaft-art-scale-x','scaleX',.05,8],['shaft-art-scale-y','scaleY',.05,8],
+    ['shaft-art-x','x',-2400,2400],['shaft-art-y','y',-2400,2400]
+  ]) {
+    const field=byId(id);
+    const edit=commit=>{
+      const raw=field.value.trim(),n=Number(raw);if(!raw||!Number.isFinite(n))return;
+      const shaft=chosenShaft();
+      shaft.shaftArtTransform={...api.shaftArtTransform(shaft),
+        [key]:Math.max(min,Math.min(max,n))}; // Shaft image and flames inherit ONLY this independent transform.
+      if(commit)save();else refreshRigPreview();
+    };
+    field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
+  }
+  byId('region-select').onclick=()=>{
+    regionSelecting=!regionSelecting;regionDraft=null;updateRegionControls();
+    drawBridgeOverlay(); // Selection overlay replaces brush interaction until a region is completed.
+    msg(regionSelecting?'Drag a rectangle on the assembled weapon preview to select rig children.':'Region selection cancelled.');
+  };
+  byId('region-list').onchange=()=>{
+    activeRegionId=byId('region-list').value;updateRegionControls();drawBridgeOverlay();
+  };
+  byId('region-remove').onclick=()=>{
+    if(!activeRegion())return;
+    chosenShaft().rigRegions=chosenShaft().rigRegions.filter(r=>r.id!==activeRegionId);
+    activeRegionId=null;save();
+  };
+  byId('region-name').onchange=()=>{
+    const region=activeRegion();if(!region)return;
+    region.label=byId('region-name').value.trim().slice(0,64)||region.label;save();
+  };
+  for(const [id,key,min,max] of [
+    ['region-scale-x','scaleX',.05,8],['region-scale-y','scaleY',.05,8],
+    ['region-x','x',-2400,2400],['region-y','y',-2400,2400]
+  ]) {
+    const field=byId(id);
+    const edit=commit=>{
+      const region=activeRegion(),raw=field.value.trim(),n=Number(raw);
+      if(!region||!raw||!Number.isFinite(n))return;
+      region.transform={...api.duplicateTransform(region.transform),
+        [key]:Math.max(min,Math.min(max,n))}; // Only children selected by this area's original box inherit the transform.
+      if(commit)save();else {refreshRigPreview();updateRegionControls();}
+    };
+    field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
   }
   byId('duplicate-sprite').onchange = () => {
     const shaft = chosenShaft(), sprite = byId('duplicate-sprite').value.trim();
