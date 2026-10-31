@@ -42,7 +42,7 @@ function fakeThree() {
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
   assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'legacy wing-step helper stays compatible');
-  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'five sprites pack into a 3x2 atlas');
+  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'three fly poses, two coat patterns and authored eyes fit the shared 3x2 atlas');
   assert.deepEqual({ ...S.CROP }, { x: 0, y: 0, w: 478, h: 399 }, 'do not use the obsolete crop on the new PNGs');
   assert(S.FRAME_URLS.every((url, i) => url.endsWith('honeyfuzzle_fly' + (i + 1) + '.png')));
   assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_tailfeathers.png')));
@@ -104,7 +104,12 @@ function fakeThree() {
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
   const avatar = S.buildAvatar(THREE, { name: 'swarm_test', modelWidth: 1.3, memberWidth: 0.4, count: 9 });
-  assert.equal(avatar.swarm.count, 9, 'one instanced mesh holds the whole swarm');
+  assert.equal(avatar.swarm.count, 3, 'main plane uses one third of the nominal birds');
+  assert.equal(avatar.sideSwarms.length, 2, 'a decorative layer sits on each side of the central plane');
+  assert(avatar.sideSwarms.every(side => side.count === 1 && side.userData.honeyfuzzleVisualOnly === true), 'outer planes are visual only, a third of main density');
+  assert(avatar.sideSwarms[0].position.z < 0 && avatar.sideSwarms[1].position.z > 0, 'parallel planes are offset along +/-Z');
+  assert.equal(avatar.frontPlane.children.length, 3, 'all three planes follow one creature-root pivot');
+  assert.equal(avatar.renderedMemberCount, 5, 'five birds instead of nine for this small custom swarm');
   const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
   avatar.swarm.material.onBeforeCompile(shader);
   assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
@@ -112,16 +117,25 @@ function fakeThree() {
   assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
   assert(shader.vertexShader.includes('vUv.xy /= vec2(3.0, 2.0)'), '3x2 atlas UV coordinates are used');
   assert(shader.fragmentShader.includes('vec2( 0.0, 0.5 )'), 'tail and fly sprite sample different atlas rows');
+  assert(shader.fragmentShader.includes('vec4 eyes = mapTexelToLinear') && shader.fragmentShader.includes('overlayHoneyfuzzle( eyes, composed )'), 'authored eyes draw on top of the patterns');
+  assert.equal(S.EYE_URL, 'assets/creaturesprites/honeyfuzzle_eyes.png', 'original uploaded eye asset is reused');
   assert.equal(avatar.group.children[0], avatar.frontPlane, 'frontPlane is the yaw pivot the creature loop rotates');
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
   const frameAttr = avatar.swarm.geometry.getAttribute('aFrame');
-  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => i % 3), 'wing phase stays fixed per member');
+  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: avatar.swarm.count }, (_, i) => i % 3), 'wing phase stays fixed per member');
   assert.equal(new Set(Array.from(frameAttr.array)).size, 3, 'all three phases occur across the swarm');
   const m = avatar.swarm.instanceMatrix.array;
   assert(Array.from(m).every(Number.isFinite), 'instance matrices are finite');
   assert.equal(m[15], 1);
   // Smooth time advances without changing aFrame buffers or reallocating texture data.
+  const poseBefore = Array.from(avatar.swarm.instanceMatrix.array); // Confirms low-frequency posing avoids redundant per-frame writes.
+  avatar.swarm.instanceMatrix.needsUpdate = false;
+  avatar.update(0, 1050, 0.016, 150);
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'under 125 ms only shader wing phase advances');
+  assert.deepEqual(Array.from(avatar.swarm.instanceMatrix.array), poseBefore, 'bird matrices stay unchanged on intermediate frames');
+  avatar.update(0, 1190, 0.016, 150);
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, true, 'later tick refreshes all three planes');
   frameAttr.needsUpdate = false;
   const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
   avatar.update(0, 1001, 0.016, 150);
@@ -143,7 +157,9 @@ function fakeThree() {
   tinted.setGenotype(null);
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
-  assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
+  assert.equal(tinted.group.children.length, 1, 'all three planes share one root/pivot and one material');
+  assert.equal(tinted.centerMemberCount, 8); assert.equal(tinted.sideMemberCount, 3);
+  assert.equal(tinted.renderedMemberCount, 14, 'default swarm now draws 14 birds instead of 24');
   assert.equal(typeof S.debugSnapshot, 'function');
   assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
   const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
