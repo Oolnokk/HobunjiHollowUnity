@@ -50,7 +50,7 @@ All five new PNGs have identical **478×399** canvas coordinates; the retired 50
 
 The wilderness generator's `beehive` objects are hollow stump tiles (`floraKind === 'beehive'`, drawn by `FoliageGenerator.buildStumpMesh`). Each stump is three things:
 
-1. **Home.** By day `ensureCurrentZone` (called from `WildlifeSpawn.updateHostileSpawning`) spawns one swarm per stump near the player. `updateHostiles` calls `HoneyfuzzleHives.control` before the generic AI: at night the swarm flies to the stump and tucks inside (hidden and frozen); at dawn it comes back out. A killed swarm is replaced after two days.
+1. **Home.** By day `ensureCurrentZone` (called from `WildlifeSpawn.updateHostileSpawning`) spawns one swarm per stump near the player. `updateHostiles` calls `HoneyfuzzleHives.control` before the generic AI: at night the swarm flies to the stump and tucks inside (hidden and frozen); at dawn it comes back out. A killed swarm is replaced 15 real seconds after death while the stump still stands, even at night. Starting a nighttime honey harvest instantly wakes a hostile swarm and interrupts the hold without awarding honey or collapsing the stump.
 2. **Nest.** One long hold (`HOLD_SECONDS`, via the same hold input as `js/corpse-hold-loot.js`) gives 1-3 `fertileHoneyfuzzleEgg`.
 3. **Resource.** The same hold gives `honey`. The stump then collapses: the tile becomes grass and an entry with `regrowDays: HIVE_REGROW_DAYS` goes into `_zoneFelledTreePersist` (so it persists and regrows through the felled-tree machinery, just on a longer clock). Its swarm is left homeless until the stump regrows.
 
