@@ -5024,6 +5024,7 @@
       }
 
       function despawnCreature(c) {
+        if (c?.maskboundTroop === 'headtaker') window.MaskboundHeadtaker?.cancel?.(c, 'despawn'); // Release the player's neck/input lock before removing this attacker and its visual rig.
         clearKnockbackLedgeMotion(c);
         disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
       }
@@ -6619,6 +6620,12 @@
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
 
       function updateHostiles(dt) {
+        for (const entity of hostileObjects) {
+          if (entity?.maskboundTroop === 'headtaker' && entity._attachment?.id === 'maskbound-headtaker'
+            && entity.areaId && entity.areaId !== currentArea) {
+            window.MaskboundHeadtaker?.cancel?.(entity, 'area-changed'); // The old area's AI won't tick the grapple again; never strand the player's head lock across a doorway.
+          }
+        }
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
