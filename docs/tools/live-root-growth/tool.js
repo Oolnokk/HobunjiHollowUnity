@@ -615,6 +615,8 @@
     return {schema:'hobunji_live_root_growth.v1',
       environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),appearance:readPreviewColors(),
       recipe:readRecipe(), position:readPosition().toArray(),
+      snare:{enabled:$('snareEnabled').checked,settings:snareSettings(),
+        fixedNodes:rootHands?.diagnostics().anchors||[]}, // Persist the authored hiding places and settings for later gameplay integration.
       target:{kind:source.kind,file:source.file,...(source.mechanism?{mechanism:{type:source.mechanism.type,seed:source.mechanism.seed,pose:active?.getPoseProgress?.()??Number($('mechanismPose').value)/100,duration:readMechanismDuration()}}:{}),
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
           ? {furniture:source.data} : {})}
@@ -636,9 +638,17 @@
     const json = JSON.parse(await file.text());
     if (json.schema !== 'hobunji_live_root_growth.v1') throw new Error('Not a live-root-growth recipe.');
     fillRecipe(json.recipe);
+    if(json.snare&&typeof json.snare==='object'){
+      $('snareEnabled').checked=json.snare.enabled===true;
+      const values=json.snare.settings||{};
+      for(const [id,key] of [['snareCount','count'],['snareRadius','triggerRadius'],['snareReach','reach'],
+        ['snareExtend','extendSpeed'],['snareRetract','retractSpeed'],['snareRunnerSpeed','runnerSpeed']]){
+        if(Number.isFinite(Number(values[key])))$(id).value=String(values[key]);
+      }
+    }
     syncPreviewColors(json.appearance||PREVIEW_COLORS);
     updatePreviewColor('stoneColor');
-    $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
+    $('previewEnvironment').value=json.snare?.enabled===true||json.environment==='ruin'?'ruin':'flat';
     $('ruinSize').value=['small','medium','large','vast'].includes(json.ruinSize)?json.ruinSize:'vast';
     $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.3));
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
