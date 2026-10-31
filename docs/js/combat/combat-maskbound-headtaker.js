@@ -714,6 +714,14 @@
       return { handled: true, moving: false, aimAngle: attacker.facing || 0 };
     }
     if (state?.stage === 'grip') {
+      if (player(state.host)) {
+        const currentAvatar = window.WorldPortraitLife?.getPlayerAvatar?.();
+        if (currentAvatar?.group && state.portrait?.root !== currentAvatar.group) {
+          window.Combat.attach?.endManual?.(attacker, state.shared, 'player-portrait-rebuilt');
+          if (!state.disposed) dispose(state, 'player-portrait-rebuilt'); // Gear/species changes replace skin bones; drop the stale grip and release the head-only input lock instead of writing disposed joints.
+          return { handled: true, moving: false, aimAngle: attacker.facing || 0 };
+        }
+      }
       const live = window.Combat.attach?.updateManual?.(attacker, state.shared, dt);
       if (live && !state.disposed) alignBehindPortrait(state, state.host);
       if (state.endRequested && live) window.Combat.attach?.endManual?.(attacker, state.shared, 'completed');
