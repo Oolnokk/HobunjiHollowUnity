@@ -443,7 +443,7 @@
     if (emitter.plane?.userData) delete emitter.plane.userData.hobunjiHeldOverlayVfxPadding; // No stale scissor enlargement after unequipping.
   }
 
-  function makeEmitter(plane) {
+  function makeEmitter(plane, playerHeld = false) {
     if (typeof THREE === 'undefined' || !plane?.add) return null;
     const group = new THREE.Group(); // Used as the plane-local owner for all transient particles on this exact visible weapon copy.
     group.name = 'weapon_enchantment_metal_particles';
@@ -452,7 +452,7 @@
     plane.add(group);
     plane.userData = plane.userData || {};
     plane.userData.hobunjiHeldOverlayVfxPadding = 0; // Read by HeldObjectRenderOrder's scissor bounds for only this emitting weapon plane.
-    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now() };
+    return { plane, group, particles: [], pool: [], accumulator: 0, token: '', lastTime: performance.now(), playerHeld }; // Only the actual player's held sprite may bypass replay culling; NPC and preview motes retain the draw-call optimization.
   }
 
   function styleFor(state) {
@@ -460,7 +460,7 @@
     return def?.effects?.find(effect => effect.id === state?.effectId) || def?.effects?.[0] || null;
   }
 
-  function syncParticleRenderLayers(sprite, plane) {
+  function syncParticleRenderLayers(sprite, plane, playerHeld = false) {
     if (!sprite?.layers) return;
     const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Used to share the held-weapon selective replay without losing ordinary room rendering.
     const overlays = Number.isInteger(overlayLayer) && overlayLayer > 0 && overlayLayer < 32
@@ -468,7 +468,7 @@
     const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Normal rendering stays available if the selective depth replay skips this scene.
     if ((Number(sprite.layers.mask) >>> 0) !== wantedMask) sprite.layers.mask = wantedMask;
     sprite.userData = sprite.userData || {};
-    sprite.userData.hobunjiHeldOverlayParticle = !!overlays; // Read by HeldObjectRenderOrder's replay culling: drifting held motes must never be culled by their source blade's bounds.
+    sprite.userData.hobunjiHeldOverlayParticle = !!overlays && playerHeld; // Only player-held motes are protected from the source-blade scissor's extra frustum cull.
   }
 
   function spawnParticle(emitter, mask, snapshot) {
@@ -506,7 +506,7 @@
     // well: rooms without ground replay still use the ordinary world pass.
     // Recheck existing sprites each frame as the held renderer may mark a mesh
     // after its first particle spawned (notably during scene/equipment rebuilds).
-    syncParticleRenderLayers(sprite, emitter.plane);
+    syncParticleRenderLayers(sprite, emitter.plane, emitter.playerHeld);
 
     const index = mask.indices[Math.floor(random() * mask.indices.length)]; // Used to choose one exact verdigris-qualified metal pixel uniformly.
     const origin = metalPixelToLocal(index, mask, emitter.plane); // Pixel emission follows even offset/expanded modular weapon geometry.
@@ -602,7 +602,7 @@
     }
     for (const plane of wanted) {
       if (!EMITTERS.has(plane)) {
-        const emitter = makeEmitter(plane); // Used as the persistent particle pool for this visible blade copy.
+        const emitter = makeEmitter(plane, true); // Only these world-held player emitters bypass the replay's additional sprite cull.
         if (emitter) EMITTERS.set(plane, emitter);
       }
     }
@@ -624,7 +624,7 @@
     for (const emitter of emitters) {
       for (let index = emitter.particles.length - 1; index >= 0; index--) {
         const particle = emitter.particles[index]; // Used as the current pooled particle advanced this frame.
-        syncParticleRenderLayers(particle.sprite, emitter.plane); // Live weapons can acquire their replay layer after the first emission.
+        syncParticleRenderLayers(particle.sprite, emitter.plane, emitter.playerHeld); // Live weapons can acquire their replay layer after the first emission.
         if (updateParticle(particle, dt)) continue;
         retireParticle(emitter, particle);
         emitter.particles.splice(index, 1);
