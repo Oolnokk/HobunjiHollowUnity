@@ -493,12 +493,13 @@ assert.equal(feature.normalizeRecipe({detailPreservation:4,knotDensity:-1,minRoo
 assert.equal(feature.normalizeRecipe({knotDensity:-1}).knotDensity,0);
 assert.equal(feature.normalizeRecipe({minRootRadius:Infinity}).minRootRadius,.008);
 assert.equal(feature.normalizeRecipe({minRootRadius:0}).minRootRadius,.002);
-const roughnessHelper=editor.slice(editor.indexOf('  function readRuinRoughness('),editor.indexOf('  function disposeRoomModel(')); // Execute the preview's saved-setting validator without creating WebGL.
+const roughnessHelper=editor.slice(editor.indexOf('  function readRuinRoughness('),editor.indexOf('  const {ruinRockGeometry')); // Execute the preview's saved-setting validator without creating WebGL.
 const roughnessContext={$:()=>({value:'.3'})};vm.createContext(roughnessContext);vm.runInContext(roughnessHelper,roughnessContext);
 for(const [value,expected] of [[0,0],[1,1],[-2,0],[4,1],['.25',.25],[NaN,.3],[undefined,.3],[Infinity,.3]]){
   roughnessContext.value=value;assert.equal(vm.runInContext('readRuinRoughness(value)',roughnessContext),expected);
 }
-const prismHelper=editor.slice(editor.indexOf('  function ruinRockGeometry('),editor.indexOf('  function disposeRoomModel(')); // Exercise extrusion before roughening, including caller/temporary geometry ownership.
+const scenerySource=fs.readFileSync('docs/js/stone-age-ruin-scenery.js','utf8'); // Shared geometry now lives outside the editor, alongside the playable ruin.
+const prismHelper=scenerySource.slice(scenerySource.indexOf('  function ruinRockGeometry('),scenerySource.indexOf('  function makeRuinStoneMaterial(')); // Exercise extrusion before roughening, including caller/temporary geometry ownership.
 const prismSource={computeBoundingBox(){},boundingBox:{getSize:out=>out.copy(new Vector3(4,3,0)),getCenter:out=>out.copy(new Vector3(1,2,.1))}};
 const prismContext={T:{Vector3,BoxGeometry:class{constructor(x,y,z){this.dimensions=[x,y,z];}translate(x,y,z){this.center=[x,y,z];}dispose(){this.disposed=true;}}},mesh:{geometry:prismSource,userData:{ruinInteriorWall:true}},window:{ProceduralFurniture:{createRockGeometry(input,settings){prismContext.input=input;prismContext.settings=settings;return 'rock';}}}};
 vm.createContext(prismContext);vm.runInContext(prismHelper,prismContext);
@@ -537,8 +538,8 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
     foliage:{...foliage,buildSurfaceGrowth(parent,recipe){staticCalls.push(recipe);return fakeGrowth(parent,recipe);}}});
   assert.equal(staticCalls.length,templeRecipes.length,'each authored Temple layer must run exactly once');
   staticCalls.forEach((actual,index)=>{for(const [key,value] of Object.entries(templeRecipes[index]))if(key!=='seed')assert.deepEqual(actual[key],value,'Temple '+key+' must remain independent of structure settings');});
-  const coverRecipeHelper=editor.slice(editor.indexOf('  function ruinCoverRecipes('),editor.indexOf('  async function prepareRuin(')),coverRecipeContext={templeCoverRecipes:templeRecipes,rootFinishForPreview:()=>({color:'#8b7451'})};
-  vm.createContext(coverRecipeContext);vm.runInContext(coverRecipeHelper,coverRecipeContext);const varied=vm.runInContext('ruinCoverRecipes()',coverRecipeContext);
+  const coverRecipeHelper=scenerySource.slice(scenerySource.indexOf('  function coverRecipes('),scenerySource.indexOf('  // The playable generator owns collision')),coverRecipeContext={templeCoverRecipes:templeRecipes};
+  vm.createContext(coverRecipeContext);vm.runInContext(coverRecipeHelper,coverRecipeContext);const varied=vm.runInContext('coverRecipes(templeCoverRecipes,"#8b7451")',coverRecipeContext);
   assert.equal(varied.length,7,'initial cover must add woven vines plus root and vine floor passes');
   assert(varied.every(r=>r.shrinkwrapFinal===true&&r.strandLimit<=80),'all initial vegetation must shrinkwrap onto final stone with bounded per-layer budgets');
   for(let i=0;i<templeRecipes.length;i++){assert(varied[i].density>=templeRecipes[i].density);assert(varied[i].strandLimit>=templeRecipes[i].strandLimit);}

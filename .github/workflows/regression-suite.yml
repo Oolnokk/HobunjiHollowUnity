@@ -52,6 +52,8 @@ jobs:
         run: node scripts/test-surface-foliage-styles-browser.js
       - name: Rooted ruin mechanism gameplay collision browser regression
         run: node scripts/test-root-mechanism-runtime-browser.js
+      - name: Stone Age multiroom floor and texture lifecycle browser regression
+        run: node scripts/test-stone-age-multiroom-browser.js
       - name: Controller modal pin browser regression
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Farmwork controller tile grid and stepper browser regression
