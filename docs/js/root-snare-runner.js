@@ -28,7 +28,7 @@
     const appearance={...(profile.appearance||{}),...(profile.visuals?.appearance||{}),
       ...(raw.appearance||{}),...(npc.appearance||{})};
     appearance.speciesId=String(appearance.speciesId||appearance.species||npc.species||'mao_ao').replace(/_/g,'-');
-    appearance.gender=String(appearance.gender||npc.gender||'male').toLowerCase()==='female'?'female':'male';
+    appearance.gender=['female','f'].includes(String(appearance.gender||npc.gender||'male').toLowerCase())?'female':'male';
     appearance.cosmetics={...(profile.appearance?.cosmetics||{}),...(raw.appearance?.cosmetics||{}),
       ...(npc.appearance?.cosmetics||{})};
     appearance.bodyColors={...(profile.appearance?.bodyColors||{}),...(raw.appearance?.bodyColors||{}),
@@ -48,7 +48,14 @@
     const records=await npcDatabase();
     await root.NpcAvatarPreview.ensurePortraitCosmetics({assetBase:'assets/',configBase:'config/'});
     const rng=root.RootSnareHands?.seeded?.(seed)||Math.random;
-    const eligible=records.filter(n=>{const a=appearanceFor(n);return !!a.speciesId&&a.speciesId!=='omgurku';});
+    const supported=root.getPortraitFighters?.()||[]; // The Animation Author's own portrait fighter list is authoritative.
+    const eligible=records.filter(n=>{const a=appearanceFor(n);
+      return a.speciesId!=='omgurku'&&supported.some(f=>{
+        const species=String(f.speciesId||'').replace(/_/g,'-');
+        const gender=f.gender||((f.id==='F')?'female':(f.id==='M')?'male':null);
+        return species===a.speciesId&&(!gender||gender===a.gender);
+      });
+    });
     if(!eligible.length)throw Error('No non-Omgurku NPC is available for this preview.');
     const npc=id?eligible.find(n=>String(n.id||n.name)===String(id)):eligible[Math.floor(rng()*eligible.length)];
     if(!npc)throw Error('Chosen NPC is not available in the loaded repository database.');
