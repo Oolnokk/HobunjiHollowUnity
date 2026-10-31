@@ -32,7 +32,7 @@ Ticks are delivered with `noStagger` so a damage-over-time rider does not stun-l
 
 `def.attacks: ['swarm']`, `attackTag: 'poison'`, `realAttackEvery: 1` (a companion uses Swarm every time instead of the usual 1 in 4). Defaults: 6 s on the target, 5 s rest, a tick every 0.5 s of `0.3 x attackDamage` direct damage with a heavy Poisoned Health buildup (`poisonedHealth: 3`, i.e. 3x the direct damage), softened to 60% against the player; immune to the swarmed target; the swarmed creature flails at 50% of its own `attackDamage` every 1.1 s, which damages allies within 1.4 tiles.
 
-Attached Honeyfuzzles contract to 42% of their free-flight spread for a clearly distinct, densely clustered state. Contraction is quick on impact; they relax back into a loose cloud on detach. Only presentation changes, not attack duration/damage.
+Attached Honeyfuzzles now contract to 71% of their ordinary spread (half the former contraction) and occupy the middle of the host's upper quarter (87.5% up its full height). They relax back into free flight on detach. These are visual changes only. An eligible ally within six tiles temporarily targets the swarmed victim and uses a normal bite telegraph: the swarm receives 100% of the ally's hit, the victim 25% of its full Health, Footing, affliction and knockback effects, and the swarm detaches immediately. Owner/camp/tribe/den/herd rules restrict rescue; global friendly fire stays disabled.
 
 Honeyfuzzles are also in the territorial species list (`creatureBehaviors.territorial.species`), so a swarm defends its hive: it warns first, then fights, using Swarm on whoever is attacking or too close.
 
