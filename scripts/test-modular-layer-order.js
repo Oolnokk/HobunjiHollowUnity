@@ -193,6 +193,83 @@ async function run() {
     { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 },
     'existing exported duplicateTransform drafts migrate to the canonical rig transform');
 
+  // Independently transformed local area: only the TOP eye/head and the TOP
+  // recipe box are children. The lower end of the same shaft must be untouched.
+  const areaBase=JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
+  api.replace(areaBase);
+  const baseTwoHead=await api.compose('hachutuTorchStaff','warhammer');
+  const areaDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  const topArea={id:'topCap',label:'Top cap',box:{x0:130,y0:185,x1:280,y1:348},
+    transform:{scaleX:1.4,scaleY:.7,x:63,y:-36}};
+  areaDraft.shafts.hachutuTorchStaff.rigRegions=[topArea];
+  api.replace(areaDraft);
+  const areaShaft=api.getConfig().shafts.hachutuTorchStaff;
+  assert.equal(areaShaft.rigRegions.length,1,'area selection survives validated save/load');
+  const areaRig=api.attachmentRig(areaShaft,api.getConfig().heads.warhammer,
+    api.settings('hachutuTorchStaff','warhammer'));
+  assert.equal(areaRig.children.filter(m=>m.regionId==='topCap').length,1,
+    'ONLY the top mounting primitive joins this local area');
+  assert.equal(areaRig.children.filter(m=>!m.regionId).length,1);
+  const areaCanvas=await api.compose('hachutuTorchStaff','warhammer');
+  const sampleHeads=canvas=>{
+    const frame=canvas.modularFrame;
+    return canvas.drawnPixels.filter(p=>p.kind==='head').map(p=>({
+      x:frame.left+p.origin.x/canvas.width*frame.width,
+      y:frame.top+p.origin.y/canvas.height*frame.height,
+      scale:Math.hypot(p.axis.x-p.origin.x,p.axis.y-p.origin.y)*frame.width/canvas.width,
+    }));
+  };
+  const samples0=sampleHeads(baseTwoHead),samples1=sampleHeads(areaCanvas);
+  assert.equal(samples0.length,2);assert.equal(samples1.length,2);
+  assert(Math.hypot(samples0[0].x-samples1[0].x,samples0[0].y-samples1[0].y)<1e-5,
+    'head on unselected lower mount does not move');
+  assert(Math.hypot(samples0[1].x-samples1[1].x,samples0[1].y-samples1[1].y)>15,
+    'selected top head is transformed in final composed artwork');
+  assert(Math.abs(samples1[1].scale-samples0[1].scale)>5,'selected head really scales');
+  const beforeRecipe=api.expandOps(areaBase.shafts.hachutuTorchStaff.overrides.dagger.bridges.strokes);
+  const afterRecipe=api.rigBridgeOperations(areaShaft,areaShaft.overrides.dagger.bridges.strokes);
+  assert.equal(beforeRecipe.length,afterRecipe.length);
+  assert(afterRecipe.some(op=>op._rigRegionId==='topCap'),
+    'top placed recipe produces transformed children');
+  assert(afterRecipe.some(op=>!op._rigRegionId && op.points),
+    'lower placed recipe retains unselected original geometry');
+  for(const op of afterRecipe.filter(op=>op._rigRegionId==='topCap'&&op.points)){
+    const src=beforeRecipe[afterRecipe.indexOf(op)];
+    if(!src.points?.length)continue;
+    const expected=api.rigPoint(areaShaft,{x:src.points[0][0],y:src.points[0][1]},topArea);
+    assert(Math.abs(expected.x-op.points[0][0])<1e-7&&Math.abs(expected.y-op.points[0][1])<1e-7,
+      'every expanded top recipe stroke inherits local area before parent');
+  }
+  const regionReload=JSON.parse(JSON.stringify(api.getConfig()));
+  api.replace(regionReload);
+  assert.deepEqual(api.getConfig().shafts.hachutuTorchStaff.rigRegions,areaShaft.rigRegions,
+    'area labels, source box, and transformation survive a second configuration round trip');
+  // Optional shaft art: the shaft and fuel move together, but the two fitted
+  // head primitives preserve their positions when the overall rig is unchanged.
+  const unscaledArt=await api.compose('hachutuTorchStaff','warhammer');
+  const artDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  artDraft.shafts.hachutuTorchStaff.shaftArtTransform={
+    enabled:true,scaleX:1.45,scaleY:.8,x:45,y:-70
+  };
+  api.replace(artDraft);
+  const artShaft=api.getConfig().shafts.hachutuTorchStaff;
+  assert.equal(api.shaftArtTransform(artShaft).enabled,true);
+  const scaledArt=await api.compose('hachutuTorchStaff','warhammer');
+  assert.deepEqual(sampleHeads(unscaledArt),sampleHeads(scaledArt),
+    'optional shaft-art sizing never changes mounted head primitive coordinates or scale');
+  const shaftSample=canvas=>{
+    const p=canvas.drawnPixels.find(x=>x.kind==='haft').origin,f=canvas.modularFrame;
+    return {x:f.left+p.x/canvas.width*f.width,y:f.top+p.y/canvas.height*f.height};
+  };
+  assert(Math.hypot(shaftSample(unscaledArt).x-shaftSample(scaledArt).x,
+    shaftSample(unscaledArt).y-shaftSample(scaledArt).y)>12,
+    'opt-in shaft-art transform moves actual shaft pixels independently of heads');
+  const artOffDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  artOffDraft.shafts.hachutuTorchStaff.shaftArtTransform.enabled=false;
+  api.replace(artOffDraft);
+  assert.deepEqual(sampleHeads(unscaledArt),sampleHeads(await api.compose('hachutuTorchStaff','warhammer')),
+    'disabling optional shaft transform retains fitted head output');
+
   const fireActivations = []; // Captures the actual modular weapon decorator's living flame carrier in a lightweight Three.js fixture.
   const fireWindow = { ModularWeapons: api, HobunjiLayeredWeaponEffects: {
     activateStatic(state, base, layers, meshes, image, unit) {
