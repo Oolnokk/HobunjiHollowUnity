@@ -47,7 +47,10 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
           type: 'fire', sourceHex: '#7F00FF', masteryClusters: 2,
           rate: 44, // Each of the two tips gets the Torch-Flail's full-strength 22 motes/s at mastery 5.
           colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
-          size: 0.05, life: 0.35, speed: 0.12, // Torch-Flail fuel's 0.02 × its 2.5-scaled brazier head.
+          size: 0.02, life: 0.35, speed: 0.12, // Keep original brazier mote size; scale the whole emitter geometry instead.
+          visualScale: 4, // Bigger than the 2.5x brazier, while keeping each tip anchored to the staff.
+          masteryFocus: 0.55, // Preserve the ignition footprint; don't stack every flame onto a single pixel.
+          blendMode: 'normal', opacity: 0.65, // Avoid additive whiteout when larger flame silhouettes overlap.
         },
       }, // One rigid PNG, two original-marker fire regions; deliberately no metal/verdigris surface.
       layers: [],
