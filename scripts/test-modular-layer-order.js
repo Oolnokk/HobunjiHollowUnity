@@ -230,6 +230,39 @@ async function run() {
   assert(editor.includes("field.addEventListener('input', () => applyRig(false))")
     && editor.includes("drawLines('shaft-canvas'); updateRigTree(); preview()"),
     'typing scale or translation immediately redraws both the visible rig and assembled primitives');
+  // Execute the editor's real input binding; a previous onchange-only hookup left visual
+  // primitives unmoved on mobile until the numeric control was blurred.
+  const controlsStart = editor.indexOf('  for (const [id, key, fallback, min, max] of [', helperEnd);
+  const controlsEnd = editor.indexOf("  byId('duplicate-sprite').onchange", controlsStart);
+  assert(controlsStart > helperEnd && controlsEnd > controlsStart);
+  const controls = new Map();
+  for (const id of ['duplicate-scale-x','duplicate-scale-y','duplicate-x','duplicate-y']) {
+    controls.set(id, { value: '1', listeners: new Map(),
+      addEventListener(name, fn) { this.listeners.set(name, fn); } });
+  }
+  const changes = { render: 0, tree: 0, preview: 0, save: 0, replaced: 0 };
+  const rigBinding = new Function('byId', 'chosenShaft', 'api', 'data', 'drawLines',
+    'updateRigTree', 'preview', 'save', editor.slice(controlsStart, controlsEnd));
+  rigBinding(id => controls.get(id), () => fixture,
+    { replace() { changes.replaced++; } }, { shafts: { hachutuTorchStaff: fixture } },
+    () => { changes.render++; }, () => { changes.tree++; }, () => { changes.preview++; },
+    () => { changes.save++; });
+  controls.get('duplicate-scale-x').value = '2.4';
+  controls.get('duplicate-scale-x').listeners.get('input')();
+  assert.equal(fixture.duplicateTransform.scaleX, 2.4);
+  assert.equal(changes.replaced, 1);
+  assert.equal(changes.preview, 1);
+  assert.equal(changes.render, 1);
+  controls.get('duplicate-y').value = '86';
+  controls.get('duplicate-y').listeners.get('input')();
+  assert.equal(fixture.duplicateTransform.y, 86);
+  assert.equal(changes.preview, 2);
+  assert.equal(changes.tree, 2);
+  controls.get('duplicate-y').onchange();
+  assert.equal(changes.save, 1, 'committing rig edits persists the result without requiring a second transform');
+  controls.get('duplicate-scale-y').value = '-';
+  controls.get('duplicate-scale-y').listeners.get('input')();
+  assert.equal(fixture.duplicateTransform.scaleY, .75, 'partial numeric entry does not corrupt the rig');
   console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
 }
 
