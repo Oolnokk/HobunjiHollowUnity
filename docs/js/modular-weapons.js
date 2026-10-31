@@ -105,15 +105,16 @@
     // A placed recipe is one selectable child group: every expanded step inherits
     // the area containing its authored placement box, not each individual point.
     const expanded = strokes.flatMap(saved => {
-      const centroid = saved.recipe && saved.box ? {x:(saved.box.x0+saved.box.x1)/2,y:(saved.box.y0+saved.box.y1)/2} : null;
-      return expandOps([saved]).map(op => ({ op, groupRegion:centroid && regionAt(shaft,centroid) }));
+      const isRecipe=Boolean(saved.recipe && saved.box); // Even UNSELECTED recipes must stay a single group.
+      const centroid=isRecipe ? {x:(saved.box.x0+saved.box.x1)/2,y:(saved.box.y0+saved.box.y1)/2} : null;
+      return expandOps([saved]).map(op => ({ op, isRecipe, groupRegion:isRecipe ? regionAt(shaft,centroid) : null }));
     });
     const parent=shaftRigTransform(shaft);
-    return expanded.map(({op,groupRegion}) => {
+    return expanded.map(({op,isRecipe,groupRegion}) => {
       const center = op.junction ? {x:op.x,y:op.y} : op.points?.length
         ? {x:op.points.reduce((n,p)=>n+p[0],0)/op.points.length,
            y:op.points.reduce((n,p)=>n+p[1],0)/op.points.length} : null;
-      const region=groupRegion || (center && regionAt(shaft,center));
+      const region=isRecipe ? groupRegion : (center && regionAt(shaft,center)); // Never select individual steps of an unselected placed recipe.
       const area=region ? duplicateTransform(region.transform) : duplicateTransform();
       const sx=parent.scaleX*area.scaleX,sy=parent.scaleY*area.scaleY;
       const mean=Math.sqrt(sx*sy);
@@ -245,8 +246,8 @@
     return raw.slice(0, 12).flatMap((region, index) => {
       const box = region?.box;
       if (!box || ![box.x0,box.y0,box.x1,box.y1].every(Number.isFinite)) return [];
-      const x0 = finite(box.x0,0,0,450), y0 = finite(box.y0,0,0,1204);
-      const x1 = finite(box.x1,0,0,450), y1 = finite(box.y1,0,0,1204);
+      const x0 = finite(box.x0,0,-2400,2850), y0 = finite(box.y0,0,-2400,3604);
+      const x1 = finite(box.x1,0,-2400,2850), y1 = finite(box.y1,0,-2400,3604); // Regions may select attached head/bridge art beyond the 450×1204 donor image.
       if (x1-x0 < 8 || y1-y0 < 8) return [];
       const id = typeof region.id === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(region.id)
         ? region.id : 'area'+index;
