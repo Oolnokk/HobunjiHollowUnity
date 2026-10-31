@@ -3,8 +3,8 @@
 
   // Porakaneki wilderness camp network.
   //
-  // Every generated wilderness map receives 2-4 small camps populated only by
-  // procedural Porakaneki. A separate large camp contains the named chief plus
+  // Every generated wilderness map receives one hunting camp per rival tribe,
+  // at opposing ends of the map. A separate large camp contains the named chief plus
   // a larger procedural population and migrates between wilderness maps when
   // CalendarSystem's regional season changes. Small camps stay put for the
   // whole Tothal generation.
@@ -545,10 +545,8 @@
     buildGeneration += 1;
   }
 
-  function smallCampCountForZone(zoneId) {
-    const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-count`);
-    return Math.max(MIN_HUNTING_CAMPS_PER_ZONE, integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4)));
+  function smallCampCountForZone() {
+    return MIN_HUNTING_CAMPS_PER_ZONE; // Exactly one per tribe and map, regardless of saved/older config overrides.
   }
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
@@ -593,6 +591,18 @@
     for (const rival of earlierTribes()) sites.push(...rival.occupiedSites(zoneId), ...rival.reservedSites(zoneId)); // Rival tribes keep the same spacing a bandit camp gets.
     return sites.map(site => site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null).filter(Boolean);
   }
+  function huntingCampPreferredPoint(zoneState, zoneId) {
+    const view = zoneState.view; // This map's dimensions determine which pair of opposing edges are its "ends".
+    const horizontal = view.cols >= view.rows; // Split the map along its longest axis for maximum tribe separation.
+    const rivalSite = earlierTribes().flatMap(rival => rival.occupiedSites(zoneId))[0]; // Earlier tribe's hunting camp, never its inactive chief reservation.
+    const axisLength = horizontal ? view.cols : view.rows; // End-to-end span used to choose the edge farthest from the rival.
+    const rivalAxis = rivalSite ? (horizontal ? rivalSite.x + rivalSite.w / 2 : rivalSite.y + rivalSite.h / 2) : null; // Rival's site center on the long axis.
+    const highEnd = rivalAxis == null ? earlierTribes().length > 0 : rivalAxis < axisLength / 2; // First tribe takes the low end; second takes the far end.
+    return horizontal
+      ? { col: highEnd ? view.cols : 0, row: rivalSite ? rivalSite.y + rivalSite.h / 2 : view.rows / 2 }
+      : { col: rivalSite ? rivalSite.x + rivalSite.w / 2 : view.cols / 2, row: highEnd ? view.rows : 0 };
+  }
+
   function stampHuntingCamp(zoneState, zoneId, campIndex, minimumFallback = false) {
     if (!zoneState?.view || !smallLocaleDef) return null;
     const instanceId = minimumFallback
@@ -600,6 +610,7 @@
       : `${KEY}_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
     const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
       rng: seededRng(`${generationYear()}:${zoneId}:${KEY}-small-site:${minimumFallback ? 'minimum' : campIndex}`),
+      preferredPoint: huntingCampPreferredPoint(zoneState, zoneId), // Rank legal camp sites toward the assigned end; all hard exclusions still apply.
       clearableTypes: new Set(),
       minimumCampRequired: minimumFallback,
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
@@ -642,18 +653,8 @@
     });
     if (zoneState.chiefReservation) state.stamps += 1;
 
-    const targetCount = smallCampCountForZone(zoneId);
-    for (let i = 0; i < targetCount; i++) stampHuntingCamp(zoneState, zoneId, i, false);
-    // Earlier tribes fill the zone first. A later tribe takes over their
-    // surplus hunting-camp slots (never below their one-camp floor) so rival
-    // tribes end up with comparable camps while chunks stay exclusive.
-    const maxSmallCamps = Math.max(targetCount, num(cfg?.smallCamps?.maxPerZone, 4));
-    for (let i = 0; i < maxSmallCamps; i++) {
-      if (zoneState.smallCamps.some(camp => camp.id === `${KEY}_small_${zoneId}_${i}`)) continue;
-      const rival = earlierTribes().find(other => num(other.debugSnapshot().zones?.[zoneId]?.smallCampCount, 0) > zoneState.smallCamps.length + 1);
-      if (!rival) break; // Parity reached; a lower seeded roll no longer leaves this tribe far behind its rival.
-      if (rival.reduceHuntingCampsForBandit(zoneId)) stampHuntingCamp(zoneState, zoneId, i, false);
-    }
+    const targetCount = smallCampCountForZone(zoneId); // Shared single-camp cap, still used by the protected minimum fallback.
+    stampHuntingCamp(zoneState, zoneId, 0, false); // No additional or rival-slot-replacement hunting camps.
     if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
       stampHuntingCamp(zoneState, zoneId, targetCount, true); // Exhaustive zero-clearance/non-flat fallback prevents an unlucky zone from ending up camp-less.
     }
@@ -2226,7 +2227,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);
