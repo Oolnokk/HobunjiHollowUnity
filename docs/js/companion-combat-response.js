@@ -53,6 +53,9 @@
       chosen = current;
     }
     if (chosen !== current) {
+      if (chosen && companion._stage?.mode === 'backingUp') {
+        companion._stage.mode = 'active'; companion._stage.t = 0; // A new immediate threat cancels the old target's retreat beat without bypassing attack cooldowns.
+      }
       window.__farmLog?.('[companion-response] ' + (companion.id || companion.creatureKey || 'pet') +
         ' target ' + (chosen?.id || chosen?.creatureKey || 'none'), 'combat');
     }
