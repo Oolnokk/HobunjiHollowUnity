@@ -853,7 +853,8 @@
   }
 
   window.MaskboundHeadtaker = Object.freeze({
-    id: ID, install, update, cancel, isDescending: attacker => { const state = active.get(attacker); return state?.stage === 'leap' && !!state.descending; }, // The world-space sky-to-portrait lerp currently owns this avatar's visible Y.
+    id: ID, install, update, cancel, isActive: attacker => { const state = active.get(attacker); return !!state && !state.disposed; }, // A committed leap/grapple keeps its clock even if gameplay AI temporarily switches from chase to searching.
+    isDescending: attacker => { const state = active.get(attacker); return state?.stage === 'leap' && !!state.descending; }, // The world-space sky-to-portrait lerp currently owns this avatar's visible Y.
     headArtReady: attacker => active.get(attacker)?.artReady || Promise.resolve(false), // Awaitable portrait composite for deterministic, frame-independent workshop scrubbing.
     getDebug: () => ({ ...telemetry }),
     tuning: Object.freeze({ leapS: LEAP_S, descentS: DESCEND_S, skyHeight: SKY_HEIGHT, rearArmFraction: REAR_ARM_FRACTION, targetHeightFraction: TARGET_HEIGHT_FRACTION, attackerLeanDegrees: 15, finalHeadPitchDegrees: 40, finalHeadStretch: FINAL_HEAD_STRETCH, pullImpulseFraction: PULL_IMPULSE_FRAC, neckStretch: HEAD_STRETCH, radiusTiles: 1, reversiblePullS: PULL_S, repetitions: 2, finalPullS: FINAL_PULL_S, throwS: THROW_S }),
