@@ -46,10 +46,11 @@
     if(!root.NpcAvatarPreview||!root.PNGPlaneAvatar||!root.renderPortraitProfile)
       throw Error('Load the Animation Author NPC portrait and PNGPlaneAvatar runtimes before generating a snare NPC.');
     const records=await npcDatabase();
-    // portrait-utils uses window.location.href (not document.baseURI) when
-    // resolving configBase. The author is nested under tools/live-root-growth/,
-    // so pass complete docs-root URLs exactly as Animation Author does.
-    const docsBase=new URL('../../',document.location.href);
+    // The shared portrait loader resolves configBase against location.href,
+    // unlike ordinary HTML loads that honor <base href="../../">. Reuse that
+    // existing docs-root base and pass fully-qualified URLs, just as the
+    // Animation Author does, without changing the shared portrait runtime.
+    const docsBase=document.baseURI; // Used for both species/cosmetic JSON and portrait sprite textures.
     await root.NpcAvatarPreview.ensurePortraitCosmetics({
       assetBase:new URL('assets/',docsBase).href,
       configBase:new URL('config/',docsBase).href
