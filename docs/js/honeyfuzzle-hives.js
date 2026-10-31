@@ -29,12 +29,12 @@
   const HIVE_REGROW_DAYS = 28;
   const SPAWN_RADIUS_TILES = 24; // Hives farther than this from the player stay empty until approached.
   const REACH_TILES = 2.6; // How close the player must stand to harvest.
-  const RESPAWN_DAYS = 2; // A killed swarm is replaced this many days later.
+  const RESPAWN_DELAY_MS = 15000; // A downed hive swarm returns fifteen real seconds later while the stump stands.
   const TUCK_DISTANCE_TILES = 1.2; // The stump tile is solid, so a swarm can only ever reach its edge: tuck when it gets there.
 
   let deps = null;
   const hiveCache = new WeakMap(); // layout -> [{col,row}] — scanned once per generated layout.
-  const killedOn = new Map(); // hiveKey -> calendar day its swarm died.
+  const killedAt = new Map(); // hiveKey -> monotonic time the swarm went down; never tied to calendar days.
   const spawnedOnce = new Set(); // hiveKey -> true once a swarm has existed (session scope).
 
   function init(injectedDeps) { deps = injectedDeps; }
@@ -65,6 +65,32 @@
   function swarmFor(hiveKey) {
     for (const c of deps.hostileObjects) if (c.hiveKey === hiveKey && c.health > 0) return c;
     return null;
+  }
+
+  function noteSwarmDown(creature) {
+    if (!creature?.hiveKey || creature.health > 0) return false;
+    if (!killedAt.has(creature.hiveKey)) killedAt.set(creature.hiveKey, performance.now()); // Called by the real death hook before corpse cleanup.
+    spawnedOnce.add(creature.hiveKey);
+    return true;
+  }
+
+  function wakeDefender(zoneId, hive) {
+    const grid = deps.getGrid();
+    if (!isLiveHiveTile(grid, hive.col, hive.row)) return null; // Collapsed stumps cannot defend or respawn.
+    let swarm = swarmFor(hive.key); // Reuse a tucked swarm rather than duplicating its entity.
+    if (!swarm) {
+      swarm = spawnSwarm(zoneId, hive);
+      if (!swarm) return null;
+    }
+    killedAt.delete(hive.key); // Night disturbance immediately restores a defender if one is down.
+    swarm._hiveTucked = false;
+    swarm._hiveAngeredUntil = performance.now() + 8000; // Prevents instantly flying home before it can retaliate.
+    swarm.state = 'chase';
+    swarm.targetPlayer = deps.player;
+    if (swarm.avatarRef?.group) swarm.avatarRef.group.visible = true;
+    if (swarm.groundShadow) swarm.groundShadow.visible = true;
+    window.__farmLog?.('[honeyfuzzle] disturbed hive at night: defender awakened', 'wildlife');
+    return swarm;
   }
 
   // ---- A. swarm lifecycle ---------------------------------------------------
@@ -110,21 +136,21 @@
     const grid = deps.getGrid();
     const hives = hivesInLayout(layout);
     if (!hives.length || !grid) return;
-    const T = deps.TILE, px = deps.player.x, py = deps.player.y, day = deps.calendar.day;
+    const T = deps.TILE, px = deps.player.x, py = deps.player.y;
     for (const h of hives) {
       const hive = { col: h.col, row: h.row, key: hiveKeyFor(zoneId, h.col, h.row) };
       if (!isLiveHiveTile(grid, hive.col, hive.row)) continue; // Collapsed: the swarm is homeless until it regrows.
       const existing = swarmFor(hive.key);
       if (existing) continue;
-      if (isNight()) continue; // Swarms are out only in their active hours; a stump with no swarm at night just stays quiet.
+      if (isNight() && !spawnedOnce.has(hive.key)) continue; // Untouched hives stay quiet at night; defeated hives still respawn after fifteen seconds.
       if (Math.hypot((hive.col + 0.5) * T - px, (hive.row + 0.5) * T - py) > SPAWN_RADIUS_TILES * T) continue;
-      if (killedOn.has(hive.key) && day - killedOn.get(hive.key) < RESPAWN_DAYS) continue;
-      if (!killedOn.has(hive.key) && spawnedOnce.has(hive.key)) { // Its swarm vanished without a recorded death (zone reset): treat as killed today.
-        killedOn.set(hive.key, day);
-        continue;
+      if (spawnedOnce.has(hive.key)) {
+        if (!killedAt.has(hive.key)) killedAt.set(hive.key, performance.now()); // Also catches entities removed without the ordinary death callback.
+        if (performance.now() - killedAt.get(hive.key) < RESPAWN_DELAY_MS) continue;
       }
-      killedOn.delete(hive.key);
-      spawnSwarm(zoneId, hive);
+      killedAt.delete(hive.key);
+      const replacement = spawnSwarm(zoneId, hive);
+      if (replacement && isNight()) wakeDefender(zoneId, hive); // A nighttime replacement must not hide immediately inside the stump.
     }
   }
 
@@ -143,7 +169,7 @@
       c.state = 'idle';
       return false;
     }
-    if (!night) return false;
+    if (!night || c._hiveAngeredUntil > performance.now()) return false;
     if (c.state === 'chase' || c.state === 'searching' || c.state === 'fleeing-low-health' || c.knockbackT > 0) return false; // Defending itself beats going to bed.
     const dx = c.homeX - c.x, dy = c.homeY - c.y;
     if (Math.hypot(dx, dy) <= T * TUCK_DISTANCE_TILES) {
@@ -183,6 +209,7 @@
     deps.felledPersist.set(zoneId, entries);
     const updated = deps.removeZoneVegetationVisual(zoneId, col, row);
     if (!updated) window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId);
+    killedAt.delete(hiveKeyFor(zoneId, col, row)); // No replacement while the stump is collapsed.
     for (const c of deps.hostileObjects) { // Its swarm loses its home: no more night return until a new stump grows.
       if (c.hiveKey === hiveKeyFor(zoneId, col, row)) {
         c.hiveKey = null; c._hiveTucked = false;
@@ -195,6 +222,12 @@
   function harvest(zoneId, col, row) {
     const grid = deps.getGrid();
     if (!isLiveHiveTile(grid, col, row)) return { ok: false, message: 'This stump has already collapsed.' };
+    if (isNight()) {
+      const defender = wakeDefender(zoneId, { col, row, key: hiveKeyFor(zoneId, col, row) });
+      return { ok: false, defender: !!defender, message: defender
+        ? 'The hive stirs! A honeyfuzzle swarm attacks when you try to take honey at night.'
+        : 'The hive cannot be disturbed right now.' }; // Keep the harvest and stump intact; waking the defender is the nighttime consequence.
+    }
     const { eggs, honey } = rollHarvest(deps.rnd);
     const eggRoom = Math.max(0, (window.InventoryStacks?.MAX_TOTAL ?? 99) - (Number(deps.inventory[EGG_ITEM]) || 0));
     if (eggRoom < 1) return { ok: false, message: 'No room in your bag for fertile eggs.' };
@@ -273,14 +306,14 @@
     const hives = hivesInLayout(deps.zoneLayouts.get(zoneId)).map(h => {
       const key = hiveKeyFor(zoneId, h.col, h.row);
       const swarm = swarmFor(key);
-      return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, killedOnDay: killedOn.get(key) ?? null };
+      return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, respawnRemainingS: killedAt.has(key) ? Math.max(0, (RESPAWN_DELAY_MS - (performance.now() - killedAt.get(key))) / 1000) : null };
     });
     return { zoneId, excluded, night: isNight(), spawnRadiusTiles: SPAWN_RADIUS_TILES, hives };
   }
 
   window.HoneyfuzzleHives = {
     SPECIES, EGG_ITEM, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, EGG_MIN, EGG_MAX, HONEY_MIN, HONEY_MAX,
-    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census,
-    debugSnapshot: () => ({ killedOn: [...killedOn], spawned: spawnedOnce.size }),
+    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census, noteSwarmDown,
+    debugSnapshot: () => ({ respawnCountdowns: [...killedAt].map(([key, at]) => ({ key, secondsRemaining: Math.max(0, (RESPAWN_DELAY_MS - (performance.now() - at)) / 1000) })), spawned: spawnedOnce.size }),
   };
 })();
