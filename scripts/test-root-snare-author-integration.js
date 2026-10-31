@@ -9,10 +9,11 @@ for(const [name,source] of [['Root Growth Author',author],['Wall snare',hands],[
   assert.doesNotThrow(()=>new Function(source),'javascript syntax: '+name);
 const required=['snareEnabled','snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed','snareReveal','snareBuild','snareReroute','snareNpc','snareNpcStatus','snareRunPast','snareRelease','snareRunAway','snareRunToward','snareDoubleGrip','snareStatus'];
 for(const id of required)assert(html.includes('id="'+id+'"'),'mobile preview is missing '+id);
-for(const script of ['js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','js/leg-bones.js','js/procedural-leg-animation.js','js/root-snare-hands.js','js/root-snare-runner.js','tools/live-root-growth/tool.js'])
+for(const script of ['js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','config/pants-rigs.js','js/pants-rig-core.js','js/pants-garment-renderer.js','js/leg-bones.js','js/procedural-leg-animation.js','js/root-snare-hands.js','js/root-snare-runner.js','tools/live-root-growth/tool.js'])
   assert(html.includes(script+'?v='),'versioned preview script missing: '+script);
 assert(html.indexOf('npc-avatar-preview-utils.js')<html.indexOf('root-snare-runner.js'));
 assert(html.indexOf('png-plane-avatar.js')<html.indexOf('root-snare-runner.js'));
+assert(html.indexOf('pants-rig-core.js')<html.indexOf('pants-garment-renderer.js'));
 assert(html.indexOf('leg-bones.js')<html.indexOf('procedural-leg-animation.js'));
 assert(html.indexOf('root-snare-hands.js')<html.indexOf('root-snare-runner.js'));
 assert(html.indexOf('root-snare-runner.js')<html.indexOf('tools/live-root-growth/tool.js'));
@@ -33,6 +34,8 @@ assert(author.includes("numeric('snareExtend',.05,12,.2)")&&author.includes("num
 assert(runner.includes('ProceduralLegAnimation?.attach')&&runner.includes('legs?.update?.'),'the walker must borrow the authentic procedural gait, not fake steps');
 assert(runner.includes('loadNpcPortrait')&&runner.includes('NpcAvatarPreview.buildProfileFromNpcExport')&&runner.includes('PNGPlaneAvatar.buildSinglePlaneAvatarModel'),'use actual Animation Author NPC portrait/plane builder and repository NPC records');
 assert(runner.includes('portraitView:\'behind\'')&&runner.includes('neckRig:true')&&runner.includes('standingPosteriorY'),'NPC must render the rear view, use skinned neck, and locate pelvis from species-specific leg solver');
+assert(runner.includes('PantsGarmentRenderer')&&runner.includes('attachToLegs')&&runner.includes('garmentForCosmetics'),
+  'actual NPC trousers/skirt must be selected from repository equipment and skinned to the native procedural leg bones');
 assert(runner.includes('bodyPivot.quaternion.setFromUnitVectors(up,baseAxis)')&&runner.includes('dual.tiltDeg'),'whole avatar must tilt using neck and feet grip positions');
 assert(author.includes('requireNpc:true')&&author.includes('runner.installAvatar(rendered)')&&author.includes('snareNpcRevision'),'the public editor must await real NPC assets and reject stale results rather than silently show the fixture');
 assert(hands.includes("target?.getGripTarget"),'both hands must target the same neck/feet points that drive body tilt');
