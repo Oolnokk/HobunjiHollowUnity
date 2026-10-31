@@ -24,11 +24,14 @@ const enemies = new Set([far, distant, herbivore, close]); // Deliberately wrong
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), close, 'closest urgent enemy wins even if last in Set');
 assert.equal(R.debugSnapshot(pet).target, 'close');
 
+pet._stage = { mode: 'backingUp', t: 0.9 }; // A stale retreat from a previous target should not delay response to a new enemy.
 const slightlyNearer = { id: 'challenger', x: 32, y: 0, health: 20, areaId: 'forest' };
 enemies.add(slightlyNearer);
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), close, 'small distance changes cannot flip-flop targets');
 slightlyNearer.x = 9;
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), slightlyNearer, 'a substantially more urgent threat interrupts target commitment');
+assert.equal(pet._stage.mode, 'active', 'switching to a much closer threat ends the old backup phase');
+assert.equal(pet._stage.t, 0, 'new target begins a fresh response timer without resetting the attack cooldown');
 slightlyNearer.health = 0;
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), close, 'dead target is immediately released');
 
