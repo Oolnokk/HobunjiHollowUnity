@@ -100,6 +100,7 @@ shaft.renderOrder = 1.5;
 state.plane = shaft;
 const shaftLayer = { id:'haftFuel', material:'marker', sourceHex:'#7F00FF', vfx:{ type:'fire', rate:22, life:.35, size:.02, speed:.12 } };
 const shaftMesh = { renderOrder:1.501 }; // Source mesh for the new shaft emitter, kept independent from the head.
+state.materialLayers = [{ mesh:shaftMesh, image:fuel }]; // Match decorate()'s registration contract before activating the rigid stack.
 api.activateStatic(state,[shaftLayer],[shaftMesh],back,0.002);
 assert.equal(state.fireEmitters.length,2,'shaft and head emitters remain owned by the same weapon');
 assert.equal(state.metalTargets.length,oldHeadTargets+1,'head enchantment masks survive activation of rigid shaft');
