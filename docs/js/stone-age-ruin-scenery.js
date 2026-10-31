@@ -151,13 +151,13 @@
         isPillar ||= /pillar/i.test(role);
         // Never reskin or hide a semantic activator/moving mechanism merely because a parent happens to be a pillar.
         if(hidden||semantic||!mesh.geometry?.getAttribute?.('position')||mesh.userData?.furnitureGlbPart)continue;
-        if(isFloor){nativeMeshes.push({mesh,visible:mesh.visible});continue;}
+        if(isFloor){nativeMeshes.push({mesh,layerMask:mesh.layers.mask});continue;}
         if(!mesh.userData?.ruinInteriorWall&&!isPillar)continue;
         const copy=mesh.clone(false);
         copy.geometry=ruinRockGeometry(mesh,{enabled:true,seed:String(seed)+':stone-'+pieces,roughness,contactArea:.35});
         copy.material=stoneMaterial;
         copy.userData={ruinPreviewRole:isPillar?'pillar':'wall',surfaceFoliageRole:'walls',stoneAgeScenery:true};
-        copy.castShadow=false;copy.receiveShadow=false;
+        copy.layers.enable(0);copy.castShadow=false;copy.receiveShadow=false; // Replacement stone must draw on the gameplay camera's default layer.
         mapRuinStoneSurfaces(copy);
         toLocal.clone().multiply(mesh.matrixWorld).decompose(copy.position,copy.quaternion,copy.scale);
         model.add(copy);
@@ -173,12 +173,12 @@
         floorY:Number(meta.floorSurfaceY)||0,walls,pillars,pieces,floorStones:floor.mesh.userData.stoneCount};
       const activate=()=>{
         if(active||closed)return;
-        for(const item of nativeMeshes)item.mesh.visible=false; // Semantic footprint/DS support remains on the untouched source objects.
+        for(const item of nativeMeshes)item.mesh.layers.disable(0); // Keep source visible/material alive for stillOwnedByScanRoot() collision; only suppress main-camera drawing.
         root.add(model);active=true;
       };
       const dispose=()=>{
         if(closed)return;closed=true;
-        for(const item of nativeMeshes)item.mesh.visible=item.visible;
+        for(const item of nativeMeshes)item.mesh.layers.mask=item.layerMask; // Original mask is restored before V50 reclaims the source tree.
         model.parent?.remove(model);
         const geometries=new Set();
         model.traverse(mesh=>{if(!mesh.isMesh)return;if(mesh.geometry)geometries.add(mesh.geometry);if(mesh.isInstancedMesh)mesh.dispose?.();});
