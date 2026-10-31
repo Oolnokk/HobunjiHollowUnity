@@ -260,7 +260,7 @@
       const stretch=clamp((dual.time-.55)/dual.stretchTime,0,1);
       const nodeAxis=targetAxis.copy(dual.neckAnchor.point).sub(dual.feetAnchor.point);
       if(nodeAxis.lengthSq()<.0001)nodeAxis.set(0,1,0);
-      else{nodeAxis.y+=.6;nodeAxis.normalize();}
+      else nodeAxis.normalize(); // No artificial pitch: the two gripping hands' relative origins dictate the actual body axis.
       // The hands, not an unrelated pitch tween, define the body orientation.
       // They are moved to these anatomical targets below, and the avatar tilt
       // follows the live vector between their neck and foot grips.
