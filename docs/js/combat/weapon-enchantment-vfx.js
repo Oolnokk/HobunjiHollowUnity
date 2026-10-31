@@ -465,8 +465,10 @@
     const overlayLayer = window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Used to share the held-weapon selective replay without losing ordinary room rendering.
     const overlays = Number.isInteger(overlayLayer) && overlayLayer > 0 && overlayLayer < 32
       && ((Number(plane?.layers?.mask) >>> overlayLayer) & 1);
-    const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Layer 0 is the safe fallback when replay is skipped.
+    const wantedMask = (1 | (overlays ? (1 << overlayLayer) : 0)) >>> 0; // Normal rendering stays available if the selective depth replay skips this scene.
     if ((Number(sprite.layers.mask) >>> 0) !== wantedMask) sprite.layers.mask = wantedMask;
+    sprite.userData = sprite.userData || {};
+    sprite.userData.hobunjiHeldOverlayParticle = !!overlays; // Read by HeldObjectRenderOrder's replay culling: drifting held motes must never be culled by their source blade's bounds.
   }
 
   function spawnParticle(emitter, mask, snapshot) {
