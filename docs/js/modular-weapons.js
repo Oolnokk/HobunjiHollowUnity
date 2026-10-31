@@ -500,7 +500,12 @@
     return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
   }
   function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}) {
-    let left = 0, top = 0, right = 450, bottom = 1204; // Fixed shaft envelope; only the rig's child primitives can expand the frame.
+    let left = 0, top = 0, right = 450, bottom = 1204; // Neutral shaft footprint is preserved for existing held poses.
+    const shaftArt=shaftArtTransform(shaft);
+    if (shaftArt.enabled) for(const x of [0,450]) for(const y of [0,1204]){
+      const p=duplicatePoint({x,y},shaftArt);
+      left=Math.min(left,p.x);top=Math.min(top,p.y);right=Math.max(right,p.x);bottom=Math.max(bottom,p.y);
+    } // Opt-in shaft artwork may extend outside its fixed, original 450x1204 footprint.
     for (const mount of attachmentRig(shaft, head, values).children) {
       for (const primitive of mount.children) {
         const matrix = primitive.worldMatrix; // Same parent*child transform that the canvas renderer uses.
@@ -610,13 +615,18 @@
         const image = fire?.material === 'marker'
           ? global.HobunjiLayeredWeaponEffects?.recolorMarker?.(shaftImage, fire.sourceHex, fire.targetHex) || shaftImage
           : shaftImage; // The shaft's fixed artwork is recolored, but never scaled or translated with its mounting rig.
+        const art=shaftArtTransform(shaft); // Optional shaft-only scale/translation; head primitives remain under their separate rig.
         for (const context of [ctx, protectedCtx].filter(Boolean)) {
           context.save();
+          if (art.enabled) {
+            context.translate(225+art.x,602+art.y);
+            context.scale(art.scaleX,art.scaleY);context.translate(-225,-602);
+          }
           if (shaft.crop) {
             context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
           }
           context.drawImage(image, 0, 0, 450, 1204);
-          context.restore(); // Neither the head fit nor the mounting rig changes this source-to-output mapping.
+          context.restore(); // Shaft-art transform also applies to the nonmetal mask; forged heads stay independent.
         }
       }
       function paintHeads() {
