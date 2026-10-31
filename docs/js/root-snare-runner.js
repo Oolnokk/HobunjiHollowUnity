@@ -36,7 +36,7 @@
       heading.normalize();
       velocity.lerp(heading.clone().multiplyScalar(chosenSpeed),Math.min(1,dt*4.5));
       const step=velocity.clone().multiplyScalar(dt);
-      if(step.lengthSq()>heading.distanceToSquared(target))step.copy(heading);
+      const remaining=target.distanceTo(group.position);if(step.length()>remaining)step.copy(heading).multiplyScalar(remaining); // Avoid overshooting a waypoint during a low-FPS frame.
       group.position.x=Math.min(center.x+edgeX,Math.max(center.x-edgeX,group.position.x+step.x));
       group.position.z=Math.min(center.z+edgeZ,Math.max(center.z-edgeZ,group.position.z+step.z));
       group.rotation.y=Math.atan2(velocity.x,velocity.z);
