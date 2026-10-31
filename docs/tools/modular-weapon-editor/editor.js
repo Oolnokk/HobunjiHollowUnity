@@ -108,9 +108,9 @@
     ctx.stroke(); ctx.restore();
   }
   function rigLayout(id) {
-    const shaft = chosenShaft(); // Only the shaft attachment rig has its own authoring transform.
-    return id === 'shaft-canvas' && shaft.duplicateFrom
-      ? api.duplicateTransform(shaft.duplicateTransform) : null;
+    const layout = api.shaftRigTransform(chosenShaft()); // Original shafts have the same movable rig as duplicates.
+    return id === 'shaft-canvas' && (layout.scaleX !== 1 || layout.scaleY !== 1 || layout.x || layout.y)
+      ? layout : null;
   }
   function displayMounts(id) {
     return id === 'head-canvas' ? [chosenHead().mount] : api.shaftMounts(chosenShaft());
@@ -155,7 +155,7 @@
         const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
-          duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: shaft.duplicateFrom ? api.duplicateTransform(shaft.duplicateTransform) : null,
+          duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
           rigHierarchy: rig, effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
@@ -225,9 +225,8 @@
   }
   function updateRigTree() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Show actual attachment descendants on mobile.
-    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom];
     const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey));
-    const transform = duplicated ? api.duplicateTransform(shaft.duplicateTransform) : api.duplicateTransform();
+    const transform = api.shaftRigTransform(shaft);
     byId('rig-tree').textContent = [
       'Shaft sprite + live fire (OUTSIDE rig; unchanged)',
       'Attachment scaling rig (PARENT)',
@@ -255,15 +254,15 @@
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
-    const layout = api.duplicateTransform(shaft.duplicateTransform);
+    const layout = api.shaftRigTransform(shaft);
     for (const [id, value] of [['duplicate-scale-x', layout.scaleX],['duplicate-scale-y', layout.scaleY],
       ['duplicate-x',layout.x],['duplicate-y',layout.y]]) {
-      byId(id).value = String(value); byId(id).disabled = !duplicated;
+      byId(id).value = String(value); byId(id).disabled = false; // Original shafts can scale/translate their rigs too.
     }
     byId('duplicate-sprite').value = shaft.sprite || ''; byId('duplicate-sprite').disabled = !duplicated;
     byId('duplicate-note').textContent = duplicated
       ? 'Rig copied from ' + duplicated.label + '. Scaling/translation affects fitted head primitives and tang/sleeve mounts only; the shaft PNG and flames remain fixed.'
-      : 'This is an original shaft. Choose "Duplicate selected shaft" to copy it, then adjust its mounting rig independently.';
+      : 'Original shaft: its mounting rig is directly editable. The shaft PNG and flames remain fixed. Duplicate only if you want a separate copy.';
     updateRigTree(); // Same live hierarchy is refreshed when editing values, not only after a full render.
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
@@ -416,7 +415,8 @@
     }
     const clone = JSON.parse(JSON.stringify(source)); // Keep pair-specific exclusions and sockets independent from donor edits.
     clone.label = label.slice(0,96); clone.sprite = sprite; clone.duplicateFrom = from;
-    clone.duplicateTransform = { ...api.duplicateTransform(source.duplicateTransform) }; // Independent scale/translation of mounting rig and attached heads only.
+    clone.attachmentRigTransform = { ...api.shaftRigTransform(source) }; // Copy the parent rig into an independently editable shaft.
+    delete clone.duplicateTransform; // Avoid retaining two conflicting transform values on new copies.
     data.shafts[id] = clone; updateShaftList(id); mountIndex = 0; save();
     msg('Duplicated '+source.label+' into '+clone.label+'. Attachment rig and fitted heads can move/scale; shaft artwork and fire stay fixed.');
   };
@@ -426,10 +426,10 @@
   ]) {
     const field = byId(id);
     const applyRig = commit => {
-      const shaft = chosenShaft(); if (!shaft.duplicateFrom) return;
+      const shaft = chosenShaft();
       const raw = field.value.trim(), n = Number(raw);
       if (!raw || !Number.isFinite(n)) return; // Partial mobile keyboard input is not a valid transform.
-      (shaft.duplicateTransform ||= {})[key] = Math.max(min, Math.min(max, n));
+      shaft.attachmentRigTransform = { ...api.shaftRigTransform(shaft), [key]: Math.max(min, Math.min(max, n)) }; // One canonical parent for original or cloned shafts.
       if (commit) {
         save(); // Committed draft and history entry on blur/Enter; browser storage matches the visible transform.
       } else {
