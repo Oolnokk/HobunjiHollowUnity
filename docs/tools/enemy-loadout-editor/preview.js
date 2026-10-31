@@ -69,6 +69,7 @@ const files = [
   'js/combat/combat-enchantments.js?v=20261031ghoulvar1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
   'js/combat/weapon-enchantment-vfx.js?v=20261031ghoulvar1',
   'js/combat/ghoul-special-variants.js?v=20261031ghoulvar1',
+  'js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1',
   'js/combat/combat-special-liches.js?v=20261030lichEyeglow5', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/player-body-transform-composer.js?v=20261030hff4c1d3',
   'js/drunk-locomotion.js?v=20261029a',

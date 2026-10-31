@@ -263,6 +263,8 @@
       const wearable = slots.filter(s => Object.keys(candidatesBySlot[s] || {}).length);
       if (wearable.length) fillSlot(wearable[Math.floor(deps.rnd() * wearable.length)]);
     }
+    // A captain always wears overwear (BanditRankWardrobe patterns it): force-fill the slot when the independent rolls left it empty.
+    if (rank === 'captain' && !Object.values(cosmeticSlots).includes('overwear')) fillSlot('overwear');
     // Head covering is never left to chance: every bandit wears a fine_hood,
     // a facewrap, or a headband. The independent per-slot rolls above already
     // land one most of the time -- this only force-fills hat or hood when
@@ -844,17 +846,23 @@
     const filtered = [...allowed].filter(shapeKey => deps.HELD_SHAPE_DEFS[shapeKey]?.slots?.includes('weapon')); // Explicit minion pools validate definitions directly, without the ordinary bandit enumeration filter. // Final validated melee pool consumed by banditWeaponFor().
     return filtered.length ? filtered : allWeaponShapes;
   }
-  function banditWeaponFor(cfg, rank, tier) {
-    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
-    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
-    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
-    const configuredMetalKey = typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers; null preserves rank/tier metal rolling.
+  // The rank/tier weapon material roll, shared by the weapon itself and by rank metal armor (which must match it before the portrait is baked).
+  function rollBanditWeaponMetalKey(cfg, rank, tier) {
     const [minT, maxT] = cfg?.weaponMetalTierRangeByRank?.[rank] || [1, 2];
     const bonusT = tier;
     const maxMetalTier = Math.max(...deps.VERDIGRIS_METAL_KEYS.map(k => deps.METAL_DEFS[k].tier));
     const loT = deps.clamp(Math.round(minT), 1, maxMetalTier), hiT = deps.clamp(Math.round(maxT) + bonusT, loT, maxMetalTier);
     const tierPool = deps.VERDIGRIS_METAL_KEYS.filter(k => deps.METAL_DEFS[k].tier >= loT && deps.METAL_DEFS[k].tier <= hiT);
-    const rolledMetalKey = (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+    return (tierPool.length ? tierPool : deps.VERDIGRIS_METAL_KEYS)[Math.floor(deps.rnd() * (tierPool.length || deps.VERDIGRIS_METAL_KEYS.length))]; // Existing rank/tier material roll retained for ordinary bandits.
+  }
+  const configuredWeaponMetalKey = cfg => typeof cfg?.weaponMetalKey === 'string' && deps.METAL_DEFS[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null; // Optional fixed material used by special callers.
+
+  function banditWeaponFor(cfg, rank, tier) {
+    const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
+    const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
+    const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
+    const configuredMetalKey = configuredWeaponMetalKey(cfg); // Null preserves rank/tier metal rolling.
+    const rolledMetalKey = configuredMetalKey ? null : rollBanditWeaponMetalKey(cfg, rank, tier);
     const metalKey = configuredMetalKey || rolledMetalKey; // Final material passed to item-key generation and damage scaling.
     const weaponKey = deps.craftedToolItemKey(shapeKey, metalKey);
     return { weaponKey, shapeKey, metalKey, dmgType: shape.dmgType || 'sharp', dmgMultiplier: deps.metalDmgMultiplier(metalKey) };
@@ -2815,6 +2823,8 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
+    const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
+    if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
     const legacyMask = (roster.equippedCosmetics || []).find(id=>window.isPortraitMaskCosmeticId?.(id) && roster.cosmeticSlots?.[id] === 'hood');
     if (legacyMask) {
@@ -2827,8 +2837,11 @@
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
     if (roster?.mountSpecies && !roster.mountGenotype) roster.mountGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(roster.mountSpecies) || null; // Same coat/pattern roll a wild specimen gets; kept on the roster so a rebuilt avatar keeps its mount.
     if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster);
+    if (loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster) { // Bandit rank is worn: pauldrons, circlets, patterned pants/overwear.
+      window.BanditRankWardrobe?.style?.(roster, { rank, rnd: deps.rnd, rollDyeId: () => _banditRollDyeId(cfg), metalKey: wearsRankMetal ? configuredWeaponMetalKey(cfg) : null, mastery: banditMasteryFor(cfg, rank, tier) });
+    }
     if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster && (opts.extra?.isGhoulShadowknight || opts.extra?.mineWyrmWitchType)) { // Mine variants: own wardrobe, patterns, and (knights) an enchanted weapon.
-      await window.GhoulSpecialVariants?.style?.(roster, { rnd: deps.rnd, tier, shadowknight: !!opts.extra.isGhoulShadowknight, witchType: opts.extra.mineWyrmWitchType || null });
+      await window.GhoulSpecialVariants?.style?.(roster, { rnd: deps.rnd, tier, shadowknight: !!opts.extra.isGhoulShadowknight, witchType: opts.extra.mineWyrmWitchType || null, mastery: banditMasteryFor(cfg, rank, tier) });
     } // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.

@@ -68,10 +68,11 @@
     return { enchantments, visual, counts };
   }
 
-  function metalPiece(id, metalKey, gender, pattern, paintHex) {
+  function metalPiece(id, metalKey, gender, pattern, paintHex, mastery = 0) {
     const armor = window.MetalArmorSystem;
     const item = armor?.makeCraftedItem?.(id, metalKey);
     if (!item) return null;
+    item.temperXp = window.BanditRankWardrobe?.temperXpForMastery?.(mastery) || 0; // Temper (verdigris) follows the weapon's mastery.
     item.sprite = armor.spriteForBlueprintAppearance?.(id, { speciesId: 'ghoul', gender });
     item.smithTreatment = { mode: 'painted', metalKey, pattern, paintHex }; // The metal itself, painted with the piece's own random-framed pattern.
     return item;
@@ -79,7 +80,7 @@
 
   // Dresses a mine ghoul variant. options: { rnd, tier, shadowknight, witchType }. Main clothing colors stay the ordinary ghoul's (set by BanditCombat).
   async function style(roster, options = {}) {
-    const { rnd = Math.random, tier = 1, shadowknight = false, witchType = null } = options;
+    const { rnd = Math.random, tier = 1, shadowknight = false, witchType = null, mastery = 0 } = options;
     if (!roster || (!shadowknight && !witchType)) return roster;
     const gender = roster.appearance?.gender === 'female' ? 'female' : 'male';
     const slots = roster.cosmeticSlots || (roster.cosmeticSlots = {});
@@ -106,7 +107,7 @@
     const pieces = shadowknight ? ['tangedcirclet', 'rounded_pauldron'] : ['tangedcirclet'];
     roster.metalArmorItems = (roster.metalArmorItems || []).filter(item => !dropSlots.has(item.slot));
     for (const id of pieces) {
-      const item = metalPiece(id, metalKey, gender, framedPattern(glyph, rnd), patternHex);
+      const item = metalPiece(id, metalKey, gender, framedPattern(glyph, rnd), patternHex, mastery);
       wear(id, id === 'tangedcirclet' ? 'hat' : 'pauldron');
       if (item) roster.metalArmorItems.push(item);
     }
