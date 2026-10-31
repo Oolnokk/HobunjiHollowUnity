@@ -300,8 +300,10 @@
       for(const offset of room.floorLayout.offsets){const patch=floor.targetGrowth.clone(true);patch.name='Quarter-scale floor vegetation';patch.scale.setScalar(room.floorLayout.scale);patch.position.set(...offset);walls.targetGrowth.add(patch);patches.push(patch);}
       const strands=wallInfo.shapeStrands+floorInfo.shapeStrands*patches.length;walls.targetGrowth.userData.generatedStrands=strands;
       let disposed=false; // Clones share floor geometry/materials; dispose the original generated floor resources exactly once.
-      const rootLayers=walls.targetGrowth.children.filter((layer,index)=>wallRecipes[index]?.kind==='roots'); // Exact fixed root tubes that host the hidden branch nodes.
-      const cover={...walls,wallRootLayers:rootLayers,getDiagnostics:()=>({...wallInfo,recipeCount:recipes.length,vegetationRecipes:recipes,shapeStrands:strands,
+      const wallRootLayers=walls.targetGrowth.children.filter((layer,index)=>wallRecipes[index]?.kind==='roots'); // Original fixed wall-root tubes host hidden branches.
+      const floorRootLayers=patches.flatMap(patch=>patch.children.filter((layer,index)=>floorRecipes[index]?.kind==='roots')); // Sixteen transformed floor patches provide equally fixed hiding nodes.
+      const rootLayers=[...wallRootLayers.map(layer=>({layer,role:'wall'})),...floorRootLayers.map(layer=>({layer,role:'floor'}))]; // Each generated root retains its original wall/floor surface association.
+      const cover={...walls,wallRootLayers,rootLayers,getDiagnostics:()=>({...wallInfo,recipeCount:recipes.length,vegetationRecipes:recipes,shapeStrands:strands,
         shrinkwrapRays:wallInfo.shrinkwrapRays+floorInfo.shrinkwrapRays,shrinkwrapHits:wallInfo.shrinkwrapHits+floorInfo.shrinkwrapHits,
         floorTileScale:room.floorLayout.scale,floorTileCopies:patches.length,floorPatternStrands:floorInfo.shapeStrands}),
         dispose(){if(disposed)return;disposed=true;for(const patch of patches)patch.parent?.remove(patch);walls.dispose();floor.dispose();}};
@@ -320,7 +322,7 @@
   function buildRootSnare(){
     releaseRootSnare();
     if(!$('snareEnabled').checked){$('snareStatus').textContent='Preview disabled; all branches remain normal.';return;}
-    if(!preparedRuin?.room||!preparedRuin.cover?.wallRootLayers?.length){
+    if(!preparedRuin?.room||!preparedRuin.cover?.rootLayers?.length){
       $('snareStatus').textContent='Build the ruin and its wall roots to locate hidden hand nodes.';return;
     }
     if(!window.RootSnareHands||!window.RootSnareRunner){
@@ -329,7 +331,7 @@
     const settings=snareSettings(),room=preparedRuin.room;
     try{
       const hands=window.RootSnareHands.create({THREE:T,room,
-        wallRootLayers:preparedRuin.cover.wallRootLayers,seed:room.seed+':snare-nodes',
+        rootLayers:preparedRuin.cover.rootLayers,seed:room.seed+':snare-nodes',
         count:settings.count,triggerRadius:settings.triggerRadius,reach:settings.reach,
         extendSpeed:settings.extendSpeed,retractSpeed:settings.retractSpeed,
         showNodes:$('snareReveal').checked});
@@ -696,7 +698,8 @@
   $('snareEnabled').onchange=()=>{if($('snareEnabled').checked&&$('previewEnvironment').value!=='ruin'){$('previewEnvironment').value='ruin';rebuild(false);}else buildRootSnare();};
   $('snareBuild').onclick=buildRootSnare;
   $('snareReroute').onclick=()=>roamingNpc?.chooseTarget();
-  $('snareRunPast').onclick=()=>{if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
+  $('snareRunPast').onclick=()=>{rootHands?.releaseCaptured();if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
+  $('snareRelease').onclick=()=>{if(rootHands?.releaseCaptured())previewDirty=true;}; // Captive remains held indefinitely until manually released.
   $('snareReveal').onchange=()=>{rootHands?.setNodeVisibility($('snareReveal').checked);previewDirty=true;};
   for(const id of ['snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed'])$(id).onchange=buildRootSnare;
   $('rebuild').onclick=()=>rebuild();
@@ -750,8 +753,8 @@
     requestAnimationFrame(frame); // Isolated authoring preview, never part of the game's permanent frame scheduler.
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
     lastTimestamp=timestamp;if(!buildState.running){active?.update(delta);if(roamingNpc?.update(delta))previewDirty=true;
-      if(rootHands?.update(delta,roamingNpc.group))previewDirty=true;
-      if(rootHands&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=info.anchors.length+' fixed nodes · '+info.active+' reaching · '+info.lungeCount+' triggered · runner: '+(roamingNpc?.diagnostics().authenticFeet?'procedural feet':'torso only');lastHandStatus=timestamp;}}
+      if(rootHands?.update(delta,roamingNpc))previewDirty=true; // Pass the walker controller so capture freezes authentic procedural walking.
+      if(rootHands&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=info.anchors.length+' fixed nodes · '+info.active+' active · '+info.held+' held · '+info.lungeCount+' triggered · runner: '+(roamingNpc?.diagnostics().authenticFeet?'procedural feet':'torso only');lastHandStatus=timestamp;}}
     orbit.update();
     const progress=active?.getProgress()??0; // Growth and particle playback still render while static repeated floor meshes can rest.
     const version=active?.getRenderVersion?.()??0;if(active!==renderedActive||progress!==renderedProgress||version!==renderedVersion)previewDirty=true;
