@@ -159,6 +159,19 @@
       }
       for(const m of syntheticMats)m.dispose();syntheticMats=[];
       upper.add(upperModel);lower.add(lowerModel);
+      // Stretch the actual torso pigment instead of the old wooden-cylinder
+      // stand-in: repeat a thin rendered portrait band across the gap.
+      if(stretchBridge){stretchBridge.parent?.remove(stretchBridge);stretchBridge.geometry?.dispose();
+        stretchBridge.material?.map?.dispose();stretchBridge.material?.dispose();}
+      const band=document.createElement('canvas');band.width=front.width;band.height=Math.max(8,Math.round(front.height*.12));
+      const bandCtx=band.getContext('2d');
+      bandCtx.drawImage(front,0,clamp(splitPixel-band.height*.5,0,front.height-band.height),
+        front.width,band.height,0,0,band.width,band.height);
+      const bandTexture=new T.CanvasTexture(band);bandTexture.needsUpdate=true;
+      stretchBridge=new T.Mesh(new T.PlaneGeometry(w*.7,1),
+        new T.MeshBasicMaterial({map:bandTexture,transparent:true,alphaTest:.05,side:T.DoubleSide}));
+      stretchBridge.name='Actual NPC stretched waist portrait band';
+      stretchBridge.visible=false;bodyPivot.add(stretchBridge);
       legs=newLegs;actualAvatar={npc,profile,upperModel,lowerModel,canvases};
       modelHeight=h;pelvisY=Number.isFinite(posterior)?posterior:h*.42;
       footY=Number.isFinite(ankle)?ankle:h*.06;
@@ -229,7 +242,7 @@
       const tiltProgress=clamp(dual.time/.75,0,1);
       baseAxis.copy(up).lerp(nodeAxis,tiltProgress).normalize();
       dual.tiltDeg=Math.acos(clamp(baseAxis.dot(up),-1,1))*180/Math.PI;
-      const anatomical=neckY-footY,spread=stretch*1.65;
+      const anatomical=Math.max(.2,neckY-footY),spread=stretch*1.65;
       desiredMid.copy(dual.initialCenter);desiredMid.y+=dual.lift;
       neckGoal.copy(desiredMid).addScaledVector(baseAxis,(anatomical+spread)*.5);
       feetGoal.copy(desiredMid).addScaledVector(baseAxis,-(anatomical+spread)*.5);
@@ -329,6 +342,7 @@
           root.PNGPlaneAvatar?.disposeAvatarModel?.(actualAvatar.lowerModel);
         }
         group.traverse(o=>{if(o.geometry)o.geometry.dispose();});
+        stretchBridge?.material?.map?.dispose?.();stretchBridge?.material?.dispose?.();
         for(const m of syntheticMats)m.dispose();red.dispose();
       }
     };
