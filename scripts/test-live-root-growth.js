@@ -511,7 +511,10 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
   staticCalls.forEach((actual,index)=>{for(const [key,value] of Object.entries(templeRecipes[index]))if(key!=='seed')assert.deepEqual(actual[key],value,'Temple '+key+' must remain independent of structure settings');});
   const coverRecipeHelper=editor.slice(editor.indexOf('  function ruinCoverRecipes('),editor.indexOf('  async function prepareRuin(')),coverRecipeContext={templeCoverRecipes:templeRecipes,rootFinishForPreview:()=>({color:'#8b7451'})};
   vm.createContext(coverRecipeContext);vm.runInContext(coverRecipeHelper,coverRecipeContext);const varied=vm.runInContext('ruinCoverRecipes()',coverRecipeContext);
-  assert.equal(varied.length,5,'initial cover must add a green vine weave to the four Temple layers');
+  assert.equal(varied.length,7,'initial cover must add woven vines plus root and vine floor passes');
+  assert(varied.every(r=>r.shrinkwrapFinal===true&&r.strandLimit<=80),'all initial vegetation must shrinkwrap onto final stone with bounded per-layer budgets');
+  for(let i=0;i<templeRecipes.length;i++){assert(varied[i].density>=templeRecipes[i].density);assert(varied[i].strandLimit>=templeRecipes[i].strandLimit);}
+  for(const kind of ['roots','vines'])assert(varied.some(r=>r.kind===kind&&r.target==='floors'&&r.count===80&&r.density===1),'both kinds must cover the rock floor');
   assert(varied.filter(r=>r.kind==='roots').every(r=>r.radiusScaleMin===.6&&r.radiusScaleMax===1.5));
   assert(varied.filter(r=>r.kind==='vines').every(r=>r.radiusScaleMin===1&&r.radiusScaleMax===1.5));
   assert.equal(JSON.stringify(templeRecipes),templeSnapshot,'preparing cover must not mutate the authored Temple configuration');

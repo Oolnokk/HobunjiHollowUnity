@@ -110,6 +110,19 @@ if (mapperSnapshot.version !== 3 || mapperSnapshot.segmentation !== 'furniture-e
 }
 if (!windowMock.HobunjiSurfacePerimeterFrame?.centralizedInSurfaceMapper) throw new Error('perimeter behavior is not centralized in HobunjiSurfaceStretchUV');
 
+const touchingStones=new Geometry([0,0,0, 1,0,0, 1,0,1, 0,0,0, 1,0,1, 0,0,1, 1,0,0, 2,0,0, 2,0,1, 1,0,0, 2,0,1, 1,0,1]); // Two coplanar rocks touch exactly, but must each receive a complete PNG.
+const mergedStoneChart=mapper.mapGeometry(touchingStones);
+if(mergedStoneChart.userData.hobunjiSurfaceStretch.patchCount!==1)throw new Error('ordinary connected surfaces should still join');
+touchingStones.setAttribute('surfacePieceId',new BufferAttribute(new Float32Array([0,0,0,0,0,0,1,1,1,1,1,1]),1));
+const separateStoneCharts=mapper.mapGeometry(touchingStones);
+if(separateStoneCharts.userData.hobunjiSurfaceStretch.patchCount!==2)throw new Error('batched touching rocks must retain independent post-shape texture charts');
+for(let start=0;start<12;start+=6){
+  const uv=separateStoneCharts.getAttribute('uv'),us=[],vs=[]; // Each rock gets the full texture domain without changing position buffers.
+  for(let i=start;i<start+6;i++){us.push(uv.getX(i));vs.push(uv.getY(i));}
+  if(Math.min(...us)!==0||Math.max(...us)!==1||Math.min(...vs)!==0||Math.max(...vs)!==1)throw new Error('one rock did not receive the complete stone texture');
+}
+if(touchingStones.getAttribute('uv'))throw new Error('surface mapping must leave caller-owned geometry intact');
+
 const texasLike = fanPolygon([[0, 0], [4, 0], [5, 1], [4, 2], [4.5, 4], [2.5, 3.2], [1, 4], [0.5, 2.2], [-0.5, 1.5]]); // Used to prove one square PNG can fill an irregular connected planar outline.
 const texasMapped = mapper.mapGeometry(texasLike);
 const texasReport = texasMapped.userData.hobunjiSurfaceStretch;

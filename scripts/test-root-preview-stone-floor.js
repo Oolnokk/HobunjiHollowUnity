@@ -14,6 +14,9 @@ assert.equal(JSON.stringify(meta),saved,'the shared generated footprint must rem
 assert.equal(shell.topTileCount,cells.length,'every real floor cell must still be covered');
 assert(shell.componentCount>20&&shell.componentCount<cells.length/8,'use giant multi-cell stones rather than brick-sized pieces');
 assert.equal(shell.yScale,.25);
+assert.equal(shell.pieceIds.length,shell.pos.length/3);
+assert.equal(new Set(shell.pieceIds).size,shell.componentCount,'every wilderness rock retains an independent texture identity');
+for(let i=0;i<shell.idx.length;i+=3)assert(shell.pieceIds[shell.idx[i]]===shell.pieceIds[shell.idx[i+1]]&&shell.pieceIds[shell.idx[i]]===shell.pieceIds[shell.idx[i+2]],'each triangle belongs to exactly one floor rock');
 for(let i=0;i<shell.pos.length;i+=3){assert(Number.isFinite(shell.pos[i]));assert(shell.pos[i]>=-7&&shell.pos[i]<=7);assert(shell.pos[i+1]>=-.061&&shell.pos[i+1]<.31);assert(shell.pos[i+2]>=-6&&shell.pos[i+2]<=6);}
 assert(Math.max(...shell.pos.filter((_,i)=>i%3===1))>.1,'flattened boulders retain their crown and visible thickness');
 assert.deepEqual(vm.runInContext('ruinFloorShell(meta,"vast-floor").pos',context),shell.pos,'the same seed must reproduce all vertices');
