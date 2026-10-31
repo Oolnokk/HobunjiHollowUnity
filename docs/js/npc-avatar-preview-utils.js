@@ -182,6 +182,15 @@
     return !available.length || available.includes(authored) ? authored : fallback;
   }
 
+  // An exorcised mask (a Maskbound's mask after a priest frees the soul bound inside) keeps its look but its eyes no longer glow.
+  function stripExorcisedMaskGlow(profile) {
+    const descriptors = profile?.bodyColors?.__hobunjiWovenClothing;
+    if (!Array.isArray(descriptors) || !descriptors.some(descriptor => descriptor?.slot === 'mask' && descriptor.exorcised === true)) return profile;
+    if (!profile.mask?.layers?.length) return profile;
+    profile.mask = { ...profile.mask, layers: profile.mask.layers.map(layer => layer?.pixelDye ? { ...layer, pixelDye: { ...layer.pixelDye, glow: null } } : layer) };
+    return profile;
+  }
+
   function buildProfileFromNpcExport(npc) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
@@ -258,6 +267,7 @@
     applyEquip('hat', 'hat', hatOptions?.[0]);
     applyEquip('hood', 'hood', hoodOptions?.[0]);
     applyEquip('mask', 'mask', cosmetics.maskOptions?.[0]);
+    stripExorcisedMaskGlow(profile); // The worn item's descriptor (with its exorcised flag) is already in bodyColors at this point.
     // Masks that declare procedural patterns (the Hachutu mask) get a generated, per-wearer glyph pattern stack unless the wearer's
     // record opts out (maskPatterns:false) or already carries authored mask weaving. Players use their own gear weaving.
     if (npc.id !== 'player' && npc.maskPatterns !== false && window.ProceduralMaskPatterns?.enabled && profile.mask?.id) {

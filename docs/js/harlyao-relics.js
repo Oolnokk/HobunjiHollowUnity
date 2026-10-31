@@ -265,8 +265,9 @@
     const item = cursedCircletsInPack().find(entry => entry.uid === uid);
     if (!item) return { ok: false, reason: 'not-owned' };
     if (!spendGold(DISPEL_PRICE)) return { ok: false, reason: 'gold' };
-    item.label = item.cursed.originalLabel || item.label; // Restores the pre-curse name; the article itself, pattern and all, is untouched.
-    delete item.cursed;
+    const originalLabel = item.cursed.originalLabel || item.label; // Restores the pre-curse name; the article itself, pattern and all, is untouched.
+    if (window.EquipmentPanel?.dispelCurse) window.EquipmentPanel.dispelCurse(item);
+    else { item.label = originalLabel; delete item.cursed; }
     deps.showToast?.(`Garanki dispels the curse. The ${item.label} can be worn now.`, true);
     deps.saveMemberWorldData?.();
     deps.buildPackClothingSection?.();

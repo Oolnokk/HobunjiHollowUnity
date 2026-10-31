@@ -485,11 +485,12 @@
       const colorC = portraitClothingColor(item?.colorC);
       const cKey = thirdTintKey(item?.slot);
       if (cKey && colorC) colors[cKey] = colorC;
-      if (baseId && weavingHasAnyDecoration(item?.weaving)) {
+      if (baseId && (weavingHasAnyDecoration(item?.weaving) || item?.exorcised === true)) {
         wovenDescriptors.push({
           uid: item.uid,
           slot: item.slot,
           baseCosmeticId: baseId,
+          ...(item?.exorcised === true ? { exorcised: true } : {}), // A freed mask no longer glows (see NpcAvatarPreview's stripExorcisedMaskGlow).
           weaving: clone(item.weaving),
           colorA: portraitClothingColor(item.colorA), // NPC authored dye-id strings and player color objects converge before runtime swap/color resolution.
           colorB: portraitClothingColor(item.colorB),

@@ -159,4 +159,33 @@ assert.equal(pack[0].label, 'Tanged Circlet', 'and the name restored');
 assert.equal(dispelContext.deps.inventory.gold, 350, 'for 150 gold');
 assert.ok(pack[1].cursed, 'the mask stays cursed');
 assert.match(relics, /getPackClothing: \(\) => packClothing/.test(fs.readFileSync('docs/game.js', 'utf8')) ? /Cursed circlets/ : /impossible/, 'Garanki’s panel lists cursed circlets and game.js supplies the pack');
+// ── Exorcism: souls, priests and glowing eyes ─────────────────────────────────────────────────────────────────────────────────────────
+const panelContext = vm.createContext({});
+vm.runInContext(extract(panel, 'cursedMessage') + extract(panel, 'dispelCurse') + 'this.msg = cursedMessage; this.dispel = dispelCurse;', panelContext);
+assert.match(panelContext.msg({ cursed: { kind: 'mask', dispelBy: 'hunundi' } }), /soul is bound inside.*priest.*a mage cannot/, 'a cursed mask holds a soul: it needs a priest, not a mage');
+assert.match(panelContext.msg({ cursed: { kind: 'circlet', dispelBy: 'garanki' } }), /Garanki/);
+const freedMask = { label: 'Cursed Mask', cursed: { kind: 'mask', dispelBy: 'hunundi', originalLabel: 'Mask' } };
+assert.equal(panelContext.dispel(freedMask), true);
+assert.deepEqual({ ...freedMask }, { label: 'Mask', exorcised: true }, 'an exorcised mask is flagged so its eyes stay dark, and the curse is gone');
+const freedCirclet = { label: 'Cursed Circlet', cursed: { kind: 'circlet', dispelBy: 'garanki', originalLabel: 'Circlet' } };
+panelContext.dispel(freedCirclet);
+assert.deepEqual({ ...freedCirclet }, { label: 'Circlet' }, 'a dispelled circlet carries no flags that could emit fire');
+assert.equal(panelContext.dispel({ label: 'plain' }), false);
+const avatarUtils = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8');
+const glowContext = vm.createContext({});
+vm.runInContext(extract(avatarUtils, 'stripExorcisedMaskGlow') + 'this.strip = stripExorcisedMaskGlow;', glowContext);
+const glowingMask = () => ({ layers: [{ url: 'a.png', pixelDye: { sourceHex: '#7F00FF', glow: { radius: 0.65 } } }, { url: 'b.png' }] });
+const exorcisedProfile = glowContext.strip({ bodyColors: { __hobunjiWovenClothing: [{ slot: 'mask', exorcised: true }] }, mask: glowingMask() });
+assert.equal(exorcisedProfile.mask.layers[0].pixelDye.glow, null, 'an exorcised mask’s eyes do not glow');
+assert.equal(exorcisedProfile.mask.layers[0].pixelDye.sourceHex, '#7F00FF', 'its eye dye/color is otherwise unchanged');
+const stillGlowing = glowContext.strip({ bodyColors: { __hobunjiWovenClothing: [{ slot: 'mask' }] }, mask: glowingMask() });
+assert.ok(stillGlowing.mask.layers[0].pixelDye.glow, 'a Maskbound’s own mask still glows');
+assert.ok(glowContext.strip({ bodyColors: {}, mask: glowingMask() }).mask.layers[0].pixelDye.glow);
+assert.match(fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'), /item\?\.exorcised === true \? \{ exorcised: true \}/, 'the worn-item descriptor carries the exorcised flag to the portrait');
+assert.match(relics, /window\.EquipmentPanel\?\.dispelCurse/, 'Garanki lifts curses through the shared helper');
+// Lich fire comes only from the lich avatar's hidden headband; looted/dispelled circlets never carry or request any.
+assert.doesNotMatch(camps, /headFire|specialHeadFire|flameHeadband/, 'loot never carries fire data');
+assert.match(fs.readFileSync('docs/js/combat/combat-special-liches.js', 'utf8'), /const root=actor\.avatarRef\?\.group, data=root\?\.userData\?\.specialHeadFire/, 'flames are read from the lich avatar only');
+assert.equal(Object.keys(circlet).some(key => /fire|flame/i.test(key)), false);
+
 console.log('Lich patterns and loot: random frames, tradition patterns, retained loot patterns and curses verified');

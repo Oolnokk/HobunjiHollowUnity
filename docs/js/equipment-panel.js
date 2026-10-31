@@ -714,7 +714,20 @@
   }
 
   function cursedMessage(item) {
-    return item?.cursed?.dispelBy === 'garanki' ? 'Cursed: it cannot be worn until Garanki Gabu dispels the curse.' : 'Cursed: it cannot be worn until the curse is lifted.';
+    if (item?.cursed?.dispelBy === 'garanki') return 'Cursed: it cannot be worn until Garanki Gabu dispels the curse.';
+    if (item?.cursed?.kind === 'mask') return 'Cursed: someone’s soul is bound inside this mask. It cannot be worn until a priest frees it; a mage cannot.';
+    return 'Cursed: it cannot be worn until the curse is lifted.';
+  }
+  // Single owner of lifting a curse (Garanki's circlet dispel today, Father Hunundi's exorcism of masks later). A freed mask is flagged
+  // `exorcised`, which silences its glowing eyes for whoever wears it; a dispelled circlet carries nothing that could emit fire (lich flames
+  // come only from the lich's own hidden headband).
+  function dispelCurse(item) {
+    if (!item?.cursed) return false;
+    const kind = item.cursed.kind;
+    item.label = item.cursed.originalLabel || item.label;
+    delete item.cursed;
+    if (kind === 'mask') item.exorcised = true;
+    return true;
   }
 
   function transferClothingToGear(uid) {
@@ -1319,6 +1332,7 @@
 
   window.EquipmentPanel = {
     init,
+    dispelCurse,
     getEquippedWeaponPreviewPlane,
     squareToolIcon,
     getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
