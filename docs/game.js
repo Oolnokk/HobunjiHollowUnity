@@ -5072,6 +5072,7 @@
           c._wildlifeVisualLodHidden = false;
           c.avatarRef.group.visible = true;
         }
+        window.HoneyfuzzleHives?.noteSwarmDown?.(c); // Record the downed time at death, not at the next wildlife poll.
         window.CreatureDeath.begin(c, fromX ?? c.x, fromY ?? c.y);
         return true;
       }
@@ -6552,6 +6553,10 @@
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
+          if (window.Combat?.attach?.updateRescuer?.(c, entityDt, {
+            move: moveCreatureToward, render: updateCreatureMesh, animate: updateCreatureAnimFrame,
+            updateTool: actor => { if (actor.isBandit) window.BanditCombat?.updateToolMesh?.(actor); },
+          })) continue; // NPC allies and den packmates help swarmed teammates, with no global friendly fire.
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
           // 'fleeing-low-health' below and applyWildlifeSkirmishDamage).
@@ -8234,6 +8239,9 @@
             ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
             : Math.max(0, c.attackCooldownT - dt);
           if (!tickCreatureResources(c, dt)) continue;
+          if (window.Combat?.attach?.updateRescuer?.(c, dt, {
+            move: moveCreatureToward, render: updateCreatureMesh, animate: updateCreatureAnimFrame,
+          })) continue; // Temporarily help a swarmed master instead of following Sicced or ordinary enemy targets.
           const companionTempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Saved tempo changes recovery/base Stamina while species attack timelines stay intact.
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
