@@ -196,6 +196,7 @@
     let neckGrip=null,feetGrip=null,captive=null,closed=false,lunges=0,doubleGrabs=0;
     function actorOf(target){return target?.group||target;}
     function gripPoint(target,which,out){
+      if(target?.getGripTarget&&target?.diagnostics?.()?.dual)return target.getGripTarget(which,out); // Hand tips follow the same two physical grip targets that drive whole-body tilt.
       if(target?.getGripPoint)return target.getGripPoint(which,out);
       const actor=actorOf(target);out.copy(actor.position);out.y+=which==='neck'?1.38:.18;return out;
     }
