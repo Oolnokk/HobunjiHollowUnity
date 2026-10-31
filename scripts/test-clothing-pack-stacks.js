@@ -162,8 +162,8 @@ transferTestClothing(banditClothA);
 assert.equal(gear.clothingItems.length, 2, 'a patterned bandit poncho joins the plain owned poncho instead of becoming a dye');
 assert.equal(gear.clothing.overwear.weaving.forcedOverpassPattern.repoPatternId, 'glyphA',
   'the bandit pattern survives transfer and is equipped');
-assert.match(nodes.get('iiDesc').textContent || '', /^$|Patterned garment/,
-  'Gear selection may display a mobile-visible pattern marker');
+assert(panel.__test.hasIndividualClothingPattern(gear.clothing.overwear),
+  'transferred woven bandit clothing is recognized by the gear collection');
 transferTestClothing(banditClothB);
 assert.equal(gear.clothingItems.length, 3, 'different looted bandit patterns remain separate Gear articles');
 assert.deepEqual(gear.clothingItems.slice(1).map(item => item.weaving?.forcedOverpassPattern?.repoPatternId),
