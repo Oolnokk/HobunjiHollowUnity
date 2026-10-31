@@ -554,6 +554,22 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
+  const tight = el('label', 'chance', 'Tight head gate (experimental)');
+  const tightCheck = el('input');
+  tightCheck.type = 'checkbox';
+  tightCheck.checked = rule().tightHeadGate === true;
+  tightCheck.onchange = () => {
+    mutate((r) => {
+      if (tightCheck.checked) r.tightHeadGate = true;
+      else delete r.tightHeadGate;
+    });
+    queueProportionPreview();
+  };
+  tight.prepend(tightCheck);
+  tight.append(
+    el('span', 'muted', ' head scale stops just below the skull, so a wide hood, shoulders and vest follow body width/height. Works on any enemy; try it to judge a global change.'),
+  );
+  box.append(tight);
   const patterns = el('label', 'chance', 'Procedural mask patterns');
   const patternsCheck = el('input');
   patternsCheck.type = 'checkbox';

@@ -62,6 +62,8 @@
         throw Error('Invalid enemy rule');
       if (rule.enabled != null && typeof rule.enabled !== 'boolean')
         throw Error('Enemy rule enabled must be true/false');
+      if (rule.tightHeadGate != null && typeof rule.tightHeadGate !== 'boolean')
+        throw Error(kind + '.tightHeadGate must be true/false');
       if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
         throw Error(kind + '.maskPatterns must be true/false');
       if (rule.maskPatternScale != null) {
@@ -303,6 +305,7 @@
     roster.cosmeticSlots ||= {};
     roster.appliedDyes ||= {};
     if (rule.maskPatternScale) roster.maskPatternScale = { ...rule.maskPatternScale }; // Override of the procedural mask pattern scale range.
+    if (rule.tightHeadGate === true) roster.tightHeadGate = true; // Experimental portrait rig: head scale stops just below the skull so hoods/vests follow body width.
     if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
       if (roster.metalArmorItems)

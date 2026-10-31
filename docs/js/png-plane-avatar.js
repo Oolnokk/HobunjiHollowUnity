@@ -458,8 +458,9 @@
     if (!headBoundsPx) return 1;
     const halfWidth = Math.max(1, (headBoundsPx.right - headBoundsPx.left) / 2); // Bare head half-width in pixels.
     const centerX = (headBoundsPx.left + headBoundsPx.right) / 2; // Horizontal center of the detected head.
-    const inner = halfWidth * 1.5; // Full head-scale influence includes nearby hats.
-    const outer = halfWidth * 2.5; // Shoulders beyond this keep rotation only.
+    const tight = headBoundsPx.tightGate === true; // Opt-in (Enemy Workshop "Tight head gate"): wide hoods/vests beyond the bare skull follow the body instead of the head scale.
+    const inner = halfWidth * (tight ? 1 : 1.5); // Full head-scale influence includes nearby hats.
+    const outer = halfWidth * (tight ? 1.3 : 2.5); // Shoulders beyond this keep rotation only.
     const dx = Math.abs(pixelX - centerX); // Distance from the head center.
     return dx <= inner ? 1 : dx >= outer ? 0
       : smoothstep01(1 - (dx - inner) / (outer - inner));
@@ -474,7 +475,7 @@
     // The fade band must be taller than any plausible Head Y offset (hunch). With the old 0.08 band a head lowered by 9.5-12% of the
     // model height (Mashtzarr, Maskbound troops) moved further than the band is tall, so the mesh folded over itself under the chin
     // and showed hard-edged shoulder/neck strips; 0.2 leaves room for offsets up to ~17% before any fold.
-    const blendBelow = modelHeight * 0.2;
+    const blendBelow = modelHeight * (bounds.tightGate === true ? 0.06 : 0.2); // The tight gate ends head scaling just below the skull.
     return smoothstep01((y - (neckY - blendBelow)) / (blendBelow - fullBelow)) * headScaleGateAtPixel(pixelX, bounds);
   }
 
@@ -689,7 +690,7 @@
     const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
     const sourceCanvas = fallbackDimensions.sourceCanvas;
     const detectedHead = sourceCanvas ? detectHeadRigPixels(fallbackDimensions.headCanvas, sourceCanvas, 12) : null;
-    const headBounds = detectedHead?.boundsPx;
+    const headBounds = detectedHead?.boundsPx && fallbackDimensions.tightHeadGate === true ? { ...detectedHead.boundsPx, tightGate: true } : detectedHead?.boundsPx; // The flag rides on the bounds so the renderer and every landmark resolver agree.
     const pixelWidth = sourceCanvas?.width || 1;
     const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
       {x:pivotLocalX,y:pivotLocalY,z:0}, {

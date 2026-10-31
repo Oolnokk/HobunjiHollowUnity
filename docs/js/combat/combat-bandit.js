@@ -491,10 +491,10 @@
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, tightHeadGate: roster.tightHeadGate === true })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, tightHeadGate: roster.tightHeadGate === true })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -545,7 +545,7 @@
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
         neckLocal:{...frontNeckSkin.neckBone.position},
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
-        headBoundsPx:headPixels?.boundsPx || null,
+        headBoundsPx:headPixels?.boundsPx ? (roster.tightHeadGate === true ? { ...headPixels.boundsPx, tightGate:true } : headPixels.boundsPx) : null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
     group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.
