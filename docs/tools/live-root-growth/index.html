@@ -19,7 +19,8 @@
 <script src="js/terrain-preview.js?v=20261013he41c002"></script>
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
-<script src="js/live-root-growth.js?v=20261031hc8e1ec8"></script>
+<script src="js/live-root-network.js?v=1"></script>
+<script src="js/live-root-growth.js?v=20261031h3576e03"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -81,14 +82,17 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <label>Floor density <input id="floorDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
 <label>Shape density <input id="targetDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
 <label>Floor path length <input id="floorLength" type="number" min=".5" max="30" step=".5" value="12"></label>
-<label>Shape path length <input id="targetLength" type="number" min=".5" max="30" step=".5" value="12"></label>
+<label>Surface detail length <input id="targetLength" type="number" min=".5" max="30" step=".5" value="12"></label>
 <label>Bend <input id="bend" type="number" min="0" max="3" step=".1" value=".42"></label>
 <label>Arc concavity <input id="arcConcavity" type="number" min="0" max="1" step=".05" value=".72"></label>
 <label>Inner shape inset <input id="shapeInset" type="number" min="0" max=".5" step=".005" value=".035"></label>
 <label>Volume fill depth <input id="volumeFillDepth" type="number" min="0" max=".5" step=".01" value=".24"></label>
+<label>Detail preservation (0–1) <input id="detailPreservation" type="number" min="0" max="1" step=".05" value=".8"></label>
+<label>Knot density (0–3) <input id="knotDensity" type="number" min="0" max="3" step=".1" value="1"></label>
+<label>Minimum preferred root radius <input id="minRootRadius" type="number" min=".002" max=".08" step=".001" value=".008"></label>
 <label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".05" value=".5"></label>
 </div><p>Arc concavity: 0 = straight vertical rise; 1 = branches hug the root-covered floor longer before sweeping upward toward the furniture. Seeded variation keeps the curves organic.</p>
-<p>Growth starts at actual floor-adjacent furniture parts, then travels through their connections: table legs before tabletop, arch posts before the overhang. Higher pieces retract first. Density 6 layers six separately seeded Wrap passes on the floor and furniture (rather than capping at density 1). For furniture, roots are ray-shrinkwrapped <strong>inside</strong> its hidden physical surfaces: inset controls the near-surface clearance; volume fill depth spreads successive layers farther into the object's interior (clamped at thin walls). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
+<p>Growth starts at actual floor-adjacent furniture parts, then travels through their connections: table legs before tabletop, arch posts before the overhang. Higher pieces retract first. Furniture roots follow a connected path through each original piece. Thin details narrow the roots; broad pieces receive winding knots; every touching neighbour gets a route. Detail preservation controls sampling and finer surface strands. Knot density controls interior winding. The minimum radius is a preference: roots can thin further to fit very narrow details. Floor density still layers the original floor Wrap. For furniture, roots are ray-shrinkwrapped <strong>inside</strong> its hidden physical surfaces: inset controls the near-surface clearance; volume fill depth spreads successive layers farther into the object's interior (clamped at thin walls). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
 <div class="controls" style="margin-top:10px"><button id="rebuild">Rebuild</button><button id="randomSeed">New seed</button></div>
 </section>
 <section><h2>3 · Animate</h2>
@@ -102,10 +106,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Live-grown furniture now has smoothed root paths and pointed, closed ends. Growth follows complete strands with tapered moving tips, including when scrubbing or retracting. The pre-grown ruin cover is preserved.</p></section>
+<section><h2>Latest change</h2><p>Furniture now grows through a connected, piece-by-piece root network. Roots narrow through thin details, wind into knots inside broad pieces, and fork to every touching neighbour. Detail preservation, knot density and minimum preferred thickness save with the recipe.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031h54c1327"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031h6ef236e"></script>
 </body></html>

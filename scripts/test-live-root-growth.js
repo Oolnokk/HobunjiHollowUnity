@@ -466,7 +466,7 @@ assert(editor.includes('function importRepoFurniture('));
 assert(editor.includes('scene.overrideMaterial = shellOutlineMaterial'));
 assert(editor.includes('camera.layers.set(1)'));
 const strandHelpers=fs.readFileSync('docs/js/live-root-growth.js','utf8'); // Execute the same whole-ring reveal used by real furniture geometry.
-const revealContext={smooth:t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);}};vm.createContext(revealContext);
+const revealContext={clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),smooth:t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);}};vm.createContext(revealContext);
 vm.runInContext(strandHelpers.slice(strandHelpers.indexOf('  function prepareStrandReveal('),strandHelpers.indexOf('  // Indexed triangles are grouped')),revealContext);
 const revealPositions=[],revealIndices=[],revealStrands=[]; // Different strand lengths must reveal contiguous sections independently.
 for(const segments of [4,6]){
@@ -485,6 +485,14 @@ const partialReveal=revealAttribute.array.slice(); // Returning to a previous sc
 vm.runInContext('revealStrands(mesh,.2);revealStrands(mesh,.625)',revealContext);assert.deepEqual(revealAttribute.array,partialReveal);
 vm.runInContext('revealStrands(mesh,1)',revealContext);assert.equal(revealMesh.geometry.drawRange.count,revealIndices.length);assert.deepEqual(revealAttribute.array,new Float32Array(revealPositions),'completion must restore the exact finished root geometry');
 vm.runInContext('revealStrands(mesh,0)',revealContext);assert.equal(revealMesh.geometry.drawRange.count,0);assert.deepEqual(revealAttribute.array,new Float32Array(revealPositions));
+const timedAttribute={...revealAttribute,array:new Float32Array(revealPositions)}; // Delayed detail paths must wait until the entry trunk has grown.
+const timedMesh={userData:{},geometry:{index:{array:new Uint16Array(revealIndices)},getAttribute:()=>timedAttribute,setDrawRange(start,count){this.drawRange={start,count};}}};
+revealContext.mesh=timedMesh;revealContext.strands=revealStrands.map((strand,i)=>({...strand,startTime:i===0?.4:0,endTime:i===0?1:.3}));
+vm.runInContext('prepareStrandReveal(mesh,strands);revealStrands(mesh,.2)',revealContext);assert.equal(timedMesh.geometry.drawRange.count,4*18,'fork/detail strands cannot reveal before their own start time');
+assert.equal(feature.normalizeRecipe({detailPreservation:4,knotDensity:-1,minRootRadius:Infinity}).detailPreservation,1);
+assert.equal(feature.normalizeRecipe({knotDensity:-1}).knotDensity,0);
+assert.equal(feature.normalizeRecipe({minRootRadius:Infinity}).minRootRadius,.008);
+assert.equal(feature.normalizeRecipe({minRootRadius:0}).minRootRadius,.002);
 const roughnessHelper=editor.slice(editor.indexOf('  function readRuinRoughness('),editor.indexOf('  function disposeRoomModel(')); // Execute the preview's saved-setting validator without creating WebGL.
 const roughnessContext={$:()=>({value:'.3'})};vm.createContext(roughnessContext);vm.runInContext(roughnessHelper,roughnessContext);
 for(const [value,expected] of [[0,0],[1,1],[-2,0],[4,1],['.25',.25],[NaN,.3],[undefined,.3],[Infinity,.3]]){

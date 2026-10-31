@@ -6,7 +6,7 @@
   const $ = id => document.getElementById(id); // Local authoring form lookup, never used by the game.
   const status = $('hud'), diagnostics = $('debug'), errorBox = $('errors');
   const trackedFields = ['seed','floorWidth','floorDepth','branchCount','strandLimit','radius',
-    'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','shapeInset','volumeFillDepth','duration','showGuide'];
+    'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','shapeInset','volumeFillDepth','detailPreservation','knotDensity','minRootRadius','duration','showGuide'];
   const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
   const PREVIEW_COLORS={stoneColor:'#363733',rootColor:'#24211d'}; // Picker defaults and legacy-recipe fallback: user-selected stone and root palette.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
@@ -415,7 +415,7 @@
     const message = (info.substrate==='ruin'?'Temple-covered ruin + ':'') + source.name + ' · ' + percent + '% grown\n' +
       info.branchCount + ' branches · ' + info.floorStrands + (info.preparedVegetation?' existing vegetation strands · ':' floor wraps · ') +
       info.shapeStrands + (info.continuousStrandReveal?' smooth, tapered shape strands · ':' shape wraps · ') + info.shrinkwrapHits + '/' + info.shrinkwrapRays +
-      ' inward hits\n' + info.groundedParts.length + ' grounded parts → ' +
+      ' inward hits\n' + (info.rootNetwork?info.rootNetwork.contactCount+' contacts · '+info.rootNetwork.junctions+' junctions · '+info.rootNetwork.knots+' knots\n':'') + info.groundedParts.length + ' grounded parts → ' +
       (info.partCount-info.groundedParts.length) + ' raised parts (' +
       info.rootTransferCount + ' connecting shoots, depth ' + info.maxPartDepth + ')';
     if (force || message !== lastStatus) { status.textContent = message; lastStatus = message; }

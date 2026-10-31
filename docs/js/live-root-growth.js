@@ -1,6 +1,6 @@
 // LiveRootGrowth — purpose-agnostic growth/retraction on invisible furniture geometry.
-// Shares the temple's FoliageGenerator surface-wrap implementation, not a second
-// foliage renderer. No frame loop or collision/puzzle rules live in this module.
+// Shares Temple materials/detail wrapping and a connected per-piece volume planner.
+// No independent foliage renderer. No frame loop or collision/puzzle rules live in this module.
 (function (root) {
   'use strict';
 
@@ -14,7 +14,7 @@
     floorDensity: 6, targetDensity: 6, strandLimit: 80,
     shapeInset: 0.035, volumeFillDepth: 0.24, // Inward bark surface clearance plus internal layers filling the target volume.
     targetLength: 12, floorLength: 12,
-    radius: 0.045, curl: 0.6, showGuide: false
+    radius: 0.045, curl: 0.6, detailPreservation:.8, knotDensity:1, minRootRadius:.008, showGuide: false
   }); // Every instance gets its own normalized, serializable configuration.
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value)); // Used by bounded imported recipes, animation and mesh budgets.
@@ -39,6 +39,9 @@
     result.shapeInset = number(data.shapeInset, DEFAULTS.shapeInset, 0, 0.5);
     result.volumeFillDepth = number(data.volumeFillDepth, DEFAULTS.volumeFillDepth, 0, 0.5);
     result.curl = number(data.curl, DEFAULTS.curl, 0, 2);
+    result.detailPreservation=number(data.detailPreservation,DEFAULTS.detailPreservation,0,1);
+    result.knotDensity=number(data.knotDensity,DEFAULTS.knotDensity,0,3);
+    result.minRootRadius=number(data.minRootRadius,DEFAULTS.minRootRadius,.002,.08);
     result.showGuide = data.showGuide === true;
     return result;
   }
@@ -218,7 +221,7 @@
       if(points[0].y>points[points.length-1].y){points.reverse();radii.reverse();} // A strand grows from its lower end within the existing support-first part stages.
       const softened=points.map((point,i)=>i===0||i===points.length-1?point:point.clone().multiplyScalar(.6).addScaledVector(points[i-1],.2).addScaledVector(points[i+1],.2)); // Soften shrinkwrap corner jumps before transporting the cross sections again.
       const curve=new THREE.CatmullRomCurve3(softened,false,'centripetal'),length=curve.getLength(),segments=Math.min(128,Math.max(12,Math.ceil(length/.06))); // Fine, bounded spacing removes the old polygonal spine.
-      plans.push({curve,radii,length,segments,vertexStart:vertexCount,indexStart:indexCount,radial:5,ringCount:segments+1});vertexCount+=(segments+1)*6;indexCount+=segments*30;
+      plans.push({curve,radii,length,segments,vertexStart:vertexCount,indexStart:indexCount,radial:5,ringCount:segments+1,startTime:mesh.userData.networkDetail ? .45 : 0,endTime:1});vertexCount+=(segments+1)*6;indexCount+=segments*30;
     }
     if(!plans.length)return false;
     const positions=new Float32Array(vertexCount*3),uvs=new Float32Array(vertexCount*2),indices=new (vertexCount>65535?Uint32Array:Uint16Array)(indexCount); // One batched geometry preserves the existing draw-call count.
@@ -252,7 +255,7 @@
         for(let spoke=0;spoke<strand.radial;spoke++){x+=position.getX(start+spoke)/strand.radial;y+=position.getY(start+spoke)/strand.radial;z+=position.getZ(start+spoke)/strand.radial;}
         for(let spoke=0;spoke<stride;spoke++){centers[(start+spoke)*3]=x;centers[(start+spoke)*3+1]=y;centers[(start+spoke)*3+2]=z;}
       }
-      for(let segment=0;segment<segments;segment++)sections.push({time:(segment+1)/segments,start:strand.indexStart+segment*strand.radial*6,count:strand.radial*6});
+      for(let segment=0;segment<segments;segment++)sections.push({time:(strand.startTime||0)+(segment+1)/segments*((strand.endTime??1)-(strand.startTime||0)),start:strand.indexStart+segment*strand.radial*6,count:strand.radial*6});
       strand.front=-1;
     }
     sections.sort((a,b)=>a.time-b.time||a.start-b.start);
@@ -269,8 +272,9 @@
       const stride=strand.radial+1,segments=strand.ringCount-1,restoreStart=Math.max(0,strand.front-2); // Restore the previous moving tip before applying a new progress value in either direction.
       if(strand.front>=0){const from=(strand.vertexStart+restoreStart*stride)*3,to=(strand.vertexStart+(strand.front+1)*stride)*3;array.set(data.rest.subarray(from,to),from);}
       strand.front=-1;
-      if(progress<=0||progress>=1)continue;
-      const amount=progress*segments,front=Math.min(segments,Math.floor(amount+1e-10)),fraction=amount-front;strand.front=front; // Sub-ring interpolation gives the terminal point continuous forward motion.
+      const local=clamp((progress-(strand.startTime||0))/Math.max(.0001,(strand.endTime??1)-(strand.startTime||0)),0,1); // Entry trunks precede forks and knots within each existing part stage.
+      if(local<=0||local>=1)continue;
+      const amount=local*segments,front=Math.min(segments,Math.floor(amount+1e-10)),fraction=amount-front;strand.front=front; // Sub-ring interpolation gives the terminal point continuous forward motion.
       for(let ring=Math.max(0,front-2);ring<=front;ring++){
         const scale=ring===front?0:smooth((front-ring+fraction)/3); // The current tip is closed and gently widens into its two preceding rings.
         for(let spoke=0;spoke<stride;spoke++){
@@ -549,6 +553,9 @@
     }, recipe.floorDensity)); // Dense permanent cover uses precisely the temple Wrap solver.
     if(floorGrowth&&!options.growthSource){floorHost.add(floorGrowth);ownedGrowths.push(floorGrowth);}
     const partPlan=planFurnitureGrowth(THREE,target,recipe.floorY,recipe.radius);
+    const useNetwork=!!(THREE.Ray&&THREE.Triangle&&THREE.Curve); // Lightweight external geometry adapters keep their existing Wrap contract.
+    if(useNetwork&&!root.LiveRootNetwork)throw new Error('The root path planner did not load. Reload the preview.');
+    const network=useNetwork?yield* root.LiveRootNetwork.plan(THREE,target,partPlan,recipe):null; // Contact/volume planning yields between original furniture pieces.
     // One per-part generator per density pass would multiply an authored 30-part
     // festival arch's 80-strand budget by 30. Divide the shared pass budget
     // across pieces, with a small minimum for narrow posts and pennants.
@@ -573,7 +580,7 @@
         radius:partRadius, strandLimit:partWrapLimit,count:partWrapLimit,
         target:isFloor?'floors':'all', targetMeshId:part.mesh.uuid, length:isFloor?recipe.floorLength:recipe.targetLength,
         shrinkwrapFinal:true, shrinkwrapHidden:true, shrinkwrapInside:true
-      },isFloor?recipe.floorDensity:recipe.targetDensity,(pass,passes)=>({
+      },isFloor?recipe.floorDensity:network?Math.max(1,recipe.targetDensity*recipe.detailPreservation*.2):recipe.targetDensity,(pass,passes)=>({
         inset:Math.min(.5,recipe.shapeInset+
           recipe.volumeFillDepth*(passes<=1?0:pass/(passes-1)))
       }));
@@ -591,6 +598,16 @@
       const floorPart=partPlan.find(part=>part.mesh.userData?.liveRootFloor); // Source nodes are sampled from generated room-floor roots, including irregular footprints.
       if(!floorPart)throw new Error('A ruin substrate must contain a mesh tagged liveRootFloor.');
       floorGrowth=partGrowths[floorPart.index];
+    }
+    if(network){
+      const finishSource=findGrowthMesh(targetGrowth)?.material||findGrowthMesh(floorGrowth)?.material; // Reuse the existing Temple material and its authored texture ownership.
+      for(const part of partPlan){
+        const built=root.LiveRootNetwork.buildGeometry(THREE,network.parts[part.index],target,recipe),material=finishSource?.clone?.()||new THREE.MeshBasicMaterial({color:parseInt(rootFinish.color.slice(1),16)}); // One merged core mesh per piece retains its original animation stage.
+        const mesh=new THREE.Mesh(built.geometry,material);mesh.name='Connected roots of '+part.label;mesh.layers?.enable?.(1);mesh.userData.rootNetwork=true;mesh.userData.networkRadii=built.diagnostics;prepareStrandReveal(mesh,built.strands);
+        partGrowths[part.index].add(mesh);targetGrowth.userData.generatedStrands+=built.strands.length;
+        network.parts[part.index].diagnostics=built.diagnostics;
+        yield {part:'Build '+part.label,layer:part.index+1,layers:partPlan.length};
+      }
     }
     const shapeMesh=findGrowthMesh(targetGrowth),floorMesh=findGrowthMesh(floorGrowth);
     const groundedPartPlan=partPlan.filter(part=>part.grounded);
@@ -616,7 +633,8 @@
     }));
     const shapeMeshes=growthMeshes(targetGrowth);
     for(const mesh of shapeMeshes){
-      if(!smoothFurnitureStrands(THREE,mesh))orderGrowthByHeight(mesh); // Minimal external geometry adapters retain the legacy fallback.
+      mesh.userData.networkDetail=!!network&&!mesh.userData.rootNetwork;
+      if(!mesh.userData.rootNetwork&&!smoothFurnitureStrands(THREE,mesh))orderGrowthByHeight(mesh); // Minimal external geometry adapters retain the legacy fallback.
       mesh.userData.fullDrawCount=mesh.geometry.index?
         mesh.geometry.index.count:mesh.geometry.attributes.position.count;
     }
@@ -705,6 +723,7 @@
               partWindows[part.index].start)/stageLength,0,1),gap:part.linkGap})),
           floorDensityPasses:floorGrowth.userData?.densityPasses || 1,
           shapeDensityPasses:targetGrowth.userData?.densityPasses || 1,
+          rootNetwork:network?{...network.diagnostics,radii:network.parts.map(part=>part.diagnostics)}:null,
           smoothFurnitureStrands:shapeMeshes.reduce((count,mesh)=>count+(mesh.userData.strandReveal?.strands.length||0),0),continuousStrandReveal:shapeMeshes.some(mesh=>!!mesh.userData.strandReveal),
           insideShrinkwrap:true, shapeInset:recipe.shapeInset, volumeFillDepth:recipe.volumeFillDepth,
           shrinkwrapRays:partGrowths.reduce((n,part)=>n+

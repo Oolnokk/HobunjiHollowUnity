@@ -18,7 +18,7 @@ const server=http.createServer((request,response)=>{
   const route=(request.url||'/').split('?')[0];
   if(route==='/test-page'){
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/live-root-growth.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/config/natural-surface-materials.js"></script><script src="/docs/js/natural-surface-materials.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
+    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/live-root-network.js"></script><script src="/docs/js/live-root-growth.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/config/natural-surface-materials.js"></script><script src="/docs/js/natural-surface-materials.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
     return;
   }
   if(route==='/vendor-three.js'){
@@ -493,15 +493,16 @@ const server=http.createServer((request,response)=>{
           floorLength:6,targetLength:7,duration:.5,shapeInset:.03,volumeFillDepth:.1
         }});
         const plan=grown.partPlan.map(p=>({name:p.label,grounded:p.grounded,depth:p.depth,parent:p.parent}));
-        const shapeStrands=grown.getDiagnostics().shapeStrands;
+        const shapeStrands=grown.getDiagnostics().shapeStrands,network=grown.getDiagnostics().rootNetwork; // Validate the connected planner with real Three.js geometry.
+        const visibleCount=group=>{let count=0;group.traverse(mesh=>{if(mesh.isMesh)count+=mesh.geometry.drawRange.count||0;});return count;};
         grown.setProgress(.38);
-        const early=grown.partGrowths.map(g=>g.children[0]?.geometry?.drawRange.count||0);
+        const early=grown.partGrowths.map(visibleCount);
         grown.setProgress(.8);
-        const late=grown.partGrowths.map(g=>g.children[0]?.geometry?.drawRange.count||0);
+        const late=grown.partGrowths.map(visibleCount);
         grown.setProgress(1);
         const done=grown.partGrowths.every(g=>g.children.every(child=>
           child.geometry?.drawRange.count===child.geometry?.index?.count));
-        grown.dispose();return {plan,shapeStrands,early,late,done};
+        grown.dispose();return {plan,shapeStrands,network,early,late,done};
       }
       return {
         table:scenario('table',[
@@ -523,6 +524,8 @@ const server=http.createServer((request,response)=>{
       assert.equal(raised.length,1,name+': the elevated surface must not be a floor root');
       assert.equal(raised[0].depth,1,name+': raised surfaces must grow from the rooted structural pieces');
       assert(report.shapeStrands>0,name+': real scoped geometry must generate root strands');
+      assert(report.network.contactCount>=2&&report.network.pieces.every(piece=>piece.paths>0),name+': original touching pieces must have connected volume paths');
+      assert(report.network.radii.every(part=>part.outsideSamples===0),name+': planned centerlines must remain inside the real guides');
       assert(report.early[raised[0].parent] > 0 || grounded.some(p=>report.early[report.plan.indexOf(p)]>0),
         name+': supporting parts start filling before the elevated surface');
       assert.equal(report.early[report.plan.indexOf(raised[0])],0,
@@ -612,6 +615,17 @@ const server=http.createServer((request,response)=>{
     assert(data.edgeCapacity>=data.edgePairs*2,'Boundary slots, not interior occupancy, determine endpoint capacity');
     assert(data.correctEdges,'Every Wrap strand must begin and end on two different real perimeter edges');
     assert(data.endpointSeparation>=.1,'All Wrap start and end anchors must reserve non-overlapping edge space');
+
+    const networkDetail=await page.evaluate(()=>{
+      const T=window.THREE,target=new T.Group(),material=new T.MeshBasicMaterial(); // A narrow bottleneck joins a grounded hub to a broad upper piece and side branches.
+      for(const [w,h,d,x,y,z] of [[.8,.6,.8,0,.3,0],[.014,.6,.014,0,.9,0],[.5,.3,.5,0,1.35,0],[.7,.06,.06,.75,.3,0],[.7,.06,.06,-.75,.3,0]]){const mesh=new T.Mesh(new T.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);target.add(mesh);}
+      const grown=window.LiveRootGrowth.create({THREE:T,foliage:window.FoliageGenerator,target,recipe:{strandLimit:9,floorDensity:.2,targetDensity:1,knotDensity:1}}),report=grown.getDiagnostics().rootNetwork;
+      grown.setProgress(1);grown.setProgress(.4);grown.setProgress(1);grown.dispose();return report;
+    });
+    assert(networkDetail.contactCount>=4&&networkDetail.junctions>=1,'root network must fork to every real neighbouring piece');
+    assert(networkDetail.pieces.every(piece=>piece.paths>0),'thin details must never lose their entire path budget');
+    assert(networkDetail.radii[1].maxRadius<.008&&networkDetail.radii[2].maxRadius>networkDetail.radii[1].maxRadius*3,'roots must narrow through a bottleneck and regain width afterward');
+    assert(networkDetail.knots>0&&networkDetail.radii.every(part=>part.outsideSamples===0),'large pieces must contain fitted knot paths: '+JSON.stringify(networkDetail));
 
     assert.equal(data.fullCover,0,'Wrap must never generate a flat surface-covering sheet, even at 100% edge density');
     assert.equal(data.fullTriangles,0,'Wrap must not paint the wall interior or cover its triangles');
