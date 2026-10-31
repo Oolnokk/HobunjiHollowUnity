@@ -383,6 +383,7 @@
       smithTreatment: item.smithTreatment || null,
       physicalMassKg: Number.isFinite(Number(item.physicalMassKg)) ? Number(item.physicalMassKg) : null,
       dyeable: item.dyeable === false ? false : undefined,
+      exorcised: item.exorcised === true ? true : undefined, // A freed mask stays quiet once it moves into gear.
     };
     window.MetalArmorSystem?.normalizeItem?.(entry);
     ensureArticleDyeIds(entry);
