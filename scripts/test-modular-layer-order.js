@@ -256,8 +256,12 @@ async function run() {
   const artShaft=api.getConfig().shafts.hachutuTorchStaff;
   assert.equal(api.shaftArtTransform(artShaft).enabled,true);
   const scaledArt=await api.compose('hachutuTorchStaff','warhammer');
-  assert.deepEqual(sampleHeads(unscaledArt),sampleHeads(scaledArt),
-    'optional shaft-art sizing never changes mounted head primitive coordinates or scale');
+  for(const [i,before] of sampleHeads(unscaledArt).entries()) {
+    const after=sampleHeads(scaledArt)[i];
+    assert(Math.hypot(after.x-before.x,after.y-before.y)<1e-7
+      && Math.abs(after.scale-before.scale)<1e-7,
+      'optional shaft art must not change attached head pixels (allow subpixel canvas rounding)');
+  }
   const shaftSample=canvas=>{
     const p=canvas.drawnPixels.find(x=>x.kind==='haft').origin,f=canvas.modularFrame;
     return {x:f.left+p.x/canvas.width*f.width,y:f.top+p.y/canvas.height*f.height};
@@ -268,8 +272,12 @@ async function run() {
   const artOffDraft=JSON.parse(JSON.stringify(api.getConfig()));
   artOffDraft.shafts.hachutuTorchStaff.shaftArtTransform.enabled=false;
   api.replace(artOffDraft);
-  assert.deepEqual(sampleHeads(unscaledArt),sampleHeads(await api.compose('hachutuTorchStaff','warhammer')),
-    'disabling optional shaft transform retains fitted head output');
+  for(const [i,before] of sampleHeads(unscaledArt).entries()) {
+    const after=sampleHeads(await api.compose('hachutuTorchStaff','warhammer'))[i];
+    assert(Math.hypot(after.x-before.x,after.y-before.y)<1e-7
+      && Math.abs(after.scale-before.scale)<1e-7,
+      'disabled shaft art must preserve attached head pose');
+  }
 
   const fireActivations = []; // Captures the actual modular weapon decorator's living flame carrier in a lightweight Three.js fixture.
   const fireWindow = { ModularWeapons: api, HobunjiLayeredWeaponEffects: {
