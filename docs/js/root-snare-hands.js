@@ -228,8 +228,8 @@
           hand.draw(dt,entry.progress,targetPoint,entry.reach,0,false);
           if(hand.aim.distanceToSquared(priorAim)>.0001)entry.aims++;
           // Actual collision, not merely coming within the detection radius.
-          if(nearDistance<=settings.reach+.58 &&
-            hand.collider.center.distanceTo(targetPoint)<=hand.collider.radius+.28){
+          if(entry.progress>=.58 && nearDistance<=settings.reach+.58 &&
+            hand.collider.center.distanceTo(targetPoint)<=hand.collider.radius+.25){ // Approach visibly opens before contact can wrap the digits.
             capture(entry,target,actor);
           }else if(nearDistance>settings.triggerRadius+.55){
             entry.state='retracting';entry.cooldown=.8;
@@ -258,7 +258,7 @@
           carry.y-=.85;
           actor.position.lerp(carry,clamp(dt*13,0,1));
         }
-        changed=true;
+        if(entry.state!=='dormant')changed=true; // Dormant hidden roots do not force a redundant preview render each frame.
       }
       return changed;
     }
