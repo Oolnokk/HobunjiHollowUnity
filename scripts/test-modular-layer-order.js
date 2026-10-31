@@ -189,6 +189,47 @@ async function run() {
   assert(editor.includes("pair.layerOrder = byId('layer-order').value"), 'Both manual choices are saved explicitly and survive curated default fallback.');
   assert(html.includes('id="rig-tree"') && editor.includes('api.attachmentRig('),
     'Mobile editor exposes the actual parent rig and primitive child hierarchy rather than only flattened transforms.');
+  // Run the actual editor's rig/canvas helpers: the old bug was that the artist-facing
+  // shaft canvas painted RAW mounts even though the hidden compositor had transformed them.
+  const helperStart = editor.indexOf('  function rigLayout(id) {');
+  const helperEnd = editor.indexOf('  async function preview() {', helperStart);
+  assert(helperStart >= 0 && helperEnd > helperStart, 'editor rig helpers must remain a single testable block');
+  const rigHelperSource = editor.slice(helperStart, helperEnd);
+  const fixture = JSON.parse(JSON.stringify(api.getConfig().shafts.hachutuTorchStaff)); // Fixed shaft bitmap, editable child mount rig.
+  fixture.duplicateTransform = { scaleX: 1.8, scaleY: .75, x: 50, y: -120 };
+  const editorCanvasOps = [];
+  const authorCanvas = {
+    width: 450, height: 1204,
+    getContext: () => ({
+      clearRect: (...args) => editorCanvasOps.push(['clear', ...args]),
+      drawImage: () => editorCanvasOps.push(['haft']),
+    }),
+  };
+  const editorDrawnMounts = []; // Receives positions of actual overlay lines, not just source draft values.
+  const editorDrawnGizmos = [];
+  const editorHelpers = new Function('api', 'chosenShaft', 'chosenHead', 'cachedImages', 'byId',
+    'lineMarker', 'drawGizmo', 'mountIndex', rigHelperSource +
+    '\\nreturn { rigLayout, displayMounts, rigToLocal, drawLines };')(
+    api, () => fixture, () => api.getConfig().heads.warhammer, { 'shaft-canvas': {} },
+    () => authorCanvas,
+    (_ctx, mount) => editorDrawnMounts.push(mount),
+    (_ctx, mount) => editorDrawnGizmos.push(mount), 0);
+  editorHelpers.drawLines('shaft-canvas');
+  assert.equal(editorCanvasOps.filter(event => event[0] === 'haft').length, 1,
+    'rig edit draws the original shaft only once, with no source-image scaling');
+  assert.deepEqual(editorDrawnMounts, api.shaftMounts(fixture),
+    'visible primitive mount lines are the fully transformed parent-rig children');
+  assert.deepEqual(editorDrawnGizmos[0], editorDrawnMounts[0],
+    'touch/drag gizmo is rendered at the actual visible transformed mount');
+  const sourcePoint = fixture.mounts[0].start;
+  const visiblePoint = api.duplicatePoint(sourcePoint, fixture.duplicateTransform);
+  const pointerBackToLocal = editorHelpers.rigToLocal(visiblePoint, 'shaft-canvas');
+  assert(Math.abs(pointerBackToLocal.x - sourcePoint.x) < 1e-9
+    && Math.abs(pointerBackToLocal.y - sourcePoint.y) < 1e-9,
+    'editing a transformed primitive maps the gesture back to original local mount coordinates');
+  assert(editor.includes("field.addEventListener('input', () => applyRig(false))")
+    && editor.includes("drawLines('shaft-canvas'); updateRigTree(); preview()"),
+    'typing scale or translation immediately redraws both the visible rig and assembled primitives');
   console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
 }
 
