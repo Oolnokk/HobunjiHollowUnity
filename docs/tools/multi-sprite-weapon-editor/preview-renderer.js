@@ -353,7 +353,10 @@
       reach = Math.max(reach, scale * (size * 2 + speed * life * 1.5));
     }
     for (const part of [model.definition.base, ...model.baseLayers].filter(Boolean)) { // The rigid base PNG can itself emit fire without overlays.
-      if (part.vfx?.type === 'fire') reach = Math.max(reach, Math.max(.004, Number(part.vfx.size) || .035) * 2 + (Number(part.vfx.speed) || .12) * Math.max(.1, Number(part.vfx.life) || .65) * 1.5);
+      if (part.vfx?.type === 'fire') {
+        const scale = Math.max(0.1, Math.min(8, Number(part.vfx.visualScale) || 1)); // Camera includes tip-anchored fire geometry, not just bare mote scale.
+        reach = Math.max(reach, scale * (Math.max(.004, Number(part.vfx.size) || .035) * 2 + (Number(part.vfx.speed) || .12) * Math.max(.1, Number(part.vfx.life) || .65) * 1.5));
+      }
     }
     return reach;
   }
