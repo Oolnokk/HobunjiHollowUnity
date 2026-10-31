@@ -22,7 +22,7 @@ assert(hands.includes('sourceKey:p.sourceKey')&&hands.includes('hiddenRootNode:a
 assert(hands.includes("entry.state='held'")&&hands.includes('releaseCaptured'),'the captured runner must remain held after retraction until explicit release');
 assert(hands.includes('digitRoles')&&hands.includes("role:'thumb'")&&hands.includes("role:'finger'"),'branch hand must have two fingers and an opposing thumb');
 assert(hands.includes('buildLogMesh')&&hands.includes('lastAim.lerp'),'arms must use natural foliage branches and steer while extending');
-assert(!/devour|digest|swallow|consum|shrink/i.test(hands),'no devouring or shrinking sequence is implemented');
+assert(!hands.includes('makeFeedingRoots')&&!hands.includes("state='devouring'")&&!hands.includes("state='digesting'")&&!hands.includes('actor.scale.copy'),'no swallowing, disappearance or size-changing sequence exists');
 assert(runner.includes('ProceduralLegAnimation?.attach')&&runner.includes('legs?.update?.'),'the walker must borrow the authentic procedural gait, not fake steps');
 assert(scene.includes('buildFloorCoverSectors(room.floorPattern)')&&scene.includes('perSurface:true'),'multiroom floor coverage must reuse author-like sixteen independent strand budgets');
 assert(scene.includes("surfaceFoliageRole:'growthPlanOnly'")&&scene.includes('guide.userData?.surfaceFoliageGuide'),'floor planning authority must not contribute visible root geometry');
