@@ -84,7 +84,7 @@ const server=http.createServer((request,response)=>{
       const pattern=new T.Mesh(flatGeo,new T.MeshBasicMaterial());
       const sectors=window.StoneAgeRuinScenery.buildFloorCoverSectors(pattern);
       assert(sectors.regions===16,'gameplay must match the author’s sixteen quarter-floor growth budgets');
-      const count=sectors.target.children.reduce((n,x)=>n+x.geometry.getAttribute('position').count/3,0);
+      const count=sectors.target.children.filter(x=>x.userData?.surfaceFoliageGuide).reduce((n,x)=>n+x.geometry.getAttribute('position').count/3,0);
       assert(count===verts.length/9,'sector bucketing must neither fill missing floor tiles nor drop real triangles');
       // The real Temple foliage renderer must recognize every region even after
       // createCoverAsync() clones the original target and gives it a new UUID.
