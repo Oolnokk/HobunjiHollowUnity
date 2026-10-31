@@ -43,6 +43,9 @@ assert(previewHtml.includes('js/stone-age-ruin-scenery.js?v='),'preview must loa
 assert(preview.includes('=window.StoneAgeRuinScenery'),'preview uses the same geometry factory');
 assert(runtime.includes("pieceSet:'stoneAge',floorProps:'pillarsOnly',singleRoom:true,roomPreset:'veryLarge'"),'full Stone Age ruins must opt into V50 architecture and large single-room geometry');
 assert(runtime.includes('await prepareStoneAgeScenery(ruin)'),'Stone Age environment must be built before entering gameplay');
+assert(runtime.includes('await ensureStoneAgeSceneryDependencies()'),'Rock authoring dependencies must load in playable mode');
+assert(runtime.includes('js/natural-surface-materials.js?v=') && runtime.includes('js/surface-stretch-uv-furniture.js?v='),'The playable page must lazy-load the preview stone material and UV mapper');
+assert(!read('docs/index.html').includes('src="js/natural-surface-materials.js'),'Harlyao worlds should not eagerly install additional natural-surface hooks');
 assert(runtime.includes('stoneAgeScenery?.cover?.dispose()')&&runtime.includes('stoneAgeScenery?.dispose()'),'clear/retry must restore V50 sources and release scenery buffers');
 assert(runtime.includes('rootMechanisms:selected,stoneAge:selected'),'the existing checkbox must enable the complete ruin type');
 assert(shared.includes('item.mesh.layers.disable(0)')&&shared.includes('item.mesh.layers.mask=item.layerMask'),'native wall rendering must be suppressed without disabling SolidFootprints collision');
