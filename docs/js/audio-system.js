@@ -1361,6 +1361,7 @@
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
   function playAnimalVoiceUtterance(c, opts = {}) {
+    if (animalVoiceSpeciesKey(c) === 'honeyfuzzle') return false; // Direct callers also cannot trigger honeyfuzzle utterances; buzzing is handled separately.
     const pool = animalVoicePool(c, opts); // Authored species must pass the native preparation gate before independent tempo/pitch playback can start.
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();
