@@ -855,12 +855,18 @@
   // -- hoe is 'hoe' slot only, no dmgType at all) can be rolled here.
   // Recomputed fresh each call rather than cached at module load so a
   // shape added to deps.HELD_SHAPE_DEFS later is picked up automatically.
+  // A hand-authored relic weapon (the Hachutu torch-flail and torch-staff) is a standalone TOOL_ITEM_DEFS item with its own shape and, for the flail,
+  // its own metal; it has no entry in the smithable HELD_SHAPE_DEFS table. An enemy weapon pool may name one by item key.
+  const banditRelicItem = key => {
+    const item = deps.TOOL_ITEM_DEFS?.[key];
+    return item && !deps.HELD_SHAPE_DEFS[key] && item.shapeKey && item.slots?.includes('weapon') ? item : null;
+  };
   function banditWeaponShapeKeys(cfg) {
     const allWeaponShapes = Object.keys(deps.HELD_SHAPE_DEFS).filter(k => deps.HELD_SHAPE_DEFS[k].slots?.includes('weapon')); // Canonical fallback pool used by ordinary bandits exactly as before.
     const configuredPool = Array.isArray(cfg?.weaponShapePool) ? cfg.weaponShapePool : null; // Optional caller-scoped subset used by special humanoid enemies such as arena Harlyao Skeletons.
     if (!configuredPool?.length) return allWeaponShapes;
     const allowed = new Set(configuredPool); // Used only for this selection pass so invalid/non-weapon shape ids are ignored safely.
-    const filtered = [...allowed].filter(shapeKey => deps.HELD_SHAPE_DEFS[shapeKey]?.slots?.includes('weapon')); // Explicit minion pools validate definitions directly, without the ordinary bandit enumeration filter. // Final validated melee pool consumed by banditWeaponFor().
+    const filtered = [...allowed].filter(shapeKey => deps.HELD_SHAPE_DEFS[shapeKey]?.slots?.includes('weapon') || banditRelicItem(shapeKey)); // Explicit minion pools validate definitions directly, without the ordinary bandit enumeration filter. // Final validated melee pool consumed by banditWeaponFor().
     return filtered.length ? filtered : allWeaponShapes;
   }
   // The rank/tier weapon material roll, shared by the weapon itself and by rank metal armor (which must match it before the portrait is baked).
@@ -877,6 +883,11 @@
   function banditWeaponFor(cfg, rank, tier) {
     const shapeKeys = banditWeaponShapeKeys(cfg); // Caller-specific pool when supplied; otherwise the unchanged full weapon-slot pool.
     const shapeKey = shapeKeys[Math.floor(deps.rnd() * shapeKeys.length)]; // Selected melee shape used for held rendering, attacks, and ability style.
+    const relic = banditRelicItem(shapeKey);
+    if (relic) { // Used exactly as authored: its own item key, shape and metal (or none), never a rolled metal.
+      const relicMetal = relic.metalKey && deps.METAL_DEFS[relic.metalKey] ? relic.metalKey : null;
+      return { weaponKey: shapeKey, shapeKey: relic.shapeKey, metalKey: relicMetal, dmgType: relic.dmgType || 'sharp', dmgMultiplier: relicMetal ? deps.metalDmgMultiplier(relicMetal) : 1 };
+    }
     const shape = deps.HELD_SHAPE_DEFS[shapeKey]; // Canonical shape metadata supplies damage type and animation semantics.
     const configuredMetalKey = configuredWeaponMetalKey(cfg); // Null preserves rank/tier metal rolling.
     const rolledMetalKey = configuredMetalKey ? null : rollBanditWeaponMetalKey(cfg, rank, tier);
