@@ -405,7 +405,7 @@ async function run() {
   // Execute the editor's real input binding; a previous onchange-only hookup left visual
   // primitives unmoved on mobile until the numeric control was blurred.
   const controlsStart = editor.indexOf('  for (const [id, key, fallback, min, max] of [', helperEnd);
-  const controlsEnd = editor.indexOf("  byId('duplicate-sprite').onchange", controlsStart);
+  const controlsEnd = editor.indexOf('  function refreshRigPreview() {', controlsStart);
   assert(controlsStart > helperEnd && controlsEnd > controlsStart);
   const controls = new Map();
   for (const id of ['duplicate-scale-x','duplicate-scale-y','duplicate-x','duplicate-y']) {
