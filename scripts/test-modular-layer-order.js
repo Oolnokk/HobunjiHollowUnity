@@ -90,7 +90,7 @@ async function run() {
   assert.deepEqual(originalRig.children.map(mount => mount.children.map(child => child.kind)),
     [['primitive'], ['primitive']], 'head primitives are nested under each mount, not under the shaft bitmap');
   const staffEdited = JSON.parse(JSON.stringify(api.getConfig()));
-  staffEdited.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.75, scaleY: 0.65, x: 125, y: -200 }; // Intentionally large attachment-only motion.
+  staffEdited.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.75, scaleY: 0.65, x: 125, y: -200 }; // Intentionally large attachment-only motion.
   api.replace(staffEdited);
   const transformed = await api.compose('hachutuTorchStaff', 'warhammer');
   assert.deepEqual(paints(transformed), paints(staffIdentity), 'rig movement never removes or duplicates the staff PNG or the heads');
@@ -128,6 +128,21 @@ async function run() {
   assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
   assert(transformed.modularNonMetalMask instanceof Uint8Array, 'the fixed shaft still preserves its independent nonmetal recolor mask');
+  // The historical duplicate-only gate silently ignored scaling on any ORIGINAL shaft.
+  const originalShaftDraft = JSON.parse(JSON.stringify(api.getConfig()));
+  originalShaftDraft.shafts.bshuakauitl.attachmentRigTransform = { scaleX: 2.2, scaleY: .8, x: 95, y: 45 };
+  api.replace(originalShaftDraft);
+  const originalShaftRig = api.attachmentRig(api.getConfig().shafts.bshuakauitl,
+    api.getConfig().heads.warhammer, api.settings('bshuakauitl','warhammer'));
+  assert.equal(originalShaftRig.parent.a, 2.2, 'parent X scale is not gated behind duplicateFrom');
+  assert.equal(originalShaftRig.parent.d, .8, 'parent Y scale is not gated behind duplicateFrom');
+  assert.equal(api.shaftMounts(api.getConfig().shafts.bshuakauitl).length, 4);
+  const oldDraft = JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
+  oldDraft.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 };
+  api.replace(oldDraft);
+  assert.deepEqual(api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff),
+    { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 },
+    'existing exported duplicateTransform drafts migrate to the canonical rig transform');
 
   const fireActivations = []; // Captures the actual modular weapon decorator's living flame carrier in a lightweight Three.js fixture.
   const fireWindow = { ModularWeapons: api, HobunjiLayeredWeaponEffects: {
@@ -196,7 +211,7 @@ async function run() {
   assert(helperStart >= 0 && helperEnd > helperStart, 'editor rig helpers must remain a single testable block');
   const rigHelperSource = editor.slice(helperStart, helperEnd);
   const fixture = JSON.parse(JSON.stringify(api.getConfig().shafts.hachutuTorchStaff)); // Fixed shaft bitmap, editable child mount rig.
-  fixture.duplicateTransform = { scaleX: 1.8, scaleY: .75, x: 50, y: -120 };
+  fixture.attachmentRigTransform = { scaleX: 1.8, scaleY: .75, x: 50, y: -120 };
   const editorCanvasOps = [];
   const authorCanvas = {
     width: 450, height: 1204,
@@ -222,7 +237,7 @@ async function run() {
   assert.deepEqual(editorDrawnGizmos[0], editorDrawnMounts[0],
     'touch/drag gizmo is rendered at the actual visible transformed mount');
   const sourcePoint = fixture.mounts[0].start;
-  const visiblePoint = api.duplicatePoint(sourcePoint, fixture.duplicateTransform);
+  const visiblePoint = api.duplicatePoint(sourcePoint, api.shaftRigTransform(fixture));
   const pointerBackToLocal = editorHelpers.rigToLocal(visiblePoint, 'shaft-canvas');
   assert(Math.abs(pointerBackToLocal.x - sourcePoint.x) < 1e-9
     && Math.abs(pointerBackToLocal.y - sourcePoint.y) < 1e-9,
@@ -249,20 +264,20 @@ async function run() {
     () => { changes.save++; });
   controls.get('duplicate-scale-x').value = '2.4';
   controls.get('duplicate-scale-x').listeners.get('input')();
-  assert.equal(fixture.duplicateTransform.scaleX, 2.4);
+  assert.equal(fixture.attachmentRigTransform.scaleX, 2.4);
   assert.equal(changes.replaced, 1);
   assert.equal(changes.preview, 1);
   assert.equal(changes.render, 1);
   controls.get('duplicate-y').value = '86';
   controls.get('duplicate-y').listeners.get('input')();
-  assert.equal(fixture.duplicateTransform.y, 86);
+  assert.equal(fixture.attachmentRigTransform.y, 86);
   assert.equal(changes.preview, 2);
   assert.equal(changes.tree, 2);
   controls.get('duplicate-y').onchange();
   assert.equal(changes.save, 1, 'committing rig edits persists the result without requiring a second transform');
   controls.get('duplicate-scale-y').value = '-';
   controls.get('duplicate-scale-y').listeners.get('input')();
-  assert.equal(fixture.duplicateTransform.scaleY, .75, 'partial numeric entry does not corrupt the rig');
+  assert.equal(fixture.attachmentRigTransform.scaleY, .75, 'partial numeric entry does not corrupt the rig');
   console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
 }
 
