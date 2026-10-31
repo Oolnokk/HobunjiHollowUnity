@@ -53,7 +53,16 @@ The staff therefore opts into `blendMode: 'normal'` and
 `life: 0.35`, `speed: 0.12`, and the palette are unchanged.
 `rate: 44` gives **each end** the Torch-Flail's 22 motes/s budget at
 rank 5. Existing Torch-Flail emitters retain their original additive
-blending and transform path.
+blending and 2.5× head scale.
+
+Both Torch-Staff and Torch-Flail now explicitly set `worldRise: true`.
+Each particle captures its world-space ignition point and inherited
+world scale when emitted; after that, `+Y` rise and sideways flicker
+are applied in world coordinates, then transformed back into the holder's
+local particle group for the original depth/render ordering. A swung,
+inverted, translated or moving head therefore **does not pull older
+flames sideways**. New flames continue appearing at its new tip position.
+The normal emitter remains unchanged for weapons without `worldRise`.
 
 Gameplay passes the live `ToolMastery.toolMasteryLevel(itemKey)` callback
 when constructing a weapon. The Tool Hub adds a **Preview mastery 0–5**
@@ -66,6 +75,36 @@ emitter path. Diagnostics include scale, effective mote width and both
 tip pivot locations.
 The existing recipe schema remains `hobunji_weapon_sprite_assemblies.v1`;
 existing drafts still load, and effects on a base sprite are opt-in.
+
+## Full modular Torch-Staff shaft and reusable duplication
+
+The Foundry registers `hachutuTorchStaff` as an actual **shaft** in
+`config/modular-weapons.js`: it copies all four B'shuakauitl directed
+eye/tang mounting lines, all per-head corrections and the same seven
+permitted heads, while keeping the own `hachutuTorchStaff` gameplay
+identity (melee only). The **whole staff** remains the shaft, including
+its independent two-tip flame emitter and off-white material.
+`fireAssembly: 'hachutuTorchStaff'` tells the shared weapon assembly
+to mount the live particles to the modular shaft's source sprite, not
+to bake particles into a metal-textured composite or replace its heads.
+
+For other weapons, use the **Duplicate selected shaft + mounts + fitting rules**
+button in the Modular Weapon Editor, provide a stable key/label and sprite,
+then adjust the duplicated shaft's **X scale, Y scale, X translation, and
+Y translation**. A single `duplicateTransform` applies around the
+canonical 450×1204 frame center to the complete shaft sprite and all
+original attachment arrows; each head is fitted to those transformed
+arrows. Any live `fireAssembly` on a copied shaft also inherits the same
+transform, so the flame source positions and relative motion remain
+aligned. The original donor is unaffected. The editor's **shaft arrow**
+view continues to show original untransformed source pixels for precise
+editing; the **combined preview** shows the transformed assembly.
+
+The modular compositor recolors the original `#7F00FF` fuel markers
+off-white and records which source-shaft pixels are visible. The metal
+recolor pipeline restores **those pixels** after tinting/oxidizing the
+forged head, including head-over-haft layer ordering. Thus the Torch-Staff
+itself cannot gain verdigris even when its attached head does.
 
 ## Runtime architecture
 
