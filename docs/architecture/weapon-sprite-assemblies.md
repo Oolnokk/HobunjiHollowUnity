@@ -34,21 +34,36 @@ mask on this rigid sprite. Ordinary tool/weapon mastery XP still increases.
 The shared emitter's optional `vfx.masteryClusters: 2` splits the source
 marker pixels along their longest axis (the two staff ends) into stable
 groups. At mastery 0 each region emits small, separately scattered motes.
-Mastery ranks 1–4 smoothly concentrate the origin points toward their two
-centroids while increasing each mote's size; at mastery 5 both regions
-produce single concentrated fire plumes. The final Torch-Staff `size: 0.05` is **2.5×** the Torch-Flail's
-`size: 0.02`, because the Torch-Flail's entire brazier head (including
-its flame sprites) is scaled 2.5×. This produces equivalent **rendered**
-flame size without scaling the staff. `life: 0.35`, `speed: 0.12`, and
-the palette remain unchanged. `rate: 44` gives **each end** the Torch-Flail's 22
-motes/s budget at rank 5. The normal emitter has no mastery scaling,
-so existing flail fire is unchanged.
+Mastery ranks 1–4 concentrate the origin points towards two centroids
+while increasing the individual mote size. At mastery 5 both regions form
+one cohesive plume apiece, **without collapsing every ignition position
+onto an identical pixel** (`masteryFocus: 0.55`). 
+
+The Torch-Flail is scaled via its **entire head-group transform** (`head.scale: 2.5`),
+not by altering the fire particle size itself. The Torch-Staff now follows
+that same mechanism: its local `size: 0.02` stays identical to the
+Torch-Flail's, while `visualScale: 4` scales an independent fire child
+group **around each staff tip**. This makes the full plume, spacing,
+vertical travel and lateral movement 4× larger (an effective
+rank-5 width of 0.08), while keeping the underlying PNG, source anchors,
+mote brightness and number of motes unchanged. Larger individual radial
+sprites alone had increased overdraw without preserving the flame shape.
+The staff therefore opts into `blendMode: 'normal'` and
+`opacity: 0.65` rather than accumulating opaque additive glow.
+`life: 0.35`, `speed: 0.12`, and the palette are unchanged.
+`rate: 44` gives **each end** the Torch-Flail's 22 motes/s budget at
+rank 5. Existing Torch-Flail emitters retain their original additive
+blending and transform path.
 
 Gameplay passes the live `ToolMastery.toolMasteryLevel(itemKey)` callback
 when constructing a weapon. The Tool Hub adds a **Preview mastery 0–5**
 slider which uses the same callback path in both 3D views. Its Base sprite
 tab allows other tools to opt into either standard fire or two-ended
 mastery fire, edit the marker colors and adjust rate/size/life/speed/palette.
+It also exposes independent whole-plume geometry scale, rank-5 clustering
+focus, blend mode and opacity; changes use the same runtime and preview
+emitter path. Diagnostics include scale, effective mote width and both
+tip pivot locations.
 The existing recipe schema remains `hobunji_weapon_sprite_assemblies.v1`;
 existing drafts still load, and effects on a base sprite are opt-in.
 
