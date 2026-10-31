@@ -116,7 +116,14 @@ heldPlane.layers.mask = (1 | (1 << 29)) >>> 0;
 const heldEmitter = makeEmitter(heldPlane);
 updateEmitters(0.5, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.length > 0, 'held-plane emitter spawns');
-assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === (1 << 29) >>> 0), 'particles on a held-overlay plane render only in the overlay pass');
+const heldMask = (1 | (1 << 29)) >>> 0; // Kept on base for maps with no selective ground replay, and on overlay when the held plane is replayed.
+assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === heldMask), 'particles share the held overlay without disappearing when replay is skipped');
+heldPlane.layers.mask = 1; // A scene transition temporarily returns the held weapon to the ordinary world pass.
+updateEmitters(0.016, snapshot, [heldEmitter]);
+assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === 1), 'existing live particles revert to the ordinary world layer when overlay is unavailable');
+heldPlane.layers.mask = heldMask; // The replay renderer can register/repair the weapon after particles already exist.
+updateEmitters(0.016, snapshot, [heldEmitter]);
+assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === heldMask), 'existing particles rejoin the held overlay after a late layer repair');
 const plainEmitter = makeEmitter(Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 1.2 } } }));
 updateEmitters(0.5, snapshot, [plainEmitter]);
 assert.ok(plainEmitter.particles.every(p => p.sprite.layers.mask === 1), 'particles on an ordinary plane stay on the default layer');
