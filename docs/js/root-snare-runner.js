@@ -46,7 +46,16 @@
       legs?.update?.(dt,velocity.length(),false,null,{});
       return true;
     }
-    let closed=false;return {group,update,chooseTarget:nextDestination,setSpeed(v){chosenSpeed=Math.max(.3,Math.min(5,Number(v)||2.5));},
+    function runPastHand(anchor){
+      if(!anchor?.point||!anchor?.direction)return false;
+      const d=anchor.direction; // Start in the open interior and run toward this exact concealed node for mobile visual inspection.
+      const limitX=x=>Math.max(center.x-edgeX,Math.min(center.x+edgeX,x));
+      const limitZ=z=>Math.max(center.z-edgeZ,Math.min(center.z+edgeZ,z));
+      group.position.set(limitX(anchor.point.x+d.x*3.1),baseY,limitZ(anchor.point.z+d.z*3.1));
+      target.set(limitX(anchor.point.x+d.x*.55),baseY,limitZ(anchor.point.z+d.z*.55));
+      velocity.set(0,0,0);enabled=true;return true;
+    }
+    let closed=false;return {group,update,chooseTarget:nextDestination,runPastHand,setSpeed(v){chosenSpeed=Math.max(.3,Math.min(5,Number(v)||2.5));},
       setRunning(on){enabled=!!on;},get running(){return enabled;},
       diagnostics(){return {x:+group.position.x.toFixed(2),z:+group.position.z.toFixed(2),target:target.toArray(),speed:chosenSpeed,turns,
         authenticFeet:!!legs,elapsed:+elapsed.toFixed(2)};},
