@@ -11,7 +11,7 @@
   function validEnemy(enemy, areaId) {
     return !!enemy && Number(enemy.health) > 0 && !enemy._downed &&
       !enemy._deathTransitionStarted && !enemy._denHidden && enemy.def?.hostile !== false &&
-      (!areaId || !enemy.areaId || enemy.areaId === areaId);
+      (!areaId || enemy.areaId === areaId); // Match game.js's original area check: unknown-zone enemies cannot be targeted through transitions.
   }
 
   function score(companion, master, enemy) {
