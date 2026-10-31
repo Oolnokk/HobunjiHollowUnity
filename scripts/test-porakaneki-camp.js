@@ -405,7 +405,7 @@ function hunterDebug(api, zoneId, campId, index) {
       assert(oldCohorts.length >= 2 && oldCohorts.length <= 4, 'one physical camp retains the previous 2–4 independent hunting cohorts');
       assert.deepEqual(camp.cohortSizes, oldCohorts, 'each cohort exactly preserves the population of its former physical camp');
       assert.equal(camp.residents, oldCohorts.reduce((sum, count) => sum + count, 0), 'one camp contains the same total number of ordinary hunters as before');
-      assert.equal(camp.hunters.length, camp.residents, 'every consolidated hunter is spawned exactly once');
+      assert.equal(camp.hunters.filter(h => h.role === 'resident').length, camp.residents, 'every ordinary hunter is spawned once; Avengers are extra');
       assert.equal(camp.huntingParties.length, oldCohorts.length, 'all former Porakaneki camps retain their own awake hunting parties');
       const memberIds = new Set(); // Detects accidental double-assignment across independent den parties.
       for (const party of camp.huntingParties) {
