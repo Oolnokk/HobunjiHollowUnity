@@ -841,8 +841,11 @@
   }
   function smudgeLive(from, to, paint = bridgePaint) {
     const { image, stepper } = paint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
+    const points=paint.stroke.points, center={x:points.reduce((n,p)=>n+p[0],0)/points.length,
+      y:points.reduce((n,p)=>n+p[1],0)/points.length};
+    const region=api.regionAt(chosenShaft(),center); // Smudge is a whole operation, not one independently transformed point per step.
     const toPixel = point => {
-      const [x, y] = bridgeVisual(point);
+      const [x, y] = bridgeVisual(point,region);
       return { x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height };
     };
     stepper.step(toPixel(from), toPixel(to));
@@ -853,14 +856,22 @@
     const canvas = bridgeView.composed, frame = bridgeView.frame, fill = window.ModularWeaponBridgeFill;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
-    const toPixel = (x, y) => {
-      const [wx,wy] = bridgeVisual([x,y]); return { x: (wx - frame.left) * sx, y: (wy - frame.top) * sy };
-    };
     const rig = api.shaftRigTransform(chosenShaft());
     const fills = strokes.filter(stroke => stroke.points && !stroke.smudge && !stroke.tool && !stroke.junction); // Only bridge fills can fail.
-    for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, {
-      ...stroke, rX: stroke.r * rig.scaleX, rY: stroke.r * rig.scaleY,
-    }, toPixel, sx);
+    for (const stroke of fills) {
+      const center={x:stroke.points.reduce((n,p)=>n+p[0],0)/stroke.points.length,
+        y:stroke.points.reduce((n,p)=>n+p[1],0)/stroke.points.length};
+      const region=api.regionAt(chosenShaft(),center);
+      const local=region?api.duplicateTransform(region.transform):{scaleX:1,scaleY:1};
+      const toPixel = (x,y) => {
+        const [wx,wy]=bridgeVisual([x,y],region);
+        return {x:(wx-frame.left)*sx,y:(wy-frame.top)*sy};
+      };
+      fill.stampStroke(mask, canvas.width, canvas.height, {
+        ...stroke, rX: stroke.r * rig.scaleX * local.scaleX,
+        rY: stroke.r * rig.scaleY * local.scaleY,
+      },toPixel,sx); // Preflight now uses the SAME single-region geometry as final composition.
+    }
     if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
         { outlineThickness: 0, shadeWidth: 0 });
