@@ -426,6 +426,7 @@
       e: 225 + layout.x - 225 * layout.scaleX,
       f: 602 + layout.y - 602 * layout.scaleY,
     }; // Parent attachment primitive transform; shaft image and shaft VFX are intentionally siblings, not children.
+    if (!head) return { kind: 'attachmentRig', parent, children: [], shaftOutsideRig: true }; // Operation/junction-only callers need the parent, without a fitted head.
     const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
     const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
       .filter(entry => entry.mount.type === required);
