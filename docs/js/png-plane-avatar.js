@@ -628,7 +628,7 @@
       y: modelHeight / 2 - (headCentroidPx.y / pxH) * modelHeight,
       z: 0,
     };
-    const gatedHeadBounds = headGateBounds(detectedHead.boundsPx, config.headGate, config.speciesId); // Species-aware head gate (player and NPC avatars).
+    const gatedHeadBounds = headGateBounds(detectedHead.boundsPx, config.headGate, config.speciesId, null, false, config.cosmeticIds); // Species-aware head gate (player and NPC avatars).
     const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, {
       pixelWidth: pxW,
       pixelHeight: pxH,
@@ -715,14 +715,17 @@
 
   // Head-gate modes: 'tight' (head scale ends just below the skull, so a wide hood, shoulders and vest follow body width/height), 'legacy'
   // (the original wide box with a long fade) and 'mask' (opt-in: the head plus its equipped head cosmetics, from a head-only render).
-  // Mashtzarr and Mammakhbuur default to the legacy box; every other species defaults to the tight one.
-  const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur']);
-  function defaultHeadGateFor(speciesId) {
+  // Mashtzarr, Mammakhbuur and the Maskbound default to the legacy box; every other species defaults to the tight one. Certain clothing pieces
+  // (the oversized Hachutu binding masks) force the legacy box on any wearer, whatever the species.
+  const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur', 'maskbound-guardian']);
+  const LEGACY_HEAD_GATE_COSMETICS = [/binding_mask/i]; // Clothing whose bulk needs the wide gate: extend this list to override the species rule per piece.
+  function defaultHeadGateFor(speciesId, cosmeticIds = []) {
+    if ((cosmeticIds || []).some(id => LEGACY_HEAD_GATE_COSMETICS.some(pattern => pattern.test(String(id || ''))))) return 'legacy';
     return LEGACY_HEAD_GATE_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-')) ? 'legacy' : 'tight';
   }
-  function headGateBounds(bounds, mode, speciesId, maskCanvas = null, mirror = false) {
+  function headGateBounds(bounds, mode, speciesId, maskCanvas = null, mirror = false, cosmeticIds = []) {
     if (!bounds) return bounds;
-    const gate = mode || defaultHeadGateFor(speciesId);
+    const gate = mode || defaultHeadGateFor(speciesId, cosmeticIds);
     if (gate === 'mask') {
       const headMask = buildHeadMaskWeights(maskCanvas, mirror);
       return headMask ? { ...bounds, headMask } : { ...bounds, tightGate: true }; // An unreadable mask render falls back to the tight box.
@@ -740,7 +743,7 @@
     const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
     const sourceCanvas = fallbackDimensions.sourceCanvas;
     const detectedHead = sourceCanvas ? detectHeadRigPixels(fallbackDimensions.headCanvas, sourceCanvas, 12) : null;
-    const headBounds = headGateBounds(detectedHead?.boundsPx, fallbackDimensions.headGate, fallbackDimensions.speciesId, fallbackDimensions.headMaskCanvas, mirrorX);
+    const headBounds = headGateBounds(detectedHead?.boundsPx, fallbackDimensions.headGate, fallbackDimensions.speciesId, fallbackDimensions.headMaskCanvas, mirrorX, fallbackDimensions.cosmeticIds);
     const pixelWidth = sourceCanvas?.width || 1;
     const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
       {x:pivotLocalX,y:pivotLocalY,z:0}, {
@@ -1263,6 +1266,7 @@
           sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
           headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           speciesId, headGate: options.headGate,
+          cosmeticIds: options.cosmeticIds || ['mask', 'hat', 'hood', 'upperFace', 'facialHair'].map(key => options.profile?.[key]?.id).filter(Boolean), // Worn pieces that can override the species head gate.
           name: `${root.name}_skinned_plane_assembly`,
         })
       : null;

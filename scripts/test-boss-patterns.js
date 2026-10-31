@@ -51,6 +51,8 @@ for (const type of ['hronal', 'tothal', 'kanthic']) {
   const forced = liches.specialRoster(type).clothingPatterns.forcedOverpassBySlot;
   assert.ok(forced.overwear.pattern && forced.pants.pattern, type + ' robe and pants are both patterned');
   assert.equal(forced.pants.fallbackColorC.hex, liches.bodyColor3For(type), type + ' pants use Body Color 3 for the pattern');
+  assert.deepEqual([...forced.pants.roles], ['BASE'], type + ' pants pattern only the base sprite');
+  assert.equal(forced.pants.drapeUsesPatternColor, true, type + ' pants drape is dyed the pattern color as a whole');
 }
 
 // Armor and weapon: silver plating painted with the pattern (never verdigris removal), carried on the lootable items; circlets for all three.
@@ -101,6 +103,8 @@ assert.match(armorSource, /cannot be re-patterned/, 'painted plating cannot be r
   const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
   assert.match(bandit, /group\.userData\.specialHeadFire = await window\.SpecialHarlyaoLiches\.prepareHeadFire/, 'the hostile builder requests the emitter data');
   assert.match(bandit, /appearance: pantsAppearanceWithForcedPattern\(window\.PantsGarmentRenderer\.appearanceFromBodyColors\(profile\.bodyColors\), roster\)/, 'the hostile pants renderer receives the forced woven pattern');
+  assert.match(bandit, /forced\.drapeUsesPatternColor \? \{ secondaryHex: patternHex \}/, 'the drape layer takes the pattern color');
+  assert.match(bandit, /roster\.clothingPatterns\?\.forcedOverpassBySlot\) \{ \/\/ Woven pattern config/, 'patterned enemies warm the weave caches before their real portraits');
   assert.match(bandit, /forcedOverpassPattern: JSON\.parse\(JSON\.stringify\(forced\.pattern\)\)/, 'pants weave data carries the guardian pattern');
   assert.match(fs.readFileSync('docs/js/combat/combat-special-liches.js', 'utf8'), /trackPortraitTexture\?\.\(THREE,texture,'front'\)/, 'the circlet overlay follows the portrait flip setting');
   assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/weapon-layer-effects\.js\?v=/, 'the Workshop loads the marker-pixel scanner');

@@ -131,7 +131,7 @@
       flameHeadband:{cosmeticId:'basic_headband',hex:MARKER_HEX,hidden:true}, // Invisible marker-dyed headband under the circlet; see prepareHeadFire.
       clothingPatterns:{forcedOverpassBySlot:{
         overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
-        pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Every named guardian's pants carry the same woven glyph as the robe.
+        pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},roles:['BASE'],drapeUsesPatternColor:true}, // Every guardian's pants carry the woven glyph on the BASE sprite only; the DRAPE is dyed the pattern color (Body Color 3) as a whole.
       }},
     };
     {

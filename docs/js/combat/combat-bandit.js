@@ -359,7 +359,7 @@
     const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: JSON.parse(JSON.stringify(forced.pattern)) };
     if (Array.isArray(forced.roles) && forced.roles.length) weaving.forcedOverpassRoles = [...forced.roles];
     const patternHex = appearance.patternHex && appearance.patternHex !== '#ffffff' ? appearance.patternHex : (forced.fallbackColorC?.hex || appearance.patternHex);
-    return { ...appearance, weaving, patternHex }; // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3).
+    return { ...appearance, weaving, patternHex, ...(forced.drapeUsesPatternColor ? { secondaryHex: patternHex } : {}) }; // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3); an optional drape layer is dyed that color as a whole.
   }
 
   function ensureEnemyPants(roster) {
@@ -399,6 +399,11 @@
     const frontCanvas = document.createElement('canvas');
     frontCanvas.width = frontCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'front-portrait';
+    if (roster.clothingPatterns?.forcedOverpassBySlot) { // Woven pattern config and motif composites are cold on a first spawn and its retry can miss them, leaving the garment plain; one throwaway render warms them before the real portraits.
+      const warmCanvas = document.createElement('canvas');
+      warmCanvas.width = warmCanvas.height = PORTRAIT_SIZE;
+      await window.NpcAvatarPreview.renderProfileToCanvas(warmCanvas, profile, { forceEyesOpen: true });
+    }
     await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
@@ -509,10 +514,10 @@
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, cosmeticIds: roster.equippedCosmetics })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, cosmeticIds: roster.equippedCosmetics })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -563,7 +568,7 @@
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
         neckLocal:{...frontNeckSkin.neckBone.position},
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
-        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false) || headPixels?.boundsPx || null,
+        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false, roster.equippedCosmetics) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
     if (roster.specialLichId && window.SpecialHarlyaoLiches?.prepareHeadFire) { // Named guardians: hidden flame headband emitter pixels + circlet overlay (see combat-special-liches.js).
