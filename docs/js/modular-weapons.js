@@ -224,13 +224,52 @@
   function shaftRigTransform(shaft) {
     return duplicateTransform(shaft?.attachmentRigTransform || shaft?.duplicateTransform);
   } // All shafts, not only duplicates, have an independent attachment parent; old duplicateTransform drafts still work.
+  function shaftArtTransform(shaft) {
+    const raw = shaft?.shaftArtTransform;
+    return { ...duplicateTransform(raw), enabled: raw?.enabled === true }; // Independent, opt-in sprite transform; flame source inherits it.
+  }
+  function cleanRigRegions(raw) {
+    if (!Array.isArray(raw)) return [];
+    const used = new Set();
+    return raw.slice(0, 12).flatMap((region, index) => {
+      const box = region?.box;
+      if (!box || ![box.x0,box.y0,box.x1,box.y1].every(Number.isFinite)) return [];
+      const x0 = finite(box.x0,0,0,450), y0 = finite(box.y0,0,0,1204);
+      const x1 = finite(box.x1,0,0,450), y1 = finite(box.y1,0,0,1204);
+      if (x1-x0 < 8 || y1-y0 < 8) return [];
+      const id = typeof region.id === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(region.id)
+        ? region.id : 'area'+index;
+      if (used.has(id)) return [];
+      used.add(id);
+      return [{ id, label: String(region.label || 'Region '+(index+1)).slice(0,64),
+        box:{x0,y0,x1,y1}, transform:duplicateTransform(region.transform) }];
+    }); // Regions are independently transformed selections of the mounting rig's children.
+  }
+  function regionAt(shaft, point) {
+    const regions = shaft?.rigRegions || [];
+    for (let i=regions.length-1;i>=0;i--) {
+      const region = regions[i], b=region.box;
+      if (point.x>=b.x0 && point.x<=b.x1 && point.y>=b.y0 && point.y<=b.y1) return region;
+    }
+    return null; // Later areas win when selections overlap; this remains stable after transforms move their contents.
+  }
+  function regionAffine(region) {
+    if (!region) return {a:1,b:0,c:0,d:1,e:0,f:0};
+    const box=region.box, t=duplicateTransform(region.transform);
+    const cx=(box.x0+box.x1)/2,cy=(box.y0+box.y1)/2;
+    return {a:t.scaleX,b:0,c:0,d:t.scaleY,e:cx+t.x-cx*t.scaleX,f:cy+t.y-cy*t.scaleY};
+  } // Each region is a child of the overall attachment parent, pivoting at the selected box center.
+  function affinePoint(matrix, p) {
+    return {x:matrix.a*p.x+matrix.c*p.y+matrix.e,y:matrix.b*p.x+matrix.d*p.y+matrix.f};
+  }
+  function rigPoint(shaft, p, region = regionAt(shaft,p)) {
+    return duplicatePoint(affinePoint(regionAffine(region),p),shaftRigTransform(shaft));
+  } // Transform each selected child's endpoints under its area, then under the overall parent.
   function shaftMounts(shaft) {
-    const mounts = shaft?.mounts || [];
-    const layout = shaftRigTransform(shaft);
-    if (layout.scaleX === 1 && layout.scaleY === 1 && !layout.x && !layout.y) return mounts;
-    return mounts.map(mount => ({
-      type: mount.type, start: duplicatePoint(mount.start, layout), end: duplicatePoint(mount.end, layout),
-    })); // Parent rig moves every tang/sleeve child; shaft artwork and live fire are outside it.
+    return (shaft?.mounts || []).map(mount => {
+      const region=regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+      return {type:mount.type,start:rigPoint(shaft,mount.start,region),end:rigPoint(shaft,mount.end,region)};
+    }); // A selected mounting primitive travels with its area, rather than only the whole rig.
   }
   function matchingMounts(shaft, head) {
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
@@ -322,6 +361,9 @@
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
       if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
+      shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
+      shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
+        enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
       if (raw.attachmentRigTransform || raw.duplicateTransform || shaft.attachmentRigTransform || shaft.duplicateTransform) {
         // Apply to both original and cloned shafts. Older browser drafts use duplicateTransform;
         // newer edits store attachmentRigTransform without changing the shaft sprite itself.
@@ -432,13 +474,15 @@
       .filter(entry => entry.mount.type === required);
     const selected = compatible.length ? compatible : (shaft?.mounts || []).slice(0, 1).map((mount, index) => ({ mount, index }));
     const children = selected.map(({ mount, index }) => {
-      const localMatrix = headTransform(mount, values, head.mount); // Fit the primitive inside the *unscaled* mounting rig.
+      const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+      const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
+      const localMatrix = headTransform(mount, values, head.mount); // Fit first; inherit region and overall rig parents afterward.
       return {
-        kind: 'mount', index, type: mount.type, localMount: mount,
-        worldMount: { type: mount.type, start: duplicatePoint(mount.start, layout), end: duplicatePoint(mount.end, layout) },
+        kind: 'mount', index, type: mount.type, localMount: mount, regionId:region?.id||null, regionMatrix,
+        worldMount: { type: mount.type, start: rigPoint(shaft,mount.start,region), end: rigPoint(shaft,mount.end,region) },
         children: [{
           kind: 'primitive', source: 'head', localMatrix,
-          worldMatrix: multiplyAffine(parent, localMatrix), // The child inherits translation and nonuniform scale in both axes.
+          worldMatrix: multiplyAffine(multiplyAffine(parent,regionMatrix), localMatrix),
         }],
       };
     }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
@@ -573,8 +617,10 @@
             context.transform(t.a, t.b, t.c, t.d, t.e, t.f); // One parent scaling rig; all primitives and sockets are its children.
           }
           for (const mounting of rig.children) for (const primitive of mounting.children) {
-            const t = primitive.localMatrix; // Local fit is independent from the duplicated rig's scale/translation.
-            context.save(); context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+            const t = primitive.localMatrix, area=mounting.regionMatrix; // Selected area is a parent of the fitted head primitive.
+            context.save();
+            if (mounting.regionId) context.transform(area.a, area.b, area.c, area.d, area.e, area.f);
+            context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
             context.drawImage(headImage, 0, 0, 450, 1204);
             context.restore();
           }
@@ -640,6 +686,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftRigTransform, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);
