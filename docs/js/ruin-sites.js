@@ -31,6 +31,8 @@
   const PIECES = ['ruinEntranceTunnel', 'ruinEntranceDoor', 'ruinEntranceDoorRubble', 'ruinTargetPillar', 'ruinPillarBroken', 'ruinPillarStump', 'ruinRubblePile', 'ruinBurrowHole'];
   const STORE_KEY = 'hobunjiRuinSites.v1';
   const DEFAULT_HOLE_CHANCE = .06;
+  const STORY_VAULT_ZONE = 'map_western_slope'; // The one moving, world-persistent quest burrow is independent of normal Tothal-cycle hole state.
+  const STORY_VAULT_ID = 'garanki_story_vault'; // Stable identity for the unique talisman vault and its eventual map marker.
   const FACING_VECTORS = { north:{ x:0, z:-1 }, east:{ x:1, z:0 }, south:{ x:0, z:1 }, west:{ x:-1, z:0 } }; // Outward (approach) direction per authored facing.
   const DOOR_INSET = .3; // Leaf sits this far inside the cliff line so the tunnel's front lip frames it.
   const PILLAR_HALF = .43;
@@ -40,6 +42,7 @@
   let piecesReady = null;
   const sitesByZone = new Map(); // zoneId -> [site]
   const rendered = new Map(); // zoneId -> { group, sites:[runtime] }
+  const buildSerials = new Map(); // Each zone's latest async mesh build wins; reload/dig/shift callbacks cannot attach duplicate stale burrows.
   let activeVisit = null; // { kind:'entrance'|'hole', id, zoneId }
   let rangedHookInstalled = false;
   const debug = { registered:0, rendered:0, lastEnter:null, lastExit:null, lastHit:null, holeRolls:0 };
@@ -67,6 +70,65 @@
     entry.entrances[id] = { ...(entry.entrances[id] || { struck:[], open:false, spent:false }), ...patch };
     saveState(entry);
     return entry.entrances[id];
+  }
+
+  function storyVaultSite(zoneId = STORY_VAULT_ZONE) {
+    const guild = window.DelversGuild;
+    if (zoneId !== STORY_VAULT_ZONE || !['search','report'].includes(guild?.vaultPhase?.()) || !guild?.hasTalisman?.()) return null;
+    const saved = guild.vaultSite?.();
+    if (saved?.zoneId === zoneId && Number(saved.cycle) === cycle() && Number.isInteger(saved.col) && Number.isInteger(saved.row)) return saved;
+    const zi = deps?._zoneScenes?.get?.(zoneId); // Choose only after the genuine generated Western Slope grid is available.
+    if (!zi?.grid) return null;
+    const rng = rngFor('story-vault-position'); // Deterministic for a world/Tothal cycle without consuming normal treasure streams.
+    const layout = deps?._zoneLayouts?.get?.(zoneId);
+    const avoid = [...(layout?.dens || []), ...(layout?.buildings || []), ...(layout?.localeInstances || [])].map(o => ({
+      col:Number(o.col ?? o.x ?? o.gridX), row:Number(o.row ?? o.y ?? o.gridZ),
+    })).filter(p => Number.isFinite(p.col) && Number.isFinite(p.row)); // Avoid landmarks/den mouths, not every bush and forage resource across a dense wilderness.
+    const previous = saved?.zoneId === zoneId ? saved : null; // A revealed hole remains revealed if the terrain moves on a Shift.
+    let picks = deps?.findZoneFlatEmptyTiles?.(zoneId, 48, rng, avoid) || [];
+    const viableFrom = candidates => candidates.filter(({col,row}) => {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 8 || row < 8 || col >= zi.cols - 8 || row >= zi.rows - 8) return false;
+      const tile = zi.grid[row]?.[col];
+      if (!tile || tile.water || tile.incline || tile.type === deps.TileType?.TRENCH || tile.type === deps.TileType?.RAMP || tile.type === deps.TileType?.ROCK) return false;
+      if (avoid.some(point => Math.hypot(point.col - col, point.row - row) < 6)) return false;
+      if ((deps?._zoneTreasurePersist?.get?.(zoneId)?.placements || []).some(p => p.col === col && p.row === row)) return false;
+      if (Object.values(state().holes || {}).some(hole => hole.zoneId === zoneId && hole.state === 'open' && hole.col === col && hole.row === row)) return false;
+      return true;
+    });
+    let viable = viableFrom(picks);
+    if (!viable.length) {
+      picks = deps?.findZoneFlatEmptyTiles?.(zoneId, 160, rng, avoid) || []; // Retry a wider standard flat-tile sample before declaring a dense/cliff-heavy map impossible.
+      viable = viableFrom(picks);
+    }
+    const selected = viable[0];
+    if (!selected) { debug.storyVaultError = 'No safe Western Slope dig tile was selected'; return null; }
+    const site = { zoneId, col:selected.col, row:selected.row, cycle:cycle(), revealed:previous?.revealed === true };
+    if (!guild.saveVaultSite?.(site)) { debug.storyVaultError = 'World-scoped vault position save failed'; return null; }
+    if (site.revealed) {
+      const tile = zi.grid[site.row]?.[site.col]; // A previously unearthed vault stays a visible open shaft after the burrow relocates with Tothal.
+      if (tile && tile.type !== deps.TileType?.TRENCH) {
+        tile.type = deps.TileType.TRENCH;
+        tile.depth = 1;
+        deps.recordWildernessChunkTileDelta?.(zoneId,site.col,site.row);
+        if (zi.scene) setTimeout(() => window.ZoneRegrowth?.refreshZoneGroundVisuals?.(zoneId,site.col,site.row),0);
+      }
+      if (zi.scene) setTimeout(() => buildZoneMeshes(zi.scene,zi.grid,zoneId),0); // A relocated, already-open shaft must appear even if the zone's first mesh pass ran before _zoneScenes registered it.
+    }
+    debug.storyVaultError = null;
+    return site;
+  }
+
+  function storyVaultDigCheck(zoneId) {
+    if (zoneId !== STORY_VAULT_ZONE) return false;
+    const site = storyVaultSite(zoneId);
+    if (!site || site.revealed) return false;
+    const zi = deps?._zoneScenes?.get?.(zoneId);
+    if (zi?.grid?.[site.row]?.[site.col]?.type !== deps.TileType?.TRENCH) return false;
+    if (!window.DelversGuild?.uncoverVault?.()) return false;
+    deps?.showToast?.('The talisman flashes! Beneath the earth is an ancient stone shaft.', true);
+    if (zi?.scene) buildZoneMeshes(zi.scene, zi.grid, zoneId);
+    syncMapMarkers();
+    return true;
   }
 
   function seedFor(id) { return RL.hashString(`${worldId()}|${cycle()}|${id}`) >>> 0; }
@@ -149,13 +211,22 @@
 
   function buildZoneMeshes(zScene, zGrid, mapId) {
     const zoneId = String(mapId || '');
+    const serial = (buildSerials.get(zoneId) || 0) + 1; // Invalidates an older in-flight ensurePieces() completion for this zone.
+    buildSerials.set(zoneId,serial);
     const previous = rendered.get(zoneId);
     if (previous?.group?.parent) previous.group.parent.remove(previous.group);
     rendered.delete(zoneId);
     const sites = sitesByZone.get(zoneId) || [];
     const holes = Object.entries(state().holes || {}).filter(([, hole]) => hole.zoneId === zoneId);
-    if (!zScene || (!sites.length && !holes.length)) return;
+    const storySite = storyVaultSite(zoneId);
+    if (storySite && !storySite.revealed && zGrid?.[storySite.row]?.[storySite.col]?.type === deps.TileType?.TRENCH) {
+      storyVaultDigCheck(zoneId); // A previously dug tile should also reveal the story shaft after reload.
+      return;
+    }
+    if (!zScene || (!sites.length && !holes.length && !storySite?.revealed)) return;
     ensurePieces().then(() => {
+      const registeredScene=deps?._zoneScenes?.get?.(zoneId)?.scene; // A newly built zone may not yet be registered when its first scene callback is scheduled.
+      if (buildSerials.get(zoneId) !== serial || (registeredScene && registeredScene !== zScene)) return; // Never attach stale burrow meshes after a scene replacement.
       if (!zScene.parent && zScene.type !== 'Scene') return;
       const group = new THREE.Group();
       group.name = 'ruinSites';
@@ -164,6 +235,10 @@
       for (const [id, hole] of holes) {
         const built = buildHole(id, hole, group, zGrid, runtime);
         if (built) runtime.holes.push(built);
+      }
+      if (storySite?.revealed) {
+        const built = buildHole(STORY_VAULT_ID, { ...storySite, story:true, state:'open' }, group, zGrid, runtime);
+        if (built) runtime.holes.push(built); // Unlike ordinary holes, this persists through Tothal and relocates with the world story.
       }
       zScene.add(group);
       rendered.set(zoneId, runtime);
@@ -314,6 +389,7 @@
   function holeId(zoneId, col, row) { return `hole:${zoneId}:${col},${row}`; }
 
   function buildHole(id, hole, parent, zGrid, runtime) {
+    const isStoryVault = hole.story === true; // Reuse the existing authored burrow hole, interaction footprint and ladder prompt.
     if (hole.state === 'cleared') { fillHole(id, hole); return null; }
     const piece = build('ruinBurrowHole');
     if (!piece) return null;
@@ -322,11 +398,15 @@
     place(piece, parent, hole.col + .5, y, hole.row + .5, 0);
     const object = {
       id:`ruinhole_${hole.zoneId}_${hole.col}_${hole.row}`, type:'ruin_hole', col:hole.col, row:hole.row, mesh:piece,
-      label:'🕳️ Ruin Burrow',
-      getButtons() { return [{ icon:'🪜', label:window.DelversGuild?.hasStone?.() ? 'Climb down into the ruin' : "Requires a Delver's Stone", action:'obj_ruin_hole', style:'primary', allowed:!!window.DelversGuild?.hasStone?.() }]; },
+      label:isStoryVault ? '🕳️ Harlyao Vault Burrow' : '🕳️ Ruin Burrow',
+      getButtons() {
+        const allowed = isStoryVault ? !!window.DelversGuild?.hasTalisman?.() : !!window.DelversGuild?.hasStone?.();
+        return [{ icon:'🪜', label:allowed ? (isStoryVault ? 'Descend into the hidden vault' : 'Climb down into the ruin') : (isStoryVault ? 'Requires the Harlyao Key Talisman' : "Requires a Delver's Stone"), action:'obj_ruin_hole', style:'primary', allowed }];
+      },
       onAction(action) {
         if (action !== 'obj_ruin_hole') return { ok:false, message:'Unknown action.' };
-        if (!enterSite({ kind:'hole', id, zoneId:hole.zoneId, name:'Ruin Burrow', returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } })) return { ok:false, message:"A Delver's Stone is required." };
+        const visit = { kind:isStoryVault ? 'story-vault' : 'hole', id, zoneId:hole.zoneId, name:isStoryVault ? 'Forgotten Harlyao Vault' : 'Ruin Burrow', returnAt:{ x:hole.col + .5, z:hole.row + 1.5 } };
+        if (!enterSite(visit)) return { ok:false, message:isStoryVault ? 'The Harlyao Key Talisman is required.' : "A Delver's Stone is required." };
         return { ok:true, message:'You climb down the shaft.' };
       },
     };
@@ -401,6 +481,11 @@
       if (!byZone.has(hole.zoneId)) byZone.set(hole.zoneId, []);
       byZone.get(hole.zoneId).push({ localeId:`ruin_hole_${hole.zoneId}_${hole.col}_${hole.row}`, name:'Ruin Burrow', category:'ruin_hole', x:hole.col - .5, y:hole.row - .5, alwaysVisible:true, objects:[], connectors:[], [MARKER_FLAG]:true, ruinHoleId:id });
     }
+    const story = storyVaultSite(STORY_VAULT_ZONE);
+    if (story?.revealed) {
+      if (!byZone.has(STORY_VAULT_ZONE)) byZone.set(STORY_VAULT_ZONE, []);
+      byZone.get(STORY_VAULT_ZONE).push({ localeId:STORY_VAULT_ID, name:'Forgotten Harlyao Vault', category:'story_poi', x:story.col, y:story.row, alwaysVisible:true, objects:[], connectors:[], [MARKER_FLAG]:true });
+    }
     for (const [zoneId, layout] of layouts) {
       if (!layout || !Array.isArray(layout.localeInstances)) continue;
       const kept = layout.localeInstances.filter(instance => !instance?.[MARKER_FLAG]);
@@ -412,6 +497,17 @@
 
   // ── Entering / leaving ────────────────────────────────────────────────────
   function enterSite(visit) {
+    if (visit.kind === 'story-vault') {
+      if (!window.DelversGuild?.hasTalisman?.()) return false;
+      const R = window.DevRandomRuin;
+      if (!R?.generateStoryVault) { deps?.showToast?.('The hidden vault is not ready.', false); return false; }
+      activeVisit = { ...visit };
+      const returnAnchor = { area:visit.zoneId, x:visit.returnAt.x * deps.TILE, y:visit.returnAt.z * deps.TILE };
+      Promise.resolve(R.generateStoryVault({returnAnchor})).then(ok => { if (!ok) activeVisit = null; }).catch(error => {
+        activeVisit = null; debug.storyVaultError = String(error?.message || error);
+      });
+      return true;
+    }
     if (!window.DelversGuild?.hasStone?.()) {
       deps?.showToast?.("A Delver's Stone is required to enter Harlyao ruins.", false);
       return false;
@@ -545,8 +641,26 @@
   function treasureHoleChance() { return Math.max(0, Math.min(1, Number(config('sites.treasureHoleChance', DEFAULT_HOLE_CHANCE)) || 0)); }
   function holeAt(mapId, col, row) { return state().holes[holeId(mapId, col, row)] || null; }
 
+  function refreshStoryVault() {
+    const zi = deps?._zoneScenes?.get?.(STORY_VAULT_ZONE); // PlayerReady inventory hydration can occur after the first zone's scene pass.
+    if (!zi?.scene || !zi.grid) return false;
+    buildZoneMeshes(zi.scene,zi.grid,STORY_VAULT_ZONE);
+    syncMapMarkers();
+    return true;
+  }
+
   function init(injected) {
     deps = injected;
+    const wild = window.WildTreasure; // Shares the exact post-dig refresh seam already used to uncover ordinary treasure shafts.
+    if (wild?.syncZoneInteractivity && !wild.__storyVaultDigWrapped) {
+      const previous = wild.syncZoneInteractivity;
+      wild.syncZoneInteractivity = function (...args) {
+        const result = previous.apply(this, args);
+        storyVaultDigCheck(String(args[0] || ''));
+        return result;
+      };
+      wild.__storyVaultDigWrapped = true;
+    }
     window.AreaFootprintBlockers?.register?.('ruin-sites', { area:null, blocksBox:(x, z, half, worldY) => blocksBox(deps?.getCurrentArea?.(), x, z, half, worldY) });
     installRangedHook();
     ensurePieces();
@@ -563,12 +677,14 @@
   window.RuinSites = Object.freeze({
     init, registerWorkspace, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
+    storyVaultSite, storyVaultDigCheck, refreshStoryVault,
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,
       zones:Object.fromEntries([...sitesByZone].map(([zoneId, sites]) => [zoneId, sites.map(site => ({ id:site.id, facing:site.facing, door:site.door, state:entranceState(site.id) }))])),
       rendered:Object.fromEntries([...rendered].map(([zoneId, runtime]) => [zoneId, { sites:runtime.sites.map(record => ({ id:record.site.id, doorPoint:record.layout.doorPoint, approach:record.layout.approach, y:record.y, pillars:record.pillars.map(p => ({ id:p.slot.id, x:p.slot.x, z:p.slot.z, struck:p.struck })), spent:!!record.rubble })), holes:runtime.holes.map(h => h.id), blockers:runtime.blockers.length, cells:runtime.cells.size }])),
       holes:state().holes, bossSites:state().bossSites||{}, // Mobile-readable evidence of the three unique key-guardian graves.
+      storyVault: { phase:window.DelversGuild?.vaultPhase?.(), site:window.DelversGuild?.vaultSite?.(), error:debug.storyVaultError || null },
       mapMarkers:[...(deps?._zoneLayouts?.values?.() || [])].reduce((sum, layout) => sum + (layout?.localeInstances || []).filter(instance => instance?.[MARKER_FLAG]).length, 0),
     }),
     debugStrikeAll(zoneId) {
