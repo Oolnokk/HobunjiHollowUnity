@@ -257,12 +257,14 @@
         if(isPillar)pillars++;else walls++;
       }
       if(!walls)throw new Error('Stone Age ruin has no generated walls to replace.');
+      const floorBuildStart=root.performance?.now?.()??Date.now(); // Used for mobile debug timing of the expensive geometry/UV mapping stage.
       const floor=floorHeights?ruinMappedFloorMesh(meta,seed,stoneMaterial,floorHeights):ruinFloorMesh(meta,seed,stoneMaterial); // Multiroom gameplay uses exact V50 cells; the standalone preview retains its original 4×4 room tiles.
+      const floorBuildMs=Math.round((root.performance?.now?.()??Date.now())-floorBuildStart); // Separately exposes the floor build cost without counting Temple asset loading.
       model.add(floor.mesh);
       model.updateWorldMatrix(true,true);
       const room={model,seed,stoneMaterial,floorPattern:floor.pattern,floorLayout:floor.layout,
         floorY:Number(meta.floorSurfaceY)||0,walls,pillars,pieces,floorStones:floor.mesh.userData.stoneCount,
-        floorStats:floor.stats||null}; // Multi-elevation diagnostics stay attached to the same authored room object.
+        floorStats:floor.stats||null,floorBuildMs}; // Multi-elevation and real device-side build timing diagnostics.
       const activate=()=>{
         if(active||closed)return;
         for(const item of nativeMeshes)item.mesh.layers.disable(0); // Keep source visible/material alive for stillOwnedByScanRoot() collision; only suppress main-camera drawing.
