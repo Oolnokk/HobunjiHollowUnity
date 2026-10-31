@@ -30,12 +30,17 @@
     for (const enemy of enemies || []) {
       if (enemy === current) currentSeen = true;
       if (!validEnemy(enemy, areaId)) continue;
-      if (Math.hypot(enemy.x - master.x, enemy.y - master.y) > radius) continue;
+      const ownerDistance = Math.hypot(enemy.x - master.x, enemy.y - master.y); // Owner alert range normally anchors companion fights.
+      const petDistance = Math.hypot(enemy.x - companion.x, enemy.y - companion.y); // A pet must still defend itself from nearby attacks outside that range.
+      const attackingPet = enemy.targetCreature === companion || enemy.targetPlayer === companion;
+      if (ownerDistance > radius && !(attackingPet && petDistance <= radius * 0.5)) continue;
       const priority = score(companion, master, enemy);
       if (priority < chosenScore) { chosenScore = priority; chosen = enemy; }
     }
     const currentEligible = currentSeen && validEnemy(current, areaId) &&
-      Math.hypot(current.x - master.x, current.y - master.y) <= radius;
+      (Math.hypot(current.x - master.x, current.y - master.y) <= radius ||
+        ((current.targetCreature === companion || current.targetPlayer === companion)
+         && Math.hypot(current.x - companion.x, current.y - companion.y) <= radius * 0.5));
     const currentScore = currentEligible ? score(companion, master, current) : Infinity; // Compare against an established target without stale-entry bias.
     const chosenThreatensOwner = chosen && (chosen.targetPlayer === master || chosen.targetCreature === master || chosen._banditTarget === master);
     const currentThreatensOwner = current && (current.targetPlayer === master || current.targetCreature === master || current._banditTarget === master);
@@ -52,8 +57,9 @@
     return chosen;
   }
 
-  function shouldRestartApproach(stage, targetDistance, attackReach) {
-    return stage?.mode === 'backingUp' && Number(targetDistance) > Math.max(0, Number(attackReach) || 0) * APPROACH_RESTART_RATIO;
+  function shouldRestartApproach(stage, targetDistance, attackReach, urgent = false) {
+    return stage?.mode === 'backingUp' && (urgent ||
+      Number(targetDistance) > Math.max(0, Number(attackReach) || 0) * APPROACH_RESTART_RATIO);
   }
 
   function debugSnapshot(companion) {
