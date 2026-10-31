@@ -33,13 +33,15 @@
   'use strict';
 
   const FALLBACK_NECK_DROP = 0.25; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
-  const SHOULDER_DROP_RATIO = 0.8; // The spline's vertical drop at the neck node is this share of the total head drop; the head bone supplies the rest.
-  const WAIST_BELOW_NECK = 0.42; // Fallback only: with no authored posterior the spline starts this far (fraction of model height) below the neck pivot.
-  const SPLINE_NODES = 7; // Posterior (0) ... neck (6).
+  const SHOULDER_DROP_RATIO = 1; // The spline carries this share of the total head drop at its neck-base node; the head bone supplies any rest. 1: nothing for the head bone to fight the spline over.
+  const WAIST_BELOW_NECK = 0.42; // Fallback only: with no authored posterior the spline starts this far (fraction of model height) below the neck base.
+  const NECK_BASE_BELOW_PIVOT = 0.08; // Fallback only: with no authored shoulders the neck base (where the spline ends) is this far (fraction of model height) below the head-turn pivot, which sits at the head's centre in x and its chin line in y.
+  const PITCH_PEAK_AT = 0.4; // The curl peaks this far up the spline (low in the back)...
+  const PITCH_END_SHARE = 0.3; // ...and relaxes to this share of the peak at the neck base, so the spline meets the upright head and shoulders without a hard angle.
+  const SPLINE_NODES = 7; // Posterior (0) ... neck base (6).
   const SEGMENTS = SPLINE_NODES - 1;
   const MAX_PITCH = 85 * Math.PI / 180; // The curl never exceeds this at the neck node.
   const DEPTH_SCALE = 0.5; // The portrait is a flat card: how much of the curve's forward (+z) travel the skin, anchors and orbit really make.
-  const ORBIT_BELOW_NECK = 0.08; // The attack orbit centre is the shoulder line: this far (fraction of model height) below the neck pivot.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.
 
@@ -91,7 +93,7 @@
   function profileFor(hunch, sway = 0) {
     const h = clamp01(Number(hunch) || 0);
     const totalDrop = h * neckDropMax(); // Where the head ends up: the NPC age-hunch amount.
-    const shoulderDrop = totalDrop * SHOULDER_DROP_RATIO; // The vertical drop of the spline's neck node.
+    const shoulderDrop = totalDrop * SHOULDER_DROP_RATIO; // The vertical drop of the spline's neck-base node.
     return {
       hunch: h,
       sway: Math.max(-1, Math.min(1, Number(sway) || 0)),
@@ -116,39 +118,64 @@
     return floorY - modelHeight / 2 - (Number(placementRatio) - 0.5) * modelHeight;
   }
 
+  // The neck base in the skinned plane's frame: where the spline ends, i.e. where the head and neck meet the shoulders. It is NOT the head-turn
+  // pivot (that sits at the head's centre in x and its chin line in y, and stays where it is). Authored per species: the midpoint of the two
+  // hand-shoulder anchors (floor-relative like the posterior, so the same conversion into the plane's frame). Species without authored shoulders
+  // (the skeletons) get a point just below the pivot, on the root's axis. Returns { x, y }.
+  function neckBaseLocal({ speciesId, gender, modelHeight, placementRatio = 0.5, neckX = 0, neckY, posteriorY }) {
+    const fallback = { x: 0, y: neckY - NECK_BASE_BELOW_PIVOT * modelHeight };
+    if (!(modelHeight > 0) || !Number.isFinite(neckY)) return { x: Number(neckX) || 0, y: neckY };
+    const key = id => String(id || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    const g = String(gender || '').toLowerCase() === 'female' ? 'female' : 'male';
+    const anchors = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${key(speciesId)}::${g}`]?.anchors;
+    const left = anchors?.leftHandShoulder?.position, right = anchors?.rightHandShoulder?.position;
+    if (![left?.x, left?.y, right?.x, right?.y].every(value => Number.isFinite(Number(value)))) return fallback;
+    const y = (Number(left.y) + Number(right.y)) / 2 - modelHeight / 2 - (Number(placementRatio) - 0.5) * modelHeight;
+    const floor = Number.isFinite(posteriorY) ? posteriorY : neckY - WAIST_BELOW_NECK * modelHeight;
+    const plausible = y < neckY - 0.01 * modelHeight && y > floor + 0.15 * modelHeight; // Under the pivot and well above the posterior.
+    return plausible ? { x: (Number(left.x) + Number(right.x)) / 2, y } : fallback;
+  }
+
   // Where the spline starts (the posterior); falls back to a fixed stretch below the neck when the posterior is unknown or implausible.
   const waistFor = (neckY, modelHeight, posteriorY) =>
     Number.isFinite(posteriorY) && posteriorY < neckY - 0.1 * modelHeight ? posteriorY : neckY - WAIST_BELOW_NECK * modelHeight;
 
   // Rest-pose layout of the spline: SPLINE_NODES points evenly spaced from the posterior (pinned to the local root, x = 0, z = 0) to the neck
-  // pivot. `nodes` are plane-local; `offsets[k]` is node k relative to node k - 1, which is how the node bones chain (the first offset entry
-  // is unused). The head-turn bone sits on the last node, at offset 0.
-  function layoutFor(neckX, neckY, modelHeight, posteriorY) {
-    const waistY = waistFor(neckY, modelHeight, posteriorY);
+  // base. `nodes` are plane-local; `offsets[k]` is node k relative to node k - 1, which is how the node bones chain (the first offset entry is
+  // unused). The head-turn bone, whose pivot is wherever the species' head puts it (the pivot), hangs off the last node at that offset.
+  function layoutFor(baseX, baseY, modelHeight, posteriorY, pivotX = baseX, pivotY = baseY) {
+    const waistY = waistFor(baseY, modelHeight, posteriorY);
     const nodes = [], offsets = [];
     for (let k = 0; k < SPLINE_NODES; k++) {
       const t = k / SEGMENTS;
-      nodes.push({ x: neckX * t, y: waistY + (neckY - waistY) * t, z: 0 });
+      nodes.push({ x: baseX * t, y: waistY + (baseY - waistY) * t, z: 0 });
       offsets.push(k === 0 ? { x: 0, y: 0, z: 0 } : { x: nodes[k].x - nodes[k - 1].x, y: nodes[k].y - nodes[k - 1].y, z: 0 });
     }
-    return { nodes, offsets, neck: { x: 0, y: 0, z: 0 } };
+    return { nodes, offsets, neck: { x: pivotX - baseX, y: pivotY - baseY, z: 0 } };
   }
 
-  // Skin weights of a rest-pose point at plane-local height y: the two neighbouring spline nodes (a, a + 1) and the share of the upper one
-  // (smoothstepped, so the displacement is C1 along the curve rather than kinked at each node). Everything below the posterior rides node 0
-  // and everything above the neck rides the last node. Writes into `out` to stay allocation-free for per-vertex and per-frame callers.
-  function nodeWeightsAt(y, neckY, modelHeight, posteriorY, out = {}) {
-    const lo = waistFor(neckY, modelHeight, posteriorY);
-    const s = clamp01((y - lo) / (neckY - lo)) * SEGMENTS;
+  // Skin weights of a rest-pose point at plane-local height y: the two neighbouring spline nodes (a, a + 1) and the share of the upper one.
+  // Linear, so every segment foreshortens uniformly and the vertical squash follows the node pitch smoothly instead of pulsing node to node.
+  // Everything below the posterior rides node 0 and everything above the neck base rides the last node. Writes into `out` to stay
+  // allocation-free for per-vertex and per-frame callers.
+  function nodeWeightsAt(y, baseY, modelHeight, posteriorY, out = {}) {
+    const lo = waistFor(baseY, modelHeight, posteriorY);
+    const s = clamp01((y - lo) / (baseY - lo)) * SEGMENTS;
     const a = Math.min(SEGMENTS - 1, Math.floor(s));
-    out.a = a; out.b = a + 1; out.wb = smoothstep01(s - a);
+    out.a = a; out.b = a + 1; out.wb = s - a;
     return out;
   }
 
   // Curls the rest spline by the profile and returns each node's displacement from its rest position (plane-local, node 0 pinned at {0,0,0}).
-  // The cumulative pitch eases out along the spline (concave, so the curvature sits low in the back), segment lengths are preserved, and the
-  // total curl is solved so the neck node drops by exactly profile.shoulderDrop * modelHeight (capped at MAX_PITCH). The pitch swings the
+  // The cumulative pitch rises quickly to its peak low in the back and relaxes toward the neck base (so the spline meets the upright head and
+  // shoulders without a hard angle), segment lengths are preserved, and the peak is solved so the neck-base node drops by exactly
+  // profile.shoulderDrop * modelHeight (capped at MAX_PITCH). The pitch swings the
   // upper body down and forward (+z); sway rolls it sideways (+x). Forward travel is scaled by DEPTH_SCALE for the flat portrait cards.
+  // Share of the peak pitch at height t (0 at the posterior, 1 at the neck base): a quarter-sine up to the peak, then a smooth relax.
+  const pitchProfile = t => t <= PITCH_PEAK_AT
+    ? Math.sin(Math.PI / 2 * t / PITCH_PEAK_AT)
+    : 1 - (1 - PITCH_END_SHARE) * smoothstep01((t - PITCH_PEAK_AT) / (1 - PITCH_PEAK_AT));
+
   function solveCurve(profile, layout, modelHeight) {
     const rest = layout.nodes, lengths = [];
     for (let k = 1; k < SPLINE_NODES; k++) lengths.push(Math.hypot(rest[k].x - rest[k - 1].x, rest[k].y - rest[k - 1].y));
@@ -160,7 +187,7 @@
       let x = rest[0].x, y = rest[0].y, z = 0;
       for (let k = 1; k < SPLINE_NODES; k++) {
         const t = (k - 0.5) / SEGMENTS;
-        const phi = pitch * (1 - (1 - t) * (1 - t)); // Cumulative pitch at the segment's middle: ease-out.
+        const phi = pitch * pitchProfile(t); // Cumulative pitch at the segment's middle.
         const psi = -sway * phi; // Roll about the facing axis: the same shape, sideways (a positive sway leans toward +x).
         const dx = rx, dy = ry * Math.cos(phi), dz = ry * Math.sin(phi);
         x += lengths[k - 1] * (dx * Math.cos(psi) - dy * Math.sin(psi));
@@ -168,7 +195,7 @@
         z += lengths[k - 1] * dz;
         if (displacement) displacement[k] = { x: x - rest[k].x, y: y - rest[k].y, z: z * DEPTH_SCALE };
       }
-      return rest[SEGMENTS].y - y; // Vertical drop of the neck node.
+      return rest[SEGMENTS].y - y; // Vertical drop of the neck-base node.
     };
     let pitch = 0;
     if (target > 0) {
@@ -190,9 +217,10 @@
   function applyToRig(rig, profile, modelHeight) {
     const nodes = rig?.splineNodes;
     if (!nodes || !profile || !(modelHeight > 0)) return false;
-    const neckX = Number(rig.neckLocal?.x) || 0, neckY = Number(rig.neckLocal?.y) || 0;
+    const neckX = Number(rig.neckLocal?.x) || 0, neckY = Number(rig.neckLocal?.y) || 0; // The head-turn pivot.
+    const baseX = Number.isFinite(rig.spineBase?.x) ? rig.spineBase.x : neckX, baseY = Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY; // Where the spline ends.
     const posteriorY = Number.isFinite(rig.spinePosteriorY) ? rig.spinePosteriorY : null;
-    const layout = layoutFor(neckX, neckY, modelHeight, posteriorY);
+    const layout = layoutFor(baseX, baseY, modelHeight, posteriorY, neckX, neckY);
     const curve = solveCurve(profile, layout, modelHeight);
     const skins = Array.isArray(nodes) ? [[nodes, 1]] : [[nodes.front, 1], [nodes.back, -1]];
     for (const [bones, sign] of skins) {
@@ -207,8 +235,8 @@
         bone.updateMatrix?.();
       }
     }
-    Object.assign(profile, { curve, neckX, neckY, posteriorY, modelHeight, blendHeight: rig.blendHeight || null });
-    profile.orbitOffset = deformAt(profile, neckY - ORBIT_BELOW_NECK * modelHeight, {});
+    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, blendHeight: rig.blendHeight || null });
+    profile.orbitOffset = deformAt(profile, baseY, {}); // The orbit centre is the shoulder line, where the spline ends.
     return true;
   }
 
@@ -220,8 +248,8 @@
     out.x = out.y = out.z = 0;
     const curve = profile?.curve;
     if (!curve) return out;
-    const { neckY, modelHeight, posteriorY } = profile;
-    const w = nodeWeightsAt(y, neckY, modelHeight, posteriorY, weightScratch);
+    const { neckY, baseY, modelHeight, posteriorY } = profile;
+    const w = nodeWeightsAt(y, baseY, modelHeight, posteriorY, weightScratch);
     const blend = Math.max(modelHeight * 0.012, Number(profile.blendHeight) || modelHeight * 0.3);
     const head = smoothstep01((y - (neckY - blend * 0.55)) / blend);
     const a = curve[w.a], b = curve[w.b], last = curve[SEGMENTS];
@@ -331,6 +359,7 @@
     applyToRig,
     deformAt,
     posteriorLocalY,
+    neckBaseLocal,
     makeBoneGuides,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,

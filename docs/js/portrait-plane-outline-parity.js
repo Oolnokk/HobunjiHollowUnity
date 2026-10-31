@@ -92,7 +92,7 @@
       const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > HEAD_BONE
         ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
       headWeight = Math.max(headWeight, headScaleWeight);
-      const spline = window.HobunjiCharacterSpine?.nodeWeightsAt?.(localPoint.y, neckY, modelHeight, rig.spinePosteriorY, splineScratch) || Object.assign(splineScratch, { a: 0, b: 0, wb: 0 }); // Same spline-node shares the portrait skin uses.
+      const spline = window.HobunjiCharacterSpine?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, splineScratch) || Object.assign(splineScratch, { a: 0, b: 0, wb: 0 }); // Same spline-node shares the portrait skin uses.
       const bodyWeight = 1 - headWeight;
       for (let i = 0; i < Math.min(HEAD_BONE + 1, skeleton.bones.length); i++) {
         const weight = i === NECK_BONE ? headWeight - headScaleWeight : i === HEAD_BONE ? headScaleWeight
