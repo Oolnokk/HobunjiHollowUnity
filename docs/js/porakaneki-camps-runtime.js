@@ -551,7 +551,7 @@
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
     const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-${campIndex}:population`);
-    return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
+    return integerRoll(rng, num(small.minResidents, 4), num(small.maxResidents, 5)); // One camp per map: 4–5 hunters averages half of the former 2–4 camps × 2–4 hunters.
   }
 
   function earlierTribes() {
