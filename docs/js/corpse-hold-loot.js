@@ -51,7 +51,10 @@
     if (!held) interrupted = false;
     const target = held && !interrupted && deps.getActiveAction() === HOLD_ACTION ? deps.getAimedHoldCorpse() : null;
     if (!target) { if (holdId !== null || hudVisible) reset(); return; }
-    if (holdId !== target.id) { holdId = target.id; holdT = 0; hideHud(); }
+    if (holdId !== target.id) {
+      holdId = target.id; holdT = 0; hideHud();
+      target.onHoldStart?.(); // Optional one-shot hook: provoking a nighttime hive happens on the first attempt, before the hold completes.
+    }
     holdT += dt;
     const holdSeconds = Math.max(0.1, Number(target.holdSeconds) || 2);
     showHud(target.holdLabel || 'Looting...', (holdT / holdSeconds) * 100);
