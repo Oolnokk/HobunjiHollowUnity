@@ -191,7 +191,10 @@
       floorStyle:'cell-masked-wilderness-skipping-stones',stoneCount:shell.componentCount,
       tileScale:.25,tileCopies:1,levels:shell.levelCount,voidCells:shell.voidCells};
     mapRuinStoneSurfaces(mesh);
-    return {mesh,pattern:mesh,layout:null,stats:shell};
+    const stats={featureScale:shell.featureScale,reliefScale:shell.reliefScale,levelCount:shell.levelCount,
+      voidCells:shell.voidCells,floorCells:shell.floorCells,minHeight:shell.minHeight,maxHeight:shell.maxHeight,
+      pieceCount:shell.pieceCount,componentCount:shell.componentCount}; // Drop temporary source arrays; the compact BufferGeometry is the sole resident floor mesh.
+    return {mesh,pattern:mesh,layout:null,stats};
   }
 
   function coverRecipes(templeRecipes,rootColor='#24211d'){
