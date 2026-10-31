@@ -33,8 +33,9 @@ assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v3');
 assert.deepEqual(cfg.wildernessZones, ZONES);
 assert.equal(cfg.smallCamps.minPerZone, 1);
 assert.equal(cfg.smallCamps.maxPerZone, 1);
-assert.equal(cfg.smallCamps.minResidents, 2);
-assert.equal(cfg.smallCamps.maxResidents, 4);
+assert.equal(cfg.smallCamps.minResidents, 4);
+assert.equal(cfg.smallCamps.maxResidents, 5);
+assert.equal((cfg.smallCamps.minResidents + cfg.smallCamps.maxResidents) / 2, 4.5, 'one camp averages half of the former 3 camps × 3 residents per wilderness map');
 assert.equal(cfg.chiefCamp.generatedResidents, 6);
 assert.deepEqual(cfg.chiefCamp.seasonZoneMap, {
   Stormtide: 'map_southern_cloud_forest',
@@ -399,7 +400,7 @@ function hunterDebug(api, zoneId, campId, index) {
     }
     assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
     for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) {
-      assert(camp.residents >= 2 && camp.residents <= 4);
+      assert(camp.residents >= 4 && camp.residents <= 5, 'one 4-5 hunter camp replaces the old 2-4 camps of 2-4 hunters');
       assert(camp.huntingParty, `${zoneId} small camp forms an awake den-hunting party`);
       assert(camp.huntingParty.memberCount >= 2 && camp.huntingParty.memberCount <= 3, 'den hunting party uses the configured small group size');
       const den = zoneLayouts.get(zoneId).dens.find(entry => String(entry.id) === String(camp.huntingParty.denId));
