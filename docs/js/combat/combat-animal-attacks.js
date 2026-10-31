@@ -83,7 +83,12 @@
     // calling start(). Named attacks can top that payment up here without
     // making the generic bite/Guard Charge share their larger specialty cost.
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
-    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // A Furious interrupt has already paid its full cost from the enhanced pool.
+    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) {
+      const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed increases the real cost of the special top-up.
+      const required = additionalStaminaCost * (Number.isFinite(taxed) && taxed >= 0 ? taxed : 1);
+      if (Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Prefer the caller's ordinary bite fallback instead of forcing a pet into Exhausted.
+      window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // Furious interrupts already paid for the whole special.
+    }
     const state = {};
     const target = ctx?.target; // Original companion decision remains locked during the opening charge.
     const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
