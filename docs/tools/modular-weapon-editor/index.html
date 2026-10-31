@@ -33,9 +33,9 @@
 <main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
 <div class="panel" id="shaft-duplicate-panel">
-<h2>Duplicate shaft attachment rig</h2>
+<h2>Shaft attachment scaling rig</h2>
 <button id="duplicate-shaft" type="button">Duplicate selected shaft + mounts + fitting rules</button>
-<p>The duplicate retains the selected shaft's artwork, compatible heads, fitting rules and tang/sleeve mounting rig. <strong>Only the attachment primitive and its tang/sleeve rig move or scale with the four controls below.</strong> The shaft PNG, held pose and live shaft flames remain unchanged; mounted heads follow the adjusted rig.</p>
+<p>Use the four settings below on <strong>any selected shaft</strong>, whether original or duplicated. The parent transform moves and scales every child tang/sleeve mount and fitted head primitive. It never moves the shaft PNG, held pose or live flames. Duplicate a shaft above only when you want a new independent copy.</p>
 <label>Duplicated shaft PNG <input id="duplicate-sprite" list="shaft-sprites" placeholder="assets/toolsprites/your_sprite.png"></label>
 <datalist id="shaft-sprites"><option value="assets/toolsprites/hachutu_torch-staff.png"></option></datalist>
 <div class="grid2">
@@ -44,7 +44,7 @@
 <label>Rig X translation (source px) <input id="duplicate-x" type="number" min="-2400" max="2400" step="1"></label>
 <label>Rig Y translation (source px) <input id="duplicate-y" type="number" min="-2400" max="2400" step="1"></label>
 </div>
-<p id="duplicate-note" aria-live="polite">Choose a duplicated shaft to edit its attachment rig.</p>
+<p id="duplicate-note" aria-live="polite">Choose any shaft and edit its attachment scaling rig.</p>
 <pre id="rig-tree" aria-label="Attachment rig hierarchy" style="white-space:pre-wrap;font-size:12px;overflow-wrap:anywhere"></pre>
 <p>The combined preview shows a fixed shaft and its fitted, transformed heads. The shaft flames remain attached to the original fuel markers in gameplay; they are not baked into the modular PNG.</p>
 </div>
