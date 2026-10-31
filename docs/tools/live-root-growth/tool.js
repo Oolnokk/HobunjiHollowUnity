@@ -8,7 +8,7 @@
   const trackedFields = ['seed','floorWidth','floorDepth','branchCount','strandLimit','radius',
     'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','shapeInset','volumeFillDepth','duration','showGuide'];
   const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
-  const PREVIEW_COLORS={stoneColor:'#4f514b',rootColor:'#8b7451'}; // Picker defaults and legacy-recipe fallback: darker stone with lighter warm roots.
+  const PREVIEW_COLORS={stoneColor:'#363733',rootColor:'#24211d'}; // Picker defaults and legacy-recipe fallback: user-selected stone and root palette.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
   let templeCoverRecipes=null,templeSettingsLoad=null; // Initial ruin cover follows authored Temple layers, independent of new-growth controls.
@@ -194,7 +194,7 @@
   }
   function updatePreviewColor(id,fromHex=false,preserveHslId=null){
     const value=normalizePreviewColor($(id+(fromHex?'Hex':'')).value,null); // Invalid typed colours stay visible for correction instead of changing the scene.
-    if(!value){$('colorStatus').textContent='Use a six-digit hex colour, such as #4f514b.';return false;}
+    if(!value){$('colorStatus').textContent='Use a six-digit hex colour, such as #363733.';return false;}
     $(id).value=value;syncPreviewColors(readPreviewColors(),preserveHslId,id);
     if(id==='stoneColor'){
       for(const material of new Set([ruinRoom?.stoneMaterial,preparedRuin?.room.stoneMaterial]))if(material)material.color.set(value); // Stone changes are immediate and reuse the existing geometry/vegetation.
@@ -203,8 +203,8 @@
     return true;
   }
   function readRuinRoughness(value=$('ruinRoughness').value){
-    const number=Number(value??.85); // Saved recipes and the editable control share one finite, bounded roughness value.
-    return Number.isFinite(number)?Math.max(0,Math.min(1,number)):.85;
+    const number=Number(value??.3); // Saved recipes and the editable control share one finite, bounded roughness value.
+    return Number.isFinite(number)?Math.max(0,Math.min(1,number)):.3;
   }
   function ruinRockGeometry(mesh,settings){
     let sourceGeometry=mesh.geometry; // Keep caller-owned stone sources intact; only wall prisms are temporary build inputs.
@@ -575,7 +575,7 @@
     updatePreviewColor('stoneColor');
     $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
     $('ruinSize').value=['small','medium','large'].includes(json.ruinSize)?json.ruinSize:'small';
-    $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.85));
+    $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.3));
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
       const n = Number(json.position[i]); if (Number.isFinite(n)) $(id).value = String(n);
     });
