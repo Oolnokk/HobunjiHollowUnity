@@ -1,10 +1,12 @@
-# Multi-sprite weapon authoring
+# Complex tool visual authoring
 
-The **Tool Hub → Combat → Multi-sprite Weapons** editor lives in
+The **Tool Hub → Combat → Complex Tool Visuals** editor lives in
 [tools/multi-sprite-weapon-editor/](../tools/multi-sprite-weapon-editor/index.html).
-It has two tabs: **Flails** (haft, chain, attachment pixels, idle inertia and
-attack following) and **Multi-layer Parts** (ordered sprite layers and
-interleaved effects, usable on flails or ordinary weapons).
+It has three tabs: **Flails** (haft, connector, inertia and anchors),
+**Multi-layer Parts** (ordered sprite stacks and interleaved effects), and
+**Base sprite + VFX** (material/marker recolor and emission directly on an
+existing tool PNG, without requiring overlays or a flail). These tools share
+the same 3D gameplay assembly and mobile-friendly debug log.
 
 Edits stay in a device-local draft until exported and committed. Use **Export JS
 config** to replace [config/weapon-sprite-assemblies.js](../config/weapon-sprite-assemblies.js)
@@ -12,6 +14,207 @@ or **Export JSON** for a portable draft. The runtime never loads the author's
 localStorage draft. An authored key must resolve to an existing
 `TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
 weapon definitions or acquisitions.
+
+## Hachutu Torch-Staff: two flame regions and no verdigris
+
+`hachutuTorchStaff` uses the new
+`assets/toolsprites/hachutu_torch-staff.png` as its sole sprite, with the
+same sweep/melee style and long-haft two-hand grip windows as B'shuakauitl.
+It is a distinct melee-only weapon (not a blowgun, and not a metal-shape
+variant). The game registers both its tool and inventory metadata, without
+giving it to the player automatically.
+
+The base PNG is authored with `base.material: 'marker'`,
+`sourceHex: '#7F00FF'`, and `targetHex: '#E7DDC9'`, exactly like
+the Torch-Flail brazier fuel. Recoloring and flame ignition sample the
+**original** PNG, never the already tinted canvas. It has no `metalKey`:
+there is no verdigris progress, plating recolor or visible-metal enchantment
+mask on this rigid sprite. Ordinary tool/weapon mastery XP still increases.
+
+The shared emitter's optional `vfx.masteryClusters: 2` splits the source
+marker pixels along their longest axis (the two staff ends) into stable
+groups. At mastery 0 each region emits small, separately scattered motes.
+Mastery ranks 1–4 concentrate the origin points towards two centroids
+while increasing the individual mote size. At mastery 5 both regions form
+one cohesive plume apiece, **without collapsing every ignition position
+onto an identical pixel** (`masteryFocus: 0.55`). 
+
+The Torch-Flail is scaled via its **entire head-group transform** (`head.scale: 2.5`),
+not by altering the fire particle size itself. The Torch-Staff now follows
+that same mechanism: its local `size: 0.02` stays identical to the
+Torch-Flail's, while `visualScale: 4` scales an independent fire child
+group **around each staff tip**. This makes the full plume, spacing,
+vertical travel and lateral movement 4× larger (an effective
+rank-5 width of 0.08), while keeping the underlying PNG, source anchors,
+mote brightness and number of motes unchanged. Larger individual radial
+sprites alone had increased overdraw without preserving the flame shape.
+The staff therefore opts into `blendMode: 'normal'` and
+`opacity: 0.65` rather than accumulating opaque additive glow.
+`life: 0.35`, `speed: 0.12`, and the palette are unchanged.
+`rate: 44` gives **each end** the Torch-Flail's 22 motes/s budget at
+rank 5. Existing Torch-Flail emitters retain their original additive
+blending and 2.5× head scale.
+
+Both Torch-Staff and Torch-Flail now explicitly set `worldRise: true`.
+Each particle captures its world-space ignition point and inherited
+world scale when emitted; after that, `+Y` rise and sideways flicker
+are applied in world coordinates, then transformed back into the holder's
+local particle group for the original depth/render ordering. A swung,
+inverted, translated or moving head therefore **does not pull older
+flames sideways**. New flames continue appearing at its new tip position.
+The normal emitter remains unchanged for weapons without `worldRise`.
+
+Gameplay passes the live `ToolMastery.toolMasteryLevel(itemKey)` callback
+when constructing a weapon. The Tool Hub adds a **Preview mastery 0–5**
+slider which uses the same callback path in both 3D views. Its Base sprite
+tab allows other tools to opt into either standard fire or two-ended
+mastery fire, edit the marker colors and adjust rate/size/life/speed/palette.
+It also exposes independent whole-plume geometry scale, rank-5 clustering
+focus, blend mode and opacity; changes use the same runtime and preview
+emitter path. Diagnostics include scale, effective mote width and both
+tip pivot locations.
+The existing recipe schema remains `hobunji_weapon_sprite_assemblies.v1`;
+existing drafts still load, and effects on a base sprite are opt-in.
+
+## Full modular Torch-Staff shaft and reusable duplication
+
+The Foundry registers `hachutuTorchStaff` as an actual **shaft** in
+`config/modular-weapons.js`: it copies all four B'shuakauitl directed
+eye/tang mounting lines, all per-head corrections and the same seven
+permitted heads, while keeping the own `hachutuTorchStaff` gameplay
+identity (melee only). The **whole staff** remains the shaft, including
+its independent two-tip flame emitter and off-white material.
+`fireAssembly: 'hachutuTorchStaff'` tells the shared weapon assembly
+to mount the live particles to the modular shaft's source sprite, not
+to bake particles into a metal-textured composite or replace its heads.
+
+For other weapons, use the **Duplicate selected shaft + mounts + fitting rules**
+button in the Modular Weapon Editor, provide a stable key/label and sprite,
+then adjust the duplicate's **Rig X scale, Rig Y scale, Rig X translation,
+and Rig Y translation**. The existing `duplicateTransform` config field now
+applies **only to the attachment primitive / tang-and-sleeve rig and the
+fitted head geometry**, relative to the canonical 450×1204 frame center.
+Neither the original shaft sprite nor its pose, crop, nonmetal material,
+flame ignition origins, flame group scale, or other live effects inherit
+this transform. Source markers are still recolored in their original
+positions. The compositor now constructs one real `attachmentRig` transform
+node with mounting-line **children**, each containing one fitted head
+**primitive child**. All head primitives first resolve their fit in their
+unscaled local mount coordinates, then inherit the single parent rig
+transform. For arbitrary X/Y scales, the final matrix is `parent × child`
+(instead of re-fitting the head to an already stretched mounting arrow).
+The canvas renderer uses nested transforms, and composition bounds use
+the same parent–child matrices, so the display, export and runtime agree.
+The unchanged shaft bitmap and its independent live-fire group are
+siblings, never descendants of the attachment rig.
+
+The Foundry editor now draws the **effective transformed mounting arrows and drag gizmos**
+over the unchanged shaft sprite, rather than drawing raw local coordinates on the
+canvas. Pointer gestures are inverse-transformed back to local mount data; this
+ensures editing a moved or stretched rig does not accidentally add the parent
+transform twice. The rig's numeric X/Y scale and translation controls update the
+assembled preview **on input** (while typing), before persisting on change.
+The mobile hierarchy diagnostic shows the same source/parent/child relationship
+used by the compositor. The assembled head primitives change, but the original
+shaft bitmap and flames do not.
+
+**Rig transforms now work on original shafts as well as duplicates.** The canonical
+`attachmentRigTransform` field is validated for every shaft in the Foundry,
+including B'shuakauitl itself; old saved `duplicateTransform` fields migrate
+as compatible aliases. The mounting-line editor shows the transformed
+socket positions and supports inverse-transformed touch input. Composite
+head pixels are checked at representative source-art locations relative to
+the stationary shaft—not merely by counting Canvas transform calls.
+
+The game intentionally caches each modular weapon as a **single composited
+sprite plane** (including layer ordering, bridge strokes, metallic recoloring,
+and nonmetal source masks). The attachment hierarchy here is a **composition
+tree**: parent Canvas transform → mount children → head primitive draws,
+not a persistent separate `THREE.Group` of independently movable head meshes.
+Changing authored rig settings recomposes the weapon; it does not animate
+separate head meshes in an existing held weapon. `ToolMetalRecolor` now includes
+the Foundry revision in its composite canvas cache key, preventing stale head
+pixels after editing rig settings and recomposition.
+
+The original donor is unaffected and old saved `duplicateTransform`
+values are retained but interpreted as rig-only adjustments. The editor
+draws transformed arrow overlays above the **unmoved shaft bitmap**;
+touch gestures invert the parent transform before altering local mount
+records. The **combined preview** shows a stationary shaft with the
+transformed head, junctions, bridges, smudge strokes and recipe results.
+The 2D modular preview does not bake live flames into a PNG.
+
+**Bridge and recipe children:** the compositor first expands saved
+`{ recipe, box }` operations using the existing recipe mapping, then
+applies the same parent attachment transform to every resulting spatial
+step. Direct bridge strokes, smudge/plow/puff/clean strokes and their
+X/Y coordinates follow the parent. Painted fill strokes use separate
+elliptical X/Y radii so nonuniform rig scales do not leave their masks
+behind; algorithms with a single radial parameter use the geometric-mean
+scale. Junction images remain in rig-local coordinates and render under
+the full Canvas parent matrix, so their position, rotation and nonuniform
+X/Y geometry transform with the rest of the rig. Cleanup and separate-
+shading operations remain ordered after their associated brush work and
+operate on the resulting changed region. Composite bounds now include
+the transformed bridge masks and junction sprite envelopes, preventing
+clipping when a rig moves away from the source shaft. Recipes themselves
+are never rewritten when the parent moves.
+
+The editor stores bridge strokes, junction placement and recipe boxes
+in the same local coordinate frame as the head primitives, converts
+pointer interactions back from screen coordinates, and projects recipe
+boxes and junction ghosts through the rig parent. The mobile diagnostic
+tree now shows saved versus expanded bridge/recipe operations, junction
+count and brush count alongside the mount/head children.
+
+### Optional shaft artwork and local attachment-region transforms
+
+The overall `attachmentRigTransform` remains the parent of all fitted
+mounting primitives and bridge/recipe/junction operations. A separate
+`shaftArtTransform` has `enabled` defaulting to false. When enabled,
+its independent X/Y scale and translation are applied only to the shaft's
+source bitmap and its protected nonmetal mask. The live Torch-Staff
+fuel-marker source carrier inherits that same translation and scale,
+while world-up flame movement and the attachment rig remain independent.
+The composite frame includes the optional source-art envelope.
+
+Each shaft may also own up to 12 `rigRegions`, each with a stable ID,
+label, untransformed source-coordinate selection rectangle and independent
+X/Y scale/offset. Region transforms pivot at the center of their selection
+rectangle and are applied *between* the overall rig parent and their
+selected child geometry. A mount and its fitted head are selected together
+by the midpoint of the authored tang/sleeve; direct spatial operations
+are selected by their authored center; a placed recipe is selected as one
+group by its saved box center, so every expanded step retains the same
+area. Overlapping regions use last-in-order priority. Unselected heads and
+operations receive the identity local transform. Source mounts, bridge
+steps, recipes and art are not destructively rewritten.
+
+The mobile editor offers a rectangle picker on the assembled preview,
+per-region transform fields and a remove button; it shows selected head
+and expanded operation counts without developer tools. Creating a new
+region always inverse-transforms the pointer through the **overall rig
+only**, even when the drag begins inside an existing region. Editing
+an existing stroke or recipe inverts its assigned local region too.
+Recipe hit testing is performed against the recipe's own transformed
+box, including corner resize handles that extend beyond the region
+selection rectangle. New source selection boxes are permitted beyond
+the shaft PNG when fitted child graphics extend outside 450 × 1204.
+All points in one painted brush stroke and every expanded step in one
+placed recipe inherit a *single* region; an unselected recipe cannot
+have individual nested strokes captured merely because their points
+cross another region.
+
+Selections are whole child operations, **not arbitrary cutouts of
+head pixels or fractional brush strokes**; selection has no effect
+on the unselected shaft bitmap. Older configurations with no regions
+or no enabled art transform keep their original output.
+
+The modular compositor recolors the original `#7F00FF` fuel markers
+off-white and records which source-shaft pixels are visible. The metal
+recolor pipeline restores **those pixels** after tinting/oxidizing the
+forged head, including head-over-haft layer ordering. Thus the Torch-Staff
+itself cannot gain verdigris even when its attached head does.
 
 ## Runtime architecture
 

@@ -16,6 +16,10 @@
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  let regionSelecting = false; // Preview is temporarily a rectangle picker rather than a bridge paint surface.
+  let regionDraft = null; // Active local selection box while dragging on the assembled preview.
+  let activeRegionId = null; // Stable ID prevents selection jumping when undo/import removes another region.
+  const activeRegion = () => (chosenShaft().rigRegions || []).find(region => region.id === activeRegionId);
   const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
   let bridgeView = null; // Last composed preview bitmap and its logical frame, for painting bridge strokes over it.
   let pendingStrokes = []; // Bridge stroke being drawn (applied on release), in composed-frame source-pixel coordinates.
@@ -33,6 +37,10 @@
       option.value = key; option.textContent = record.label; byId(id).appendChild(option);
     }
   }
+  function updateShaftList(active = byId('shaft').value) {
+    byId('shaft').replaceChildren(); options('shaft', data.shafts);
+    byId('shaft').value = data.shafts[active] ? active : Object.keys(data.shafts)[0];
+  } // New duplicate keys must stay selectable after import, undo and redo.
   // Undo/redo: every committed draft state (lines, corrections, layering, bridges, imports, resets) is a step.
   const undoStack = [], redoStack = [], MAX_HISTORY = 100;
   let savedState = JSON.stringify(data); // Draft as last committed, the state Undo returns from.
@@ -48,7 +56,7 @@
   function restore(state) {
     data = JSON.parse(JSON.stringify(api.replace(JSON.parse(state), true)));
     savedState = JSON.stringify(data); pendingStrokes = [];
-    render(); syncBridgeControls(); historyButtons();
+    updateShaftList(); render(); syncBridgeControls(); historyButtons();
   }
   function save() {
     try {
@@ -103,14 +111,40 @@
     }
     ctx.stroke(); ctx.restore();
   }
+  function rigLayout(id) {
+    const layout = api.shaftRigTransform(chosenShaft()); // Original shafts have the same movable rig as duplicates.
+    return id === 'shaft-canvas' && (layout.scaleX !== 1 || layout.scaleY !== 1 || layout.x || layout.y)
+      ? layout : null;
+  }
+  function displayMounts(id) {
+    return id === 'head-canvas' ? [chosenHead().mount] : api.shaftMounts(chosenShaft());
+  }
+  function rigToLocal(point, id) {
+    const layout = rigLayout(id);
+    const p = layout ? {
+      x: (point.x - 225 - layout.x) / layout.scaleX + 225,
+      y: (point.y - 602 - layout.y) / layout.scaleY + 602,
+    } : point;
+    if(id!=='shaft-canvas')return p;
+    const mount=chosenShaft().mounts[mountIndex]; // The active line's selected area is the only additional parent.
+    const region=api.regionAt(chosenShaft(),{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+    if(!region)return p;
+    const area=api.regionAffine(region);
+    return {x:(p.x-area.e)/area.a,y:(p.y-area.f)/area.d}; // Invert area then overall parent, never bake transforms into line data.
+  }
   function drawLines(id) {
-    const image = cachedImages[id], canvas = byId(id); // Redraw the source image before overlaying edited lines.
+    const image = cachedImages[id], canvas = byId(id); // Shaft bitmap is fixed, but child mounts visibly follow their rig.
     if (!image) return;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const mounts = id === 'head-canvas' ? [chosenHead().mount] : chosenShaft().mounts;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const art = id === 'shaft-canvas' ? api.shaftArtTransform(chosenShaft()) : null;
+    ctx.save();
+    if (art?.enabled) {ctx.translate(225+art.x,602+art.y);ctx.scale(art.scaleX,art.scaleY);ctx.translate(-225,-602);}
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.restore(); // Shaft artwork transform is optional; mounting overlays are painted outside it.
+    const mounts = displayMounts(id); // What the player sees now matches the composed head and transform diagnostics.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
-    drawGizmo(ctx, id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]); // Only selected line gets handles.
+    drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
   }
   async function preview() {
     const ticket = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Preview identity.
@@ -132,11 +166,19 @@
         ctx.drawImage(composed, 0, 0);
         bridgeView = { composed, frame: composed.modularFrame };
         drawBridgeOverlay();
-        const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
+        const rig = api.attachmentRig(shaft, head, values); // Same scene tree as production: one parent rig with mount/primitive descendants.
+        const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
+          duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
+          rigHierarchy: rig, localRegions: shaft.rigRegions||[], shaftArtTransform: api.shaftArtTransform(shaft),
+          effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
-          matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
+          matrices,
+          rigOperationSummary: { saved: values.bridges?.strokes?.length || 0,
+            expanded: api.rigBridgeOperations(shaft, values.bridges?.strokes || []).length,
+            junctions: api.rigBridgeOperations(shaft, values.bridges?.strokes || []).filter(op => op.junction).length },
+          frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
         }, null, 2);
       } else {
@@ -201,6 +243,57 @@
       }
     }
   }
+  function updateRigTree() {
+    const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Show actual attachment descendants on mobile.
+    const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey));
+    const transform = api.shaftRigTransform(shaft);
+    const sourceOps = api.settings(byId('shaft').value, headKey).bridges?.strokes || [];
+    const operations = api.rigBridgeOperations(shaft, sourceOps); // Expanded recipe children share the same rig as attached heads.
+    const junctions = operations.filter(op => op.junction).length;
+    const spatial = operations.filter(op => op.points).length;
+    const effects = operations.length - junctions - spatial;
+    const art=api.shaftArtTransform(shaft),regions=shaft.rigRegions||[];
+    byId('rig-tree').textContent = [
+      'Shaft sprite + live fire (OUTSIDE rig; '+(art.enabled?'opt-in scaled':'fixed')+')',
+      ...regions.map(region=>'  Area '+region.label+' ['+region.id+'] — local transform '+JSON.stringify(region.transform)),
+      'Attachment scaling rig (PARENT)',
+      '  X scale ' + transform.scaleX + ', Y scale ' + transform.scaleY + ', offset (' + transform.x + ', ' + transform.y + ')',
+      ...rig.children.flatMap(mount => [
+        '  ├ ' + (mount.type === 'eye' ? 'Sleeve' : 'Tang') + ' #' + (mount.index + 1) + ' (CHILD)',
+        ...mount.children.map(primitive => '  │ └ ' + primitive.source + ' primitive (GRANDCHILD)'),
+      ]),
+      '  ├ Bridge/recipe steps: ' + sourceOps.length + ' saved → ' + operations.length + ' child ops',
+      '  │  ├ ' + junctions + ' junction sprites, ' + spatial + ' brush/smudge strokes, ' + effects + ' global cleanup passes',
+    ].join('\n'); // The user can distinguish a missing recipe child from a head-fit or mount problem on mobile.
+  }
+  function updateRegionControls() {
+    const shaft = chosenShaft(), regions=shaft.rigRegions || [];
+    const list=byId('region-list');
+    list.replaceChildren(...regions.map(region=>{
+      const option=document.createElement('option'); option.value=region.id;option.textContent=region.label;return option;
+    }));
+    if (!regions.some(region=>region.id===activeRegionId)) activeRegionId=regions[0]?.id||null;
+    if (activeRegionId) list.value=activeRegionId;
+    const region=activeRegion();
+    byId('region-name').value=region?.label||'';
+    byId('region-name').disabled=!region;
+    byId('region-remove').disabled=!region;
+    const t=api.duplicateTransform(region?.transform);
+    for(const [id,value] of [['region-scale-x',t.scaleX],['region-scale-y',t.scaleY],
+      ['region-x',t.x],['region-y',t.y]]){
+      byId(id).value=String(value);byId(id).disabled=!region;
+    }
+    byId('region-select').setAttribute('aria-pressed',String(regionSelecting));
+    const count=regions.length, countOps=api.rigBridgeOperations(shaft,
+      api.settings(byId('shaft').value,byId('head').value).bridges?.strokes || [])
+      .filter(op=>op._rigRegionId===activeRegionId).length;
+    const selectedHeads=api.attachmentRig(shaft,chosenHead(),
+      api.settings(byId('shaft').value,byId('head').value)).children
+      .filter(mount=>mount.regionId===activeRegionId).length;
+    byId('region-status').textContent=count+' region(s). '+(region?
+      'Selected '+region.label+' — '+selectedHeads+' head mount(s), '+countOps+' bridge/recipe steps. Draw another rectangle or edit its X/Y controls.'
+      :'Draw a rectangle on the assembled preview to create a region.');
+  }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     const pairKey = byId('shaft').value + '|' + headKey;
@@ -217,6 +310,22 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
+    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
+    const art=api.shaftArtTransform(shaft);
+    byId('shaft-art-enabled').checked=art.enabled;
+    for(const [id,value] of [['shaft-art-scale-x',art.scaleX],['shaft-art-scale-y',art.scaleY],
+      ['shaft-art-x',art.x],['shaft-art-y',art.y]]) byId(id).value=String(value);
+    updateRegionControls(); // Selection survives pair previews and shaft imports while its options stay in sync.
+    const layout = api.shaftRigTransform(shaft);
+    for (const [id, value] of [['duplicate-scale-x', layout.scaleX],['duplicate-scale-y', layout.scaleY],
+      ['duplicate-x',layout.x],['duplicate-y',layout.y]]) {
+      byId(id).value = String(value); byId(id).disabled = false; // Original shafts can scale/translate their rigs too.
+    }
+    byId('duplicate-sprite').value = shaft.sprite || ''; byId('duplicate-sprite').disabled = !duplicated;
+    byId('duplicate-note').textContent = duplicated
+      ? 'Rig copied from ' + duplicated.label + '. The attachment rig moves fitted heads, junctions, bridges and recipes. The separate, optional shaft-art controls below govern shaft PNG and flames.'
+      : 'Original shaft: its mounting rig is editable independently of the optional shaft-art scaling below. Duplicate only if you want a separate copy.';
+    updateRigTree(); // Same live hierarchy is refreshed when editing values, not only after a full render.
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
@@ -288,7 +397,7 @@
     const element = byId(id); // Source sprites accept one active line/handle drag.
     function update(event) {
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
-      const current = pointFor(element, event); // Use source-image coordinates regardless of responsive canvas size.
+      const current = rigToLocal(pointFor(element, event), id); // Invert parent transform when writing to the local primitive's line.
       if (drawing.mode === 'draw') {
         drawing.line.end = current; // Draw mode is the original base-to-tip gesture.
       } else if (drawing.mode === 'move') {
@@ -303,17 +412,19 @@
     element.addEventListener('pointerdown', event => {
       if (drawing || !event.isPrimary) return;
       event.preventDefault();
-      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex];
-      const point = pointFor(element, event); // Always work on the currently selected line.
-      const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(line) : gizmos.midpoint(line);
+      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]; // Stored local mount.
+      const point = pointFor(element, event); // World/source-canvas pointer for visible handle hit-testing.
+      const visibleLine = displayMounts(id)[id === 'head-canvas' ? 0 : mountIndex];
+      const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(visibleLine) : gizmos.midpoint(visibleLine);
       if (gizmoMode !== 'draw' && !nearHandle(element, event, handle)) {
         msg(gizmoMode === 'move' ? 'Drag the crosshair handle to move the selected line.'
           : 'Drag the circular rotate handle to turn the selected line.');
         return;
       }
+      const localPoint = rigToLocal(point, id); // Gestures edit the child primitive, not its parent's scale and translation.
       drawing = { id, pointer: event.pointerId, line, mode: gizmoMode,
-        pointerStart: point, original: JSON.parse(JSON.stringify(line)) }; // Restorable state for cancellations.
-      if (gizmoMode === 'draw') { line.start = point; line.end = { ...point }; }
+        pointerStart: localPoint, original: JSON.parse(JSON.stringify(line)) }; // Restorable local lines for cancellations.
+      if (gizmoMode === 'draw') { line.start = localPoint; line.end = { ...localPoint }; }
       element.setPointerCapture(event.pointerId); drawLines(id);
     });
     element.addEventListener('pointermove', event => {
@@ -351,7 +462,109 @@
     byId('shaft').value = selected.shaft; byId('head').value = selected.head; mountIndex = 0;
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
-  byId('shaft').onchange = () => { mountIndex = 0; render(); };
+  byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;render(); };
+  byId('duplicate-shaft').onclick = () => {
+    const from = byId('shaft').value, source = chosenShaft(); // Copy ALL source mount lines, pair overrides and optional living-shaft fire.
+    const id = prompt('New shaft key (letters/numbers, e.g. myTorchShaft):', from + 'Copy');
+    if (!id || !/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(id) || data.shafts[id]) {
+      msg('Choose a unique shaft key beginning with a letter.'); return;
+    }
+    const label = prompt('Name for the duplicated shaft:', source.label + ' Copy');
+    if (!label) return;
+    const sprite = prompt('Sprite path for the complete duplicate:', source.sprite);
+    if (!/^assets\/[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(sprite || '')) {
+      msg('The duplicate needs an asset PNG or WebP path.'); return;
+    }
+    const clone = JSON.parse(JSON.stringify(source)); // Keep pair-specific exclusions and sockets independent from donor edits.
+    clone.label = label.slice(0,96); clone.sprite = sprite; clone.duplicateFrom = from;
+    clone.attachmentRigTransform = { ...api.shaftRigTransform(source) }; // Copy the parent rig into an independently editable shaft.
+    delete clone.duplicateTransform; // Avoid retaining two conflicting transform values on new copies.
+    data.shafts[id] = clone; updateShaftList(id); mountIndex = 0; save();
+    msg('Duplicated '+source.label+' into '+clone.label+'. Attachment rig and fitted heads can move/scale; shaft artwork and fire stay fixed.');
+  };
+  for (const [id, key, fallback, min, max] of [
+    ['duplicate-scale-x','scaleX',1,.05,8],['duplicate-scale-y','scaleY',1,.05,8],
+    ['duplicate-x','x',0,-2400,2400],['duplicate-y','y',0,-2400,2400],
+  ]) {
+    const field = byId(id);
+    const applyRig = commit => {
+      const shaft = chosenShaft();
+      const raw = field.value.trim(), n = Number(raw);
+      if (!raw || !Number.isFinite(n)) return; // Partial mobile keyboard input is not a valid transform.
+      shaft.attachmentRigTransform = { ...api.shaftRigTransform(shaft), [key]: Math.max(min, Math.min(max, n)) }; // One canonical parent for original or cloned shafts.
+      if (commit) {
+        save(); // Committed draft and history entry on blur/Enter; browser storage matches the visible transform.
+      } else {
+        api.replace(data); // Invalidate composed PNG cache without clobbering the number field being edited.
+        drawLines('shaft-canvas'); updateRigTree(); preview(); // Immediate live visual feedback while typing.
+      }
+    };
+    field.addEventListener('input', () => applyRig(false));
+    field.onchange = () => applyRig(true);
+  }
+  function refreshRigPreview() {
+    api.replace(data); // Update cached composed textures, but do not discard a numeric field mid-typing on mobile.
+    drawLines('shaft-canvas');updateRigTree();preview();
+  }
+  byId('shaft-art-enabled').onchange = () => {
+    chosenShaft().shaftArtTransform={
+      ...api.shaftArtTransform(chosenShaft()),enabled:byId('shaft-art-enabled').checked
+    }; // Explicit enable keeps older/default shaft PNG and flame sources unchanged.
+    save();
+  };
+  for(const [id,key,min,max] of [
+    ['shaft-art-scale-x','scaleX',.05,8],['shaft-art-scale-y','scaleY',.05,8],
+    ['shaft-art-x','x',-2400,2400],['shaft-art-y','y',-2400,2400]
+  ]) {
+    const field=byId(id);
+    const edit=commit=>{
+      const raw=field.value.trim(),n=Number(raw);if(!raw||!Number.isFinite(n))return;
+      const shaft=chosenShaft();
+      shaft.shaftArtTransform={...api.shaftArtTransform(shaft),
+        [key]:Math.max(min,Math.min(max,n))}; // Shaft image and flames inherit ONLY this independent transform.
+      if(commit)save();else refreshRigPreview();
+    };
+    field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
+  }
+  byId('region-select').onclick=()=>{
+    regionSelecting=!regionSelecting;regionDraft=null;updateRegionControls();
+    drawBridgeOverlay(); // Selection overlay replaces brush interaction until a region is completed.
+    msg(regionSelecting?'Drag a rectangle on the assembled weapon preview to select rig children.':'Region selection cancelled.');
+  };
+  byId('region-list').onchange=()=>{
+    activeRegionId=byId('region-list').value;updateRegionControls();drawBridgeOverlay();
+  };
+  byId('region-remove').onclick=()=>{
+    if(!activeRegion())return;
+    chosenShaft().rigRegions=chosenShaft().rigRegions.filter(r=>r.id!==activeRegionId);
+    activeRegionId=null;save();
+  };
+  byId('region-name').onchange=()=>{
+    const region=activeRegion();if(!region)return;
+    region.label=byId('region-name').value.trim().slice(0,64)||region.label;save();
+  };
+  for(const [id,key,min,max] of [
+    ['region-scale-x','scaleX',.05,8],['region-scale-y','scaleY',.05,8],
+    ['region-x','x',-2400,2400],['region-y','y',-2400,2400]
+  ]) {
+    const field=byId(id);
+    const edit=commit=>{
+      const region=activeRegion(),raw=field.value.trim(),n=Number(raw);
+      if(!region||!raw||!Number.isFinite(n))return;
+      region.transform={...api.duplicateTransform(region.transform),
+        [key]:Math.max(min,Math.min(max,n))}; // Only children selected by this area's original box inherit the transform.
+      if(commit)save();else refreshRigPreview(); // Don't replace active mobile numeric input while the user is typing.
+    };
+    field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
+  }
+  byId('duplicate-sprite').onchange = () => {
+    const shaft = chosenShaft(), sprite = byId('duplicate-sprite').value.trim();
+    if (!shaft.duplicateFrom) return;
+    if (!/^assets\/[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(sprite)) {
+      msg('Use an assets/... PNG or WebP path.'); byId('duplicate-sprite').value=shaft.sprite; return;
+    }
+    shaft.sprite = sprite; save(); // Replacement PNG is the entire shaft; copied sockets still align to its authoring frame.
+  };
   byId('head').onchange = render;
   byId('socket').onchange = () => { mountIndex = Number(byId('socket').value); render(); };
   byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
@@ -404,13 +617,13 @@
       const raw = await file.text(); // JSON or JS assignment exported by this tool; never eval.
       const json = raw.trim().startsWith('{') ? raw : raw.slice(raw.indexOf('=') + 1).trim().replace(/;\s*$/, '');
       data = JSON.parse(JSON.stringify(api.replace(JSON.parse(json), true)));
-      record(); mountIndex = 0; render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
+      record(); mountIndex = 0; updateShaftList(); render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
     } catch (error) { msg('Import failed: ' + error.message); }
     finally { byId('file').value = ''; }
   };
   byId('reset').onclick = () => {
     data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); // Restores shipped lines and pair corrections.
-    record(); mountIndex = 0; render(); msg('Restored committed directed mount data.');
+    record(); mountIndex = 0; updateShaftList(); render(); msg('Restored committed directed mount data.');
   };
   // Pair bridge brush: strokes painted on the assembled preview are stored on this pair and re-filled by
   // ModularWeapons.compose() (which the game also uses), so the preview shows exactly what gameplay renders.
@@ -437,11 +650,51 @@
     const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
     return { left: rect.left + (rect.width - canvas.width * scale) / 2, top: rect.top + (rect.height - canvas.height * scale) / 2, scale };
   }
-  function logicalPoint(event) {
+  function bridgeVisual(point, area=undefined) {
+    const p = api.rigPoint(chosenShaft(),{x:point[0],y:point[1]},
+      area===undefined ? api.regionAt(chosenShaft(),{x:point[0],y:point[1]}) : area);
+    return [p.x,p.y]; // Region's selected area then the overall parent.
+  }
+  function bridgeLocal(point) {
+    const shaft=chosenShaft(), rig=api.shaftRigTransform(shaft);
+    const parentLocal={x:(point[0]-225-rig.x)/rig.scaleX+225,y:(point[1]-602-rig.y)/rig.scaleY+602};
+    // A pointer over a moved region is converted to that region's original local coordinates.
+    for(const region of [...(shaft.rigRegions||[])].reverse()){
+      const t=api.regionAffine(region), p={x:(parentLocal.x-t.e)/t.a,y:(parentLocal.y-t.f)/t.d},b=region.box;
+      if(p.x>=b.x0&&p.x<=b.x1&&p.y>=b.y0&&p.y<=b.y1)return [p.x,p.y];
+    }
+    return [parentLocal.x,parentLocal.y];
+  }
+  function logicalPoint(event, rootOnly=false) {
     const canvas = byId('preview'), box = contentRect(canvas), frame = bridgeView.frame;
     const bx = (event.clientX - box.left) / box.scale, by = (event.clientY - box.top) / box.scale; // Bitmap pixels.
-    return [Math.round((frame.left + bx * frame.width / canvas.width) * 2) / 2,
-      Math.round((frame.top + by * frame.height / canvas.height) * 2) / 2];
+    const visible=[frame.left + bx * frame.width / canvas.width,
+      frame.top + by * frame.height / canvas.height];
+    const rig=api.shaftRigTransform(chosenShaft()); // New selection rectangles must not inherit an existing region's inverse.
+    const local=rootOnly ? [(visible[0]-225-rig.x)/rig.scaleX+225,
+      (visible[1]-602-rig.y)/rig.scaleY+602] : bridgeLocal(visible);
+    return local.map(v => Math.round(v * 2) / 2);
+  }
+  function drawRegionOverlay(ctx, sx, sy, frame) {
+    const shaft=chosenShaft(), regions=shaft.rigRegions||[];
+    if(!regions.length&&!regionDraft)return;
+    const map=(p,region)=> {
+      const xy=region ? api.rigPoint(shaft,{x:p[0],y:p[1]},region)
+        : api.duplicatePoint({x:p[0],y:p[1]},api.shaftRigTransform(shaft)); // New selection is in root-rig coordinates.
+      return [(xy.x-frame.left)*sx,(xy.y-frame.top)*sy];
+    };
+    ctx.save();ctx.lineWidth=2;ctx.setLineDash([8,5]);
+    for(const region of regions){
+      const b=region.box;
+      const p0=map([b.x0,b.y0],region),p1=map([b.x1,b.y1],region);
+      ctx.strokeStyle=region.id===activeRegionId?'#ffdc83':'#76dfcf';
+      ctx.strokeRect(p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);
+    }
+    if(regionDraft){
+      const b=regionDraft.box,p0=map([b.x0,b.y0]),p1=map([b.x1,b.y1]);
+      ctx.strokeStyle='#ffffff';ctx.strokeRect(p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);
+    }
+    ctx.restore(); // Preview overlay is always separate from actual forged pixels.
   }
   function drawBridgeOverlay() {
     if (!bridgeView) return;
@@ -452,28 +705,49 @@
     else ctx.drawImage(bridgeView.composed, 0, 0);
     ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = '#000';
     for (const stroke of pendingStrokes) {
-      const pts = stroke.points.map(([x, y]) => [(x - frame.left) * sx, (y - frame.top) * sy]);
-      ctx.lineWidth = stroke.r * 2 * sx;
+      const center={x:stroke.points.reduce((n,p)=>n+p[0],0)/stroke.points.length,
+        y:stroke.points.reduce((n,p)=>n+p[1],0)/stroke.points.length};
+      const area=api.regionAt(chosenShaft(),center); // A stroke is ONE child even when its points cross selection boundaries.
+      const pts = stroke.points.map(point => {
+        const [x,y] = bridgeVisual(point,area); return [(x - frame.left) * sx, (y - frame.top) * sy];
+      });
+      const rig = api.shaftRigTransform(chosenShaft()),local=area?api.duplicateTransform(area.transform):{scaleX:1,scaleY:1};
+      ctx.lineWidth = stroke.r * 2 * sx * Math.sqrt(rig.scaleX * rig.scaleY * local.scaleX * local.scaleY);
       ctx.beginPath(); ctx.moveTo(...pts[0]);
       for (const pt of pts.slice(1)) ctx.lineTo(...pt);
-      if (pts.length === 1) { ctx.arc(pts[0][0], pts[0][1], stroke.r * sx, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
+      if (pts.length === 1) { ctx.beginPath(); ctx.ellipse(pts[0][0], pts[0][1],
+        stroke.r * sx * rig.scaleX*local.scaleX, stroke.r * sy * rig.scaleY*local.scaleY, 0, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
     }
     drawRecipeBoxes(ctx, sx, sy, frame);
     if (bridgeHover && byId('pair-bridge-on').checked && byId('pair-brush-mode').value === 'junction') {
-      ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy); // Ghost of the piece, in source pixels.
+      ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+      const shaft=chosenShaft(),t=api.attachmentRig(shaft).parent;
+      ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+      const region=api.regionAt(shaft,{x:bridgeHover[0],y:bridgeHover[1]});
+      if(region){const area=api.regionAffine(region);ctx.transform(area.a,area.b,area.c,area.d,area.e,area.f);}
+      // Real junction compositing follows the same parent * region * junction matrices.
       window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
     } else if (bridgeHover && byId('pair-bridge-on').checked) {
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
-      const hx = (bridgeHover[0] - frame.left) * sx, hy = (bridgeHover[1] - frame.top) * sy, r = bridgeRadius() * sx;
+      const [wx, wy] = bridgeVisual(bridgeHover);
+      const hx = (wx - frame.left) * sx, hy = (wy - frame.top) * sy;
+      const rig = api.shaftRigTransform(chosenShaft()), r = bridgeRadius() * sx * Math.sqrt(rig.scaleX * rig.scaleY);
       if (byId('pair-brush-mode').value === 'plow') { // The blade: 2r long across the drag direction.
         const depth = Math.max(2, Math.round(bridgeRadius() / 4)) * sx;
         ctx.translate(hx, hy); ctx.rotate(plowAngle); ctx.strokeRect(-depth / 2, -r, depth, 2 * r);
       } else { ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke(); }
     }
     ctx.restore();
+    drawRegionOverlay(ctx,sx,sy,frame); // Show editable region outlines after painting the actual composed weapon.
   }
   const previewCanvas = byId('preview');
   previewCanvas.addEventListener('pointerdown', event => {
+    if(regionSelecting && bridgeView && event.isPrimary){
+      event.preventDefault();
+      const p=logicalPoint(event,true); // Region creation is always in the root rig's local frame, even over transformed children.
+      regionDraft={pointer:event.pointerId,start:p,box:{x0:p[0],y0:p[1],x1:p[0],y1:p[1]}};
+      previewCanvas.setPointerCapture(event.pointerId);drawBridgeOverlay();return;
+    }
     if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
     event.preventDefault();
     if (byId('pair-brush-mode').value === 'recipe') { recipePointerDown(event); return; }
@@ -488,8 +762,13 @@
       const stroke = mode === 'smudge' ? { smudge: true, r: bridgeRadius(), points: [logicalPoint(event)] }
         : { tool: mode, r: bridgeRadius(), points: [logicalPoint(event)], strength: toolStrength('pair'), seed: (Math.random() * 2147483647) | 0,
           ...(mode === 'clean' ? cleanSettings('pair') : {}) };
+      const rig = api.shaftRigTransform(chosenShaft()); // Live smudge radius includes any selected local region.
+      const p=logicalPoint(event),region=api.regionAt(chosenShaft(),{x:p[0],y:p[1]});
+      const local=region?api.duplicateTransform(region.transform):{scaleX:1,scaleY:1};
       bridgePaint = { pointer: event.pointerId, stroke, smudge: { image, stepper: window.ModularWeaponBridgeFill.toolStepper(
-        image.data, image.width, image.height, stroke, { scale: image.width / frame.width, reference: canvas.modularReference || null }) } };
+        image.data, image.width, image.height, stroke, { scale: image.width / frame.width *
+          Math.sqrt(rig.scaleX * rig.scaleY * local.scaleX * local.scaleY),
+          reference: canvas.modularReference || null }) } };
     } else {
       const stroke = { r: bridgeRadius(), points: [logicalPoint(event)] };
       pendingStrokes.push(stroke); bridgePaint = { pointer: event.pointerId, stroke };
@@ -497,6 +776,12 @@
     previewCanvas.setPointerCapture(event.pointerId); drawBridgeOverlay();
   });
   previewCanvas.addEventListener('pointermove', event => {
+    if(regionDraft?.pointer===event.pointerId){
+      event.preventDefault();const p=logicalPoint(event,true),start=regionDraft.start;
+      regionDraft.box={x0:Math.min(start[0],p[0]),y0:Math.min(start[1],p[1]),
+        x1:Math.max(start[0],p[0]),y1:Math.max(start[1],p[1])};
+      drawBridgeOverlay();return;
+    }
     if (recipeDrag?.pointer === event.pointerId) { event.preventDefault(); recipePointerMove(event); return; }
     if (!byId('pair-bridge-on').checked || !bridgeView) return;
     const previousHover = bridgeHover;
@@ -517,6 +802,22 @@
     drawBridgeOverlay();
   });
   function endBridgePaint(event) {
+    if(regionDraft?.pointer===event.pointerId){
+      const draft=regionDraft;regionDraft=null;
+      if(event.type==='pointercancel'){drawBridgeOverlay();return;}
+      const box=draft.box;
+      if(box.x1-box.x0<8||box.y1-box.y0<8){
+        byId('region-status').textContent='Select an area at least 8×8 source pixels.';drawBridgeOverlay();return;
+      }
+      const shaft=chosenShaft(),regions=shaft.rigRegions||[];
+      if(regions.length>=12){byId('region-status').textContent='Maximum of 12 rig regions per shaft.';drawBridgeOverlay();return;}
+      const id='area'+(Math.max(0,...regions.map(r=>Number(r.id.replace(/^area/,''))||0))+1);
+      shaft.rigRegions=[...regions,{id,label:'Region '+(regions.length+1),box,
+        transform:{scaleX:1,scaleY:1,x:0,y:0}}]; // Saved rectangle defines the stable members of a local transform group.
+      activeRegionId=id;regionSelecting=false;
+      save();msg('Selected '+shaft.rigRegions.length+' rig regions; adjust local scale and offset.');
+      return;
+    }
     if (recipeDrag?.pointer === event.pointerId) { recipePointerUp(event); return; }
     if (bridgePaint?.pointer !== event.pointerId) return;
     if (bridgePaint.junction) {
@@ -540,7 +841,13 @@
   }
   function smudgeLive(from, to, paint = bridgePaint) {
     const { image, stepper } = paint.smudge, frame = bridgeView.frame, sx = image.width / frame.width;
-    const toPixel = ([x, y]) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height });
+    const points=paint.stroke.points, center={x:points.reduce((n,p)=>n+p[0],0)/points.length,
+      y:points.reduce((n,p)=>n+p[1],0)/points.length};
+    const region=api.regionAt(chosenShaft(),center); // Smudge is a whole operation, not one independently transformed point per step.
+    const toPixel = point => {
+      const [x, y] = bridgeVisual(point,region);
+      return { x: (x - frame.left) * sx, y: (y - frame.top) * image.height / frame.height };
+    };
     stepper.step(toPixel(from), toPixel(to));
   }
   function applyStrokes(strokes, label = '') {
@@ -549,9 +856,22 @@
     const canvas = bridgeView.composed, frame = bridgeView.frame, fill = window.ModularWeaponBridgeFill;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height;
     const mask = new Uint8Array(canvas.width * canvas.height);
-    const toPixel = (x, y) => ({ x: (x - frame.left) * sx, y: (y - frame.top) * sy });
+    const rig = api.shaftRigTransform(chosenShaft());
     const fills = strokes.filter(stroke => stroke.points && !stroke.smudge && !stroke.tool && !stroke.junction); // Only bridge fills can fail.
-    for (const stroke of fills) fill.stampStroke(mask, canvas.width, canvas.height, stroke, toPixel, sx);
+    for (const stroke of fills) {
+      const center={x:stroke.points.reduce((n,p)=>n+p[0],0)/stroke.points.length,
+        y:stroke.points.reduce((n,p)=>n+p[1],0)/stroke.points.length};
+      const region=api.regionAt(chosenShaft(),center);
+      const local=region?api.duplicateTransform(region.transform):{scaleX:1,scaleY:1};
+      const toPixel = (x,y) => {
+        const [wx,wy]=bridgeVisual([x,y],region);
+        return {x:(wx-frame.left)*sx,y:(wy-frame.top)*sy};
+      };
+      fill.stampStroke(mask, canvas.width, canvas.height, {
+        ...stroke, rX: stroke.r * rig.scaleX * local.scaleX,
+        rY: stroke.r * rig.scaleY * local.scaleY,
+      },toPixel,sx); // Preflight now uses the SAME single-region geometry as final composition.
+    }
     if (fills.length) try {
       fill.fillBridge(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data, mask, canvas.width, canvas.height,
         { outlineThickness: 0, shadeWidth: 0 });
@@ -588,40 +908,91 @@
   function drawRecipeBoxes(ctx, sx, sy, frame) {
     if (byId('pair-brush-mode').value !== 'recipe' && !recipeDraft && !placedBoxes().length) return;
     const showing = byId('pair-brush-mode').value === 'recipe', scale = contentRect(byId('preview')).scale || 1, hs = 5 / scale; // Handle half-size in bitmap px.
-    const rect = box => [(box.x0 - frame.left) * sx, (box.y0 - frame.top) * sy, (box.x1 - box.x0) * sx, (box.y1 - box.y0) * sy];
+    const rect = (box, draft=false) => {
+      const area=draft?null:api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+      const [x0,y0]=bridgeVisual([box.x0,box.y0],area),
+        [x1,y1]=bridgeVisual([box.x1,box.y1],area);
+      return [(x0-frame.left)*sx,(y0-frame.top)*sy,(x1-x0)*sx,(y1-y0)*sy];
+    };
     ctx.save(); ctx.lineWidth = 1.5 / scale; ctx.font = (11 / scale) + 'px system-ui'; ctx.textBaseline = 'top';
     const boxes = placedBoxes().map(({ op, index }) => ({ box: op.box, label: op.recipe, selected: index === recipeSel, color: '#75e9ed' }));
     if (recipeDraft) boxes.push({ box: recipeDraft, label: 'new box', selected: recipeSel < 0, color: '#ffce64' });
     for (const entry of boxes) {
       if (!showing && !entry.selected && entry.color !== '#ffce64') continue;
       ctx.strokeStyle = entry.selected ? '#fff' : entry.color; ctx.fillStyle = entry.color; ctx.setLineDash(entry.selected ? [] : [6 / scale, 4 / scale]);
-      const [x, y, w, h] = rect(entry.box); ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
-      if (entry.selected && showing) { ctx.setLineDash([]); ctx.fillStyle = '#fff'; for (const [, , hx, hy] of boxHandles(entry.box)) ctx.fillRect((hx - frame.left) * sx - hs, (hy - frame.top) * sy - hs, 2 * hs, 2 * hs); }
+      const [x, y, w, h] = rect(entry.box,entry.color==='#ffce64'); // New recipe draft is in root coordinates; placed recipes may belong to a local region. ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
+      if (entry.selected && showing) {
+        const box=entry.box, area=entry.color==='#ffce64'?null
+          :api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+        ctx.setLineDash([]);ctx.fillStyle='#fff';
+        for(const [,,hx,hy] of boxHandles(box)){
+          const [wx,wy]=bridgeVisual([hx,hy],area);
+          ctx.fillRect((wx-frame.left)*sx-hs,(wy-frame.top)*sy-hs,2*hs,2*hs);
+        }
+      }
     }
     ctx.restore();
   }
-  function recipeHit(point) {
-    const frame = bridgeView.frame, canvas = byId('preview'), tol = 9 / ((contentRect(canvas).scale || 1) * (canvas.width / frame.width));
-    const candidates = [];
-    const op = selectedOp(); if (op) candidates.push({ target: 'op', index: recipeSel, box: op.box });
-    if (recipeDraft && recipeSel < 0) candidates.push({ target: 'draft', box: recipeDraft });
-    for (const c of candidates) for (const [hx, hy, x, y] of boxHandles(c.box)) if (Math.hypot(point[0] - x, point[1] - y) <= tol) return { ...c, mode: 'resize', handle: [hx, hy] };
-    const inside = box => point[0] >= box.x0 && point[0] <= box.x1 && point[1] >= box.y0 && point[1] <= box.y1;
-    for (const c of candidates) if (inside(c.box)) return { ...c, mode: 'move' };
-    const placed = placedBoxes().reverse().find(({ op: o }) => inside(o.box)); // A click inside another placed box selects it.
-    if (placed) return { target: 'op', index: placed.index, box: placed.op.box, mode: 'move' };
-    if (recipeDraft && inside(recipeDraft)) return { target: 'draft', box: recipeDraft, mode: 'move' };
+  function recipeRegion(box, isDraft=false) {
+    const center={x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2};
+    return isDraft?null:api.regionAt(chosenShaft(),center);
+  }
+  function recipeBoxInRoot(box, region) {
+    if(!region)return box; // Coordinates before the overall parent are the editor's root-space hit-test frame.
+    const t=api.regionAffine(region);
+    return {x0:t.a*box.x0+t.e,y0:t.d*box.y0+t.f,
+      x1:t.a*box.x1+t.e,y1:t.d*box.y1+t.f};
+  }
+  function recipePointInLocal(rootPoint, region) {
+    if(!region)return rootPoint;
+    const t=api.regionAffine(region);
+    return [(rootPoint[0]-t.e)/t.a,(rootPoint[1]-t.f)/t.d];
+  }
+  function recipeHit(rootPoint) {
+    const frame=bridgeView.frame,canvas=byId('preview'),root=api.shaftRigTransform(chosenShaft());
+    const tol=9/((contentRect(canvas).scale||1)*(canvas.width/frame.width))
+      /Math.max(.05,Math.min(root.scaleX,root.scaleY)); // Map comfortable touch area to source-root coordinates.
+    const candidates=[];
+    const selected=selectedOp();
+    if(selected)candidates.push({target:'op',index:recipeSel,box:selected.box});
+    if(recipeDraft&&recipeSel<0)candidates.push({target:'draft',box:recipeDraft});
+    const placed=placedBoxes().slice().reverse().map(({op,index})=>({target:'op',index,box:op.box}));
+    const entries=[...candidates,...placed];
+    const hit=({box,target,index},handlesOnly=false)=>{
+      const area=recipeRegion(box,target==='draft'),mapped=recipeBoxInRoot(box,area);
+      for(const [hx,hy,x,y] of boxHandles(mapped)){
+        if(Math.hypot(rootPoint[0]-x,rootPoint[1]-y)<=tol)
+          return {box,target,index,regionId:area?.id||null,mode:'resize',handle:[hx,hy]};
+      }
+      if(!handlesOnly&&rootPoint[0]>=mapped.x0&&rootPoint[0]<=mapped.x1&&
+        rootPoint[1]>=mapped.y0&&rootPoint[1]<=mapped.y1)
+        return {box,target,index,regionId:area?.id||null,mode:'move'};
+      return null;
+    };
+    for(const entry of entries){const found=hit(entry,true);if(found)return found;}
+    for(const entry of entries){const found=hit(entry,false);if(found)return found;}
     return null;
   }
   function recipePointerDown(event) {
-    if (!bridgeView || recipeDrag) return;
-    const point = logicalPoint(event), hit = recipeHit(point);
-    if (hit) { recipeSel = hit.target === 'op' ? hit.index : -1; recipeDrag = { pointer: event.pointerId, target: hit.target, mode: hit.mode, handle: hit.handle, start: point, orig: { ...hit.box } }; }
-    else { recipeSel = -1; recipeDraft = { x0: point[0], y0: point[1], x1: point[0] + 1, y1: point[1] + 1 }; recipeDrag = { pointer: event.pointerId, target: 'draft', mode: 'new', start: point, orig: { ...recipeDraft } }; }
-    previewCanvas.setPointerCapture(event.pointerId); syncRecipeControls(); drawBridgeOverlay();
+    if(!bridgeView||recipeDrag)return;
+    const rootPoint=logicalPoint(event,true),hit=recipeHit(rootPoint); // Compare handles in ROOT space, even outside a recipe's region rectangle.
+    if(hit){
+      const region=(chosenShaft().rigRegions||[]).find(r=>r.id===hit.regionId);
+      const point=recipePointInLocal(rootPoint,region);
+      recipeSel=hit.target==='op'?hit.index:-1;
+      recipeDrag={pointer:event.pointerId,target:hit.target,mode:hit.mode,handle:hit.handle,
+        regionId:hit.regionId,start:point,orig:{...hit.box}};
+    }else{
+      recipeSel=-1;recipeDraft={x0:rootPoint[0],y0:rootPoint[1],x1:rootPoint[0]+1,y1:rootPoint[1]+1};
+      recipeDrag={pointer:event.pointerId,target:'draft',mode:'new',regionId:null,
+        start:rootPoint,orig:{...recipeDraft}};
+    }
+    previewCanvas.setPointerCapture(event.pointerId);syncRecipeControls();drawBridgeOverlay();
   }
   function recipePointerMove(event) {
-    const point = logicalPoint(event), d = recipeDrag, dx = point[0] - d.start[0], dy = point[1] - d.start[1], MIN = 8;
+    const d=recipeDrag, region=(chosenShaft().rigRegions||[]).find(r=>r.id===d.regionId);
+    const point=recipePointInLocal(logicalPoint(event,true),region);
+    const dx = point[0] - d.start[0], dy = point[1] - d.start[1], MIN = 8; // Preserve the same local parent during the entire drag.
     let box;
     if (d.mode === 'new') box = { x0: Math.min(d.start[0], point[0]), y0: Math.min(d.start[1], point[1]), x1: Math.max(d.start[0], point[0]), y1: Math.max(d.start[1], point[1]) };
     else if (d.mode === 'move') box = { x0: d.orig.x0 + dx, x1: d.orig.x1 + dx, y0: d.orig.y0 + dy, y1: d.orig.y1 + dy };
@@ -659,7 +1030,9 @@
   // The haft's mounts that a head attaches to, as frames { x, y, ax, ay, len } (midpoint, unit direction, length),
   // ordered along the haft (rank 0 = the topmost). A recipe's box is anchored to one of these.
   function mountFrames(shaftKey, headKey) {
-    const list = api.matchingMounts(data.shafts[shaftKey], data.heads[headKey]).map(mount => {
+    const list = api.attachmentRig(data.shafts[shaftKey], data.heads[headKey],
+      api.settings(shaftKey, headKey)).children.map(entry => entry.localMount).map(mount => {
+      // Recipes remain local to the same mounting rig as their source primitive, not to the already transformed image.
       const dx = mount.end.x - mount.start.x, dy = mount.end.y - mount.start.y, len = Math.hypot(dx, dy) || 1;
       return { x: (mount.start.x + mount.end.x) / 2, y: (mount.start.y + mount.end.y) / 2, ax: dx / len, ay: dy / len, len };
     }).sort((u, v) => u.y - v.y);

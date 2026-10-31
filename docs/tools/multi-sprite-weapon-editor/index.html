@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Hobunji Hollow — Multi-sprite Weapon Editor</title>
+<title>Hobunji Hollow — Complex Tool Visuals</title>
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
 <style>
 :root{color-scheme:dark;--bg:#090f17;--pane:#121e2b;--line:#304052;--text:#e8f2ff;--muted:#a0b6cc;--accent:#83bcff;--active:#2c567b}
@@ -58,18 +58,18 @@ h3{font-size:13px;margin:5px 0}
 <script src="../../js/portrait-utils.js?v=20261030preview3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261030h1493a02"></script>
-<script src="../../js/weapon-layer-effects.js?v=20261030flailfx3"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261030worldrise1"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261030worldrise1"></script>
 <script src="../../js/combat/shared-attack-pose.js?v=20261030preview3d1"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261030h1493a02"></script>
-<script src="preview-renderer.js?v=20261030he301a26"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030regions7"></script>
+<script src="preview-renderer.js?v=20261030torchstaffgeometry3"></script>
 <script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
-<script defer src="app.js?v=20261030he6ab9c0"></script>
+<script defer src="app.js?v=20261030torchstaffgeometry3"></script>
 </head>
 <body>
 <main>
 <header>
-<strong>⛓ Multi-sprite Weapons</strong>
+<strong>🔥 Complex Tool Visuals</strong>
 <button id="save">Save draft</button><button id="restoreDraft" hidden>Load saved draft</button><button id="reset">Reset to repository</button>
 <button id="exportJson">Export JSON</button><button id="exportJs">Export JS config</button>
 <button id="importBtn">Import JSON</button><input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -79,16 +79,49 @@ h3{font-size:13px;margin:5px 0}
 <section id="side" aria-label="Weapon assembly controls">
 <div class="panel">
 <p id="recipeSource" class="help" role="status">Repository settings</p>
-<label for="weapon">Weapon recipe</label>
-<div class="row"><select id="weapon"></select><button id="newWeapon">+ Existing weapon key</button></div>
+<label for="weapon">Tool / weapon visual recipe</label>
+<div class="row"><select id="weapon"></select><button id="newWeapon">+ Existing tool key</button></div>
 <label for="weaponLabel">Display label</label><input id="weaponLabel">
-<label for="baseSpriteGeneral">Base weapon sprite PNG</label><input list="repoSprites" id="baseSpriteGeneral" placeholder="assets/toolsprites/my_weapon.png">
-<p class="help">Only weapons that declare a recipe use this renderer. The weapon key must match an existing TOOL_ITEM_DEFS entry or shape. Export the configuration to commit it for gameplay; local drafts are preview-only.</p>
+<label for="baseSpriteGeneral">Base tool sprite PNG</label><input list="repoSprites" id="baseSpriteGeneral" placeholder="assets/toolsprites/my_weapon.png">
+<p class="help">Any tool with an existing TOOL_ITEM_DEFS key or shape can use rigid-sprite materials, marker effects, layered components and/or flail assemblies. Export the config to commit it for gameplay; local drafts are preview-only.</p>
 </div>
 <nav class="tabs" aria-label="Assembly editor">
 <button data-tab="flails" aria-selected="true">1. Flails</button>
 <button data-tab="layers" aria-selected="false">2. Multi-layer Parts</button>
+<button data-tab="base" aria-selected="false">3. Base sprite + VFX</button>
 </nav>
+<div id="baseTab" hidden>
+<div class="panel">
+<h2>Original sprite material and effects</h2>
+<p class="help">Use this tab for single-sprite complex tools, too. Marker material recolors only the selected original PNG hex; no metal recognition or verdigris is applied to it.</p>
+<div class="grid2">
+<div><label for="baseMaterial">Base sprite material</label><select id="baseMaterial"><option value="metal">Metal / verdigris</option><option value="marker">Marker / recolor</option><option value="none">Unmodified</option></select></div>
+<div><label for="baseFireMode">Base sprite effect</label><select id="baseFireMode"><option value="none">No fire</option><option value="fire">Ordinary marker fire</option><option value="mastery">Two-ended mastery fire (0–5)</option></select></div>
+</div>
+<div class="grid2">
+<div><label for="baseSourceHex">Marker source hex</label><input id="baseSourceHex" placeholder="#7F00FF"></div>
+<div><label for="baseTargetHex">Tint target hex</label><input id="baseTargetHex" placeholder="#E7DDC9"></div>
+</div>
+<div id="baseFireSettings">
+<div class="grid3">
+<div><label for="baseFireRate">Total motes/s</label><input id="baseFireRate" type="number" min="0" max="60" step="1"></div>
+<div><label for="baseFireSize">Local rank-5 mote size (before geometry scale)</label><input id="baseFireSize" type="number" min=".001" max="2" step=".005"></div>
+<div><label for="baseFireLife">Life (s)</label><input id="baseFireLife" type="number" min=".1" max="5" step=".05"></div>
+</div>
+<div class="grid2">
+<div><label for="baseFireVisualScale">Flame geometry scale (per tip; 1 = original)</label><input id="baseFireVisualScale" type="number" min=".1" max="8" step=".1"></div>
+<div><label for="baseFireFocus">Mastery 5 clustering (0 = spread, 1 = single pixel)</label><input id="baseFireFocus" type="number" min="0" max="1" step=".05"></div>
+</div>
+<div class="grid2">
+<div><label for="baseFireBlend">Particle blending</label><select id="baseFireBlend"><option value="additive">Additive (glowy)</option><option value="normal">Normal (preserves flame colors)</option></select></div>
+<div><label for="baseFireOpacity">Peak particle opacity</label><input id="baseFireOpacity" type="number" min="0" max="1" step=".05"></div>
+</div>
+<label for="baseFireSpeed">Rise speed (local/s; geometry scale also increases travel)</label><input id="baseFireSpeed" type="number" min="0" max="5" step=".01">
+<label for="baseFireColors">Fire palette (comma-separated hex)</label><input id="baseFireColors" placeholder="#FFE6A5, #FFAA3E, #FF5F20">
+<p class="help">Geometry scale enlarges the complete flame system around each tip, including motion and spacing, just like scaling a flail head; it does not increase particle count or brightness. Focus below 1 retains flame shape at rank 5. Use Normal blending to avoid additive whiteout.</p>
+</div>
+</div>
+</div>
 <div id="flailsTab">
 <button id="enableFlail">Enable flail assembly for this weapon</button>
 <div id="flailFields">
@@ -154,7 +187,7 @@ h3{font-size:13px;margin:5px 0}
 <div><label for="ragHex">Marker target hex</label><input id="ragHex" placeholder="#E7DDC9"></div></div>
 <div id="fireSettings">
 <div class="grid3">
-<div><label for="fireRate">Motes/s</label><input id="fireRate" type="number" min="0" max="40"></div>
+<div><label for="fireRate">Motes/s</label><input id="fireRate" type="number" min="0" max="60"></div>
 <div><label for="fireLife">Life (s)</label><input id="fireLife" type="number" min=".1" max="5" step=".05"></div>
 <div><label for="fireSize">Size (world)</label><input id="fireSize" type="number" min=".001" max="2" step=".005"></div>
 </div>
@@ -175,6 +208,7 @@ h3{font-size:13px;margin:5px 0}
 <details><summary>Mobile debug log</summary><pre id="log"></pre></details>
 </section>
 <section id="stage" aria-label="Live weapon preview">
+<div class="row"><label for="previewMastery">Preview mastery <output id="previewMasteryValue">0</output>/5</label><input id="previewMastery" type="range" min="0" max="5" step="1" value="0"></div>
 <div class="row"><button id="play">⏸ Pause motion</button><button id="resetView">Reset 3D views</button><label for="scrub">Animation progress</label><input id="scrub" type="range" min="0" max="1" step=".001" value="0"></div>
 <section class="previewPanel" aria-label="Independent head preview">
 <div class="row"><h2>1 · Head / layered part close-up</h2><label class="previewSolo"><input id="soloLayer" type="checkbox"> Solo selected layer</label></div>

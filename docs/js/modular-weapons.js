@@ -101,11 +101,40 @@
     return { strokes, outline: Math.round(finite(raw.outline, 10, 0, 32)), light,
       shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
   }
-  function applyBridges(canvas, frame, bridges, junctionImages = {}) {
+  function rigBridgeOperations(shaft, strokes) {
+    // A placed recipe is one selectable child group: every expanded step inherits
+    // the area containing its authored placement box, not each individual point.
+    const expanded = strokes.flatMap(saved => {
+      const isRecipe=Boolean(saved.recipe && saved.box); // Even UNSELECTED recipes must stay a single group.
+      const centroid=isRecipe ? {x:(saved.box.x0+saved.box.x1)/2,y:(saved.box.y0+saved.box.y1)/2} : null;
+      return expandOps([saved]).map(op => ({ op, isRecipe, groupRegion:isRecipe ? regionAt(shaft,centroid) : null }));
+    });
+    const parent=shaftRigTransform(shaft);
+    return expanded.map(({op,isRecipe,groupRegion}) => {
+      const center = op.junction ? {x:op.x,y:op.y} : op.points?.length
+        ? {x:op.points.reduce((n,p)=>n+p[0],0)/op.points.length,
+           y:op.points.reduce((n,p)=>n+p[1],0)/op.points.length} : null;
+      const region=isRecipe ? groupRegion : (center && regionAt(shaft,center)); // Never select individual steps of an unselected placed recipe.
+      const area=region ? duplicateTransform(region.transform) : duplicateTransform();
+      const sx=parent.scaleX*area.scaleX,sy=parent.scaleY*area.scaleY;
+      const mean=Math.sqrt(sx*sy);
+      if (op.junction) return { ...op, _rigJunction:true, _rigRegionId:region?.id||null };
+      if (!op.points) return { ...op }; // Region cleanup/revert markers operate on their changed pixels in order.
+      return { ...op, _rigRegionId:region?.id||null,
+        points:op.points.map(([x,y])=>{
+          const p=rigPoint(shaft,{x,y},region);return [p.x,p.y];
+        }),
+        r:op.r*mean,rX:op.r*sx,rY:op.r*sy,
+        ...(op.smoothing!=null?{smoothing:op.smoothing*mean}:{}),
+        ...(op.speck!=null?{speck:op.speck*mean*mean}:{}),
+      };
+    }); // Saved operations and shared recipes stay unchanged when their area is transformed.
+  }
+  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
-    const ops = expandOps(bridges.strokes); // Recipe boxes become their re-mapped steps.
+    const ops = rigBridgeOperations(shaft, bridges.strokes); // Recipe expansion happens FIRST; all resulting strokes/junctions inherit the rig.
     if (!ops.length) return;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -151,6 +180,12 @@
         if (!piece) continue; // Missing upload: skip this piece, keep everything else.
         ctx.putImageData(image, 0, 0);
         ctx.save(); ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+        if (shaft) {
+          const parent = attachmentRig(shaft).parent; // Junction is nested under the overall parent and optional selected area.
+          ctx.transform(parent.a, parent.b, parent.c, parent.d, parent.e, parent.f);
+          const area=(shaft.rigRegions||[]).find(region=>region.id===stroke._rigRegionId);
+          if (area) {const t=regionAffine(area);ctx.transform(t.a,t.b,t.c,t.d,t.e,t.f);}
+        }
         drawJunction(ctx, piece, stroke); ctx.restore();
         image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         continue;
@@ -188,13 +223,73 @@
     if (Math.hypot(end.x - start.x, end.y - start.y) < 1) return { ...fallback, start: point(fallback.start), end: point(fallback.end) };
     return { type, start, end };
   }
+  function duplicateTransform(raw) {
+    return {
+      scaleX: finite(raw?.scaleX, 1, 0.05, 8), scaleY: finite(raw?.scaleY, 1, 0.05, 8),
+      x: finite(raw?.x, 0, -2400, 2400), y: finite(raw?.y, 0, -2400, 2400),
+    }; // Attachment-rig-only transform about the 450x1204 shaft reference center; not applied to the shaft sprite.
+  }
+  function duplicatePoint(point, layout) {
+    return { x: (point.x - 225) * layout.scaleX + 225 + layout.x,
+      y: (point.y - 602) * layout.scaleY + 602 + layout.y };
+  }
+  function shaftRigTransform(shaft) {
+    return duplicateTransform(shaft?.attachmentRigTransform || shaft?.duplicateTransform);
+  } // All shafts, not only duplicates, have an independent attachment parent; old duplicateTransform drafts still work.
+  function shaftArtTransform(shaft) {
+    const raw = shaft?.shaftArtTransform;
+    return { ...duplicateTransform(raw), enabled: raw?.enabled === true }; // Independent, opt-in sprite transform; flame source inherits it.
+  }
+  function cleanRigRegions(raw) {
+    if (!Array.isArray(raw)) return [];
+    const used = new Set();
+    return raw.slice(0, 12).flatMap((region, index) => {
+      const box = region?.box;
+      if (!box || ![box.x0,box.y0,box.x1,box.y1].every(Number.isFinite)) return [];
+      const x0 = finite(box.x0,0,-2400,2850), y0 = finite(box.y0,0,-2400,3604);
+      const x1 = finite(box.x1,0,-2400,2850), y1 = finite(box.y1,0,-2400,3604); // Regions may select attached head/bridge art beyond the 450×1204 donor image.
+      if (x1-x0 < 8 || y1-y0 < 8) return [];
+      const id = typeof region.id === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(region.id)
+        ? region.id : 'area'+index;
+      if (used.has(id)) return [];
+      used.add(id);
+      return [{ id, label: String(region.label || 'Region '+(index+1)).slice(0,64),
+        box:{x0,y0,x1,y1}, transform:duplicateTransform(region.transform) }];
+    }); // Regions are independently transformed selections of the mounting rig's children.
+  }
+  function regionAt(shaft, point) {
+    const regions = shaft?.rigRegions || [];
+    for (let i=regions.length-1;i>=0;i--) {
+      const region = regions[i], b=region.box;
+      if (point.x>=b.x0 && point.x<=b.x1 && point.y>=b.y0 && point.y<=b.y1) return region;
+    }
+    return null; // Later areas win when selections overlap; this remains stable after transforms move their contents.
+  }
+  function regionAffine(region) {
+    if (!region) return {a:1,b:0,c:0,d:1,e:0,f:0};
+    const box=region.box, t=duplicateTransform(region.transform);
+    const cx=(box.x0+box.x1)/2,cy=(box.y0+box.y1)/2;
+    return {a:t.scaleX,b:0,c:0,d:t.scaleY,e:cx+t.x-cx*t.scaleX,f:cy+t.y-cy*t.scaleY};
+  } // Each region is a child of the overall attachment parent, pivoting at the selected box center.
+  function affinePoint(matrix, p) {
+    return {x:matrix.a*p.x+matrix.c*p.y+matrix.e,y:matrix.b*p.x+matrix.d*p.y+matrix.f};
+  }
+  function rigPoint(shaft, p, region = regionAt(shaft,p)) {
+    return duplicatePoint(affinePoint(regionAffine(region),p),shaftRigTransform(shaft));
+  } // Transform each selected child's endpoints under its area, then under the overall parent.
+  function shaftMounts(shaft) {
+    return (shaft?.mounts || []).map(mount => {
+      const region=regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+      return {type:mount.type,start:rigPoint(shaft,mount.start,region),end:rigPoint(shaft,mount.end,region)};
+    }); // A selected mounting primitive travels with its area, rather than only the whole rig.
+  }
   function matchingMounts(shaft, head) {
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
-    return (shaft?.mounts || []).filter(mount => mount.type === kind); // Incompatible mechanisms never compose or forge.
+    return shaftMounts(shaft).filter(mount => mount.type === kind); // Works on the transformed clone without weakening original exclusions.
   }
   function renderingMounts(shaft, head) {
     const compatible = matchingMounts(shaft, head); // Only same-kind arrows are valid for newly crafted combinations.
-    return compatible.length ? compatible : shaft?.mounts?.slice(0, 1) || []; // Existing saved legacy weapons keep a visual head if a past combination becomes incompatible.
+    return compatible.length ? compatible : shaftMounts(shaft).slice(0, 1); // Existing saved legacy weapons keep a visual head if a past combination becomes incompatible.
   }
   function legacyLine(pivot, type, rotation = 0) {
     const start = point(pivot), angle = rotation * Math.PI / 180; // Migrates legacy pivot and socket rotation into directed lines.
@@ -262,6 +357,14 @@
     const reference = global.MODULAR_WEAPON_CONFIG; // Committed catalog owns sprites, metadata, and keys.
     const incoming = data.schema === SCHEMA ? data : convertLegacy(data, reference); // Preserve old editor drafts and imported v1 exports.
     const next = JSON.parse(JSON.stringify(reference));
+    for (const [key, raw] of Object.entries(incoming.shafts || {})) {
+      if (Object.hasOwn(next.shafts, key)) continue;
+      if (!/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(key) || Object.keys(next.shafts).length >= 60) continue;
+      const donor = next.shafts[raw?.duplicateFrom]; // Only allow new shaft keys based on an already-approved donor, never arbitrary untrusted definitions.
+      if (!donor || !/^[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(raw?.sprite || '')) continue;
+      next.shafts[key] = { ...JSON.parse(JSON.stringify(donor)), label: String(raw.label || key).slice(0,96),
+        sprite: raw.sprite, sourceShape: donor.sourceShape, duplicateFrom: raw.duplicateFrom };
+    }
     for (const [key, head] of Object.entries(next.heads)) {
       const raw = incoming.heads[key] || head;
       head.mount = line(raw.mount, 'head', head.mount);
@@ -270,6 +373,15 @@
     for (const [key, shaft] of Object.entries(next.shafts)) {
       const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
       if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
+      shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
+      shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
+        enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
+      if (raw.attachmentRigTransform || raw.duplicateTransform || shaft.attachmentRigTransform || shaft.duplicateTransform) {
+        // Apply to both original and cloned shafts. Older browser drafts use duplicateTransform;
+        // newer edits store attachmentRigTransform without changing the shaft sprite itself.
+        shaft.attachmentRigTransform = duplicateTransform(
+          raw.attachmentRigTransform || raw.duplicateTransform || shaft.attachmentRigTransform || shaft.duplicateTransform);
+      }
       shaft.mounts = (Array.isArray(raw.mounts) && raw.mounts.length ? raw.mounts : shaft.mounts)
         .slice(0, shaft.maxAttachments || 8).map((mount, index) => line(mount, 'shaft', shaft.mounts[Math.min(index, shaft.mounts.length - 1)]));
       const shipped = shaft.overrides; // Keep committed explicit pair exclusions when older imports omit them.
@@ -350,13 +462,82 @@
     return { a, b, c, d, e: target.start.x + ox - a * src.start.x - c * src.start.y,
       f: target.start.y + oy - b * src.start.x - d * src.start.y }; // Exact Canvas affine matrix.
   }
-  function compositionFrame(shaft, head, bounds, values) {
-    let left = 0, top = 0, right = 450, bottom = 1204; // Donor grip geometry always stays anchored to original source frame.
-    for (const mount of renderingMounts(shaft, head)) {
-      const matrix = headTransform(mount, values, head.mount); // Same transform determines bounds and eventual drawing.
-      for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
-        const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
-        left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+  function multiplyAffine(parent, child) {
+    // Compose a primitive's local transform underneath the attachment rig, never underneath the shaft sprite.
+    return {
+      a: parent.a * child.a + parent.c * child.b,
+      b: parent.b * child.a + parent.d * child.b,
+      c: parent.a * child.c + parent.c * child.d,
+      d: parent.b * child.c + parent.d * child.d,
+      e: parent.a * child.e + parent.c * child.f + parent.e,
+      f: parent.b * child.e + parent.d * child.f + parent.f,
+    };
+  }
+  function attachmentRig(shaft, head, values) {
+    const layout = shaftRigTransform(shaft);
+    const parent = {
+      a: layout.scaleX, b: 0, c: 0, d: layout.scaleY,
+      e: 225 + layout.x - 225 * layout.scaleX,
+      f: 602 + layout.y - 602 * layout.scaleY,
+    }; // Parent attachment primitive transform; shaft image and shaft VFX are intentionally siblings, not children.
+    if (!head) return { kind: 'attachmentRig', parent, children: [], shaftOutsideRig: true }; // Operation/junction-only callers need the parent, without a fitted head.
+    const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
+    const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
+      .filter(entry => entry.mount.type === required);
+    const selected = compatible.length ? compatible : (shaft?.mounts || []).slice(0, 1).map((mount, index) => ({ mount, index }));
+    const children = selected.map(({ mount, index }) => {
+      const region = regionAt(shaft,{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+      const regionMatrix=regionAffine(region); // Mount and fitted primitive are descendants of this local area.
+      const localMatrix = headTransform(mount, values, head.mount); // Fit first; inherit region and overall rig parents afterward.
+      return {
+        kind: 'mount', index, type: mount.type, localMount: mount, regionId:region?.id||null, regionMatrix,
+        worldMount: { type: mount.type, start: rigPoint(shaft,mount.start,region), end: rigPoint(shaft,mount.end,region) },
+        children: [{
+          kind: 'primitive', source: 'head', localMatrix,
+          worldMatrix: multiplyAffine(multiplyAffine(parent,regionMatrix), localMatrix),
+        }],
+      };
+    }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
+    return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
+  }
+  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}) {
+    let left = 0, top = 0, right = 450, bottom = 1204; // Neutral shaft footprint is preserved for existing held poses.
+    const shaftArt=shaftArtTransform(shaft);
+    if (shaftArt.enabled) for(const x of [0,450]) for(const y of [0,1204]){
+      const p=duplicatePoint({x,y},shaftArt);
+      left=Math.min(left,p.x);top=Math.min(top,p.y);right=Math.max(right,p.x);bottom=Math.max(bottom,p.y);
+    } // Opt-in shaft artwork may extend outside its fixed, original 450x1204 footprint.
+    for (const mount of attachmentRig(shaft, head, values).children) {
+      for (const primitive of mount.children) {
+        const matrix = primitive.worldMatrix; // Same parent*child transform that the canvas renderer uses.
+        for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
+          const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
+          left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+        }
+      }
+    }
+    // A moved junction or bridge can extend further than the attached head. Include these children before allocating the bitmap.
+    const parent = attachmentRig(shaft).parent;
+    for (const op of bridgeOps) {
+      if (op.junction) {
+        const piece = junctionImages[op.junction];
+        if (!piece) continue;
+        const halfW = piece.width / 2 * op.scale, halfH = piece.height / 2 * op.scale;
+        const angle = op.rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+        for (const x of [-halfW, halfW]) for (const y of [-halfH, halfH]) {
+          const localX = op.x + cos * x - sin * y, localY = op.y + sin * x + cos * y;
+          const region=(shaft.rigRegions||[]).find(region=>region.id===op._rigRegionId);
+          const matrix=region ? multiplyAffine(parent,regionAffine(region)) : parent;
+          const px = matrix.a * localX + matrix.c * localY + matrix.e;
+          const py = matrix.b * localX + matrix.d * localY + matrix.f;
+          left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+        }
+      } else if (op.points) {
+        for (const [x,y] of op.points) {
+          const rx = Math.max(0, op.rX || op.r || 0), ry = Math.max(0, op.rY || op.r || 0);
+          left = Math.min(left, x-rx); right = Math.max(right, x+rx);
+          top = Math.min(top, y-ry); bottom = Math.max(bottom, y+ry);
+        }
       }
     }
     left = Math.floor(left) - 4; top = Math.floor(top) - 4;
@@ -409,7 +590,8 @@
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
-      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values); // Expand to contain every rotated, scaled and translated head.
+      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values,
+        rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Include movable bridge/junction children in bounds.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
       if (pixelScale < 1) {
         const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
@@ -422,22 +604,66 @@
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
+      const protectedCanvas = shaft.fireAssembly ? document.createElement('canvas') : null; // Preserve nonmetal living-shaft pixels when the forged HEAD receives metal/verdigris.
+      if (protectedCanvas) { protectedCanvas.width = canvas.width; protectedCanvas.height = canvas.height; }
+      const protectedCtx = protectedCanvas?.getContext('2d') || null; // Bound to this composition, not per-frame.
+      if (protectedCtx) {
+        protectedCtx.scale(canvas.width / frame.width, canvas.height / frame.height);
+        protectedCtx.translate(-frame.left, -frame.top);
+      }
       function paintHaft() {
-        if (shaft.crop) {
-          ctx.save(); ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
-          ctx.drawImage(shaftImage, 0, 0, 450, 1204); ctx.restore(); // Crop applies only to the haft, regardless of layer ordering.
-        } else ctx.drawImage(shaftImage, 0, 0, 450, 1204);
+        const fire = shaft.fireAssembly && global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base;
+        const image = fire?.material === 'marker'
+          ? global.HobunjiLayeredWeaponEffects?.recolorMarker?.(shaftImage, fire.sourceHex, fire.targetHex) || shaftImage
+          : shaftImage; // The shaft's fixed artwork is recolored, but never scaled or translated with its mounting rig.
+        const art=shaftArtTransform(shaft); // Optional shaft-only scale/translation; head primitives remain under their separate rig.
+        for (const context of [ctx, protectedCtx].filter(Boolean)) {
+          context.save();
+          if (art.enabled) {
+            context.translate(225+art.x,602+art.y);
+            context.scale(art.scaleX,art.scaleY);context.translate(-225,-602);
+          }
+          if (shaft.crop) {
+            context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
+          }
+          context.drawImage(image, 0, 0, 450, 1204);
+          context.restore(); // Shaft-art transform also applies to the nonmetal mask; forged heads stay independent.
+        }
       }
       function paintHeads() {
-        for (const mount of renderingMounts(shaft, head)) {
-          const matrix = headTransform(mount, values, head.mount); // Each head uses the exact transform used to expand bounds.
-          ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-          ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+        const rig = attachmentRig(shaft, head, values); // Explicit parent -> mounting lines -> head primitives hierarchy.
+        const needsParent = rig.parent.a !== 1 || rig.parent.d !== 1 || rig.parent.e !== 0 || rig.parent.f !== 0;
+        const drawChildren = (context, eraseShaft = false) => {
+          context.save(); // Parent is active ONLY around rig children, never around paintHaft().
+          if (eraseShaft) context.globalCompositeOperation = 'destination-out';
+          if (needsParent) {
+            const t = rig.parent;
+            context.transform(t.a, t.b, t.c, t.d, t.e, t.f); // One parent scaling rig; all primitives and sockets are its children.
+          }
+          for (const mounting of rig.children) for (const primitive of mounting.children) {
+            const t = primitive.localMatrix, area=mounting.regionMatrix; // Selected area is a parent of the fitted head primitive.
+            context.save();
+            if (mounting.regionId) context.transform(area.a, area.b, area.c, area.d, area.e, area.f);
+            context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+            context.drawImage(headImage, 0, 0, 450, 1204);
+            context.restore();
+          }
+          context.restore();
+        };
+        drawChildren(ctx);
+        if (protectedCtx && values.layerOrder === 'head-over-haft') {
+          drawChildren(protectedCtx, true); // The same parent and descendants occlude only covered nonmetal-shaft pixels.
         }
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList)); // Pair-specific brush work, cached with this canvas.
+      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
+      if (protectedCtx) {
+        const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const mask = new Uint8Array(canvas.width * canvas.height); // One byte per protected shaft pixel; head metal remains exposed.
+        for (let i = 0; i < mask.length; i++) mask[i] = rgba[i * 4 + 3] > 0 ? 1 : 0;
+        canvas.modularNonMetalMask = mask; // ToolMetalRecolor restores original full-shaft colors after tinting only metal head pixels.
+      }
       return canvas;
     });
     canvases.set(cacheKey, task);
@@ -484,6 +710,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);

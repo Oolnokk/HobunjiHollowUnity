@@ -102,6 +102,12 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      hachututorchstaff: {
+        toolScale: 1.3, // B'shuakauitl's long-haft scale for the corresponding melee sweep poses.
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: 0.0394, endZ: 0.1594 }, // Melee hands use the same separated grip windows as B'shuakauitl.
+        secondaryGripSpan: { enabled: true, startZ: -0.1606, endZ: -0.0406 },
+      },
       grappleflail: {
         toolScale: 1, // Grip/weapon scale remains authoritative for the entire generated rope + grapple head.
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },

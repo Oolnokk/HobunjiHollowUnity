@@ -27,7 +27,7 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
               vfx: {
                 type: 'fire', sourceHex: '#7F00FF', rate: 22,
                 colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
-                size: 0.02, life: 0.35, speed: 0.12,
+                size: 0.02, life: 0.35, speed: 0.12, worldRise: true, // Brazier fire rises in world +Y while the flail head swings.
               },
               offsetPx: { x: 0, y: 0 },
             },
@@ -37,6 +37,23 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
         },
         motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
       },
+    },
+    hachutuTorchStaff: {
+      label: 'Hachutu Torch-Staff',
+      sprite: 'assets/toolsprites/hachutu_torch-staff.png',
+      base: {
+        material: 'marker', sourceHex: '#7F00FF', targetHex: '#E7DDC9',
+        vfx: {
+          type: 'fire', sourceHex: '#7F00FF', masteryClusters: 2,
+          rate: 44, // Each of the two tips gets the Torch-Flail's full-strength 22 motes/s at mastery 5.
+          colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
+          size: 0.02, life: 0.35, speed: 0.12, worldRise: true, // Both staff tips emit world-up flames at all mastery ranks.
+          visualScale: 4, // Bigger than the 2.5x brazier, while keeping each tip anchored to the staff.
+          masteryFocus: 0.55, // Preserve the ignition footprint; don't stack every flame onto a single pixel.
+          blendMode: 'normal', opacity: 0.65, // Avoid additive whiteout when larger flame silhouettes overlap.
+        },
+      }, // One rigid PNG, two original-marker fire regions; deliberately no metal/verdigris surface.
+      layers: [],
     },
     grappleFlail: {
       label: 'Grapple-Flail',

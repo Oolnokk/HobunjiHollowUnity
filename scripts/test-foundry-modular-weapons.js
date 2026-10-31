@@ -15,6 +15,36 @@ const api = window.ModularWeapons, mine = window.TownMine; // Public feature API
 assert.equal(api.getConfig().heads.kylie.dmgType, 'blunt', 'historic modular Kylie weapons retain blunt damage');
 assert.equal(api.getConfig().heads.kylie.craftDisabled, true, 'Kylie is retired as a forgeable head');
 assert.equal(api.getConfig().shafts.kylie.editorOnly, false, 'Kylie remains a forgeable shaft');
+const torchShaft = api.getConfig().shafts.hachutuTorchStaff; // Entire live staff is a forgeable shaft, not a separate attachable head.
+const blowgunShaft = api.getConfig().shafts.bshuakauitl; // Approved donor controls mount types, heads, exclusions and fitting.
+assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
+assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
+assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
+assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
+assert.deepEqual(plain(torchShaft.mounts), plain(blowgunShaft.mounts), 'all four B\'shuakauitl arrows copied without swapping ends');
+assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
+assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
+  'all B\'shuakauitl pair fitting/exclusion rules are preserved');
+const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
+const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
+assert.deepEqual(staffCompatible, originalCompatible, 'staff accepts exactly the same heads as B\'shuakauitl');
+const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
+copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
+api.replace(copyDraft);
+const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
+const originalMount = blowgunShaft.mounts[0];
+assert(Math.abs(shiftedMounts[0].start.x - ((originalMount.start.x - 225) * 1.5 + 250)) < 1e-6);
+assert(Math.abs(shiftedMounts[0].start.y - ((originalMount.start.y - 602) * 0.75 + 562)) < 1e-6);
+assert.equal(api.matchingMounts(api.getConfig().shafts.hachutuTorchStaff, api.getConfig().heads.warhammer).length, 2,
+  'both sleeve mounts remain usable after shaft duplication transform');
+const extraCopy = plain(api.getConfig());
+extraCopy.shafts.hachutuTorchStaffCopy = { ...plain(extraCopy.shafts.hachutuTorchStaff),
+  label: 'Independent Live Fire Copy', duplicateFrom: 'hachutuTorchStaff' };
+api.replace(extraCopy);
+assert.equal(api.getConfig().shafts.hachutuTorchStaffCopy.fireAssembly, 'hachutuTorchStaff',
+  'new editor-created shaft copies retain attached flame assemblies');
+assert.equal(api.getConfig().shafts.hachutuTorchStaffCopy.attachmentRigTransform.scaleX, 1.5);
+api.replace(plain(window.MODULAR_WEAPON_CONFIG)); // Other baseline tests below must retain their committed source geometry.
 const staleKylieDraft = JSON.parse(JSON.stringify(api.getConfig())); // Simulates a player-authored attachment draft saved before Kylies became blunt.
 staleKylieDraft.heads.kylie.dmgType = 'sharp';
 staleKylieDraft.heads.kylie.craftDisabled = false; // Old authoring data must not override shipped retirement metadata.

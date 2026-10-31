@@ -217,5 +217,22 @@ assert.equal(images.length,6,'startup loads all six Hachutu sprites');
   assert.equal(outdated.fuel(), .02);
   assert.equal(storage.has(draftKey), false); assert.equal(storage.has(draftKey + '.repository'), false);
   assert.equal(outdated.ui('recipeSource').textContent, 'Repository settings');
-  console.log('multi-sprite editor frame: PASS (real startup, six PNGs, both canvases, metal palette, rag tint, recolor cache, deduplicated errors)');
+  node('weapon').value = 'hachutuTorchStaff'; // Exercise the real third-tab input wiring without the flail-only mocked preview.
+  node('weapon').handlers.get('change')();
+  assert.equal(Number(node('baseFireSize').value), .02, 'torch-staff uses original unscaled flail mote size');
+  assert.equal(Number(node('baseFireVisualScale').value), 4, 'editor loads the four-times full-geometry scale');
+  assert.equal(Number(node('baseFireFocus').value), .55, 'editor loads partial clustering so the plume retains shape');
+  assert.equal(node('baseFireBlend').value, 'normal', 'normal blend keeps staff fire from washing out');
+  assert.equal(Number(node('baseFireOpacity').value), .65);
+  node('baseFireVisualScale').value = '5'; node('baseFireVisualScale').handlers.get('change')();
+  node('baseFireFocus').value = '.4'; node('baseFireFocus').handlers.get('change')();
+  node('baseFireBlend').value = 'additive'; node('baseFireBlend').handlers.get('change')();
+  node('baseFireOpacity').value = '.5'; node('baseFireOpacity').handlers.get('change')();
+  node('save').click();
+  const savedStaffVfx = savedDrafts.at(-1).weapons.hachutuTorchStaff.base.vfx; // Confirm every new editor control round-trips through the actual draft.
+  assert.equal(savedStaffVfx.visualScale, 5);
+  assert.equal(savedStaffVfx.masteryFocus, .4);
+  assert.equal(savedStaffVfx.blendMode, 'additive');
+  assert.equal(savedStaffVfx.opacity, .5);
+  console.log('multi-sprite editor frame: PASS (startup, both canvases, recolor cache, error recovery, editable anchored fire geometry)');
 })().catch(error => { console.error(error); process.exitCode=1; });

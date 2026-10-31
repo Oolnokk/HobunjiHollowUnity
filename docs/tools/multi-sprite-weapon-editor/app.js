@@ -97,6 +97,28 @@
 
   function activeLayer() { return layers()[selected] || null; }
 
+  function ensureBase() {
+    return entry().base || (entry().base = { material: 'metal' }); // Only authored complex tools receive a base-sprite material override.
+  }
+
+  function setBaseFields() {
+    const b = entry().base || {};
+    $('baseMaterial').value = ['metal','marker','none'].includes(b.material) ? b.material : 'metal';
+    $('baseSourceHex').value = b.sourceHex || '#7F00FF';
+    $('baseTargetHex').value = b.targetHex || '#E7DDC9';
+    $('baseFireMode').value = b.vfx?.type !== 'fire' ? 'none' : b.vfx.masteryClusters === 2 ? 'mastery' : 'fire';
+    $('baseFireRate').value = b.vfx?.rate ?? 22;
+    $('baseFireSize').value = b.vfx?.size ?? .02;
+    $('baseFireLife').value = b.vfx?.life ?? .35;
+    $('baseFireSpeed').value = b.vfx?.speed ?? .12;
+    $('baseFireVisualScale').value = b.vfx?.visualScale ?? 1;
+    $('baseFireFocus').value = b.vfx?.masteryFocus ?? 1;
+    $('baseFireBlend').value = b.vfx?.blendMode === 'normal' ? 'normal' : 'additive';
+    $('baseFireOpacity').value = b.vfx?.opacity ?? .92;
+    $('baseFireColors').value = (b.vfx?.colors || ['#FFE6A5','#FFAA3E','#FF5F20']).join(', ');
+    $('baseFireSettings').hidden = $('baseFireMode').value === 'none';
+  }
+
   function setOptions(select, values, selectedValue) {
     select.replaceChildren();
     for (const [value, name] of values) {
@@ -167,7 +189,7 @@
 
   function selectTab(value) {
     tab = value;
-    $('flailsTab').hidden = tab !== 'flails'; $('layersTab').hidden = tab !== 'layers';
+    $('flailsTab').hidden = tab !== 'flails'; $('layersTab').hidden = tab !== 'layers'; $('baseTab').hidden = tab !== 'base';
     document.querySelectorAll('[data-tab]').forEach(btn => btn.setAttribute('aria-selected', btn.dataset.tab === tab ? 'true' : 'false'));
   }
 
@@ -176,7 +198,7 @@
     key = next; selected = 0; window.HobunjiMultiSpritePreviewRenderer?.resetEffects();
     stackTarget = entry().flail ? 'head' : 'weapon';
     $('stackTarget').value = stackTarget;
-    fillWeapons(); setFlailFields(); fillLayers(); warmImages();
+    fillWeapons(); setFlailFields(); setBaseFields(); fillLayers(); warmImages();
     log('Selected ' + (entry().label || key));
   }
 
@@ -260,6 +282,38 @@
   function installEvents() {
     document.querySelectorAll('[data-tab]').forEach(button => button.onclick = () => selectTab(button.dataset.tab));
     on('weapon', 'change', () => selectWeapon($('weapon').value));
+    bindInput('baseMaterial', value => { ensureBase().material = value; });
+    bindInput('baseSourceHex', value => {
+      const b = ensureBase(); b.sourceHex = validHex(value, '#7F00FF');
+      if (b.vfx?.type === 'fire') b.vfx.sourceHex = b.sourceHex;
+    });
+    bindInput('baseTargetHex', value => { ensureBase().targetHex = validHex(value, '#E7DDC9'); });
+    bindInput('baseFireMode', value => {
+      const b = ensureBase();
+      if (value === 'none') delete b.vfx;
+      else {
+        b.vfx ||= { type: 'fire', sourceHex: b.sourceHex || '#7F00FF', rate: 22,
+          size: .02, life: .35, speed: .12, colors: ['#FFE6A5','#FFAA3E','#FF5F20'] };
+        b.vfx.type = 'fire';
+        if (value === 'mastery') b.vfx.masteryClusters = 2;
+        else delete b.vfx.masteryClusters;
+      }
+      setBaseFields();
+    });
+    for (const [id, name, fallback, min, max] of [
+      ['baseFireRate','rate',22,0,60], ['baseFireSize','size',.02,.001,2],
+      ['baseFireLife','life',.35,.1,5], ['baseFireSpeed','speed',.12,0,5],
+      ['baseFireVisualScale','visualScale',1,.1,8], // Parent fire-group scale is independent of mote-size and intensity.
+      ['baseFireFocus','masteryFocus',1,0,1], // Preserve fuel footprint when rank 5 is reached.
+      ['baseFireOpacity','opacity',.92,0,1], // Soft alpha for overlapping plumes without changing their size.
+    ]) bindInput(id, value => { if (ensureBase().vfx) ensureBase().vfx[name] = safeNum(value, fallback, min, max); });
+    bindInput('baseFireBlend', value => {
+      if (ensureBase().vfx) ensureBase().vfx.blendMode = value === 'normal' ? 'normal' : 'additive';
+    });
+    bindInput('baseFireColors', value => {
+      if (ensureBase().vfx) ensureBase().vfx.colors = value.split(',').map(color => color.trim()).filter(color => /^#[0-9a-f]{6}$/i.test(color));
+    });
+    on('previewMastery','input', () => { $('previewMasteryValue').textContent = $('previewMastery').value; }); // Live mastery callback reads this slider without resetting particles.
     on('enableFlail','click', () => {
       if (entry().flail) {
         if (!confirm('Remove this weapon\'s chain and flail-head layers? Ordinary sprite layers are preserved.')) return;
@@ -402,7 +456,7 @@
     const editVfx = (name, fall, min, max) => bindInput(name, value => {
       if (activeLayer()?.vfx) activeLayer().vfx[{fireRate:'rate',fireLife:'life',fireSize:'size',fireSpeed:'speed'}[name]] = safeNum(value, fall, min, max);
     });
-    editVfx('fireRate', 22, 0, 40); editVfx('fireLife', .65, .1, 5); editVfx('fireSize', .035, .001, 2); editVfx('fireSpeed', .12, 0, 5);
+    editVfx('fireRate', 22, 0, 60); editVfx('fireLife', .65, .1, 5); editVfx('fireSize', .035, .001, 2); editVfx('fireSpeed', .12, 0, 5);
     bindInput('fireColors', value => {
       if (activeLayer()?.vfx) activeLayer().vfx.colors = value.split(',').map(s => s.trim()).filter(s => /^#[0-9a-f]{6}$/i.test(s));
     });
@@ -456,7 +510,7 @@
     });
     on('copyJson','click', () => copy(JSON.stringify(state, null, 2)));
     on('copyDebug','click', () => copy(logs.join('\n') + '\n\n' + JSON.stringify({
-      key, tab, stackTarget, selected, latestError,
+      key, tab, stackTarget, selected, latestError, masteryRank: $('previewMastery').value, base: entry().base,
       flailScale: entry().flail ? {
         chainX: entry().flail.chain?.scaleX ?? entry().flail.chain?.scale ?? 1,
         chainY: entry().flail.chain?.scaleY ?? entry().flail.chain?.scale ?? 1,
@@ -541,6 +595,7 @@
       const model = renderer.modelFor(entry(), image, progress, now);
       const options = {
         dt, playing, selected, stackTarget, revision,
+        masteryRank: safeNum($('previewMastery').value, 0, 0, 5), // The same rank controls the real shared emitter in both previews.
         weaponKey: key, solo: $('soloLayer').checked,
         metalOptions: { targetHex: validHex($('metalHex').value, '#CD7F32'), verdigrisHex: validHex($('verdigrisHex').value, '#57B38B'), oxidationAmount: safeNum($('oxidation').value, .5, 0, 1) }, // Shared gameplay material resolver receives the live authoring palette.
         effects: window.HobunjiLayeredWeaponEffects,
@@ -603,7 +658,7 @@
     window.addEventListener('error', event => log('Browser error: ' + event.message, true)); // Visible on phones without devtools.
     window.addEventListener('unhandledrejection', event => log('Async error: ' + (event.reason?.message || event.reason), true));
     suggestRepoSprites(); // Optional repo PNG suggestions; no credentials required.
-    log('Multi-sprite editor ready. 3D preview uses the gameplay assembly and particle emitter. Drag to orbit; pinch or scroll to zoom.');
+    log('Complex-tool editor ready. Base PNGs, layered effects and flails use the gameplay assembly. Mastery preview runs live, including on mobile.');
   }
   start();
 })();

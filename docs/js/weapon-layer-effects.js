@@ -209,6 +209,37 @@
     return fireTexture;
   }
 
+  function fireClusters(pixels, width, count) {
+    // Source-PNG pixels determine stable, per-end ignition sites; never cluster recolored images.
+    if (count !== 2 || pixels.length < 2) return null;
+    const coords = pixels.map(index => ({ index, x: index % width, y: Math.floor(index / width) }));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; // Single pass avoids massive spread-argument lists on large source PNGs.
+    for (const point of coords) {
+      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+    }
+    const vertical = maxY - minY >= maxX - minX;
+    const axis = point => vertical ? point.y : point.x;
+    const middle = vertical ? (minY + maxY) / 2 : (minX + maxX) / 2;
+    let halves = [coords.filter(point => axis(point) <= middle), coords.filter(point => axis(point) > middle)];
+    if (!halves[0].length || !halves[1].length) {
+      const sorted = coords.slice().sort((a, b) => axis(a) - axis(b));
+      const split = Math.floor(sorted.length / 2);
+      halves = [sorted.slice(0, split), sorted.slice(split)];
+    }
+    return halves.map(points => ({
+      pixels: points.map(point => point.index),
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+    }));
+  }
+
+  function fireRank(state, spec) {
+    if (!spec.masteryClusters) return 5; // Classic torch-flail fire is not mastery-dependent.
+    const level = Number(state.masteryLevel?.());
+    return Number.isFinite(level) ? Math.max(0, Math.min(5, level)) : 0;
+  }
+
   function activateStack(state, layers, owner, unit) {
     // One ordered stack drives both regular layered tools and multi-piece flail heads.
     state.metalTargets = [...(state.metalTargets || []), ...visibleMetalTargets(layers)]; // Each authored stack contributes its visible metal masks; flail heads must not erase haft masks.
@@ -221,15 +252,35 @@
       const sources = sourcePixels(layer.image, spec.sourceHex || layer.config.sourceHex || '#7F00FF', 'marker');
       if (!sources.length) return;
       const THREE = state.THREE;
-      const group = new THREE.Group(); // Local to rotating head, not shaft; particles originate in the fuel's image frame.
+      const group = new THREE.Group(); // Local to rotating head or rigid weapon; maintains ordered depth with source artwork.
       group.name = 'weapon_interleaved_fire_' + layer.config.id;
       group.userData.weaponInterleavedVfx = true;
-      owner.add(group); // Fire is local to whichever part of the weapon owns this sprite stack.
+      owner.add(group); // Fire inherits the weapon pose without scaling the visible staff PNG.
+      const clusters = fireClusters(sources, pix.width, spec.masteryClusters); // Original marker pixels define independent staff-tip ignition areas.
+      const requestedScale = Number(spec.visualScale); // Artist-controlled geometric scale; omitted on existing flails to preserve their look.
+      const visualScale = Number.isFinite(requestedScale) && requestedScale > 0 ? Math.max(0.1, Math.min(8, requestedScale)) : 1;
+      const off = offsetOf(layer.config);
+      const anchors = visualScale === 1 ? null : (clusters || [{
+        x: sources.reduce((sum, pixel) => sum + pixel % pix.width, 0) / sources.length,
+        y: sources.reduce((sum, pixel) => sum + Math.floor(pixel / pix.width), 0) / sources.length,
+      }]).map(center => {
+        const x = (center.x + 0.5 - pix.width / 2 + off.x) * unit;
+        const y = (pix.height / 2 - center.y - 0.5 - off.y) * unit;
+        const pivot = new THREE.Group(); // Same parent-group scaling as the brazier, but centered on THIS end of the staff.
+        pivot.position.set(x, y, 0);
+        pivot.scale.setScalar(visualScale); // Enlarges plume geometry, rise and lateral motion together, not brightness/particle count.
+        group.add(pivot);
+        return { group: pivot, x, y };
+      });
       const above = layers[index + 1]?.mesh;
       const renderOrder = layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2;
       emitters.push({
         config: spec, sourceLayer: layer.config, image: pix, sources,
+        clusters, anchors, visualScale, // Geometric per-tip parent scaling matches the flail-head transform.
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
+        worldRise: spec.worldRise === true, // Opt in: torch-staff and brazier particles travel along world-up even as their weapons rotate.
+        worldTarget: spec.worldRise === true ? new THREE.Vector3() : null, // Shared scratch vector avoids per-frame GC for world-space positions.
+        worldScale: spec.worldRise === true ? new THREE.Vector3() : null, // Capture parent/visual scale at emission, without changing world-up direction.
         texture: createFireTexture(THREE),
       });
     });
@@ -243,9 +294,13 @@
     activateStack(state, layers, state.headRoot, unit);
   }
 
-  function activateStatic(state, layers, meshes, sourceImage, unit) {
+  function activateStatic(state, base, layers, meshes, sourceImage, unit) {
+    if (Array.isArray(base)) {
+      // Preserve old five-argument callers (including existing flail regression fixtures).
+      unit = sourceImage; sourceImage = meshes; meshes = layers; layers = base; base = null;
+    }
     const all = [
-      { config: { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
+      { config: { id: 'base', ...(base || { material: 'metal' }) }, mesh: state.plane, image: sourceImage },
       ...layers.map((config, index) => ({
         config, mesh: meshes[index],
         image: state.materialLayers.find(entry => entry.mesh === meshes[index])?.image,
@@ -264,21 +319,40 @@
         const t = particle.age / particle.life;
         if (t >= 1) {
           particle.sprite.visible = false;
-          fx.group.remove(particle.sprite);
+          particle.sprite.parent?.remove(particle.sprite); // With per-tip pivots, the emitter root is no longer the direct sprite parent.
           fx.pool.push(particle.sprite);
           fx.particles.splice(p, 1);
           continue;
         }
-        particle.sprite.position.x = particle.x + Math.sin(particle.age * 13 + particle.phase) * fx.unit * 6 * t;
-        particle.sprite.position.y = particle.y + particle.speed * particle.age;
-        particle.sprite.material.opacity = Math.sin(Math.PI * t) * 0.92;
+        if (fx.worldRise) {
+          // Existing motes keep the world-space origin captured at ignition; a moving or spinning
+          // weapon changes where NEW flames spawn, never the direction or position of old ones.
+          fx.worldTarget.copy(particle.spawnWorld);
+          fx.worldTarget.x += Math.sin(particle.age * 13 + particle.phase) * particle.worldDrift * t;
+          fx.worldTarget.y += particle.worldSpeed * particle.age; // World +Y is up, regardless of the head/staff pitch.
+          particle.sprite.position.copy(particle.sprite.parent.worldToLocal(fx.worldTarget));
+        } else {
+          particle.sprite.position.x = particle.x + Math.sin(particle.age * 13 + particle.phase) * fx.unit * 6 * t;
+          particle.sprite.position.y = particle.y + particle.speed * particle.age;
+        }
+        const opacity = Number(fx.config.opacity); // Optional per-mote alpha controls overlap without shrinking flame geometry.
+        particle.sprite.material.opacity = Math.sin(Math.PI * t) * (Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0.92);
         particle.sprite.scale.setScalar(particle.size * (0.5 + t * 1.5));
       }
-      fx.accumulation = Math.min(2, fx.accumulation + dt * Math.min(40, Math.max(0, Number(fx.config.rate) || 0)));
+      fx.accumulation = Math.min(2, fx.accumulation + dt * Math.min(60, Math.max(0, Number(fx.config.rate) || 0)));
       while (fx.accumulation >= 1 && fx.particles.length < MAX_FIRE_PARTICLES) {
         fx.accumulation -= 1;
-        const pixel = fx.sources[Math.floor(Math.random() * fx.sources.length)];
-        const x = pixel % fx.image.width, y = Math.floor(pixel / fx.image.width);
+        const growth = fireRank(state, fx.config) / 5;
+        const focus = Number(fx.config.masteryFocus); // Maximum tip-centering, leaving a configurable fuel footprint so large plumes retain shape.
+        const merge = growth * growth * (3 - 2 * growth) * (Number.isFinite(focus) ? Math.max(0, Math.min(1, focus)) : 1);
+        const clusterIndex = fx.clusters ? Math.floor(Math.random() * fx.clusters.length) : 0;
+        const cluster = fx.clusters?.[clusterIndex];
+        const anchor = fx.anchors?.[clusterIndex]; // Pivots stay fixed at their original pixel-cluster centers.
+        const candidates = cluster?.pixels || fx.sources;
+        const pixel = candidates[Math.floor(Math.random() * candidates.length)];
+        const sourceX = pixel % fx.image.width, sourceY = Math.floor(pixel / fx.image.width);
+        const x = cluster ? sourceX + (cluster.x - sourceX) * merge : sourceX;
+        const y = cluster ? sourceY + (cluster.y - sourceY) * merge : sourceY;
         const off = offsetOf(fx.sourceLayer);
         const px = (x + 0.5 - fx.image.width / 2 + off.x) * fx.unit;
         const py = (fx.image.height / 2 - y - 0.5 - off.y) * fx.unit;
@@ -287,20 +361,32 @@
         let sprite = fx.pool.pop();
         if (!sprite) sprite = new THREE.Sprite(new THREE.SpriteMaterial({
           map: fx.texture, transparent: true, opacity: 0,
-          depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
+          depthWrite: false, depthTest: true,
+          blending: fx.config.blendMode === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending, // Non-additive flames keep distinct colors instead of white-hot overdraw.
         }));
         sprite.material.color.set(color);
         sprite.renderOrder = fx.renderOrder; // Interleaved between fuel and later metal silhouettes (front).
         const overlayLayer = global.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER; // Shared x-ray held-object replay draws fire with the assembled metal, never through world geometry.
         if (Number.isInteger(overlayLayer) && ((fx.group.parent?.children?.[0]?.layers?.mask >>> overlayLayer) & 1)) sprite.layers.set(overlayLayer);
         else sprite.layers.set(0);
-        sprite.position.set(px, py, FIRE_DEPTH_OFFSET);
+        const localX = anchor ? px - anchor.x : px;
+        const localY = anchor ? py - anchor.y : py;
+        sprite.position.set(localX, localY, FIRE_DEPTH_OFFSET / fx.visualScale);
         sprite.visible = true;
-        fx.group.add(sprite);
+        (anchor?.group || fx.group).add(sprite); // Keep the render-order stack and per-tip scale, even for world-moving particles.
+        const speed = (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()); // Local rise rate reused for world-up emission.
+        let spawnWorld = null, worldSpeed = 0, worldDrift = 0; // Per-particle ignition origin and parent-scale-adjusted world velocity.
+        if (fx.worldRise) {
+          spawnWorld = sprite.getWorldPosition(new THREE.Vector3()); // Capture actual tip position, after holder and flail motion.
+          sprite.parent.getWorldScale(fx.worldScale); // Head scale 2.5 or tip scale 4 changes distance, never world-up direction.
+          worldSpeed = speed * Math.abs(fx.worldScale.y);
+          worldDrift = fx.unit * 6 * Math.abs(fx.worldScale.x);
+        }
         fx.particles.push({
           sprite, age: 0, life: Math.max(0.1, Number(fx.config.life) || 0.65),
-          x: px, y: py, speed: (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()),
-          phase: Math.random() * 6.283, size: Math.max(0.004, Number(fx.config.size) || 0.035),
+          x: localX, y: localY, speed, spawnWorld, worldSpeed, worldDrift,
+          phase: Math.random() * 6.283,
+          size: Math.max(0.001, (Number(fx.config.size) || 0.035) * (fx.config.masteryClusters ? 0.22 + 0.78 * growth : 1)), // Local mote size stays at brazier baseline; the pivot scales the entire fire.
         });
       }
     }
@@ -309,7 +395,8 @@
   function dispose(state) {
     if (!state.fireEmitters) return;
     for (const fx of state.fireEmitters) {
-      for (const child of [...fx.group.children, ...fx.pool]) child.material?.dispose?.();
+      for (const particle of fx.particles) particle.sprite.material?.dispose?.(); // Per-tip child groups must not hide materials from teardown.
+      for (const sprite of fx.pool) sprite.material?.dispose?.();
       fx.group.parent?.remove?.(fx.group);
       fx.particles.length = 0;
       fx.pool.length = 0;
@@ -319,6 +406,6 @@
 
   global.HobunjiLayeredWeaponEffects = Object.freeze({
     registerLayer, activateHead, activateStatic, refreshMetal, stepFire, dispose,
-    visibleMetalTargets, sourcePixels, recolorMarker, coveredByUpperLayers,
+    visibleMetalTargets, sourcePixels, recolorMarker, coveredByUpperLayers, fireClusters,
   });
 })(window);
