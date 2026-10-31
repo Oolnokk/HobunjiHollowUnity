@@ -209,6 +209,34 @@
     return fireTexture;
   }
 
+  function fireClusters(pixels, width, count) {
+    // Source-PNG pixels determine stable, per-end ignition sites; never cluster recolored images.
+    if (count !== 2 || pixels.length < 2) return null;
+    const coords = pixels.map(index => ({ index, x: index % width, y: Math.floor(index / width) }));
+    const xs = coords.map(point => point.x), ys = coords.map(point => point.y);
+    const vertical = Math.max(...ys) - Math.min(...ys) >= Math.max(...xs) - Math.min(...xs);
+    const axis = point => vertical ? point.y : point.x;
+    const extent = coords.map(axis);
+    const middle = (Math.min(...extent) + Math.max(...extent)) / 2;
+    let halves = [coords.filter(point => axis(point) <= middle), coords.filter(point => axis(point) > middle)];
+    if (!halves[0].length || !halves[1].length) {
+      const sorted = coords.slice().sort((a, b) => axis(a) - axis(b));
+      const split = Math.floor(sorted.length / 2);
+      halves = [sorted.slice(0, split), sorted.slice(split)];
+    }
+    return halves.map(points => ({
+      pixels: points.map(point => point.index),
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+    }));
+  }
+
+  function fireRank(state, spec) {
+    if (!spec.masteryClusters) return 5; // Classic torch-flail fire is not mastery-dependent.
+    const level = Number(state.masteryLevel?.());
+    return Number.isFinite(level) ? Math.max(0, Math.min(5, level)) : 0;
+  }
+
   function activateStack(state, layers, owner, unit) {
     // One ordered stack drives both regular layered tools and multi-piece flail heads.
     state.metalTargets = [...(state.metalTargets || []), ...visibleMetalTargets(layers)]; // Each authored stack contributes its visible metal masks; flail heads must not erase haft masks.
@@ -229,6 +257,7 @@
       const renderOrder = layer.mesh.renderOrder + ((above?.renderOrder || layer.mesh.renderOrder + 0.001) - layer.mesh.renderOrder) / 2;
       emitters.push({
         config: spec, sourceLayer: layer.config, image: pix, sources,
+        clusters: fireClusters(sources, pix.width, spec.masteryClusters), // Two ends remain independent throughout mastery 0–5.
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
         texture: createFireTexture(THREE),
       });
@@ -243,9 +272,9 @@
     activateStack(state, layers, state.headRoot, unit);
   }
 
-  function activateStatic(state, layers, meshes, sourceImage, unit) {
+  function activateStatic(state, base, layers, meshes, sourceImage, unit) {
     const all = [
-      { config: { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
+      { config: base || { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
       ...layers.map((config, index) => ({
         config, mesh: meshes[index],
         image: state.materialLayers.find(entry => entry.mesh === meshes[index])?.image,
@@ -274,11 +303,17 @@
         particle.sprite.material.opacity = Math.sin(Math.PI * t) * 0.92;
         particle.sprite.scale.setScalar(particle.size * (0.5 + t * 1.5));
       }
-      fx.accumulation = Math.min(2, fx.accumulation + dt * Math.min(40, Math.max(0, Number(fx.config.rate) || 0)));
+      fx.accumulation = Math.min(2, fx.accumulation + dt * Math.min(60, Math.max(0, Number(fx.config.rate) || 0)));
       while (fx.accumulation >= 1 && fx.particles.length < MAX_FIRE_PARTICLES) {
         fx.accumulation -= 1;
-        const pixel = fx.sources[Math.floor(Math.random() * fx.sources.length)];
-        const x = pixel % fx.image.width, y = Math.floor(pixel / fx.image.width);
+        const growth = fireRank(state, fx.config) / 5;
+        const merge = growth * growth * (3 - 2 * growth); // Tiny separate rank-0 flames converge smoothly into one plume per end at rank 5.
+        const cluster = fx.clusters?.[Math.floor(Math.random() * fx.clusters.length)];
+        const candidates = cluster?.pixels || fx.sources;
+        const pixel = candidates[Math.floor(Math.random() * candidates.length)];
+        const sourceX = pixel % fx.image.width, sourceY = Math.floor(pixel / fx.image.width);
+        const x = cluster ? sourceX + (cluster.x - sourceX) * merge : sourceX;
+        const y = cluster ? sourceY + (cluster.y - sourceY) * merge : sourceY;
         const off = offsetOf(fx.sourceLayer);
         const px = (x + 0.5 - fx.image.width / 2 + off.x) * fx.unit;
         const py = (fx.image.height / 2 - y - 0.5 - off.y) * fx.unit;
@@ -300,7 +335,8 @@
         fx.particles.push({
           sprite, age: 0, life: Math.max(0.1, Number(fx.config.life) || 0.65),
           x: px, y: py, speed: (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()),
-          phase: Math.random() * 6.283, size: Math.max(0.004, Number(fx.config.size) || 0.035),
+          phase: Math.random() * 6.283,
+          size: Math.max(0.001, (Number(fx.config.size) || 0.035) * (fx.config.masteryClusters ? 0.22 + 0.78 * growth : 1)), // Rank 5 uses exactly the torch-flail's calibrated mote size.
         });
       }
     }
@@ -319,6 +355,6 @@
 
   global.HobunjiLayeredWeaponEffects = Object.freeze({
     registerLayer, activateHead, activateStatic, refreshMetal, stepFire, dispose,
-    visibleMetalTargets, sourcePixels, recolorMarker, coveredByUpperLayers,
+    visibleMetalTargets, sourcePixels, recolorMarker, coveredByUpperLayers, fireClusters,
   });
 })(window);
