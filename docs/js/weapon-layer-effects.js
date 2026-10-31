@@ -113,10 +113,16 @@
     const targets = [];
     for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
       const layer = layers[layerIndex];
-      if (layer.config.material !== 'metal') continue;
+      const material = layer.config.material;
+      if (material !== 'metal' && material !== 'marker') continue; // Plain-art layers (haft, chain rope) never emit.
       const imageData = rgba(layer.image);
       if (!imageData) continue;
-      const indices = sourcePixels(layer.image, METAL_HEX, 'metal').filter(index => {
+      // Enchantments emit from both authored source colours: the verdigris-compatible metal hue and the
+      // violet fire marker (art may swap one for the other). The hue families are ~100 degrees apart, so
+      // the two pixel sets never overlap and can simply be concatenated.
+      const markerHex = layer.config.sourceHex || layer.config.vfx?.sourceHex || '#7F00FF';
+      const sources = [...sourcePixels(layer.image, METAL_HEX, 'metal'), ...sourcePixels(layer.image, markerHex, 'marker')];
+      const indices = sources.filter(index => {
         const x = index % imageData.width, y = Math.floor(index / imageData.width);
         return !coveredByUpperLayers(x, y, layer, layers, layerIndex);
       });

@@ -571,14 +571,14 @@
     }));
   }
 
-  function enchantmentTargets(visual) {
-    const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
-    const plane = visual?.userData?.toolPlane;
-    if (!plane || !global.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.()?.active) return sourceTargets;
-    // Dual-wielded ordinary layered weapons duplicate their visible base and
-    // overlay meshes. Redirect enchantments to the two visible copies rather
-    // than emitting at the hidden midpoint or at the original layers.
+  // Pure selection step, exported for tests. While dual wield is active the held plane's base and its direct-child
+  // overlay layers are hidden and replaced by two visible clones, so their enchantments follow the clones. Anything
+  // dual wield does not clone (a flail head's layers live under their own head rig and stay visible) keeps emitting
+  // from its source mesh; redirecting *every* target to clones silently dropped all flail enchantment motes.
+  function dualWieldEnchantmentTargets(plane, sourceTargets) {
     const copies = [];
+    const clonedBySource = target => target.plane === plane || target.plane?.parent === plane;
+    for (const target of sourceTargets) if (!clonedBySource(target)) copies.push(target);
     plane.traverse?.(node => {
       const parentSource = node?.userData?.hobunjiDualWeaponSourceLayer; // The exact source layer cloned by the dual-wield renderer.
       for (const target of sourceTargets) {
@@ -591,8 +591,15 @@
     return copies;
   }
 
+  function enchantmentTargets(visual) {
+    const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
+    const plane = visual?.userData?.toolPlane;
+    if (!plane || !global.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.()?.active) return sourceTargets;
+    return dualWieldEnchantmentTargets(plane, sourceTargets);
+  }
+
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets,
+    definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
     opaqueAt, anchor, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
   if (global.RuntimeFrameScheduler?.register) {
