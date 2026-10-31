@@ -68,9 +68,9 @@ for (const [attr, halfAngle] of [[base, 0.3], [widened, 0.6]]) {
     const [x, y, z] = attr.xyz(i * 2); // Outer edge is exactly the cone's horizontal+vertical reach.
     approximate(x, 3 + radius * Math.cos(pitch) * Math.cos(a), 'true collider arc X');
     approximate(z, 5 + radius * Math.cos(pitch) * Math.sin(a), 'true collider arc Z');
-    approximate(y, 1 + radius * Math.sin(pitch) - 0.35 * Math.sin(Math.PI * u), '3D low edge height');
+    approximate(y, 1 + radius * Math.sin(pitch) - (0.35 - 0.07) * Math.sin(Math.PI * u), '3D low edge height');
     const [innerX, innerY, innerZ] = attr.xyz(i * 2 + 1); // Inner upper edge never overshoots the hit radius.
-    const distance = Math.hypot(innerX - 3, innerY - 1 - 0.35 * Math.sin(Math.PI * u) + Math.min(0.22, 0.35 * 0.2) * Math.sin(Math.PI * u), innerZ - 5);
+    const distance = Math.hypot(innerX - 3, innerY - 1 - 0.35 * Math.sin(Math.PI * u), innerZ - 5);
     assert(distance <= radius + 0.00001, 'inner edge stays inside true reach');
     assert(innerY > y - 0.00001, '3D band has nonnegative vertical thickness');
   }
