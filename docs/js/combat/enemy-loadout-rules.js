@@ -23,7 +23,7 @@
     blastRadiusTiles:[0.5,8], blastDamage:[1,200], plasmDurationSeconds:[1,90],
   });
   const bossGlyphIds = Object.freeze(['harlyao_glyph_entropy','harlyao_glyph_servitude','harlyao_glyph_ignorance']); // Only existing authored motifs are allowed for a boss's symbolic inscription.
-  const headGates = Object.freeze(['mask', 'tight', 'legacy']); // Portrait head-scale gate: head sprite pixels, box just below the skull, or the original wide box.
+  const headGates = Object.freeze(['tight', 'legacy']); // Portrait head-scale gate: box just below the skull, or the original wide box. Unset uses the species default (tight; legacy for Mashtzarr/Mammakhbuur).
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
@@ -65,6 +65,7 @@
         throw Error('Enemy rule enabled must be true/false');
       if (rule.tightHeadGate === true) rule.headGate ||= 'tight'; // Migration of the first experimental checkbox.
       delete rule.tightHeadGate;
+      if (rule.headGate === 'mask') delete rule.headGate; // The skull-mask experiment was removed; the species default applies.
       if (rule.headGate != null && !headGates.includes(rule.headGate))
         throw Error(kind + '.headGate must be one of ' + headGates.join(', '));
       if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
