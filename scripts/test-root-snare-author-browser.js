@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
 let chromium;try{({chromium}=require('playwright'));}catch(error){if(error.code==='MODULE_NOT_FOUND'){console.log('skip: playwright unavailable');process.exit(0);}throw error;}
 const repo=path.resolve(__dirname,'..'),three=path.join(repo,'node_modules/three/build/three.min.js');
-const scripts=['config/scratchbones-config.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
+const scripts=['config/scratchbones-config.js','js/portrait-utils.js','js/portrait-breathing.js','js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
 const server=http.createServer((request,response)=>{
   const route=decodeURIComponent((request.url||'/').split('?')[0]);
   if(route==='/snare-fixture'){
@@ -15,7 +15,8 @@ const server=http.createServer((request,response)=>{
   const file=path.resolve(repo,'docs',route.replace(/^\/+/,''));
   if(!file.startsWith(path.join(repo,'docs')+path.sep)){response.writeHead(403);response.end();return;}
   fs.readFile(file,(err,data)=>{if(err){response.writeHead(404);response.end(err.message);return;}
-    response.setHeader('Content-Type','text/javascript');response.end(data);});
+    const mime=file.endsWith('.json')?'application/json':file.endsWith('.png')?'image/png':file.endsWith('.webp')?'image/webp':file.endsWith('.jpg')?'image/jpeg':'text/javascript';
+    response.setHeader('Content-Type',mime);response.end(data);});
 });
 (async()=>{
   await new Promise(ok=>server.listen(0,'127.0.0.1',ok));let browser;
@@ -143,6 +144,33 @@ const server=http.createServer((request,response)=>{
         'author release must restore the playable walking preview without residual stretched parts');
       const traveled=runner.diagnostics();pair.dispose();runner.dispose();
 
+      // Exercise the same REAL repository data + portrait render pipeline as
+      // the Animation Author, not merely a fake THREE humanoid fixture.
+      const rendered=await window.RootSnareRunner.loadNpcPortrait({seed:'browser-repository-npc'});
+      assert(rendered.npc&&rendered.front.width>0&&rendered.back.height>0,
+        'real NPC database record must produce both painted portrait views');
+      const avatarRunner=window.RootSnareRunner.create({THREE:T,room,speed:5,requireNpc:true});
+      assert(!avatarRunner.hasRepositoryNpc,'do not silently substitute a fake humanoid before loading');
+      assert(avatarRunner.installAvatar(rendered),'install the actual PNGPlaneAvatar and procedural feet');
+      assert(avatarRunner.hasRepositoryNpc&&avatarRunner.diagnostics().authenticFeet,
+        'an actual NPC must use its species-specific procedural foot rig');
+      assert(avatarRunner.diagnostics().neckBone,'the live NPC must have a real skinned portrait neck joint');
+      const allObjects=[];avatarRunner.group.traverse(node=>allObjects.push(node.name));
+      assert(allObjects.some(name=>name.startsWith('Upper '))&&allObjects.some(name=>name.startsWith('Pants and lower ')),
+        'head/torso and pants/feet must be separate slices of the same real NPC portrait rig');
+      avatarRunner.startDualCapture({point:new T.Vector3(-3,1,-4)},{point:new T.Vector3(3,0,-4)});
+      for(let i=0;i<74;i++)avatarRunner.update(.05);
+      const tilted=avatarRunner.diagnostics();
+      assert(tilted.tiltedDegrees>12,'actual entire NPC must tilt toward the line between the two roots');
+      assert(tilted.separated&&tilted.splitCount===1,
+        'real NPC pants and GLB feet separate after three seconds with one splurt');
+      assert(avatarRunner.getGripTarget('neck').distanceTo(avatarRunner.getGripTarget('feet'))>1,
+        'two live grip points must remain distinct after the character is tilted and stretched');
+      avatarRunner.resetAfterSnare();
+      assert(!avatarRunner.diagnostics().dual&&avatarRunner.hasRepositoryNpc,
+        'restarting the animation must preserve the loaded real character rig');
+      avatarRunner.dispose();
+
       // A complete 8 × 8 flat floor should partition into all sixteen quarters;
       // a hole must remain missing from the emitted floor guide triangles.
       const verts=[],uv=[];
@@ -169,7 +197,7 @@ const server=http.createServer((request,response)=>{
       assert(layerStats?.perSurface===true&&layerStats.surfaces===16,
         'real surface-growth must assign the author’s per-region root budget to all sixteen cloned floor guides');
       actual.dispose();sectors.dispose();
-      return {nodes:anchorsA.length,lunges:1,doubleGrabs:bothGrips.doubleGrabs,splitCount:split.splitCount,runnerTurns:traveled.turns,regions:16,triangles:count,
+      return {nodes:anchorsA.length,lunges:1,doubleGrabs:bothGrips.doubleGrabs,splitCount:split.splitCount,npcRig:tilted.npcRig,tilt:+tilted.tiltedDegrees.toFixed(1),runnerTurns:traveled.turns,regions:16,triangles:count,
         mappedFoliageRegions:layerStats.surfaces};
 
     });
