@@ -1,8 +1,6 @@
 (() => {
   'use strict';
 
-  const HOSTILE_DEFAULT_HEAD_GATE = 'mask'; // 'mask' (skull pixels), 'tight' or 'legacy' (the original wide box); an enemy rule's headGate overrides it.
-
   // Bandit Gangs — a bandit camp is a `placement.mode: "temporary"` locale
   // (see js/temporary-locales.js) stamped into an already-generated
   // wilderness zone at runtime, plus a gang of hostiles spawned around it.
@@ -487,7 +485,7 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
-    const headGate = roster.headGate || HOSTILE_DEFAULT_HEAD_GATE; // Global default: head scale follows the skull, so hoods, shoulders and vests follow body width.
+    const headGate = roster.headGate; // An enemy rule's gate; unset uses the rig's global default (PNGPlaneAvatar.headGateBounds), so head scale follows the skull and hoods/vests follow body width.
     const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
       || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
     const neckPivotNormalized = neckPivotPx

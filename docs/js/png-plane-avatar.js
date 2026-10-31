@@ -713,7 +713,8 @@
   }
 
   // Head-gate modes: 'legacy' (wide box + long fade, the original), 'tight' (box ending just below the skull) and 'mask' (the head sprite's pixels).
-  function headGateBounds(bounds, mode, headCanvas, mirror) {
+  const DEFAULT_HEAD_GATE = 'mask'; // Global default for every caller that passes no mode.
+  function headGateBounds(bounds, mode = DEFAULT_HEAD_GATE, headCanvas, mirror) {
     if (!bounds) return bounds;
     if (mode === 'tight') return { ...bounds, tightGate: true };
     if (mode === 'mask') {

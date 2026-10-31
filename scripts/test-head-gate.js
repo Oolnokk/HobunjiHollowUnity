@@ -20,6 +20,7 @@ function extract(source, name) {
 }
 const context = vm.createContext({});
 for (const name of ['smoothstep01', 'buildHeadMaskWeights', 'headScaleGateAtPixel', 'headScaleWeightAt', 'headGateBounds']) vm.runInContext(extract(avatarSource, name), context);
+vm.runInContext("const DEFAULT_HEAD_GATE = 'mask';", context);
 
 const bounds = { left: 46, right: 154, top: 51, bottom: 148 };
 const tight = { ...bounds, tightGate: true };
@@ -52,6 +53,7 @@ assert.equal(mirrored.weightAtPixel(100 - 50, 50), 1, 'the rear mesh samples the
 const maskBounds = context.headGateBounds(bounds, 'mask', canvas, false);
 assert.equal(context.headScaleWeightAt(0, 0, 1, 50, maskBounds, 0), mask.weightAtPixel(50, 50), 'mask bounds drive headScaleWeightAt');
 assert.equal(context.headGateBounds(bounds, 'legacy', canvas, false), bounds, 'legacy keeps the original gate');
+assert.ok(context.headGateBounds(bounds, undefined, canvas, false).headMask, 'unset uses the global mask default');
 assert.ok(context.headGateBounds(bounds, 'tight', canvas, false).tightGate);
 assert.ok(context.headGateBounds(bounds, 'mask', { width: 0 }, false).tightGate, 'an unreadable head canvas falls back to the tight box');
 
@@ -70,8 +72,8 @@ assert.equal(rules.applyRoster('bandit:grunt', { appearance: {} }, Math.random).
 
 // The hostile avatar builder is wired: global default, both neck skins and the recorded rig bounds all use the chosen gate.
 const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
-assert.match(bandit, /HOSTILE_DEFAULT_HEAD_GATE = 'mask'/);
-assert.match(bandit, /roster\.headGate \|\| HOSTILE_DEFAULT_HEAD_GATE/);
+assert.match(avatarSource, /DEFAULT_HEAD_GATE = 'mask'/, 'the rig owns the global default');
+assert.match(bandit, /const headGate = roster\.headGate;/);
 assert.equal((bandit.match(/headCanvas, headGate \}\)/g) || []).length, 2, 'front and rear neck skins');
 assert.match(bandit, /headGateBounds\?\.\(headPixels\?\.boundsPx, headGate, headCanvas, false\)/);
 console.log('Head gate: skull mask, tight box, rule migration and builder wiring verified');
