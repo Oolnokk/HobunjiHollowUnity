@@ -55,7 +55,7 @@
 </div></details>
 <div id="rig-region-panel">
 <h3>Local rig regions</h3>
-<p>Choose <strong>Select rectangle</strong>, then drag on the assembled preview around mounts, heads, bridges or recipe boxes. The selected objects become children of the region, with their own scale and position. The rest of the rig is unchanged. Overlapping regions use the last region drawn.</p>
+<p>Choose <strong>Select rectangle</strong>, then drag on the assembled preview. A region selects complete head attachments by their tang/sleeve <strong>midpoints</strong>, individual bridge/junction operations by their centers, and whole placed recipes by their box centers. Selected children gain their own X/Y scale and translation; the rest of the rig is unchanged. Operations are selected as whole objects, not split pixel-by-pixel. Overlapping areas use the last region drawn.</p>
 <div class="toolbar"><button id="region-select" type="button" aria-pressed="false">Select rectangle on assembled preview</button><button id="region-remove" type="button">Remove selected region</button></div>
 <label>Region <select id="region-list"></select></label>
 <label>Region name <input id="region-name" maxlength="64"></label>
