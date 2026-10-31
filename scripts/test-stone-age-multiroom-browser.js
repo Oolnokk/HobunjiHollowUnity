@@ -56,7 +56,7 @@ const server=http.createServer((request,response)=>{
       check(room.floorStats.levelCount===3&&room.floorStats.voidCells===131,'the real THREE floor retains three elevations and all absent cells');
       check(!room.floorStats.pos&&!room.floorStats.idx&&!room.floorStats.uv,'mobile diagnostics must not retain temporary full-resolution stone arrays');
       check(room.floorStones<cells.length,'irregular boulders must join multiple floor cells');
-      check(visible.geometry.index.count>0&&visible.geometry.getAttribute('uv').count>0,'the genuine mapped floor needs renderable triangles and UVs');
+      check((visible.geometry.index?.count||visible.geometry.getAttribute('position')?.count)>0&&visible.geometry.getAttribute('uv').count>0,'the genuine mapped floor needs renderable triangles and UVs'); // The UV mapper intentionally splits indexed geometry into unindexed texture charts.
       check(visible.userData.stoneSurfaceMapping?.postRockification===true,'natural stone UVs must map after geometry generation');
       check(root.children.length===2,'construction must remain hidden until activated');
       scenery.activate();
@@ -67,7 +67,7 @@ const server=http.createServer((request,response)=>{
       let floorDisposed=false,wallDisposed=false; // Real THREE dispose events detect GPU buffer leaks, not just detached Object3D parents.
       stoneGeometry.addEventListener('dispose',()=>{floorDisposed=true;});
       wallStone?.addEventListener('dispose',()=>{wallDisposed=true;});
-      const location={levels:room.floorStats.levelCount,voids:room.floorStats.voidCells,cells:room.floorStats.floorCells,boulders:room.floorStones,triangles:stoneGeometry.index.count/3};
+      const location={levels:room.floorStats.levelCount,voids:room.floorStats.voidCells,cells:room.floorStats.floorCells,boulders:room.floorStones,triangles:(stoneGeometry.index?.count||stoneGeometry.getAttribute('position').count)/3};
       scenery.dispose();scenery.dispose();
       check(floor.layers.mask===floorMask&&wall.layers.mask===wallMask,'exact original render layer masks must be restored');
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'source collision geometry must survive disposal');
