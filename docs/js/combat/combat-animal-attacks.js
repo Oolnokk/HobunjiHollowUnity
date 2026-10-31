@@ -86,7 +86,7 @@
     if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) {
       const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed increases the real cost of the special top-up.
       const required = additionalStaminaCost * (Number.isFinite(taxed) && taxed >= 0 ? taxed : 1);
-      if (Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Prefer the caller's ordinary bite fallback instead of forcing a pet into Exhausted.
+      if (c.isCompanion && !c.banditCompanion && Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Only player pets use the bite fallback; wild animals keep their authored exhaustion behavior.
       window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // Furious interrupts already paid for the whole special.
     }
     const state = {};
