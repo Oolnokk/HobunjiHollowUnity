@@ -138,15 +138,19 @@
       root.traverse(mesh=>{if(mesh.isMesh)candidates.push(mesh);});
       for(const mesh of candidates){
         const isFloor=mesh.userData?.wallBuilderRecipe==='wallrecipe2.json';
-        let owner=mesh,role='',isPillar=false,hidden=false;
+        let owner=mesh,role='',isPillar=false,hidden=false,semantic=false;
         while(owner&&owner!==root){
-          role ||= owner.userData?.interiorRuinRole||'';
-          isPillar ||= !!owner.userData?.squarePillar&&!owner.userData?.repoPillarBeam&&!owner.userData?.squarePillarBeam;
-          hidden ||= owner.visible===false||!!owner.userData?.surfaceFoliage||!!owner.userData?.surfaceFoliageGuide;
+          const info=owner.userData||{};
+          role ||= info.interiorRuinRole||'';
+          isPillar ||= !!info.squarePillar&&!info.repoPillarBeam&&!info.squarePillarBeam;
+          hidden ||= owner.visible===false||!!info.surfaceFoliage||!!info.surfaceFoliageGuide;
+          semantic ||= !!(info.activatorType||info.previewMotion||info.mechanismId||info.linkedMechanismId||
+            info.transitDoor||info.squarePillarHousing||info.interactive3D||info.puzzleId||info.pushable);
           owner=owner.parent;
         }
         isPillar ||= /pillar/i.test(role);
-        if(hidden||!mesh.geometry?.getAttribute?.('position')||mesh.userData?.furnitureGlbPart)continue;
+        // Never reskin or hide a semantic activator/moving mechanism merely because a parent happens to be a pillar.
+        if(hidden||semantic||!mesh.geometry?.getAttribute?.('position')||mesh.userData?.furnitureGlbPart)continue;
         if(isFloor){nativeMeshes.push({mesh,visible:mesh.visible});continue;}
         if(!mesh.userData?.ruinInteriorWall&&!isPillar)continue;
         const copy=mesh.clone(false);
