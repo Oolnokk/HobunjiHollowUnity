@@ -93,6 +93,130 @@
     return !!att && att.stage === 'attached' && !!att.cfg.staggerImmune;
   }
 
+
+  // ---- Ally rescue of attached swarms ----------------------------------------
+  const RESCUE_EFFECT_SCALE = 0.25; // The friend receives a quarter of every outgoing hit effect, including knockback, Footing and afflictions.
+  const RESCUE_ALERT_TILES = 6; // Allies within six tiles can respond to an attached swarm without changing general hostility.
+  const RESCUE_WINDUP_S = 0.2; // Existing bite telegraph duration for the rescue attack.
+  const RESCUE_STRIKE_S = 0.18; // Existing telegraph holds its strike pose for this duration.
+  const RESCUE_RECOVERY_S = 0.65; // Prevents a rescuer from instantly repeating a hit.
+  const RESCUE_KNOCKBACK_PX_S = 220; // Ordinary rescue attack impulse before per-target scaling.
+
+  function swarmOn(host) {
+    return attachersOf(host).find(c => c.health > 0 && c._attachment?.id === 'swarm' && c._attachment.stage === 'attached') || null;
+  }
+
+  function sameRescueTeam(actor, host) {
+    if (!actor || !host || actor === host || actor.health <= 0 || !hostAlive(host)) return false;
+    if (isPlayer(host)) return actor.isCompanion && !actor.banditCompanion && actor.stableRole === 'companion'
+      && (actor.master || deps().player) === host;
+    if (actor.master === host) return true; // NPC-owned hounds and Beastmaster companions defend their owner.
+    if (actor.isCompanion && host.isCompanion && actor.master && actor.master === host.master) return true;
+    if (host.banditCampInstanceId && actor.banditCampInstanceId) return host.banditCampInstanceId === actor.banditCampInstanceId;
+    if (host.isBandit && actor.isBandit && !host.banditCampInstanceId && !actor.banditCampInstanceId) return true;
+    if ((host.isTribeHunter || host.isPorakanekiHunter) && (actor.isTribeHunter || actor.isPorakanekiHunter))
+      return !host.tribeId || !actor.tribeId || host.tribeId === actor.tribeId;
+    if (host.denKey && actor.denKey) return host.denKey === actor.denKey;
+    if (host.herdKey && actor.herdKey) return host.herdKey === actor.herdKey;
+    return false; // Never enlist unrelated nearby creatures or NPC factions.
+  }
+
+  function rescueHostFor(actor) {
+    const d = deps();
+    if (!actor || actor.health <= 0 || actor._attachment || actor._downed ||
+        actor.stableRole === 'shoulderPet' || actor.stableRole === 'mount') return null;
+    const seen = new Set(); // Companions can also exist in hostileObjects; inspect each host once.
+    let best = null, closest = Infinity; // Used to target the closest eligible ally with an active swarm.
+    for (const collection of [[d.player, ...(d.players || [])], d.hostileObjects || [], d.companionObjects || []]) {
+      for (const host of collection) {
+        if (!host || seen.has(host)) continue;
+        seen.add(host);
+        if (!swarmOn(host) || !sameRescueTeam(actor, host) || !sameArea(actor, host)) continue;
+        const dist = Math.hypot(host.x - actor.x, host.y - actor.y);
+        if (dist < closest && dist <= RESCUE_ALERT_TILES * d.TILE) { best = host; closest = dist; }
+      }
+    }
+    return best;
+  }
+
+  function rescueStrike(actor, host, reachPx = deps().TILE * 1.45) {
+    const d = deps(), swarm = swarmOn(host);
+    if (!swarm || !hostAlive(host) || !sameRescueTeam(actor, host)
+        || Math.hypot(host.x - actor.x, host.y - actor.y) > reachPx) return false;
+    const tag = actor.def?.attackTag || 'sharp';
+    const base = Math.max(0, Number(actor.def?.attackDamage) || 0);
+    if (!base) return false;
+    const opts = { tag, attacker: actor, friendlyFire: true, swarmRescue: true,
+      afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag?.(tag) }; // Reuses normal companion attack channels.
+    const scale = (target) => actor.isCompanion && window.CompanionOffense?.scaleHit
+      ? window.CompanionOffense.scaleHit(actor, target, base, opts)
+      : { amount: base, opts, modifiers: { knockback: 1 } };
+    const full = scale(swarm), reduced = scale(host); // Target-dependent companion bonuses are resolved before multiplying the host's effects.
+    d.damageCreature(swarm, full.amount, actor.x, actor.y,
+      RESCUE_KNOCKBACK_PX_S * (full.modifiers.knockback ?? 1),
+      { ...full.opts, attacker: actor, ignoreDodge: true });
+    window.Combat.animalAttacks?.cancel?.(swarm); // Any rescue hit disengages, even if it doesn't kill the swarm.
+    const reducedOpts = { ...reduced.opts, attacker: actor, friendlyFire: true, swarmRescue: true, ignoreDodge: true };
+    const reducedDamage = reduced.amount * RESCUE_EFFECT_SCALE;
+    const reducedImpulse = RESCUE_KNOCKBACK_PX_S * (reduced.modifiers.knockback ?? 1) * RESCUE_EFFECT_SCALE;
+    if (isPlayer(host)) d.damagePlayer(reducedDamage, actor.x, actor.y, reducedImpulse, reducedOpts);
+    else d.damageCreature(host, reducedDamage, actor.x, actor.y, reducedImpulse, reducedOpts);
+    window.AudioSystem?.playCreatureClawHit?.(actor);
+    window.__farmLog?.('[swarm-rescue] ' + (actor.id || actor.name || 'ally') + ' detached swarm (100%) and struck host (25%)', 'combat');
+    return true;
+  }
+
+  function updateRescuer(actor, dt, adapters = {}) {
+    const host = rescueHostFor(actor), previous = actor?._swarmRescue;
+    if (!host) {
+      if (previous?.ownsTelegraph) window.Combat.telegraph?.cancel?.(actor);
+      if (actor) actor._swarmRescue = null;
+      return false;
+    }
+    if (actor.prone || actor.knockbackT > 0 || actor._knockbackLedgeFall) return false;
+    if (!previous || previous.host !== host) {
+      if (previous?.ownsTelegraph) window.Combat.telegraph?.cancel?.(actor);
+      actor._swarmRescue = { host, cooldown: 0, ownsTelegraph: false, windup: 0, struck: false }; // Only this rescue's timing, never shared AI targeting.
+      window.Combat.animalAttacks?.cancel?.(actor); // Avoid finishing an enemy special on the friendly target.
+      window.Combat.telegraph?.cancel?.(actor);
+      actor._stage = null;
+    }
+    const state = actor._swarmRescue;
+    state.cooldown = Math.max(0, state.cooldown - dt);
+    const reach = Math.max(deps().TILE * 0.8, Math.min(deps().TILE * 1.45,
+      Number(actor.def?.attackRangePx) || deps().TILE));
+    const dist = Math.hypot(host.x - actor.x, host.y - actor.y);
+    actor.facing = Math.atan2(host.y - actor.y, host.x - actor.x);
+    let moving = false; // Passed to the ordinary animal run animation when approaching the victim.
+    if (!state.ownsTelegraph && dist > reach * 0.8) {
+      moving = !!adapters.move?.(actor, host.x, host.y, actor.def?.chaseSpeed || actor.def?.moveSpeed || 100, dt);
+    } else if (!state.ownsTelegraph && state.cooldown <= 0 && dist <= reach) {
+      state.ownsTelegraph = true;
+      state.windup = RESCUE_WINDUP_S;
+      state.struck = false;
+      window.Combat.telegraph?.start?.(actor, { windupS: RESCUE_WINDUP_S, strikeS: RESCUE_STRIKE_S,
+        onStrike: () => { state.struck = true; rescueStrike(actor, host, reach); } });
+    }
+    if (state.ownsTelegraph) {
+      if (window.Combat.telegraph) {
+        window.Combat.telegraph.update(actor, dt);
+        if (!window.Combat.telegraph.isBusy(actor)) {
+          state.ownsTelegraph = false; state.cooldown = RESCUE_RECOVERY_S;
+        }
+      } else { // Test/sandbox adapter when the presentation module is absent.
+        state.windup -= dt;
+        if (!state.struck && state.windup <= 0) { state.struck = true; rescueStrike(actor, host, reach); }
+        if (state.windup <= -RESCUE_STRIKE_S) {
+          state.ownsTelegraph = false; state.cooldown = RESCUE_RECOVERY_S;
+        }
+      }
+    }
+    adapters.render?.(actor, dt, actor.facing);
+    adapters.animate?.(actor, dt, moving);
+    adapters.updateTool?.(actor);
+    return true;
+  }
+
   // ---- ticks and reactions ---------------------------------------------------
 
   function defaultTick(c, host, cfg) {
@@ -193,7 +317,7 @@
         (Number(c.avatarRef?.group?.scale?.y) || 1); // Honeyfuzzle wing cloud hovers above its root; align the birds, not the root.
       const hostY = d.getActorWorldY?.(host); // Target's real rendered body center (not its physical top); missing values must not turn into 0.
       const groundY = d.worldSurfaceY?.(c.x, c.y); // Converts target center into the existing shared hop-offset slot, retaining undefined for the fallback.
-      const offset = cfg.heightAboveHost ?? 0; // Centered attacks may opt into a small visual offset.
+      const offset = (cfg.heightAboveHost ?? 0) + hostHeightUnits(host) * ((cfg.verticalFraction ?? 0.5) - 0.5); // Centered attacks may opt into a small visual offset.
       c._banditLungeHopCurrent = Number.isFinite(hostY) && Number.isFinite(groundY)
         ? hostY + offset - groundY - ownLift - pivotOffset
         : hostHeightUnits(host) * 0.5 + offset - ownLift - pivotOffset;
@@ -273,7 +397,7 @@
     return cfg;
   }
 
-  window.Combat.attach = { register, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost };
+  window.Combat.attach = { register, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, rescueHostFor, updateRescuer, rescueStrike };
 
   // ── Swarm (honeyfuzzle) ──────────────────────────────────────────────
   // Picks a single target and sits on top of it. Almost no direct damage but a
@@ -289,7 +413,8 @@
     tickIntervalS: 0.5,
     verticalAnchor: 'center',
     heightAboveHost: 0,
-    visualSpreadScale: 0.42,
+    verticalFraction: 0.875,
+    visualSpreadScale: 0.71,
     maxPerHost: 3,
     tick: { damageScale: 0.3, playerScale: 0.6, tag: 'poison', afflictionBonuses: { poisonedHealth: 3 } },
     hostReaction: { kind: 'flail', intervalS: 1.1, radiusTiles: 1.4, damageScale: 0.5, hitsAllies: true, hitsOpponents: false },
