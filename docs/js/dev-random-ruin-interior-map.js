@@ -891,6 +891,154 @@
     finally { if(button){button.disabled=false;button.textContent='Generate';} }
   }
 
+  // Fixed story ruin: intentionally bypass V50 generation and all puzzle/boss composers.
+  // It still uses this module's normal _buildingScenes, scene transition, floor support,
+  // player-mesh ownership and exit lifecycle, so it is a real playable interior.
+  async function generateStoryVault(options = {}) {
+    if (!deps || !buildingScenes || !window.DelversGuild?.hasTalisman?.()) return false;
+    if (!['search','report'].includes(window.DelversGuild?.vaultPhase?.())) return false;
+    try {
+      if (deps.getCurrentArea?.() !== MAP_ID) returnAnchor = options.returnAnchor || {
+        area:deps.getCurrentArea?.(), x:deps.player.x, y:deps.player.y,
+      };
+      clearRuntime(false);
+      generationLabel = 'Forgotten Harlyao Vault';
+      const cols = 13, rows = 30; // Fixed hall-to-chamber geometry, used by grid, collision, camera, and authored footprint paths.
+      const walkable = new Set(); // Exactly the hallway and one end chamber; no side rooms, puzzles, or randomness.
+      for (let z = 13; z <= 27; z++) for (let x = 5; x <= 7; x++) walkable.add(x + ',' + z);
+      for (let z = 3; z <= 12; z++) for (let x = 2; x <= 10; x++) walkable.add(x + ',' + z);
+      const grid = Array.from({length:rows}, (_,z) => Array.from({length:cols}, (_,x) => makeTile(walkable.has(x + ',' + z))));
+      const scene = new THREE.Scene(), root = new THREE.Group(), particles = new THREE.Group(); // Reuses the existing ruin's map record and teardown structure.
+      scene.name = MAP_ID;
+      scene.background = new THREE.Color('#171614');
+      root.name = 'fixed_harlyao_story_vault';
+      scene.add(root, particles);
+      const stone = new THREE.MeshBasicMaterial({color:0x504a43}); // Shared flat Harlyao masonry surface for this small authored interior.
+      const wallStone = new THREE.MeshBasicMaterial({color:0x3d3a36}); // Wall and archstone contrast without a new texture generator.
+      const brokenStone = new THREE.MeshBasicMaterial({color:0x6a645d}); // Clearly visible, non-colliding shattered door fragments.
+      const gold = new THREE.MeshBasicMaterial({color:0x8b8060}); // Subtle detailing for the now-empty legendary-item altar.
+      const floorGeometry = new THREE.BoxGeometry(1,0.14,1); // One reusable tile mesh source keeps the static geometry simple.
+      const wallGeometry = new THREE.BoxGeometry(1,2.9,1); // Only boundary tiles receive actual walls.
+      const occlusionMeshes = []; // Existing game camera handles normal occlusion around these fixed walls.
+      const addBox = (name,x,y,z,w,h,d,mat,parent=root) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+        mesh.name=name;mesh.position.set(x,y,z);parent.add(mesh);return mesh;
+      }; // Used for door fragments and pedestal; intentionally none of these register blockers.
+      floorHeights.clear(); floorCellSize = 1;
+      DS.clearScope(SCOPE);
+      for (const key of walkable) {
+        const [x,z] = key.split(',').map(Number);
+        const floor = new THREE.Mesh(floorGeometry,stone);
+        floor.name = 'story_vault_floor_' + key;
+        floor.position.set(x+.5,-.08,z+.5); root.add(floor);
+        floorHeights.set((x-PAD)+','+(z-PAD),0);
+        DS.registerSurface({id:'story-vault-floor-'+key,scope:SCOPE,
+          bounds:{minX:x,maxX:x+1,minZ:z,maxZ:z+1},topY:0,priority:2});
+        for (const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          if (walkable.has((x+dx)+','+(z+dz))) continue;
+          // Hall entrance at z=27 has one open exit tile; no scripted collision is put across it.
+          if (z === 27 && dz === 1 && x === 6) continue;
+          const wall = new THREE.Mesh(wallGeometry,wallStone);
+          wall.name='story_vault_wall_'+x+'_'+z+'_'+dx+'_'+dz;
+          wall.scale.set(Math.abs(dx) ? .20 : 1,1,Math.abs(dz) ? .20 : 1);
+          wall.position.set(x+.5+dx*.5,1.38,z+.5+dz*.5);
+          root.add(wall);occlusionMeshes.push(wall);
+        }
+      }
+      // The great door was broken from the *outside*: fragments lie on both sides
+      // of the threshold, but neither the geometry nor the grid blocks passage.
+      const doorZ = 12.95; // Threshold between the 3-wide straight hallway and the large altar chamber.
+      addBox('shattered_great_door_left_jamb',4.55,.95,doorZ,.48,1.9,.75,brokenStone);
+      addBox('shattered_great_door_right_jamb',8.45,.91,doorZ,.48,1.82,.75,brokenStone);
+      for (let i=0;i<18;i++) {
+        const along = (i%6)-2.5, across = Math.floor(i/6)-1;
+        const block=addBox('noncolliding_great_door_fragment_'+i,6.5+along*.47,.10,doorZ+across*.58,
+          .23+(i%3)*.09,.16+(i%2)*.12,.26+(i%4)*.07,brokenStone);
+        block.rotation.y=(i*0.67)%Math.PI;block.rotation.z=((i%5)-2)*.19;
+      }
+      const pedestal = new THREE.Group(); // Named reticle target, not a pickup: the legendary-item mount is visibly empty.
+      pedestal.name='story_vault_empty_altar';
+      root.add(pedestal);
+      addBox('altar_base',6.5,.17,5.4,1.65,.34,1.45,wallStone,pedestal);
+      addBox('altar_plinth',6.5,.52,5.4,1.0,.45,.96,stone,pedestal);
+      addBox('empty_legendary_relic_rest',6.5,.81,5.4,.84,.14,.76,gold,pedestal);
+      // A slightly raised back wall silhouettes the empty rest without inventing the missing relic.
+      addBox('altar_rear_inscription',6.5,1.03,4.88,.95,.38,.16,wallStone,pedestal);
+
+      const footprintOwners = []; // PNG-projected floor planes are updated together when the async decal mask finishes loading.
+      const footprintMaterial = new THREE.MeshBasicMaterial({color:0x080808,transparent:true,opacity:0,
+        depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-3}); // Keep the planes invisible until the black-on-white authored mask is loaded; otherwise they appear as solid rectangles.
+      const footprintGeometry = new THREE.PlaneGeometry(.28,.42);
+      function addPrint(x,z,yaw,index) {
+        const pivot = new THREE.Group(); // World-yaw parent; the child image's top/toes naturally point toward -Z at yaw zero.
+        pivot.name='hachutu_bird_footprint_'+index;pivot.position.set(x,.025,z);pivot.rotation.y=yaw;
+        const decal = new THREE.Mesh(footprintGeometry,footprintMaterial);
+        decal.rotation.x=-Math.PI/2;decal.renderOrder=3;pivot.add(decal);root.add(pivot);
+        footprintOwners.push(pivot);
+      }
+      let footIndex=0;
+      for (let z=26.9;z>=5.8;z-=.65) {
+        const step=footIndex++%2===0 ? -.14 : .14; // Opposite feet stagger left/right while traveling toward the empty altar.
+        addPrint(6.04+step,z,0,footIndex);
+      }
+      for (let z=5.9;z<=26.9;z+=.65) {
+        const step=footIndex++%2===0 ? -.14 : .14;
+        addPrint(6.95+step,z,Math.PI,footIndex);
+      }
+      // The author's PNG has toes pointing UP. Turning black pixels opaque and
+      // white pixels transparent prevents a white rectangular mask on the floor.
+      const decalImage = new Image();
+      decalImage.onload = () => {
+        if (ruin?.localeRoot !== root) return; // Async loads from an exited ruin cannot decorate the next visit.
+        const canvas=document.createElement('canvas');
+        canvas.width=decalImage.naturalWidth;canvas.height=decalImage.naturalHeight;
+        const ctx=canvas.getContext('2d',{willReadFrequently:true});
+        ctx.drawImage(decalImage,0,0);
+        const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+        for (let i=0;i<pixels.data.length;i+=4) {
+          const gray=(pixels.data[i]+pixels.data[i+1]+pixels.data[i+2])/765;
+          pixels.data[i]=0;pixels.data[i+1]=0;pixels.data[i+2]=0;
+          pixels.data[i+3]=Math.round(pixels.data[i+3]*Math.max(0,Math.min(1,(.90-gray)*3)));
+        }
+        ctx.putImageData(pixels,0,0);
+        const texture=new THREE.CanvasTexture(canvas);
+        texture.colorSpace=THREE.SRGBColorSpace;texture.needsUpdate=true;
+        footprintMaterial.map=texture;footprintMaterial.opacity=.92;footprintMaterial.needsUpdate=true;
+        ruin.storyVaultDecalReady=true; // Exposed in the existing mobile diagnostics; not an assumed asset.
+      };
+      decalImage.onerror=()=>{if(ruin?.localeRoot===root)ruin.storyVaultDecalError='footprint_hachutu.png failed to load';}; // Missing assets never paint solid black boxes.
+      const spawn={x:6.5,z:26.6}; // Same playable entrance as the fixed map exit.
+      const floor=[...walkable].map(key=>key.split(',').map(Number));
+      const exits=[{id:'exit_story_harlyao_vault',label:'Climb out of the vault',tiles:[[6,27]],targetMap:'',spawnCol:0,spawnRow:0}];
+      const mapData={schema:'hobunji_building_interior.v1',id:MAP_ID,name:generationLabel,cols,rows,
+        floor,exits,colliders:[],furniture:[],vendorZones:[],wallStyle:'cavern',devSessionOnly:true,storyVault:true};
+      const rec={scene,grid,cols,rows,mapData,wallStyle:'cavern',floorSet:walkable,exits,
+        spawn,localeRoot:root,particleRoot:particles,occlusionMeshes};
+      buildingScenes.set(MAP_ID,rec);
+      const controls=[{kind:'story-vault-pedestal',label:'Investigate the empty pedestal',touchIcon:'🔎',
+        object:pedestal,promptRoot:pedestal,point:{x:6.5,y:.8,z:5.4},range:1.8,priority:110,
+        onPress:()=>window.DelversGuild?.playVaultInvestigation?.()}]; // Reuses the ordinary aimed ruin interaction prompt.
+      const noPuzzles={syncPressurePlates(){},tickRuntime(){},applyProgress(){}}; // Parent frame's mechanism scheduler expects a V50-like adapter.
+      ruin={seed:0,theme:'hronal',specialBoss:false,storyVault:true,ruinName:generationLabel,
+        sourceSeed:'story-vault-fixed',requestedSeed:0,meta:{rooms:[{name:'hallway'},{name:'empty vault'}]},
+        puzzleOptions:{},puzzleGeneration:{},api:noPuzzles,...rec,controls,mechanisms:new Map(),activators:[],
+        pressurePlateRoots:[],mechanismSignalRoots:[],pushBlocks:[],transitDoors:[],transitDoorStates:[],
+        supportY:0,supportId:null,falling:null,solvability:{ok:true,story:true},storyVaultDecalReady:false,
+        storyVaultFootprintCount:footprintOwners.length, // Mobile diagnostics prove the authored texture is instanced along the entire return trail.
+        lastAcceptedPx:{x:spawn.x*deps.TILE,y:spawn.z*deps.TILE},
+        lastSafePx:{x:spawn.x*deps.TILE,y:spawn.z*deps.TILE}};
+      decalImage.src='assets/textures/decals/footprint_hachutu.png';
+      await enterRuin();
+      deps.showToast?.('A ruined entrance leads to a silent, empty Harlyao vault.', true);
+      return true;
+    } catch(error) {
+      console.error('[Harlyao story vault]',error);
+      deps.showToast?.('Could not enter the hidden vault: '+error.message,false);
+      clearRuntime(true);
+      return false;
+    }
+  }
+
   function enterRuin() {
     const entering=ruin;
     return runSceneTransition(()=>{
@@ -912,7 +1060,10 @@
   function leaveRuin() {
     if (!ruin || deps.getCurrentArea?.()!==MAP_ID) return;
     const leaving=ruin;
-    const back=returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
+    const relocated=leaving.storyVault ? window.RuinSites?.storyVaultSite?.('map_western_slope') : null; // A Tothal Shift may move the unique quest burrow while the player is underground.
+    const back=relocated
+      ? {area:relocated.zoneId,x:(relocated.col+.5)*deps.TILE,y:(relocated.row+1.5)*deps.TILE}
+      : returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
     return runSceneTransition(()=>{
       if(!leaving||ruin!==leaving)return;
       for(const o of playerSceneObjects()) detach(o);
@@ -945,6 +1096,19 @@
 
   function clearRuntime(removeMap=true) {
     ruin?.occupancy?.destroy?.();
+    if(ruin?.storyVault && ruin.localeRoot) {
+      const geometries=new Set(),materials=new Set(); // Static story rooms are rebuilt on each visit; release their owned GPU resources exactly once.
+      ruin.localeRoot.traverse(node=>{
+        if(node.geometry) geometries.add(node.geometry);
+        const mats=Array.isArray(node.material)?node.material:[node.material];
+        for(const material of mats) if(material) materials.add(material);
+      });
+      for(const geo of geometries) geo.dispose?.();
+      for(const material of materials) {
+        material.map?.dispose?.();
+        material.dispose?.();
+      }
+    }
     DS.clearScope(SCOPE);
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
@@ -1154,5 +1318,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,generateStoryVault,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

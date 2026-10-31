@@ -158,7 +158,8 @@
     const targetCount = 1 + Math.floor((zi.cols * zi.rows) / 3200); // rare — usually 1-2 per zone
     const rng = deps._mbRng(deps._seedFromString(mapId + ':treasure:' + weekIndex()));
     const blockedTerrainTiles = _treasureBlockedTerrainTiles(zi); // Used to keep the shared flat-empty picker from selecting non-diggable roads or waterways.
-    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles];
+    const storyVaultSite = window.RuinSites?.storyVaultSite?.(mapId); // Keep weekly diggable treasure off the world-persistent Harlyao vault's one hidden tile.
+    const avoid = [...(deps._zoneReagentPersist.get(mapId)?.placements || []), ...(deps._zoneBerryPersist.get(mapId)?.placements || []), ...blockedTerrainTiles, ...(storyVaultSite ? [storyVaultSite] : [])];
     const spots = deps.findZoneFlatEmptyTiles(mapId, targetCount, rng, avoid);
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Separate stream so loot rolls stay identical to before.

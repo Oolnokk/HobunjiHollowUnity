@@ -101,8 +101,9 @@ assert(tasks.includes('window.DelversGuild?.syncQuest?.()'));
   assert(quest.delvers_three_key_stones.progress.objective.includes('Nanahi the Unsleeping'));
   assert(quest.delvers_three_key_stones.progress.objective.includes('Imlao the Sightless'));
   assert.equal(api.KEY_STONES.length, 3);
-  assert(inventoryItems.every(item => item.key === 'delversStone' || api.KEY_STONES.some(key => key.id === item.key)));
-  assert.equal(inventoryItems.length, 4); // No quest keys are granted before their sources are authored.
+  assert(inventoryItems.every(item => item.key === 'delversStone' || item.key === api.TALISMAN_KEY || api.KEY_STONES.some(key => key.id === item.key)));
+  assert.equal(inventoryItems.length, 5); // The talisman is registered but never granted before handing in all three stones.
+  assert.equal(inventory.harlyaoKeyTalisman || 0, 0);
   assert.equal(playedScenes.length, 3); // Declined intro, accepted intro, trusted enchant scene.
 
   inventory.azgarlu_key_stone = 1;
