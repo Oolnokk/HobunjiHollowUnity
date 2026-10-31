@@ -214,6 +214,24 @@ const wovenKeyB = api.__test.wovenIconVisualKey({
   weaving: { pattern: { meshScale: 2, motifDataUrl: 'data:image/png;base64,AA==' } },
 });
 assert.notEqual(wovenKeyA, wovenKeyB, 'inventory woven-icon cache key changes when the applied pattern changes');
+
+const banditPatternBase = {
+  cosmeticId: 'rugged_poncho',
+  colorA: { hex: '#654321' },
+  colorC: { hex: '#bada55' },
+}; // Simulates a bandit pattern snapshot once it has become an individually owned Gear article.
+const forcedMotifA = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphA', frameScale: .55 }, forcedOverpassRoles: ['wrap'] } };
+const forcedMotifB = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphB', frameScale: .55 }, forcedOverpassRoles: ['wrap'] } };
+const forcedRoleB = { ...banditPatternBase, weaving: { forcedOverpassPattern: { repoPatternId: 'glyphA', frameScale: .55 }, forcedOverpassRoles: ['base'] } };
+assert.notEqual(api.__test.wovenIconVisualKey(forcedMotifA), api.__test.wovenIconVisualKey(forcedMotifB),
+  'different looted bandit glyphs cannot accidentally share a Gear icon cache entry');
+assert.notEqual(api.__test.wovenIconVisualKey(forcedMotifA), api.__test.wovenIconVisualKey(forcedRoleB),
+  'changing the forced pattern surface also invalidates the Gear icon');
+assert.deepEqual(api.__test.weavingPatternsForRole(forcedMotifA.weaving, 'wrap').map(pattern => pattern.repoPatternId),
+  ['glyphA'], 'a looted forced overpass participates in the same renderer pattern lookup as loom weaving');
+assert.equal(api.__test.weavingPatternsForRole(forcedMotifA.weaving, 'base').length, 0,
+  'a wrap-only bandit pattern does not incorrectly color the poncho base layer');
+
 const ten = api.armorStats(10);
 assert(Math.abs(ten.damageTakenMul - 0.75) < 1e-12);
 assert(Math.abs(ten.footingTakenMul - 0.65) < 1e-12);
