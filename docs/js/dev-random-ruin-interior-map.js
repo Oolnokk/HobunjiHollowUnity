@@ -870,7 +870,7 @@
     const layers=temple.surfaceGrowth?.filter(item=>item.kind==='roots'||item.kind==='vines'); // Reuse actual Life Temple authoring rather than approximating its foliage.
     if(!layers?.some(item=>item.kind==='roots')||!layers.some(item=>item.kind==='vines'))throw new Error('Temple roots and vines are required for a Stone Age ruin.');
     if(ruin!==owner||signal.aborted)throw Object.assign(new Error('Stone Age ruin build cancelled.'),{name:'AbortError'});
-    const scenery=builder.buildRoom({root:owner.localeRoot,meta:owner.meta,seed:owner.sourceSeed,roughness:.3,color:'#363733'});
+    const scenery=builder.buildRoom({root:owner.localeRoot,meta:owner.meta,seed:owner.sourceSeed,roughness:.3,color:'#363733',floorHeights}); // The existing collision/support map owns every cell's elevation and missing-floor footprint.
     owner.stoneAgeScenery=scenery; // Cleanup owns all original visibility, stone buffers, cloned materials and prepared root/vine geometry.
     const button=document.getElementById('devRandomTestRuinBtn');
     const cover=await builder.prepareCover({room:scenery.room,templeRecipes:layers,rootColor:'#24211d',signal,
@@ -885,7 +885,9 @@
     scenery.room.model.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.ruinPreviewRole==='wall')occlusion.push(mesh);});
     owner.stoneAge=true;
     owner.stoneAgeStats={pieceSet:'stoneAge',rooms:owner.meta?.rooms?.length||0,walls:scenery.room.walls,pillars:scenery.room.pillars,
-      floorStones:scenery.room.floorStones,floorTileScale:scenery.room.floorLayout.scale,floorTileCopies:scenery.room.floorLayout.offsets.length,
+      floorStones:scenery.room.floorStones,floorTileScale:scenery.room.floorLayout?.scale||scenery.room.floorStats?.featureScale||.25,
+      floorTileCopies:scenery.room.floorLayout?.offsets.length||1,maskedFloorCells:scenery.room.floorStats?.floorCells||0,
+      floorLevels:scenery.room.floorStats?.levelCount||1,floorVoids:scenery.room.floorStats?.voidCells||0,
       cover:cover.stats}; // On-device debug badge exposes actual geometry and decorative cover counts.
   }
 
@@ -937,9 +939,9 @@
         const candidateSeed=generationCandidateSeed(requestedSeed,attempt); // Deterministic retry seed so rejected layouts can be reproduced from diagnostics.
         if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
-          size:stoneAgeRequested?'large':cfg('generation.size','medium'),density:cfg('generation.density',62),
+          size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions,
-          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly',singleRoom:true,roomPreset:'veryLarge'}:{})}); // A complete, playable one-room Stone Age ruin preserves exact V50 puzzle/entrance geometry.
+          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
