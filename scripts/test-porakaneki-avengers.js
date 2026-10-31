@@ -122,6 +122,31 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(contextWindow.TribeCamps.get('omgurku'), omg);
   tick(0.21);
 
+  // Independent golden values from the original multi-camp generation RNG:
+  // tothalCycle() is 1 in this fixture. Do NOT derive the expected values
+  // from historicalHuntingCohortsForZone; that would allow both the runtime
+  // and its test to make the same population-regression mistake.
+  const originalCohortsByTribe = { // Fixed results of the pre-consolidation 2-4 camps × 2-4 hunters rolls in all four zones.
+    porakaneki: {
+      map_northern_cliffs: [4, 4, 2, 4],
+      map_southern_cloud_forest: [4, 4, 2, 4],
+      map_western_slope: [4, 3, 4, 4],
+      map_eastern_mire: [3, 2, 4, 4],
+    },
+    omgurku: {
+      map_northern_cliffs: [2, 4],
+      map_southern_cloud_forest: [3, 3, 2],
+      map_western_slope: [2, 2],
+      map_eastern_mire: [2, 2],
+    },
+  };
+  for (const zoneId of ZONES) {
+    assert.deepEqual(pora.__test.historicalHuntingCohortsForZone(zoneId), originalCohortsByTribe.porakaneki[zoneId],
+      `${zoneId} Porakaneki cohorts exactly match the original seeded multi-camp generator`);
+    assert.deepEqual(omg.__test.historicalHuntingCohortsForZone(zoneId), originalCohortsByTribe.omgurku[zoneId],
+      `${zoneId} Omgurku cohorts exactly match the original seeded multi-camp generator`);
+  }
+
   // Each map keeps only one hunting camp per tribe; Omgurku requests the edge
   // opposite the Porakaneki camp's ACTUAL placement, not just its planned edge.
   for (const zoneId of ZONES) {
