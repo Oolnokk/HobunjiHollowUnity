@@ -107,14 +107,29 @@
     }
     ctx.stroke(); ctx.restore();
   }
+  function rigLayout(id) {
+    const shaft = chosenShaft(); // Only the shaft attachment rig has its own authoring transform.
+    return id === 'shaft-canvas' && shaft.duplicateFrom
+      ? api.duplicateTransform(shaft.duplicateTransform) : null;
+  }
+  function displayMounts(id) {
+    return id === 'head-canvas' ? [chosenHead().mount] : api.shaftMounts(chosenShaft());
+  }
+  function rigToLocal(point, id) {
+    const layout = rigLayout(id);
+    return layout ? {
+      x: (point.x - 225 - layout.x) / layout.scaleX + 225,
+      y: (point.y - 602 - layout.y) / layout.scaleY + 602,
+    } : point; // Pointer-edit local lines while the user sees their inherited parent-rig transform.
+  }
   function drawLines(id) {
-    const image = cachedImages[id], canvas = byId(id); // Redraw the source image before overlaying edited lines.
+    const image = cachedImages[id], canvas = byId(id); // Shaft bitmap is fixed, but child mounts visibly follow their rig.
     if (!image) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const mounts = id === 'head-canvas' ? [chosenHead().mount] : chosenShaft().mounts;
+    const mounts = displayMounts(id); // What the player sees now matches the composed head and transform diagnostics.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
-    drawGizmo(ctx, id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]); // Only selected line gets handles.
+    drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
   }
   async function preview() {
     const ticket = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Preview identity.
@@ -208,6 +223,21 @@
       }
     }
   }
+  function updateRigTree() {
+    const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Show actual attachment descendants on mobile.
+    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom];
+    const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey));
+    const transform = duplicated ? api.duplicateTransform(shaft.duplicateTransform) : api.duplicateTransform();
+    byId('rig-tree').textContent = [
+      'Shaft sprite + live fire (OUTSIDE rig; unchanged)',
+      'Attachment scaling rig (PARENT)',
+      '  X scale ' + transform.scaleX + ', Y scale ' + transform.scaleY + ', offset (' + transform.x + ', ' + transform.y + ')',
+      ...rig.children.flatMap(mount => [
+        '  ├ ' + (mount.type === 'eye' ? 'Sleeve' : 'Tang') + ' #' + (mount.index + 1) + ' (CHILD)',
+        ...mount.children.map(primitive => '  │ └ ' + primitive.source + ' primitive (GRANDCHILD)'),
+      ]),
+    ].join('\n');
+  }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     const pairKey = byId('shaft').value + '|' + headKey;
@@ -234,17 +264,7 @@
     byId('duplicate-note').textContent = duplicated
       ? 'Rig copied from ' + duplicated.label + '. Scaling/translation affects fitted head primitives and tang/sleeve mounts only; the shaft PNG and flames remain fixed.'
       : 'This is an original shaft. Choose "Duplicate selected shaft" to copy it, then adjust its mounting rig independently.';
-    const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey)); // Live parent/child scene tree used by composition.
-    const transform = duplicated ? api.duplicateTransform(shaft.duplicateTransform) : api.duplicateTransform();
-    byId('rig-tree').textContent = [
-      'Shaft sprite + live fire (outside rig; unchanged)',
-      'Attachment scaling rig (PARENT)',
-      '  X scale ' + transform.scaleX + ', Y scale ' + transform.scaleY + ', offset (' + transform.x + ', ' + transform.y + ')',
-      ...rig.children.flatMap(mount => [
-        '  ├ ' + (mount.type === 'eye' ? 'Sleeve' : 'Tang') + ' #' + (mount.index + 1) + ' (child)',
-        ...mount.children.map(primitive => '  │ └ ' + primitive.source + ' primitive (grandchild)'),
-      ]),
-    ].join('\n'); // Visible hierarchy helps diagnose clipping and transforms on mobile without devtools.
+    updateRigTree(); // Same live hierarchy is refreshed when editing values, not only after a full render.
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
@@ -316,7 +336,7 @@
     const element = byId(id); // Source sprites accept one active line/handle drag.
     function update(event) {
       if (!drawing || drawing.id !== id || drawing.pointer !== event.pointerId) return;
-      const current = pointFor(element, event); // Use source-image coordinates regardless of responsive canvas size.
+      const current = rigToLocal(pointFor(element, event), id); // Invert parent transform when writing to the local primitive's line.
       if (drawing.mode === 'draw') {
         drawing.line.end = current; // Draw mode is the original base-to-tip gesture.
       } else if (drawing.mode === 'move') {
@@ -331,17 +351,19 @@
     element.addEventListener('pointerdown', event => {
       if (drawing || !event.isPrimary) return;
       event.preventDefault();
-      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex];
-      const point = pointFor(element, event); // Always work on the currently selected line.
-      const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(line) : gizmos.midpoint(line);
+      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]; // Stored local mount.
+      const point = pointFor(element, event); // World/source-canvas pointer for visible handle hit-testing.
+      const visibleLine = displayMounts(id)[id === 'head-canvas' ? 0 : mountIndex];
+      const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(visibleLine) : gizmos.midpoint(visibleLine);
       if (gizmoMode !== 'draw' && !nearHandle(element, event, handle)) {
         msg(gizmoMode === 'move' ? 'Drag the crosshair handle to move the selected line.'
           : 'Drag the circular rotate handle to turn the selected line.');
         return;
       }
+      const localPoint = rigToLocal(point, id); // Gestures edit the child primitive, not its parent's scale and translation.
       drawing = { id, pointer: event.pointerId, line, mode: gizmoMode,
-        pointerStart: point, original: JSON.parse(JSON.stringify(line)) }; // Restorable state for cancellations.
-      if (gizmoMode === 'draw') { line.start = point; line.end = { ...point }; }
+        pointerStart: localPoint, original: JSON.parse(JSON.stringify(line)) }; // Restorable local lines for cancellations.
+      if (gizmoMode === 'draw') { line.start = localPoint; line.end = { ...localPoint }; }
       element.setPointerCapture(event.pointerId); drawLines(id);
     });
     element.addEventListener('pointermove', event => {
@@ -401,12 +423,23 @@
   for (const [id, key, fallback, min, max] of [
     ['duplicate-scale-x','scaleX',1,.05,8],['duplicate-scale-y','scaleY',1,.05,8],
     ['duplicate-x','x',0,-2400,2400],['duplicate-y','y',0,-2400,2400],
-  ]) byId(id).onchange = () => {
-    const shaft = chosenShaft(); if (!shaft.duplicateFrom) return;
-    const n = Number(byId(id).value);
-    (shaft.duplicateTransform ||= {})[key] = Number.isFinite(n) ? Math.max(min, Math.min(max,n)) : fallback;
-    save(); // Apply to mounting primitive and every eye/tang line; never to the shaft PNG or source fire.
-  };
+  ]) {
+    const field = byId(id);
+    const applyRig = commit => {
+      const shaft = chosenShaft(); if (!shaft.duplicateFrom) return;
+      const raw = field.value.trim(), n = Number(raw);
+      if (!raw || !Number.isFinite(n)) return; // Partial mobile keyboard input is not a valid transform.
+      (shaft.duplicateTransform ||= {})[key] = Math.max(min, Math.min(max, n));
+      if (commit) {
+        save(); // Committed draft and history entry on blur/Enter; browser storage matches the visible transform.
+      } else {
+        api.replace(data); // Invalidate composed PNG cache without clobbering the number field being edited.
+        drawLines('shaft-canvas'); updateRigTree(); preview(); // Immediate live visual feedback while typing.
+      }
+    };
+    field.addEventListener('input', () => applyRig(false));
+    field.onchange = () => applyRig(true);
+  }
   byId('duplicate-sprite').onchange = () => {
     const shaft = chosenShaft(), sprite = byId('duplicate-sprite').value.trim();
     if (!shaft.duplicateFrom) return;
