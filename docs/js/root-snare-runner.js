@@ -57,7 +57,9 @@
       });
     });
     if(!eligible.length)throw Error('No non-Omgurku NPC is available for this preview.');
-    const npc=id?eligible.find(n=>String(n.id||n.name)===String(id)):eligible[Math.floor(rng()*eligible.length)];
+    const withPants=eligible.filter(n=>root.PantsGarmentRenderer?.garmentForCosmetics?.(exportNpcForPortrait(n).equippedCosmetics));
+    const randomPool=withPants.length?withPants:eligible; // Default showcase favors a real NPC equipped with an authored pants/skirt rig.
+    const npc=id?eligible.find(n=>String(n.id||n.name)===String(id)):randomPool[Math.floor(rng()*randomPool.length)];
     if(!npc)throw Error('Chosen NPC is not available in the loaded repository database.');
     const portraitNpc=exportNpcForPortrait(npc);
     const profile=root.NpcAvatarPreview.buildProfileFromNpcExport(portraitNpc);
