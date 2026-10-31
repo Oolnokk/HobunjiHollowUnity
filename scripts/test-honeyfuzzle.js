@@ -255,13 +255,15 @@ function fakeThree() {
       'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
       'assets/creaturesprites/honeyfuzzle_fly1.png',
       'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
-    ], 'tail, body, spectacles are composited in that order for portraits');
+      'assets/creaturesprites/honeyfuzzle_eyes.png',
+    ], 'tail, body, spectacles and original untinted eyes are composited in that order for portraits');
     return renderer.composeFrame('honeyfuzzle', 'run2', null);
   }).then(canvas => {
     assert.deepEqual(Array.from(canvas.layers), [
       'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
       'assets/creaturesprites/honeyfuzzle_fly3.png',
-    ], 'the default tail remains visible without genes or spectacles');
+      'assets/creaturesprites/honeyfuzzle_eyes.png',
+    ], 'the default tail and authored eyes remain visible without genes or spectacles');
   }).catch(error => { throw error; });
 }
 
