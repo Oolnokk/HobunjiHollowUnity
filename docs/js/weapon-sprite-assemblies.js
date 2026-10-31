@@ -211,6 +211,7 @@
         }
         if (config.base) effects?.registerLayer(state, plane, { id: 'base', ...config.base }, source);
         effects?.activateStatic(state, config.base, layers, staticMeshes, source, unit); // Base-sprite fire also works with zero overlay layers.
+        state.staticReady = true; // Mobile diagnostics distinguish finished single-sprite assembly from a still-loading rigid base.
       }
       if (!config.flail) return;
       const f = config.flail;
@@ -527,7 +528,7 @@
 
   function debugSnapshot() {
     return [...records].map(s => ({
-      itemKey: s.itemKey, loaded: !!(s.chain && s.headRoot),
+      itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
