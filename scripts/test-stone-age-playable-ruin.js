@@ -52,6 +52,7 @@ const irregularSnapshot=JSON.stringify(irregular),heightsSnapshot=JSON.stringify
 const cellFloor=scenery.ruinMappedFloorShell(irregular,'multichamber',heightMap); // The runtime's sampled V50 top elevations override fallback metadata.
 assert.equal(cellFloor.topTileCount,oddCells.length,'all and only native floor cells must receive stone');
 assert.equal(cellFloor.floorCells,oddCells.length);
+assert(cellFloor.pos.length<oddCells.length*35,'reduced shell must not retain the high-density source geometry');
 assert.equal(cellFloor.voidCells,irregular.gridCols*irregular.gridRows-oddCells.length);
 assert.equal(cellFloor.levelCount,3,'sunken room, ordinary corridor and raised room must remain separate elevations');
 assert.equal(cellFloor.featureScale,.25);assert.equal(cellFloor.reliefScale,.0625);
@@ -68,6 +69,27 @@ for(let index=0;index<mappedIndices.length;index+=3){
   const y=ids.reduce((sum,id)=>sum+mappedPositions[id*3+1],0)/3;
   assert(Math.abs(y-expectedY)<.07,'stone geometry must stay on its own native elevation, not stretch across levels');
 }
+
+// Production floor shell directly uses 2×2 source subdivisions; compare with the old 4×4
+// builder followed by compactFloorStoneIndices to prove the exact visible triangles survive.
+const highDetail=scenery.ruinMappedFloorShell(irregular,'multichamber',heightMap,{subdivisions:4});
+assert.equal(cellFloor.subdivisions,2,'normal playable ruins must use reduced source subdivision');
+assert.equal(highDetail.subdivisions,4,'reference shell must remain available for parity tests');
+assert.equal(highDetail.idx.length,cellFloor.idx.length*4,'skip exactly three quarters of the unused source triangles');
+assert.equal(cellFloor.topTileCount,highDetail.topTileCount);
+assert.equal(cellFloor.componentCount,highDetail.componentCount);
+const referenceIndices=scenery.compactFloorStoneIndices(highDetail.idx); // The original discarded-quad rendering contract.
+function trianglePositions(shell,indices){
+  const result=[];
+  for(let i=0;i<indices.length;i+=3){
+    const vertices=indices.slice(i,i+3).map(index=>shell.pos.slice(index*3,index*3+3).map(value=>value.toFixed(6)).join(','));
+    result.push(vertices.sort().join('|'));
+  }
+  return result.sort();
+}
+assert.deepEqual(trianglePositions(cellFloor,cellFloor.idx),trianglePositions(highDetail,referenceIndices),
+  'all rendered triangles must be unchanged, including elevations, gaps, and boulder boundaries');
+
 const alternate=scenery.ruinMappedFloorShell(irregular,'multichamber',heightMap);
 assert.deepEqual(Array.from(alternate.pos),Array.from(cellFloor.pos),'the exact same seed/levels must reproduce all stones');
 assert.equal(JSON.stringify(irregular),irregularSnapshot,'geometry generation must not modify the V50 layout');
