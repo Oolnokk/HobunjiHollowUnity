@@ -28,7 +28,7 @@ assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunSh
 const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
 assert.deepEqual(staffCompatible, originalCompatible, 'staff accepts exactly the same heads as B\'shuakauitl');
-const copyDraft = plain(api.getConfig()); // Whole-shaft copy transform must move and stretch artwork sockets together.
+const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
 copyDraft.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
