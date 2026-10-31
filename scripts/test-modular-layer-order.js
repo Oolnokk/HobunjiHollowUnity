@@ -325,6 +325,26 @@ async function run() {
   assert.equal(fireActivations[0].carrier.scale.x,1,'rig X scaling does not resize shaft flames');
   assert.equal(fireActivations[0].carrier.scale.y,1,'rig Y scaling does not resize shaft flames');
   assert.equal(carrierPlane.material.map.image,modelImage,'the real composite metal head texture remains unchanged');
+  // A separate opt-in shaft transformation must move/scale both the shaft bitmap
+  // and its living source emitter. Region and overall rig edits cannot do this.
+  const flameDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  flameDraft.shafts.hachutuTorchStaff.shaftArtTransform={enabled:true,scaleX:1.4,scaleY:.6,x:72,y:-90};
+  api.replace(flameDraft);
+  const secondPlane=new Group3();
+  secondPlane.material={map:{image:modelImage}};secondPlane.geometry={parameters:{width:.5}};
+  const secondRoot=new Group3();
+  secondRoot.userData.toolPlane=secondPlane;secondRoot.add(secondPlane);
+  fireWindow.HobunjiWeaponSpriteAssemblies.decorate(secondRoot,itemKey,{
+    modular:{shaft:'hachutuTorchStaff',head:'warhammer'},shapeKey:'hachutuTorchStaff',sprite:itemKey,
+  },{THREE:Three});
+  for(let i=0;i<12;i++)await Promise.resolve();
+  assert.equal(fireActivations.length,2,'opt-in transformed staff still initializes its live fire carrier');
+  const fireCar=fireActivations[1].carrier;
+  assert(Math.abs(fireCar.position.x-(72*.5/450))<1e-9
+    && Math.abs(fireCar.position.y-(90*.5/450))<1e-9,
+    'live flame origins inherit opt-in shaft-art translation but not rig-region movement');
+  assert(Math.abs(fireCar.scale.x-1.4)<1e-9 && Math.abs(fireCar.scale.y-.6)<1e-9,
+    'flame emission scale follows ONLY optional shaft art scaling');
 
   // Older imports inherit all committed, manually authored pair choices.
   api.replace({ schema: 'hobunji_modular_weapons.v1', heads: {}, shafts: {} });
@@ -339,6 +359,14 @@ async function run() {
   assert(editor.includes("pair.layerOrder = byId('layer-order').value"), 'Both manual choices are saved explicitly and survive curated default fallback.');
   assert(html.includes('id="rig-tree"') && editor.includes('api.attachmentRig('),
     'Mobile editor exposes the actual parent rig and primitive child hierarchy rather than only flattened transforms.');
+  for(const id of ['shaft-art-enabled','shaft-art-scale-x','shaft-art-scale-y','shaft-art-x','shaft-art-y',
+    'region-select','region-list','region-remove','region-name','region-scale-x','region-scale-y','region-x','region-y']){
+    assert(html.includes('id="'+id+'"'), 'mobile editor must expose working '+id+' input');
+  }
+  assert(editor.includes("previewCanvas.addEventListener('pointerdown'") &&
+    editor.includes("if(regionSelecting && bridgeView && event.isPrimary)") &&
+    editor.includes('regionDraft.box=') && editor.includes("region.transform="),
+    'region selection is wired to a real pointer rectangle and local transform controls');
   // Run the actual editor's rig/canvas helpers: the old bug was that the artist-facing
   // shaft canvas painted RAW mounts even though the hidden compositor had transformed them.
   const helperStart = editor.indexOf('  function rigLayout(id) {');
