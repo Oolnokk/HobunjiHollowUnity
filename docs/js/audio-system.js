@@ -1177,6 +1177,7 @@
   // plain gar-wolf's neutral pitch. Future creatures/attacks can add
   // their own url+species entry without touching this function.
   function playCreatureBark(c) {
+    if (c?.creatureKey === 'honeyfuzzle') return; // Block legacy warning/growl fallback: the positional hive buzz is its only voice.
     const cfg = combatSfxConfig().creatureBark;
     const speciesCfg = cfg?.species?.[c.creatureKey];
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
@@ -1360,6 +1361,7 @@
   // means and when each utterance is due; AudioSystem resolves the asset,
   // distance mix, tempo/pitch playback, and browser Audio lifecycle.
   function playAnimalVoiceUtterance(c, opts = {}) {
+    if (animalVoiceSpeciesKey(c) === 'honeyfuzzle') return false; // Direct callers also cannot trigger honeyfuzzle utterances; buzzing is handled separately.
     const pool = animalVoicePool(c, opts); // Authored species must pass the native preparation gate before independent tempo/pitch playback can start.
     if (!pool?.length || !deps || c?.areaId !== deps.getCurrentArea()) return false;
     const audioCfg = gameAudioConfig();

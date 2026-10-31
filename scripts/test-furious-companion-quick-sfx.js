@@ -52,6 +52,7 @@ for (const [id, extraCost] of [['cheap', 5], ['expensive', 15]]) {
 }
 assert.equal(attacks.mostExpensiveCompanionSpecial(actor, { target }).id, 'expensive');
 assert.equal(attacks.mostExpensiveCompanionSpecial(actor, { target }).cost, 25);
+assert.equal(attacks.mostExpensiveCompanionSpecial({ ...actor, master: null }, { target }).id, 'expensive', 'older companions with no explicit master still use the player-owned Furious special');
 assert.equal(attacks.startFuriousSpecial(actor, { target }), false, '24.9 Furious must not buy a 25-point attack');
 assert.equal(starts.length, 0);
 actor.afflictions.furiousStamina = 25;
@@ -86,6 +87,7 @@ assert.equal(attacks.startFuriousSpecial({ ...actor, stableRole: 'mount', _anima
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Structural coverage confirms live companion AI calls this tested seam.
 assert.match(game, /c\._furiousSpecial\.cooldownBefore/, 'companion cooldown remains frozen during the special');
+assert.match(game, /c\._knockbackLedgeFall \|\| c\.prone \|\| c\.knockbackT > 0[\s\S]{0,400}animalAttacks\.cancel\(c\)/, 'prone and knockback abort a named move and restore Furious cooldowns');
 assert.match(game, /animalAttacks\?\.startFuriousSpecial\?\.\(c, \{ target \}\)/, 'companion AI checks threshold before its regular action timer');
 const playerQuick = fs.readFileSync('docs/js/combat/combat-quickattacks.js', 'utf8');
 const enemyQuick = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');

@@ -239,7 +239,7 @@
         * lerp(RANGE_MUL_MIN, RANGE_MUL_MAX, poseCharge)
         * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
       const halfConeDeg = lerp(HALF_CONE_DEG_MIN, HALF_CONE_DEG_MAX, poseCharge);
-      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
+      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseKnockbackPxS = baseAbil.knockbackPxS
         * lerp(KNOCKBACK_MUL_MIN, KNOCKBACK_MUL_MAX, poseCharge)
         * (1 + (effects.stats.knockbackMul || 0));

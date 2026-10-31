@@ -125,6 +125,18 @@ const tick = at => { now = at; registeredFrame(at); }; // Runs the production up
   assert.equal(snapshot().emitters, 1);
   assert.equal(third.userData.toolPlane.children.length, 1, 'cached-mask rebuild remounts on the actual live mesh');
 
+  const wristRig = new Object3D(); // Nested arm/shaft carriers can be inserted between the player holder and the weapon.
+  holder.remove(third); holder.add(wristRig); wristRig.add(third);
+  context.window.ProceduralHandAttachments.gameDeps.toolMeshMap = { weapon: first }; // A stale slot-map entry must not override the visibly attached weapon.
+  api.forceRefresh(); tick(1040);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshot().heldVisualFound, true, 'nested current player weapon is found by holder ancestry');
+  assert.equal(snapshot().emitters, 1, 'nested held weapon retains exactly one emitter');
+  assert.equal(third.userData.toolPlane.children.length, 1, 'nested weapon owns the live aura instead of the stale mapped weapon');
+  assert.equal(first.userData.toolPlane.children.length, 0, 'detached stale mapped weapon stays particle-free');
+  delete context.window.ProceduralHandAttachments.gameDeps.toolMeshMap;
+  wristRig.remove(third); holder.remove(wristRig); holder.add(third);
+
   const ranged = new Object3D(); // An unenchanted ranged weapon can never inherit the melee item's particles.
   ranged.userData = { itemKey: 'bow', toolPlane: plane() };
   activeSlot = 'ranged'; holder.remove(third); holder.add(ranged);
@@ -153,7 +165,16 @@ const tick = at => { now = at; registeredFrame(at); }; // Runs the production up
   dualOffhand.userData.hobunjiDualWieldDuplicate = true;
   third.userData.toolPlane.add(dualMain);
   third.userData.toolPlane.add(dualOffhand);
-  context.window.HobunjiDualWieldWeaponVisuals = { debugSnapshot: () => ({ active: true }) };
+  // The idle "invisible offhand tool" also reports active, but its clones are never drawn and the real weapon stays
+  // visible: the aura must stay on the real plane, otherwise every ordinary pose shows no particles at all.
+  context.window.HobunjiDualWieldWeaponVisuals = { debugSnapshot: () => ({ active: true, copiesVisible: false, source: 'invisible-offhand' }) };
+  api.forceRefresh(); tick(1077);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(snapshot().emitters, 1, 'invisible offhand tool leaves exactly one aura, on the real weapon');
+  assert.equal(dualMain.children.length, 0, 'the undrawn main clone gets no emitter');
+  assert.equal(dualOffhand.children.length, 0, 'the undrawn offhand clone gets no emitter');
+  assert.equal(third.userData.toolPlane.children.filter(child => /enchantment/.test(child.name || '')).length, 1, 'the real weapon plane owns the emitter');
+  context.window.HobunjiDualWieldWeaponVisuals = { debugSnapshot: () => ({ active: true, copiesVisible: true, source: 'dual-wield' }) };
   api.forceRefresh(); tick(1078);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(snapshot().emitters, 2, 'dual-wield duplicates each retain their own aura');

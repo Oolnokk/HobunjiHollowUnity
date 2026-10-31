@@ -1836,7 +1836,12 @@
       colorA: clothingColorHex(item?.colorA),
       colorB: clothingColorHex(item?.colorB, clothingColorHex(item?.colorA)),
       colorC: clothingColorHex(item?.colorC),
-      weaving: weaving?.layers ? { layers: resolvedLayers, trim: weaving?.trim || null } : { pattern: weaving?.pattern || null, patterns: weaving?.patterns || null, trim: weaving?.trim || null },
+      weaving: {
+        ...(weaving?.layers ? { layers: resolvedLayers } : { pattern: weaving?.pattern || null, patterns: weaving?.patterns || null }),
+        forcedOverpassPattern: weaving?.forcedOverpassPattern || null, // Bandit loot uses this separate slot; missing it made distinct motifs reuse the same cached Gear/Pack icon.
+        forcedOverpassRoles: weaving?.forcedOverpassRoles || null, // A hood base and poncho wrap may show different areas of the same forced motif.
+        trim: weaving?.trim || null,
+      },
       metalState: isReweavableClothComponent(item) ? window.MetalArmorSystem?.portraitStateForItem?.(item) : null, // Composite-icon cache differentiates alloy, Temper and plating.
     }; // Resolves library-backed motifs into the key so editing a saved pattern invalidates its icon without touching every garment instance.
     return JSON.stringify(visual);

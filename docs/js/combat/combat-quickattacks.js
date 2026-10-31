@@ -226,7 +226,7 @@
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const rangePx = baseAbil.rangePx * def.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
-      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range);
+      const halfConeRad = Math.min(Math.PI, def.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseLungePx = deps.TILE * LUNGE_TILE_MUL * (1 + (effects.stats.lungeMul || 0)); // Existing Quick Attack lunge remains the base that Living Gust scales.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,

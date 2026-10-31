@@ -131,6 +131,27 @@ assert(/while \(!instance && \(window\.TribeCamps \|\| window\.PorakanekiCamps\)
 assert(!banditCampSource.includes('avoidChunks: []'),
   'no bandit placement fallback may explicitly drop the hard chunk exclusion');
 
+// The shared temporary-locale finder must honor opposite-edge preferences
+// without allowing that preference to bypass terrain or streamed-chunk blockers.
+const directionalZone = {
+  cols: 64, rows: 40,
+  tiles: Array.from({ length: 40 }, () => Array.from({ length: 64 }, () => ({ height: 0, water: false }))),
+  objects: [],
+};
+const directionalLocale = { tiles: { '0,0': { type: 'grass' }, '3,3': { type: 'grass' } }, placement: { clearanceTiles: 0, requiresFlatGround: false } };
+const leftSite = contextWindow.TemporaryLocales.findSite(directionalZone, directionalLocale, { preferredPoint: { col: 0, row: 20 }, rng: () => 0.5 });
+const rightSite = contextWindow.TemporaryLocales.findSite(directionalZone, directionalLocale, { preferredPoint: { col: 64, row: 20 }, rng: () => 0.5 });
+assert.equal(leftSite.x, 0, 'low-end Porakaneki site is closest to the western edge');
+assert.equal(rightSite.x, 60, 'high-end Omgurku site is closest to the eastern edge');
+assert.equal(leftSite.y, rightSite.y, 'opposite-edge preferences use the same transverse center');
+const chunkLimitedSite = contextWindow.TemporaryLocales.findSite(directionalZone, directionalLocale, {
+  preferredPoint: { col: 0, row: 20 }, chunkSizeTiles: 16, avoidChunks: ['0,0', '0,1', '0,2'], rng: () => 0.5,
+});
+assert(chunkLimitedSite.x >= 16, 'the preferred edge must never override excluded bandit or rival streamed chunks');
+directionalZone.tiles[18][0].water = true;
+const blockedEdgeSite = contextWindow.TemporaryLocales.findSite(directionalZone, directionalLocale, { preferredPoint: { col: 0, row: 20 }, rng: () => 0.5 });
+assert(blockedEdgeSite && !(blockedEdgeSite.x === 0 && blockedEdgeSite.y === 18), 'a preferred site still respects blocked water tiles');
+
 // This is the production failure shape: every otherwise-valid tile has an
 // ordinary procedural shrub/rock occupancy record. Before the policy, the
 // large chief footprint has no legal site at all because every one of those

@@ -7,9 +7,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.HouseWindowLinkage?.version) >= 13) return;
+  if (Number(window.HouseWindowLinkage?.version) >= 14) return;
 
-  const VERSION = 13; // v13 lifts exterior windows with the terrain-elevated house mesh and refuses slots on entrance/chimney tiles; v12 parents the exterior window and exact cut guide to one wall-aligned aperture frame.
+  const VERSION = 14; // v14 uses room-local interior-only offsets for paired windows without changing exterior slot geometry.
   const WINDOW_KEYS = new Set(['simpleWindow', 'crossbarWindow', 'wideWindow']); // Only authored daylight-window furniture participates.
   const PEER_SUFFIX = ':house-window-peer'; // Deterministic suffix lets a primary decor id regenerate the same opposite-side id after load.
   const INTERIOR_SCALE = 2; // HousePieces.computeInteriorLayout maps every exterior farm tile to a 2x2 interior footprint.
@@ -288,6 +288,22 @@
     return snapBindingToExteriorSlot(binding); // Window dimensions already fit inside a two-tile slot; the slot is the only placement authority.
   }
 
+  function indoorRoomForRun(run) {
+    const piece = run?.piece || pieceById(run?.pieceId);
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(piece?.id); // Independent room origin leaves the entire outdoor house unchanged.
+    return piece ? { piece, col: room?.col ?? piece.col * INTERIOR_SCALE, row: room?.row ?? piece.row * INTERIOR_SCALE } : null;
+  }
+  function toIndoorPoint(run, farmX, farmZ, y) {
+    const room = indoorRoomForRun(run); // Exterior farm position -> specific room's full-size interior wall point.
+    return room ? [room.col + (farmX - room.piece.col) * INTERIOR_SCALE, y,
+      room.row + (farmZ - room.piece.row) * INTERIOR_SCALE] : null;
+  }
+  function fromIndoorPoint(run, point) {
+    const room = indoorRoomForRun(run); // Inverse of toIndoorPoint for edited window placement.
+    return room ? [room.piece.col + (finite(point[0]) - room.col) / INTERIOR_SCALE,
+      room.piece.row + (finite(point[2]) - room.row) / INTERIOR_SCALE] : null;
+  }
+
   function bindingFromPlacement(area, placement, key, previousBinding = null) {
     const point = placementTargetPoint(placement); // Furniture attachment target after U/V/N offsets, in the active area's world units.
     const sourceHeight = area === 'interior' ? INTERIOR_WALL_HEIGHT : EXTERIOR_WALL_HEIGHT; // Same normalized vertical coordinate maps between unequal wall heights.
@@ -310,10 +326,10 @@
       let canonicalAlong = 0; // Stable farm-grid coordinate along the untapered exterior wall.
       let planeDistance = Infinity; // Distance from clicked target to the expected wall plane in source-area units.
       if (area === 'interior') {
-        const scaledX = finite(point[0]) / INTERIOR_SCALE; // Interior X maps back to farm-grid canonical coordinates.
-        const scaledZ = finite(point[2]) / INTERIOR_SCALE; // Interior Z maps back to farm-grid canonical coordinates.
-        canonicalAlong = run.side === 'north' || run.side === 'south' ? scaledX : scaledZ;
-        const normalCoord = run.side === 'north' || run.side === 'south' ? scaledZ : scaledX; // Canonical coordinate perpendicular to this wall.
+        const canonical = fromIndoorPoint(run, point); // The interior origin differs between joined sections.
+        if (!canonical) return;
+        canonicalAlong = run.side === 'north' || run.side === 'south' ? canonical[0] : canonical[1];
+        const normalCoord = run.side === 'north' || run.side === 'south' ? canonical[1] : canonical[0];
         planeDistance = Math.abs(normalCoord - run.fixed);
       } else {
         const runV01 = clamp((finite(point[1]) - houseElevationY(run.piece)) / EXTERIOR_WALL_HEIGHT, 0, 1); // Height on this room's (possibly terrain-lifted) wall.
@@ -350,8 +366,8 @@
       const canonicalAlong = run.start + (run.end - run.start) * normalized.u01; // Same exterior normalized U expressed on the 2x room wall.
       const fixed = run.fixed; // Canonical farm-grid side plane before interior scale.
       point = run.side === 'north' || run.side === 'south'
-        ? [canonicalAlong * INTERIOR_SCALE, normalized.v01 * INTERIOR_WALL_HEIGHT, fixed * INTERIOR_SCALE]
-        : [fixed * INTERIOR_SCALE, normalized.v01 * INTERIOR_WALL_HEIGHT, canonicalAlong * INTERIOR_SCALE];
+        ? toIndoorPoint(run, canonicalAlong, fixed, normalized.v01 * INTERIOR_WALL_HEIGHT)
+        : toIndoorPoint(run, fixed, canonicalAlong, normalized.v01 * INTERIOR_WALL_HEIGHT);
       normal = outward.map(value => -value); // A window seen from inside attaches to the inward-facing side of the same physical wall.
     } else point = exteriorSlotSurface(run, normalized)?.center;
     if (!point) return null;
@@ -704,8 +720,9 @@
       const canonicalAlong = run.start + (run.end - run.start) * binding.u01; // Exterior farm coordinate before the 2x interior mapping.
       const fixed = run.fixed; // Exterior side plane before the 2x interior mapping.
       const center = run.side === 'north' || run.side === 'south'
-        ? [canonicalAlong * INTERIOR_SCALE, binding.v01 * INTERIOR_WALL_HEIGHT, fixed * INTERIOR_SCALE]
-        : [fixed * INTERIOR_SCALE, binding.v01 * INTERIOR_WALL_HEIGHT, canonicalAlong * INTERIOR_SCALE]; // Exact interior wall-plane aperture center.
+        ? toIndoorPoint(run, canonicalAlong, fixed, binding.v01 * INTERIOR_WALL_HEIGHT)
+        : toIndoorPoint(run, fixed, canonicalAlong, binding.v01 * INTERIOR_WALL_HEIGHT); // Position remains on the shifted full-size room boundary.
+      if (!center) return null;
       const silhouette = windowSilhouette(record.key); // Brick omission follows the full visible frame silhouette.
       return { id: record.primaryId, center, normal: outwardNormal(run.side).map(value => -value), width: silhouette.width, height: silhouette.height };
     }).filter(Boolean);
@@ -807,7 +824,7 @@
     debugSnapshot,
     isWindowKey,
     snapExteriorPlayerPlacement,
-    __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
+    __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, fromIndoorPoint, toIndoorPoint, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
   });
   window.__houseWindowLinkDebug = debugSnapshot;
 

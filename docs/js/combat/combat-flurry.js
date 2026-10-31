@@ -95,7 +95,7 @@
       const rangePx = baseAbil.rangePx * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
       const halfConeDeg = HALF_CONE_DEG_BASE
         + Math.min(HALF_CONE_DEG_MAX_GROWTH, count * HALF_CONE_DEG_GROWTH_PER_STRIKE);
-      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
+      const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseKnockbackPxS = baseAbil.knockbackPxS
         * (KNOCKBACK_MUL_BASE + count * KNOCKBACK_MUL_PER_STRIKE)
         * (1 + (effects.stats.knockbackMul || 0));

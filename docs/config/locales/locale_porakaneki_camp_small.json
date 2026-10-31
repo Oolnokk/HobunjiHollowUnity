@@ -606,7 +606,7 @@
   "connectors": [],
   "placement": {
     "mode": "temporary",
-    "maxInstances": 4,
+    "maxInstances": 1,
     "allowedZones": [
       "map_northern_cliffs",
       "map_southern_cloud_forest",
@@ -620,7 +620,7 @@
     "sameSectorAsEntry": false,
     "alwaysVisibleOnMap": false,
     "groundOnly": false,
-    "notes": "PorakanekiCamps places 2-4 persistent small camps independently in every generated wilderness map. These camps never contain the named chief."
+    "notes": "Each wilderness map gets one Porakaneki and one Omgurku hunting camp at opposite ends; neither houses the named chief."
   },
   "meta": {
     "authoring": "runtime hunting camp",

@@ -428,12 +428,30 @@
     return addedDyeCount;
   }
 
+  // A patterned or decorated garment is a physical collectible, not just another dye swatch of its base clothing.
+  // Plain dyed copies still intentionally merge and teach the owned garment additional dye colors.
+  function hasIndividualClothingPattern(item) {
+    const weaving = item?.weaving; // Reads saved visual state without relying on when the renderer initializes.
+    if (!weaving || typeof weaving !== 'object') return false;
+    if (weaving.forcedOverpassPattern || weaving.pattern || weaving.patternLibraryId || weaving.trim?.enabled) return true;
+    if (Array.isArray(weaving.patterns) && weaving.patterns.some(Boolean)) return true;
+    return Object.values(weaving.layers || {}).some(layer =>
+      !!(layer?.pattern || layer?.patternLibraryId || (Array.isArray(layer?.patterns) && layer.patterns.some(Boolean))));
+  }
+
+  function clothingGearCollectionKey(item) {
+    const cosmeticId = item?.cosmeticId; // The original cosmetic type remains the grouping key for unpatterned dyes.
+    if (!cosmeticId) return null;
+    return hasIndividualClothingPattern(item) && item.uid
+      ? 'woven:' + item.uid : 'cosmetic:' + cosmeticId; // Bandit pattern frames are individual collectibles across saves and equip swaps.
+  }
+
   function normalizeGearClothingItems(gearInventory) {
     if (!gearInventory || !Array.isArray(gearInventory.clothingItems)) return false;
     let changed = false; // Used to persist legacy duplicate cleanup only when the save actually changes.
     const sourceItems = gearInventory.clothingItems.filter(Boolean); // Used as the migration input before duplicate articles are collapsed.
-    const groupsByCosmeticId = new Map(); // Used to group dye variants of the same authored clothing article.
-    const wornUidByCosmeticId = new Map(); // Used to preserve whichever dyed copy is currently visible during migration.
+    const groupsByCollectionKey = new Map(); // Groups plain dye variants together while preserving individually patterned garments.
+    const wornUidByCollectionKey = new Map(); // Keeps each retained article's equipped copy when migrating saves.
 
     for (const item of sourceItems) {
       if (migrateGearClothingQuality(item)) changed = true;
@@ -444,37 +462,40 @@
         changed = true;
       }
       if (ensureArticleDyeIds(item)) changed = true;
-      if (!item?.cosmeticId) continue;
-      if (!groupsByCosmeticId.has(item.cosmeticId)) groupsByCosmeticId.set(item.cosmeticId, []);
-      groupsByCosmeticId.get(item.cosmeticId).push(item);
+      const collectionKey = clothingGearCollectionKey(item); // Each woven article has an individual key, plain dye variants share theirs.
+      if (!collectionKey) continue;
+      if (!groupsByCollectionKey.has(collectionKey)) groupsByCollectionKey.set(collectionKey, []);
+      groupsByCollectionKey.get(collectionKey).push(item);
     }
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing?.[slot]; // Used to choose the visible copy as canonical when an old save has duplicates.
-      if (worn?.cosmeticId && worn?.uid) wornUidByCosmeticId.set(worn.cosmeticId, worn.uid);
+      const collectionKey = clothingGearCollectionKey(worn); // Matches the saved equipped article's physical weave identity.
+      if (collectionKey && worn?.uid) wornUidByCollectionKey.set(collectionKey, worn.uid);
     }
 
-    const canonicalByCosmeticId = new Map(); // Used to map every duplicate article to its single retained gear entry.
-    for (const [cosmeticId, variants] of groupsByCosmeticId) {
-      const wornUid = wornUidByCosmeticId.get(cosmeticId); // Used to avoid changing the player's currently visible dye during migration.
+    const canonicalByCollectionKey = new Map(); // Maps ordinary duplicates without collapsing patterned pieces.
+    for (const [collectionKey, variants] of groupsByCollectionKey) {
+      const wornUid = wornUidByCollectionKey.get(collectionKey); // Used to avoid changing the player's currently visible dye during migration.
       const canonical = variants.find(item => item.uid === wornUid) || variants[0]; // Used as the one retained owned-clothing record.
       for (const variant of variants) {
         if (variant === canonical) continue;
         if (mergeArticleDyes(canonical, variant) > 0) changed = true;
       }
-      canonicalByCosmeticId.set(cosmeticId, canonical);
+      canonicalByCollectionKey.set(collectionKey, canonical);
       if (variants.length > 1) changed = true;
     }
 
-    const normalizedItems = []; // Used to preserve original ordering while emitting only one item per cosmeticId.
-    const emittedCosmeticIds = new Set(); // Used to suppress duplicate dye variants in the Owned Clothing row.
+    const normalizedItems = []; // Preserves ordering with one item per collection identity.
+    const emittedCollectionKeys = new Set(); // One tile per plain article or individually patterned piece.
     for (const item of sourceItems) {
-      if (!item?.cosmeticId) {
+      const collectionKey = clothingGearCollectionKey(item); // Uses the same key as transfer and collection migration.
+      if (!collectionKey) {
         normalizedItems.push(item);
         continue;
       }
-      if (emittedCosmeticIds.has(item.cosmeticId)) continue;
-      emittedCosmeticIds.add(item.cosmeticId);
-      normalizedItems.push(canonicalByCosmeticId.get(item.cosmeticId) || item);
+      if (emittedCollectionKeys.has(collectionKey)) continue;
+      emittedCollectionKeys.add(collectionKey);
+      normalizedItems.push(canonicalByCollectionKey.get(collectionKey) || item);
     }
     const listChanged = normalizedItems.length !== gearInventory.clothingItems.length || normalizedItems.some((item, index) => gearInventory.clothingItems[index] !== item); // Used to avoid replacing the array when no migration is needed.
     if (listChanged) {
@@ -485,7 +506,8 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing?.[slot]; // Used to reconnect equipped slots to their retained canonical clothing record.
       if (!worn?.cosmeticId) continue;
-      const canonical = canonicalByCosmeticId.get(worn.cosmeticId); // Used to keep slot and collection references on the same retained article.
+      const canonical = (worn.uid && gearInventory.clothingItems.find(item => item?.uid === worn.uid))
+        || canonicalByCollectionKey.get(clothingGearCollectionKey(worn)); // Prefer exact UID when a legacy worn snapshot lacks its article's weaving metadata.
       if (canonical && gearInventory.clothing[slot] !== canonical) {
         gearInventory.clothing[slot] = canonical;
         changed = true;
@@ -739,7 +761,8 @@
     const item = makeClothingGearEntry(packClothing[idx]);
     ensureGearClothingCollection();
     const gearInventory = deps.getGearInventory();
-    const existingItem = item.cosmeticId ? gearInventory.clothingItems.find(c => c?.cosmeticId === item.cosmeticId) : null; // Used to collapse a newly acquired dye variant into an already-owned article.
+    const collectionKey = clothingGearCollectionKey(item); // Distinguishes woven loot from plain garments with the same authored cosmetic.
+    const existingItem = collectionKey ? gearInventory.clothingItems.find(c => clothingGearCollectionKey(c) === collectionKey) : null; // Plain dye variants still merge into one owned article.
     let equippedItem = item; // Used so duplicate transfers equip the retained canonical article rather than a second copy.
     let learnedDyeCount = 0; // Used to tell the player whether the duplicate taught this article any new shades.
     if (existingItem) {
@@ -932,7 +955,8 @@
     const gearInventory = deps.getGearInventory();
     const isWorn = gearInventory?.clothing?.[slot]?.uid === item.uid;
     const metalArmorDetail = window.MetalArmorSystem?.detailText?.(item) || ''; // Mobile-visible material/Temper/weight diagnostics for any smith-crafted metal clothing.
-    set('iiDesc',  [item.description, metalArmorDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
+    const weaveDetail = hasIndividualClothingPattern(item) ? 'Patterned garment — its unique woven design is saved with this article.' : ''; // Mobile-visible confirmation for inspected bandit loot.
+    set('iiDesc',  [item.description, metalArmorDetail, weaveDetail, isWorn ? 'Currently worn. Select another collected piece below to swap.' : 'Collected clothing in gear. Equip it to wear it.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
@@ -1352,6 +1376,6 @@
       const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
       return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
     },
-    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids },
+    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids, hasIndividualClothingPattern, clothingGearCollectionKey },
   };
 })();

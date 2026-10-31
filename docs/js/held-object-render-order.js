@@ -924,6 +924,7 @@
 
   function isReplayCullable(object) {
     if (object.frustumCulled === false || object.children.length) return false; // Hiding a parent would hide children that may be in view.
+    if (object.isSprite && object.userData?.hobunjiHeldOverlayParticle === true) return false; // Moving enchantment motes inherit the held blade's expanded scissor but must not be hidden by the replay's extra object-frustum cull.
     if (object.isSprite) return true;
     if (!object.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false; // r128 bounds these by the base geometry only.
     const geometry = object.geometry;

@@ -94,6 +94,7 @@
   }
 
   function utterWarning(creature) {
+    if (creature?.creatureKey === 'honeyfuzzle') return; // Swarm threat is conveyed by HoneyfuzzleAudio's live buzz/pitch, never an utterance.
     if (!window.AnimalVocalizations?.warning?.(creature, 'territorial-boundary')) {
       window.AudioSystem?.playCreatureBark?.(creature);
     }
@@ -179,6 +180,13 @@
       if (siblingState.phase === 'fight') continue; // already fighting (or already woken this same broadcast)
       beginFight(sibling, siblingState, player, `nest under attack (${creature.creatureKey} engaged)`, true);
     }
+  }
+
+  function provoke(creature, target, reason = 'provoked') {
+    if (!deps || !target || !isTerritorial(creature) || creature.health <= 0) return false;
+    const state = ensureState(creature); // Night hive theft skips the warning phase but reuses the territorial combat rules.
+    beginFight(creature, state, target, reason);
+    return true;
   }
 
   function beginDisengage(creature, state) {
@@ -410,7 +418,7 @@
   }
 
   window.HobunjiTerritorialWildlife = {
-    applyConfig,
+    applyConfig, provoke,
     tuning,
     get species() { return [...territorialSpecies]; },
     get patchedApi() { return patchedApi; },
