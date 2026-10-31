@@ -24,7 +24,7 @@
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 4;
   const MAX_OFFSET_FRACTION = 0.5; // Clamp for headOffsetY and the composed age-hunch amount, as a fraction of model height.
-  const MAX_AGE_HUNCH_FRACTION = 0.15; // A fully "aged" (age = 1) NPC's head lowers by up to 15% of their own model height, on top of any authored headOffsetY.
+  const MAX_AGE_HUNCH_FRACTION = 0.25; // A fully "aged" (age = 1) character's head lowers by up to 25% of their own model height, on top of any authored headOffsetY: js/character-spine.js stoops the whole upper body by most of that (the spine bone) and the head bone carries the rest.
   const EPSILON = 1e-9;
 
   const finite = (value, fallback = 1) => {

@@ -31,9 +31,9 @@
 (() => {
   'use strict';
 
-  const FALLBACK_NECK_DROP = 0.15; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
-  const SHOULDER_DROP_RATIO = 0.7; // The spine lowers the shoulders by this share of the total head drop; the head bone supplies the rest.
-  const WAIST_BELOW_NECK = 0.34; // The spine bone's weight starts this far (fraction of model height) below the neck pivot...
+  const FALLBACK_NECK_DROP = 0.25; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
+  const SHOULDER_DROP_RATIO = 0.8; // The spine lowers the shoulders by this share of the total head drop; the head bone supplies the rest.
+  const WAIST_BELOW_NECK = 0.42; // The spine bone's weight starts this far (fraction of model height) below the neck pivot...
   const FULL_BELOW_NECK = 0.04; // ...and is complete by here, just under the shoulder line, so everything above rides the spine.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.

@@ -19,8 +19,8 @@ The portrait is a skinned plane (`png-plane-avatar.js`): torso → **spine** →
 
 | Layer | Field | Consumer |
 | --- | --- | --- |
-| Portrait torso / shoulders / neck | `shoulderDrop` (70% of the total head drop) | spine bone in both skeleton builders (`buildSkinnedSinglePlaneAssembly`, `upgradePlaneToAutoNeckSkin`), weights in `buildSkinnedPlaneGeometry`; the pixel resolvers (`resolveSkinnedPixelWorldPosition`, `portrait-plane-outline-parity.js`) use the same weights |
-| Head | `neckDrop` (the other 30%) | NPCs: `character-rig-scale.js` `applyHeadCompensation`; enemies: `applyAuthoredHostileRigScale` offsetY in `combat-bandit.js` |
+| Portrait torso / shoulders / neck | `shoulderDrop` (80% of the total head drop) | spine bone in both skeleton builders (`buildSkinnedSinglePlaneAssembly`, `upgradePlaneToAutoNeckSkin`), weights in `buildSkinnedPlaneGeometry`; the pixel resolvers (`resolveSkinnedPixelWorldPosition`, `portrait-plane-outline-parity.js`) use the same weights |
+| Head | `neckDrop` (the other 20%) | NPCs: `character-rig-scale.js` `applyHeadCompensation`; enemies: `applyAuthoredHostileRigScale` offsetY in `combat-bandit.js` |
 | Shoulder anchors | `deformDrop` | `procedural-hand-shoulder-aim.js`: anchors keep their 2D portrait coordinates and are carried through the same deformation at their own height |
 | Attack orbit centre | `orbitDrop` = `shoulderDrop` | `HobunjiSpeciesPoseScale.transformPosePoint` option `orbitDropY`: it moves precisely with the shoulders (enemy melee swing, enemy ranged hold, watchman held weapons) |
 | Feet | `stanceScale` (up to ×1.5 foot X) | `ProceduralLegAnimation.attach` option `spine`; hips, rest stance and pants follow the idle X |
