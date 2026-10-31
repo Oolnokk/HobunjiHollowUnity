@@ -888,6 +888,7 @@
       floorStones:scenery.room.floorStones,floorTileScale:scenery.room.floorLayout?.scale||scenery.room.floorStats?.featureScale||.25,
       floorTileCopies:scenery.room.floorLayout?.offsets.length||1,maskedFloorCells:scenery.room.floorStats?.floorCells||0,
       floorLevels:scenery.room.floorStats?.levelCount||1,floorVoids:scenery.room.floorStats?.voidCells||0,
+      floorBuildMs:scenery.room.floorBuildMs, // On-device measurement of the optimized geometry and texture build.
       cover:cover.stats}; // On-device debug badge exposes actual geometry and decorative cover counts.
   }
 
