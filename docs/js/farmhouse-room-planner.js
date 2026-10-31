@@ -116,6 +116,25 @@
     }
     return null; // A blocked layout is reported in debug rather than generating overlapping rooms or floors.
   }
+  function nearbyJoinDoorCells(segment, preferred) {
+    const edge = segment.edge;
+    if (!edge) return [];
+    const choices = []; // Empty seam candidates for rooms shifted at T-junctions.
+    const start = edge.axis === 'x'
+      ? Math.min(edge.first.row, edge.second.row) - 1
+      : Math.min(edge.first.col, edge.second.col) - 1;
+    const end = edge.axis === 'x'
+      ? Math.max(edge.first.row + edge.first.h, edge.second.row + edge.second.h)
+      : Math.max(edge.first.col + edge.first.w, edge.second.col + edge.second.w);
+    for (let along = start; along <= end; along++) {
+      for (let across = edge.gapStart; across <= edge.gapEnd; across++) {
+        choices.push(edge.axis === 'x' ? cell(across, along) : cell(along, across));
+      }
+    }
+    return choices.sort((a, b) =>
+      (Math.abs(a.c - preferred.c) + Math.abs(a.r - preferred.r))
+      - (Math.abs(b.c - preferred.c) + Math.abs(b.r - preferred.r)));
+  }
   function protectedInteriorCells(base) {
     const entrances = new Set((base.doors || []).filter(door => isCell(door.enter))
       .map(door => key(door.enter.c, door.enter.r))); // A cut-through wall must never strand the player at the farmhouse entrance.
@@ -164,9 +183,12 @@
     });
     const blocked = new Set();
     const doorTiles = [], resolved = [], skipped = [];
+    const reservedDoors = new Set(); // Every join owns a distinct door, even at a four-room corner.
+    const hardObstacles = new Set([...base.floorSet, ...exitSet]); // Never paint a corridor onto an exterior exit.
     for (const segment of [...joins, ...manual]) {
       const inGap = segment.builtIn; // Join walls occupy NEW space; manual subdivisions intentionally split existing rooms.
-      const allowed = segment.strip.filter(p => inGap ? !floorSet.has(key(p.c, p.r)) : floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
+      const allowed = segment.strip.filter(p => inGap ? !hardObstacles.has(key(p.c, p.r))
+        : floorSet.has(key(p.c, p.r)) && !exitSet.has(key(p.c, p.r)));
       if (allowed.length < (inGap ? 1 : 3) || allowed.length !== segment.strip.length) {
         skipped.push({ id: segment.id, reason: inGap ? 'Joined room boundaries overlap or do not align' : 'Not a continuous interior floor strip' });
         continue;
@@ -179,20 +201,34 @@
       const savedDoor = inGap ? joinDoors[segment.id] : segment.door;
       const savedSlot = Number.isInteger(savedDoor?.slot) ? savedDoor.slot : -1;
       const rect = inGap ? null : roomRect(segment.ownerPieceId);
-      const door = forcedDoorways[0]
+      const preferredDoor = forcedDoorways[0]
         || (savedSlot >= 0 && savedSlot < allowed.length ? allowed[savedSlot] : null)
         || allowed.find(p => isCell(savedDoor) && p.c === savedDoor.c + (rect?.col || 0) && p.r === savedDoor.r + (rect?.row || 0))
         || allowed[Math.floor(allowed.length / 2)];
+      let door = preferredDoor; // Keep the selected position unless a nearby corridor already occupies it.
+      let resolvedStrip = allowed;
       if (inGap) {
-        const corridor = corridorForJoin(segment, door, base.floorSet); // One full-size-room-to-room walkway; never excavate a room's own tiles.
-        if (!corridor) {
-          skipped.push({ id: segment.id, reason: 'No unobstructed route through the indoor-only gap' });
+        const candidates = [preferredDoor, ...allowed, ...nearbyJoinDoorCells(segment, preferredDoor)];
+        const examined = new Set();
+        let chosen = null;
+        for (const candidate of candidates) {
+          const k = key(candidate.c, candidate.r);
+          if (examined.has(k) || hardObstacles.has(k) || reservedDoors.has(k) || floorSet.has(k)) continue;
+          examined.add(k);
+          const route = corridorForJoin(segment, candidate, hardObstacles);
+          if (route && !route.some(p => exitSet.has(key(p.c, p.r)))) { chosen = { candidate, route }; break; }
+        }
+        if (!chosen) {
+          skipped.push({ id: segment.id, reason: 'No distinct unobstructed doorway across the indoor-only gap' });
           continue;
         }
-        corridor.forEach(p => floorSet.add(key(p.c, p.r)));
+        door = chosen.candidate;
+        chosen.route.forEach(p => floorSet.add(key(p.c, p.r))); // Add a connecting passage without removing a room floor.
+        if (!allowed.some(p => p.c === door.c && p.r === door.r)) resolvedStrip = [...allowed, door];
       } else for (const p of allowed) if (p !== door) blocked.add(key(p.c, p.r));
+      reservedDoors.add(key(door.c, door.r));
       doorTiles.push([door.c, door.r]);
-      resolved.push({ id: segment.id, builtIn: inGap, strip: allowed, door });
+      resolved.push({ id: segment.id, builtIn: inGap, strip: resolvedStrip, door });
     }
     for (const k of blocked) floorSet.delete(k);
     latest = { originalFloor: new Set(base.floorSet), exitSet, segments: resolved, floorSet, blocked, skipped, entrances, protectedHearths,
