@@ -8268,6 +8268,12 @@
           if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
             target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
           }
+          // Once a named move owns its lunge/strike, preserve the original living target
+          // even if the master briefly runs outside ALERT_RANGE_PX. Without this, pets
+          // cancelled a committed swing as soon as its enemy crossed the alert boundary.
+          const committedTarget = c._animalAttack?.ctx?.target;
+          if (!target && !rescueActive && committedTarget?.health > 0 && !committedTarget._downed
+              && committedTarget.areaId === currentArea) target = committedTarget;
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
