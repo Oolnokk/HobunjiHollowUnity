@@ -217,6 +217,35 @@
     try{return window.ProceduralFurniture.createRockGeometry(sourceGeometry,settings);}
     finally{if(sourceGeometry!==mesh.geometry)sourceGeometry.dispose();}
   }
+  function ruinFloorShell(meta,seed){
+    const cols=Number(meta.gridCols),rows=Number(meta.gridRows),cellSize=Number(meta.cellSize); // Generator dimensions keep the replacement exactly inside its real floor footprint.
+    if(!Number.isInteger(cols)||!Number.isInteger(rows)||cols<1||rows<1||cols>512||rows>512||!Number.isFinite(cellSize)||cellSize<=0||!Number.isFinite(Number(meta.worldWidth))||!Number.isFinite(Number(meta.worldDepth))||!Array.isArray(meta.floorCells)||!meta.floorCells.length)throw new Error('The generated room has no valid floor footprint.');
+    const grid=Array.from({length:rows},()=>Array(cols).fill(null)); // Preview-owned grid: the wilderness builder may cache cover heights without touching generator metadata.
+    let salt=0;for(const letter of String(seed))salt=(Math.imul(salt,31)+letter.charCodeAt(0))>>>0; // Seed varies the joints reproducibly without changing the generated room footprint.
+    const noise=()=>{salt=(Math.imul(salt,1664525)+1013904223)>>>0;return salt/4294967296;}; // Jitters the stone centres used by the floor partition only.
+    const centres=[]; // Nearest-centre footprints give the real wilderness builder irregular stones rather than rectangular tiles.
+    for(let r=-2;r<rows+4;r+=4)for(let c=-2;c<cols+5;c+=5)centres.push({x:c+(Math.floor((r+2)/4)%2)*2+(noise()-.5)*2,z:r+(noise()-.5)*1.5});
+    for(const [c,r] of meta.floorCells){
+      if(!Number.isInteger(c)||!Number.isInteger(r)||c<0||r<0||c>=cols||r>=rows)throw new Error('The generated floor contains an invalid cell.');
+      let nearest=0,distance=Infinity; // Every actual floor cell belongs to one large, irregular stone with no uncovered gaps.
+      for(let i=0;i<centres.length;i++){const d=(c+.5-centres[i].x)**2+(r+.5-centres[i].z)**2;if(d<distance){distance=d;nearest=i;}}
+      grid[r][c]={type:'rock',rockKind:'undiggableBoulder',boulderId:'stone:'+nearest,elevTier:0};
+    }
+    const wilderness=window.ZoneTerrainFeatures; // Reuse the actual wilderness boulder shell owner in this standalone preview realm.
+    wilderness.init({TileType:{ROCK:'rock'},NORMAL_TOP:0,PLATEAU_UNIT:1});
+    const shell=wilderness.buildUndiggableBoulderShellData(grid,cols,rows); // One welded batch contains separate natural boulder crowns with no tiny bricks.
+    const floorY=Number(meta.floorSurfaceY)||0,yScale=.25; // Compress wilderness height to a skipping-stone profile while leaving horizontal size intact.
+    for(let i=0;i<shell.pos.length;i+=3){shell.pos[i]=shell.pos[i]*cellSize-Number(meta.worldWidth)/2;shell.pos[i+1]=floorY-.12+shell.pos[i+1]*yScale;shell.pos[i+2]=shell.pos[i+2]*cellSize-Number(meta.worldDepth)/2;}
+    return {...shell,yScale};
+  }
+  function ruinFloorMesh(meta,seed,material){
+    const shell=ruinFloorShell(meta,seed),geometry=new T.BufferGeometry(); // One owned buffer keeps vegetation sampling and draw calls bounded in the larger room.
+    geometry.setAttribute('position',new T.Float32BufferAttribute(shell.pos,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(shell.uv,2));
+    geometry.setIndex(shell.idx);geometry.computeVertexNormals();
+    const mesh=new T.Mesh(geometry,material); // This replaces every generated brick batch before the initial vegetation wrap.
+    mesh.name='Giant skipping-stone floor';mesh.userData={liveRootFloor:true,ruinPreviewRole:'floor',surfaceFoliageRole:'floors',floorStyle:'wilderness-skipping-stones',stoneCount:shell.componentCount,yScale:shell.yScale};
+    return mesh;
+  }
   function disposeRoomModel(room){
     if(!room||room.disposed)return;room.disposed=true;
     const materials=new Set(); // Instanced and ordinary room pieces share one stone finish.
@@ -232,14 +261,14 @@
       buildMessage('loading','Loading the existing ruin generator…');
       const api=await ruinGenerator(); // The hidden frame owns no render loop or extra WebGL context.
       if(request!==buildRequestId)throw Object.assign(new Error('Obsolete room request.'),{name:'AbortError'});
-      buildMessage('room','Generating the room walls and brick floor…');
+      buildMessage('room','Generating the room walls and giant stone floor…');
       let timer; // Missing textures, models or furniture downloads must not leave the entire rebuild queue pending forever.
       const deadline=new Promise((resolve,reject)=>{
         roomCancel=()=>reject(Object.assign(new Error('Ruin generation cancelled.'),{name:'AbortError'}));
         timer=setTimeout(()=>reject(new Error('Ruin generation timed out after 45 seconds. A model or texture may not have loaded. Rebuild to retry.')),45000);
       });
       let result; // Discard the stalled iframe on timeout/cancel; the next rebuild starts a clean generator.
-      try{result=await Promise.race([api.generateInteriorLocale({seed,size,singleRoom:true,pieceSet:'stoneAge',floorProps:'pillarsOnly',
+      try{result=await Promise.race([api.generateInteriorLocale({seed,size:size==='vast'?'large':size,roomPreset:size==='vast'?'veryLarge':null,singleRoom:true,pieceSet:'stoneAge',floorProps:'pillarsOnly',
         puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}}),deadline]);}
       catch(error){ruinFrame?.remove();ruinFrame=null;ruinLoader=null;throw error;}
       finally{clearTimeout(timer);roomCancel=null;}
@@ -256,25 +285,26 @@
         const isFloor=mesh.userData?.wallBuilderRecipe==='wallrecipe2.json';
         let owner=mesh,role='',isPillar=false;while(owner&&owner!==roots.localeRoot){role ||= owner.userData?.interiorRuinRole||'';isPillar ||= !!owner.userData?.squarePillar&&!owner.userData?.repoPillarBeam&&!owner.userData?.squarePillarBeam;owner=owner.parent;}
         isPillar ||= /pillar/i.test(role);
-        if(!isFloor&&!mesh.userData?.ruinInteriorWall&&!isPillar)return; // Keep pillars and the room shell; remove floor displays, rubble and other props without changing vegetation.
+        if(isFloor||(!mesh.userData?.ruinInteriorWall&&!isPillar))return; // Replace brick batches below; retain only walls and standing pillars from the generated shell.
         let node=mesh;while(node&&node!==roots.localeRoot){if(node.visible===false||node.userData?.surfaceFoliage||node.userData?.surfaceFoliageGuide)return;node=node.parent;}
         if(!mesh.geometry?.getAttribute('position')||mesh.userData?.furnitureGlbPart)return;
         const copy=mesh.clone(false); // Clone owned buffers: the generator disposes its originals on the next seed.
-        copy.geometry=ruinRockGeometry(mesh,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness,contactArea:.35}); // Reuse the furniture rock solver; instanced brick batches retain their placement matrices.
+        copy.geometry=ruinRockGeometry(mesh,{enabled:true,seed:seed+':ruin-rock-'+pieces,roughness,contactArea:.35}); // Reuse the furniture rock solver for the retained wall and pillar shapes.
         pieces+=mesh.isInstancedMesh?mesh.count:1;
         copy.userData.rockShape={enabled:true,roughness};
         copy.material=stoneMaterial;
         mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);
-        copy.visible=true;copy.userData.liveRootFloor=isFloor;copy.userData.ruinPreviewRole=isPillar?'pillar':isFloor?'floor':'wall';
+        copy.visible=true;copy.userData.liveRootFloor=false;copy.userData.ruinPreviewRole=isPillar?'pillar':'wall';
         if(isPillar)pillars++;
-        copy.userData.surfaceFoliageRole=isFloor?'floors':'walls';
-        model.add(copy);if(isFloor)floors++;else if(mesh.userData?.ruinInteriorWall)walls++;
+        copy.userData.surfaceFoliageRole='walls';
+        model.add(copy);if(mesh.userData?.ruinInteriorWall)walls++;
       });
+      const stoneFloor=ruinFloorMesh(meta,seed,stoneMaterial);model.add(stoneFloor);floors=1;pieces+=stoneFloor.userData.stoneCount; // Build the new floor before any vegetation is applied.
       if(!floors||!walls)throw new Error('The generated room is missing its physical floor or walls.');
       model.updateWorldMatrix(true,true);
       const floorY=Number(meta.floorSurfaceY)||0; // Keep furniture placement and floor-node sampling in the generated room's own coordinate system.
       if(ruinRoom!==preparedRuin?.room)disposeRoomModel(ruinRoom); // Keep the previous visible stone alive until its replacement has finished building.
-      ruinRoom={key,model,stoneMaterial,floorY,walls,floors,rooms:1,seed,size,pieces,pillars,rockRoughness:roughness,pieceSet:'stoneAge',floorProps:'pillars-only',wallPrismDepth:.45};
+      ruinRoom={key,model,stoneMaterial,floorY,walls,floors,rooms:1,seed,size,pieces,pillars,rockRoughness:roughness,pieceSet:'stoneAge',floorProps:'pillars-only',wallPrismDepth:.45,floorStyle:stoneFloor.userData.floorStyle,floorStones:stoneFloor.userData.stoneCount,floorYScale:stoneFloor.userData.yScale,roomWidth:meta.rooms[0].w*meta.cellSize,roomDepth:meta.rooms[0].h*meta.cellSize};
       $('ruinStatus').textContent=`1 room · ${walls} solid walls · ${floors} floor · ${pieces} Stone Age pieces (${Math.round(roughness*100)}% roughness). Preparing vegetation…`;
       return ruinRoom;
     });
@@ -330,7 +360,7 @@
       active?.dispose();active=next;next=null;
       if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
       if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
-      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} solid walls · ${room.floors} floor · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Temple cover: varied roots (60–150%) + woven vines (100–150%); Grow/Reset affects only the new shape.`;
+      if(room)$('ruinStatus').textContent=`1 room · ${room.walls} solid walls · ${room.roomWidth} × ${room.roomDepth} room · ${room.floorStones} giant floor stones · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Temple cover: varied roots (60–150%) + woven vines (100–150%); Grow/Reset affects only the new shape.`;
       buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
       scene.add(active.group); rebuildMarkers();
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
@@ -363,7 +393,7 @@
     const details = JSON.stringify({
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,appearance:readPreviewColors(),
       environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
-        {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,wallPrismDepth:ruinRoom?.wallPrismDepth,cover:preparedRuin?.cover.getDiagnostics()}:null,
+        {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,wallPrismDepth:ruinRoom?.wallPrismDepth,floorStyle:ruinRoom?.floorStyle,floorStones:ruinRoom?.floorStones,floorYScale:ruinRoom?.floorYScale,roomWidth:ruinRoom?.roomWidth,roomDepth:ruinRoom?.roomDepth,cover:preparedRuin?.cover.getDiagnostics()}:null,
       targetPosition:readPosition().toArray(), ...info
     }, null, 2);
     if (force || details !== lastDebug) { diagnostics.textContent = details; lastDebug = details; }
@@ -574,7 +604,7 @@
     syncPreviewColors(json.appearance||PREVIEW_COLORS);
     updatePreviewColor('stoneColor');
     $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
-    $('ruinSize').value=['small','medium','large'].includes(json.ruinSize)?json.ruinSize:'small';
+    $('ruinSize').value=['small','medium','large','vast'].includes(json.ruinSize)?json.ruinSize:'vast';
     $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.3));
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
       const n = Number(json.position[i]); if (Number.isFinite(n)) $(id).value = String(n);

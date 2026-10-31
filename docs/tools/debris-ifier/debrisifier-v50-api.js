@@ -204,6 +204,7 @@
     await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
+    window.__devRuinSingleRoomLarge = options.singleRoom === true && options.roomPreset === 'veryLarge'; // Root preview opts into the generator's existing vast chamber preset.
     window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
 
     const puzzleOptions = normalizeRuntimePuzzleOptions(options.puzzles); // Used by the embedded V50 patch while this one interior is generated.
