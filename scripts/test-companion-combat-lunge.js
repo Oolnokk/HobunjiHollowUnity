@@ -164,4 +164,8 @@ assert.equal(attacks.start(rested, 'costlySpecial', { target }), true, 'affordab
 assert.equal(rested.stamina, 6, 'only the additional special cost is spent here');
 attacks.cancel(rested);
 assert.equal(attacks.start({ ...tired, health: 0 }, 'costlySpecial', { target }), false, 'dead companion cannot restart an attack');
+const wildTired = { ...tired, isCompanion: false, stamina: 7, _animalAttack: null }; // Wild animals keep their legacy Exhaustion/resource transaction rather than a player-pet-only fallback.
+assert.equal(attacks.start(wildTired, 'costlySpecial', { target }), true, 'pet Stamina restriction must not disable wild signature attacks');
+attacks.cancel(wildTired);
+
 console.log('Shared companion weapon-speed engagement, attack lifecycle, mobile debug and collision passed.');
