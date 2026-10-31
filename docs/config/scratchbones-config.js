@@ -4054,6 +4054,7 @@ window.SCRATCHBONES_CONFIG = {
           "footHeightFraction": 0.11,
           "sizeBalanceMultiplier": 1.2,
           "referenceSpeedWorldUnitsPerSecond": 4.3,
+          "stanceDrop": { "enabled": true, "heightFraction": 0.06 },
           "alphaThreshold": 8,
           "boneColorHex": "#D8C7A3",
           "keratinColorHex": "#44484D",

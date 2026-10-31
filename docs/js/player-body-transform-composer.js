@@ -24,6 +24,7 @@
   const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
   let playerMesh = null;
   let playerLegRoot = null;
+  let playerLegHandle = null; // The live ProceduralLegAnimation handle, so body-lowering channels can ask the legs to fold.
   let playerPosteriorY = 0;
   let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
@@ -494,6 +495,7 @@
   function registerPlayerRig(parent, handle) {
     playerMesh = parent?.isObject3D ? parent : null;
     playerLegRoot = handle?.group?.isObject3D ? handle.group : null;
+    playerLegHandle = playerLegRoot ? handle : null;
     playerPosteriorY = finite(handle?.standingPosteriorY);
     playerNeckJointCache = null;
     renderFacingState = {};
@@ -504,6 +506,7 @@
     if (handle?.group && playerLegRoot !== handle.group) return;
     playerMesh = null;
     playerLegRoot = null;
+    playerLegHandle = null;
     playerPosteriorY = 0;
     playerNeckJointCache = null;
     setHeadAimTarget(null);
@@ -651,6 +654,7 @@
     resolvedYawDeltaRad,
     getHeadMaxYawDeg: () => PLAYER_HEAD_MAX_YAW_DEG, // Shared physical yaw cap lets NPC greeting neck turns match the player's head limit without duplicating the number.
     getPlayerMesh: () => playerMesh,
+    getPlayerLegHandle: () => playerLegHandle,
     getPosteriorY: () => playerPosteriorY, // Exact live player-local posterior pivot shared by holding/camera/composed body transforms.
     getVisualRoots: () => currentOwnedRoots().slice(),
     hasVisibleHeldItem: () => !!playerMesh && Array.from(playerMesh.children || []).some(isHeldVisualRoot),
