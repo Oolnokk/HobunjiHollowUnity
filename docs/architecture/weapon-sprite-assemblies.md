@@ -118,6 +118,24 @@ The mobile hierarchy diagnostic shows the same source/parent/child relationship
 used by the compositor. The assembled head primitives change, but the original
 shaft bitmap and flames do not.
 
+**Rig transforms now work on original shafts as well as duplicates.** The canonical
+`attachmentRigTransform` field is validated for every shaft in the Foundry,
+including B'shuakauitl itself; old saved `duplicateTransform` fields migrate
+as compatible aliases. The mounting-line editor shows the transformed
+socket positions and supports inverse-transformed touch input. Composite
+head pixels are checked at representative source-art locations relative to
+the stationary shaft—not merely by counting Canvas transform calls.
+
+The game intentionally caches each modular weapon as a **single composited
+sprite plane** (including layer ordering, bridge strokes, metallic recoloring,
+and nonmetal source masks). The attachment hierarchy here is a **composition
+tree**: parent Canvas transform → mount children → head primitive draws,
+not a persistent separate `THREE.Group` of independently movable head meshes.
+Changing authored rig settings recomposes the weapon; it does not animate
+separate head meshes in an existing held weapon. `ToolMetalRecolor` now includes
+the Foundry revision in its composite canvas cache key, preventing stale head
+pixels after editing rig settings and recomposition.
+
 The original donor is unaffected and old saved `duplicateTransform`
 values are retained but interpreted as rig-only adjustments. The editor's
 **shaft arrow** view continues to show original untransformed source
