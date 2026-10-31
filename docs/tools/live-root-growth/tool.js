@@ -696,6 +696,7 @@
   $('snareEnabled').onchange=()=>{if($('snareEnabled').checked&&$('previewEnvironment').value!=='ruin'){$('previewEnvironment').value='ruin';rebuild(false);}else buildRootSnare();};
   $('snareBuild').onclick=buildRootSnare;
   $('snareReroute').onclick=()=>roamingNpc?.chooseTarget();
+  $('snareRunPast').onclick=()=>{if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
   $('snareReveal').onchange=()=>{rootHands?.setNodeVisibility($('snareReveal').checked);previewDirty=true;};
   for(const id of ['snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed'])$(id).onchange=buildRootSnare;
   $('rebuild').onclick=()=>rebuild();
