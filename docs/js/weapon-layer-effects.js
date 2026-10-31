@@ -211,7 +211,7 @@
 
   function activateStack(state, layers, owner, unit) {
     // One ordered stack drives both regular layered tools and multi-piece flail heads.
-    state.metalTargets = visibleMetalTargets(layers);
+    state.metalTargets = [...(state.metalTargets || []), ...visibleMetalTargets(layers)]; // Each authored stack contributes its visible metal masks; flail heads must not erase haft masks.
     const emitters = [];
     layers.forEach((layer, index) => {
       const spec = layer.config.vfx;
@@ -233,7 +233,7 @@
         texture: createFireTexture(THREE),
       });
     });
-    state.fireEmitters = emitters; // Updated by the assembly's existing pre-render clock.
+    state.fireEmitters = [...(state.fireEmitters || []), ...emitters]; // Keep emitters belonging to earlier rigid-weapon or flail-head stacks alive until shared teardown.
   }
 
   function activateHead(state, head, images, unit) {

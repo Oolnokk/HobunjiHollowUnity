@@ -71,7 +71,7 @@ assert.equal(fuel.pixels[2*4],127,'source PNG pixels remain untouched');
 const grouped=api.visibleMetalTargets(layers).reduce((n,t)=>n+t.mask.matchedMetalPixels,0);
 assert.equal(grouped,3,'all visible metal pixels are available for the existing enchantment emitter');
 
-class Group {constructor(){this.children=[];this.layers={mask:1};this.userData={};}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);}}
+class Group {constructor(){this.children=[];this.layers={mask:1};this.userData={};}add(o){o.parent=this;this.children.push(o);}remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}}
 const THREE={
   Group,
   CanvasTexture: class{constructor(canvas){this.image=canvas;}},
@@ -92,7 +92,24 @@ assert.deepEqual(Array.from(state.metalTargets,t=>t.mask.matchedMetalPixels),[1,
 api.stepFire(state,0.1);
 assert(emitter.particles.length>0,'fire emits from the fuel marker mask');
 assert(emitter.particles.every(p=>p.sprite.renderOrder<layers[3].mesh.renderOrder));
+// A flail may also author fuel on the rigid shaft: activating either stack must
+// not discard the other's particles, masks, or cleanup ownership.
+const oldHeadTargets = state.metalTargets.length; // The previously constructed head masks must survive the second stack.
+const shaft = new Group(); // Independent parent simulates the rigid tool plane under the same weapon state.
+shaft.renderOrder = 1.5;
+state.plane = shaft;
+const shaftLayer = { id:'haftFuel', material:'marker', sourceHex:'#7F00FF', vfx:{ type:'fire', rate:22, life:.35, size:.02, speed:.12 } };
+const shaftMesh = { renderOrder:1.501 }; // Source mesh for the new shaft emitter, kept independent from the head.
+api.activateStatic(state,[shaftLayer],[shaftMesh],back,0.002);
+assert.equal(state.fireEmitters.length,2,'shaft and head emitters remain owned by the same weapon');
+assert.equal(state.metalTargets.length,oldHeadTargets+1,'head enchantment masks survive activation of rigid shaft');
+assert.strictEqual(state.fireEmitters[0],emitter,'head emitter identity survives rigid stack activation');
+api.stepFire(state,.1);
+assert(state.fireEmitters.every(fx=>fx.particles.length>0),'both independent particle stacks continue to emit');
+const [headFire,shaftFire] = state.fireEmitters.map(fx=>fx.group); // Check both parent groups release correctly.
 api.dispose(state);
-assert.equal(state.fireEmitters.length,0,'teardown disposes fire sprite pools');
+assert.equal(state.fireEmitters.length,0,'teardown disposes both fire sprite pools');
+assert.equal(headFire.parent,null,'head emitter is detached');
+assert.equal(shaftFire.parent,null,'shaft emitter is detached');
 
 console.log('weapon layer effects: PASS (metal recolor, visible composite mask, fuel marker, interleaved fire, head-only enchantments, no chain)');
