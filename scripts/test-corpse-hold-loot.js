@@ -51,4 +51,20 @@ action = Hold.HOLD_ACTION;
 aimed = null;
 Hold.update(3);
 assert.equal(looted, 1, 'nothing aimed, nothing looted');
+// Nighttime hives intercept the *start* of a hold, not the end.
+let interruptedStarts = 0;
+held = false; Hold.update(0.01);
+aimed = {
+  id: 'hive_1', holdSeconds: 5, holdLabel: 'Harvesting...',
+  onHoldStart() { interruptedStarts++; return { ok: false, interrupt: true, message: 'The hive stirs!' }; },
+  onAction() { throw new Error('Nighttime hold must never finish harvesting'); },
+};
+held = true; Hold.update(0.01);
+assert.equal(interruptedStarts, 1, 'first held frame awakens the hive');
+assert.equal(toasts.at(-1), 'The hive stirs!');
+assert(!classes.has('visible'), 'a hostile start interrupts before the progress HUD opens');
+Hold.update(10);
+assert.equal(interruptedStarts, 1, 'cannot spam hive starts without releasing the button');
+held = false; Hold.update(0.01); held = true; Hold.update(0.01);
+assert.equal(interruptedStarts, 2, 'fresh attempt after release calls onHoldStart again');
 console.log('PASS corpse-hold-loot');
