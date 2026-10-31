@@ -42,7 +42,7 @@ function fakeThree() {
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
   assert.deepEqual(Array.from(S.WING_CYCLE), [0, 1, 2, 1], 'legacy wing-step helper stays compatible');
-  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'five sprites pack into a 3x2 atlas');
+  assert.equal(S.ATLAS_COLS, 3); assert.equal(S.ATLAS_ROWS, 2, 'three fly poses, two coat patterns and authored eyes fit the shared 3x2 atlas');
   assert.deepEqual({ ...S.CROP }, { x: 0, y: 0, w: 478, h: 399 }, 'do not use the obsolete crop on the new PNGs');
   assert(S.FRAME_URLS.every((url, i) => url.endsWith('honeyfuzzle_fly' + (i + 1) + '.png')));
   assert(S.PATTERN_URLS.some(url => url.endsWith('honeyfuzzle_tailfeathers.png')));
@@ -104,7 +104,12 @@ function fakeThree() {
   load(context, 'docs/js/honeyfuzzle-swarm.js');
   const S = context.HoneyfuzzleSwarm;
   const avatar = S.buildAvatar(THREE, { name: 'swarm_test', modelWidth: 1.3, memberWidth: 0.4, count: 9 });
-  assert.equal(avatar.swarm.count, 9, 'one instanced mesh holds the whole swarm');
+  assert.equal(avatar.swarm.count, 3, 'main plane uses one third of the nominal birds');
+  assert.equal(avatar.sideSwarms.length, 2, 'a decorative layer sits on each side of the central plane');
+  assert(avatar.sideSwarms.every(side => side.count === 1 && side.userData.honeyfuzzleVisualOnly === true), 'outer planes are visual only, a third of main density');
+  assert(avatar.sideSwarms[0].position.z < 0 && avatar.sideSwarms[1].position.z > 0, 'parallel planes are offset along +/-Z');
+  assert.equal(avatar.frontPlane.children.length, 3, 'all three planes follow one creature-root pivot');
+  assert.equal(avatar.renderedMemberCount, 5, 'five birds instead of nine for this small custom swarm');
   const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <uv_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>' }; // Verifies actual shader composition, not merely uniforms.
   avatar.swarm.material.onBeforeCompile(shader);
   assert(shader.fragmentShader.includes('vec4 composed = overlayHoneyfuzzle( body, tail )'), 'tail blends beneath the body');
@@ -112,16 +117,39 @@ function fakeThree() {
   assert(shader.fragmentShader.includes('weights /= weights.x + weights.y + weights.z'), 'all three fly poses have normalized weights');
   assert(shader.vertexShader.includes('vUv.xy /= vec2(3.0, 2.0)'), '3x2 atlas UV coordinates are used');
   assert(shader.fragmentShader.includes('vec2( 0.0, 0.5 )'), 'tail and fly sprite sample different atlas rows');
+  assert(shader.fragmentShader.includes('vec4 eyes = mapTexelToLinear') && shader.fragmentShader.includes('overlayHoneyfuzzle( eyes, composed )'), 'authored eyes draw on top of the patterns');
+  assert.equal(S.EYE_URL, 'assets/creaturesprites/honeyfuzzle_eyes.png', 'original uploaded eye asset is reused');
   assert.equal(avatar.group.children[0], avatar.frontPlane, 'frontPlane is the yaw pivot the creature loop rotates');
   assert.equal(avatar.backPlane, null);
   avatar.update(0, 1000, 0.016, 150);
   const frameAttr = avatar.swarm.geometry.getAttribute('aFrame');
-  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: 9 }, (_, i) => i % 3), 'wing phase stays fixed per member');
+  assert.deepEqual(Array.from(frameAttr.array), Array.from({ length: avatar.swarm.count }, (_, i) => i % 3), 'wing phase stays fixed per member');
   assert.equal(new Set(Array.from(frameAttr.array)).size, 3, 'all three phases occur across the swarm');
   const m = avatar.swarm.instanceMatrix.array;
   assert(Array.from(m).every(Number.isFinite), 'instance matrices are finite');
   assert.equal(m[15], 1);
   // Smooth time advances without changing aFrame buffers or reallocating texture data.
+  const poseBefore = Array.from(avatar.swarm.instanceMatrix.array); // Confirms low-frequency posing avoids redundant per-frame writes.
+  avatar.swarm.instanceMatrix.needsUpdate = false;
+  avatar.update(0, 1050, 0.016, 150);
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'under 125 ms only shader wing phase advances');
+  assert.deepEqual(Array.from(avatar.swarm.instanceMatrix.array), poseBefore, 'bird matrices stay unchanged on intermediate frames');
+  avatar.update(0, 1190, 0.016, 150);
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, true, 'later tick refreshes all three planes');
+  const outerDepth = avatar.sideSwarms[1].position.z; // Unattached distance is the reference for all three swarm layers.
+  avatar.swarm.instanceMatrix.needsUpdate = false;
+  avatar.update(0, 1230, 0.1, 150, 0.71); // Full contraction occurs before the next 8 Hz pose-matrix refresh.
+  assert(Math.abs(avatar.sideSwarms[0].position.z + outerDepth * 0.71) < 1e-8, 'rear plane contracts in local -Z');
+  assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth * 0.71) < 1e-8, 'front plane contracts in local +Z');
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'depth spacing still animates on an intermediate frame');
+  avatar.update(0, 1400, 0.016, 150, 0.71);
+  assert(Math.abs(avatar.swarm.instanceMatrix.array[14] - (-1.5 * 0.003 * 0.71)) < 1e-6,
+    'per-bird Z offsets contract along with the layer spacing');
+  avatar.update(0, 1430, 0.1, 150, 1);
+  assert(avatar.sideSwarms[1].position.z > outerDepth * 0.71 && avatar.sideSwarms[1].position.z < outerDepth,
+    'detachment smoothly expands the layer spacing instead of snapping');
+  avatar.update(0, 1570, 0.2, 150, 1);
+  assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth) < 1e-8, 'unattached Z spacing returns to its original value');
   frameAttr.needsUpdate = false;
   const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
   avatar.update(0, 1001, 0.016, 150);
@@ -143,7 +171,9 @@ function fakeThree() {
   tinted.setGenotype(null);
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uTailColor.value.value, '#ece8e0');
   assert.equal(tinted.swarm.material.userData.honeyfuzzle.uSpectaclesUse.value, 0);
-  assert.equal(tinted.group.children.length, 1, 'all overlay sprites share one instanced mesh');
+  assert.equal(tinted.group.children.length, 1, 'all three planes share one root/pivot and one material');
+  assert.equal(tinted.centerMemberCount, 8); assert.equal(tinted.sideMemberCount, 3);
+  assert.equal(tinted.renderedMemberCount, 14, 'default swarm now draws 14 birds instead of 24');
   assert.equal(typeof S.debugSnapshot, 'function');
   assert(S.FLUTTER_HZ > 0 && S.FLUTTER_HZ < 15, 'opacity variation avoids aliasing at 30 FPS');
   const beforeWrap = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
@@ -225,13 +255,15 @@ function fakeThree() {
       'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
       'assets/creaturesprites/honeyfuzzle_fly1.png',
       'assets/creaturesprites/patterns/honeyfuzzle_spectacles.png',
-    ], 'tail, body, spectacles are composited in that order for portraits');
+      'assets/creaturesprites/honeyfuzzle_eyes.png',
+    ], 'tail, body, spectacles and original untinted eyes are composited in that order for portraits');
     return renderer.composeFrame('honeyfuzzle', 'run2', null);
   }).then(canvas => {
     assert.deepEqual(Array.from(canvas.layers), [
       'assets/creaturesprites/patterns/honeyfuzzle_tailfeathers.png',
       'assets/creaturesprites/honeyfuzzle_fly3.png',
-    ], 'the default tail remains visible without genes or spectacles');
+      'assets/creaturesprites/honeyfuzzle_eyes.png',
+    ], 'the default tail and authored eyes remain visible without genes or spectacles');
   }).catch(error => { throw error; });
 }
 
@@ -315,7 +347,8 @@ function hiveWorld({ night = false } = {}) {
   grid[8][2] = { type: TileType.SHRUB, floraKind: 'bush' };
   const tiles = [];
   grid.forEach((row, r) => row.forEach((tile, c) => tiles.push({ c, r, ...tile })));
-  const state = { night, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
+  const state = { night, nowMs: 0, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
+  context.performance.now = () => state.nowMs; // Monotonic active-game clock used to verify the precise 15-second hive respawn.
   const player = { x: 5.5 * 40, y: 6.5 * 40 };
   context.HoneyfuzzleHives.init({
     TILE: 40, TileType, player, calendar: state.calendar, inventory: state.inventory, hostileObjects: state.hostile, rnd: () => 0.5,
@@ -409,6 +442,53 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(west.context.HoneyfuzzleHives.getHoldTarget(5, 4), null);
   assert.equal(west.context.HoneyfuzzleHives.senseTargets({}).length, 0, 'excluded Western Slope scenery is never a hive highlight');
   assert.equal(west.context.HoneyfuzzleColors.zonePalette('map_western_slope').length, 0);
+}
+
+// ---- Swarm replacement and nighttime hive theft ---------------------------
+{
+  const { H, state } = hiveWorld();
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 1);
+  state.created[0].health = 0; // Ordinary combat defeats the current defender.
+  assert.equal(H.recordDefeat(state.created[0]), true, 'first observed death starts the countdown');
+  state.nowMs = 14999; H.ensureCurrentZone();
+  assert.equal(state.created.length, 1, 'no replacement before 15 seconds');
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'replaced after exactly 15 seconds while stump stands');
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'one replacement, no duplicates');
+  state.created[1].health = 0; H.recordDefeat(state.created[1]);
+  H.harvest('map_test', 5, 4); // Removes the hive permanently until regrowth.
+  state.nowMs = 31000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a collapsed hive cannot respawn its defender');
+}
+{
+  const { H, state, context } = hiveWorld({ night: true });
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 0, 'ordinary nocturnal hive never creates a daytime defender');
+  const target = H.getHoldTarget(5, 4);
+  let holdStarts = 0;
+  const originalHoldStart = target.onHoldStart;
+  target.onHoldStart = () => { holdStarts++; return originalHoldStart(); };
+  load(context, 'docs/js/corpse-hold-loot.js');
+  context.CorpseHoldLoot.init({
+    getActionHeldDown: () => true, getActiveAction: () => 'corpse_hold_loot',
+    getAimedHoldCorpse: () => target, showToast() {},
+  });
+  context.CorpseHoldLoot.update(0.1); context.CorpseHoldLoot.update(0.1);
+  assert.equal(holdStarts, 1, 'night harvest provokes exactly once when the hold begins');
+  assert.equal(state.created.length, 1, 'the night harvest attempt spawns a defending swarm before any honey is taken');
+  const defender = state.created[0];
+  assert.equal(defender.state, 'chase');
+  assert.equal(defender._hiveNightProvoked, true);
+  assert.equal(H.control(defender, 0.1), false, 'night defender stays engaged instead of returning to hive');
+  assert.equal(defender.avatarRef.group.visible, true, 'night defender remains visible');
+  target.onHoldStart(); // Repeat attempts use the existing swarm.
+  assert.equal(state.created.length, 1);
+  defender.health = 0; H.recordDefeat(defender);
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a defeated nighttime defender also respawns after 15 seconds');
+  assert.equal(state.created[1]._hiveNightProvoked, true);
 }
 
 // ---- Honeyfuzzle House (FarmProduction building) --------------------------------------------

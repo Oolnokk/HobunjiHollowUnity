@@ -27,7 +27,7 @@
 
   function mostExpensiveCompanionSpecial(c, ctx) {
     const deps = window.Combat.deps; // Shared combat context owns the local player and species attack costs.
-    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || c.master !== deps?.player) return null;
+    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || !deps?.player || (c.master || deps.player) !== deps.player) return null; // Legacy companions missing a master still belong to the local player.
     const enabledIds = window.StableAnimalTrainingRefinements?.enabledSpecialAttackIds?.(c) || c.def?.attacks || []; // Stable tactics exclude deliberately disabled special attacks.
     const tempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Matches the ordinary companion attack's tempo-adjusted base cost.
     const costTax = Math.max(0, Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1)); // Includes Taxed just as spendStamina does.
@@ -77,13 +77,18 @@
   // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
     const def = ATTACKS[id];
-    if (!def) return false;
+    if (!def || !c || c._animalAttack || (Number.isFinite(c.health) && c.health <= 0)) return false; // A second request must never overwrite an already committed attack or reanimate a defeated companion.
     const deps = window.Combat.deps;
     // game.js pays each species' generic attackStaminaCost immediately before
     // calling start(). Named attacks can top that payment up here without
     // making the generic bite/Guard Charge share their larger specialty cost.
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
-    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // A Furious interrupt has already paid its full cost from the enhanced pool.
+    if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) {
+      const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed increases the real cost of the special top-up.
+      const required = additionalStaminaCost * (Number.isFinite(taxed) && taxed >= 0 ? taxed : 1);
+      if (c.isCompanion && !c.banditCompanion && Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Only player pets use the bite fallback; wild animals keep their authored exhaustion behavior.
+      window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // Furious interrupts already paid for the whole special.
+    }
     const state = {};
     const target = ctx?.target; // Original companion decision remains locked during the opening charge.
     const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
