@@ -374,7 +374,7 @@ async function run() {
     'touch/drag gizmo is rendered at the actual visible transformed mount');
   // Verify that bridge/recipe editor pointer coordinates are inverse-transformed
   // from their visible positions, without overwriting the original source steps.
-  const bridgeHelpersStart = editor.indexOf('  function bridgeVisual(point, area=null) {');
+  const bridgeHelpersStart = editor.indexOf('  function bridgeVisual(point, area=undefined) {');
   const bridgeHelpersEnd = editor.indexOf('  function drawBridgeOverlay() {', bridgeHelpersStart);
   assert(bridgeHelpersStart >= 0 && bridgeHelpersEnd > bridgeHelpersStart);
   const bridgeCanvas = { width: 450, height: 1204 };
