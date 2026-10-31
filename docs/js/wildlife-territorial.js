@@ -181,6 +181,13 @@
     }
   }
 
+  function provoke(creature, target, reason = 'provoked') {
+    if (!deps || !target || !isTerritorial(creature) || creature.health <= 0) return false;
+    const state = ensureState(creature); // Night hive theft skips the warning phase but reuses the territorial combat rules.
+    beginFight(creature, state, target, reason);
+    return true;
+  }
+
   function beginDisengage(creature, state) {
     state.phase = 'disengage';
     state.elapsedS = 0;
@@ -410,7 +417,7 @@
   }
 
   window.HobunjiTerritorialWildlife = {
-    applyConfig,
+    applyConfig, provoke,
     tuning,
     get species() { return [...territorialSpecies]; },
     get patchedApi() { return patchedApi; },
