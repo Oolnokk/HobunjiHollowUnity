@@ -38,6 +38,20 @@ window.WEAPON_SPRITE_ASSEMBLY_CONFIG = Object.freeze({
         motion: { lag: 0.065, idleFollow: 7, attackFollow: 15 },
       },
     },
+    hachutuTorchStaff: {
+      label: 'Hachutu Torch-Staff',
+      sprite: 'assets/toolsprites/hachutu_torch-staff.png',
+      base: {
+        material: 'marker', sourceHex: '#7F00FF', targetHex: '#E7DDC9',
+        vfx: {
+          type: 'fire', sourceHex: '#7F00FF', masteryClusters: 2,
+          rate: 44, // Each of the two tips gets the Torch-Flail's full-strength 22 motes/s at mastery 5.
+          colors: ['#FFE6A5', '#FFAA3E', '#FF5F20'],
+          size: 0.02, life: 0.35, speed: 0.12,
+        },
+      }, // One rigid PNG, two original-marker fire regions; deliberately no metal/verdigris surface.
+      layers: [],
+    },
     grappleFlail: {
       label: 'Grapple-Flail',
       sprite: 'assets/toolsprites/grapple-flail_handle.png',
