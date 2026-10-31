@@ -550,7 +550,7 @@
       if(!region||!raw||!Number.isFinite(n))return;
       region.transform={...api.duplicateTransform(region.transform),
         [key]:Math.max(min,Math.min(max,n))}; // Only children selected by this area's original box inherit the transform.
-      if(commit)save();else {refreshRigPreview();updateRegionControls();}
+      if(commit)save();else refreshRigPreview(); // Don't replace active mobile numeric input while the user is typing.
     };
     field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
   }
@@ -647,9 +647,9 @@
     const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
     return { left: rect.left + (rect.width - canvas.width * scale) / 2, top: rect.top + (rect.height - canvas.height * scale) / 2, scale };
   }
-  function bridgeVisual(point, area=null) {
+  function bridgeVisual(point, area=undefined) {
     const p = api.rigPoint(chosenShaft(),{x:point[0],y:point[1]},
-      area || api.regionAt(chosenShaft(),{x:point[0],y:point[1]}));
+      area===undefined ? api.regionAt(chosenShaft(),{x:point[0],y:point[1]}) : area);
     return [p.x,p.y]; // Region's selected area then the overall parent.
   }
   function bridgeLocal(point) {
