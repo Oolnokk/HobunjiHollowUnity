@@ -97,8 +97,16 @@ fitted head geometry**, relative to the canonical 450×1204 frame center.
 Neither the original shaft sprite nor its pose, crop, nonmetal material,
 flame ignition origins, flame group scale, or other live effects inherit
 this transform. Source markers are still recolored in their original
-positions. Only mounted heads move and scale because the shared
-`shaftMounts` geometry feeds the normal head-fitting and bounds logic.
+positions. The compositor now constructs one real `attachmentRig` transform
+node with mounting-line **children**, each containing one fitted head
+**primitive child**. All head primitives first resolve their fit in their
+unscaled local mount coordinates, then inherit the single parent rig
+transform. For arbitrary X/Y scales, the final matrix is `parent × child`
+(instead of re-fitting the head to an already stretched mounting arrow).
+The canvas renderer uses nested transforms, and composition bounds use
+the same parent–child matrices, so the display, export and runtime agree.
+The unchanged shaft bitmap and its independent live-fire group are
+siblings, never descendants of the attachment rig.
 
 The original donor is unaffected and old saved `duplicateTransform`
 values are retained but interpreted as rig-only adjustments. The editor's
