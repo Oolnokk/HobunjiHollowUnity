@@ -90,15 +90,22 @@ to bake particles into a metal-textured composite or replace its heads.
 
 For other weapons, use the **Duplicate selected shaft + mounts + fitting rules**
 button in the Modular Weapon Editor, provide a stable key/label and sprite,
-then adjust the duplicated shaft's **X scale, Y scale, X translation, and
-Y translation**. A single `duplicateTransform` applies around the
-canonical 450×1204 frame center to the complete shaft sprite and all
-original attachment arrows; each head is fitted to those transformed
-arrows. Any live `fireAssembly` on a copied shaft also inherits the same
-transform, so the flame source positions and relative motion remain
-aligned. The original donor is unaffected. The editor's **shaft arrow**
-view continues to show original untransformed source pixels for precise
-editing; the **combined preview** shows the transformed assembly.
+then adjust the duplicate's **Rig X scale, Rig Y scale, Rig X translation,
+and Rig Y translation**. The existing `duplicateTransform` config field now
+applies **only to the attachment primitive / tang-and-sleeve rig and the
+fitted head geometry**, relative to the canonical 450×1204 frame center.
+Neither the original shaft sprite nor its pose, crop, nonmetal material,
+flame ignition origins, flame group scale, or other live effects inherit
+this transform. Source markers are still recolored in their original
+positions. Only mounted heads move and scale because the shared
+`shaftMounts` geometry feeds the normal head-fitting and bounds logic.
+
+The original donor is unaffected and old saved `duplicateTransform`
+values are retained but interpreted as rig-only adjustments. The editor's
+**shaft arrow** view continues to show original untransformed source
+pixels for precise editing; the **combined preview** shows a stationary
+shaft with the transformed heads. The 2D modular preview does not bake
+live flames into a PNG.
 
 The modular compositor recolors the original `#7F00FF` fuel markers
 off-white and records which source-shaft pixels are visible. The metal
