@@ -24,7 +24,7 @@
   const MIN_SCALE = 0.1;
   const MAX_SCALE = 4;
   const MAX_OFFSET_FRACTION = 0.5; // Clamp for headOffsetY and the composed age-hunch amount, as a fraction of model height.
-  const MAX_AGE_HUNCH_FRACTION = 0.15; // A fully "aged" (age = 1) NPC's head lowers by up to 15% of their own model height, on top of any authored headOffsetY.
+  const MAX_AGE_HUNCH_FRACTION = 0.25; // A fully "aged" (age = 1) character's head lowers by up to 25% of their own model height, on top of any authored headOffsetY: js/character-spine.js stoops the whole upper body by most of that (the spine bone) and the head bone carries the rest.
   const EPSILON = 1e-9;
 
   const finite = (value, fallback = 1) => {
@@ -259,7 +259,8 @@
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction), modelHeight);
+    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(ageFraction)?.shoulderDrop || 0 : 0; // The spline already lowers the head by this much (the head bones sit on its last node); only the rest comes from the head bone.
+    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction) + spineShare, modelHeight);
     return true;
   }
 

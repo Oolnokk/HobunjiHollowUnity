@@ -1784,8 +1784,8 @@
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
         grappleFlail: { label: 'Grapple-Flail', icon: '🪝', sprite: 'assets/toolsprites/grapple-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'grappleFlail', metalKey: 'tinBronze' }, // Unique rope flail; reuses the same shaft-attached weapon assembly and hit logic.
-        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
-        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', shapeKey: 'hachutuTorchStaff' }, // B'shuakauitl melee stance/attacks; no metalKey, so mastery never grows verdigris.
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Legacy unique-item key (kept for saves/dev grants); the smithable shape of the same name now crafts hachutuTorchFlail_<metal>. The haft remains its original grip/hitbox mesh.
+        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', shapeKey: 'hachutuTorchStaff' }, // Legacy unique-item key (kept for saves/dev grants); the smithable shape of the same name now crafts hachutuTorchStaff_<metal>. B'shuakauitl melee stance/attacks; this bare key has no metalKey, so it never grows verdigris.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -1886,6 +1886,8 @@
         dagger:       { label: 'Dagger',        icon: '🗡️', baseSprite: 'assets/toolsprites/dagger.png',             slots: ['weapon'], animStyle: 'thrust', dmgType: 'sharp', weaponIdleClass: 'light' },
         kylie:        { label: 'Kylie',         icon: '🪃', baseSprite: 'assets/toolsprites/kylie.png',              slots: ['weapon'], animStyle: 'sweep',  dmgType: 'blunt', weaponIdleClass: 'light' },
         warCleaver:   { label: 'War-Cleaver',   icon: '🗡️', baseSprite: 'assets/toolsprites/war-cleaver.png',        slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', baseSprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true }, // Smithable once the player has acquired one (owning any item of this shape unlocks it, see weapon-trust-visits.js): crafted keys hachutuTorchFlail_<metal>; its chain/brazier/fire assembly resolves through the shape key (weapon-sprite-assemblies.js).
+        hachutuTorchStaff: { label: 'Hachutu Torch-Staff', icon: '🔥', baseSprite: 'assets/toolsprites/hachutu_torch-staff.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true }, // Smithable once the player has acquired one (owning any item of this shape unlocks it, see weapon-trust-visits.js): crafted keys hachutuTorchStaff_<metal>; B'shuakauitl melee stance/attacks (weapon-shape-stats.js), two-tip fire from the shape's assembly.
       };
       const HELD_SHAPE_DEFS = { ...TOOL_SHAPE_DEFS, ...MELEE_WEAPON_SHAPE_DEFS }; // Shared smithing/equipment catalog used by the existing generated-item pipeline.
       // Full catalog; WeaponTrustVisits filters discovery/friendship gates.
@@ -12544,6 +12546,8 @@
           name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
+          spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
         // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).
@@ -16417,7 +16421,7 @@
       // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
       // 5 hand-authored tool keys just above.
       ITEM_DEFS.grappleFlail = { icon: '🪝', label: 'Grapple-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Flail', 'Grapple'], desc: 'A two-part metal grapple head suspended on a generated rope.' }; // Inventory metadata only; acquisition remains authored separately.
-      ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Unique, non-smithing weapon registered for inventory lookups without unlocking it by default.
+      ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Legacy unique-item key registered for inventory lookups; the smithable shape crafts hachutuTorchFlail_<metal>.
       ITEM_DEFS.hachutuTorchStaff = { icon: '🔥', label: 'Hachutu Torch-Staff', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Staff'], desc: 'An ancient double-ended torch-staff. Mastery brings its little flames together into two blazes.' }; // Weapon-only relic metadata; acquisition remains a separate authoring decision.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
@@ -17531,6 +17535,7 @@
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
           name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
         // playback.js) writes directly into this same legs handle — re-attach

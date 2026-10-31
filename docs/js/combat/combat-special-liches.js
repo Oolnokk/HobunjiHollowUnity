@@ -466,7 +466,7 @@
   function ensureHeadFire(actor) {
     if(actor._specialHeadFire || typeof document==='undefined')return;
     const root=actor.avatarRef?.group, data=root?.userData?.specialHeadFire, rig=root?.userData?.neckRig, THREE=window.THREE;
-    const neck=rig?.neckJoint?.position, joint=rig?.headScaleJoint, plane=rig?.skinnedPlane;
+    const neck=rig?.neckLocal, joint=rig?.headScaleJoint, plane=rig?.skinnedPlane;
     if(!data?.sources?.length || !rig?.available || !joint || !neck || !plane || !THREE)return;
     const width=root.userData.portraitModelWidth, height=root.userData.portraitModelHeight; // Same plane-to-bone mapping the portrait glow lights use.
     const group=new THREE.Group();group.name='special_lich_headfire';

@@ -6,11 +6,12 @@ const files = [
   'config/scratchbones-config.js?v=20261030h3882d51',
   'config/attachment-rig-profiles.js?v=20261028a',
   'config/character-rig-scale-defaults.js?v=20261028a',
-  'js/character-rig-scale.js?v=20261028a',
+  'js/character-rig-scale.js?v=20261031hb701fa8',
   'js/color-fill.js?v=20261028a',
   'js/portrait-utils.js?v=20261030headMask1',
   'js/portrait-breathing.js?v=20261028a',
   'js/npc-avatar-preview-utils.js?v=20261031h4adfa50',
+  'js/character-spine.js?v=spine1', // Hunchback weights/deformation, read by the portrait skin, shoulder aim and leg solver.
   'js/png-plane-avatar.js?v=20261031hacbff47',
   'js/species-pose-scaling.js?v=20261029maskSlots2',
   'js/character-dimensions.js?v=20261007he86e7d1', // Species heights drive the held weapon's height factor and grip offset, exactly as in the game and Attack Animation Editor.
@@ -20,6 +21,8 @@ const files = [
   'js/furniture-light-registry.js?v=20261028a',
   'js/tool-metal-recolor.js?v=20261028a',
   'js/weapon-layer-effects.js?v=20261031h7702074', // Marker-pixel scanning shared with the flail fuel sprites (the guardians' flame headband emitters).
+  'config/weapon-sprite-assemblies.js?v=20261030worldrise1', // Layered weapon recipes (the Torch-Flail chain and brazier, the Torch-Staff's marker recolor and fire), shared with the game.
+  'js/weapon-sprite-assemblies.js?v=20261030regions7', // Their runtime: held weapons get the same layers, recolor and fire as in the game.
   'js/motif-store.js?v=20261026templepatterns1', // The shared Pattern editor and libraries, so clothing and weapon patterns are authored with the same UI as the game and other tools.
   'js/pattern-library.js?v=20261026hPlayerDefaults5',
   'js/repo-pattern-library.js?v=20261030lichPatterns3',
@@ -29,7 +32,7 @@ const files = [
   'js/town-mine.js?v=20261028a',
   'js/npc-movement-head-target.js?v=20261028a',
   'js/leg-bones.js?v=20261028a',
-  'js/procedural-leg-animation.js?v=20261030h2d6073a',
+  'js/procedural-leg-animation.js?v=20261031h99e235f',
   'js/procedural-feet-outline-parity.js?v=20261029a',
   'js/png-plane-outline-occluder.js?v=20261029enemyParity1',
   'js/weather-fx.js?v=20261029enemyParity1',
@@ -40,14 +43,14 @@ const files = [
   'js/npc-wardrobe.js?v=20261030lichWardrobe4', // Applies the live NPC forced-overpass garment policy before the portrait is baked; required for named lich glyphs.
   'config/pants-rigs.js?v=20261028a',
   'js/pants-rig-core.js?v=20261028a',
-  'js/pants-garment-renderer.js?v=20261030h4b26b8d',
+  'js/pants-garment-renderer.js?v=20261031hd62e30c',
   'js/perp-rotation.js?v=20261026h7f6f691', // Mounts turn like creature cards (dead-zone facing); without it the Nazgraku card stays edge-on.
   'js/creature-texture-cache.js?v=20261011h0a4170f',
   'js/creature-genetics.js?v=20261029h86f0973', // makeDefaultGenotype: the same coat roll wild Nazgraku get.
   'js/creature-genetics-render.js?v=20261028a',
   'config/modular-weapons.js?v=20261028a',
   'js/modular-weapons.js?v=20261028a',
-  'js/held-action-animations.js?v=20261031h23dda4c',
+  'js/held-action-animations.js?v=20261031h92335d0',
   'js/combat/shared-attack-pose.js?v=20261030h12f55f4',
   'js/combat/attack-pose-templates.js?v=20261028a',
   'js/combat/melee-pose-spacing.js?v=20261028a',
@@ -57,27 +60,27 @@ const files = [
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
-  'js/combat/ranged-weapons.js?v=20261029maskSlots2',
+  'js/combat/ranged-weapons.js?v=20261031hbad4f8b',
   'js/alchemy-system.js?v=20261028a',
-  'js/combat/enemy-loadout-rules.js?v=20261030lichRules3',
-  'js/combat/combat-bandit.js?v=20261030lichEyeglow4',
+  'js/combat/enemy-loadout-rules.js?v=20261031h512399e',
+  'js/combat/combat-bandit.js?v=20261031he5e3a69',
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
   'js/combat/combat-minion.js?v=20261028a',
-  'js/combat/combat-maskbound-guardian.js?v=20261029maskSlots2',
+  'js/combat/combat-maskbound-guardian.js?v=20261031h552a81b',
   'js/combat/combat-lich.js?v=20261030namedboss2',
   'js/combat/combat-enchantments.js?v=20261031ghoulvar1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
   'js/combat/weapon-enchantment-vfx.js?v=20261031h6c09483',
   'js/combat/ghoul-special-variants.js?v=20261031ghoulvar1',
   'js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1',
-  'js/combat/combat-special-liches.js?v=20261030lichEyeglow5', // Workshop loads the shipped boss runtime, not a copied test implementation.
+  'js/combat/combat-special-liches.js?v=20261031h362266d', // Workshop loads the shipped boss runtime, not a copied test implementation.
   'js/player-body-transform-composer.js?v=20261030hff4c1d3',
   'js/drunk-locomotion.js?v=20261029a',
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261030lichSource3',
+  'tools/enemy-loadout-editor/source-data.js?v=20261031h3fcdd3d',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -250,6 +253,8 @@ export class EnemyPreview {
       this.weaponTextures,
       d.heldObjectRenderOrder,
       (root) => window.PngPlaneOutlineOccluder.markPngPlane(root),
+      (itemKey) => this.weaponMetalOptions(itemKey), // The weapon-assembly runtime's recolor options, as in the game.
+      () => 0, // Preview weapons are unmastered.
     );
     this.dependencies = {
       rnd: () => this.random(),
@@ -365,6 +370,11 @@ export class EnemyPreview {
     this.camera.aspect = r.width / Math.max(1, r.height);
     this.camera.updateProjectionMatrix();
   }
+  // The recolor the plain weapon sprite gets, as the weapon-assembly runtime's metalOptions (null for a metal-less weapon).
+  weaponMetalOptions(itemKey) {
+    const metal = this.items[itemKey]?.metalKey && this.data.metals[this.items[itemKey].metalKey];
+    return metal ? { targetHex: metal.hex, verdigrisHex: metal.verdigrisHex || '#3FAF9F', oxidationAmount: 0 } : null;
+  }
   weaponMesh(key) {
     const def = this.items[key] || {
       sprite: 'assets/toolsprites/ranged_' + key + '.png',
@@ -434,6 +444,13 @@ export class EnemyPreview {
           (0.5 * def._imgH) / def._imgW,
         );
         group.userData.unloadedTexture = texture;
+        // The game builds a weapon mesh only after its texture has loaded; here the real image arrives after the mesh, so the layered assembly
+        // (flail chain and brazier, staff marker recolor and fire) is set up now, against the real sprite, replacing the one made on the blank placeholder.
+        const assemblies = window.HobunjiWeaponSpriteAssemblies;
+        if (assemblies) {
+          assemblies.drop(group);
+          assemblies.decorate(group, key, def, { THREE, metalOptions: () => this.weaponMetalOptions(key), masteryLevel: () => 0 });
+        }
         if (loadedImage) {
           const loaded = window.HobunjiSpritePngSurface.makeCanvasTexture(
             THREE,
@@ -863,6 +880,7 @@ export class EnemyPreview {
       if (this.actor) this.update(dt);
     }
     this.controls.update();
+    window.HobunjiWeaponSpriteAssemblies?.tick?.(this.paused ? 0 : dt); // The game ticks this from its frame scheduler's pre-render phase.
     this.headUndo.length = 0;
     window.HobunjiDrunkProneCompositionBridge.prepareBanditSwayForRender(
       this.headUndo,

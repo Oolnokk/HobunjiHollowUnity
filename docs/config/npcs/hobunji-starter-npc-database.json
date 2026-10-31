@@ -2864,7 +2864,8 @@
                               "l": 68
                         },
                         "aging": {
-                              "hunch": 0.13,
+                              "hunch": 0.4,
+                              "kyphosis": 0.4,
                               "bodyColor": {
                                     "preset": "old",
                                     "amount": 70,
@@ -3401,7 +3402,8 @@
                               "l": 68
                         },
                         "aging": {
-                              "hunch": 0.13,
+                              "hunch": 0.4,
+                              "kyphosis": 0.4,
                               "bodyColor": {
                                     "preset": "old",
                                     "amount": 70,
@@ -7476,7 +7478,8 @@
                               "l": 68
                         },
                         "aging": {
-                              "hunch": 0.07,
+                              "hunch": 0.3,
+                              "kyphosis": 0.3,
                               "bodyColor": {
                                     "preset": "mature",
                                     "amount": 40,
@@ -9225,6 +9228,10 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.5,
+                              "kyphosis": 0.5
                         }
                   },
                   "equippedCosmetics": [
@@ -9857,6 +9864,10 @@
                               "h": 210,
                               "s": 75,
                               "l": 68
+                        },
+                        "aging": {
+                              "hunch": 0.5,
+                              "kyphosis": 0.5
                         }
                   },
                   "equippedCosmetics": [
@@ -12112,6 +12123,7 @@
                         },
                         "aging": {
                               "hunch": 0.3,
+                              "kyphosis": 0.3,
                               "bodyColor": {
                                     "preset": "old",
                                     "amount": 70,

@@ -87,11 +87,18 @@
       const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
       bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
       deformed.set(0, 0, 0);
-      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length >= 3
+      const splineLayout = skeleton.bones.length > 8; // Current skeleton: spline nodes 0-6, then head-turn (7) and head-scale (8). Legacy rigs: body 0, neck 1, head 2.
+      const neckBone = splineLayout ? 7 : 1, headBone = splineLayout ? 8 : 2;
+      const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
         ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
       headWeight = Math.max(headWeight, headScaleWeight);
-      for (let i = 0; i < Math.min(3, skeleton.bones.length); i++) {
-        const weight = i === 0 ? 1 - headWeight : i === 1 ? headWeight - headScaleWeight : headScaleWeight; // Same torso/neck/head weights without a per-query array.
+      const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 };
+      spline.a = 0; spline.b = 0; spline.wb = 0;
+      if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline); // Same shares the portrait skin uses.
+      const bodyWeight = 1 - headWeight;
+      for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
+        const weight = i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
+          : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0);
         if (!weight) continue;
         if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
           boneMatrix.fromArray(skeleton.boneMatrices, i * 16);

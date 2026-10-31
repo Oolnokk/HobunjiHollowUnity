@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261031h433dcc8';
+import { EnemyPreview } from './preview.js?v=20261031h1fd2e84';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -616,6 +616,43 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
+  const spineLabel = el('label', 'chance', 'Spine hunch (%)'); // Static hunchback: lowers neck, shoulders and attack-orbit centre, widens stance and stride (js/character-spine.js).
+  const spineInput = el('input');
+  spineInput.type = 'number';
+  spineInput.min = '0';
+  spineInput.max = '100';
+  spineInput.step = '5';
+  spineInput.value = String(Math.round((Number(rule().spine?.hunch) || 0) * 100));
+  spineInput.onchange = () => {
+    mutate((r) => {
+      const hunch = Math.min(1, Math.max(0, (Number(spineInput.value) || 0) / 100));
+      if (hunch > 0) r.spine = { ...(r.spine || {}), hunch }; // Keeps any authored sway and kyphosis.
+      else delete r.spine;
+    });
+    kyphosisInput.disabled = !(Number(rule().spine?.hunch) > 0);
+    queueProportionPreview(); // The enemy is built from the saved rule, so replay the current seed to show the new stoop.
+  };
+  spineLabel.append(spineInput, el('span', 'muted', ' 0 = upright, 100 = fully stooped; saved with the spawn rules and used in game'));
+  box.append(spineLabel);
+  const kyphosisLabel = el('label', 'chance', 'Kyphosis (%)'); // How far and how late the upper back hooks forward, independent of how far it stoops (js/character-spine.js).
+  const kyphosisInput = el('input');
+  kyphosisInput.type = 'number';
+  kyphosisInput.min = '0';
+  kyphosisInput.max = '100';
+  kyphosisInput.step = '5';
+  kyphosisInput.value = String(Math.round((rule().spine?.kyphosis ?? 0.5) * 100));
+  kyphosisInput.disabled = !(Number(rule().spine?.hunch) > 0); // It shapes a hunch, so it needs one.
+  kyphosisInput.onchange = () => {
+    mutate((r) => {
+      if (!r.spine) return;
+      const kyphosis = Math.min(1, Math.max(0, (Number(kyphosisInput.value) || 0) / 100));
+      if (Math.abs(kyphosis - 0.5) < 1e-9) delete r.spine.kyphosis; // 50 is the default; only a real choice is saved.
+      else r.spine.kyphosis = kyphosis;
+    });
+    queueProportionPreview();
+  };
+  kyphosisLabel.append(kyphosisInput, el('span', 'muted', ' 0 = a pure stoop with no forward curl, 50 = default, 100 = a straight back with the neck hooked far forward'));
+  box.append(kyphosisLabel);
   const gate = el('label', 'chance', 'Head gate');
   const gateSelect = el('select');
   for (const [value, text] of [

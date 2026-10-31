@@ -241,6 +241,25 @@
     return point;
   }
 
+  // World displacement of the orbit centre by a hunched spine (options.orbitOffset, from HobunjiCharacterSpine.orbitOffsetWorld), in the pose
+  // frame: x sideways, y vertical (negative = lower), z forward. Null/absent for an upright character.
+  const NO_ORBIT_OFFSET = Object.freeze({ x: 0, y: 0, z: 0 });
+  function orbitOffsetOf(options) {
+    const offset = options?.orbitOffset;
+    return offset && [offset.x, offset.y, offset.z].every(Number.isFinite) ? offset : NO_ORBIT_OFFSET;
+  }
+  // The same offset with its horizontal part turned into world X/Z by the pose frame's facing (right = (cos, -sin), forward = (sin, cos));
+  // yawRad 0/omitted means the coordinates already ARE the pose frame.
+  function orbitShift(options, out) {
+    const offset = orbitOffsetOf(options), yaw = Number(options?.yawRad) || 0;
+    const c = Math.cos(yaw), n = Math.sin(yaw);
+    out.x = offset.x * c + offset.z * n;
+    out.y = offset.y;
+    out.z = -offset.x * n + offset.z * c;
+    return out;
+  }
+  const orbitShiftScratch = { x: 0, y: 0, z: 0 };
+
   // Applies the complete weapon-position mapping. baseY is the UNSCALED
   // floor-relative hand/tool anchor produced by PNGPlaneAvatar. That anchor
   // already includes portrait scale, vertical placement, and real opaque-art
@@ -261,9 +280,10 @@
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
     const [dx, dz] = scaleHorizontal(x - cx, z - cz, axes.x, axes.z, options.yawRad);
-    const nextY = scaledBaseY + (y - baseY) * metrics.heightRatio * axes.y;
-    if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
-    else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
+    const shift = orbitShift(options, orbitShiftScratch); // A hunched spine (HobunjiCharacterSpine) moves the whole orbit centre, not just the hand.
+    const nextY = scaledBaseY + shift.y + (y - baseY) * metrics.heightRatio * axes.y;
+    if (typeof point.set === 'function') point.set(cx + dx + shift.x, nextY, cz + dz + shift.z);
+    else { point.x = cx + dx + shift.x; point.y = nextY; point.z = cz + dz + shift.z; }
     return point;
   }
 
@@ -279,8 +299,9 @@
     const metrics = heightMetrics(options.speciesId, options.gender, options.modelHeight, options.rigScaleY);
     if (!(axes.x > 0) || !(axes.y > 0) || !(axes.z > 0) || !(metrics.heightRatio > 0)) return point;
     const scaledBaseY = floorY + (baseY - floorY) * metrics.rigScaleY;
-    const [dx, dz] = scaleHorizontal(x - cx, z - cz, 1 / axes.x, 1 / axes.z, options.yawRad);
-    const nextY = baseY + (y - scaledBaseY) / (metrics.heightRatio * axes.y);
+    const shift = orbitShift(options, orbitShiftScratch); // The exact inverse of transformPosePoint's orbit shift.
+    const [dx, dz] = scaleHorizontal(x - cx - shift.x, z - cz - shift.z, 1 / axes.x, 1 / axes.z, options.yawRad);
+    const nextY = baseY + (y - scaledBaseY - shift.y) / (metrics.heightRatio * axes.y);
     if (typeof point.set === 'function') point.set(cx + dx, nextY, cz + dz);
     else { point.x = cx + dx; point.y = nextY; point.z = cz + dz; }
     return point;

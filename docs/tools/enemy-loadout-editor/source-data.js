@@ -126,6 +126,8 @@
       'toolTextures',
       'HELD_OBJECT_RENDER_ORDER',
       '_markPngPlane',
+      'metalToolRecolorOptions', // Resolved by the weapon-assembly runtime when it recolors/ignites a held weapon.
+      'toolMasteryLevel',
       'const TOOL_MODEL_WIDTH=0.5;const modularToolGeometries=new Map();return (' +
         toolMeshSource +
         ');',

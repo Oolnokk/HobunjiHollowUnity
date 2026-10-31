@@ -208,7 +208,7 @@
 
     function shoulderInParent(side) {
       const profileShoulder = profileShoulderInParent(side); // Attachment-rig coordinates already share the floor-relative hand-parent space.
-      if (profileShoulder) return shoulderParent.copy(profileShoulder);
+      if (profileShoulder) return spineLowered(shoulderParent.copy(profileShoulder));
       const source = shoulderAvatar[side];
       if (!source) return null;
       shoulderWorld.copy(source);
@@ -217,7 +217,27 @@
       shoulderParent.copy(shoulderWorld);
       parent.updateWorldMatrix?.(true, false);
       parent.worldToLocal(shoulderParent);
-      return shoulderParent;
+      return spineLowered(shoulderParent);
+    }
+
+    // Shoulder anchors keep their 2D portrait coordinates; a hunched spine (js/character-spine.js, bound on the avatar root) carries them along
+    // the same curve the portrait skin follows: the point is taken into the avatar's frame, displaced (down, forward and sideways, off the local
+    // root's x = 0, z = 0) by the curve at its own height, and brought back to the parent frame.
+    const spineScratch = new THREE.Vector3();
+    const spineDisplacement = { x: 0, y: 0, z: 0 };
+    function spineLowered(point) {
+      const spine = avatarRoot.userData?.hobunjiSpine;
+      if (!spine?.curve) return point;
+      parent.updateWorldMatrix?.(true, false);
+      avatarRoot.updateWorldMatrix?.(true, false);
+      spineScratch.copy(point);
+      parent.localToWorld(spineScratch);
+      avatarRoot.worldToLocal(spineScratch);
+      const d = window.HobunjiCharacterSpine.deformAt(spine, spineScratch.y - assemblyY, spineDisplacement);
+      spineScratch.x += d.x; spineScratch.y += d.y; spineScratch.z += d.z;
+      avatarRoot.localToWorld(spineScratch);
+      parent.worldToLocal(spineScratch);
+      return point.copy(spineScratch);
     }
 
     rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.

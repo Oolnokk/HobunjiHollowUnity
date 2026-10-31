@@ -82,4 +82,26 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   near(resolve(root, { x: 80, y: 10 }).y, .6, 'mirrored landmark uses rendered X for head-scale gate');
   context.portraitsFlipped = false;
 }
+// Current skeleton (spline nodes 0-6, head-turn 7, head-scale 8): body pixels follow the two spline nodes either side of their height, taken from
+// the spline module's own weights; a point at the posterior rides the pinned node 0 and a point above the neck base the last node.
+context.window = context; // The resolver reads window.HobunjiCharacterSpine, installed by the spine module in this same realm.
+vm.runInContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), context);
+function splineFixture(nodeShift) {
+  const world = new Matrix4(1, 0);
+  const matrices = Array.from({ length: 9 }, (_, k) => (k >= 1 && k <= 6 ? new Matrix4(1, nodeShift[k]) : world)); // Nodes 1-6 displaced, node 0 pinned, neck/head bones at rest.
+  const skeleton = { bones: matrices.map(matrixWorld => ({ matrixWorld })), boneInverses: matrices.map(() => new Matrix4()), update() {} };
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .3 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+    updateMatrixWorld() {}, localToWorld(v) { return v; } };
+  return { updateMatrixWorld() {}, userData: { sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
+    neckRig: { available: true, skinnedPlane, neckLocal: { y: .2 }, spineBase: { y: .1 }, spinePosteriorY: -.3, headScaleJoint: {}, headBoundsPx: { left: 40, right: 60 } } } };
+}
+for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition]) {
+  const nodes = [0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.24]; // Each node displaced a little more than the one below it.
+  const root = splineFixture(nodes);
+  const weights = context.window.HobunjiCharacterSpine.nodeWeightsAt(.035, .1, 1, -.3, {});
+  const expected = .035 + nodes[weights.a] * (1 - weights.wb) + nodes[weights.b] * weights.wb;
+  near(resolve(root, { x: 90, y: 46.5 }).y, expected, 'a body pixel (outside the head) follows its two neighbouring spline nodes');
+  near(resolve(root, { x: 90, y: 80 }).y, -.3, 'a pixel at the posterior stays on the pinned node 0');
+  near(resolve(splineFixture([0, 0, 0, 0, 0, 0, 0]), { x: 90, y: 46.5 }).y, .035, 'an upright skeleton leaves the pixel where it was');
+}
 console.log('head centroid skinning regression passed');

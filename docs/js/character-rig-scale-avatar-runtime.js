@@ -27,7 +27,9 @@
         || appearance.gender
         || options.profile?.gender
         || 'male',
-      age: typeof window.HobunjiCharacterRigScale?.ageFor === 'function'
+      age: typeof window.HobunjiCharacterSpine?.hunchFor === 'function'
+        ? window.HobunjiCharacterSpine.hunchFor(options) // An explicit spine.hunch wins, else the shared age resolver below.
+        : typeof window.HobunjiCharacterRigScale?.ageFor === 'function'
         ? window.HobunjiCharacterRigScale.ageFor(options) // Shared resolver: explicit age, then the NPC's authored appearance.aging.hunch.
         : (options.age ?? options.profile?.age ?? options.npcRecord?.age ?? 0),
     };
@@ -60,6 +62,8 @@
       );
 
       root.userData ||= {};
+      const spineProfile = window.HobunjiCharacterSpine?.bind(root, options); // The whole options bag, so an authored aging.kyphosis (and sway) reaches the spine along with the hunch; shoulder aim and the weapon orbit read the same profile.
+      if (spineProfile?.hunch > 0) window.HobunjiCharacterSpine.applyToRig(root.userData.neckRig, spineProfile, Number(root.userData.portraitModelHeight)); // Stoops the portrait itself.
       root.userData.hobunjiCharacterRigHeadRuntime = {
         applied: !!applied,
         species: identity.speciesId,

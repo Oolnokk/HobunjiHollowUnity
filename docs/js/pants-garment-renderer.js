@@ -388,7 +388,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -411,7 +411,10 @@
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
       maskUniforms: { uPantsDepthBias: { value: 0 }, uPantsMask: { value: null }, uPantsMaskOn: { value: 0 }, uPantsMaskO: { value: new THREE.Vector2(data.maskMapping.ox, data.maskMapping.oy) }, uPantsMaskInv: { value: new THREE.Vector4(...data.maskMapping.inv) } },
       scratch: makeScratch(THREE), appearance: { ...appearance, speciesId, gender, imageUrl }, renderToken: 0, ready: false, garment,
+      spineSource: spine, spineCurve: null, spineShift: null, // The portrait's spine curve (js/character-spine.js): the pants ride it like an extension of the portrait.
     };
+    // Per-vertex shift the spine curve gives the garment's mask lookup (see setSpineShift): zeros for an upright character.
+    handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array((handle.basePositions.length / 3) * 2), 2));
 
     const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
     handle.setDepthBiasLimit=(owner,limit=null)=>{
@@ -437,13 +440,13 @@
       material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
+          .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nattribute vec2 pantsSpineShift;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPantsLocal = position.xy - pantsSpineShift;'); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
-      material.customProgramCacheKey = () => 'pantsOverlayMask';
+      material.customProgramCacheKey = () => 'pantsOverlayMaskSpine';
       return { texture, material };
     };
 
@@ -612,6 +615,36 @@
       if (!handle.showSplines && handle.debugLines) for (const entry of Object.values(handle.debugLines)) entry.line.visible = entry.points.visible = false;
     };
 
+    // The pants as an extension of the portrait: when the avatar has a spine (a hunch), every garment vertex is carried by the same curve the
+    // portrait skin follows, looked up by the vertex's REST height in the portrait plane's frame. The waistband therefore moves exactly with the
+    // portrait's lower edge (no seam, no separate plane), and everything at or below the posterior, where the curve is pinned to the root, is
+    // unchanged. The overlay mask that keeps arm/overwear art in front of the pants lives in portrait space, so the shader samples it at the
+    // vertex's un-displaced position (pantsSpineShift) to stay lined up with the portrait art, which has moved the same way.
+    const spineProfile = () => (typeof handle.spineSource === 'function' ? handle.spineSource() : handle.spineSource) || handle.model.userData?.hobunjiSpine || global.HobunjiCharacterSpine?.fromRoot?.(handle.model) || null;
+    const rebuildSpineShift = profile => {
+      handle.spineCurve = profile?.curve || null;
+      const count = handle.basePositions.length / 3;
+      const maskAttribute = handle.geometry.getAttribute('pantsSpineShift');
+      maskAttribute.array.fill(0);
+      maskAttribute.needsUpdate = true;
+      if (!handle.spineCurve || !global.HobunjiCharacterSpine?.deformAt) { handle.spineShift = null; return; }
+      const plane = findPortraitPlane(handle.model);
+      if (!plane) { handle.spineShift = null; return; }
+      handle.model.updateMatrixWorld?.(true);
+      plane.updateMatrixWorld?.(true);
+      const toPlane = new THREE.Matrix4().copy(plane.matrixWorld).invert().multiply(handle.model.matrixWorld); // Avatar-local -> portrait-plane-local.
+      const rotation = new THREE.Matrix3().setFromMatrix4(toPlane), back = rotation.clone().invert();
+      const point = new THREE.Vector3(), shift = new THREE.Vector3(), displacement = { x: 0, y: 0, z: 0 };
+      const shifts = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        point.set(handle.basePositions[i * 3], handle.basePositions[i * 3 + 1], handle.basePositions[i * 3 + 2]).applyMatrix4(toPlane);
+        global.HobunjiCharacterSpine.deformAt(profile, point.y, displacement);
+        shift.set(displacement.x, displacement.y, displacement.z).applyMatrix3(back); // The curve is in plane axes; the garment's positions are avatar-local.
+        shifts[i * 3] = shift.x; shifts[i * 3 + 1] = shift.y; shifts[i * 3 + 2] = shift.z;
+        maskAttribute.array[i * 2] = shift.x; maskAttribute.array[i * 2 + 1] = shift.y;
+      }
+      handle.spineShift = shifts;
+    };
     handle.update = () => {
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
@@ -631,6 +664,8 @@
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
         if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); signature = legSignature(aim); } // aim offsets depend on the rest pose just captured.
       }
+      const spine = spineProfile();
+      if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
       if (signature === handle.lastSignature && !handle.dirty) return;
       handle.lastSignature = signature;
       handle.dirty = false;
@@ -663,6 +698,7 @@
           out[i * 3] += dx * k; out[i * 3 + 1] += dy * k; out[i * 3 + 2] += dz * k;
         }
       }
+      if (handle.spineShift) for (let i = 0; i < out.length; i++) out[i] += handle.spineShift[i]; // Carried by the portrait's spine curve (see rebuildSpineShift).
       if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
       if (handle.mesh.userData?.hobunjiPantsLitNormals) handle.geometry.computeVertexNormals(); // Lit ghoul trousers need current surface normals after each actual pose change, never per idle frame.
