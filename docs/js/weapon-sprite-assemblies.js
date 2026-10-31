@@ -206,6 +206,7 @@
         const source = rawBase?.image || baseImg;
         if (config.base?.material === 'marker' && plane.material?.map) {
           plane.material.map = plane.material.map.clone(); // Do not recolor the shared in-hand texture used by other actors or inventory previews.
+          plane.material.needsUpdate = true;
           plane.material.map.needsUpdate = true;
         }
         if (config.base) effects?.registerLayer(state, plane, { id: 'base', ...config.base }, source);
