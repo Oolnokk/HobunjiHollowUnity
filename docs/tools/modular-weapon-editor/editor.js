@@ -908,8 +908,8 @@
   function drawRecipeBoxes(ctx, sx, sy, frame) {
     if (byId('pair-brush-mode').value !== 'recipe' && !recipeDraft && !placedBoxes().length) return;
     const showing = byId('pair-brush-mode').value === 'recipe', scale = contentRect(byId('preview')).scale || 1, hs = 5 / scale; // Handle half-size in bitmap px.
-    const rect = box => {
-      const area=api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+    const rect = (box, draft=false) => {
+      const area=draft?null:api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
       const [x0,y0]=bridgeVisual([box.x0,box.y0],area),
         [x1,y1]=bridgeVisual([box.x1,box.y1],area);
       return [(x0-frame.left)*sx,(y0-frame.top)*sy,(x1-x0)*sx,(y1-y0)*sy];
@@ -920,9 +920,10 @@
     for (const entry of boxes) {
       if (!showing && !entry.selected && entry.color !== '#ffce64') continue;
       ctx.strokeStyle = entry.selected ? '#fff' : entry.color; ctx.fillStyle = entry.color; ctx.setLineDash(entry.selected ? [] : [6 / scale, 4 / scale]);
-      const [x, y, w, h] = rect(entry.box); ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
+      const [x, y, w, h] = rect(entry.box,entry.color==='#ffce64'); // New recipe draft is in root coordinates; placed recipes may belong to a local region. ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
       if (entry.selected && showing) {
-        const box=entry.box, area=api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+        const box=entry.box, area=entry.color==='#ffce64'?null
+          :api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
         ctx.setLineDash([]);ctx.fillStyle='#fff';
         for(const [,,hx,hy] of boxHandles(box)){
           const [wx,wy]=bridgeVisual([hx,hy],area);
@@ -932,28 +933,66 @@
     }
     ctx.restore();
   }
-  function recipeHit(point) {
-    const frame = bridgeView.frame, canvas = byId('preview'), tol = 9 / ((contentRect(canvas).scale || 1) * (canvas.width / frame.width));
-    const candidates = [];
-    const op = selectedOp(); if (op) candidates.push({ target: 'op', index: recipeSel, box: op.box });
-    if (recipeDraft && recipeSel < 0) candidates.push({ target: 'draft', box: recipeDraft });
-    for (const c of candidates) for (const [hx, hy, x, y] of boxHandles(c.box)) if (Math.hypot(point[0] - x, point[1] - y) <= tol) return { ...c, mode: 'resize', handle: [hx, hy] };
-    const inside = box => point[0] >= box.x0 && point[0] <= box.x1 && point[1] >= box.y0 && point[1] <= box.y1;
-    for (const c of candidates) if (inside(c.box)) return { ...c, mode: 'move' };
-    const placed = placedBoxes().reverse().find(({ op: o }) => inside(o.box)); // A click inside another placed box selects it.
-    if (placed) return { target: 'op', index: placed.index, box: placed.op.box, mode: 'move' };
-    if (recipeDraft && inside(recipeDraft)) return { target: 'draft', box: recipeDraft, mode: 'move' };
+  function recipeRegion(box, isDraft=false) {
+    const center={x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2};
+    return isDraft?null:api.regionAt(chosenShaft(),center);
+  }
+  function recipeBoxInRoot(box, region) {
+    if(!region)return box; // Coordinates before the overall parent are the editor's root-space hit-test frame.
+    const t=api.regionAffine(region);
+    return {x0:t.a*box.x0+t.e,y0:t.d*box.y0+t.f,
+      x1:t.a*box.x1+t.e,y1:t.d*box.y1+t.f};
+  }
+  function recipePointInLocal(rootPoint, region) {
+    if(!region)return rootPoint;
+    const t=api.regionAffine(region);
+    return [(rootPoint[0]-t.e)/t.a,(rootPoint[1]-t.f)/t.d];
+  }
+  function recipeHit(rootPoint) {
+    const frame=bridgeView.frame,canvas=byId('preview'),root=api.shaftRigTransform(chosenShaft());
+    const tol=9/((contentRect(canvas).scale||1)*(canvas.width/frame.width))
+      /Math.max(.05,Math.min(root.scaleX,root.scaleY)); // Map comfortable touch area to source-root coordinates.
+    const candidates=[];
+    const selected=selectedOp();
+    if(selected)candidates.push({target:'op',index:recipeSel,box:selected.box});
+    if(recipeDraft&&recipeSel<0)candidates.push({target:'draft',box:recipeDraft});
+    const placed=placedBoxes().slice().reverse().map(({op,index})=>({target:'op',index,box:op.box}));
+    const entries=[...candidates,...placed];
+    const hit=({box,target,index},handlesOnly=false)=>{
+      const area=recipeRegion(box,target==='draft'),mapped=recipeBoxInRoot(box,area);
+      for(const [hx,hy,x,y] of boxHandles(mapped)){
+        if(Math.hypot(rootPoint[0]-x,rootPoint[1]-y)<=tol)
+          return {box,target,index,regionId:area?.id||null,mode:'resize',handle:[hx,hy]};
+      }
+      if(!handlesOnly&&rootPoint[0]>=mapped.x0&&rootPoint[0]<=mapped.x1&&
+        rootPoint[1]>=mapped.y0&&rootPoint[1]<=mapped.y1)
+        return {box,target,index,regionId:area?.id||null,mode:'move'};
+      return null;
+    };
+    for(const entry of entries){const found=hit(entry,true);if(found)return found;}
+    for(const entry of entries){const found=hit(entry,false);if(found)return found;}
     return null;
   }
   function recipePointerDown(event) {
-    if (!bridgeView || recipeDrag) return;
-    const point = logicalPoint(event), hit = recipeHit(point);
-    if (hit) { recipeSel = hit.target === 'op' ? hit.index : -1; recipeDrag = { pointer: event.pointerId, target: hit.target, mode: hit.mode, handle: hit.handle, start: point, orig: { ...hit.box } }; }
-    else { recipeSel = -1; recipeDraft = { x0: point[0], y0: point[1], x1: point[0] + 1, y1: point[1] + 1 }; recipeDrag = { pointer: event.pointerId, target: 'draft', mode: 'new', start: point, orig: { ...recipeDraft } }; }
-    previewCanvas.setPointerCapture(event.pointerId); syncRecipeControls(); drawBridgeOverlay();
+    if(!bridgeView||recipeDrag)return;
+    const rootPoint=logicalPoint(event,true),hit=recipeHit(rootPoint); // Compare handles in ROOT space, even outside a recipe's region rectangle.
+    if(hit){
+      const region=(chosenShaft().rigRegions||[]).find(r=>r.id===hit.regionId);
+      const point=recipePointInLocal(rootPoint,region);
+      recipeSel=hit.target==='op'?hit.index:-1;
+      recipeDrag={pointer:event.pointerId,target:hit.target,mode:hit.mode,handle:hit.handle,
+        regionId:hit.regionId,start:point,orig:{...hit.box}};
+    }else{
+      recipeSel=-1;recipeDraft={x0:rootPoint[0],y0:rootPoint[1],x1:rootPoint[0]+1,y1:rootPoint[1]+1};
+      recipeDrag={pointer:event.pointerId,target:'draft',mode:'new',regionId:null,
+        start:rootPoint,orig:{...recipeDraft}};
+    }
+    previewCanvas.setPointerCapture(event.pointerId);syncRecipeControls();drawBridgeOverlay();
   }
   function recipePointerMove(event) {
-    const point = logicalPoint(event), d = recipeDrag, dx = point[0] - d.start[0], dy = point[1] - d.start[1], MIN = 8;
+    const d=recipeDrag, region=(chosenShaft().rigRegions||[]).find(r=>r.id===d.regionId);
+    const point=recipePointInLocal(logicalPoint(event,true),region);
+    const dx = point[0] - d.start[0], dy = point[1] - d.start[1], MIN = 8; // Preserve the same local parent during the entire drag.
     let box;
     if (d.mode === 'new') box = { x0: Math.min(d.start[0], point[0]), y0: Math.min(d.start[1], point[1]), x1: Math.max(d.start[0], point[0]), y1: Math.max(d.start[1], point[1]) };
     else if (d.mode === 'move') box = { x0: d.orig.x0 + dx, x1: d.orig.x1 + dx, y0: d.orig.y0 + dy, y1: d.orig.y1 + dy };
