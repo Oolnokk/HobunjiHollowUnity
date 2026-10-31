@@ -37,7 +37,17 @@
   const defeatedAt = new Map(); // hiveKey -> monotonic timestamp when its active defender was defeated.
   const spawnedOnce = new Set(); // hiveKey -> true once a swarm has existed (session scope).
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  let listeningForDeaths = false; // Records the precise lethal damage frame rather than waiting for a two-second wildlife spawn scan.
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    if (!listeningForDeaths && typeof window.addEventListener === 'function') {
+      window.addEventListener('hobunji-resource-change', event => {
+        const actor = event?.detail?.entity; // ResourceSystem emits after applying actual Health damage.
+        if (event?.detail?.delta < 0 && actor?.hiveKey && actor.health <= 0) recordDefeat(actor);
+      });
+      listeningForDeaths = true;
+    }
+  }
 
   const hiveKeyFor = (zoneId, col, row) => `${zoneId}:hive:${col},${row}`;
 
