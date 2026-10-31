@@ -290,6 +290,32 @@
       }
     }
   }
+  function triggerBossBlizzard(boss) {
+    if (!world || world.theme !== 'tothal' || !boss?.isSpecialLich || boss.lichType !== 'tothal') return 0;
+    const arena = window.DevRandomRuinSanctum?.getState?.()?.layout?.arena; // Existing boss chamber is the only ceiling-wide blizzard target.
+    if (!arena || !world.icicleGeometries?.length || !world.icicleMaterial) return 0;
+    const tiles = [], kit = world.kit; // Shares real ceiling geometry, impacts, and floor support.
+    const wave = world.bossBlizzardWave || 0; // Pattern offset staggers the repeated overlapping waves.
+    world.bossBlizzardWave = wave + 1; // Monotonic per-ruin phase, reset when the ruin is rebuilt.
+    for (let z = arena.minZ + 1 + (wave % 2) * .7; z < arena.maxZ - 1; z += 2)
+      for (let x = arena.minX + 1 + (wave % 3) * .6; x < arena.maxX - 1; x += 2) {
+        if (tiles.length >= 32 || !clearAt(x, z, floorY(kit, x, z))) continue;
+        tiles.push({x,z});
+      }
+    for (const [index,p] of tiles.entries()) {
+      const geometry = world.icicleGeometries[(index + wave) % world.icicleGeometries.length]; // Reuses shared low-draw-call cluster shapes.
+      const mesh = new THREE.Mesh(geometry,world.icicleMaterial);
+      const ceiling = Math.max(world.ceilingY,(Number(world.context.meta?.floorSurfaceY)||0)+4.2);
+      mesh.position.set(p.x,ceiling-.05,p.z);
+      mesh.name='tothal_boss_ceiling_icicles';
+      world.group.add(mesh);
+      geometry.computeBoundingBox?.();
+      const deepest = Math.max(.7,Math.abs(Number(geometry.boundingBox?.min?.y) || -1.2));
+      world.icicles.push({...p,ground:floorY(kit,p.x,p.z),mesh,deepest,phase:'falling',speed:1.1+index%3*.2,owner:boss,temporary:true});
+    }
+    lastEvent='tothal:boss-overlap-wave-'+wave;
+    return tiles.length;
+  }
   function emitShards(x, y, z, color, radius, count, pillarHeight = 0, pillarWidth = 0) {
     const group = new THREE.Group();
     const geo = new THREE.TetrahedronGeometry(.11);
@@ -574,7 +600,7 @@
         spike.mesh.visible = false; spike.phase = 'done';
         playRockImpact();
         emitShards(spike.x, spike.ground + .1, spike.z, 0xaad9ff, 2, 28);
-        for (const actor of actors) if (distance(pointOf(actor, kit.deps.TILE), spike) < 2) {
+        for (const actor of actors) if (actor !== spike.owner && !(actor.isSpecialLich && actor.lichType === 'tothal') && distance(pointOf(actor, kit.deps.TILE), spike) < 2) { // Nanahi is immune to every icicle in her sanctum; her skeleton minions are not.
           window.ResourceSystem?.addAffliction?.(actor, 'shatteredStamina', 13);
           window.ResourceSystem?.spendFooting?.(actor, 10, 'falling icicle');
           const fromX=spike.x*kit.deps.TILE,fromZ=spike.z*kit.deps.TILE; // Impact center produces outward canonical knockback.
@@ -904,7 +930,11 @@
     if (!world || world.context.root !== kit.state?.context?.root || dt <= 0) return;
     const actors = getActors(kit);
     if (world.theme === 'hronal') updatePillars(kit,dt,actors);
-    if (world.theme === 'tothal') updateIcicles(kit,dt,actors); // Player ice physics run inside native game.js movement, before collision.
+    if (world.theme === 'tothal') {
+      updateIcicles(kit,dt,actors); // Player ice physics run inside native game.js movement, before collision.
+      for (const spike of world.icicles) if (spike.temporary && spike.phase === 'done') spike.mesh.parent?.remove?.(spike.mesh); // Shared geometry/material remain owned by the ruin.
+      world.icicles = world.icicles.filter(spike => !spike.temporary || spike.phase !== 'done');
+    }
     if (world.theme === 'kanthic') updatePlasm(kit,dt);
     updateBursts(dt);
     badgeClock += dt;
@@ -976,6 +1006,8 @@
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
+    triggerBossBlizzard, // Named Tothal phase uses the normal icicle physics, hit and shatter handlers.
+    plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
     isProtectedPlasmAt:(x,z)=>!!(world?.theme==='kanthic'&&protectedPlasmTile(world.kit,Math.floor(x),Math.floor(z))), // Shared landing/doorway safety for both room and lich-spell plasm.
   });

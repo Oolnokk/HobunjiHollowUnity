@@ -56,7 +56,7 @@
     const surfaces = window.FurniturePatternSurfaces; // Used to wrap the one production ruin-decoration entry point after that module has loaded.
     if (ruinPatternDecoratorInstalled || !surfaces?.decorateRuin) return ruinPatternDecoratorInstalled;
     const decorateRuin = surfaces.decorateRuin; // Used as the unchanged generic decorator beneath the Harlyao-only catalog scope.
-    surfaces.decorateRuin = function (root, seed) {
+    surfaces.decorateRuin = function (root, seed, options = null) {
       const allowedIds = new Set(HARLYAO_RUIN_PATTERN_IDS); // Used to admit only Entropy, Servitude and Ignorance while the current Harlyao ruin is decorated.
       const repoLibrary = window.RepoPatternLibrary; // Temporarily narrowed for the generic decorator's collectible-repo lookup.
       const playerLibrary = window.PatternLibrary; // Temporarily narrowed so built-in generic runes cannot leak into Harlyao ruins.
@@ -65,7 +65,7 @@
       if (repoLibrary) window.RepoPatternLibrary = narrowedRepoLibrary;
       if (playerLibrary) window.PatternLibrary = narrowedPlayerLibrary;
       try {
-        const result = decorateRuin.call(this, root, seed); // Used as the authoritative list of motifs actually assigned to this generated ruin.
+        const result = decorateRuin.call(this, root, seed, options); // Preserve named-boss motif and glow overrides through the restricted Harlyao catalog decorator. // Used as the authoritative list of motifs actually assigned to this generated ruin.
         if (root?.userData) root.userData.ruinPatternPoolIds = [...HARLYAO_RUIN_PATTERN_IDS]; // Mobile/debug-visible metadata records the intended current-ruin pool.
         return result;
       } finally {

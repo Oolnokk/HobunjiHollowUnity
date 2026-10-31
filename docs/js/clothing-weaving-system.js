@@ -485,11 +485,12 @@
       const colorC = portraitClothingColor(item?.colorC);
       const cKey = thirdTintKey(item?.slot);
       if (cKey && colorC) colors[cKey] = colorC;
-      if (baseId && weavingHasAnyDecoration(item?.weaving)) {
+      if (baseId && (weavingHasAnyDecoration(item?.weaving) || item?.exorcised === true)) {
         wovenDescriptors.push({
           uid: item.uid,
           slot: item.slot,
           baseCosmeticId: baseId,
+          ...(item?.exorcised === true ? { exorcised: true } : {}), // A freed mask no longer glows (see NpcAvatarPreview's stripExorcisedMaskGlow).
           weaving: clone(item.weaving),
           colorA: portraitClothingColor(item.colorA), // NPC authored dye-id strings and player color objects converge before runtime swap/color resolution.
           colorB: portraitClothingColor(item.colorB),
@@ -2205,6 +2206,7 @@
     const motifScale = Math.max(.05, Number(patternDef?.motifScale ?? patternDef?.scale) || 1);
     const frameScale = Math.max(.05, Number(patternDef?.frameScale) || 1);
     const meshScale = resolvedPatternMeshScale(patternDef);
+    const stretchX = clamp(finite(patternDef?.usageStretchX, 1), .1, 10), stretchY = clamp(finite(patternDef?.usageStretchY, 1), .1, 10); // Body-scale pre-compensation: applied before the rig stretches the texture, so the motif ends at its authored proportions.
     const motifRad = (Number(patternDef?.motifRotationDeg) || 0) * Math.PI / 180;
     const frameRad = (Number(patternDef?.frameRotationDeg) || 0) * Math.PI / 180;
     const meshRad = ((Number(patternDef?.meshRotationDeg) || 0) + finite(patternDef?.usageRotationDeg)) * Math.PI / 180; // Per-piece rotation preserves the repository pattern's authored rotation.
@@ -2235,12 +2237,12 @@
     ctx.save();
     ctx.translate(width / 2 + offsetX, height / 2 + offsetY);
     ctx.rotate(meshRad);
-    ctx.scale(meshScale * (patternDef?.usageFlipX ? -1 : 1), meshScale * (patternDef?.usageFlipY ? -1 : 1));
+    ctx.scale(meshScale * stretchX * (patternDef?.usageFlipX ? -1 : 1), meshScale * stretchY * (patternDef?.usageFlipY ? -1 : 1));
     if (clusterSeparatorSrc) {
       clusterSeparatorCtx.save();
       clusterSeparatorCtx.translate(width / 2 + offsetX, height / 2 + offsetY);
       clusterSeparatorCtx.rotate(meshRad);
-      clusterSeparatorCtx.scale(meshScale * (patternDef?.usageFlipX ? -1 : 1), meshScale * (patternDef?.usageFlipY ? -1 : 1));
+      clusterSeparatorCtx.scale(meshScale * stretchX * (patternDef?.usageFlipX ? -1 : 1), meshScale * stretchY * (patternDef?.usageFlipY ? -1 : 1));
     }
 
     if (bbox) {
@@ -2307,7 +2309,7 @@
         // meshScale converts it into those same local units. Lattice
         // placement no longer depends on frameX/frameY at all — those only
         // steer what a cell's own crop samples now, never where cells sit.
-        const reach = (Math.hypot(width, height) / 2 + Math.hypot(offsetX, offsetY)) / meshScale + Math.hypot(cellW, cellH); // Offset tiled meshes must still cover the entire garment.
+        const reach = (Math.hypot(width, height) / 2 + Math.hypot(offsetX, offsetY)) / (meshScale * Math.min(stretchX, stretchY)) + Math.hypot(cellW, cellH); // Offset tiled meshes must still cover the entire garment.
         const det = basisU.x*basisV.y-basisU.y*basisV.x; let maxI=8, maxJ=8;
         if (Math.abs(det) > 1e-6) {
           const ia=basisV.y/det, ib=-basisV.x/det, ic=-basisU.y/det, id=basisU.x/det;
@@ -2577,7 +2579,17 @@
   // retain the same apparent line weight. Motif scaling does not affect it.
   function scaledOutlineWidth(defaultWidth, _rawPattern, debugLabel = 'woven-motif', sourceWidth = 0, sourceHeight = 0) {
     const baseWidth = Math.max(1, finite(defaultWidth, 1)); // Used unchanged by clothing and as the non-animal fallback.
-    if (debugLabel !== 'animal-surface-pattern') return baseWidth * clamp(finite(_rawPattern?.renderRasterScale,1),.001,1); // Downsample the atlas border along with its motif geometry.
+    if (debugLabel !== 'animal-surface-pattern') {
+      let width = baseWidth * clamp(finite(_rawPattern?.renderRasterScale,1),.001,1); // Downsample the atlas border along with its motif geometry.
+      // Opt-in raw-size math (the same idea animals use): a piece whose sprite is larger than the standard garment sprite keeps the same apparent line
+      // weight, e.g. 500px pants beside 173px-short-side body clothing. Callers set outlineReferenceShortSide to that standard short side.
+      const referenceShortSide = finite(_rawPattern?.outlineReferenceShortSide, 0);
+      const shortSide = Math.min(Math.max(0, finite(sourceWidth, 0)), Math.max(0, finite(sourceHeight, 0)));
+      if (referenceShortSide > 0 && shortSide > 0) width *= shortSide / referenceShortSide;
+      // Body-scale pre-compensation (usageStretchX/Y) shrinks the motif before the rig stretches it back; the outline follows by the same mean.
+      width *= Math.sqrt(clamp(finite(_rawPattern?.usageStretchX, 1), .1, 10) * clamp(finite(_rawPattern?.usageStretchY, 1), .1, 10));
+      return width;
+    }
     const widthPx = Math.max(0, finite(sourceWidth, 0)); // Used with sourceHeight to resolve the source raster's short side.
     const heightPx = Math.max(0, finite(sourceHeight, 0)); // Used with sourceWidth to resolve the source raster's short side.
     const shortSidePx = widthPx > 0 && heightPx > 0 ? Math.min(widthPx, heightPx) : 0; // Drives animal line weight independently of motif scale.

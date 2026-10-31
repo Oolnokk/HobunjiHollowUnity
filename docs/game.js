@@ -31187,6 +31187,8 @@
         showToast,
         esc: window.FormatUtils.esc,
         buildInventoryGrid,
+        getPackClothing: () => packClothing, // Garanki dispels curses on looted lich circlets that are still in the pack.
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(),
         buildEquipmentSlots: () => window.EquipmentPanel?.buildEquipmentSlots?.(),
         isDevMode: () => s_devMode,
       });

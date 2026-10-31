@@ -383,6 +383,7 @@
       smithTreatment: item.smithTreatment || null,
       physicalMassKg: Number.isFinite(Number(item.physicalMassKg)) ? Number(item.physicalMassKg) : null,
       dyeable: item.dyeable === false ? false : undefined,
+      exorcised: item.exorcised === true ? true : undefined, // A freed mask stays quiet once it moves into gear.
     };
     window.MetalArmorSystem?.normalizeItem?.(entry);
     ensureArticleDyeIds(entry);
@@ -713,10 +714,28 @@
     return changed;
   }
 
+  function cursedMessage(item) {
+    if (item?.cursed?.dispelBy === 'garanki') return 'Cursed: it cannot be worn until Garanki Gabu dispels the curse.';
+    if (item?.cursed?.kind === 'mask') return 'Cursed: someone’s soul is bound inside this mask. It cannot be worn until a priest frees it; a mage cannot.';
+    return 'Cursed: it cannot be worn until the curse is lifted.';
+  }
+  // Single owner of lifting a curse (Garanki's circlet dispel today, Father Hunundi's exorcism of masks later). A freed mask is flagged
+  // `exorcised`, which silences its glowing eyes for whoever wears it; a dispelled circlet carries nothing that could emit fire (lich flames
+  // come only from the lich's own hidden headband).
+  function dispelCurse(item) {
+    if (!item?.cursed) return false;
+    const kind = item.cursed.kind;
+    item.label = item.cursed.originalLabel || item.label;
+    delete item.cursed;
+    if (kind === 'mask') item.exorcised = true;
+    return true;
+  }
+
   function transferClothingToGear(uid) {
     const packClothing = deps.getPackClothing();
     const idx = packClothing.findIndex(c => c.uid === uid);
     if (idx < 0) return;
+    if (packClothing[idx]?.cursed) { deps.showToast(cursedMessage(packClothing[idx]), false); return; } // A cursed article never reaches gear, so it can never be equipped.
     const item = makeClothingGearEntry(packClothing[idx]);
     ensureGearClothingCollection();
     const gearInventory = deps.getGearInventory();
@@ -846,14 +865,17 @@
     set('iiName',  (starText ? starText + ' ' : '') + item.label + (stackCount > 1 ? ' ×' + stackCount : ''));
     set('iiPrice', salePrice ? salePrice + 'g' : '');
     set('iiTags',  starText ? ('Quality ' + starText) : '');
-    set('iiDesc',  [item.description, stackCount > 1 ? 'Stack of ' + stackCount + ' identical articles. Actions affect one piece at a time.' : '', 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
+    set('iiDesc',  [item.description, stackCount > 1 ? 'Stack of ' + stackCount + ' identical articles. Actions affect one piece at a time.' : '', item.cursed ? cursedMessage(item) : 'Transfer to gear to wear it (permanent). Can sell while in pack.'].filter(Boolean).join(' '));
     const actEl = document.getElementById('iiActions');
     if (actEl) {
       actEl.innerHTML = '';
       const mkBtn = (label, cls, fn) => {
         const b = document.createElement('button'); b.className = 'ii-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; actEl.appendChild(b);
       };
-      mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+      if (item.cursed) {
+        mkBtn('Cursed — cannot be worn', 'secondary', () => deps.showToast(cursedMessage(item), false));
+        actEl.lastChild.disabled = true;
+      } else mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
       if (salePrice > 0) {
         mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
           const owned = deps.getPackClothing(); // Read the current saved articles, not a stale detail-panel snapshot.
@@ -887,6 +909,7 @@
     const gearInventory = deps.getGearInventory();
     const item = gearInventory.clothingItems.find(c => c.uid === uid);
     if (!item) return;
+    if (item.cursed) { deps.showToast(cursedMessage(item), false); return; } // Defends old saves or other routes that put a cursed piece in gear.
     gearInventory.clothing[item.slot] = item;
     deps.saveGearInventory();
     deps.refreshPlayerAvatar();
@@ -1310,6 +1333,7 @@
 
   window.EquipmentPanel = {
     init,
+    dispelCurse,
     getEquippedWeaponPreviewPlane,
     squareToolIcon,
     getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
