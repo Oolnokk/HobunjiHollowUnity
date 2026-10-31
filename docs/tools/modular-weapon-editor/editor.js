@@ -121,10 +121,16 @@
   }
   function rigToLocal(point, id) {
     const layout = rigLayout(id);
-    return layout ? {
+    const p = layout ? {
       x: (point.x - 225 - layout.x) / layout.scaleX + 225,
       y: (point.y - 602 - layout.y) / layout.scaleY + 602,
-    } : point; // Pointer-edit local lines while the user sees their inherited parent-rig transform.
+    } : point;
+    if(id!=='shaft-canvas')return p;
+    const mount=chosenShaft().mounts[mountIndex]; // The active line's selected area is the only additional parent.
+    const region=api.regionAt(chosenShaft(),{x:(mount.start.x+mount.end.x)/2,y:(mount.start.y+mount.end.y)/2});
+    if(!region)return p;
+    const area=api.regionAffine(region);
+    return {x:(p.x-area.e)/area.a,y:(p.y-area.f)/area.d}; // Invert area then overall parent, never bake transforms into line data.
   }
   function drawLines(id) {
     const image = cachedImages[id], canvas = byId(id); // Shaft bitmap is fixed, but child mounts visibly follow their rig.
@@ -586,9 +592,10 @@
     const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
     return { left: rect.left + (rect.width - canvas.width * scale) / 2, top: rect.top + (rect.height - canvas.height * scale) / 2, scale };
   }
-  function bridgeVisual(point) {
-    const p = api.duplicatePoint({ x: point[0], y: point[1] }, api.shaftRigTransform(chosenShaft()));
-    return [p.x, p.y]; // World/composed coordinates of every bridge, junction, recipe and mask point.
+  function bridgeVisual(point, area=null) {
+    const p = api.rigPoint(chosenShaft(),{x:point[0],y:point[1]},
+      area || api.regionAt(chosenShaft(),{x:point[0],y:point[1]}));
+    return [p.x,p.y]; // Region's selected area then the overall parent.
   }
   function bridgeLocal(point) {
     const rig = api.shaftRigTransform(chosenShaft()); // Inverse parent, so existing saved authoring strokes remain editable and unmodified.
@@ -600,6 +607,26 @@
     const local = bridgeLocal([frame.left + bx * frame.width / canvas.width,
       frame.top + by * frame.height / canvas.height]);
     return local.map(v => Math.round(v * 2) / 2); // Store gestures in rig-local coordinates, just like the source head/mount fittings.
+  }
+  function drawRegionOverlay(ctx, sx, sy, frame) {
+    const shaft=chosenShaft(), regions=shaft.rigRegions||[];
+    if(!regions.length&&!regionDraft)return;
+    const map=(p,region)=> {
+      const xy=region?api.rigPoint(shaft,{x:p[0],y:p[1]},region):bridgeVisual(p);
+      return [(xy.x-frame.left)*sx,(xy.y-frame.top)*sy];
+    };
+    ctx.save();ctx.lineWidth=2;ctx.setLineDash([8,5]);
+    for(const region of regions){
+      const b=region.box;
+      const p0=map([b.x0,b.y0],region),p1=map([b.x1,b.y1],region);
+      ctx.strokeStyle=region.id===activeRegionId?'#ffdc83':'#76dfcf';
+      ctx.strokeRect(p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);
+    }
+    if(regionDraft){
+      const b=regionDraft.box,p0=map([b.x0,b.y0]),p1=map([b.x1,b.y1]);
+      ctx.strokeStyle='#ffffff';ctx.strokeRect(p0[0],p0[1],p1[0]-p0[0],p1[1]-p0[1]);
+    }
+    ctx.restore(); // Preview overlay is always separate from actual forged pixels.
   }
   function drawBridgeOverlay() {
     if (!bridgeView) return;
@@ -637,9 +664,16 @@
       } else { ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.stroke(); }
     }
     ctx.restore();
+    drawRegionOverlay(ctx,sx,sy,frame); // Show editable region outlines after painting the actual composed weapon.
   }
   const previewCanvas = byId('preview');
   previewCanvas.addEventListener('pointerdown', event => {
+    if(regionSelecting && bridgeView && event.isPrimary){
+      event.preventDefault();
+      const p=logicalPoint(event); // Source rig-local rectangle selection, independent of the current parent transform.
+      regionDraft={pointer:event.pointerId,start:p,box:{x0:p[0],y0:p[1],x1:p[0],y1:p[1]}};
+      previewCanvas.setPointerCapture(event.pointerId);drawBridgeOverlay();return;
+    }
     if (!byId('pair-bridge-on').checked || !bridgeView || bridgePaint || !event.isPrimary) return;
     event.preventDefault();
     if (byId('pair-brush-mode').value === 'recipe') { recipePointerDown(event); return; }
@@ -665,6 +699,12 @@
     previewCanvas.setPointerCapture(event.pointerId); drawBridgeOverlay();
   });
   previewCanvas.addEventListener('pointermove', event => {
+    if(regionDraft?.pointer===event.pointerId){
+      event.preventDefault();const p=logicalPoint(event),start=regionDraft.start;
+      regionDraft.box={x0:Math.min(start[0],p[0]),y0:Math.min(start[1],p[1]),
+        x1:Math.max(start[0],p[0]),y1:Math.max(start[1],p[1])};
+      drawBridgeOverlay();return;
+    }
     if (recipeDrag?.pointer === event.pointerId) { event.preventDefault(); recipePointerMove(event); return; }
     if (!byId('pair-bridge-on').checked || !bridgeView) return;
     const previousHover = bridgeHover;
@@ -685,6 +725,22 @@
     drawBridgeOverlay();
   });
   function endBridgePaint(event) {
+    if(regionDraft?.pointer===event.pointerId){
+      const draft=regionDraft;regionDraft=null;
+      if(event.type==='pointercancel'){drawBridgeOverlay();return;}
+      const box=draft.box;
+      if(box.x1-box.x0<8||box.y1-box.y0<8){
+        byId('region-status').textContent='Select an area at least 8×8 source pixels.';drawBridgeOverlay();return;
+      }
+      const shaft=chosenShaft(),regions=shaft.rigRegions||[];
+      if(regions.length>=12){byId('region-status').textContent='Maximum of 12 rig regions per shaft.';drawBridgeOverlay();return;}
+      const id='area'+(Math.max(0,...regions.map(r=>Number(r.id.replace(/^area/,''))||0))+1);
+      shaft.rigRegions=[...regions,{id,label:'Region '+(regions.length+1),box,
+        transform:{scaleX:1,scaleY:1,x:0,y:0}}]; // Saved rectangle defines the stable members of a local transform group.
+      activeRegionId=id;regionSelecting=false;
+      save();msg('Selected '+shaft.rigRegions.length+' rig regions; adjust local scale and offset.');
+      return;
+    }
     if (recipeDrag?.pointer === event.pointerId) { recipePointerUp(event); return; }
     if (bridgePaint?.pointer !== event.pointerId) return;
     if (bridgePaint.junction) {
