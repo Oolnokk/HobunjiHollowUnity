@@ -25,6 +25,12 @@ const enemies = new Set([far, distant, herbivore, unzoned, close]); // Deliberat
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), close, 'closest urgent enemy wins even if last in Set');
 assert.equal(R.validEnemy(unzoned, 'forest'), false, 'unknown-area actors are excluded just as they were in the original game loop');
 assert.equal(R.debugSnapshot(pet).target, 'close');
+const idlessPlayer = { x: 0, y: 0, health: 100 }; // Actual player actors do not have creature IDs; rescue status must not appear blank.
+context.window.Combat = { deps: { player: idlessPlayer } };
+pet._honeyfuzzleRescueTarget = idlessPlayer;
+assert.equal(R.debugSnapshot(pet).rescuing, 'player', 'mobile rescue diagnostics identify the player without a creature ID');
+pet._honeyfuzzleRescueTarget = null;
+
 
 pet._stage = { mode: 'backingUp', t: 0.9 }; // A stale retreat from a previous target should not delay response to a new enemy.
 const slightlyNearer = { id: 'challenger', x: 32, y: 0, health: 20, areaId: 'forest' };
