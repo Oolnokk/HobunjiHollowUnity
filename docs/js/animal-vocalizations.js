@@ -391,6 +391,7 @@
   }
 
   function tickCreature(c, dt, opts = {}) {
+    if (speciesProfileKey(c) === 'honeyfuzzle') return; // Skip even scheduled chatter/pulse work for pure-buzz swarms.
     if (!deps || !c || c.health <= 0 || !hasVoice(c)) return;
     const state = stateFor(c);
     const step = Math.max(0, Number(dt) || 0);
