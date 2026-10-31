@@ -162,14 +162,15 @@
     return !!grid && boulderComponentCache.delete(grid); // Called after a tribal-camp footprint replaces whole boulders on a live wilderness grid.
   }
 
-  function isUndiggableBoulderTile(zGrid, c, r) {
+  function isUndiggableBoulderTile(zGrid, c, r, terrainDeps = deps) {
     const tile = zGrid?.[r]?.[c]; // Tile inspected by component collection and perimeter tests.
-    return tile?.type === deps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
+    return tile?.type === terrainDeps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
   }
 
-  function collectUndiggableBoulderComponents(zGrid, zcols, zrows) {
+  function collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps = deps) {
+    const rockTileType=terrainDeps?.TileType?.ROCK; // Cached indexes are keyed by rock tile type as well as grid identity.
     const cached = boulderComponentCache.get(zGrid); // Grid identity remains stable across every chunk in one zone visit.
-    if (cached && cached.zcols === zcols && cached.zrows === zrows) {
+    if (cached && cached.zcols === zcols && cached.zrows === zrows && cached.rockTileType === rockTileType) {
       boulderShellStats.indexHits++;
       return cached.components;
     }
@@ -177,7 +178,7 @@
     const legacyCells = new Set(); // Old cached/generated maps without IDs retain a connected-component fallback.
     for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
       boulderShellStats.gridTilesScanned++;
-      if (!isUndiggableBoulderTile(zGrid, c, r)) continue;
+      if (!isUndiggableBoulderTile(zGrid, c, r, terrainDeps)) continue;
       const tile = zGrid[r][c]; // Source tile carries the preserved generator object ID when available.
       if (tile.boulderId) {
         let cells = groupedCells.get(tile.boulderId); // Shared tile list becomes one authored boulder shell.
@@ -206,7 +207,7 @@
       }
       components.push(cells);
     }
-    boulderComponentCache.set(zGrid, { zcols, zrows, components });
+    boulderComponentCache.set(zGrid, { zcols, zrows, rockTileType, components });
     boulderShellStats.indexBuilds++;
     return components;
   }
@@ -214,7 +215,7 @@
   function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null, dependencyOverride = null) {
     const terrainDeps = dependencyOverride || deps; // Optional private floor-build datum leaves normal wilderness initialization untouched.
     const range = normalizedBounds(zcols, zrows, bounds); // Current streaming chunk whose portion of each global shell is emitted.
-    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
+    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
     const pos = [], uv = [], idx = []; // World-space shell buffers returned to the Three.js wrapper.
     const vertexBySample = new Map(); // Reuses top vertices shared by neighboring source tiles instead of duplicating each patch edge.
     let topTileCount = 0; // Diagnostic count of footprint tiles emitted in this chunk.
