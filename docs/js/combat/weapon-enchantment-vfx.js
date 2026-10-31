@@ -316,7 +316,7 @@
     const plane = visual?.userData?.toolPlane; // Used as the authored single-weapon plane and the root containing dual-wield duplicates.
     if (!plane?.isObject3D) return [];
     const dual = window.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.(); // Used to avoid emitting around the hidden midpoint plane while dual wield is visually active.
-    if (!dual?.active) return [plane];
+    if (!(dual?.copiesVisible ?? dual?.active)) return [plane]; // The invisible idle-offhand tool reports active but draws nothing; only real dual wield replaces the plane.
     const duplicates = []; // Used as the visible main/offhand blade planes when the original source material is hidden.
     plane.traverse?.(node => {
       if (node?.userData?.hobunjiDualWieldDuplicate === true) duplicates.push(node);

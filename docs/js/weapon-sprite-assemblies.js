@@ -594,7 +594,8 @@
   function enchantmentTargets(visual) {
     const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
     const plane = visual?.userData?.toolPlane;
-    if (!plane || !global.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.()?.active) return sourceTargets;
+    const dual = global.HobunjiDualWieldWeaponVisuals?.debugSnapshot?.();
+    if (!plane || !(dual?.copiesVisible ?? dual?.active)) return sourceTargets; // Invisible idle-offhand clones are never drawn, so the real layers keep emitting.
     return dualWieldEnchantmentTargets(plane, sourceTargets);
   }
 

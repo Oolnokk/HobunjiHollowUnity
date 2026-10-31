@@ -675,7 +675,8 @@
     const state = states.get(PLAYER_KEY) || null; // The local player's duplicates; actors are counted separately below.
     return {
       actorStates: states.size - (state ? 1 : 0),
-      active: !!state && state.influence > ACTIVE_EPSILON,
+      active: !!state && state.influence > ACTIVE_EPSILON, // Also true for the invisible idle-offhand tool, whose clones are never drawn: use copiesVisible to ask "are the clones what the player sees?".
+      copiesVisible: !!state && !state.invisible && state.influence > ACTIVE_EPSILON, // True dual wield only: the original plane is hidden and the two clones are the drawn weapon.
       influence: state?.influence || 0,
       idleBlend: state?.idleBlend || 0,
       source: state?.dualSource || state?.source || null,
@@ -684,7 +685,7 @@
       mainHandLagMs: MAIN_HAND_LAG_MS,
       historySamples: state?.history?.length || 0,
       originalPlaneName: state?.plane?.name || null,
-      originalMaterialHidden: !!state && state.influence > ACTIVE_EPSILON,
+      originalMaterialHidden: !!state && !state.invisible && state.influence > ACTIVE_EPSILON, // The invisible offhand tool leaves the real weapon untouched and visible.
       mainRootScale: state?.mainRoot?.scale?.toArray?.() || null,
       offRootScale: state?.offRoot?.scale?.toArray?.() || null,
       mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
