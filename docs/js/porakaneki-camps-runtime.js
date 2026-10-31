@@ -3,8 +3,8 @@
 
   // Porakaneki wilderness camp network.
   //
-  // Every generated wilderness map receives 2-4 small camps populated only by
-  // procedural Porakaneki. A separate large camp contains the named chief plus
+  // Every generated wilderness map receives one hunting camp per rival tribe,
+  // at opposing ends of the map. A separate large camp contains the named chief plus
   // a larger procedural population and migrates between wilderness maps when
   // CalendarSystem's regional season changes. Small camps stay put for the
   // whole Tothal generation.
@@ -492,7 +492,7 @@
   function centerForInstance(instance) {
     return instance ? { col: instance.site.x + instance.site.w * 0.5, row: instance.site.y + instance.site.h * 0.5 } : null;
   }
-  function makeCamp(zoneState, instance, kind, residentTarget, seedLabel) {
+  function makeCamp(zoneState, instance, kind, residentTarget, seedLabel, cohortSizes = [residentTarget]) {
     return {
       id: instance.id,
       kind,
@@ -502,9 +502,10 @@
       props: propsForInstance(zoneState.view, instance),
       center: centerForInstance(instance),
       residentTarget,
+      cohortSizes, // Former per-camp resident rolls, now sharing this one physical camp; consumed by resident assignment and independent parties.
       rng: seededRng(`${generationYear()}:${zoneState.zoneId}:${seedLabel}:residents`),
       hunters: [],
-      huntingParty: null, // One small surface hunting group per camp; it follows a shared random den-to-den patrol route.
+      huntingParties: [], // One independent den patrol for each former camp cohort; a chief camp still has one.
       huntingPartySeq: 0,
       propMeshes: new Map(),
       benchStationsRegistered: false,
@@ -545,15 +546,22 @@
     buildGeneration += 1;
   }
 
-  function smallCampCountForZone(zoneId) {
-    const small = cfg?.smallCamps || {};
-    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-count`);
-    return Math.max(MIN_HUNTING_CAMPS_PER_ZONE, integerRoll(rng, num(small.minPerZone, 2), num(small.maxPerZone, 4)));
+  function smallCampCountForZone() {
+    return MIN_HUNTING_CAMPS_PER_ZONE; // Exactly one per tribe and map, regardless of saved/older config overrides.
   }
   function smallResidentCount(zoneId, campIndex) {
     const small = cfg?.smallCamps || {};
     const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-${campIndex}:population`);
     return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
+  }
+  function historicalHuntingPartyCountForZone(zoneId) {
+    const small = cfg?.smallCamps || {};
+    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-count`); // Exact former 2–4 physical-camp seed now determines independent hunting cohorts.
+    return integerRoll(rng, num(small.huntingPartiesMinPerZone, 2), num(small.huntingPartiesMaxPerZone, 4));
+  }
+  function historicalHuntingCohortsForZone(zoneId) {
+    const count = historicalHuntingPartyCountForZone(zoneId); // Recreate each old camp's original population roll, with no extra physical stamps.
+    return Array.from({ length: count }, (_, index) => smallResidentCount(zoneId, index));
   }
 
   function earlierTribes() {
@@ -593,6 +601,18 @@
     for (const rival of earlierTribes()) sites.push(...rival.occupiedSites(zoneId), ...rival.reservedSites(zoneId)); // Rival tribes keep the same spacing a bandit camp gets.
     return sites.map(site => site ? { col: site.x + site.w * 0.5, row: site.y + site.h * 0.5, minDistance } : null).filter(Boolean);
   }
+  function huntingCampPreferredPoint(zoneState, zoneId) {
+    const view = zoneState.view; // This map's dimensions determine which pair of opposing edges are its "ends".
+    const horizontal = view.cols >= view.rows; // Split the map along its longest axis for maximum tribe separation.
+    const rivalSite = earlierTribes().flatMap(rival => rival.occupiedSites(zoneId))[0]; // Earlier tribe's hunting camp, never its inactive chief reservation.
+    const axisLength = horizontal ? view.cols : view.rows; // End-to-end span used to choose the edge farthest from the rival.
+    const rivalAxis = rivalSite ? (horizontal ? rivalSite.x + rivalSite.w / 2 : rivalSite.y + rivalSite.h / 2) : null; // Rival's site center on the long axis.
+    const highEnd = rivalAxis == null ? earlierTribes().length > 0 : rivalAxis < axisLength / 2; // First tribe takes the low end; second takes the far end.
+    return horizontal
+      ? { col: highEnd ? view.cols : 0, row: rivalSite ? rivalSite.y + rivalSite.h / 2 : view.rows / 2 }
+      : { col: rivalSite ? rivalSite.x + rivalSite.w / 2 : view.cols / 2, row: highEnd ? view.rows : 0 };
+  }
+
   function stampHuntingCamp(zoneState, zoneId, campIndex, minimumFallback = false) {
     if (!zoneState?.view || !smallLocaleDef) return null;
     const instanceId = minimumFallback
@@ -600,6 +620,7 @@
       : `${KEY}_small_${zoneId}_${campIndex}`; // Distinct fallback id makes the one-camp guarantee visible in diagnostics/tests.
     const instance = window.TemporaryLocales.stamp(zoneState.view, smallLocaleDef, {
       rng: seededRng(`${generationYear()}:${zoneId}:${KEY}-small-site:${minimumFallback ? 'minimum' : campIndex}`),
+      preferredPoint: huntingCampPreferredPoint(zoneState, zoneId), // Rank legal camp sites toward the assigned end; all hard exclusions still apply.
       clearableTypes: new Set(),
       minimumCampRequired: minimumFallback,
       clearanceTiles: minimumFallback ? 0 : (smallLocaleDef.placement?.clearanceTiles ?? 2),
@@ -611,7 +632,9 @@
       instanceId,
     });
     if (!instance) return null;
-    const camp = makeCamp(zoneState, instance, 'small', smallResidentCount(zoneId, campIndex), `small-${minimumFallback ? 'minimum' : campIndex}`);
+    const cohortSizes = historicalHuntingCohortsForZone(zoneId); // Recover the former map-wide total instead of only the first camp's residents.
+    const camp = makeCamp(zoneState, instance, 'small', cohortSizes.reduce((sum, size) => sum + size, 0),
+      `small-${minimumFallback ? 'minimum' : campIndex}`, cohortSizes);
     zoneState.smallCamps.push(camp);
     state.stamps += 1;
     return camp;
@@ -642,18 +665,8 @@
     });
     if (zoneState.chiefReservation) state.stamps += 1;
 
-    const targetCount = smallCampCountForZone(zoneId);
-    for (let i = 0; i < targetCount; i++) stampHuntingCamp(zoneState, zoneId, i, false);
-    // Earlier tribes fill the zone first. A later tribe takes over their
-    // surplus hunting-camp slots (never below their one-camp floor) so rival
-    // tribes end up with comparable camps while chunks stay exclusive.
-    const maxSmallCamps = Math.max(targetCount, num(cfg?.smallCamps?.maxPerZone, 4));
-    for (let i = 0; i < maxSmallCamps; i++) {
-      if (zoneState.smallCamps.some(camp => camp.id === `${KEY}_small_${zoneId}_${i}`)) continue;
-      const rival = earlierTribes().find(other => num(other.debugSnapshot().zones?.[zoneId]?.smallCampCount, 0) > zoneState.smallCamps.length + 1);
-      if (!rival) break; // Parity reached; a lower seeded roll no longer leaves this tribe far behind its rival.
-      if (rival.reduceHuntingCampsForBandit(zoneId)) stampHuntingCamp(zoneState, zoneId, i, false);
-    }
+    const targetCount = smallCampCountForZone(zoneId); // Shared single-camp cap, still used by the protected minimum fallback.
+    stampHuntingCamp(zoneState, zoneId, 0, false); // No additional or rival-slot-replacement hunting camps.
     if (zoneState.smallCamps.length < MIN_HUNTING_CAMPS_PER_ZONE) {
       stampHuntingCamp(zoneState, zoneId, targetCount, true); // Exhaustive zero-clearance/non-flat fallback prevents an unlucky zone from ending up camp-less.
     }
@@ -1238,10 +1251,19 @@
   function makeResident(camp, id, rng, extra = null) {
     const index = camp.hunters.length;
     const spawn = randomCampPoint(camp, rng);
+    let cohortIndex = null; // Assign each ordinary hunter to its former camp cohort; Avengers are excluded below.
+    if (index < camp.residentTarget) {
+      let offset = index; // Position in the combined resident roll, used to find the cohort's original size.
+      for (let i = 0; i < camp.cohortSizes.length; i++) {
+        if (offset < camp.cohortSizes[i]) { cohortIndex = i; break; }
+        offset -= camp.cohortSizes[i];
+      }
+    }
     camp.hunters.push({
       id,
       index,
       camp,
+      cohortIndex,
       weaponShape: weaponRoll(rng),
       x: spawn.col,
       y: spawn.row,
@@ -1459,34 +1481,38 @@
     return null;
   } // Targets only exterior walkable tiles; hunters never invoke den transitions or enter cavern maps.
 
-  function huntingPartyMembers(camp) {
-    const ids = camp?.huntingParty?.memberIds;
+  function huntingPartyMembers(camp, party) {
+    const ids = party?.memberIds; // The specific cohort's membership, not every resident of the shared physical camp.
     if (!ids?.size) return [];
     return camp.hunters.filter(hunter => ids.has(hunter.id) && !hunter.killCounted && !hunter.slain && (!hunter.entity || hunter.entity.health > 0));
   }
   function huntingPartyFor(hunter) {
-    const party = hunter?.camp?.huntingParty;
-    return party?.memberIds?.has?.(hunter.id) ? party : null;
+    if (!hunter?.huntPartyId) return null;
+    return hunter.camp?.huntingParties?.find(party => party.id === hunter.huntPartyId && party.memberIds.has(hunter.id)) || null;
   }
-  function clearHuntingParty(camp) {
-    if (!camp?.huntingParty) return;
+  function clearHuntingParty(camp, party) {
+    if (!camp || !party) return;
     for (const hunter of camp.hunters) {
-      if (!camp.huntingParty.memberIds.has(hunter.id)) continue;
+      if (!party.memberIds.has(hunter.id)) continue;
       hunter.huntPartyId = null;
       hunter.huntDenId = null;
       hunter.huntRouteStep = -1;
       if (hunter.activity === 'hunt-den') { hunter.activity = 'camp'; hunter.target = null; hunter.decisionT = 0; }
     }
-    camp.huntingParty = null;
+    const index = camp.huntingParties.indexOf(party);
+    if (index >= 0) camp.huntingParties.splice(index, 1); // Only this cohort disbands; every other independent party keeps moving.
   }
-  function chooseNextPartyDen(camp) {
-    const party = camp?.huntingParty;
+  function clearHuntingParties(camp) {
+    for (const party of [...(camp?.huntingParties || [])]) clearHuntingParty(camp, party);
+  }
+  function chooseNextPartyDen(camp, party) {
     const dens = campDens(camp);
     if (!party || !dens.length) return false;
     const choices = dens.length > 1 ? dens.filter(den => String(den.id) !== String(party.denId)) : dens;
-    const shuffled = [...choices];
+    const available = choices.filter(den => !camp.huntingParties.some(other => other !== party && String(other.denId) === String(den.id)));
+    const shuffled = [...(available.length ? available : choices)]; // Prefer different dens for independent parties when enough exist.
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(camp.rng() * (i + 1));
+      const j = Math.floor(party.rng() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     let den = null, target = null;
@@ -1500,7 +1526,7 @@
     party.target = target;
     party.routeStep += 1;
     party.dwellT = 0;
-    const members = huntingPartyMembers(camp);
+    const members = huntingPartyMembers(camp, party);
     const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15));
     members.forEach((hunter, index) => {
       const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
@@ -1514,45 +1540,54 @@
     state.lastReason = `den-hunt-route:${camp.zoneId}:${camp.id}:${party.denId}`;
     return true;
   }
-  function ensureHuntingParty(camp) {
-    if (!camp || isSleepingHour() || camp.huntingParty || campDens(camp).length === 0) return camp?.huntingParty || null;
-    const eligible = camp.hunters.filter(hunter => !isAvenger(hunter) && !hunter.killCounted && !hunter.slain && (!hunter.entity || hunter.entity.health > 0));
-    const minSize = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
-    const maxSize = Math.max(minSize, Math.floor(num(cfg?.behavior?.denHuntGroupMax, 3)));
-    if (eligible.length < minSize) return null;
-    const shuffled = [...eligible];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(camp.rng() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  function ensureHuntingParties(camp) {
+    if (!camp || isSleepingHour() || campDens(camp).length === 0) return camp?.huntingParties || [];
+    const configuredMin = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
+    const configuredMax = Math.max(configuredMin, Math.floor(num(cfg?.behavior?.denHuntGroupMax, 3)));
+    for (let cohortIndex = 0; cohortIndex < camp.cohortSizes.length; cohortIndex++) {
+      if (camp.huntingParties.some(party => party.cohortIndex === cohortIndex)) continue;
+      const cohortSize = camp.cohortSizes[cohortIndex]; // One old camp's headcount; no hunting party may recruit from another cohort.
+      const minSize = Math.min(configuredMin, cohortSize); // Old Omgurku two-resident cohorts remain viable as two-person patrols.
+      const eligible = camp.hunters.filter(hunter => hunter.cohortIndex === cohortIndex && !isAvenger(hunter)
+        && !hunter.killCounted && !hunter.slain && (!hunter.entity || hunter.entity.health > 0));
+      if (eligible.length < minSize) continue;
+      const rng = seededRng(`${generationYear()}:${camp.zoneId}:${KEY}-cohort-${cohortIndex}:hunt-${camp.huntingPartySeq}`); // Independent roll stream per original camp/party.
+      const shuffled = [...eligible];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      const size = Math.min(eligible.length, minSize + Math.floor(rng() * (configuredMax - minSize + 1)));
+      const members = shuffled.slice(0, size);
+      const party = {
+        id: `${camp.id}:hunt-party:${cohortIndex}:${gameDay()}:${camp.huntingPartySeq++}`,
+        cohortIndex, // Stable original-camp index used to prevent members being borrowed by another party.
+        minMembers: minSize, // A two-resident Omgurku cohort can hunt without altering normal 3–4-member groups.
+        memberIds: new Set(members.map(hunter => hunter.id)),
+        denId: null,
+        target: null,
+        routeStep: 0,
+        dwellT: 0,
+        rng, // Keeps each cohort's den choices independent from other parties.
+      };
+      camp.huntingParties.push(party);
+      if (!chooseNextPartyDen(camp, party)) clearHuntingParty(camp, party);
     }
-    const size = Math.min(eligible.length, minSize + Math.floor(camp.rng() * (maxSize - minSize + 1)));
-    const members = shuffled.slice(0, size);
-    camp.huntingParty = {
-      id: `${camp.id}:hunt-party:${gameDay()}:${camp.huntingPartySeq++}`,
-      memberIds: new Set(members.map(hunter => hunter.id)),
-      denId: null,
-      target: null,
-      routeStep: 0,
-      dwellT: 0,
-    };
-    if (!chooseNextPartyDen(camp)) { clearHuntingParty(camp); return null; }
-    return camp.huntingParty;
+    return camp.huntingParties;
   }
-  function updateHuntingParty(camp, dt) {
-    const party = camp?.huntingParty;
+  function updateHuntingParty(camp, party, dt) {
     if (!party) return;
-    const members = huntingPartyMembers(camp);
-    const minSize = Math.max(2, Math.floor(num(cfg?.behavior?.denHuntGroupMin, 2)));
-    if (members.length < minSize) { clearHuntingParty(camp); return; }
-    const liveDen = party.denId != null ? campDens(camp).find(den => String(den.id) === String(party.denId)) : null; // Used to abandon a collapsed den or follow the same den slot after it relocates.
-    if (party.denId != null && !liveDen) { if (!chooseNextPartyDen(camp)) clearHuntingParty(camp); return; }
+    const members = huntingPartyMembers(camp, party);
+    if (members.length < party.minMembers) { clearHuntingParty(camp, party); return; }
+    const liveDen = party.denId != null ? campDens(camp).find(den => String(den.id) === String(party.denId)) : null;
+    if (party.denId != null && !liveDen) { if (!chooseNextPartyDen(camp, party)) clearHuntingParty(camp, party); return; }
     if (liveDen && party.target) {
-      const liveTarget = denExteriorPoint(camp, liveDen); // Re-resolves coordinates because den IDs remain stable while their physical site can migrate.
+      const liveTarget = denExteriorPoint(camp, liveDen);
       if (liveTarget && Math.hypot(liveTarget.col - party.target.col, liveTarget.row - party.target.row) > 1.5) {
         party.target = liveTarget;
         party.routeStep += 1;
         party.dwellT = 0;
-        const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15)); // Same formation radius chooseNextPartyDen uses for an ordinary route step.
+        const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15));
         members.forEach((hunter, index) => {
           const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
           hunter.huntRouteStep = party.routeStep;
@@ -1562,18 +1597,18 @@
         });
       }
     }
-    if (!party.target) { if (!chooseNextPartyDen(camp)) clearHuntingParty(camp); return; }
+    if (!party.target) { if (!chooseNextPartyDen(camp, party)) clearHuntingParty(camp, party); return; }
     const arrivalRadius = Math.max(1, num(cfg?.behavior?.denHuntArrivalRadiusTiles, 2.5));
     const allArrived = members.every(hunter => Math.hypot(hunter.x - party.target.col, hunter.y - party.target.row) <= arrivalRadius);
     if (!allArrived) { party.dwellT = 0; return; }
     if (!(party.dwellT > 0)) {
       const min = Math.max(0, num(cfg?.behavior?.denHuntDwellMinSeconds, 4));
       const max = Math.max(min, num(cfg?.behavior?.denHuntDwellMaxSeconds, 8));
-      party.dwellT = min + camp.rng() * (max - min);
+      party.dwellT = min + party.rng() * (max - min);
       return;
     }
     party.dwellT -= Math.max(0, num(dt, 0));
-    if (party.dwellT <= 0 && !chooseNextPartyDen(camp)) clearHuntingParty(camp);
+    if (party.dwellT <= 0 && !chooseNextPartyDen(camp, party)) clearHuntingParty(camp, party);
   }
 
   function chooseHunterActivity(hunter) {
@@ -1588,7 +1623,7 @@
       hunter.huntPartyId = party.id;
       hunter.huntDenId = party.denId;
       if (hunter.huntRouteStep !== party.routeStep || !hunter.target) {
-        const members = huntingPartyMembers(camp);
+        const members = huntingPartyMembers(camp, party);
         const index = Math.max(0, members.indexOf(hunter));
         const radius = Math.max(0.6, num(cfg?.behavior?.denHuntFormationRadiusTiles, 1.15));
         const angle = ((index / Math.max(1, members.length)) * Math.PI * 2) + party.routeStep * 0.73;
@@ -1926,11 +1961,11 @@
     const generation = buildGeneration;
     const sleeping = isSleepingHour();
     if (sleeping) {
-      clearHuntingParty(camp);
+      clearHuntingParties(camp);
       if (camp.avengerBand) { camp.avengerBand.quarry = null; camp.avengerBand.patrolTarget = null; }
     } else {
-      ensureHuntingParty(camp);
-      updateHuntingParty(camp, coarseDt > 0 ? coarseDt : dt);
+      ensureHuntingParties(camp);
+      for (const party of [...camp.huntingParties]) updateHuntingParty(camp, party, coarseDt > 0 ? coarseDt : dt);
       updateAvengerBand(camp);
     }
     for (const hunter of camp.hunters) {
@@ -2088,13 +2123,18 @@
         quarryId: camp.avengerBand.quarry?.id || null,
         quarry: camp.avengerBand.quarry ? { col: Number(camp.avengerBand.quarry.x.toFixed(1)), row: Number(camp.avengerBand.quarry.y.toFixed(1)) } : null,
       } : null,
-      huntingParty: camp.huntingParty ? {
-        id: camp.huntingParty.id,
-        denId: camp.huntingParty.denId,
-        routeStep: camp.huntingParty.routeStep,
-        memberCount: huntingPartyMembers(camp).length,
-        target: camp.huntingParty.target ? { col: Number(camp.huntingParty.target.col.toFixed(1)), row: Number(camp.huntingParty.target.row.toFixed(1)) } : null,
-      } : null,
+      cohortSizes: [...camp.cohortSizes], // Copyable debug proof of exactly how many residents each former camp contributed.
+      huntingParties: camp.huntingParties.map(party => ({
+        id: party.id, cohortIndex: party.cohortIndex, denId: party.denId,
+        routeStep: party.routeStep, memberCount: huntingPartyMembers(camp, party).length,
+        target: party.target ? { col: Number(party.target.col.toFixed(1)), row: Number(party.target.row.toFixed(1)) } : null,
+      })), // All simultaneous independent den patrols, visible in mobile debug snapshots.
+      huntingParty: camp.huntingParties.length ? (() => {
+        const party = camp.huntingParties[0]; // Legacy single-party diagnostic remains available to existing tools.
+        return { id: party.id, denId: party.denId, routeStep: party.routeStep,
+          memberCount: huntingPartyMembers(camp, party).length,
+          target: party.target ? { col: Number(party.target.col.toFixed(1)), row: Number(party.target.row.toFixed(1)) } : null };
+      })() : null,
       hunters: camp.hunters.map(hunter => {
         const entity = hunter.entity;
         const group = entity?.avatarRef?.group;
@@ -2226,7 +2266,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, historicalHuntingPartyCountForZone, historicalHuntingCohortsForZone, denExteriorPoint, chooseNextPartyDen, ensureHuntingParties, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);
