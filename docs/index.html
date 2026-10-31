@@ -74,7 +74,7 @@
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
   <script src="js/den-nest-system.js?v=20261027sense1"></script>
-  <script src="js/corpse-hold-loot.js?v=20261010corpsehold1"></script>
+  <script src="js/corpse-hold-loot.js?v=20261031honey3d1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
   <script src="js/player-downed.js?v=20261026hf60fe42"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
   <script src="js/player-crawl.js?v=20261024crawl1"></script> <!-- Procedural left-side lean crawl for the downed player; driven by player-downed.js. -->
@@ -226,10 +226,10 @@
   <script src="js/creature-genetics.js?v=20261029h86f0973"></script>
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
-  <script src="js/creature-genetics-render.js?v=20261026honeyStatic3"></script>
-  <script src="js/honeyfuzzle-swarm.js?v=20261026honeyAudit3"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
+  <script src="js/creature-genetics-render.js?v=20261031honey3d1"></script>
+  <script src="js/honeyfuzzle-swarm.js?v=20261031honey3dz2"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261027sense1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261031honey3d1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -327,9 +327,9 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261028hfurycombat1"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261031responsive4"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
-  <script src="js/combat/combat-attach.js?v=20261028hattachaudit2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
+  <script src="js/combat/combat-attach.js?v=20261031rescuecheck2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261030h5bdb79c"></script>
   <script src="js/combat/combat-progression.js?v=20261019h586a5e1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
@@ -337,6 +337,7 @@
   <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20261027h464fa30"></script>
+  <script src="js/companion-combat-response.js?v=20261031responsive3"></script> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
@@ -396,7 +397,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261031h6f37db1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261031hcombrescue2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -565,7 +566,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20261031cohorts1"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20261031h1008026"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -2663,11 +2664,11 @@
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261028hsplat2"></script>
+  <script src="js/audio-system.js?v=20261031honey3d1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20261025combatHrtf2"></script>
+  <script src="js/animal-vocalizations.js?v=20261031honey3d1"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2869,7 +2870,7 @@
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261030lichQuest3"></script>
-  <script src="game.js?v=20261031farmhouseRebase1"></script>
+  <script src="game.js?v=20261031responsive3"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -45,7 +45,7 @@ assert.equal(attacks.companionEngagementRangePx(actor, TILE), TILE * 3.6);
 // Execute the *actual* game's companion combat decision, not a duplicated implementation.
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const companionStart = game.indexOf('              const st = c._stage ||', game.indexOf('function updateCompanions(dt)'));
-const companionEnd = game.indexOf('\n            }\n          } else if (c.treasureCue)', companionStart);
+const companionEnd = game.indexOf('\n            }\n          } else if (rescueActive)', companionStart); // Rescue arbitration is a distinct branch; extract only the actual attack decision for this fixture.
 assert(companionStart >= 0 && companionEnd > companionStart, 'find the real active/backing-up companion AI');
 let walkCalls = 0; // Counts normal-speed pursuit so the burst cannot be preceded by a slow approach.
 Object.assign(sandbox, {
@@ -98,6 +98,9 @@ sandbox.window.Combat.deps.canOccupyAt = () => true;
 const near = { ...actor, x: target.x - TILE * 0.5, _animalAttack: null };
 attacks.start(near, 'testBite', { target });
 assert(!near._animalAttack.approach && started === 3, 'no double lunge inside normal attack reach');
+assert.equal(attacks.start(near, 'testBite', { target }), false, 'a duplicate request cannot overwrite an active strike');
+assert.equal(started, 3, 'duplicate request cannot invoke a second signature startup');
+
 const wild = { ...actor, isCompanion: false, x: 0, _animalAttack: null };
 attacks.start(wild, 'testBite', { target });
 assert(!wild._animalAttack.approach && started === 4, 'wild creature AI is not changed');
@@ -144,5 +147,25 @@ assert(wildPounce._animalAttack.state.lungeSpeedPxS <=
   companionPounceSpeed,
   'wild Pounce does not inherit the companion-specific speed boost');
 attacks.cancel(wildPounce);
+
+// Extra-cost specials must fall back cleanly when the base action already used all available Stamina.
+let costlyStarts = 0; // Detects accidental special starts despite insufficient remaining resources.
+attacks.register('costlySpecial', {
+  additionalStaminaCost: () => 12,
+  start() { costlyStarts++; },
+  update() { return false; },
+});
+const tired = { ...actor, x: target.x, stamina: 7, _animalAttack: null }; // Ordinary attack payment has already been made by the companion decision.
+assert.equal(attacks.start(tired, 'costlySpecial', { target }), false, 'unaﬀordable extra-cost move should be rejected');
+assert.equal(tired.stamina, 7, 'failed special must not drain Stamina or trigger Exhausted');
+assert.equal(costlyStarts, 0);
+const rested = { ...tired, stamina: 18 };
+assert.equal(attacks.start(rested, 'costlySpecial', { target }), true, 'affordable named special starts normally');
+assert.equal(rested.stamina, 6, 'only the additional special cost is spent here');
+attacks.cancel(rested);
+assert.equal(attacks.start({ ...tired, health: 0 }, 'costlySpecial', { target }), false, 'dead companion cannot restart an attack');
+const wildTired = { ...tired, isCompanion: false, stamina: 7, _animalAttack: null }; // Wild animals keep their legacy Exhaustion/resource transaction rather than a player-pet-only fallback.
+assert.equal(attacks.start(wildTired, 'costlySpecial', { target }), true, 'pet Stamina restriction must not disable wild signature attacks');
+attacks.cancel(wildTired);
 
 console.log('Shared companion weapon-speed engagement, attack lifecycle, mobile debug and collision passed.');

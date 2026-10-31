@@ -8402,15 +8402,13 @@
           const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
           if (!isBanditCompanion) {
-            for (const h of hostileObjects) {
-              if (h.health <= 0) continue;
-              if (h.areaId !== currentArea) continue;
-              if (h._denHidden) continue;
-              // Wild herbivores (e.g. uumkaoii-wild) live in hostileObjects too
-              // (see spawnPackAtDen/EXTERIOR_ZONES.herbivoreSpecies) but never
-              // fight — companions should ignore them, not treat them as prey.
-              if (h.def?.hostile === false) continue;
-              if (Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+            if (window.CompanionCombatResponse) {
+              target = window.CompanionCombatResponse.chooseTarget(c, master, hostileObjects, currentArea, ALERT_RANGE_PX); // Nearest active threat, with persistent commitment to avoid flip-flopping.
+            } else {
+              for (const h of hostileObjects) {
+                if (h.health > 0 && h.areaId === currentArea && !h._denHidden && h.def?.hostile !== false
+                    && Math.hypot(h.x - master.x, h.y - master.y) <= ALERT_RANGE_PX) { target = h; break; }
+              }
             }
           }
           // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
@@ -8420,15 +8418,28 @@
             const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
             if (sicced && sicced.health > 0 && sicced.areaId === currentArea) target = sicced;
             const downedFocus = window.PlayerDowned?.getFocusTarget?.(); // While the owner is down, the enemy they last shot with a ranged weapon is the companion's priority.
-            if (downedFocus && downedFocus.areaId === currentArea) target = downedFocus;
+            if (downedFocus && downedFocus.health > 0 && !downedFocus._downed && downedFocus.areaId === currentArea) target = downedFocus; // Never chase a dead or already-downed target until its downed-focus state clears.
           }
 
+          const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
+          const rescueActive = !!rescueHost && rescueHost.health > 0
+            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle');
+          if (!rescueActive && rescueHost) c._honeyfuzzleRescueTarget = null; // Detachment and interrupted rescue cannot leave a stale friendly-fire focus.
+          if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
+            target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
+          }
+          // Once a named move owns its lunge/strike, preserve the original living target
+          // even if the master briefly runs outside ALERT_RANGE_PX. Without this, pets
+          // cancelled a committed swing as soon as its enemy crossed the alert boundary.
+          const committedTarget = c._animalAttack?.ctx?.target;
+          if (!target && !rescueActive && committedTarget?.health > 0 && !committedTarget._downed
+              && committedTarget.areaId === currentArea) target = committedTarget;
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
-          if (!target && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
-          if (!target && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
-          if (!target) c._stage = null;
+          if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+          if (!target && !rescueActive) c._stage = null;
 
           if (target && c.treasureCue) _clearCompanionTreasureCue(c, dt, 'combat');
           if (target && c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'combat');
@@ -8452,6 +8463,12 @@
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
+            // An interrupted animal must not resume a stale lunge after recovering.
+            // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
+            if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
+            if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
+          }
           if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
@@ -8502,6 +8519,10 @@
               // separated from the next by a tempo-scaled backup beat.
               const st = c._stage || (c._stage = { mode: 'active', t: 0 });
               st.t += dt;
+              if (window.CompanionCombatResponse?.shouldRestartApproach?.(st, dist, def.attackRangePx,
+                target.targetPlayer === master || target.targetCreature === master)) {
+                st.mode = 'active'; st.t = 0; // Enemy escaped the backup circle: resume pursuit rather than finishing a retreat away from the fight.
+              }
               const furiousEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Uses the same collision-limited reach as an ordinary named attack.
               const furiousStarted = !c.banditCompanion && !isCreatureSwimming(c) && dist <= furiousEngageRangePx
                 && !!window.Combat?.animalAttacks?.startFuriousSpecial?.(c, { target }); // Bypasses current cooldown and Stamina only when the most expensive enabled special is fully funded.
@@ -8514,7 +8535,9 @@
               } else {
                 const companionAttackCost = def.attackStaminaCost * (companionTempo?.stamina || 1); // Same scaled amount is checked and paid, including empty Stamina edge cases.
                 const companionEngageRangePx = window.Combat?.animalAttacks?.companionEngagementRangePx?.(c, TILE) ?? def.attackRangePx; // Attack selection includes one short, collision-checked lunge instead of requiring ordinary chase into melee range.
-                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina >= companionAttackCost && !isCreatureSwimming(c); // A prepared companion stops jogging before launching its burst.
+                const taxedStaminaFactor = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed affects the actual attack payment, not just the displayed base cost.
+                const readyStamina = companionAttackCost * (Number.isFinite(taxedStaminaFactor) && taxedStaminaFactor >= 0 ? taxedStaminaFactor : 1); // Keeps the AI's affordability check aligned with ResourceSystem.
+                const companionCanCommit = dist <= companionEngageRangePx && c.attackCooldownT <= 0 && c.stamina + 0.0001 >= readyStamina && !isCreatureSwimming(c); // Don't begin attacks that would immediately exhaust a pet.
                 if (!companionCanCommit && dist > def.attackRangePx * 0.8) moving = moveCreatureToward(c, target.x, target.y, def.chaseSpeed, dt);
                 if (companionCanCommit) {
                   const tacticalAttack = window.StableAnimalTrainingRefinements?.chooseAttack?.(c); // Selection happens once, before any action cost or committed lunge.
@@ -8555,6 +8578,11 @@
                 }
               }
             }
+          } else if (rescueActive) {
+            // Combat.attach owns movement and attack timing for a rescue. Stop ordinary follow/chase from fighting it.
+            c.vx = 0; c.vy = 0;
+            aimAngle = Math.atan2(rescueHost.y - c.y, rescueHost.x - c.x);
+            moving = false;
           } else if (c.treasureCue) {
             const cueMotion = _tickCompanionTreasureCue(c, master, dt);
             moving = cueMotion.moving;

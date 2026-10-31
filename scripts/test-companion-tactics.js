@@ -148,7 +148,7 @@ tactics.setTactics('hound', { tempo: 'relentless', abilities: { guardCharge: { f
 // Execute the real production action block, not a mirrored implementation.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Extracts the existing companion AI seam to execute its payment and dispatch rules.
 const start = game.indexOf('              const st = c._stage ||', game.indexOf('function updateCompanions(dt)')); // One behavior decision with movement/telegraph dependencies supplied below.
-const end = game.indexOf('\n            }\n          } else if (c.treasureCue)', start); // The complete active/backing-up state block.
+const end = game.indexOf('\n            }\n          } else if (rescueActive)', start); // Rescue is now a separate post-combat branch; extract only the actual attack decision. // The complete active/backing-up state block.
 assert(start >= 0 && end > start);
 let dispatch = null; // Records the actual selected action reaching the modular creature attack dispatcher.
 context.Combat.animalAttacks = { start(c, id) { dispatch = id; return true; } };

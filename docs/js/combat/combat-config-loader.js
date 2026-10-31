@@ -148,7 +148,7 @@
     ['js/den-locale-runtime.js?v=20261023h95ecfb3', () => Number(window.DenLocaleRuntime?.version) >= 4],
     ['js/puktuk-den-nest-registration.js?v=20261019h4aab194', () => Number(window.PuktukDenNestRegistration?.version) >= 2],
     ['js/dev-arena-nest-spawner.js?v=20260914a', () => Number(window.DevArenaNestSpawner?.version) >= 1],
-    ['js/wildlife-territorial.js?v=20261024h45b14a3', () => !!window.HobunjiTerritorialWildlife],
+    ['js/wildlife-territorial.js?v=20261031honey3d1', () => !!window.HobunjiTerritorialWildlife],
     ['js/wildlife-drenkirra-grazing.js?v=20260817a', () => !!window.HobunjiDrenkirraGrazing],
     ['js/wildlife-cloud-forest-behavior.js?v=20261027soursapRind1', () => !!window.HobunjiCloudForestWildlife],
     ['js/wildlife-grehlr-foraging.js?v=20260829a', () => !!window.HobunjiGrehlrForaging],
