@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const HOSTILE_DEFAULT_HEAD_GATE = 'mask'; // 'mask' (skull pixels), 'tight' or 'legacy' (the original wide box); an enemy rule's headGate overrides it.
+
   // Bandit Gangs — a bandit camp is a `placement.mode: "temporary"` locale
   // (see js/temporary-locales.js) stamped into an already-generated
   // wilderness zone at runtime, plus a gang of hostiles spawned around it.
@@ -485,16 +487,17 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
+    const headGate = roster.headGate || HOSTILE_DEFAULT_HEAD_GATE; // Global default: head scale follows the skull, so hoods, shoulders and vests follow body width.
     const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
       || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, tightHeadGate: roster.tightHeadGate === true })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, tightHeadGate: roster.tightHeadGate === true })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -545,7 +548,7 @@
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
         neckLocal:{...frontNeckSkin.neckBone.position},
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
-        headBoundsPx:headPixels?.boundsPx ? (roster.tightHeadGate === true ? { ...headPixels.boundsPx, tightGate:true } : headPixels.boundsPx) : null,
+        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, headCanvas, false) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
     group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.

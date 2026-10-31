@@ -554,22 +554,31 @@ function renderBodyProportions(species, gender) {
     label.append(input, hint);
     box.append(label);
   }
-  const tight = el('label', 'chance', 'Tight head gate (experimental)');
-  const tightCheck = el('input');
-  tightCheck.type = 'checkbox';
-  tightCheck.checked = rule().tightHeadGate === true;
-  tightCheck.onchange = () => {
+  const gate = el('label', 'chance', 'Head gate');
+  const gateSelect = el('select');
+  for (const [value, text] of [
+    ['', 'Game default (skull mask)'],
+    ['mask', 'Skull mask — head sprite pixels'],
+    ['tight', 'Tight box — ends just below the skull'],
+    ['legacy', 'Legacy — wide box, long fade'],
+  ]) {
+    const option = el('option', null, text);
+    option.value = value;
+    gateSelect.append(option);
+  }
+  gateSelect.value = rule().headGate || '';
+  gateSelect.onchange = () => {
     mutate((r) => {
-      if (tightCheck.checked) r.tightHeadGate = true;
-      else delete r.tightHeadGate;
+      if (gateSelect.value) r.headGate = gateSelect.value;
+      else delete r.headGate;
     });
     queueProportionPreview();
   };
-  tight.prepend(tightCheck);
-  tight.append(
-    el('span', 'muted', ' head scale stops just below the skull, so a wide hood, shoulders and vest follow body width/height. Works on any enemy; try it to judge a global change.'),
+  gate.append(
+    gateSelect,
+    el('span', 'muted', ' which part of the portrait head scale controls; the rest (hood, shoulders, vest) follows body width/height'),
   );
-  box.append(tight);
+  box.append(gate);
   const patterns = el('label', 'chance', 'Procedural mask patterns');
   const patternsCheck = el('input');
   patternsCheck.type = 'checkbox';

@@ -23,6 +23,7 @@
     blastRadiusTiles:[0.5,8], blastDamage:[1,200], plasmDurationSeconds:[1,90],
   });
   const bossGlyphIds = Object.freeze(['harlyao_glyph_entropy','harlyao_glyph_servitude','harlyao_glyph_ignorance']); // Only existing authored motifs are allowed for a boss's symbolic inscription.
+  const headGates = Object.freeze(['mask', 'tight', 'legacy']); // Portrait head-scale gate: head sprite pixels, box just below the skull, or the original wide box.
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
@@ -62,8 +63,10 @@
         throw Error('Invalid enemy rule');
       if (rule.enabled != null && typeof rule.enabled !== 'boolean')
         throw Error('Enemy rule enabled must be true/false');
-      if (rule.tightHeadGate != null && typeof rule.tightHeadGate !== 'boolean')
-        throw Error(kind + '.tightHeadGate must be true/false');
+      if (rule.tightHeadGate === true) rule.headGate ||= 'tight'; // Migration of the first experimental checkbox.
+      delete rule.tightHeadGate;
+      if (rule.headGate != null && !headGates.includes(rule.headGate))
+        throw Error(kind + '.headGate must be one of ' + headGates.join(', '));
       if (rule.maskPatterns != null && typeof rule.maskPatterns !== 'boolean')
         throw Error(kind + '.maskPatterns must be true/false');
       if (rule.maskPatternScale != null) {
@@ -305,7 +308,7 @@
     roster.cosmeticSlots ||= {};
     roster.appliedDyes ||= {};
     if (rule.maskPatternScale) roster.maskPatternScale = { ...rule.maskPatternScale }; // Override of the procedural mask pattern scale range.
-    if (rule.tightHeadGate === true) roster.tightHeadGate = true; // Experimental portrait rig: head scale stops just below the skull so hoods/vests follow body width.
+    if (rule.headGate) roster.headGate = rule.headGate; // Portrait rig head gate for this enemy; unset keeps the global default.
     if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
       if (roster.metalArmorItems)
@@ -387,6 +390,7 @@
     ruleFor,
     rigScaleFor,
     rigScaleRanges,
+    headGates,
     bossRanges,bossGlyphIds, // Workshop uses the same validated fields as gameplay, including safe ranges.
     status: () => ({ error }),
   });
