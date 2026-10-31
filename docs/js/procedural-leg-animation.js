@@ -838,6 +838,7 @@
     const spineGait = window.HobunjiCharacterSpine?.resolve({ spine: options.spine }) || null;
     const spineStance = spineGait?.stanceScale > 1 ? spineGait.stanceScale : 1;
     const spineStride = spineGait?.strideScale > 1 ? spineGait.strideScale : 1;
+    const portraitGuides = options.portraitRig ? window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, options.portraitRig) || null : null; // Spine/neck guides on the portrait skin share this solver's "show bones" toggle.
     const initialIdleLeftX = -stanceWidthFraction * modelWidth * 0.5 * spineStance;
     const initialIdleRightX = stanceWidthFraction * modelWidth * 0.5 * spineStance;
 
@@ -1473,6 +1474,7 @@
       dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
+      portraitGuides?.sync(showLegBoneGuides);
       state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
         applyStanceDrop(0); // Seat solve measures from the standing hip height.
@@ -1595,6 +1597,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
+      portraitGuides?.dispose();
       parent.remove(root);
       disposeObjectResources(root);
     }

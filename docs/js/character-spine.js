@@ -123,6 +123,67 @@
     return true;
   }
 
+  // "Show bones" overlay for the portrait skin: waist -> shoulder line (spine bone, orange) -> neck (violet), drawn as children of the
+  // skinned plane so they sit in the same frame as the bones and show the stoop as it is. The leg solver owns the toggle
+  // (ProceduralLegAnimation.showBones): it calls sync(visible) every frame, so the guides appear with the leg guides, upright or not.
+  function makeBoneGuides(THREE, rig) {
+    const plane = rig?.skinnedPlane;
+    const spineBone = rig?.spineJoint?.position ? rig.spineJoint : rig?.spineJoint?.front;
+    const neckBone = rig?.neckJoint;
+    if (!plane?.isObject3D || !spineBone || !neckBone?.position) return null;
+    plane.geometry?.computeBoundingBox?.();
+    const box = plane.geometry?.boundingBox;
+    const H = box ? box.max.y - box.min.y : 0.9;
+    const neckY = Number(rig.neckLocal?.y ?? neckBone.position.y) || 0;
+    const waistY = neckY - WAIST_BELOW_NECK * H, shoulderY = neckY - FULL_BELOW_NECK * H;
+    const group = new THREE.Group();
+    group.name = 'spine_bone_guides';
+    group.visible = false;
+    group.frustumCulled = false;
+    const materials = [], geometries = [];
+    const guideMaterial = (color, opacity) => {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, depthWrite: false });
+      materials.push(material);
+      return material;
+    };
+    const spineColor = 0xff9f1a, neckColor = 0xc77dff;
+    const cylinderGeometry = new THREE.CylinderGeometry(0.012 * H / 0.9, 0.015 * H / 0.9, 1, 8);
+    const jointGeometry = new THREE.SphereGeometry(0.021 * H / 0.9, 10, 8);
+    geometries.push(cylinderGeometry, jointGeometry);
+    const bone = color => { const mesh = new THREE.Mesh(cylinderGeometry, guideMaterial(color, 0.62)); mesh.renderOrder = 42; mesh.frustumCulled = false; group.add(mesh); return mesh; };
+    const joint = color => { const mesh = new THREE.Mesh(jointGeometry, guideMaterial(color, 0.85)); mesh.renderOrder = 43; mesh.frustumCulled = false; group.add(mesh); return mesh; };
+    const spineGuide = bone(spineColor), neckGuide = bone(neckColor);
+    const waistJoint = joint(spineColor), shoulderJoint = joint(spineColor), neckJoint = joint(neckColor);
+    const x = Number(neckBone.position.x) || 0;
+    const waist = new THREE.Vector3(x, waistY, 0.01), shoulder = new THREE.Vector3(), neck = new THREE.Vector3();
+    const span = (mesh, from, to) => {
+      const dx = to.x - from.x, dy = to.y - from.y;
+      mesh.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 0.01);
+      mesh.scale.set(1, Math.max(1e-4, Math.hypot(dx, dy)), 1);
+      mesh.rotation.set(0, 0, -Math.atan2(dx, dy));
+    };
+    plane.add(group);
+    let visible = false;
+    return {
+      group,
+      sync(show) {
+        if (show !== visible) { visible = !!show; group.visible = visible; }
+        if (!visible) return;
+        spineBone.updateMatrix?.();
+        shoulder.set(x, shoulderY, 0.01).applyMatrix4(spineBone.matrix); // The shoulder line is fully weighted to the spine bone, so it rides the bone exactly.
+        neck.copy(neckBone.position).applyMatrix4(spineBone.matrix); neck.z = 0.01; // The neck bone is the spine bone's child.
+        waistJoint.position.copy(waist); shoulderJoint.position.copy(shoulder); neckJoint.position.copy(neck);
+        span(spineGuide, waist, shoulder);
+        span(neckGuide, shoulder, neck);
+      },
+      dispose() {
+        group.parent?.remove(group);
+        for (const geometry of geometries) geometry.dispose?.();
+        for (const material of materials) material.dispose?.();
+      },
+    };
+  }
+
   // How far a rest-pose point at plane-local height y is carried down by the spine, in plane-local units (0 for an upright character).
   const deformDrop = (profile, y) => profile?.dropLocal > 0
     ? profile.dropLocal * followAt(y, profile.neckY, profile.modelHeight, profile.blendHeight)
@@ -157,6 +218,7 @@
     followAt,
     applyToRig,
     deformDrop,
+    makeBoneGuides,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,
     hunchFor,

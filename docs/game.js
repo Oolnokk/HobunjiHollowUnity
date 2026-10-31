@@ -12357,6 +12357,7 @@
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
           spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Pants are a skinned mesh on the avatar that follows these procedural legs; attachToLegs hooks them into
         // legs.update()/dispose(), so every existing leg tick/teardown site drives them (js/pants-garment-renderer.js).
@@ -17340,6 +17341,7 @@
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
           name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
         // playback.js) writes directly into this same legs handle — re-attach

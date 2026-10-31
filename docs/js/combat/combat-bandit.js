@@ -639,6 +639,7 @@
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
+      portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, spineJoint: { front: frontNeckSkin.spineBone }, neckJoint: frontNeckSkin.neckBone, neckLocal: { y: frontNeckSkin.neckBone.position.y } } : undefined, // "Show bones" also draws the portrait's spine and neck.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
