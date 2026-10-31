@@ -66,7 +66,7 @@ The house is a 1x1 `FarmProduction` building (`config/farm-specializations.js`, 
 
 ## Combat
 
-Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack.
+Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. A nearby allied combat-capable NPC or the player's companion temporarily targets the swarmed victim and attacks: the swarm takes 100% of the rescuer's normal hit and disengages, while the victim takes 25% of its Health damage, Footing, affliction buildup, and knockback. Other friendly attacks remain disallowed. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack.
 
 ## Positional honeyfuzzle buzz
 
