@@ -916,6 +916,9 @@
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const nonMetalMask = img.modularNonMetalMask; // Living Torch-Staff shafts are visually nonmetal, although their forged HEAD remains plated.
+      const beforeMetal = nonMetalMask?.length === canvas.width * canvas.height
+        ? new Uint8ClampedArray(imageData.data) : null; // Original source colors are restored only where the visible shaft wins the layer ordering.
       recolorAndOxidize(imageData, {
         ...opts,
         sourceHex,
@@ -931,6 +934,13 @@
         motifImage: motifImages[0] || null,
         motifImages,
       });
+      if (beforeMetal) {
+        for (let p = 0; p < nonMetalMask.length; p++) if (nonMetalMask[p]) {
+          const at = p * 4;
+          imageData.data[at] = beforeMetal[at]; imageData.data[at + 1] = beforeMetal[at + 1];
+          imageData.data[at + 2] = beforeMetal[at + 2]; imageData.data[at + 3] = beforeMetal[at + 3];
+        } // Keep the entire authored shaft and its off-white fire markers unplated, regardless of hue or verdigris patterns.
+      }
       ctx.putImageData(imageData, 0, 0);
       _canvasCache.set(cacheKey, canvas);
       while (_canvasCache.size > MAX_CANVAS_CACHE_ENTRIES) _canvasCache.delete(_canvasCache.keys().next().value); // Evict oldest (Map preserves insertion order) instead of growing forever.
