@@ -144,9 +144,11 @@
       floorSeen.add(c+','+r);
       const height=floorYAt(c,r);if(!Number.isFinite(height))throw new Error('The generated floor elevation is invalid.');
       heights.add(Math.round(height*1000));
+      const spacing=1.5,gx=Math.floor(c/spacing),gz=Math.floor(r/spacing); // Roughly quarter-size original stone spacing; cells still join into irregular multi-cell rocks.
       let chosen=null,distance=Infinity; // A fixed nine-candidate local Voronoi search bounds work even for a large multi-room dungeon.
       for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
-        const cx=c+dx,cz=r+dz,jx=cx+.5+(noise(cx,cz,0)-.5)*.65,jz=cz+.5+(noise(cx,cz,1)-.5)*.65;
+        const cx=gx+dx,cz=gz+dz,jx=(cx+.5)*spacing+(noise(cx,cz,0)-.5)*1.05,
+          jz=(cz+.5)*spacing+(noise(cx,cz,1)-.5)*1.05;
         const d=(jx-c-.5)**2+(jz-r-.5)**2;
         if(d<distance){distance=d;chosen=cx+','+cz;}
       }
@@ -167,7 +169,7 @@
       for(const index of indices)pieceIds[index]=id;
     }
     const reliefScale=.0625; // Quarter-size feature spacing and quarter-size source height, both applied once in the final geometry.
-    const minHeight=Math.min(...pieceHeights),maxHeight=Math.max(...pieceHeights);
+    const minHeight=pieceHeights.reduce((min,y)=>Math.min(min,y),Infinity),maxHeight=pieceHeights.reduce((max,y)=>Math.max(max,y),-Infinity); // Bounded even when ruins exceed JavaScript's argument-spread limits.
     for(let i=0;i<shell.pos.length;i+=3){
       const y=pieceHeights[pieceIds[i/3]]; // The component's native floor level is never scaled towards another room's datum.
       shell.pos[i]=shell.pos[i]*cellSize-Number(meta.worldWidth)/2;
