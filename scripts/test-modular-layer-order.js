@@ -15,19 +15,35 @@ async function run() {
   const document = {
     createElement(tag) {
       assert.equal(tag, 'canvas'); // Production compositor creates one alpha-inspection canvas plus an output canvas.
-      const canvas = { width: 0, height: 0, operations: [] };
+      const canvas = { width: 0, height: 0, operations: [], drawnPixels: [] };
+      let matrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }; // Real canvas CTM semantics, not the old operation-count-only fixture.
+      const saved = []; // Parent and child transforms are nested via save/restore.
+      const multiply = t => { matrix = {
+        a: matrix.a*t.a + matrix.c*t.b, b: matrix.b*t.a + matrix.d*t.b,
+        c: matrix.a*t.c + matrix.c*t.d, d: matrix.b*t.c + matrix.d*t.d,
+        e: matrix.a*t.e + matrix.c*t.f + matrix.e,
+        f: matrix.b*t.e + matrix.d*t.f + matrix.f,
+      }; };
+      const pointOnBitmap = (x,y) => ({x:matrix.a*x + matrix.c*y + matrix.e,y:matrix.b*x+matrix.d*y+matrix.f});
       const ctx = {
-        drawImage(image) { canvas.operations.push('paint:' + (image?.key || 'unknown')); },
+        drawImage(image) {
+          canvas.operations.push('paint:' + (image?.key || 'unknown'));
+          if (image?.key === 'head' || image?.key === 'haft') {
+            canvas.drawnPixels.push({kind:image.key, origin:pointOnBitmap(200,100),
+              axis:pointOnBitmap(300,100)}); // Track two actual raster sample positions under composed parent/child transforms.
+          }
+        },
         getImageData() {
           const data = new Uint8ClampedArray(450 * 1204 * 4); // One opaque head pixel for real bounds math.
           data[(100 * 450 + 200) * 4 + 3] = 255;
           return { data };
         },
-        save() { canvas.operations.push('save'); }, restore() { canvas.operations.push('restore'); },
+        save() { canvas.operations.push('save'); saved.push({...matrix}); },
+        restore() { canvas.operations.push('restore'); matrix = saved.pop(); },
         rect() {}, clip() { canvas.operations.push('clip'); }, beginPath() {},
-        scale(x,y) { canvas.operations.push('scale:' + x + ',' + y); },
-        translate(x,y) { canvas.operations.push('translate:' + x + ',' + y); },
-        transform(a,b,c,d,e,f) { canvas.operations.push('head-transform:' + [a,b,c,d,e,f].join(',')); }
+        scale(x,y) { canvas.operations.push('scale:' + x + ',' + y); multiply({a:x,b:0,c:0,d:y,e:0,f:0}); },
+        translate(x,y) { canvas.operations.push('translate:' + x + ',' + y); multiply({a:1,b:0,c:0,d:1,e:x,f:y}); },
+        transform(a,b,c,d,e,f) { canvas.operations.push('head-transform:' + [a,b,c,d,e,f].join(',')); multiply({a,b,c,d,e,f}); }
       };
       canvas.getContext = () => ctx;
       canvases.push(canvas);
@@ -128,6 +144,31 @@ async function run() {
   assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
   assert(transformed.modularNonMetalMask instanceof Uint8Array, 'the fixed shaft still preserves its independent nonmetal recolor mask');
+  const sampleRelativeToShaft = canvas => {
+    const frame = canvas.modularFrame; // Recover real source pixels from potentially resized/compressed canvas coordinates.
+    const toOriginal = pixel => ({
+      x: frame.left + pixel.x / canvas.width * frame.width,
+      y: frame.top + pixel.y / canvas.height * frame.height,
+    });
+    const headPixels = canvas.drawnPixels.filter(p => p.kind === 'head');
+    const shaftPixels = canvas.drawnPixels.filter(p => p.kind === 'haft');
+    const shaftPt = toOriginal(shaftPixels[0].origin);
+    return headPixels.map(p => ({
+      dx:toOriginal(p.origin).x-shaftPt.x,dy:toOriginal(p.origin).y-shaftPt.y,
+      headWidth:Math.hypot(toOriginal(p.axis).x-toOriginal(p.origin).x,
+        toOriginal(p.axis).y-toOriginal(p.origin).y),
+    }));
+  };
+  const identityPixels = sampleRelativeToShaft(staffIdentity);
+  const scaledPixels = sampleRelativeToShaft(transformed);
+  assert.equal(identityPixels.length, 2);
+  assert.equal(scaledPixels.length, 2);
+  assert(scaledPixels.some((p,i) => Math.abs(p.dx - identityPixels[i].dx)>5),
+    'real composed head raster pixels must translate relative to the fixed staff');
+  assert(scaledPixels.some((p,i) => Math.abs(p.dy - identityPixels[i].dy)>5),
+    'real composed head raster pixels must move vertically with the rig');
+  assert(scaledPixels.some((p,i) => Math.abs(p.headWidth-identityPixels[i].headWidth)>5),
+    'real composed head raster pixel spacing must scale; checking matrices alone is insufficient');
   // The historical duplicate-only gate silently ignored scaling on any ORIGINAL shaft.
   const originalShaftDraft = JSON.parse(JSON.stringify(api.getConfig()));
   originalShaftDraft.shafts.bshuakauitl.attachmentRigTransform = { scaleX: 2.2, scaleY: .8, x: 95, y: 45 };
