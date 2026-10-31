@@ -74,7 +74,7 @@ assert.equal(JSON.stringify(irregular),irregularSnapshot,'geometry generation mu
 assert.equal(JSON.stringify([...heightMap]),heightsSnapshot,'geometry generation must not modify sampled collision heights');
 const untouched=scenery.ruinMappedFloorShell(irregular,'multichamber');
 assert.notDeepEqual(Array.from(untouched.pos),Array.from(cellFloor.pos),'runtime elevation overrides must affect the visible floor');
-assert.throws(()=>scenery.ruinMappedFloorShell({...irregular,floorCells:[...oddCells,[4,3]]},'bad'),/invalid or duplicate cell/);
+assert.throws(()=>scenery.ruinMappedFloorShell({...irregular,floorCells:[...oddCells,[1,1]]},'bad'),/invalid or duplicate cell/);
 
 assert(bootstrap.indexOf('stone-age-ruin-scenery.js')<bootstrap.indexOf('dev-random-ruin-interior-map.js'),'gameplay adapter must load after shared scenery');
 assert(previewHtml.includes('js/stone-age-ruin-scenery.js?v='),'preview must load the same source');
