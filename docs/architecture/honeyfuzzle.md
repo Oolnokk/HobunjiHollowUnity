@@ -50,7 +50,7 @@ All five new PNGs have identical **478×399** canvas coordinates; the retired 50
 
 The wilderness generator's `beehive` objects are hollow stump tiles (`floraKind === 'beehive'`, drawn by `FoliageGenerator.buildStumpMesh`). Each stump is three things:
 
-1. **Home.** By day `ensureCurrentZone` (called from `WildlifeSpawn.updateHostileSpawning`) spawns one swarm per stump near the player. `updateHostiles` calls `HoneyfuzzleHives.control` before the generic AI: at night the swarm flies to the stump and tucks inside (hidden and frozen); at dawn it comes back out. A killed swarm is replaced after two days.
+1. **Home.** By day `ensureCurrentZone` (called from `WildlifeSpawn.updateHostileSpawning`) spawns one swarm per stump near the player. `updateHostiles` calls `HoneyfuzzleHives.control` before the generic AI: at night the swarm flies to the stump and tucks inside (hidden and frozen); at dawn it comes back out. A defeated swarm reforms 15 seconds after lethal damage, as long as its hive stump still stands, including at night if it was engaged.
 2. **Nest.** One long hold (`HOLD_SECONDS`, via the same hold input as `js/corpse-hold-loot.js`) gives 1-3 `fertileHoneyfuzzleEgg`.
 3. **Resource.** The same hold gives `honey`. The stump then collapses: the tile becomes grass and an entry with `regrowDays: HIVE_REGROW_DAYS` goes into `_zoneFelledTreePersist` (so it persists and regrows through the felled-tree machinery, just on a longer clock). Its swarm is left homeless until the stump regrows.
 
@@ -66,7 +66,7 @@ The house is a 1x1 `FarmProduction` building (`config/farm-specializations.js`, 
 
 ## Combat
 
-Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack.
+Honeyfuzzles fight with **Swarm**, built on the reusable attach mechanic described in [combat-attach.md](combat-attach.md): one chosen target, the swarm sits on top of it for 6 s, deals little direct damage but stacks a lot of Poisoned Health, is immune to that target's attacks, and can still be hurt by anyone else. Its attached cluster contracts to 71% of free-flight spread and targets the upper quarter of the host. An ally or player's combat pet can rescue the host with a normal-strength strike against the swarm, at the cost of a quarter-strength friendly strike (Health, Footing, afflictions and knockback) on the host; the swarm immediately detaches. They are territorial (warning first, then a fight) around their hive, and as a companion they use Swarm on every attack. Beginning to harvest honey at night immediately spawns or wakes the defender and provokes a fight instead of waiting until the harvest completes.
 
 ## Positional honeyfuzzle buzz
 
@@ -77,3 +77,5 @@ Asset: the existing **AAC M4A** recording is in `docs/assets/audio/sfx/utterance
 At 10 Hz, only active voices update their location, distance attenuation and AudioParams. A 350 ms scan gathers hives, creatures and farm house visuals without per-frame world scans. Moving sources and the player supply radial velocity for capped physical Doppler; the species territorial warning/fight and attack states add a separate smooth aggression multiplier. AudioParam smoothing prevents clicks/jumps on abrupt AI state changes. The new sound routes through the shared Effects/Master mixer. The opening introduction explicitly silences and then resumes the buzz with the rest of the soundscape.
 
 On mobile use `HoneyfuzzleAudio.debugSnapshot()` (or `window.HoneyfuzzleAudio.debugSnapshot()` in any in-game diagnostics) to inspect load errors, active voice count, pitches and distance source budget. `node scripts/test-honeyfuzzle-audio.js` runs the headless behavior regression.
+
+**Respawn and nocturnal harvest diagnostics.** `HoneyfuzzleHives.census()` reports `respawnInSeconds` while a live stump is waiting for its defender to re-form; `HoneyfuzzleHives.debugSnapshot()` lists defeat timestamps. The hold-to-harvest system's optional one-shot `onHoldStart` hook provokes nighttime defenders before honey or eggs are granted. Collapsed hives never refill their defenders until the stump regrows.
