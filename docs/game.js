@@ -6621,8 +6621,8 @@
 
       function updateHostiles(dt) {
         for (const entity of hostileObjects) {
-          if (entity?.maskboundTroop === 'headtaker' && entity._attachment?.id === 'maskbound-headtaker'
-            && entity.areaId && entity.areaId !== currentArea) {
+          if (entity?.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(entity)
+            && entity.areaId && entity.areaId !== currentArea) { // Catches both an airborne leap and a landed neck-grip when the target changes maps.
             window.MaskboundHeadtaker?.cancel?.(entity, 'area-changed'); // The old area's AI won't tick the grapple again; never strand the player's head lock across a doorway.
           }
         }
