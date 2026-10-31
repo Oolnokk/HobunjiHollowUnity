@@ -152,7 +152,8 @@
     if (isPlayer(host)) return ally.isCompanion === true && !ally.banditCompanion && (ally.master || d.player) === host;
     if (host.isCompanion) return ally.isCompanion === true && !ally.banditCompanion &&
       (ally.master || d.player) === (host.master || d.player);
-    for (const key of ['banditCampInstanceId', 'porakanekiCampId', 'huntPartyId', 'tribeId', 'denKey', 'nestTreeKey', 'herdKey']) {
+    if (ally.banditCompanion && ally.master === host) return true; // Enemy beastmasters' pets can save their own masters, too.
+    for (const key of ['banditCampInstanceId', 'porakanekiCampId', 'huntPartyId', 'tribeId', 'denKey', 'nestTreeKey', 'herdKey', 'squadId', 'factionId', 'teamId']) {
       if (host[key] != null && ally[key] === host[key]) return true;
     }
     if (host.isBandit && ally.isBandit && !host.banditCampInstanceId && !ally.banditCampInstanceId) return true;
@@ -161,7 +162,7 @@
 
   function rescueCandidates(host) {
     const d = deps();
-    const pool = isPlayer(host) || host.isCompanion ? d.companionObjects : d.hostileObjects;
+    const pool = isPlayer(host) || host.isCompanion ? d.companionObjects : [...(d.hostileObjects || []), ...(d.companionObjects || [])]; // Enemy-owned pets also belong to NPC rescue parties.
     return [...(pool || [])].filter(ally => isRescueAlly(host, ally) &&
       Math.hypot(ally.x - host.x, ally.y - host.y) <= RESCUE_SENSE_TILES * d.TILE)
       .sort((a, b) => Math.hypot(a.x - host.x, a.y - host.y) - Math.hypot(b.x - host.x, b.y - host.y));
@@ -171,7 +172,7 @@
   function tryRescueSwarm(c, host, state, dt) {
     const d = deps();
     for (const ally of rescueCandidates(host)) {
-      if (window.Combat.animalAttacks?.isBusy?.(ally)) continue; // Never interrupt a committed special.
+      if (window.Combat.animalAttacks?.isBusy?.(ally) || window.Combat.telegraph?.isBusy?.(ally) || ally._banditAction) continue; // Never interrupt a committed special or NPC weapon attack.
       state.rescuer = ally;
       ally._honeyfuzzleRescueTarget = host; // Exposes the temporary ally target for debug/AI instrumentation.
       const dx = host.x - ally.x, dy = host.y - ally.y;
