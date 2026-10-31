@@ -192,10 +192,21 @@ steps, recipes and art are not destructively rewritten.
 
 The mobile editor offers a rectangle picker on the assembled preview,
 per-region transform fields and a remove button; it shows selected head
-and expanded operation counts without developer tools. Local editing
-maps transformed pointer positions back to authored coordinates.
-The selections are whole child operations, **not arbitrary cutouts of
-head pixels or fractional brush strokes**; the selection has no effect
+and expanded operation counts without developer tools. Creating a new
+region always inverse-transforms the pointer through the **overall rig
+only**, even when the drag begins inside an existing region. Editing
+an existing stroke or recipe inverts its assigned local region too.
+Recipe hit testing is performed against the recipe's own transformed
+box, including corner resize handles that extend beyond the region
+selection rectangle. New source selection boxes are permitted beyond
+the shaft PNG when fitted child graphics extend outside 450 × 1204.
+All points in one painted brush stroke and every expanded step in one
+placed recipe inherit a *single* region; an unselected recipe cannot
+have individual nested strokes captured merely because their points
+cross another region.
+
+Selections are whole child operations, **not arbitrary cutouts of
+head pixels or fractional brush strokes**; selection has no effect
 on the unselected shaft bitmap. Older configurations with no regions
 or no enabled art transform keep their original output.
 
