@@ -8,7 +8,8 @@ async function run() {
   const canvases = []; // Every composed PNG receives its own recorded draw list.
   class Image {
     set src(value) {
-      this.key = value.includes('weaponhead_') ? 'head' : 'haft'; // Identify which image the production compositor paints.
+      this.key = value.includes('weaponjunction_') ? 'junction' : value.includes('weaponhead_') ? 'head' : 'haft'; // Identify actual primitive and junction sprites.
+      this.width = this.key === 'junction' ? 20 : 450; this.height = this.key === 'junction' ? 12 : 1204; // Authoring frame and junction size fixture.
       this.onload?.(); // Simulate successful CORS image loading.
     }
   }
@@ -26,11 +27,14 @@ async function run() {
       }; };
       const pointOnBitmap = (x,y) => ({x:matrix.a*x + matrix.c*y + matrix.e,y:matrix.b*x+matrix.d*y+matrix.f});
       const ctx = {
-        drawImage(image) {
+        drawImage(image, x=0, y=0) {
           canvas.operations.push('paint:' + (image?.key || 'unknown'));
           if (image?.key === 'head' || image?.key === 'haft') {
             canvas.drawnPixels.push({kind:image.key, origin:pointOnBitmap(200,100),
               axis:pointOnBitmap(300,100)}); // Track two actual raster sample positions under composed parent/child transforms.
+          }
+          if (image?.key === 'junction') {
+            canvas.drawnPixels.push({kind:'junction', origin:pointOnBitmap(x+(image.width||0)/2,y+(image.height||0)/2)});
           }
         },
         getImageData() {
@@ -43,7 +47,11 @@ async function run() {
         rect() {}, clip() { canvas.operations.push('clip'); }, beginPath() {},
         scale(x,y) { canvas.operations.push('scale:' + x + ',' + y); multiply({a:x,b:0,c:0,d:y,e:0,f:0}); },
         translate(x,y) { canvas.operations.push('translate:' + x + ',' + y); multiply({a:1,b:0,c:0,d:1,e:x,f:y}); },
-        transform(a,b,c,d,e,f) { canvas.operations.push('head-transform:' + [a,b,c,d,e,f].join(',')); multiply({a,b,c,d,e,f}); }
+        transform(a,b,c,d,e,f) { canvas.operations.push('head-transform:' + [a,b,c,d,e,f].join(',')); multiply({a,b,c,d,e,f}); },
+        setTransform(a,b,c,d,e,f) { canvas.operations.push('set-transform'); matrix={a,b,c,d,e,f}; },
+        rotate(theta) { canvas.operations.push('rotate'); multiply({a:Math.cos(theta),b:Math.sin(theta),
+          c:-Math.sin(theta),d:Math.cos(theta),e:0,f:0}); },
+        putImageData() { canvas.operations.push('raster-update'); }
       };
       canvas.getContext = () => ctx;
       canvases.push(canvas);
@@ -403,6 +411,33 @@ async function run() {
   assert.equal(stamped[65*120+60],0,'Y radius stays compact under reduced Y rig scale');
   assert.deepEqual(api.getConfig().recipes,riggedDraft.recipes,
     'scaling rig must never modify shared authored recipe source data');
+  // End-to-end compositing: a junction sprite must be rendered under its own
+  // picture transform AND the rig parent, not left behind after head scaling.
+  const originalOpsDraft = JSON.parse(JSON.stringify(api.getConfig()));
+  originalOpsDraft.shafts.hachutuTorchStaff.attachmentRigTransform = {scaleX:1,scaleY:1,x:0,y:0};
+  originalOpsDraft.shafts.hachutuTorchStaff.overrides.warhammer.bridges = {
+    strokes:[{junction:'band',x:205,y:520,rotation:0,scale:1}],outline:4,light:[0,-1],shade:0.3,seed:1
+  }; // One explicit sprite operation to isolate actual Canvas parent movement.
+  api.replace(originalOpsDraft);
+  const junctionIdentity = await api.compose('hachutuTorchStaff','warhammer');
+  const beforeJunction = junctionIdentity.drawnPixels.filter(p=>p.kind==='junction');
+  assert.equal(beforeJunction.length,1,'junction sprite was really drawn on composed frame');
+  const translatedOpsDraft = JSON.parse(JSON.stringify(api.getConfig()));
+  translatedOpsDraft.shafts.hachutuTorchStaff.attachmentRigTransform={scaleX:1.8,scaleY:.65,x:124,y:-168};
+  api.replace(translatedOpsDraft);
+  const junctionMoved = await api.compose('hachutuTorchStaff','warhammer');
+  const afterJunction = junctionMoved.drawnPixels.filter(p=>p.kind==='junction');
+  assert.equal(afterJunction.length,1);
+  const unframe = (canvas,p) => ({
+    x:canvas.modularFrame.left+p.origin.x*canvas.modularFrame.width/canvas.width,
+    y:canvas.modularFrame.top+p.origin.y*canvas.modularFrame.height/canvas.height
+  });
+  const p0=unframe(junctionIdentity,beforeJunction[0]),p1=unframe(junctionMoved,afterJunction[0]);
+  const expected=api.duplicatePoint({x:205,y:520},api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff));
+  assert(Math.abs(p1.x-expected.x)<1e-5 && Math.abs(p1.y-expected.y)<1e-5,
+    'junction sprite is painted using actual scaled/translated parent matrix');
+  assert(Math.hypot(p1.x-p0.x,p1.y-p0.y)>30,
+    'junction PNG must visibly move, not remain at saved local pixels when the rig moves');
   console.log('Modular layering: transformed actual raster sample positions, original and cloned rig controls, saved drafts, revision cache and editor preview passed.');
 }
 
