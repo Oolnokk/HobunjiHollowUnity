@@ -29,12 +29,12 @@
   const HIVE_REGROW_DAYS = 28;
   const SPAWN_RADIUS_TILES = 24; // Hives farther than this from the player stay empty until approached.
   const REACH_TILES = 2.6; // How close the player must stand to harvest.
-  const RESPAWN_DAYS = 2; // A killed swarm is replaced this many days later.
+  const RESPAWN_DELAY_MS = 15000; // A defeated swarm reforms 15 real-time seconds later while its stump survives.
   const TUCK_DISTANCE_TILES = 1.2; // The stump tile is solid, so a swarm can only ever reach its edge: tuck when it gets there.
 
   let deps = null;
   const hiveCache = new WeakMap(); // layout -> [{col,row}] — scanned once per generated layout.
-  const killedOn = new Map(); // hiveKey -> calendar day its swarm died.
+  const defeatedAt = new Map(); // hiveKey -> monotonic timestamp when its active defender was defeated.
   const spawnedOnce = new Set(); // hiveKey -> true once a swarm has existed (session scope).
 
   function init(injectedDeps) { deps = injectedDeps; }
@@ -62,8 +62,20 @@
 
   function isNight() { return !!deps?.isNightTime?.(); }
 
+  function clockMs() { return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); }
+
+  function recordDefeat(c) {
+    if (!c?.hiveKey || c.health > 0 || defeatedAt.has(c.hiveKey)) return false;
+    defeatedAt.set(c.hiveKey, clockMs()); // Only the first death observation starts the 15-second countdown.
+    return true;
+  }
+
   function swarmFor(hiveKey) {
-    for (const c of deps.hostileObjects) if (c.hiveKey === hiveKey && c.health > 0) return c;
+    for (const c of deps.hostileObjects) {
+      if (c.hiveKey !== hiveKey) continue;
+      if (c.health > 0 && !c._deathTransitionStarted) return c;
+      recordDefeat(c); // Dead creatures can remain in hostileObjects until corpse cleanup.
+    }
     return null;
   }
 
@@ -110,21 +122,25 @@
     const grid = deps.getGrid();
     const hives = hivesInLayout(layout);
     if (!hives.length || !grid) return;
-    const T = deps.TILE, px = deps.player.x, py = deps.player.y, day = deps.calendar.day;
+    const T = deps.TILE, px = deps.player.x, py = deps.player.y, nowMs = clockMs();
     for (const h of hives) {
       const hive = { col: h.col, row: h.row, key: hiveKeyFor(zoneId, h.col, h.row) };
       if (!isLiveHiveTile(grid, hive.col, hive.row)) continue; // Collapsed: the swarm is homeless until it regrows.
       const existing = swarmFor(hive.key);
       if (existing) continue;
-      if (isNight()) continue; // Swarms are out only in their active hours; a stump with no swarm at night just stays quiet.
       if (Math.hypot((hive.col + 0.5) * T - px, (hive.row + 0.5) * T - py) > SPAWN_RADIUS_TILES * T) continue;
-      if (killedOn.has(hive.key) && day - killedOn.get(hive.key) < RESPAWN_DAYS) continue;
-      if (!killedOn.has(hive.key) && spawnedOnce.has(hive.key)) { // Its swarm vanished without a recorded death (zone reset): treat as killed today.
-        killedOn.set(hive.key, day);
+      if (!defeatedAt.has(hive.key) && spawnedOnce.has(hive.key)) {
+        defeatedAt.set(hive.key, nowMs); // A despawned/missing defender also waits before being replaced.
         continue;
       }
-      killedOn.delete(hive.key);
-      spawnSwarm(zoneId, hive);
+      const diedAt = defeatedAt.get(hive.key);
+      if (diedAt != null && nowMs - diedAt < RESPAWN_DELAY_MS) continue;
+      if (isNight() && diedAt == null) continue; // Fresh wild swarms still emerge in the morning only.
+      const replacement = spawnSwarm(zoneId, hive);
+      if (replacement) {
+        defeatedAt.delete(hive.key);
+        if (isNight()) provokeDefender(replacement); // A recently defeated night defender returns to the fight.
+      }
     }
   }
 
@@ -135,6 +151,13 @@
     if (!c.hiveKey || c.health <= 0) return false;
     const night = isNight();
     const T = deps.TILE;
+    if (!night) c._hiveNightProvoked = false;
+    if (night && c._hiveNightProvoked) {
+      c._hiveTucked = false; // Harvest attempts wake even a swarm already hidden inside its stump.
+      if (c.avatarRef?.group) c.avatarRef.group.visible = true;
+      if (c.groundShadow) c.groundShadow.visible = true;
+      return false; // Territorial chase/combat takes precedence over the ordinary dusk return.
+    }
     if (c._hiveTucked) {
       if (night) { if (c.avatarRef?.group?.visible) c.avatarRef.group.visible = false; return true; }
       c._hiveTucked = false; // Morning: pour out of the stump, from the open ground beside it where it tucked in.
@@ -159,6 +182,26 @@
     return true;
   }
 
+  function provokeDefender(c) {
+    if (!c || c.health <= 0) return false;
+    c._hiveNightProvoked = true; // Kept active through the current night after an attempted hive theft.
+    c._hiveTucked = false;
+    if (c.avatarRef?.group) c.avatarRef.group.visible = true;
+    if (c.groundShadow) c.groundShadow.visible = true;
+    if (!window.HobunjiTerritorialWildlife?.provoke?.(c, deps.player, 'night hive harvest')) {
+      c.state = 'chase'; // Fallback when territorial behavior has not initialized yet.
+      c.targetPlayer = deps.player;
+    }
+    return true;
+  }
+
+  function onHarvestAttempt(zoneId, col, row) {
+    if (!isNight() || zoneId !== deps.getCurrentArea() || !isLiveHiveTile(deps.getGrid(), col, row)) return false;
+    const hive = { zoneId, col, row, key: hiveKeyFor(zoneId, col, row) };
+    const defender = swarmFor(hive.key) || spawnSwarm(zoneId, hive); // Ignore daytime-only spawn and defeated cooldown for an attempted nighttime theft.
+    return provokeDefender(defender); // No duplicates when a defender is returning, tucked or already in combat.
+  }
+
   // ---- B/C. hold-to-harvest -------------------------------------------------
 
   function addToBag(itemKey, amount) {
@@ -178,6 +221,8 @@
   function collapseHive(zoneId, col, row) {
     const tile = deps.getGrid()?.[row]?.[col];
     if (tile) { tile.type = deps.TileType.GRASS; tile.water = 0; } // floraKind stays so the same stump regrows later.
+    defeatedAt.delete(hiveKeyFor(zoneId, col, row)); // A collapsed stump cannot produce delayed replacements.
+    spawnedOnce.delete(hiveKeyFor(zoneId, col, row));
     const entries = deps.felledPersist.get(zoneId) || [];
     entries.push({ col, row, feltDay: deps.calendar.day, regrowDays: HIVE_REGROW_DAYS, hive: true });
     deps.felledPersist.set(zoneId, entries);
@@ -245,6 +290,7 @@
     return {
       id: hive.key, type: 'honeyfuzzle_hive', promptRoot: hive.promptRoot,
       holdSeconds: HOLD_SECONDS, holdLabel: 'Harvesting hive stump...',
+      onHoldStart: () => onHarvestAttempt(hive.zoneId, hive.col, hive.row),
       onAction: () => harvest(hive.zoneId, hive.col, hive.row),
     };
   }
@@ -273,14 +319,14 @@
     const hives = hivesInLayout(deps.zoneLayouts.get(zoneId)).map(h => {
       const key = hiveKeyFor(zoneId, h.col, h.row);
       const swarm = swarmFor(key);
-      return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, killedOnDay: killedOn.get(key) ?? null };
+      return { key, col: h.col, row: h.row, standing: isLiveHiveTile(grid, h.col, h.row), swarm: !!swarm, swarmState: swarm?.state || null, respawnInSeconds: defeatedAt.has(key) ? Math.max(0, (RESPAWN_DELAY_MS - (clockMs() - defeatedAt.get(key))) / 1000) : null };
     });
     return { zoneId, excluded, night: isNight(), spawnRadiusTiles: SPAWN_RADIUS_TILES, hives };
   }
 
   window.HoneyfuzzleHives = {
     SPECIES, EGG_ITEM, HONEY_ITEM, HOLD_SECONDS, HIVE_REGROW_DAYS, EGG_MIN, EGG_MAX, HONEY_MIN, HONEY_MAX,
-    init, ensureCurrentZone, control, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census,
-    debugSnapshot: () => ({ killedOn: [...killedOn], spawned: spawnedOnce.size }),
+    RESPAWN_DELAY_MS, init, ensureCurrentZone, control, recordDefeat, onHarvestAttempt, getAimedHive, getHoldTarget, harvest, rollHarvest, hivesInLayout, senseTargets, census,
+    debugSnapshot: () => ({ defeatedAt: [...defeatedAt], spawned: spawnedOnce.size, activeRespawns: defeatedAt.size }),
   };
 })();
