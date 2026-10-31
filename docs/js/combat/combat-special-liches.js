@@ -130,8 +130,11 @@
       lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
       flameHeadband:{cosmeticId:'basic_headband',hex:MARKER_HEX,hidden:true}, // Invisible marker-dyed headband under the circlet; see prepareHeadFire.
       clothingPatterns:{forcedOverpassBySlot:{
-        overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
-        pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},roles:['BASE'],drapeUsesPatternColor:true}, // Every guardian's pants carry the woven glyph on the BASE sprite only; the DRAPE is dyed the pattern color (Body Color 3) as a whole.
+        // Each piece has its own pattern size (scale multiplies the pattern's authored size): pants 4x, robe and face coverings 1.05x.
+        overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},scale:PATTERN_SCALE.overwear}, // Garb is visibly woven with its own named Harlyao glyph.
+        hood:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},scale:PATTERN_SCALE.faceCovering}, // Face wraps (hood slot).
+        mask:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},scale:PATTERN_SCALE.faceCovering}, // Face masks, if one is ever worn.
+        pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)},scale:PATTERN_SCALE.pants,roles:['DRAPE'],baseUsesPatternColor:true}, // The DRAPE carries the main color and the pattern; the BASE is dyed the pattern color (Body Color 3) as a whole.
       }},
     };
     {
@@ -398,6 +401,7 @@
   // it only supplies emitter pixels (same marker-pixel idea as a torch-flail's fuel sprite). Flames in Body Color 3 rise from those pixels, are
   // drawn above the head but beneath an overlay plane carrying only the circlet, so the circlet occludes them like a brazier's top sprite.
   const MARKER_HEX='#7F00FF';
+  const PATTERN_SCALE=Object.freeze({pants:4,overwear:1.05,faceCovering:1.05}); // Per-piece pattern size overrides (weaving usage multiplier).
   const FIRE={rate:42,life:.8,speed:.18,size:.075,max:44,maxSources:320};
   const headFires=new Set();
   let fireTexture=null;

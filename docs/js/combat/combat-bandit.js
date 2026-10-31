@@ -356,10 +356,12 @@
   function pantsAppearanceWithForcedPattern(appearance, roster) {
     const forced = roster?.clothingPatterns?.forcedOverpassBySlot?.pants;
     if (!forced?.pattern) return appearance;
-    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: JSON.parse(JSON.stringify(forced.pattern)) };
+    const weaving = { ...(appearance.weaving || {}), forcedOverpassPattern: { ...JSON.parse(JSON.stringify(forced.pattern)), ...(Number(forced.scale) > 0 ? { usageScaleMultiplier: Number(forced.scale) } : {}) } }; // Per-piece pattern size (e.g. 4x pants) via the weaving renderer's usage multiplier.
     if (Array.isArray(forced.roles) && forced.roles.length) weaving.forcedOverpassRoles = [...forced.roles];
     const patternHex = appearance.patternHex && appearance.patternHex !== '#ffffff' ? appearance.patternHex : (forced.fallbackColorC?.hex || appearance.patternHex);
-    return { ...appearance, weaving, patternHex, ...(forced.drapeUsesPatternColor ? { secondaryHex: patternHex } : {}) }; // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3); an optional drape layer is dyed that color as a whole.
+    // Pattern color: the PANTS C dye if one exists, else the pattern fallback (Body Color 3). With baseUsesPatternColor the BASE layer (dye A) is
+    // dyed that color as a whole and the DRAPE layer (dye B) takes the garment's main color, so the pattern (scoped to DRAPE) sits on the main color.
+    return { ...appearance, weaving, patternHex, ...(forced.baseUsesPatternColor ? { primaryHex: patternHex, secondaryHex: appearance.primaryHex || appearance.secondaryHex } : {}) };
   }
 
   function ensureEnemyPants(roster) {

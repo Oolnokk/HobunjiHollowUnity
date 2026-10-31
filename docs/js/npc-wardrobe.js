@@ -110,7 +110,7 @@
     if (!forced?.pattern) return clone(rawItem);
     const weaving = {
       ...(clone(rawItem.weaving) || {}),
-      forcedOverpassPattern: clone(forced.pattern),
+      forcedOverpassPattern: { ...clone(forced.pattern), ...(Number(forced.scale) > 0 ? { usageScaleMultiplier: Number(forced.scale) } : {}) }, // Per-piece pattern size: the weaving renderer's existing transient usage multiplier.
       ...(Array.isArray(forced.roles) && forced.roles.length ? { forcedOverpassRoles: clone(forced.roles) } : {}),
     }; // Render-only override; raw gifted slot 2 remains untouched, and optional roles limit the emblem to exact authored sprite layers.
     return {
