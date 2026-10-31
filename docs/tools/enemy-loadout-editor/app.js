@@ -492,6 +492,59 @@ function queueProportionPreview() {
     else if (state.ready) roll(false);
   }, 350);
 }
+let bodyScaleMode = null; // 'override' (absolute rigScale) or 'multiplier' (rigScaleMultiplier on top of the species scale); inferred from the rule until chosen.
+const SCALE_MULTIPLIER_PRESETS = [
+  ['lieutenant', 'Lieutenant — 5% wider and taller', { x: 1.05, y: 1.05 }],
+  ['flasker', 'Flasker — 10% taller', { y: 1.1 }],
+  ['captain', 'Captain — 15% wider and taller', { x: 1.15, y: 1.15 }],
+  ['none', 'No multiplier', null],
+];
+function currentBodyScaleMode() {
+  return bodyScaleMode || (rule().rigScaleMultiplier && !rule().rigScale ? 'multiplier' : 'override');
+}
+// Multipliers applied on top of the species-derived body scale (and any absolute override), shipped for the bandit ranks.
+function renderScaleMultipliers(box) {
+  const preset = el('label', 'chance', 'Preset ');
+  const presetSelect = el('select');
+  presetSelect.append(Object.assign(el('option', null, 'Choose a preset…'), { value: '' }));
+  for (const [id, text] of SCALE_MULTIPLIER_PRESETS) presetSelect.append(Object.assign(el('option', null, text), { value: id }));
+  presetSelect.onchange = () => {
+    const chosen = SCALE_MULTIPLIER_PRESETS.find(([id]) => id === presetSelect.value);
+    if (!chosen) return;
+    mutate((r) => { if (chosen[2]) r.rigScaleMultiplier = { ...chosen[2] }; else delete r.rigScaleMultiplier; });
+    queueProportionPreview();
+    renderPools();
+  };
+  preset.append(presetSelect);
+  box.append(preset);
+  for (const [key, title] of [['x', 'Body width multiplier (%)'], ['y', 'Body height multiplier (%)'], ['head', 'Head scale multiplier (%)']]) {
+    const label = el('label', 'chance', title);
+    const check = el('input');
+    check.type = 'checkbox';
+    check.checked = rule().rigScaleMultiplier?.[key] != null;
+    const input = el('input');
+    input.type = 'number';
+    input.step = '1';
+    input.min = '10';
+    input.max = '400';
+    input.value = String(Math.round((rule().rigScaleMultiplier?.[key] ?? 1) * 100));
+    input.disabled = !check.checked;
+    const write = () => {
+      try {
+        mutate((r) => {
+          if (check.checked) { r.rigScaleMultiplier ||= {}; r.rigScaleMultiplier[key] = Math.min(4, Math.max(0.1, Number(input.value) / 100)); }
+          else if (r.rigScaleMultiplier) { delete r.rigScaleMultiplier[key]; if (!Object.keys(r.rigScaleMultiplier).length) delete r.rigScaleMultiplier; }
+        });
+        queueProportionPreview();
+      } catch (_) { renderPools(); }
+    };
+    check.onchange = () => { write(); renderPools(); };
+    input.onchange = write;
+    label.prepend(check);
+    label.append(input, el('span', 'muted', ' 100 = the species scale'));
+    box.append(label);
+  }
+}
 function renderBodyProportions(species, gender) {
   const defaults = bodyDefaults(species, gender);
   const ranges = window.EnemyLoadoutRules.rigScaleRanges;
@@ -511,7 +564,16 @@ function renderBodyProportions(species, gender) {
         ' default for this enemy; unticked values keep the default. Overrides are saved with the spawn rules and used in game.',
     ),
   );
-  for (const [key, title, step] of fields) {
+  const scaleMode = currentBodyScaleMode();
+  const modeLabel = el('label', 'chance', 'Scale mode ');
+  const modeSelect = el('select');
+  modeSelect.append(Object.assign(el('option', null, 'Override — absolute body scale'), { value: 'override' }), Object.assign(el('option', null, 'Multiplier — on top of the species scale'), { value: 'multiplier' }));
+  modeSelect.value = scaleMode;
+  modeSelect.onchange = () => { bodyScaleMode = modeSelect.value; renderPools(); };
+  modeLabel.append(modeSelect);
+  box.append(modeLabel);
+  if (scaleMode === 'multiplier') renderScaleMultipliers(box);
+  for (const [key, title, step] of (scaleMode === 'override' ? fields : [])) {
     const label = el('label', 'chance', title);
     const check = el('input');
     check.type = 'checkbox';
@@ -698,10 +760,31 @@ function renderClothingPatterns() {
     const entry = rule().clothingPatterns?.[slot];
     const row = el('div', 'chance');
     row.append(el('strong', null, PATTERN_SLOT_LABELS[slot] + ': '));
-    row.append(el('span', 'muted', entry ? (entry.patternLibraryId ? 'library ' + entry.patternLibraryId : 'custom drawing') : 'game default'));
-    const edit = el('button', null, entry ? 'Edit pattern…' : 'Author pattern…');
+    row.append(el('span', 'muted', entry ? (entry.patternLibraryId ? 'library ' + entry.patternLibraryId : entry.pattern ? 'custom drawing' : entry.inheritFrom ? 'inherits ' + PATTERN_SLOT_LABELS[entry.inheritFrom] : 'game default') : 'game default'));
+    const edit = el('button', null, entry?.pattern || entry?.patternLibraryId ? 'Edit pattern…' : 'Author pattern…');
     edit.onclick = () => openClothingPatternEditor(slot);
     row.append(edit);
+    // Share another piece's exact pattern and framing (e.g. a face mask matching the overwear's pattern).
+    const inheritLabel = el('label', 'chance', 'Inherit pattern & framing from ');
+    const inherit = el('select');
+    inherit.append(Object.assign(el('option', null, 'None (own pattern)'), { value: '' }));
+    for (const other of window.EnemyLoadoutRules.patternSlots) if (other !== slot) inherit.append(Object.assign(el('option', null, PATTERN_SLOT_LABELS[other]), { value: other }));
+    inherit.value = entry?.inheritFrom || '';
+    inherit.onchange = () => {
+      try {
+        mutate((r) => {
+          r.clothingPatterns ||= {};
+          const e = (r.clothingPatterns[slot] ||= {});
+          if (inherit.value) e.inheritFrom = inherit.value; else delete e.inheritFrom;
+          if (!Object.keys(e).length) delete r.clothingPatterns[slot];
+          if (!Object.keys(r.clothingPatterns).length) delete r.clothingPatterns;
+        });
+        queueProportionPreview();
+        renderPools();
+      } catch (_) { renderPools(); }
+    };
+    inheritLabel.append(inherit);
+    row.append(inheritLabel);
     if (entry) {
       const clear = el('button', null, 'Clear');
       clear.onclick = () => { mutate((r) => { delete r.clothingPatterns[slot]; if (!Object.keys(r.clothingPatterns).length) delete r.clothingPatterns; }); queueProportionPreview(); renderPools(); };
@@ -1147,6 +1230,7 @@ function renderPools() {
 async function selectKind(kind) {
   if (state.busy) return;
   state.kind = kind;
+  bodyScaleMode = null; // Re-inferred from the new enemy's rule.
   const type = window.EnemyLoadoutSourceData.types.find(
     (t) => t.id === kind,
   );

@@ -100,6 +100,7 @@
       [shadowknight ? 'overwear' : 'pants']: { pattern: framedPattern(glyph, rnd), fallbackColorC: { hex: patternHex }, scale: shadowknight ? PATTERN_SCALE.overwear : PATTERN_SCALE.pants },
     };
     if (!shadowknight) forced.overwear = { pattern: framedPattern(glyph, rnd), fallbackColorC: { hex: patternHex }, scale: PATTERN_SCALE.overwear }; // Witches keep their rolled wrap/poncho, patterned too.
+    else forced.pants = { pattern: framedPattern(glyph, rnd), fallbackColorC: { hex: patternHex }, scale: PATTERN_SCALE.pants }; // Knights keep their rolled pants, patterned too.
     roster.clothingPatterns = { forcedOverpassBySlot: Object.fromEntries(Object.entries(forced).filter(([, entry]) => entry)) };
 
     // Metal pieces: witches wear silver circlets, knights a circlet and pauldrons of their tier's metal; each painted with its own random frame.

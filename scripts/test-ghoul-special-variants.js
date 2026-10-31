@@ -94,7 +94,8 @@ const baseRoster = (gender = 'female') => ({ appearance: { speciesId: 'ghoul', g
     }
     assert.deepEqual([roster.cosmeticSlots.tangedcirclet, roster.cosmeticSlots.rounded_pauldron], ['hat', 'pauldron']);
     const forced = roster.clothingPatterns.forcedOverpassBySlot;
-    assert.deepEqual([...Object.keys(forced)].sort(), ['hood', 'overwear']);
+    assert.deepEqual([...Object.keys(forced)].sort(), ['hood', 'overwear', 'pants'], 'knights pattern their hood, poncho and pants');
+    assert.equal(forced.pants.scale, 4);
     for (const entry of Object.values(forced)) assert.equal(entry.fallbackColorC.hex, '#000059', 'knight patterns are shadow-blue');
     assert.equal(roster.appliedDyes.CLOTH_B, 'dye:CLOTH:silver', 'main clothing colors stay the ordinary ghoul’s');
     // Enchanted weapon

@@ -265,6 +265,14 @@
     }
     // A captain always wears overwear (BanditRankWardrobe patterns it): force-fill the slot when the independent rolls left it empty.
     if (rank === 'captain' && !Object.values(cosmeticSlots).includes('overwear')) fillSlot('overwear');
+    // A flasker always wears a face mask against its own noxious fumes: the hood slot is a facewrap, replacing any other hood it rolled.
+    if (rank === 'flasker' && candidatesBySlot.hood?.facewrap && !equippedCosmetics.includes('facewrap')) {
+      for (const id of [...equippedCosmetics]) if (cosmeticSlots[id] === 'hood') { equippedCosmetics.splice(equippedCosmetics.indexOf(id), 1); delete cosmeticSlots[id]; }
+      equippedCosmetics.push('facewrap');
+      cosmeticSlots.facewrap = 'hood';
+      const hoodDye = _banditRollDyeId(cfg);
+      if (hoodDye) appliedDyes.HOOD = hoodDye;
+    }
     // Head covering is never left to chance: every bandit wears a fine_hood,
     // a facewrap, or a headband. The independent per-slot rolls above already
     // land one most of the time -- this only force-fills hat or hood when
@@ -2788,6 +2796,13 @@
     } finally { characterBuildPending--; unlock(); }
   }
 
+  // Multiplies a body scale ({ x, y, head, offsetY }) by { x, y, head } factors; missing fields are untouched and a missing scale counts as 1.
+  function applyRigScaleMultiplier(scale, multiplier) {
+    if (!multiplier) return scale;
+    const base = value => (Number(value) > 0 ? Number(value) : 1);
+    return { ...scale, x: base(scale?.x) * base(multiplier.x), y: base(scale?.y) * base(multiplier.y), head: base(scale?.head) * base(multiplier.head) };
+  }
+
   function applyAuthoredHostileRigScale(avatarRef, explicitScale) {
     if (!avatarRef?.group || !explicitScale) return false;
     const positive = value => Number.isFinite(Number(value)) && Number(value) > 0; // Validate caller-authored scale fields before mutating live meshes.
@@ -2850,12 +2865,16 @@
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.
     if (!roster?.mountSpecies) { // Patterns are baked into the portrait before the rig stretches it, so the final body scale must be known up front (rider mounts are exempt from rig scaling).
       const earlyScale = { ...(opts.avatarRigScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...(loadoutRules?.rigScaleFor?.(loadoutKind) || {}) };
+      const multiplied = applyRigScaleMultiplier(earlyScale, loadoutRules?.rigScaleMultiplierFor?.(loadoutKind)); // Rank multipliers (e.g. captains 15% wider and taller) on top of the species/override scale.
+      earlyScale.x = multiplied.x; earlyScale.y = multiplied.y; earlyScale.head = multiplied.head;
       roster.patternBodyScale = { x: Number(earlyScale.x) > 0 ? Number(earlyScale.x) : 1, y: Number(earlyScale.y) > 0 ? Number(earlyScale.y) : 1, head: Number(earlyScale.head) > 0 ? Number(earlyScale.head) : 1 };
     }
     const avatarRef = await buildQueuedBanditAvatar(roster, opts.zoneId);
     let characterScale = opts.avatarRigScale || (!avatarRef?.riderMount && window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance));
     const rigOverride = !avatarRef?.riderMount ? loadoutRules?.rigScaleFor?.(loadoutKind) : null; // Workshop-authored body proportions (x/y/head/offsetY, any subset) win over the troop/species values, in game too.
     if (rigOverride) characterScale = { ...(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}), ...rigOverride };
+    const rigMultiplier = !avatarRef?.riderMount ? loadoutRules?.rigScaleMultiplierFor?.(loadoutKind) : null; // Multipliers apply last, on top of the species-derived scale and any absolute override.
+    if (rigMultiplier) characterScale = applyRigScaleMultiplier(characterScale || window.HobunjiCharacterRigScale?.scaleFor?.(roster.appearance.speciesId, roster.appearance.gender, roster.appearance) || {}, rigMultiplier);
     if (avatarRef && characterScale) applyAuthoredHostileRigScale(avatarRef, characterScale); // Scale wood puppets before stats, hitboxes, ground offset and weapon mounts are constructed.
     if (roster?.appearance?.speciesId === 'ghoul') makeGhoulAvatarMineLit(avatarRef); // Ghoul PNGs obey the cave's actual light level instead of glowing at full unlit brightness.
     if (!avatarRef) {

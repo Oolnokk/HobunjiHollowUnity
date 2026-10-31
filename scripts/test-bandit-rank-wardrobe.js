@@ -1,5 +1,6 @@
-// Executes bandit rank clothing: lieutenants wear pauldrons (never a circlet); captains a pauldron, a circlet and patterned overwear; every bandit's
-// pants are patterned; rank metal matches the weapon metal at the temper its mastery implies.
+// Executes bandit rank clothing: grunts and lieutenants wear no patterns (lieutenants a pauldron, never a circlet); captains a pauldron, a circlet and
+// patterned overwear, pants and hood base; flaskers patterned clothes and a face mask sharing the overwear's pattern, but no metal. Rank metal matches
+// the weapon metal at the temper its mastery implies.
 // Run with: node scripts/test-bandit-rank-wardrobe.js
 'use strict';
 const assert = require('node:assert/strict');
@@ -34,31 +35,44 @@ const run = (rank, seed, extra = {}, mastery = 3, metalKey = 'tinBronze') => { c
 const colors = new Set(), frames = new Set();
 
 for (let seed = 1; seed <= 40; seed++) {
-  // Grunts and flaskers: patterned pants only.
-  for (const rank of ['grunt', 'flasker']) {
-    const r = run(rank, seed);
-    assert.deepEqual([...Object.keys(r.clothingPatterns.forcedOverpassBySlot)], ['pants'], rank + ' gets patterned pants only');
-    assert.equal((r.metalArmorItems || []).length, 0, rank + ' wears no rank metal');
-    assert.ok(!r.equippedCosmetics.includes('rounded_pauldron') && !r.equippedCosmetics.includes('tangedcirclet'));
-    assert.ok(r.equippedCosmetics.includes('appearance::hat::basic_headband'), 'ordinary head coverings are untouched');
-  }
-  // Lieutenants: a pauldron, never a circlet, even if the clothing pool rolled one.
+  // Grunts: nothing at all.
+  const grunt = run('grunt', seed);
+  assert.equal(grunt.clothingPatterns, undefined, 'grunts wear no patterns');
+  assert.equal((grunt.metalArmorItems || []).length, 0);
+  // Lieutenants: a pauldron, never a circlet (even if rolled), and no patterns.
   const lieutenant = run('lieutenant', seed, { equippedCosmetics: ['tangedcirclet', 'fine_hood'], cosmeticSlots: { tangedcirclet: 'hat', fine_hood: 'hood' }, metalArmorItems: [{ baseCosmeticId: 'tangedcirclet' }] });
   assert.deepEqual([...lieutenant.metalArmorItems.map(item => item.baseCosmeticId)], ['rounded_pauldron'], 'lieutenants wear exactly a pauldron');
   assert.ok(lieutenant.equippedCosmetics.includes('rounded_pauldron') && lieutenant.cosmeticSlots.rounded_pauldron === 'pauldron');
   assert.ok(!lieutenant.equippedCosmetics.some(id => /circlet/i.test(id)), 'never a circlet');
-  assert.deepEqual([...Object.keys(lieutenant.clothingPatterns.forcedOverpassBySlot)], ['pants'], 'lieutenant overwear is not patterned');
-  // Captains: pauldron + circlet + patterned overwear.
+  assert.equal(lieutenant.clothingPatterns, undefined, 'lieutenants wear no patterns');
+  // Flaskers: patterned clothes, no metal, a face mask that shares the overwear's exact pattern + framing.
+  const flasker = run('flasker', seed, { equippedCosmetics: ['tankan_bodywrap', 'facewrap'], cosmeticSlots: { tankan_bodywrap: 'overwear', facewrap: 'hood' } });
+  assert.equal((flasker.metalArmorItems || []).length, 0, 'flaskers wear no metal armor');
+  assert.ok(!flasker.equippedCosmetics.some(id => /pauldron|circlet/.test(id)));
+  const fForced = flasker.clothingPatterns.forcedOverpassBySlot;
+  assert.deepEqual([...Object.keys(fForced)].sort(), ['hood', 'overwear', 'pants'], 'flasker pants, overwear and face mask are patterned');
+  assert.deepEqual(JSON.parse(JSON.stringify(fForced.hood.pattern)), JSON.parse(JSON.stringify(fForced.overwear.pattern)), 'the face mask shares the overwear’s pattern and framing');
+  assert.equal(fForced.hood.fallbackColorC.hex, fForced.overwear.fallbackColorC.hex, '...and its color');
+  assert.deepEqual([...fForced.hood.roles], ['base'], 'the mask is patterned on its base sprite');
+  const noOverwear = run('flasker', seed, { equippedCosmetics: ['facewrap'], cosmeticSlots: { facewrap: 'hood' } }).clothingPatterns.forcedOverpassBySlot;
+  assert.deepEqual([...Object.keys(noOverwear)].sort(), ['hood', 'pants'], 'without overwear the face mask gets its own pattern');
+  const poncho = run('flasker', seed, { equippedCosmetics: ['rugged_poncho', 'facewrap'], cosmeticSlots: { rugged_poncho: 'overwear', facewrap: 'hood' } }).clothingPatterns.forcedOverpassBySlot;
+  assert.deepEqual([...poncho.overwear.roles], ['wrap'], 'a rugged poncho is patterned on its shoulder sprite');
+  assert.deepEqual(JSON.parse(JSON.stringify(poncho.hood.pattern)), JSON.parse(JSON.stringify(poncho.overwear.pattern)), 'and the face mask shares that pattern too');
+  // Captains: pauldron + circlet + patterned overwear, pants and hood base.
   const captain = run('captain', seed);
   assert.deepEqual([...captain.metalArmorItems.map(item => item.baseCosmeticId)].sort(), ['rounded_pauldron', 'tangedcirclet']);
   assert.equal(captain.cosmeticSlots.tangedcirclet, 'hat');
   assert.ok(!captain.equippedCosmetics.includes('appearance::hat::basic_headband') && captain.cosmeticSlots['appearance::hat::basic_headband'] === undefined, 'the circlet replaces the rolled hat');
   assert.ok(captain.equippedCosmetics.includes('fine_hood'), 'but not the hood');
   const forced = captain.clothingPatterns.forcedOverpassBySlot;
-  assert.deepEqual([...Object.keys(forced)].sort(), ['overwear', 'pants'], 'captains pattern their overwear and pants');
-  assert.deepEqual([forced.pants.scale, forced.overwear.scale], [4, 1.05]);
-  for (const entry of Object.values(forced)) {
-    assert.ok(wardrobe.PANTS_PATTERN_RANKS.length && window.GhoulSpecialVariants.GLYPHS.includes(entry.pattern.repoPatternId), 'a Harlyao pattern');
+  assert.deepEqual([...Object.keys(forced)].sort(), ['hood', 'overwear', 'pants'], 'captains pattern their overwear, pants and hood');
+  assert.deepEqual([...forced.hood.roles], ['base'], 'a captain’s hood is patterned on its base sprite');
+  assert.deepEqual([forced.pants.scale, forced.overwear.scale, forced.hood.scale], [4, 1.05, 1.05]);
+  const hoodless = run('captain', seed, { equippedCosmetics: ['tankan_bodywrap'], cosmeticSlots: { tankan_bodywrap: 'overwear' } }).clothingPatterns.forcedOverpassBySlot;
+  assert.equal(hoodless.hood, undefined, 'no hood, nothing to pattern');
+  for (const entry of [...Object.values(forced), ...Object.values(fForced)]) {
+    assert.ok(window.GhoulSpecialVariants.GLYPHS.includes(entry.pattern.repoPatternId), 'a Harlyao pattern');
     assert.equal(entry.pattern.frameShape, 'triangle', 'the frame takes effect');
     assert.ok(DYES.some(dye => dye.hex === entry.fallbackColorC.hex), 'a color from the bandit clothing dye pool');
     colors.add(entry.fallbackColorC.hex);
@@ -71,7 +85,9 @@ assert.ok(colors.size >= 3 && frames.size > 60, 'colors and frames vary between 
 
 // A captain without overwear gets nothing to pattern here (the roster roll force-fills overwear); the pants are still patterned.
 const bare = run('captain', 5, { equippedCosmetics: ['fine_hood'], cosmeticSlots: { fine_hood: 'hood' } });
-assert.deepEqual([...Object.keys(bare.clothingPatterns.forcedOverpassBySlot)], ['pants']);
+assert.deepEqual([...Object.keys(bare.clothingPatterns.forcedOverpassBySlot)].sort(), ['hood', 'pants'], 'a captain with only a hood patterns the hood and pants');
+const naked = run('captain', 5, { equippedCosmetics: [], cosmeticSlots: {} });
+assert.deepEqual([...Object.keys(naked.clothingPatterns.forcedOverpassBySlot)], ['pants'], 'a captain with no overwear or hood still has patterned pants');
 // Mastery changes temper; no metal key means no rank metal; other ranks/unknown are untouched.
 assert.equal(run('captain', 7, {}, 0).metalArmorItems[0].temperXp, 0, 'mastery 0 -> clean metal');
 assert.equal(run('captain', 7, {}, 5).metalArmorItems[0].temperXp, 300, 'mastery 5 -> fully oxidized');

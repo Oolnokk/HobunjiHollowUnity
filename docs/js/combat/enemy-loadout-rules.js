@@ -83,6 +83,16 @@
         if (range.min != null && range.max != null && Number(range.min) > Number(range.max))
           throw Error(kind + '.maskPatternScale: min cannot exceed max');
       }
+      if (rule.rigScaleMultiplier != null) {
+        // Multipliers applied ON TOP of the species-derived (and any absolute override) body scale, e.g. a lieutenant 5% wider and taller.
+        const multiplier = rule.rigScaleMultiplier;
+        if (typeof multiplier !== 'object' || Array.isArray(multiplier)) throw Error(kind + '.rigScaleMultiplier: expected { x, y, head }');
+        for (const [field, value] of Object.entries(multiplier)) {
+          if (!['x', 'y', 'head'].includes(field)) throw Error(kind + '.rigScaleMultiplier: unknown field ' + field);
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.1 || value > 4) throw Error(kind + '.rigScaleMultiplier.' + field + ' must be between 0.1 and 4');
+        }
+        if (!Object.keys(multiplier).length) delete rule.rigScaleMultiplier;
+      }
       if (rule.rigScale != null) {
         // Same four values (and units: scale multipliers / fraction of model height) as the Animation Author's Character Rig Scale section.
         if (typeof rule.rigScale !== 'object' || Array.isArray(rule.rigScale))
@@ -111,10 +121,11 @@
           const label = kind + '.clothingPatterns.' + slot;
           if (!patternSlots.includes(slot)) throw Error(label + ' is not a patternable clothing slot');
           if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw Error(label + ' must be an object');
-          for (const key of Object.keys(entry)) if (!['patternLibraryId', 'pattern', 'scale', 'roles', 'color', 'baseUsesPatternColor', 'randomFrame'].includes(key)) throw Error(label + '.' + key + ' is unknown');
+          for (const key of Object.keys(entry)) if (!['patternLibraryId', 'pattern', 'scale', 'roles', 'color', 'baseUsesPatternColor', 'randomFrame', 'inheritFrom'].includes(key)) throw Error(label + '.' + key + ' is unknown');
           if (entry.patternLibraryId != null && !/^[A-Za-z0-9_:.-]{1,120}$/.test(String(entry.patternLibraryId))) throw Error(label + '.patternLibraryId is not a library id');
           if (entry.pattern != null && (typeof entry.pattern !== 'object' || Array.isArray(entry.pattern) || JSON.stringify(entry.pattern).length > 900000)) throw Error(label + '.pattern must be a pattern object under 900 KB');
-          if (entry.pattern == null && entry.patternLibraryId == null) throw Error(label + ' needs a pattern or a library id');
+          if (entry.inheritFrom != null && (!patternSlots.includes(entry.inheritFrom) || entry.inheritFrom === slot)) throw Error(label + '.inheritFrom must be another patternable slot');
+          if (entry.pattern == null && entry.patternLibraryId == null && entry.inheritFrom == null) throw Error(label + ' needs a pattern, a library id or a slot to inherit from');
           if (entry.scale != null && !(typeof entry.scale === 'number' && entry.scale >= 0.1 && entry.scale <= 20)) throw Error(label + '.scale must be 0.1-20');
           if (entry.roles != null && (!Array.isArray(entry.roles) || entry.roles.length > 8 || entry.roles.some(role => typeof role !== 'string' || !/^[A-Za-z0-9_]{1,24}$/.test(role)))) throw Error(label + '.roles must list garment layer roles such as BASE or DRAPE');
           if (entry.color != null && !/^(#[0-9a-fA-F]{6}|dye:[A-Za-z0-9_:]{1,80})$/.test(String(entry.color))) throw Error(label + '.color needs #RRGGBB or a dye id');
@@ -285,6 +296,11 @@
       return species;
     return 'bandit:' + rank;
   }
+  // Optional body-scale multipliers (applied on top of the species/override scale); only the fields the rule sets, null when none.
+  function rigScaleMultiplierFor(kind) {
+    const multiplier = ruleFor(kind).rigScaleMultiplier;
+    return multiplier && Object.keys(multiplier).length ? { ...multiplier } : null;
+  }
   // Optional authored body proportions for one enemy kind: only the fields the rule sets, null when none.
   function rigScaleFor(kind) {
     const scale = ruleFor(kind).rigScale; // Inherits the base Ghoul rule for special ghoul variants.
@@ -370,6 +386,22 @@
         ...(entry.baseUsesPatternColor != null ? { baseUsesPatternColor: entry.baseUsesPatternColor } : {}),
       };
     }
+    for (const [slot, entry] of Object.entries(rule.clothingPatterns || {})) { // "Inherit pattern & framing from" another slot: a piece shares its source's exact pattern, random frame and (unless it sets its own) color.
+      if (!entry.inheritFrom) continue;
+      const forcedBySlot = roster.clothingPatterns?.forcedOverpassBySlot || {};
+      const source = forcedBySlot[entry.inheritFrom];
+      if (!source?.pattern) continue;
+      const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+      const ownHex = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : (entry.color ? catalog.find(dye => dye.id === entry.color)?.hex : null);
+      roster.clothingPatterns.forcedOverpassBySlot[slot] = {
+        ...(forcedBySlot[slot] || {}),
+        pattern: clone(source.pattern),
+        ...(/^#[0-9a-f]{6}$/i.test(ownHex || '') ? { fallbackColorC: { hex: ownHex } } : (source.fallbackColorC && !forcedBySlot[slot]?.fallbackColorC ? { fallbackColorC: clone(source.fallbackColorC) } : {})),
+        ...(entry.scale ? { scale: entry.scale } : (forcedBySlot[slot]?.scale ? {} : (source.scale ? { scale: source.scale } : {}))),
+        ...(entry.roles?.length ? { roles: [...entry.roles] } : {}),
+        ...(entry.baseUsesPatternColor != null ? { baseUsesPatternColor: entry.baseUsesPatternColor } : {}),
+      };
+    }
     if (rule.headGate) roster.headGate = rule.headGate; // Portrait rig head gate for this enemy; unset keeps the global default.
     if (rule.maskPatterns === false) roster.maskPatterns = false; // Opt out of the procedural mask glyph patterns (js/procedural-mask-patterns.js).
     for (const [slot, value] of Object.entries(rule.clothing || {})) {
@@ -451,6 +483,7 @@
     seedRandom,
     ruleFor,
     rigScaleFor,
+    rigScaleMultiplierFor,
     rigScaleRanges,
     headGates,
     patternSlots,
