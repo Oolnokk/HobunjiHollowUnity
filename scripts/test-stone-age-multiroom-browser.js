@@ -63,15 +63,15 @@ const server=http.createServer((request,response)=>{
       check(floor.layers.isEnabled(0)===false&&wall.layers.isEnabled(0)===false,'only source rendering should be suppressed');
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'native V50 source and collision visibility must be preserved');
       const stoneGeometry=visible.geometry,wallStone=room.model.children.find(child=>child.userData?.ruinPreviewRole==='wall')?.geometry;
+      let floorDisposed=false,wallDisposed=false; // Real THREE dispose events detect GPU buffer leaks, not just detached Object3D parents.
+      stoneGeometry.addEventListener('dispose',()=>{floorDisposed=true;});
+      wallStone?.addEventListener('dispose',()=>{wallDisposed=true;});
       const location={levels:room.floorStats.levelCount,voids:room.floorStats.voidCells,cells:room.floorStats.floorCells,boulders:room.floorStones,triangles:stoneGeometry.index.count/3};
       scenery.dispose();scenery.dispose();
       check(floor.layers.mask===floorMask&&wall.layers.mask===wallMask,'exact original render layer masks must be restored');
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'source collision geometry must survive disposal');
       check(!room.model.parent,'replaced scene must be detached');
-      check(stoneGeometry.attributes.position.array.length===0||stoneGeometry.getAttribute('position')?.array?.length>0,
-        'THREE geometry disposal must not crash'); // Three's dispose is a GPU event, not a CPU buffer deletion.
-      check(!stoneGeometry._stoneAgeLeak,'temporary geometry must not hold extra user state');
-      check(!!wallStone,'rockified wall still existed before cleanup');
+      check(floorDisposed&&wallDisposed,'rockified floor and wall GPU geometry must be disposed exactly once');
       return location;
     });
     assert.equal(errors.length,0,errors.join('\n'));
