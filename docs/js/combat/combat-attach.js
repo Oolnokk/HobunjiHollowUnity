@@ -41,6 +41,9 @@
   const configs = new Map(); // attack id -> resolved config
   const HOST_ATTACK_ORIGIN_TILES = 0.9; // An attack with no named attacker that starts this close to the host is the host's.
   const PLAYER_HEIGHT_UNITS = 1.7;
+  const RESCUE_SENSE_TILES = 10; // Search radius for pets and friendly NPCs responding to an attached swarm.
+  const RESCUE_CONTACT_TILES = 0.95; // Minimum normal-melee reach needed to strike a swarmed ally.
+  const RESCUE_KNOCKBACK_PX_S = 260; // Full-strength rescue impulse; the swarmed ally receives one quarter.
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -137,6 +140,84 @@
     return struck;
   }
 
+  // Honeyfuzzle rescue is a narrow, explicit ally-on-ally attack, never a
+  // global friendly-fire rule. A pet/NPC hits the swarmed ally for 25% of the
+  // ordinary hit (including its afflictions, Footing and knockback), while
+  // landing 100% of the same hit on the swarm. One rescue strike detaches it.
+  function isRescueAlly(host, ally) {
+    if (!host || !ally || host === ally || ally.health <= 0 || ally._deathTransitionStarted ||
+        ally._attachment || ally.stableRole === 'shoulderPet' ||
+        (host.areaId && ally.areaId && host.areaId !== ally.areaId)) return false;
+    const d = deps();
+    if (isPlayer(host)) return ally.isCompanion === true && !ally.banditCompanion && (ally.master || d.player) === host;
+    if (host.isCompanion) return ally.isCompanion === true && !ally.banditCompanion &&
+      (ally.master || d.player) === (host.master || d.player);
+    for (const key of ['banditCampInstanceId', 'porakanekiCampId', 'huntPartyId', 'tribeId', 'denKey', 'nestTreeKey', 'herdKey']) {
+      if (host[key] != null && ally[key] === host[key]) return true;
+    }
+    if (host.isBandit && ally.isBandit && !host.banditCampInstanceId && !ally.banditCampInstanceId) return true;
+    return false;
+  }
+
+  function rescueCandidates(host) {
+    const d = deps();
+    const pool = isPlayer(host) || host.isCompanion ? d.companionObjects : d.hostileObjects;
+    return [...(pool || [])].filter(ally => isRescueAlly(host, ally) &&
+      Math.hypot(ally.x - host.x, ally.y - host.y) <= RESCUE_SENSE_TILES * d.TILE)
+      .sort((a, b) => Math.hypot(a.x - host.x, a.y - host.y) - Math.hypot(b.x - host.x, b.y - host.y));
+  }
+
+  let rescueCount = 0; // Read by mobile diagnostics to verify rescues are actually landing.
+  function tryRescueSwarm(c, host, state, dt) {
+    const d = deps();
+    for (const ally of rescueCandidates(host)) {
+      if (window.Combat.animalAttacks?.isBusy?.(ally)) continue; // Never interrupt a committed special.
+      state.rescuer = ally;
+      ally._honeyfuzzleRescueTarget = host; // Exposes the temporary ally target for debug/AI instrumentation.
+      const dx = host.x - ally.x, dy = host.y - ally.y;
+      const dist = Math.hypot(dx, dy);
+      const reach = Math.max(RESCUE_CONTACT_TILES * d.TILE, Number(ally.def?.attackRangePx) || 0);
+      if (dist > reach) {
+        const speed = Math.max(d.TILE * 2, Number(ally.def?.moveSpeed) || 0);
+        const step = Math.min(Math.max(0, dist - reach * 0.8), speed * dt);
+        if (step > 0 && dist > 0) {
+          const nx = ally.x + dx / dist * step, ny = ally.y + dy / dist * step;
+          if (!d.canOccupyAt || d.canOccupyAt(nx, ny, d.TILE * 0.3)) { ally.x = nx; ally.y = ny; }
+          ally.facing = Math.atan2(dy, dx);
+        }
+        return false;
+      }
+      if (Number(ally.attackCooldownT) > 0) return false; // Same cooldown budget as its ordinary attack.
+      const tag = ally.def?.attackTag || 'blunt';
+      const baseOpts = { tag, attacker: ally, rescueHit: true, friendlyFire: true,
+        afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag?.(tag) || null };
+      const normal = ally.isCompanion && window.CompanionOffense?.scaleHit
+        ? window.CompanionOffense.scaleHit(ally, c, Math.max(0, Number(ally.def?.attackDamage) || 4), baseOpts)
+        : { amount: Math.max(0, Number(ally.def?.attackDamage) || 4), opts: baseOpts, modifiers: { knockback: 1 } };
+      const fullDamage = normal.amount;
+      const fullKnockback = RESCUE_KNOCKBACK_PX_S * (normal.modifiers?.knockback ?? 1);
+      // Detach before dealing damage so a full knockback and death don't get
+      // swallowed by the attached rider's normal stagger immunity.
+      detach(c, state, 'rescued');
+      d.damageCreature(c, fullDamage, ally.x, ally.y, fullKnockback, normal.opts);
+      const reducedDamage = fullDamage * 0.25; // ResourceSystem derives afflictions and Footing from hit amount, so do NOT scale their coefficients twice.
+      const reducedOpts = { ...normal.opts, noStagger: true, footingDamageMultiplier:
+        (Number.isFinite(normal.opts?.footingDamageMultiplier) ? normal.opts.footingDamageMultiplier : 1) };
+      if (isPlayer(host)) d.damagePlayer(reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
+      else d.damageCreature(host, reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
+      ally.attackCooldownT = Math.max(Number(ally.attackCooldownT) || 0, Number(ally.def?.attackCooldownS) || 1.1);
+      ally.facing = Math.atan2(host.y - ally.y, host.x - ally.x);
+      ally._honeyfuzzleRescueTarget = null;
+      window.AudioSystem?.playCreatureClawHit?.(ally);
+      if (c.health <= 0) window.HoneyfuzzleHives?.recordDefeat?.(c);
+      rescueCount++;
+      window.__farmLog?.('[honeyfuzzle] ' + (ally.name || ally.creatureKey || 'ally') +
+        ' rescued ' + (host.name || (isPlayer(host) ? 'player' : 'ally')) + ' (25% friendly hit, full swarm hit)', 'wildlife');
+      return true;
+    }
+    return false;
+  }
+
   // ---- the registered attack -------------------------------------------------
 
   function attachedHostCount(host) { return host?._attachedBy ? host._attachedBy.size : 0; }
@@ -164,6 +245,7 @@
     c._attachment = null;
     c._banditLungeHopCurrent = 0;
     c._attachVisualSpread = 1;
+    if (state.rescuer?._honeyfuzzleRescueTarget === host) delete state.rescuer._honeyfuzzleRescueTarget;
     if (att && host && Number.isFinite(host.x)) { // Set down beside the host, never inside it.
       const angle = Math.atan2(c.y - host.y, c.x - host.x) || Math.random() * Math.PI * 2;
       const away = d.TILE * 0.9;
@@ -188,12 +270,12 @@
     c.vx = 0; c.vy = 0;
     const authoredLift = Number(c.groundLift ?? c.halfHeight); // The creature renderer's floor-to-root offset; zero is a valid authored ground lift.
     const ownLift = (Number.isFinite(authoredLift) ? authoredLift : 0.3) * (c.scaleY ?? 1); // Same baseline (and squash scale) used by updateCreatureMesh.
-    if (cfg.verticalAnchor === 'center') {
+    if (cfg.verticalAnchor === 'center' || cfg.verticalAnchor === 'upper-quarter') {
       const pivotOffset = (Number(c.avatarRef?.frontPlane?.position?.y) || 0) *
         (Number(c.avatarRef?.group?.scale?.y) || 1); // Honeyfuzzle wing cloud hovers above its root; align the birds, not the root.
       const hostY = d.getActorWorldY?.(host); // Target's real rendered body center (not its physical top); missing values must not turn into 0.
       const groundY = d.worldSurfaceY?.(c.x, c.y); // Converts target center into the existing shared hop-offset slot, retaining undefined for the fallback.
-      const offset = cfg.heightAboveHost ?? 0; // Centered attacks may opt into a small visual offset.
+      const offset = (cfg.heightAboveHost ?? 0) + (cfg.verticalAnchor === 'upper-quarter' ? hostHeightUnits(host) * 0.375 : 0); // Center of the uppermost quarter, measured above the actor's body center.
       c._banditLungeHopCurrent = Number.isFinite(hostY) && Number.isFinite(groundY)
         ? hostY + offset - groundY - ownLift - pivotOffset
         : hostHeightUnits(host) * 0.5 + offset - ownLift - pivotOffset;
@@ -245,6 +327,8 @@
       if (!hostAlive(host)) { detach(c, state, 'host-died'); return false; }
     }
 
+    if (state.id === 'swarm' && tryRescueSwarm(c, host, state, dt)) return false;
+
     const react = cfg.hostReaction;
     if (react && !isPlayer(host) && !host.isCompanion) {
       state.reactAcc += dt;
@@ -273,7 +357,7 @@
     return cfg;
   }
 
-  window.Combat.attach = { register, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost };
+  window.Combat.attach = { register, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, isRescueAlly, get rescueCount() { return rescueCount; } };
 
   // ── Swarm (honeyfuzzle) ──────────────────────────────────────────────
   // Picks a single target and sits on top of it. Almost no direct damage but a
@@ -287,9 +371,9 @@
     durationS: 6,
     cooldownS: 5,
     tickIntervalS: 0.5,
-    verticalAnchor: 'center',
+    verticalAnchor: 'upper-quarter',
     heightAboveHost: 0,
-    visualSpreadScale: 0.42,
+    visualSpreadScale: 0.71,
     maxPerHost: 3,
     tick: { damageScale: 0.3, playerScale: 0.6, tag: 'poison', afflictionBonuses: { poisonedHealth: 3 } },
     hostReaction: { kind: 'flail', intervalS: 1.1, radiusTiles: 1.4, damageScale: 0.5, hitsAllies: true, hitsOpponents: false },
