@@ -263,6 +263,7 @@
     const l = sceneState(), api = global.HobunjiWeaponSpriteAssemblies; // Actual gameplay assembly authority drives motion and emitters.
     const source = lookup(model.basePath); // Identity changes only once when a previously pending haft PNG finishes loading.
     l.metalOptions = options.metalOptions;
+    l.masteryRank = options.masteryRank ?? 0; // Preview-only rank remains live without rebuilding the emitter or camera.
     if (!l.root || l.generation !== generation || l.revision !== options.revision || l.weaponKey !== options.weaponKey || l.baseSource !== source) {
       releaseAssembly();
       const base = source || document.createElement('canvas'); // A missing haft must not prevent inspection of already-loaded head layers.
@@ -272,12 +273,13 @@
       l.plane.renderOrder = 1.5; l.plane.visible = !!source;
       l.root = new l.THREE.Group(); l.root.userData.toolPlane = l.plane;
       l.root.add(l.plane); l.scene.add(l.root);
-      api.decorate(l.root, options.weaponKey, { sprite: model.basePath, weaponAssembly: model.definition }, { THREE: l.THREE, metalOptions: () => l.metalOptions });
+      api.decorate(l.root, options.weaponKey, { sprite: model.basePath, weaponAssembly: model.definition }, { THREE: l.THREE, metalOptions: () => l.metalOptions, masteryLevel: () => l.masteryRank });
       l.baseSource = source; l.weaponKey = options.weaponKey; l.generation = generation; l.revision = options.revision;
       l.head = null; l.ready = false; l.nodes.length = 0; l.headNodes.length = 0; l.progress = -1;
       for (const view of views.values()) view.needsFit = true;
     }
-    const paintedBase = paint({ sprite: model.basePath, material: 'metal' }); // Reuses the editor's cached metal-color canvas for the original rigid haft.
+    const paintedBase = paint({ sprite: model.basePath, material: model.definition.base?.material || 'metal',
+      sourceHex: model.definition.base?.sourceHex, targetHex: model.definition.base?.targetHex }); // Base PNGs can use marker tint with no metal/verdigris layer at all.
     if (paintedBase && l.plane.material.map.image !== paintedBase) {
       l.plane.material.map.image = paintedBase; l.plane.material.map.needsUpdate = true;
     }
@@ -350,7 +352,7 @@
       const size = Math.max(.004, Number(part.vfx.size) || .035), life = Math.max(.1, Number(part.vfx.life) || .65), speed = Number.isFinite(part.vfx.speed) ? Math.max(0, part.vfx.speed) : .12; // Matches the shared emitter's local-world units.
       reach = Math.max(reach, scale * (size * 2 + speed * life * 1.5));
     }
-    for (const part of model.baseLayers) { // Ordinary overlays have no additional head multiplier.
+    for (const part of [model.definition.base, ...model.baseLayers].filter(Boolean)) { // The rigid base PNG can itself emit fire without overlays.
       if (part.vfx?.type === 'fire') reach = Math.max(reach, Math.max(.004, Number(part.vfx.size) || .035) * 2 + (Number(part.vfx.speed) || .12) * Math.max(.1, Number(part.vfx.life) || .65) * 1.5);
     }
     return reach;
