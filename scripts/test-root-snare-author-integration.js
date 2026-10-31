@@ -19,7 +19,7 @@ assert(author.includes('snare:{enabled:')&&author.includes('fixedNodes:rootHands
 assert(author.includes("json.snare.settings"),'import must restore authored trigger/retraction settings');
 assert(author.includes('wallRootLayers,rootLayers')&&author.includes("role:'floor'")&&author.includes("role:'wall'"),'author must pass actual wall AND floor root meshes');
 assert(hands.includes('sourceKey:p.sourceKey')&&hands.includes('hiddenRootNode:anchor.sourceKey'),'anchors must preserve a fixed original tube-node identity');
-assert(hands.includes("'neck-grip'")&&hands.includes("'feet-grip'")&&hands.includes('releaseCaptured'),'first neck grasp must be nonlocking, second must target feet');
+assert(hands.includes("entry.state=role+'-grip'")&&hands.includes("assignGrip(entry,neckGrip?'feet':'neck',target)")&&hands.includes('releaseCaptured'),'neck and feet grip roles must be assigned in that order');
 assert(hands.includes('digitRoles')&&hands.includes("role:'thumb'")&&hands.includes("role:'finger'"),'branch hand must have two fingers and an opposing thumb');
 assert(hands.includes('buildLogMesh')&&hands.includes('lastAim.lerp'),'arms must use natural foliage branches and steer while extending');
 assert(hands.includes('previewDoubleGrip')&&hands.includes('double-grip'),'second grip must start two-hand stretch sequence');
