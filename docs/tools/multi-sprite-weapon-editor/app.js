@@ -111,6 +111,10 @@
     $('baseFireSize').value = b.vfx?.size ?? .02;
     $('baseFireLife').value = b.vfx?.life ?? .35;
     $('baseFireSpeed').value = b.vfx?.speed ?? .12;
+    $('baseFireVisualScale').value = b.vfx?.visualScale ?? 1;
+    $('baseFireFocus').value = b.vfx?.masteryFocus ?? 1;
+    $('baseFireBlend').value = b.vfx?.blendMode === 'normal' ? 'normal' : 'additive';
+    $('baseFireOpacity').value = b.vfx?.opacity ?? .92;
     $('baseFireColors').value = (b.vfx?.colors || ['#FFE6A5','#FFAA3E','#FF5F20']).join(', ');
     $('baseFireSettings').hidden = $('baseFireMode').value === 'none';
   }
@@ -299,7 +303,13 @@
     for (const [id, name, fallback, min, max] of [
       ['baseFireRate','rate',22,0,60], ['baseFireSize','size',.02,.001,2],
       ['baseFireLife','life',.35,.1,5], ['baseFireSpeed','speed',.12,0,5],
+      ['baseFireVisualScale','visualScale',1,.1,8], // Parent fire-group scale is independent of mote-size and intensity.
+      ['baseFireFocus','masteryFocus',1,0,1], // Preserve fuel footprint when rank 5 is reached.
+      ['baseFireOpacity','opacity',.92,0,1], // Soft alpha for overlapping plumes without changing their size.
     ]) bindInput(id, value => { if (ensureBase().vfx) ensureBase().vfx[name] = safeNum(value, fallback, min, max); });
+    bindInput('baseFireBlend', value => {
+      if (ensureBase().vfx) ensureBase().vfx.blendMode = value === 'normal' ? 'normal' : 'additive';
+    });
     bindInput('baseFireColors', value => {
       if (ensureBase().vfx) ensureBase().vfx.colors = value.split(',').map(color => color.trim()).filter(color => /^#[0-9a-f]{6}$/i.test(color));
     });
