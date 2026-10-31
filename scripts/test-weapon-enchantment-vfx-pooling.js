@@ -13,6 +13,11 @@ const vm = require('vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'weapon-enchantment-vfx.js'), 'utf8');
 const heldOrderSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'held-object-render-order.js'), 'utf8'); // Used to guard the overlay renderer against reintroducing weapon-bound clipping.
 assert(heldOrderSource.includes('mesh.userData?.hobunjiHeldOverlayVfxPadding') && heldOrderSource.includes('scissorBox.expandByScalar(vfxPadding'), 'held replay scissor must account for live enchantment particles beyond the metal geometry.');
+const cullFunction = heldOrderSource.match(/  function isReplayCullable\(object\) \{[\s\S]*?\n  \}/)?.[0]; // Test the renderer's actual per-object cull decision without copying its implementation.
+assert(cullFunction, 'replay cull decision remains available for the particle regression');
+const isReplayCullable = vm.runInNewContext('(' + cullFunction.trim() + ')'); // Production function is pure; use real source for both positive/negative cases.
+assert.strictEqual(isReplayCullable({ isSprite: true, userData: { hobunjiHeldOverlayParticle: true }, children: [], frustumCulled: true }), false, 'moving held enchantment motes bypass the second replay frustum cull');
+assert.strictEqual(isReplayCullable({ isSprite: true, userData: {}, children: [], frustumCulled: true }), true, 'ordinary sprites continue using the performance cull');
 
 const counts = { materials: 0, disposed: 0, adds: 0 };
 class Obj {
@@ -118,9 +123,11 @@ updateEmitters(0.5, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.length > 0, 'held-plane emitter spawns');
 const heldMask = (1 | (1 << 29)) >>> 0; // Kept on base for maps with no selective ground replay, and on overlay when the held plane is replayed.
 assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === heldMask), 'particles share the held overlay without disappearing when replay is skipped');
+assert.ok(heldEmitter.particles.every(p => p.sprite.userData.hobunjiHeldOverlayParticle === true), 'only overlay-bound enchantment motes are exempt from the replay object cull');
 heldPlane.layers.mask = 1; // A scene transition temporarily returns the held weapon to the ordinary world pass.
 updateEmitters(0.016, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === 1), 'existing live particles revert to the ordinary world layer when overlay is unavailable');
+assert.ok(heldEmitter.particles.every(p => p.sprite.userData.hobunjiHeldOverlayParticle === false), 'particles outside the replay have normal culling behavior');
 heldPlane.layers.mask = heldMask; // The replay renderer can register/repair the weapon after particles already exist.
 updateEmitters(0.016, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === heldMask), 'existing particles rejoin the held overlay after a late layer repair');
