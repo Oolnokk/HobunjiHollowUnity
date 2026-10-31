@@ -2,10 +2,10 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const editor=fs.readFileSync('docs/tools/live-root-growth/tool.js','utf8'); // Execute the floor adapter with the actual wilderness boulder generator.
+const shared=fs.readFileSync('docs/js/stone-age-ruin-scenery.js','utf8'); // Run the identical floor adapter used by the gameplay runtime.
 const context={window:{}};vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/js/zone-terrain-features.js','utf8'),context);
-vm.runInContext(editor.slice(editor.indexOf('  function ruinFloorShell('),editor.indexOf('  function ruinFloorMesh(')),context);
+vm.runInContext(shared.slice(shared.indexOf('  function ruinFloorShell('),shared.indexOf('  function ruinFloorMesh(')),context);
 const cells=[];for(let r=1;r<25;r++)for(let c=1;c<29;c++)cells.push([c,r]); // A vast chamber plus its one-cell perimeter, matching the generated grid convention.
 const meta={gridCols:30,gridRows:26,cellSize:.5,worldWidth:15,worldDepth:13,floorSurfaceY:.06,floorCells:cells};
 const saved=JSON.stringify(meta);context.meta=meta;
