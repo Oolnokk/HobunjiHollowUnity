@@ -113,4 +113,35 @@ assert.equal(state.fireEmitters.length,0,'teardown disposes both fire sprite poo
 assert.equal(headFire.parent,null,'head emitter is detached');
 assert.equal(shaftFire.parent,null,'shaft emitter is detached');
 
+// Torch-Staff is a true single-PNG marker material: two original fuel regions,
+// no metal enchantment mask and rank-driven small-to-large plumes.
+const staffRecipe = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.hachutuTorchStaff; // Committed one-sprite torch staff configuration.
+assert.equal(staffRecipe.flail, undefined);
+assert.equal(staffRecipe.base.material, 'marker');
+assert.equal(staffRecipe.base.vfx.masteryClusters, 2);
+assert.equal(staffRecipe.base.vfx.size, weapon.flail.head.layers[2].vfx.size, 'rank 5 matches the torch-flail mote size');
+const staffSource = pixels(2, 20, [[0,0,rag],[0,1,rag],[0,18,rag],[0,19,rag]]); // Four opaque violet pixels form two staff tips.
+let rank = 0; // Live mastery callback exercises both ends of the rank progression.
+const staffPlane = new Group(); staffPlane.renderOrder = 1.5;
+const staffState = { THREE, plane: staffPlane, masteryLevel: () => rank };
+api.activateStatic(staffState, staffRecipe.base, [], [], staffSource, .002);
+assert.equal(staffState.metalTargets.length, 0, 'marker-only staff is not a source of verdigris or metal enchantment motes');
+assert.equal(staffState.fireEmitters.length, 1, 'both tips share one bounded pooled emitter');
+const staffFx = staffState.fireEmitters[0];
+assert.equal(staffFx.clusters.length, 2, 'fuel pixels are divided between the two ends');
+assert.deepEqual(Array.from(staffFx.clusters, cluster => cluster.pixels.length), [2,2]);
+api.stepFire(staffState, .1);
+assert(staffFx.particles.length > 0);
+assert(staffFx.particles.every(p => Math.abs(p.size - .0044) < 1e-6), 'rank 0 uses many tiny flames');
+rank = 5;
+api.stepFire(staffState, .5); // Retire existing rank-0 particles and replace them at rank-5 size.
+assert(staffFx.particles.length > 0);
+assert(staffFx.particles.every(p => Math.abs(p.size - .02) < 1e-6), 'rank 5 uses the full torch-flail flame size');
+assert(staffFx.particles.every(p => Math.abs(Math.abs(p.y) - .018) < 1e-6), 'rank-5 ignition sites converge on two individual end centers');
+api.dispose(staffState);
+assert.equal(staffFx.group.parent, null);
+assert.match(game, /hachutuTorchStaff: \{[^\n]*shapeKey: 'hachutuTorchStaff'/);
+assert.match(game, /masteryLevel: \(\) => toolMasteryLevel\(itemKey\)/);
+assert.match(hub, /baseFireMode/, 'tool editor exposes single-PNG effects');
+
 console.log('weapon layer effects: PASS (metal recolor, visible composite mask, fuel marker, interleaved fire, head-only enchantments, no chain)');
