@@ -653,8 +653,14 @@
     return [p.x,p.y]; // Region's selected area then the overall parent.
   }
   function bridgeLocal(point) {
-    const rig = api.shaftRigTransform(chosenShaft()); // Inverse parent, so existing saved authoring strokes remain editable and unmodified.
-    return [(point[0] - 225 - rig.x) / rig.scaleX + 225, (point[1] - 602 - rig.y) / rig.scaleY + 602];
+    const shaft=chosenShaft(), rig=api.shaftRigTransform(shaft);
+    const parentLocal={x:(point[0]-225-rig.x)/rig.scaleX+225,y:(point[1]-602-rig.y)/rig.scaleY+602};
+    // A pointer over a moved region is converted to that region's original local coordinates.
+    for(const region of [...(shaft.rigRegions||[])].reverse()){
+      const t=api.regionAffine(region), p={x:(parentLocal.x-t.e)/t.a,y:(parentLocal.y-t.f)/t.d},b=region.box;
+      if(p.x>=b.x0&&p.x<=b.x1&&p.y>=b.y0&&p.y<=b.y1)return [p.x,p.y];
+    }
+    return [parentLocal.x,parentLocal.y];
   }
   function logicalPoint(event) {
     const canvas = byId('preview'), box = contentRect(canvas), frame = bridgeView.frame;
@@ -667,7 +673,8 @@
     const shaft=chosenShaft(), regions=shaft.rigRegions||[];
     if(!regions.length&&!regionDraft)return;
     const map=(p,region)=> {
-      const xy=region?api.rigPoint(shaft,{x:p[0],y:p[1]},region):bridgeVisual(p);
+      const xy=region ? api.rigPoint(shaft,{x:p[0],y:p[1]},region)
+        : api.duplicatePoint({x:p[0],y:p[1]},api.shaftRigTransform(shaft)); // New selection is in root-rig coordinates.
       return [(xy.x-frame.left)*sx,(xy.y-frame.top)*sy];
     };
     ctx.save();ctx.lineWidth=2;ctx.setLineDash([8,5]);
@@ -876,8 +883,10 @@
     if (byId('pair-brush-mode').value !== 'recipe' && !recipeDraft && !placedBoxes().length) return;
     const showing = byId('pair-brush-mode').value === 'recipe', scale = contentRect(byId('preview')).scale || 1, hs = 5 / scale; // Handle half-size in bitmap px.
     const rect = box => {
-      const [x0,y0] = bridgeVisual([box.x0,box.y0]), [x1,y1] = bridgeVisual([box.x1,box.y1]);
-      return [(x0 - frame.left) * sx, (y0 - frame.top) * sy, (x1-x0)*sx, (y1-y0)*sy];
+      const area=api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+      const [x0,y0]=bridgeVisual([box.x0,box.y0],area),
+        [x1,y1]=bridgeVisual([box.x1,box.y1],area);
+      return [(x0-frame.left)*sx,(y0-frame.top)*sy,(x1-x0)*sx,(y1-y0)*sy];
     };
     ctx.save(); ctx.lineWidth = 1.5 / scale; ctx.font = (11 / scale) + 'px system-ui'; ctx.textBaseline = 'top';
     const boxes = placedBoxes().map(({ op, index }) => ({ box: op.box, label: op.recipe, selected: index === recipeSel, color: '#75e9ed' }));
@@ -886,7 +895,14 @@
       if (!showing && !entry.selected && entry.color !== '#ffce64') continue;
       ctx.strokeStyle = entry.selected ? '#fff' : entry.color; ctx.fillStyle = entry.color; ctx.setLineDash(entry.selected ? [] : [6 / scale, 4 / scale]);
       const [x, y, w, h] = rect(entry.box); ctx.strokeRect(x, y, w, h); ctx.fillText(entry.label, x + 3 / scale, y + 3 / scale);
-      if (entry.selected && showing) { ctx.setLineDash([]); ctx.fillStyle = '#fff'; for (const [, , hx, hy] of boxHandles(entry.box)) { const [wx,wy] = bridgeVisual([hx,hy]); ctx.fillRect((wx - frame.left) * sx - hs, (wy - frame.top) * sy - hs, 2 * hs, 2 * hs); } }
+      if (entry.selected && showing) {
+        const box=entry.box, area=api.regionAt(chosenShaft(),{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
+        ctx.setLineDash([]);ctx.fillStyle='#fff';
+        for(const [,,hx,hy] of boxHandles(box)){
+          const [wx,wy]=bridgeVisual([hx,hy],area);
+          ctx.fillRect((wx-frame.left)*sx-hs,(wy-frame.top)*sy-hs,2*hs,2*hs);
+        }
+      }
     }
     ctx.restore();
   }
