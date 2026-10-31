@@ -25,7 +25,7 @@
 <script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></script>
 <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
 <script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
-<script src="js/root-snare-hands.js?v=20261031snare2"></script>
+<script src="js/root-snare-hands.js?v=20261031snare3"></script>
 <script src="js/root-snare-runner.js?v=20261031snare2"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
@@ -66,7 +66,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
 </section>
 <section><h2>Wall-root snare hands · moving walker preview</h2>
-<p>Hands bud from fixed, hidden nodes on the room's actual wall roots. A procedural-walk NPC roams randomly to test snatch distance, claw curl, timing and the exact waiting places. They withdraw entirely into the same branches when the runner leaves. This section is visual authoring only; it does not damage or grab real characters in gameplay.</p>
+<p>Simple three-branch hands bud from fixed, hidden wall or floor roots at varied angles. Two finger branches and an opposing thumb open as the arm grows and reroutes toward the running NPC. An actual palm collider triggers the grip; the whole arm then pulls the NPC back to its original node, still gripped. The NPC stays held until you release it. Preview-only: no actual gameplay combat or damage.</p>
 <label><input type="checkbox" id="snareEnabled"> Enable wandering walker + wall hands</label>
 <div class="controls">
 <label>Hidden hand nodes <input id="snareCount" type="number" min="1" max="14" step="1" value="7"></label>
@@ -78,7 +78,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </div>
 <label><input type="checkbox" id="snareReveal"> Reveal the otherwise hidden root-node markers</label>
 <div class="controls"><button id="snareBuild" type="button">Rebuild hidden hands</button><button id="snareReroute" type="button">Change runner direction</button></div>
-<button id="snareRunPast" type="button" style="width:100%;margin-top:7px">Run past the first hidden hand</button>
+<div class="controls"><button id="snareRunPast" type="button">Run past first hand</button><button id="snareRelease" type="button">Release captured runner</button></div>
 <p id="snareStatus" role="status" aria-live="polite">Build a ruin to place the fixed roots, then enable the walker.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
@@ -136,10 +136,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Added deterministic hidden wall-root nodes and retractable grasping tree hands, tested against a randomly running procedural-leg NPC in the author. Playable multi-room floors now use sixteen native, footprint-safe growth regions to match the author’s floor root/vine budgets.</p></section>
+<section><h2>Latest change</h2><p>The author now grows natural, three-digit branch hands from fixed wall or floor root nodes. Arms curve toward moving targets, grasp using a palm collider and pull the runner back to their hiding node, holding it until manually released. No devouring or disappearance sequence.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031snare3"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031snare4"></script>
 </body></html>
