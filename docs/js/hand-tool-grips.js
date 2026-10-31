@@ -102,6 +102,18 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      grappleflail: {
+        toolScale: 1, // Grip/weapon scale remains authoritative for the entire generated rope + grapple head.
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        primaryGripSpan: { enabled: true, startZ: -0.24, endZ: -0.12 }, // Heavy rigid haft; the rope and head follow independently.
+        secondaryGripSpan: { enabled: true, startZ: 0, endZ: 0.12 },
+      },
+      hachututorchflail: {
+        toolScale: 1, // Conservative starting scale; the user can calibrate the haft dimensions in the Attack Editor.
+        primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Haft-only hand target; never follows the swinging chain or brazier.
+        primaryGripSpan: { enabled: true, startZ: -0.24, endZ: -0.12 }, // Heavy attack's right-hand range on the rigid haft.
+        secondaryGripSpan: { enabled: true, startZ: 0, endZ: 0.12 }, // Optional second-hand grip stays on the rigid haft.
+      },
       warhammer: {
         toolScale: 1.3,
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.18 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },

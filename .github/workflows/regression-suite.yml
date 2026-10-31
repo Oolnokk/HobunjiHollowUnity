@@ -56,6 +56,9 @@ jobs:
         run: node scripts/test-farmwork-controller-browser.js
       - name: Controller mastery inventory browser regression
         run: node scripts/test-controller-mastery-inventory-browser.js
+      - name: Multi-sprite weapon 3D browser smoke
+        run: node scripts/test-multi-sprite-weapon-browser.js
+
       - name: Omgurku hybrid calibration browser smoke
         run: node scripts/test-omgurku-calibration-browser.js
 

@@ -2554,6 +2554,14 @@
     const timelineState = c._banditToolTimeline || (c._banditToolTimeline = { live: false, progress: 0, wf: 0.16, hf: 1, poseScale: 1 }); // Read by EnemyWeaponStances for the sweep-plane twist fade; one object per enemy, updated in place.
     timelineState.live = timelineLive; timelineState.progress = progress; timelineState.wf = wf; timelineState.hf = hf;
     timelineState.poseScale = poseScale; // Partial Charged Breaker: the twist cancels by the same fraction as the player's partial release.
+    const windupPitch = Number(pose?.windup?.pitch); // Authored enemy tool pitch controls chain straightening and held follow-through.
+    const strikePitch = Number(pose?.strike?.pitch);
+    window.HobunjiWeaponSpriteAssemblies?.setAction(holder.children?.[0], {
+      attacking: timelineLive, progress, movementPosition: c.avatarRef?.group?.position, // Actual NPC-world locomotion excludes attack-pose hand translation.
+      windupFrac: wf, strikeFrac: sf, holdFrac: hf,
+      yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(pose?.windup, pose?.strike, power, dirSign), // Same held sweep follow-through as the player.
+      pitchTravelDeg: Number.isFinite(windupPitch) && Number.isFinite(strikePitch) ? (strikePitch - windupPitch) * power : undefined, // Match the enemy's actual partial-charge pose pitch.
+    }); // Uses the same per-enemy timeline and final holder pose as players and editor.
 
     // NEITHER c.facing NOR c.groupRot directly -- the weapon holder is a
     // standalone world object using the exact same rotation.y convention

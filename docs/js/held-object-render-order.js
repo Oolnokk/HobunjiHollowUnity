@@ -305,10 +305,10 @@
     // Neutral renderOrder restores Three's ordinary positioning semantics in
     // any non-overlay/debug view. The selective depth replay supplies the one
     // exceptional ground-x-ray rule.
-    if (mesh.renderOrder !== 0) {
+    if (mesh.renderOrder !== 0 && mesh.userData?.hobunjiWeaponAssemblyPart !== true) {
       mesh.renderOrder = 0;
       repaired = true;
-    }
+    } // Ordered multi-sprite weapon children retain their deliberate back→fuel→fire→front draw order; the ordinary held haft still normalizes to 0.
     if (!hasLayer(mesh, DEFAULT_LAYER)) {
       mesh.layers.enable(DEFAULT_LAYER);
       repaired = true;
