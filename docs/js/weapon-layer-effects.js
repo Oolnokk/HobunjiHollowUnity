@@ -281,7 +281,7 @@
       unit = sourceImage; sourceImage = meshes; meshes = layers; layers = base; base = null;
     }
     const all = [
-      { config: base || { id: 'base', material: 'metal' }, mesh: state.plane, image: sourceImage },
+      { config: { id: 'base', ...(base || { material: 'metal' }) }, mesh: state.plane, image: sourceImage },
       ...layers.map((config, index) => ({
         config, mesh: meshes[index],
         image: state.materialLayers.find(entry => entry.mesh === meshes[index])?.image,
