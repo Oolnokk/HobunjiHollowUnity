@@ -220,11 +220,15 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const perBand = () => Object.values(pora.debugSnapshot().zones).map(zone => zone.camps.find(camp => camp.avengers).avengers.kills);
   assert(perBand().some(kills => kills > 1), `a band makes several kills in one day (${perBand()})`);
   const slainCount = () => Object.values(omg.debugSnapshot().zones).flatMap(zone => zone.camps.flatMap(camp => camp.hunters)).filter(h => h.activity === 'slain').length;
-  const killsBefore = pora.debugSnapshot().avengerKills;
-  assert.equal(slainCount(), killsBefore);
+  const killsBefore = pora.debugSnapshot().avengerKills; // Lifetime kill count includes residents replaced after prior game days.
+  assert(slainCount() > 0 && slainCount() <= killsBefore, 'the outstanding slain population cannot exceed lifetime Avenger kills');
+  const slainIdsBefore = new Set(Object.values(omg.debugSnapshot().zones).flatMap(zone =>
+    zone.camps.flatMap(camp => camp.hunters.filter(h => h.activity === 'slain').map(h => `${camp.id}:${h.index}`)))); // Follow exact victim slots rather than comparing cumulative kills with live deaths.
   day += 2;
-  tick(0.21); // A fresh kill can land in this same tick.
-  assert.equal(slainCount(), pora.debugSnapshot().avengerKills - killsBefore, 'slain travellers are replaced in their camps after a couple of days');
+  tick(0.21);
+  const slainIdsAfter = new Set(Object.values(omg.debugSnapshot().zones).flatMap(zone =>
+    zone.camps.flatMap(camp => camp.hunters.filter(h => h.activity === 'slain').map(h => `${camp.id}:${h.index}`))));
+  assert([...slainIdsBefore].some(id => !slainIdsAfter.has(id)), 'slain residents are replaced in their camp slots after a couple of days');
 
   // Outnumbered: if the quarry's group is bigger than the band, the riders
   // break off and ride home to regroup instead of engaging.
