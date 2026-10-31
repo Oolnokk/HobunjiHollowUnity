@@ -27,6 +27,7 @@ p,.hint{font-size:11px;color:#abc0d2;margin:6px 0}
 section{border:1px solid #354d61;border-radius:10px;padding:10px;margin:10px 0;background:#152636}
 label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls label{margin:0}.controls button{width:100%}
+.color-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.color-controls>div{min-width:0}.color-controls label{margin:5px 0 2px}.color-controls input[type=color]{width:100%;height:34px;background:#091925;border:1px solid #476578;border-radius:7px}
 #viewport{min-width:0;min-height:0;position:relative;background:radial-gradient(circle at center,#1b3843,#07101a 70%)}
 #render{position:absolute;inset:0;touch-action:none}
 #hud{position:absolute;top:10px;left:10px;right:10px;pointer-events:none;background:#071523cc;border:1px solid #476578;border-radius:7px;padding:8px;white-space:pre-wrap;font:11px/1.4 monospace}
@@ -43,10 +44,14 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <label for="previewEnvironment">Root substrate</label><select id="previewEnvironment"><option value="flat">Flat floor preview</option><option value="ruin">Single ruin room</option></select>
 <label for="ruinSize">Room size</label><select id="ruinSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>
 <label for="ruinRoughness">Ruin rock roughness (0–1)</label><input id="ruinRoughness" type="number" min="0" max="1" step="0.05" value="0.85">
+<div class="controls color-controls">
+<div><label for="stoneColor">Stone colour</label><input id="stoneColor" type="color" value="#4f514b"><input type="text" id="stoneColorHex" aria-label="Stone hex colour" value="#4f514b" maxlength="7" spellcheck="false"><label for="stoneColorH">Hue <output id="stoneColorHValue"></output></label><input id="stoneColorH" type="range" min="0" max="360" step="1" aria-label="Stone hue"><label for="stoneColorS">Saturation <output id="stoneColorSValue"></output></label><input id="stoneColorS" type="range" min="0" max="100" step="1" aria-label="Stone saturation"><label for="stoneColorL">Lightness <output id="stoneColorLValue"></output></label><input id="stoneColorL" type="range" min="0" max="100" step="1" aria-label="Stone lightness"></div>
+<div><label for="rootColor">Root colour</label><input id="rootColor" type="color" value="#8b7451"><input type="text" id="rootColorHex" aria-label="Root hex colour" value="#8b7451" maxlength="7" spellcheck="false"><label for="rootColorH">Hue <output id="rootColorHValue"></output></label><input id="rootColorH" type="range" min="0" max="360" step="1" aria-label="Root hue"><label for="rootColorS">Saturation <output id="rootColorSValue"></output></label><input id="rootColorS" type="range" min="0" max="100" step="1" aria-label="Root saturation"><label for="rootColorL">Lightness <output id="rootColorLValue"></output></label><input id="rootColorL" type="range" min="0" max="100" step="1" aria-label="Root lightness"></div>
+</div><p id="colorStatus" class="muted" role="status">Stone #4f514b · Roots #8b7451</p><button id="copyColors" type="button">Copy colours to share</button>
 <button id="previewRuin" type="button" style="width:100%;margin-top:8px">Build ruin preview</button>
 <p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
 <p id="ruinStatus" role="status">Uses the existing ruin generator. Its pieces become rough rock, then receive the Life Temple’s authored root and vine layers before you grow the selected furniture from that vegetation.</p>
-<p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Grey stone remains visible beneath the vegetation. Show guide reveals only the imported target. Seed, room size and rock roughness are saved in your recipe.</p>
+<p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
 <label for="repoFurnitureSearch">Browse furniture in repository</label>
@@ -97,5 +102,5 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031h274c059"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031h42df7b4"></script>
 </body></html>

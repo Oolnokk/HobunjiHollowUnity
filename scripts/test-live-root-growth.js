@@ -485,6 +485,9 @@ const radiusReport=vm.runInContext('varySurfaceStrandRadii(geometries,{radius:.2
 assert.equal(radiusReport.strandRadiusMin,.12);assert(Math.abs(radiusReport.strandRadiusMax-.3)<1e-10);
 for(const [index,expected] of [[0,.6],[1,1.5]]){const p=radiusContext.geometries[index].getAttribute('position');assert(Math.abs(Math.hypot(p.getX(0),p.getZ(0))-expected)<1e-9);assert.equal(p.getY(0),0);assert.equal(p.getY(6),1);}
 radiusContext.geometries=[makeRadiusGeometry()];vm.runInContext('varySurfaceStrandRadii(geometries,{radius:.1,radiusScaleMin:1,radiusScaleMax:1.5},123)',radiusContext);assert.equal(radiusContext.geometries[0].getAttribute('position').getX(0),1,'normal vine width must be the minimum');
+const colorHelper=editor.slice(editor.indexOf('  function normalizePreviewColor('),editor.indexOf('  function readPreviewColors(')); // Hex validation protects typed/imported HSL picker colours.
+const colorContext={};vm.createContext(colorContext);vm.runInContext(colorHelper,colorContext);
+for(const [value,expected] of [['#ABC123','#abc123'],[' #123456 ','#123456'],['red','#4f514b'],['#xyz','#4f514b'],[null,'#4f514b']]){colorContext.value=value;assert.equal(vm.runInContext('normalizePreviewColor(value,"#4f514b")',colorContext),expected);}
 console.log('Live root growth: wrap reuse, source preservation, deterministic nodes, controls, retraction, disposal and Tools Hub wiring passed.');
 (async()=>{
   let turns=0;const progress=[]; // Cooperative creation must pause between layers while preserving the synchronous geometry.
@@ -506,7 +509,7 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
     foliage:{...foliage,buildSurfaceGrowth(parent,recipe){staticCalls.push(recipe);return fakeGrowth(parent,recipe);}}});
   assert.equal(staticCalls.length,templeRecipes.length,'each authored Temple layer must run exactly once');
   staticCalls.forEach((actual,index)=>{for(const [key,value] of Object.entries(templeRecipes[index]))if(key!=='seed')assert.deepEqual(actual[key],value,'Temple '+key+' must remain independent of structure settings');});
-  const coverRecipeHelper=editor.slice(editor.indexOf('  function ruinCoverRecipes('),editor.indexOf('  async function prepareRuin(')),coverRecipeContext={templeCoverRecipes:templeRecipes};
+  const coverRecipeHelper=editor.slice(editor.indexOf('  function ruinCoverRecipes('),editor.indexOf('  async function prepareRuin(')),coverRecipeContext={templeCoverRecipes:templeRecipes,rootFinishForPreview:()=>({color:'#8b7451'})};
   vm.createContext(coverRecipeContext);vm.runInContext(coverRecipeHelper,coverRecipeContext);const varied=vm.runInContext('ruinCoverRecipes()',coverRecipeContext);
   assert.equal(varied.length,5,'initial cover must add a green vine weave to the four Temple layers');
   assert(varied.filter(r=>r.kind==='roots').every(r=>r.radiusScaleMin===.6&&r.radiusScaleMax===1.5));

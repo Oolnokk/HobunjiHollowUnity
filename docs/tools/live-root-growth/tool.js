@@ -8,9 +8,11 @@
   const trackedFields = ['seed','floorWidth','floorDepth','branchCount','strandLimit','radius',
     'branchRadius','floorDensity','targetDensity','floorLength','targetLength','bend','arcConcavity','shapeInset','volumeFillDepth','duration','showGuide'];
   const source = { kind:'demo', name:'Raised platform (demo)', data:null, file:null, model:null }; // Imported shape and serializable source metadata.
+  const PREVIEW_COLORS={stoneColor:'#4f514b',rootColor:'#8b7451'}; // Picker defaults and legacy-recipe fallback: darker stone with lighter warm roots.
   const repoCatalog = new Map(); // Repository index/branch discovery and procedural catalog share one selectable list.
   let templeRootFinish = growth?.TEMPLE_ROOT_FINISH; // Current Temple roots finish used by every preview build.
   let templeCoverRecipes=null,templeSettingsLoad=null; // Initial ruin cover follows authored Temple layers, independent of new-growth controls.
+  let colorRebuildTimer=null; // Debounce root texture/cover rebuilds while HSL sliders are being dragged.
   let repoRequestId = 0; // Ignores stale results from overlapping catalog refresh requests.
   let buildRequestId = 0, ruinFrame = null, ruinLoader = null, ruinQueue = Promise.resolve(), ruinRoom = null; // Serialize generator ownership and discard obsolete preview requests.
   let preparedRuin=null; // Completed vegetation remains separate from the interactive Grow/Reset instance.
@@ -164,6 +166,42 @@
     })().catch(error=>{loadingFrame?.remove();if(ruinFrame===loadingFrame){ruinFrame=null;ruinLoader=null;}throw error;});
     return ruinLoader;
   }
+  function normalizePreviewColor(value,fallback){return typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value.trim())?value.trim().toLowerCase():fallback;}
+  function readPreviewColors(){return Object.fromEntries(Object.entries(PREVIEW_COLORS).map(([id,fallback])=>[id,normalizePreviewColor($(id).value,fallback)]));}
+  function rootFinishForPreview(){return {...templeRootFinish,color:readPreviewColors().rootColor};}
+  function readColorHsl(id){
+    return {h:Math.max(0,Math.min(360,Number($(id+'H').value)||0)),s:Math.max(0,Math.min(100,Number($(id+'S').value)||0)),l:Math.max(0,Math.min(100,Number($(id+'L').value)||0))};
+  }
+  function colorHslLabel(id){const hsl=readColorHsl(id);return `${hsl.h}°, ${hsl.s}%, ${hsl.l}%`;}
+  function syncPreviewColors(colors=readPreviewColors(),preserveHslId=null,changedId=null){
+    for(const [id,fallback] of Object.entries(PREVIEW_COLORS)){
+      $(id).value=normalizePreviewColor(colors[id],fallback);$(id+'Hex').value=$(id).value;
+      if(id!==preserveHslId&&(!changedId||id===changedId)){const hsl=new T.Color($(id).value).getHSL({}); /* THREE is the shared authority for both colour conversions. */$(id+'H').value=Math.round(hsl.h*360);$(id+'S').value=Math.round(hsl.s*100);$(id+'L').value=Math.round(hsl.l*100);}
+      const selected=readColorHsl(id); // Keep hue editable even while saturation is zero or lightness is at an extreme.
+      for(const [axis,key,suffix] of [['H','h','°'],['S','s','%'],['L','l','%']])$(id+axis+'Value').textContent=selected[key]+suffix;
+    }
+    const selected=readPreviewColors();$('colorStatus').textContent=`Stone ${selected.stoneColor} (${colorHslLabel('stoneColor')}) · Roots ${selected.rootColor} (${colorHslLabel('rootColor')})`;
+  }
+  function updateColorHsl(id){
+    const hsl=readColorHsl(id); // Slider values retain their exact HSL coordinates while the hex swatch is updated.
+    $(id).value='#'+new T.Color().setHSL(hsl.h/360,hsl.s/100,hsl.l/100).getHexString();
+    return updatePreviewColor(id,false,id);
+  }
+  function scheduleColorPreview(id,commit=false){
+    if(id!=='rootColor'){if(commit)updateStatus(true);return;}
+    clearTimeout(colorRebuildTimer);colorRebuildTimer=null;
+    if(commit)rebuild();else colorRebuildTimer=setTimeout(()=>rebuild(),300); // Swatches and numbers respond immediately; geometry/texture work waits for a pause or release.
+  }
+  function updatePreviewColor(id,fromHex=false,preserveHslId=null){
+    const value=normalizePreviewColor($(id+(fromHex?'Hex':'')).value,null); // Invalid typed colours stay visible for correction instead of changing the scene.
+    if(!value){$('colorStatus').textContent='Use a six-digit hex colour, such as #4f514b.';return false;}
+    $(id).value=value;syncPreviewColors(readPreviewColors(),preserveHslId,id);
+    if(id==='stoneColor'){
+      for(const material of new Set([ruinRoom?.stoneMaterial,preparedRuin?.room.stoneMaterial]))if(material)material.color.set(value); // Stone changes are immediate and reuse the existing geometry/vegetation.
+      previewDirty=true;
+    }
+    return true;
+  }
   function readRuinRoughness(value=$('ruinRoughness').value){
     const number=Number(value??.85); // Saved recipes and the editable control share one finite, bounded roughness value.
     return Number.isFinite(number)?Math.max(0,Math.min(1,number)):.85;
@@ -210,7 +248,7 @@
       if(meta?.rooms?.length!==1)throw new Error('The ruin preview must generate exactly one room.');
       const roots=api.takePreviewRoots(),model=new T.Group(); // Keep the generated architecture and furniture; the selected growth target is added later.
       roots.localeRoot.updateWorldMatrix(true,true);
-      const stoneMaterial=window.ProceduralFurniture.makePartMaterial({color:'#808080',materialRole:'stone'},0x808080); // All generated pieces use the same grey, lit stone finish.
+      const stoneMaterial=window.ProceduralFurniture.makePartMaterial({color:readPreviewColors().stoneColor,materialRole:'stone'},0x808080); // All generated pieces use the same grey, lit stone finish.
       stoneMaterial.side=T.DoubleSide; // Keep both sides of the solid scenery visible from inside and outside the ruin.
       let walls=0,floors=0,pieces=0,pillars=0; // On-device evidence that both real architectural surface types were imported.
       roots.localeRoot.traverse(mesh=>{
@@ -243,7 +281,7 @@
     return ruinQueue;
   }
   function ruinCoverRecipes(){
-    const recipes=templeCoverRecipes.map(recipe=>({...recipe,radiusScaleMin:recipe.kind==='roots'?.6:1,radiusScaleMax:1.5})); // Keep the authored base widths; only initial-cover strands gain thickness variation.
+    const recipes=templeCoverRecipes.map(recipe=>({...recipe,...(recipe.kind==='roots'?{color:rootFinishForPreview().color}:{}),radiusScaleMin:recipe.kind==='roots'?.6:1,radiusScaleMax:1.5})); // Keep the authored base widths; only initial-cover strands gain thickness variation.
     const wallVines=recipes.find(recipe=>recipe.kind==='vines'&&recipe.target==='walls'); // An extra green wall layer weaves among the darker roots at the normal vine width or larger.
     if(wallVines)recipes.push({...wallVines,seed:wallVines.seed+':root-weave',density:Math.max(.35,wallVines.density)});
     return recipes;
@@ -269,6 +307,7 @@
     orbit.update();
   }
   async function rebuild(keepProgress = true) {
+    clearTimeout(colorRebuildTimer);colorRebuildTimer=null;
     const request=++buildRequestId; // An older asynchronous room build must never overwrite a newer furniture or recipe choice.
     buildController?.abort();
     roomCancel?.();
@@ -285,7 +324,7 @@
       const placed = source.model.clone(true); // Never mutate the reusable imported source's local geometry.
       placed.position.copy(readPosition()); // Purpose-agnostic target transform for platform, bridge or future door shapes.
       next=await growth.createAsync({THREE:T,foliage,recipe:{...readRecipe(),...(room?{floorY:room.floorY}:{})},target:placed,
-        ...(pendingCover?{growthSource:pendingCover.cover.targetGrowth}:{}),progress,rootFinish:templeRootFinish,signal:controller.signal,
+        ...(pendingCover?{growthSource:pendingCover.cover.targetGrowth}:{}),progress,rootFinish:rootFinishForPreview(),signal:controller.signal,
         onProgress:step=>{if(request===buildRequestId)buildMessage('roots','Building roots: '+step.part+' · layer '+step.layer+'/'+step.layers);}});
       if(request!==buildRequestId)return;
       active?.dispose();active=next;next=null;
@@ -322,7 +361,7 @@
       info.rootTransferCount + ' connecting shoots, depth ' + info.maxPartDepth + ')';
     if (force || message !== lastStatus) { status.textContent = message; lastStatus = message; }
     const details = JSON.stringify({
-      source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,
+      source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,appearance:readPreviewColors(),
       environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
         {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,wallPrismDepth:ruinRoom?.wallPrismDepth,cover:preparedRuin?.cover.getDiagnostics()}:null,
       targetPosition:readPosition().toArray(), ...info
@@ -509,7 +548,7 @@
   }
   function exportedRecipe() {
     return {schema:'hobunji_live_root_growth.v1',
-      environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),
+      environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),appearance:readPreviewColors(),
       recipe:readRecipe(), position:readPosition().toArray(),
       target:{kind:source.kind,file:source.file,
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
@@ -522,20 +561,18 @@
     const link = document.createElement('a'); link.href = url; link.download = 'live-root-growth-recipe.json';
     document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
   }
-  async function copyJson() {
-    const json = JSON.stringify(exportedRecipe(),null,2);
-    try { await navigator.clipboard.writeText(json); status.textContent += '\nRecipe copied.'; }
-    catch {
-      const area = document.createElement('textarea'); area.value = json;
-      area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);
-      area.focus();area.select();const ok=document.execCommand('copy');area.remove();
-      status.textContent += ok?'\nRecipe copied.':'\nCopy unavailable. Use Export JSON.';
-    }
+  async function copyText(text){
+    try{await navigator.clipboard.writeText(text);return true;}
+    catch{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();const copied=document.execCommand('copy');area.remove();return copied;}
   }
+  async function copyJson(){status.textContent+=await copyText(JSON.stringify(exportedRecipe(),null,2))?'\nRecipe copied.':'\nCopy unavailable. Use Export JSON.';}
+  async function copyColors(){const colors=readPreviewColors();$('colorStatus').textContent=await copyText(`Stone: ${colors.stoneColor} · HSL(${colorHslLabel('stoneColor')})\nRoots: ${colors.rootColor} · HSL(${colorHslLabel('rootColor')})`)?`Copied: stone ${colors.stoneColor} · roots ${colors.rootColor}`:'Copy unavailable. Hex values are shown beside each picker.';}
   async function importRecipe(file) {
     const json = JSON.parse(await file.text());
     if (json.schema !== 'hobunji_live_root_growth.v1') throw new Error('Not a live-root-growth recipe.');
     fillRecipe(json.recipe);
+    syncPreviewColors(json.appearance||PREVIEW_COLORS);
+    updatePreviewColor('stoneColor');
     $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
     $('ruinSize').value=['small','medium','large'].includes(json.ruinSize)?json.ruinSize:'small';
     $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.85));
@@ -562,6 +599,16 @@
     const rect=$('render').getBoundingClientRect(), w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();
   }
+  for(const id of Object.keys(PREVIEW_COLORS)){
+    $(id).oninput=()=>{if(updatePreviewColor(id))scheduleColorPreview(id);};
+    $(id).onchange=()=>{if(updatePreviewColor(id))scheduleColorPreview(id,true);};
+    $(id+'Hex').onchange=()=>{if(updatePreviewColor(id,true))scheduleColorPreview(id,true);};
+    for(const axis of ['H','S','L']){
+      $(id+axis).oninput=()=>{if(updateColorHsl(id))scheduleColorPreview(id);};
+      $(id+axis).onchange=()=>{if(updateColorHsl(id))scheduleColorPreview(id,true);};
+    }
+  }
+  $('copyColors').onclick=()=>copyColors().catch(reportError);
   $('rebuild').onclick=()=>rebuild();
   $('cancelBuild').onclick=cancelBuild;
   $('previewEnvironment').onchange=()=>rebuild(false);
@@ -611,6 +658,7 @@
     if(!buildState.running||previewDirty){renderSceneWithShellOutlines();previewDirty=false;}
     if (active && (timestamp % 220 < 18)) updateStatus();
   }
+  syncPreviewColors();
   templeSettingsLoad=loadTempleRootFinish();
   resize();rebuild(false);requestAnimationFrame(frame);
   refreshRepoFurniture().catch(reportError);
