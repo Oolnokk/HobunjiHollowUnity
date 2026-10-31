@@ -16078,3 +16078,20 @@ window.MODULAR_WEAPON_CONFIG = {
     }
   }
 };
+
+// Reusable shaft duplication: clone the complete B'shuakauitl mount/pair preset,
+// then substitute the entire Torch-Staff sprite and its independently animated fire.
+// Other shafts can be duplicated using the Foundry's "Duplicate shaft" editor action.
+(function (config) {
+  const source = config.shafts.bshuakauitl; // Canonical donor for the four eye/tang mounts and seven allowed head families.
+  if (!source) return;
+  const staff = JSON.parse(JSON.stringify(source)); // Copy, rather than alias, mount lines and fitting overrides.
+  staff.label = 'Hachutu Torch-Staff';
+  staff.sourceShape = 'hachutuTorchStaff'; // Own melee stats/grips; no B'shuakauitl blowgun behavior.
+  staff.sprite = 'assets/toolsprites/hachutu_torch-staff.png';
+  staff.duplicateFrom = 'bshuakauitl'; // Editor provenance; the copied pair settings remain independently editable.
+  staff.duplicateTransform = { scaleX: 1, scaleY: 1, x: 0, y: 0 }; // Authorable whole-shaft transform, including sockets and live fire.
+  staff.fireAssembly = 'hachutuTorchStaff'; // Shared layered weapon emitter follows this modular shaft at runtime.
+  staff.editorOnly = false;
+  config.shafts.hachutuTorchStaff = staff;
+})(window.MODULAR_WEAPON_CONFIG);
