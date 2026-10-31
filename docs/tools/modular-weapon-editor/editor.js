@@ -158,7 +158,11 @@
           duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
           rigHierarchy: rig, effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
-          matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
+          matrices,
+          rigOperationSummary: { saved: values.bridges?.strokes?.length || 0,
+            expanded: api.rigBridgeOperations(shaft, values.bridges?.strokes || []).length,
+            junctions: api.rigBridgeOperations(shaft, values.bridges?.strokes || []).filter(op => op.junction).length },
+          frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
         }, null, 2);
       } else {
@@ -227,6 +231,11 @@
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Show actual attachment descendants on mobile.
     const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey));
     const transform = api.shaftRigTransform(shaft);
+    const sourceOps = api.settings(byId('shaft').value, headKey).bridges?.strokes || [];
+    const operations = api.rigBridgeOperations(shaft, sourceOps); // Expanded recipe children share the same rig as attached heads.
+    const junctions = operations.filter(op => op.junction).length;
+    const spatial = operations.filter(op => op.points).length;
+    const effects = operations.length - junctions - spatial;
     byId('rig-tree').textContent = [
       'Shaft sprite + live fire (OUTSIDE rig; unchanged)',
       'Attachment scaling rig (PARENT)',
@@ -235,7 +244,9 @@
         '  ├ ' + (mount.type === 'eye' ? 'Sleeve' : 'Tang') + ' #' + (mount.index + 1) + ' (CHILD)',
         ...mount.children.map(primitive => '  │ └ ' + primitive.source + ' primitive (GRANDCHILD)'),
       ]),
-    ].join('\n');
+      '  ├ Bridge/recipe steps: ' + sourceOps.length + ' saved → ' + operations.length + ' child ops',
+      '  │  ├ ' + junctions + ' junction sprites, ' + spatial + ' brush/smudge strokes, ' + effects + ' global cleanup passes',
+    ].join('\n'); // The user can distinguish a missing recipe child from a head-fit or mount problem on mobile.
   }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
