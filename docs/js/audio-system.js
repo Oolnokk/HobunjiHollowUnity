@@ -1177,6 +1177,7 @@
   // plain gar-wolf's neutral pitch. Future creatures/attacks can add
   // their own url+species entry without touching this function.
   function playCreatureBark(c) {
+    if (c?.creatureKey === 'honeyfuzzle') return; // Block legacy warning/growl fallback: the positional hive buzz is its only voice.
     const cfg = combatSfxConfig().creatureBark;
     const speciesCfg = cfg?.species?.[c.creatureKey];
     playCreatureSfxAt(c, speciesCfg?.url ? { ...cfg, ...speciesCfg } : cfg, Number(speciesCfg?.pitch) || 1);
