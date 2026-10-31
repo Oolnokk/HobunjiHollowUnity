@@ -59,7 +59,7 @@
       { id: 'increaseFootingDamage', name: 'Increase Footing Damage', tier: 2, maxRank: 5, desc: r => `Outgoing Footing damage is increased ${r * 10}%.` },
       { id: 'increaseFootingResistance', name: 'Increase Footing Resistance', tier: 2, maxRank: 5, desc: r => `Incoming Footing damage is reduced ${r * 8}%.` },
       { id: 'increaseLungeDistance', name: 'Increase Lunge Distance', tier: 2, maxRank: 5, desc: r => `Attack lunge distance is increased ${r * 12}%.` },
-      { id: 'increaseAoe', name: 'Increase AoE', tier: 2, maxRank: 5, desc: r => `Attack range/area is increased ${r * 10}%.` },
+      { id: 'increaseAoe', name: 'Increase AoE', tier: 2, maxRank: 5, desc: r => `Melee attack cone width is increased ${r * 10}%; reach is unchanged.` },
       { id: 'empowerQuickAttacks', name: 'Empower Quick Attacks', tier: 3, maxRank: 5, desc: r => `Quick Attack damage is increased ${r * 8}%.` },
       { id: 'empowerDefensiveAttacks', name: 'Empower Defensive Attacks', tier: 3, maxRank: 5, desc: r => `Defensive (Counter Shield) attack damage is increased ${r * 8}%.` },
       { id: 'empowerHeavyAttacks', name: 'Empower Heavy Attacks', tier: 3, maxRank: 5, desc: r => `Heavy attack damage is increased ${r * 8}%.` },
