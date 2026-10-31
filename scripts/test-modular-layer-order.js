@@ -268,6 +268,20 @@ async function run() {
   assert.deepEqual(api.getConfig().shafts.hachutuTorchStaff.rigRegions[0].box,
     extendedDraft.shafts.hachutuTorchStaff.rigRegions[0].box,
     'rectangle selections beyond the donor PNG survive validation without being clipped to 450×1204');
+  // Hostile and stale imported region data must not corrupt the shaft rig.
+  const invalidRegions=JSON.parse(JSON.stringify(areaDraft));
+  invalidRegions.shafts.hachutuTorchStaff.rigRegions=[
+    {id:'safe',label:'Valid',box:{x0:10,y0:10,x1:60,y1:90},
+      transform:{scaleX:500,scaleY:-2,x:99999,y:-99999}},
+    {id:'safe',box:{x0:110,y0:10,x1:160,y1:90}}, // Duplicate ID is ignored.
+    {id:'degenerate',box:{x0:100,y0:100,x1:100,y1:130}}, // No enclosed area.
+    {id:'nan',box:{x0:NaN,y0:100,x1:200,y1:300}}, // JSON serialization below converts NaN to null.
+  ];
+  api.replace(JSON.parse(JSON.stringify(invalidRegions)));
+  const sanitized=api.getConfig().shafts.hachutuTorchStaff.rigRegions;
+  assert.equal(sanitized.length,1,'duplicate IDs and invalid rectangles do not enter the compositor');
+  assert.deepEqual(sanitized[0].transform,{scaleX:8,scaleY:.05,x:2400,y:-2400},
+    'malformed or extreme rig values are clamped before rendering');
   api.replace(areaDraft); // Restore selected upper-region configuration for existing round-trip tests.
   const regionReload=JSON.parse(JSON.stringify(api.getConfig()));
   api.replace(regionReload);
