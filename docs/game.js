@@ -30827,6 +30827,7 @@
       });
 
       window.FarmhouseRoomPlanner?.init({
+        interiorCols: INTERIOR_COLS, interiorRows: INTERIOR_ROWS, // Fallback gap corridors cannot exceed the live indoor grid.
         canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
         canHostDoor: (c, r) => !interiorFurnitureObjects.some(o => o.area === 'interior'
           && c >= o.col && r >= o.row
