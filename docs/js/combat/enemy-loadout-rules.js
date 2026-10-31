@@ -355,6 +355,7 @@
       const framed = clone(pattern);
       if (entry.randomFrame) { // Same method as the Maskbound masks' procedural patterns: random frame rotation, and a frame only ever shrunk from the authored one.
         const lerp = (a, b, t) => a + (b - a) * t;
+        if (!framed.frameShape) framed.frameShape = framed.repeatMode === 'grid' ? 'square' : 'triangle'; // Frame fields are ignored (legacy path) unless the pattern declares a frame shape.
         if (entry.randomFrame.shrink) framed.frameScale = Number((Math.max(0.05, Number(framed.frameScale) || 1) * lerp(Number(entry.randomFrame.shrink.min), Number(entry.randomFrame.shrink.max), random())).toFixed(4));
         if (entry.randomFrame.rotate) framed.frameRotationDeg = Math.round(random() * 3600) / 10;
       }

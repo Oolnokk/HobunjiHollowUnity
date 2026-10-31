@@ -72,15 +72,33 @@
   }
 
   // ── Bound-relic key codec ────────────────────────────────────────
-  // harlyaoBound_<shape>_<uid>_B<base-base>_F<slot.id-slot.id>
+  // harlyaoBound_<shape>_<uid>_B<base-base>_F<slot.id-slot.id>[_V<alignment>.<colorAlignment>.<dye>.<effect>]
+  // The optional V suffix carries a looted weapon's particle choice as indices into the enchantment VFX vocabulary (alignment/colorAlignment index
+  // into EnchantmentSystem.PLANES, then the dye and effect index within that alignment), so unbinding keeps its random color and effect.
+  function visualVocabulary() {
+    return { planes: window.EnchantmentSystem?.PLANES || [], alignments: window.WeaponEnchantmentVFX?.ALIGNMENTS || {} };
+  }
+  function encodeVisual(visual) {
+    const { planes, alignments } = visualVocabulary();
+    const a = planes.indexOf(visual?.alignment), c = planes.indexOf(visual?.colorAlignment);
+    const dye = alignments[visual?.colorAlignment]?.dyeIds?.indexOf(visual?.dyeId);
+    const effect = alignments[visual?.alignment]?.effects?.findIndex(entry => entry.id === visual?.effectId);
+    return a >= 0 && c >= 0 && dye >= 0 && effect >= 0 ? `_V${a}.${c}.${dye}.${effect}` : '';
+  }
+  function decodeVisual(a, c, dye, effect) {
+    const { planes, alignments } = visualVocabulary();
+    const alignment = planes[Number(a)], colorAlignment = planes[Number(c)];
+    const dyeId = alignments[colorAlignment]?.dyeIds?.[Number(dye)], effectId = alignments[alignment]?.effects?.[Number(effect)]?.id;
+    return dyeId && effectId ? { alignment, colorAlignment, dyeId, effectId } : null;
+  }
   function encodeBoundKey(relic) {
     const base = (relic.enchantments?.base || []).join('-');
     const flourishes = Object.entries(relic.enchantments?.flourishes || {}).map(([slot, id]) => `${slot}.${id}`).join('-');
-    return `${BOUND_PREFIX}${relic.shape}_${relic.uid}_B${base}_F${flourishes}`;
+    return `${BOUND_PREFIX}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}`;
   }
 
   function decodeBoundKey(key) {
-    const match = /^harlyaoBound_([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)$/.exec(String(key || ''));
+    const match = /^harlyaoBound_([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
     if (!match || !SHAPES[match[1]]) return null;
     const flourishes = {};
     for (const pair of match[4] ? match[4].split('-') : []) {
@@ -89,7 +107,8 @@
     }
     const raw = { base: match[3] ? match[3].split('-') : [], flourishes };
     const enchantments = ES()?.cleanWeaponState ? ES().cleanWeaponState(raw) : raw;
-    return { shape: match[1], uid: match[2], enchantments };
+    const visual = match[5] != null ? decodeVisual(match[5], match[6], match[7], match[8]) : null;
+    return { shape: match[1], uid: match[2], enchantments, ...(visual ? { visual } : {}) };
   }
 
   function isBoundKey(key) {
@@ -288,6 +307,10 @@
     delete deps.inventory[boundKey];
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object') g.harlyaoRelics = {};
     g.harlyaoRelics[toolKey] = { shape: relic.shape, uid: relic.uid, originalEnchantments: relic.enchantments, unboundAt: Date.now() };
+    if (relic.visual) { // A looted enemy weapon keeps its random particle color/effect (WeaponEnchantmentVFX validates the choice on use).
+      if (!g.weaponEnchantmentVisuals || typeof g.weaponEnchantmentVisuals !== 'object') g.weaponEnchantmentVisuals = {};
+      g.weaponEnchantmentVisuals[toolKey] = { ...relic.visual };
+    }
     if (!g.tools) g.tools = {};
     g.tools[toolKey] = true;
     if (!g.toolMastery) g.toolMastery = {};

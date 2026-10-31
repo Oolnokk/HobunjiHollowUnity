@@ -79,8 +79,21 @@ for (const [type, glyph] of [['hronal', 'harlyao_glyph_entropy'], ['tothal', 'ha
   assert.ok(seen.size > 30, type + ' colors and frames vary between mobs');
 }
 assert.equal(liches.ordinaryLichPatterns('nope'), null);
+// The frame must actually take effect: without a frameShape the weaver's legacy path discards frameScale/frameRotationDeg.
+const framed = liches.ordinaryLichPatterns('hronal', seeded(5), '#abcdef').forcedOverpassBySlot;
+for (const [slot, entry] of Object.entries(framed)) {
+  assert.equal(entry.pattern.frameShape, 'triangle', slot + ' declares a frameShape so its random frame is honored');
+  assert.equal(entry.fallbackColorC.hex, '#abcdef', slot + ' uses the caller-supplied tradition-family color (one per mob)');
+}
+assert.deepEqual([...framed.pants.roles], ['BASE'], 'ordinary liches pattern the pants base');
+assert.equal(framed.pants.baseUsesPatternColor, undefined, 'the base/drape swap is a named-lich thing');
+assert.equal(liches.specialRoster('hronal').clothingPatterns.forcedOverpassBySlot.pants.baseUsesPatternColor, true, 'named liches keep the swap');
+const rolls = new Set();
+for (let seed = 1; seed <= 10; seed++) { const entry = liches.ordinaryLichPatterns('tothal', seeded(seed * 31), '#112233').forcedOverpassBySlot.overwear.pattern; rolls.add(entry.frameScale + '/' + entry.frameRotationDeg); }
+assert.ok(rolls.size >= 9, 'frames differ between rerolls');
 const lichSource = fs.readFileSync('docs/js/combat/combat-lich.js', 'utf8');
-assert.match(lichSource, /if \(!options\.roster && !special\) \{[\s\S]{0,300}ordinaryLichPatterns\?\.\(def\.id, random\)/, 'ordinary liches get their tradition patterns at spawn');
+assert.match(lichSource, /if \(!options\.roster && !special\) \{[\s\S]{0,300}ordinaryLichPatterns\?\.\(def\.id, random, patternColorFor\(def\.id, roster\.lichDyeId\)\)/, 'ordinary liches get their tradition patterns at spawn, in a color from their own tradition’s dye family');
+assert.match(lichSource, /function patternColorFor\(type, robeDyeId\)[\s\S]{0,700}id !== robeDyeId/, 'the pattern color differs from the robe dye');
 
 // ── Loot: patterns retained, circlets and masks cursed ─────────────────────────────────────────────────────────────────────────────────
 const camps = fs.readFileSync('docs/js/bandit-camps.js', 'utf8');

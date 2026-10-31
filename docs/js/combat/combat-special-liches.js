@@ -96,16 +96,19 @@
     return hslToHex(((base.h+(random()*2-1)*FAMILY.hueSpreadDeg)%360+360)%360,pick(FAMILY.saturation),pick(FAMILY.lightness));
   }
   const ORDINARY_FRAME={shrink:{min:.4,max:1},rotate:true};
-  // clothingPatterns policy for one ordinary lich. Slots are patterned like the named guardians' (same glyph and per-piece scale); only the frame and color vary.
-  function ordinaryLichPatterns(type,random=Math.random) {
+  // clothingPatterns policy for one ordinary lich. Slots are patterned like the named guardians' (same glyph and per-piece scale); the frame varies per piece
+  // and `patternColor` (one color per mob, from its tradition's own dye family, never the named lich's hand-authored inverse) is supplied by the caller.
+  function ordinaryLichPatterns(type,random=Math.random,patternColor=null) {
     if(!DATA[type])return null;
-    const base=patternFor(type,'clothingPattern'), named=bodyColor3For(type), lerp=(a,b,t)=>a+(b-a)*t;
+    const base=patternFor(type,'clothingPattern'), lerp=(a,b,t)=>a+(b-a)*t;
+    const color=/^#[0-9a-f]{6}$/i.test(patternColor||'')?patternColor:colorInFamily(bodyColor3For(type),random);
     const forced={};
     for(const [slot,scale] of [['overwear',PATTERN_SCALE.overwear],['pants',PATTERN_SCALE.pants],['hood',PATTERN_SCALE.faceCovering],['mask',PATTERN_SCALE.faceCovering]]) {
       const pattern=JSON.parse(JSON.stringify(base)); // Each piece rolls its own frame, so a robe and its hood differ.
+      pattern.frameShape=pattern.frameShape||(pattern.repeatMode==='grid'?'square':'triangle'); // Without a frameShape the weaver takes its legacy path and silently ignores frameScale/frameRotationDeg; 'triangle' is that path's own default geometry.
       pattern.frameScale=Number((Math.max(.05,Number(pattern.frameScale)||1)*lerp(ORDINARY_FRAME.shrink.min,ORDINARY_FRAME.shrink.max,random())).toFixed(4));
       pattern.frameRotationDeg=Math.round(random()*3600)/10;
-      forced[slot]={pattern,fallbackColorC:{hex:colorInFamily(named,random)},scale,...(slot==='pants'?{roles:['DRAPE'],baseUsesPatternColor:true}:{})};
+      forced[slot]={pattern,fallbackColorC:{hex:color},scale,...(slot==='pants'?{roles:['BASE']}:{})}; // Ordinary liches pattern the pants' base sprite; only the named guardians swap base and drape.
     }
     return {forcedOverpassBySlot:forced};
   }

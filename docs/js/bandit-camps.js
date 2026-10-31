@@ -1362,6 +1362,8 @@
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
         grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
+        const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
+        if (relic) parts.push('🗡️ Bound ' + relic.label);
         for (const item of banditWornClothingItems(c.rosterRecord, c)) {
           deps.getPackClothing().push(item);
           window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.

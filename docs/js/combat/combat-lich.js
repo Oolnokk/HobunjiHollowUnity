@@ -142,6 +142,18 @@
     return pool[Math.floor(random() * pool.length)] || chromatic[0];
   }
 
+  // A pattern color from the tradition's own dye family (the family its robes are rolled from), different from this lich's robe dye, as a hex.
+  function patternColorFor(type, robeDyeId) {
+    const def = typeDef(type);
+    const pool = [];
+    for (const variant of HUE_VARIANTS) for (const hue of def.hues) pool.push(`dye:CLOTH:${variant}_${hue}`);
+    for (const neutral of def.neutralDyes || []) pool.push(neutral);
+    const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
+    const options = pool.filter(id => id !== robeDyeId && /^#[0-9a-f]{6}$/i.test(catalog.find(dye => dye.id === id)?.hex || ''));
+    const chosen = options[Math.floor(random() * options.length)];
+    return catalog.find(dye => dye.id === chosen)?.hex || null;
+  }
+
   function rosterFor(type, gender = null) {
     const def = typeDef(type); // Lich type provides display name while cosmetics stay identical across traditions.
     const chosenGender = gender === 'female' ? 'female' : gender === 'male' ? 'male' : (random() < 0.5 ? 'male' : 'female'); // Used by the Engh-sho-inherited Harlyao Skeleton hood/bodywrap variants.
@@ -292,7 +304,7 @@
     const special = options.special === true ? window.SpecialHarlyaoLiches?.defFor?.(def.id) : null; // Boss-only identity; ordinary liches keep their original random cosmetics.
     const roster = options.roster || (special ? window.SpecialHarlyaoLiches.specialRoster(def.id) : rosterFor(def.id, options.gender)); // Fixed named-boss wardrobe uses the existing portrait pipeline.
     if (!options.roster && !special) { // Ordinary liches wear their tradition's glyph (same planar family as the named lich) with a random frame and a same-family color, kept on the roster for loot.
-      const patterns = window.SpecialHarlyaoLiches?.ordinaryLichPatterns?.(def.id, random);
+      const patterns = window.SpecialHarlyaoLiches?.ordinaryLichPatterns?.(def.id, random, patternColorFor(def.id, roster.lichDyeId));
       if (patterns) roster.clothingPatterns = patterns;
     }
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.

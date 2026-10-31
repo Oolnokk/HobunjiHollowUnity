@@ -2471,6 +2471,7 @@
   }
 
   function updateBanditToolMesh(c) {
+    window.GhoulSpecialVariants?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Enchanted-weapon particles for the mine's Shadowknights.
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
     const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
     const useRanged = !flaskActive && !!c._rangedMode && !!c._banditRangedToolHolder;
@@ -2825,7 +2826,10 @@
     }
     if (opts.mountSpecies && roster) roster.mountSpecies = opts.mountSpecies; // Seats the rider on a full creature card (e.g. Porakaneki Avengers on Nazgraku).
     if (roster?.mountSpecies && !roster.mountGenotype) roster.mountGenotype = window.CreatureGenetics?.makeDefaultGenotype?.(roster.mountSpecies) || null; // Same coat/pattern roll a wild specimen gets; kept on the roster so a rebuilt avatar keeps its mount.
-    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster); // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
+    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster) styleGhoulRoster(roster);
+    if (roster?.appearance?.speciesId === 'ghoul' && !opts.preserveRoster && (opts.extra?.isGhoulShadowknight || opts.extra?.mineWyrmWitchType)) { // Mine variants: own wardrobe, patterns, and (knights) an enchanted weapon.
+      await window.GhoulSpecialVariants?.style?.(roster, { rnd: deps.rnd, tier, shadowknight: !!opts.extra.isGhoulShadowknight, witchType: opts.extra.mineWyrmWitchType || null });
+    } // Mine and any future ghoul BanditCombat spawns share this one wardrobe/dye authority before portrait and corpse loot are built.
     if (opts.bodyColorsOverride && roster?.appearance) {
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
