@@ -41,7 +41,7 @@ function group() {
 const grp = group();
 const ctx = {
   window, performance: { now: () => 500 }, Math, TILE: 32, surfY: 0,
-  c, grp, dt: 1 / 60, kickPoseHeld: true, aimAngle: 2.4,
+  c, grp, dt: 1 / 60, kickPoseHeld: true, headtakerOwnsFacing: false, aimAngle: 2.4, // The kick fixture remains outside the scoped Headtaker renderer override.
   angleDiff: (target, current) => Math.atan2(Math.sin(target - current), Math.cos(target - current)),
   cameraRelativeCreaturePerps: () => [],
 };
