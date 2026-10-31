@@ -157,6 +157,22 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(omgPoint.row, rivalSite.y + rivalSite.h / 2, 'the rival camp keeps the transverse axis aligned');
   }
 
+  // All independent patrols stop to sleep and re-form separately the next
+  // morning without generating additional physical camps or losing residents.
+  hour = 23;
+  tick(0.21);
+  for (const runtime of [pora, omg]) for (const zoneId of ZONES) {
+    const camp = runtime.debugSnapshot().zones[zoneId].camps.find(c => c.kind === 'small');
+    assert.equal(camp.huntingParties.length, 0, 'all hunting parties return home for nighttime sleep');
+  }
+  hour = 12;
+  tick(0.21);
+  for (const runtime of [pora, omg]) for (const zoneId of ZONES) {
+    const camp = runtime.debugSnapshot().zones[zoneId].camps.find(c => c.kind === 'small');
+    assert.equal(camp.huntingParties.length, camp.cohortSizes.length, 'all historical parties re-form independently the next morning');
+    assert.equal(runtime.debugSnapshot().zones[zoneId].smallCampCount, 1, 'night/day cycle does not add new camp sites');
+  }
+
   // One band per wilderness map, at that map's only Porakaneki hunting camp.
   let debug = pora.debugSnapshot();
   for (const zoneId of ZONES) {
