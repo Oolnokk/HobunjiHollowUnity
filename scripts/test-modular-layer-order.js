@@ -241,6 +241,34 @@ async function run() {
     assert(Math.abs(expected.x-op.points[0][0])<1e-7&&Math.abs(expected.y-op.points[0][1])<1e-7,
       'every expanded top recipe stroke inherits local area before parent');
   }
+  // Selecting a tiny part of a recipe must NOT accidentally capture that one
+  // nested step when the recipe's BOX CENTER lies outside the selected region.
+  const partialRecipeDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  partialRecipeDraft.shafts.hachutuTorchStaff.rigRegions=[{
+    id:'partialStep',label:'Not recipe center',
+    box:{x0:175,y0:276,x1:205,y1:310},
+    transform:{scaleX:2,scaleY:.5,x:120,y:30}
+  }];
+  api.replace(partialRecipeDraft);
+  const partialShaft=api.getConfig().shafts.hachutuTorchStaff;
+  const partialStrokes=partialShaft.overrides.dagger.bridges.strokes;
+  const firstRecipeExpanded=api.expandOps([partialStrokes[0]]);
+  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=276 && op.y<=310),
+    'the source recipe really has an internal junction inside this small region');
+  const unselectedRecipeOps=api.rigBridgeOperations(partialShaft,partialStrokes);
+  assert(unselectedRecipeOps.every(op=>op._rigRegionId !== 'partialStep'),
+    'a placed recipe cannot be partially selected by its internal step positions');
+  const extendedDraft=JSON.parse(JSON.stringify(api.getConfig()));
+  extendedDraft.shafts.hachutuTorchStaff.rigRegions=[{
+    id:'outside',label:'Off-shaft area',
+    box:{x0:-90,y0:1150,x1:80,y1:1375},
+    transform:{scaleX:1.6,scaleY:1.3,x:-50,y:70}
+  }];
+  api.replace(extendedDraft);
+  assert.deepEqual(api.getConfig().shafts.hachutuTorchStaff.rigRegions[0].box,
+    extendedDraft.shafts.hachutuTorchStaff.rigRegions[0].box,
+    'rectangle selections beyond the donor PNG survive validation without being clipped to 450×1204');
+  api.replace(areaDraft); // Restore selected upper-region configuration for existing round-trip tests.
   const regionReload=JSON.parse(JSON.stringify(api.getConfig()));
   api.replace(regionReload);
   assert.deepEqual(api.getConfig().shafts.hachutuTorchStaff.rigRegions,areaShaft.rigRegions,
@@ -417,6 +445,20 @@ async function run() {
   const pointerRecipePoint = bridgeHelpers.logicalPoint({clientX:shownRecipePoint[0],clientY:shownRecipePoint[1]});
   assert.deepEqual(pointerRecipePoint,localRecipePoint,
     'bridge and recipe touch inputs map back into the original saved rig-local frame');
+  const existingArea={id:'movedBand',label:'Moved test area',
+    box:{x0:150,y0:200,x1:245,y1:350},transform:{scaleX:1.3,scaleY:.8,x:33,y:12}};
+  fixture.rigRegions=[existingArea];
+  const rootSelectionPoint=[190,265]; // Lies inside the original area, but new rectangle should be defined in root space.
+  const wholeRigPoint=api.duplicatePoint({x:rootSelectionPoint[0],y:rootSelectionPoint[1]},
+    api.shaftRigTransform(fixture));
+  assert.deepEqual(bridgeHelpers.logicalPoint({
+    clientX:wholeRigPoint.x,clientY:wholeRigPoint.y
+  },true),rootSelectionPoint,
+    'new selection gesture uses inverse overall rig ONLY, not inverse old region');
+  const movedChild=api.rigPoint(fixture,{x:190,y:265},existingArea);
+  assert.deepEqual(bridgeHelpers.logicalPoint({clientX:movedChild.x,clientY:movedChild.y}),rootSelectionPoint,
+    'editing an existing selected child still inverts its local area before editing coordinates');
+  delete fixture.rigRegions; // Later editor mount tests use the original unselected shaft fixture.
   assert(editor.includes('const [x0,y0]=bridgeVisual([box.x0,box.y0],area)'),
     'saved recipe boxes are rendered under their region and overall parent in the mobile preview');
   assert(editor.includes('ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f)'),
