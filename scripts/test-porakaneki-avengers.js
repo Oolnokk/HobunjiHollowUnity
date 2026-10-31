@@ -49,12 +49,14 @@ function makeLayout() {
   };
 }
 const zoneLayouts = new Map(ZONES.map(zoneId => [zoneId, makeLayout()]));
+const huntingSitePreferences = new Map(); // Records per-tribe, per-zone requested map ends for cross-tribe placement assertions.
 function fakeStamp(view, localeDef, opts) {
   view.__stampSeq = (view.__stampSeq || 0) + 1;
   const seq = view.__stampSeq;
   const isChief = localeDef.id === 'locale_porakaneki_camp_chief';
   const x = isChief ? 4 : 10 + (seq % 4) * 20, y = isChief ? 4 : 30 + Math.floor(seq / 4) * 20;
   const id = opts.instanceId;
+  if (!isChief) huntingSitePreferences.set(id, opts.preferredPoint); // Exercises both tribes' actual placement requests despite using a fake stamp.
   for (const object of localeDef.objects) {
     view.objects.push({ id: `${id}_${object.id}`, type: object.kind === 'tent' ? 'tent' : object.kind, key: object.key,
       x: x + object.col, y: y + object.row, w: object.w, h: object.h, rot: object.rot || 0, temporaryLocaleInstanceId: id, destroyed: false });
@@ -118,7 +120,21 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(contextWindow.TribeCamps.get('omgurku'), omg);
   tick(0.21);
 
-  // One band per wilderness map, at that map's first Porakaneki hunting camp.
+  // Each map keeps only one hunting camp per tribe; Omgurku requests the edge
+  // opposite the Porakaneki camp's ACTUAL placement, not just its planned edge.
+  for (const zoneId of ZONES) {
+    assert.equal(pora.debugSnapshot().zones[zoneId].smallCampCount, 1, `${zoneId} has one Porakaneki hunting camp`);
+    assert.equal(omg.debugSnapshot().zones[zoneId].smallCampCount, 1, `${zoneId} has one Omgurku hunting camp`);
+    const poraPoint = huntingSitePreferences.get(`porakaneki_small_${zoneId}_0`);
+    const omgPoint = huntingSitePreferences.get(`omgurku_small_${zoneId}_0`);
+    const rivalSite = pora.occupiedSites(zoneId)[0]; // The first site is always the small camp, not the seasonal chief.
+    assert.equal(poraPoint.col, 0, 'first tribe prefers the west end of a square map');
+    assert.equal(omgPoint.col, rivalSite.x + rivalSite.w / 2 < 48 ? 96 : 0,
+      'second tribe prefers the map end farthest from its actual Porakaneki rival camp');
+    assert.equal(omgPoint.row, rivalSite.y + rivalSite.h / 2, 'the rival camp keeps the transverse axis aligned');
+  }
+
+  // One band per wilderness map, at that map's only Porakaneki hunting camp.
   let debug = pora.debugSnapshot();
   for (const zoneId of ZONES) {
     const camps = debug.zones[zoneId].camps;
