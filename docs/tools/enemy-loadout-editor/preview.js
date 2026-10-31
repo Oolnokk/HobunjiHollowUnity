@@ -67,7 +67,7 @@ const files = [
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
   'js/combat/combat-minion.js?v=20261028a',
-  'js/combat/combat-maskbound-guardian.js?v=20261031h552a81b',
+  'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261031headtaker2', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261031portraitcenter2', // One owner for attach/detach, dodge interruption and victim targeting.
   'js/combat/combat-maskbound-headtaker.js?v=20261031headpitch5', // Actual Headtaker animation and head throw, not a fabricated preview-only pose.
@@ -83,7 +83,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261031h3fcdd3d',
+  'tools/enemy-loadout-editor/source-data.js?v=20261031headtakersource6',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
