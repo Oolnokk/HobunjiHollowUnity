@@ -209,14 +209,11 @@
         const image = raw.image;
         const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
         if (!(width > 0 && height > 0)) throw new Error('Modular fire shaft sprite missing dimensions.');
-        const authored = global.ModularWeapons?.duplicateTransform?.(modularShaft.duplicateTransform)
-          || { x: 0, y: 0, scaleX: 1, scaleY: 1 };
-        const sourceUnit = 0.5 / width; // Foundry composes its source shaft to the canonical 450x1204 reference frame.
-        const frameUnit = 0.5 / 450;
-        const carrier = new THREE.Group(); // Hidden geometry is unnecessary: this transform holds only the live flame sprites.
+        const sourceUnit = 0.5 / width; // Source image pixels map to the fixed 450x1204 shaft reference, independent of its attachment rig.
+        const carrier = new THREE.Group(); // Holds only living shaft flames; the separate mount/primitive transform must never affect these.
         carrier.name = itemKey + '_modular_shaft_fire';
-        carrier.position.set(authored.x * frameUnit, -authored.y * frameUnit, 0);
-        carrier.scale.set(authored.scaleX, authored.scaleY * (1204 / 450) * (width / height), 1); // Fire and shaft use identical X/Y scaling and placement even for nonstandard source PNG sizes.
+        carrier.position.set(0, 0, 0); // The shaft and ignition points always retain their original pose and position.
+        carrier.scale.set(1, (1204 / 450) * (width / height), 1); // Normalize source-image aspect, NOT the rig's X/Y scales.
         carrier.renderOrder = order + 0.005;
         plane.add(carrier); state.owned.push(carrier);
         const visiblePlane = state.plane;
