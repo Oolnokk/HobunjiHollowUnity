@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji Hollow — Multi-sprite Weapon Editor</title>
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<style>
+:root{color-scheme:dark;--bg:#090f17;--pane:#121e2b;--line:#304052;--text:#e8f2ff;--muted:#a0b6cc;--accent:#83bcff;--active:#2c567b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.45 system-ui,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:#23384f;border-radius:8px;padding:8px 10px;cursor:pointer;min-height:34px}
+button[aria-selected="true"],button.active{background:var(--active);border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+input,select,textarea{background:#0b1522;border:1px solid var(--line);border-radius:7px;padding:7px 8px;min-width:0;width:100%}
+textarea{min-height:115px;resize:vertical;font:12px/1.4 ui-monospace,monospace}
+label{display:block;color:var(--muted);font-size:12px;margin:8px 0 4px}
+main{height:100%;display:flex;flex-direction:column;min-width:0}
+header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px;border-bottom:1px solid var(--line);background:#101b29}
+header strong{margin-right:auto;font-size:15px}
+main>.content{display:grid;grid-template-columns:minmax(315px,415px) minmax(240px,1fr);flex:1;min-height:0}
+#side{overflow:auto;background:var(--pane);border-right:1px solid var(--line);padding:12px}
+#stage{display:flex;flex-direction:column;min-height:0;padding:12px;gap:8px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.previewPanel{display:flex;flex-direction:column;min-height:0;flex:1;gap:6px}
+.previewPanel h2{margin:0;font-size:12px;color:#e0edf9}
+.previewCaption{font-size:11px;color:var(--muted)}
+.previewSolo{white-space:nowrap;margin:0;color:#c4dcef}
+.previewSolo input{width:auto;margin:0 4px 0 0;vertical-align:middle}
+#pickPanel{flex:0 0 auto}
+#pickButtons{margin-top:8px}
+#pickButtons button{flex:1 1 120px}
+.previewViewport{flex:1;position:relative;min-height:220px}
+#headViewport{min-height:220px}
+#viewport{min-height:260px}
+#preview,#headPreview{width:100%;height:100%;display:block;touch-action:none;border:1px solid #304052;border-radius:10px;background:radial-gradient(#1a2a39,#0b1119)}
+.previewLegend{position:absolute;left:8px;bottom:8px;pointer-events:none;font:10px/1.35 ui-monospace,monospace;color:#bdcddd;background:#09131bc9;border-radius:6px;padding:4px 6px}
+#status{font:12px/1.5 ui-monospace,monospace;color:#a7d5ff;word-break:break-word}
+#log{max-height:120px;overflow:auto;white-space:pre-wrap;color:#c8cfdb;background:#071019;padding:8px;border-radius:6px}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.row>*{flex:1 1 100px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.tabs{display:flex;gap:6px;margin:12px 0}.tabs button{flex:1}
+.panel{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:#152434}
+.help{font-size:12px;color:var(--muted);margin:6px 0 10px}
+h2{font-size:15px;margin:8px 0 6px}
+h3{font-size:13px;margin:5px 0}
+.layer{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:5px;align-items:center;margin:5px 0}
+.layer button{min-height:32px;padding:5px 8px}
+.layer button.selected{border-color:var(--accent);background:var(--active)}
+.pill{font-size:10px;border-radius:10px;padding:2px 5px;color:#bcd3ea;border:1px solid var(--line)}
+[hidden]{display:none!important}
+@media(max-width:760px){main>.content{grid-template-columns:1fr;grid-template-rows:minmax(300px,45vh) minmax(200px,1fr)}#stage{grid-row:1;padding:8px;overflow-y:auto}#side{grid-row:2;border-right:0;border-top:1px solid var(--line);padding:8px}.previewPanel{flex:none}#headViewport{height:240px}#viewport{height:300px}.previewViewport{flex:none}header{padding:7px}h2{font-size:14px}}
+</style>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="../../js/portrait-utils.js?v=20261030preview3d1"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261030h1493a02"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261030flailfx3"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261030preview3d1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030h1493a02"></script>
+<script src="preview-renderer.js?v=20261030he301a26"></script>
+<script src="pick-on-sprite.js?v=20261030pixelpick1"></script>
+<script defer src="app.js?v=20261030he6ab9c0"></script>
+</head>
+<body>
+<main>
+<header>
+<strong>⛓ Multi-sprite Weapons</strong>
+<button id="save">Save draft</button><button id="restoreDraft" hidden>Load saved draft</button><button id="reset">Reset to repository</button>
+<button id="exportJson">Export JSON</button><button id="exportJs">Export JS config</button>
+<button id="importBtn">Import JSON</button><input type="file" id="importFile" accept=".json,application/json" hidden>
+</header>
+<datalist id="repoSprites"></datalist>
+<div class="content">
+<section id="side" aria-label="Weapon assembly controls">
+<div class="panel">
+<p id="recipeSource" class="help" role="status">Repository settings</p>
+<label for="weapon">Weapon recipe</label>
+<div class="row"><select id="weapon"></select><button id="newWeapon">+ Existing weapon key</button></div>
+<label for="weaponLabel">Display label</label><input id="weaponLabel">
+<label for="baseSpriteGeneral">Base weapon sprite PNG</label><input list="repoSprites" id="baseSpriteGeneral" placeholder="assets/toolsprites/my_weapon.png">
+<p class="help">Only weapons that declare a recipe use this renderer. The weapon key must match an existing TOOL_ITEM_DEFS entry or shape. Export the configuration to commit it for gameplay; local drafts are preview-only.</p>
+</div>
+<nav class="tabs" aria-label="Assembly editor">
+<button data-tab="flails" aria-selected="true">1. Flails</button>
+<button data-tab="layers" aria-selected="false">2. Multi-layer Parts</button>
+</nav>
+<div id="flailsTab">
+<button id="enableFlail">Enable flail assembly for this weapon</button>
+<div id="flailFields">
+<div class="panel">
+<h2>Rigid haft and chain</h2>
+<label for="baseSprite">Haft PNG (existing weapon's base sprite)</label><input list="repoSprites" id="baseSprite" placeholder="assets/toolsprites/hachutu_torch-flail_handle.png">
+<label for="connectorType">Connector type</label><select id="connectorType"><option value="chain">Chain sprite</option><option value="rope">Generated rope (root-totem material)</option></select>
+<div id="chainSpriteRow"><label for="chainSprite">Chain PNG</label><input list="repoSprites" id="chainSprite" placeholder="assets/toolsprites/hachutu_torch-flail_chain.png"></div>
+<div id="ropeFields" class="grid3" hidden><div><label for="ropeLength">Rope length (haft px)</label><input id="ropeLength" type="number" min="2" max="2048" step="1"></div><div><label for="ropeRadius">Rope radius (haft px)</label><input id="ropeRadius" type="number" min=".25" max="30" step=".25"></div><div><label for="ropeColor">Rope tint</label><input id="ropeColor" value="#6B4728"></div></div>
+<div class="grid2">
+<div><label>Haft contact</label><select id="haftMode"><option value="top">Highest opaque pixel</option><option value="bottom">Lowest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
+<div><label>Chain top</label><select id="chainTopMode"><option value="top">Highest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
+<div><label>Chain bottom</label><select id="chainBottomMode"><option value="bottom">Lowest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
+<div><label>Head contact</label><select id="headMode"><option value="bottom">Lowest opaque pixel</option><option value="top">Highest opaque pixel</option><option value="pixel">Explicit pixel</option></select></div>
+</div>
+<div class="grid4">
+<div><label>Haft X</label><input type="number" id="haftX" step="1"></div><div><label>Haft Y</label><input type="number" id="haftY" step="1"></div>
+<div><label>Top X</label><input type="number" id="chainTopX" step="1"></div><div><label>Top Y</label><input type="number" id="chainTopY" step="1"></div>
+<div><label>Bottom X</label><input type="number" id="chainBottomX" step="1"></div><div><label>Bottom Y</label><input type="number" id="chainBottomY" step="1"></div>
+<div><label>Head X</label><input type="number" id="headX" step="1"></div><div><label>Head Y</label><input type="number" id="headY" step="1"></div>
+</div>
+<label for="headAnchorLayer">Head attachment frame</label><select id="headAnchorLayer"></select>
+<div class="grid3">
+<div><label for="chainScaleX">Chain / rope X (width ×)</label><input type="number" id="chainScaleX" step=".05" min=".05" max="8" value="1"></div>
+<div><label for="chainScaleY">Chain / rope Y (length ×)</label><input type="number" id="chainScaleY" step=".05" min=".05" max="8" value="1"></div>
+<div><label for="headScale">Head scale vs handle (×)</label><input type="number" id="headScale" step=".05" min=".05" max="8" value="1"></div>
+</div>
+<p class="help">Both connector axes are relative to the final handle size: X changes chain width or generated rope radius; Y changes its length. The head retains an independent scale.</p>
+<div class="row" id="pickButtons"><button data-pick="haft">Pick haft on sprite</button><button data-pick="chainTop">Pick chain top</button><button data-pick="chainBottom">Pick chain bottom</button><button data-pick="head">Pick head on sprite</button></div>
+<p class="help">Pick on sprite opens the actual PNG at an independently fitted, tappable scale. For the Grapple-Flail head, choose “Between layers (composite)” to place a rope contact in the space between the two sprites. Picked coordinates are saved in original image pixels; no dependence on preview zoom.</p>
+</div>
+<div class="panel">
+<h2>Idle inertia and swing</h2>
+<div class="grid3">
+<div><label for="lag">Travel lag</label><input id="lag" type="number" min="0" max="1" step=".005"></div>
+<div><label for="idleFollow">Idle follow rad/s</label><input id="idleFollow" type="number" min="0.1" max="60" step=".5"></div>
+<div><label for="angularDamping">Angular damping (1/s)</label><input id="angularDamping" type="number" min="0" max="30" step=".5"></div>
+<input id="attackFollow" type="hidden">
+</div><p class="help">Angular damping slows the released chain/head during Hold and Recovery. 0 = no drag; 8 = default (speed halves in about 0.09 s); higher values stop it sooner. Saved in the exported weapon recipe. The Attack Animation Editor previews your actual authored attacks.</p>
+</div>
+</div></div>
+<div id="layersTab" hidden>
+<div class="panel">
+<h2>Ordered sprite stack</h2>
+<div class="row"><select id="stackTarget"><option value="head">Flail head layers</option><option value="weapon">Ordinary weapon overlay layers</option></select><button id="addLayer">+ Add layer</button></div>
+<div id="layerList" aria-label="Sprite stack back to front"></div>
+<p class="help">Layers are drawn from back to front. The particle effect of each layer is inserted immediately after that layer and before the next; opaque artwork above it covers the particles.</p>
+</div>
+<div class="panel" id="layerFields">
+<h3>Selected layer</h3>
+<label for="layerId">Layer ID</label><input id="layerId">
+<label for="layerSprite">Sprite PNG</label><input list="repoSprites" id="layerSprite">
+<div class="grid2">
+<div><label for="layerOffsetX">Offset X (px)</label><input id="layerOffsetX" type="number" step="1"></div>
+<div><label for="layerOffsetY">Offset Y (px)</label><input id="layerOffsetY" type="number" step="1"></div>
+</div>
+<div class="grid2">
+<div><label for="material">Material response</label>
+<select id="material"><option value="metal">Metal: verdigris and enchantments</option><option value="marker">Marker: tint pixels</option><option value="none">Unmodified</option></select></div>
+<div><label for="vfxType">Interleaved VFX</label><select id="vfxType"><option value="none">None</option><option value="fire">Fire</option></select></div>
+</div>
+<div class="grid2"><div><label for="markerHex">Source marker hex</label><input id="markerHex" placeholder="#7F00FF"></div>
+<div><label for="ragHex">Marker target hex</label><input id="ragHex" placeholder="#E7DDC9"></div></div>
+<div id="fireSettings">
+<div class="grid3">
+<div><label for="fireRate">Motes/s</label><input id="fireRate" type="number" min="0" max="40"></div>
+<div><label for="fireLife">Life (s)</label><input id="fireLife" type="number" min=".1" max="5" step=".05"></div>
+<div><label for="fireSize">Size (world)</label><input id="fireSize" type="number" min=".001" max="2" step=".005"></div>
+</div>
+<label for="fireSpeed">Rise speed (world/s)</label><input id="fireSpeed" type="number" min="0" max="5" step=".01">
+<label for="fireColors">Fire palette (comma-separated hex)</label><input id="fireColors" placeholder="#FFE6A5, #FFAA3E, #FF5F20">
+</div>
+</div>
+</div>
+<div class="panel">
+<h2>Material preview</h2>
+<div class="grid3">
+<div><label for="metalHex">Metal</label><input id="metalHex" value="#CD7F32"></div>
+<div><label for="verdigrisHex">Verdigris</label><input id="verdigrisHex" value="#57B38B"></div>
+<div><label for="oxidation">Oxidation</label><input id="oxidation" type="range" min="0" max="1" step=".1" value=".5"></div>
+</div><p class="help">Preview only. Gameplay takes its actual metal, plating and mastery from the existing gear system.</p>
+</div>
+<div class="row"><button id="copyDebug">Copy diagnostics</button><button id="copyJson">Copy current JSON</button></div>
+<details><summary>Mobile debug log</summary><pre id="log"></pre></details>
+</section>
+<section id="stage" aria-label="Live weapon preview">
+<div class="row"><button id="play">⏸ Pause motion</button><button id="resetView">Reset 3D views</button><label for="scrub">Animation progress</label><input id="scrub" type="range" min="0" max="1" step=".001" value="0"></div>
+<section class="previewPanel" aria-label="Independent head preview">
+<div class="row"><h2>1 · Head / layered part close-up</h2><label class="previewSolo"><input id="soloLayer" type="checkbox"> Solo selected layer</label></div>
+<div class="previewCaption">3D close-up of the actual gameplay head and particle emitter. Drag to orbit; pinch/scroll to zoom. Fire stays live when motion is paused.</div>
+<div id="headViewport" class="previewViewport"><canvas id="headPreview" width="900" height="450" aria-label="Magnified brazier head layers and fire"></canvas><span class="previewLegend">3D head · gameplay particles</span></div>
+</section>
+<section class="previewPanel" aria-label="Complete assembly preview">
+<h2>2 · Combined weapon preview</h2>
+<div class="previewCaption">Actual shared assembly, generated rope and pendulum physics at the game’s 0.5-unit handle width. Drag to orbit; pinch/scroll to zoom.</div>
+<div id="viewport" class="previewViewport"><canvas id="preview" width="900" height="600" aria-label="Complete weapon assembly with visible hanging brazier"></canvas><span class="previewLegend">3D assembly · gameplay scale</span></div>
+</section>
+<div id="status" role="status">Loading authored sprite assets…</div>
+<div id="pickPanel" class="panel" hidden>
+<h2 id="pickTitle">Pick sprite attachment</h2><p id="pickInfo" class="help"></p>
+<canvas id="pickCanvas" width="700" height="500" style="display:block;width:100%;max-height:48vh;aspect-ratio:7/5;background:#0b1522;border:1px solid var(--accent);border-radius:9px;touch-action:manipulation"></canvas>
+<div class="row"><button id="cancelPick">Cancel pick</button></div>
+</div>
+</section>
+</div>
+</main>
+</body>
+</html>

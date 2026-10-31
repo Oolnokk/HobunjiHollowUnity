@@ -1783,6 +1783,8 @@
         // which only fires for entries with a metalKey). Held by Foroji at
         // station_foroji_music (see map_hobunji_town.map.json's toolKey) so
         // he visibly has his instrument out while playing.
+        grappleFlail: { label: 'Grapple-Flail', icon: '🪝', sprite: 'assets/toolsprites/grapple-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'grappleFlail', metalKey: 'tinBronze' }, // Unique rope flail; reuses the same shaft-attached weapon assembly and hit logic.
+        hachutuTorchFlail: { label: 'Hachutu Torch-Flail', icon: '🔥', sprite: 'assets/toolsprites/hachutu_torch-flail_handle.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', shapeKey: 'hachutuTorchFlail', metalKey: 'tinBronze' }, // Unique relic weapon; the haft remains its original grip/hitbox mesh.
         kurraya:      { label: 'Kurraya',       icon: '🎵', sprite: 'assets/toolsprites/kurraya_front.png',        slots: ['instrument'], animStyle: 'strum' },
       };
 
@@ -1913,6 +1915,8 @@
             dmgType: shape.dmgType,
             spinning: shape.spinning,
             weaponIdleClass: shape.weaponIdleClass,
+            spriteLayers: shape.spriteLayers, // Future ordinary multi-PNG shapes inherit the reusable visual layers.
+            weaponAssembly: shape.weaponAssembly, // Future flail shapes inherit their authored chain/head layout.
             shapeKey, metalKey,
             itemKey, // self-reference — lets icon rendering resolve mastery/plating without a separate key param
           };
@@ -16219,6 +16223,8 @@
       // ── Smith-crafted verdigris tools (see craftedToolItemKey) — one per
       // TOOL_ITEM_DEFS entry carrying a metalKey. Sellable like the starting
       // 5 hand-authored tool keys just above.
+      ITEM_DEFS.grappleFlail = { icon: '🪝', label: 'Grapple-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Flail', 'Grapple'], desc: 'A two-part metal grapple head suspended on a generated rope.' }; // Inventory metadata only; acquisition remains authored separately.
+      ITEM_DEFS.hachutuTorchFlail = { icon: '🔥', label: 'Hachutu Torch-Flail', cat: 'tool', sellPrice: 0, tags: ['Weapon', 'Hachutu', 'Flail'], desc: 'A Hachutu flail with a suspended, layered torch brazier.' }; // Unique, non-smithing weapon registered for inventory lookups without unlocking it by default.
       Object.entries(TOOL_ITEM_DEFS).forEach(([key, def]) => {
         if (!def.metalKey || ITEM_DEFS[key]) return;
         const shape = HELD_SHAPE_DEFS[def.shapeKey];
@@ -22952,6 +22958,7 @@
         // updateToolMesh's baseRotZ for why.
         g.userData.toolPlane = plane;
         _markPngPlane(g);
+        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
         return g;
       }
 
@@ -23849,6 +23856,15 @@
         // what's-left formula (dig/fill/refill, and any combat swing that
         // didn't set holdS).
         const HF = SharedAttackPose.holdFrac(SF, combatSwingAnim ? combatSwingHoldS : 0, toolSwingDur); // Shared with enemies.
+        const swingWindupPitch = Number(combatSwingPose?.windup?.pitch); // Authored tool pitch endpoints determine the flail's hold-through direction.
+        const swingStrikePitch = Number(combatSwingPose?.strike?.pitch);
+        window.HobunjiWeaponSpriteAssemblies?.setAction(toolMeshMap[activeTool], {
+          attacking: activeTool === 'weapon' && toolSwingT > 0, progress,
+          movementPosition: playerMesh.position, // Character-world locomotion, not the swing-animated hand pivot; used for the hanging chain's lag.
+          windupFrac: WF, strikeFrac: SF, holdFrac: combatSwingSequenceHoldFrac ?? HF,
+          yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(combatSwingPose?.windup, combatSwingPose?.strike, combatSwingPower, combatSwingSign), // Match signed, power-scaled tool and body sweep travel.
+          pitchTravelDeg: Number.isFinite(swingWindupPitch) && Number.isFinite(swingStrikePitch) ? (swingStrikePitch - swingWindupPitch) * combatSwingPower : undefined, // Match SharedAttackPose's actual power-scaled pitch lerp.
+        }); // Late enough to pass real, eased weapon timing. Pre-render uses the final shaft pitch on this same frame.
 
         let posePlaneMirrorSign = null; // Pose-authored attacks can return to a different left/right Neutral than the one they started from.
         if (combatSwingAnim && combatSwingPose) {

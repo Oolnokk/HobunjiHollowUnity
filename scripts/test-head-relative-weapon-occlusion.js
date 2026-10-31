@@ -12,7 +12,11 @@ assert.doesNotMatch(compositor, /HeadRelativeWeaponOcclusion|headGroups|headHidd
 assert.match(compositor, /if \(overlayMeshes\.length\) \{\s*const overlayStates = tintOverlay \? prepareSubmergedOverlayStencilMaterials\(overlayMeshes\) : null;/, 'all held tools enter the same overlay and water-tint path');
 assert.match(compositor, /if \(!ground\.length && !topFaceGround\.length && !\(tintCovers\.length && \(held\.length \|\| feet\.length\)\)\) return originalRender/, 'interiors without replay requirements take the ordinary render path');
 assert.doesNotMatch(editor, /HeadRelativeWeaponOcclusion|headOcclusion|weapon\.visible = false/, 'the attack editor cannot mask or temporarily hide head-anchored tools');
-assert.match(editor, /controls\.update\(\);\s*renderer\.render\(scene, camera\);/, 'preview tools render once through the regular renderer');
+const animationStart = editor.indexOf('function animate()'); // Inspect the actual editor preview loop rather than assuming no weapon animation call can appear between controls and render.
+const animationBody = editor.slice(animationStart, editor.indexOf('\nanimate();', animationStart));
+assert(animationStart >= 0 && animationBody.includes('controls.update();'), 'preview controls update in the animation loop');
+assert.equal((animationBody.match(/renderer\.render\(scene, camera\);/g) || []).length, 1, 'preview tools render exactly once through the regular renderer');
+assert(animationBody.indexOf('controls.update();') < animationBody.indexOf('renderer.render(scene, camera);'), 'controls update before the regular render');
 assert.doesNotMatch(ranged, /headRelativeBackPlane/, 'ranged poses no longer tag the owner rear silhouette');
 assert.match(ranged, /if \(pose\.headRelative && attach && c\.avatarRef\?\.group\)/, 'mouth-relative attachment remains supported');
 assert.doesNotMatch(loader, /head-relative-weapon-occlusion/, 'the retired rear-mask module is not loaded');

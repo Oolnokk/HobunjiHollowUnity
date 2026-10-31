@@ -104,6 +104,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261030h645b148"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261030flailmerged2"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
+<script src="../../js/weapon-layer-effects.js?v=20261030flailmerged2"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261030flailmerged2"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -320,7 +325,7 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261030hec64ffe"></script>
+<script src="../../js/held-action-animations.js?v=20261030flailmerged1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
@@ -597,7 +602,8 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    'Latest: head-anchored tools no longer use the owner’s rear silhouette to mask them.',
+    'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
+    (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
     `Head vertex overlay: ${$('showHeadSkinVertices').checked ? `${headSkinVertexCount} unique weighted vertices shown` : 'hidden'}`,
@@ -886,6 +892,8 @@ $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
 // shape, and it's obvious which end is the tool's business end.
 const TOOL_MODEL_WIDTH = 0.5;
 const TOOL_SPRITE_DEFS = {
+  grappleFlail: { label: 'Grapple-Flail (rope sweep)', sprite: '../../assets/toolsprites/grapple-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  hachutuTorchFlail: { label: 'Hachutu Torch-Flail (sweep)', sprite: '../../assets/toolsprites/hachutu_torch-flail_handle.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   hatchet:      { label: 'Hatchet (sweep)',       sprite: '../../assets/toolsprites/axe_hatchet.png',          animStyle: 'sweep',  usesWeaponStanceBasis: true },
   throwingflask:{ label: 'Throwing Flask (hatchet throw)', sprite: '../../assets/objectsprites/throwing_flask.png', animStyle: 'chop', usesWeaponStanceBasis: true },
   pickshovel:   { label: 'Pick-Shovel (thrust)',  sprite: '../../assets/toolsprites/shovel_pickshovel.png',    animStyle: 'thrust', usesWeaponStanceBasis: true },
@@ -936,6 +944,7 @@ function buildToolPlaneMesh(toolKey) {
       g.rotation.z = 0; // Parent stays identity-oriented; pose rotation remains owned by toolHolder.
       g.userData.toolEndFlipBase = def.flip === true;
       g.userData.toolPlane = plane; // Lets applyPoseToRig derive the sprite basis from the previewed animation style, exactly like game.js.
+      window.HobunjiWeaponSpriteAssemblies?.decorate(g, toolKey, def, { THREE }); // Matching gameplay layered/chain visual; haft remains the authored pose authority.
       // Mirror the sprite itself (not just its position/rotation) when the
       // pose has been flipped across the midline, so asymmetric tools (e.g.
       // an axe head) stay on the correct side instead of appearing reversed.
@@ -950,7 +959,7 @@ async function setToolSprite(toolKey) {
   const g = await buildToolPlaneMesh(toolKey);
   if (requestId !== toolSpriteRequestId) { if (g) disposeToolPlaneMesh(g); return; }
   window.HobunjiDualWieldWeaponVisuals?.teardown?.();
-  if (toolPlaneMesh) { toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  if (toolPlaneMesh) { window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
   toolPlaneMesh = g;
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
@@ -2430,6 +2439,19 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+let lastFlailPreviewT = -1; // Detect timeline seeks for deterministic physics reconstruction.
+document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parameter edits also invalidate a paused physical preview.
+function updatePreviewFlail(sampleT, sampleDt) {
+  window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
+    attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
+    movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
+    windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
+    yawTravelDeg: window.HobunjiWeaponSpriteAssemblies?.flailYawTravel(anim.poses?.windup, anim.poses?.strike), // Authored travel remains available in mobile diagnostics.
+    pitchTravelDeg: (Number(anim.poses?.strike?.pitch) || 0) - (Number(anim.poses?.windup?.pitch) || 0),
+  }); // Shared runtime keeps gravity through windup, straightens during strike, and releases physical momentum during Hold.
+  window.HobunjiWeaponSpriteAssemblies?.tick(sampleDt); // No gameplay scheduler runs in the standalone ESM preview.
+}
+
 let lastFrameTime = performance.now();
 function animate() {
   requestAnimationFrame(animate);
@@ -2448,6 +2470,19 @@ function animate() {
   $('phasePill').textContent = `phase: ${phase} (${Math.round(previewT * 100)}%)`;
   updateTimelineMarker(previewT);
   controls.update();
+  const flailPreviewChanged = previewT !== lastFlailPreviewT; // Paused scrubbing reconstructs momentum from the complete preceding swing.
+  if (!playing && flailPreviewChanged) {
+    applyPoseToRig(poseAt(0).pose);
+    updatePreviewFlail(0, 0);
+    const replaySteps = Math.ceil(previewT * Math.max(0.05, anim.durationS) * 120); // Same physical timeline at 120 Hz, including direct seeks into Hold.
+    for (let step = 1; step <= replaySteps; step++) { // Only replay on a changed scrub position, never continuously while paused.
+      const sampleT = previewT * step / replaySteps; // Normalized replay time supplies both pose and connector input.
+      applyPoseToRig(poseAt(sampleT).pose);
+      updatePreviewFlail(sampleT, Math.max(0.05, anim.durationS) * previewT / replaySteps);
+    }
+    refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
+  } else updatePreviewFlail(previewT, playing ? dt : 0);
+  lastFlailPreviewT = previewT;
   renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();

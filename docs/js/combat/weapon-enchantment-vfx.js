@@ -610,7 +610,8 @@
       emitter.accumulator += dt * emissionPerSecond;
       while (emitter.accumulator >= 1 && emitter.particles.length < MAX_PARTICLES_PER_PLANE) {
         emitter.accumulator -= 1;
-        spawnParticle(emitter, snapshot.mask, snapshot);
+        const originMask = snapshot.maskByPlane?.get(emitter.plane) || snapshot.mask; // Multi-sprite flails sample only visible metal pixels from each assembled head layer.
+        if (originMask?.indices?.length) spawnParticle(emitter, originMask, snapshot);
       }
       // Sprites are independent children of the plane, not texture-masked to its metal.
       // The held-weapon x-ray pass scissored to the mesh box, however, so grow
@@ -640,6 +641,19 @@
     const heldVisual = heldVisualForWeapon(weaponKey); // Used as the exact makeToolPlaneMesh object carrying the rendered PNG plane.
     const spritePath = sourceSpriteForWeapon(weaponKey); // Used to scan the untouched authored PNG for verdigris-compatible metal pixels.
     if (!heldVisual?.userData?.toolPlane || !spritePath) return { weaponKey, visual, heldVisual, spritePath, mask: null, counts: planarCounts(weaponKey), planes: [] };
+    const assembly = window.HobunjiWeaponSpriteAssemblies; // Flail layer renderer owns the final visible head masks.
+    if (assembly?.definitionFor?.(weaponKey, window.Combat?.deps?.TOOL_ITEM_DEFS?.[weaponKey])) {
+      // No fallback to the naked haft for an authored assembly while its sprites are
+      // still loading; the next periodic scan picks up ready visible-metal masks.
+      const targets = assembly.enchantmentTargets(heldVisual); // Each target is one ordered metal layer and its post-occlusion pixel mask.
+      const planes = targets.map(target => target.plane);
+      const maskByPlane = new Map(targets.map(target => [target.plane, target.mask]));
+      const matched = targets.reduce((sum, target) => sum + target.mask.matchedMetalPixels, 0);
+      const mask = targets[0]?.mask
+        ? { indices: targets[0].mask.indices, matchedMetalPixels: matched }
+        : null;
+      return { weaponKey, visual, heldVisual, spritePath, mask, maskByPlane, counts: planarCounts(weaponKey), planes };
+    }
     const mask = await metalMaskForSprite(spritePath); // Used as the exact legal particle-origin set.
     if (activeHeldWeaponKey() !== weaponKey || directHeldVisual(weaponKey) !== heldVisual) return null; // A mask decoded after a same-key mesh rebuild must not bind to the old mesh.
     const planes = particlePlanesForVisual(heldVisual); // Used to target one normal blade or both visible dual-wield blade copies.

@@ -127,6 +127,7 @@ for (const key of ['dagger', 'kylie', 'daggersword-nativecopper', 'warCleaver', 
 assert.equal(selectStance('weapon', 'hatchet', {}), lightPose);
 // A stale holder/plane matrix used to make idle placement depend on the last render.
 // Run the production sync ordering with a matrix owner that marks its bake.
+assert.match(visualSource, /function syncAssemblyLayers\(/, 'the shared flail/layer duplicate renderer remains installed');
 const syncStart = visualSource.indexOf('  function syncNow(');
 const syncEnd = visualSource.indexOf('  function transformSocketForHand(', syncStart);
 for (const editor of [true, false]) {
@@ -140,7 +141,7 @@ for (const editor of [true, false]) {
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
-    inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {},
+    inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // Only stance order is under test; layered sprite copies need real meshes.
     idleOffhandLocalTransform() {
       assert.equal(operations[0], editor ? 'editor-bake' : 'game-bake', 'source matrices must be baked before calculating the offhand idle pose');
       operations.push('idle-pose'); return { position: new Vector(), quaternion: new Quaternion() };
@@ -164,7 +165,7 @@ for (const editor of [true, false]) {
   const poses = { main: { id: 'main' }, offhand: { id: 'offhand' } };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
-    inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {},
+    inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // The authored offhand pose is independent of sprite-copy synchronization.
     idleOffhandLocalTransform() { operations.push('offhand-derived-from-holder'); return { position: new Vector(), quaternion: new Quaternion() }; },
     idleStancePoses: () => poses,
     idleCounterpartTransform(_current, source, derived) { operations.push(`${derived.id}-derived-from-${source.id}`); return { position: new Vector(), quaternion: new Quaternion() }; },
