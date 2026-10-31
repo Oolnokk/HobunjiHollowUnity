@@ -799,7 +799,7 @@
         getDiagnostics:()=>({progress:1,vegetationKind:'temple-mixed',recipeCount:recipes.length,vegetationRecipes:recipes,
           shapeStrands:targetGrowth.userData.generatedStrands,shrinkwrapRays:targetGrowth.children.reduce((n,layer)=>n+(layer.userData.surfaceGrowthStats?.shrinkwrapRays||0),0),
           shrinkwrapHits:targetGrowth.children.reduce((n,layer)=>n+(layer.userData.surfaceGrowthStats?.shrinkwrapHits||0),0)}),
-        dispose(){if(disposed)return;disposed=true;group.parent?.remove(group);disposeGenerated([targetGrowth]);}};
+        dispose(){if(disposed)return;disposed=true;group.parent?.remove(group);target.traverse(mesh=>{if(mesh.isInstancedMesh)mesh.dispose?.();});disposeGenerated([targetGrowth]);}};
       complete=true;return api;
     }finally{if(!complete)disposeGenerated([targetGrowth]);}
   }

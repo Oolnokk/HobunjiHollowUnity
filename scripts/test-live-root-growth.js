@@ -547,7 +547,7 @@ console.log('Live root growth: wrap reuse, source preservation, deterministic no
   assert(varied.filter(r=>r.kind==='vines').every(r=>r.radiusScaleMin===1&&r.radiusScaleMax===1.5));
   assert.equal(JSON.stringify(templeRecipes),templeSnapshot,'preparing cover must not mutate the authored Temple configuration');
   assert.equal(templeCover.getProgress(),1);assert.equal(templeCover.getDiagnostics().recipeCount,4);
-  const templeGeometry=templeCover.targetGrowth.children[0].children[0].geometry;templeCover.dispose();assert(templeGeometry.disposed);assert.equal(roomFloor.geometry.disposed,undefined);
+  const templeGeometry=templeCover.targetGrowth.children[0].children[0].geometry;let instanceDisposals=0;templeCover.target.isInstancedMesh=true;templeCover.target.dispose=()=>{instanceDisposals++;};templeCover.dispose();assert.equal(instanceDisposals,1,'prepared scenery must release its owned instance buffers without disposing borrowed source geometry');assert(templeGeometry.disposed);assert.equal(roomFloor.geometry.disposed,undefined);
   const cancelCover={aborted:false},coverLayers=[];
   await assert.rejects(feature.createCoverAsync({...options,target:ruinSubstrate,recipes:templeRecipes,signal:cancelCover,schedule:async()=>{},
     foliage:{...foliage,buildSurfaceGrowth(parent,recipe){const layer=fakeGrowth(parent,recipe);coverLayers.push(layer);cancelCover.aborted=true;return layer;}}}),error=>error.name==='AbortError');

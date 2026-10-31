@@ -20,7 +20,7 @@
 <script src="js/procedural-furniture.js"></script>
 <script src="js/authored-furniture-runtime.js"></script>
 <script src="js/live-root-network.js?v=1"></script>
-<script src="js/live-root-growth.js?v=20261031h3576e03"></script>
+<script src="js/live-root-growth.js?v=20261031h2fa53a0"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -56,7 +56,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </div><p id="colorStatus" class="muted" role="status">Stone #363733 · Roots #24211d</p><button id="copyColors" type="button">Copy colours to share</button>
 <button id="previewRuin" type="button" style="width:100%;margin-top:8px">Build ruin preview</button>
 <p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
-<p id="ruinStatus" role="status">Uses the existing ruin generator. Its floor uses giant, flattened wilderness boulders. The farm cliff texture is fitted to detected surfaces after rockification, then the room receives denser roots and vines based on the Life Temple’s authored root and vine layers before you grow the selected furniture from that vegetation.</p>
+<p id="ruinStatus" role="status">Uses the existing ruin generator. Its stone floor and initial root/vine covering repeat in 4 × 4 quarter-scale tiles, including quarter-height relief. The farm cliff texture is fitted to detected surfaces after rockification, then the room receives denser roots and vines based on the Life Temple’s authored root and vine layers before you grow the selected furniture from that vegetation.</p>
 <p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
@@ -106,10 +106,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Furniture now grows through a connected, piece-by-piece root network. Roots narrow through thin details, wind into knots inside broad pieces, and fork to every touching neighbour. Detail preservation, knot density and minimum preferred thickness save with the recipe.</p></section>
+<section><h2>Latest change</h2><p>The finished stone floor, roots and vines now scale uniformly to 25% and repeat in 4 × 4 tiles across the same room. Wall vegetation and live-grown furniture keep their original scale.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031h6ef236e"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031h8051a67"></script>
 </body></html>
