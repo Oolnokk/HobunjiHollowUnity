@@ -54,6 +54,7 @@ const server=http.createServer((request,response)=>{
       check(!!visible?.isMesh,'the floor must be a regular masked THREE.Mesh, not a rectangular InstancedMesh');
       check(!visible.isInstancedMesh,'multiroom floor cannot repeat unmasked 4×4 tiles');
       check(room.floorStats.levelCount===3&&room.floorStats.voidCells===131,'the real THREE floor retains three elevations and all absent cells');
+      check(!room.floorStats.pos&&!room.floorStats.idx&&!room.floorStats.uv,'mobile diagnostics must not retain temporary full-resolution stone arrays');
       check(room.floorStones<cells.length,'irregular boulders must join multiple floor cells');
       check(visible.geometry.index.count>0&&visible.geometry.getAttribute('uv').count>0,'the genuine mapped floor needs renderable triangles and UVs');
       check(visible.userData.stoneSurfaceMapping?.postRockification===true,'natural stone UVs must map after geometry generation');
