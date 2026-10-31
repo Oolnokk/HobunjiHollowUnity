@@ -6117,7 +6117,14 @@
         c.avatarRef?.setHeadAdditiveRotation?.(vocalHeadNodDeg);
         const meleeLeapY = c._banditLungeHopCurrent || 0; // Used by pitched enemy lunges to raise the actual rendered body/hitbox volume.
         const tx = c.x / TILE, tz = c.y / TILE, ty = surfY + (c.groundLift ?? c.halfHeight) * scaleY + meleeLeapY;
-        if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
+        const headtakerAttached = c.maskboundTroop === 'headtaker' && c._attachment?.id === 'maskbound-headtaker' && c._attachment.stage === 'attached'; // Shared grapple owns its exact world-space position until dodge, death or completion.
+        const headtakerDescending = c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isDescending?.(c) === true; // During skyfall, combat owns Y; ordinary renderer still updates feet and other animations.
+        const headtakerOwnsFacing = headtakerAttached || headtakerDescending; // Only this pose is excluded from the generic target-facing billboard deadzone.
+        if (headtakerAttached) {
+          grp.position.set(tx, ty, tz); // Follow a moving/dodging victim without the ordinary 100ms/140ms sprite-position lag.
+        } else if (headtakerDescending) {
+          grp.position.x = tx; grp.position.z = tz; // Preserve the combat module's exact sky-to-host Y interpolation rather than ease toward it again.
+        } else if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
           grp.position.set(tx, ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
           c._wildlifeVisualLodJustWoke = false;
         } else {
@@ -6170,7 +6177,8 @@
         // Prism (group) tracks the raw aim angle freely — deadzone only governs
         // the interior PNG plane, not the prism's spatial orientation or the
         // movement/targeting logic that drives aimAngle.
-        if (kickPoseHeld) c.groupRot = rawTargetRotY; // Finish the 180° turn at impact rather than leaving the render rig slowly rotating through the held pose.
+        if (headtakerOwnsFacing) { /* Skyfall/grapple already authored groupRot parallel to the target portrait, including its 15-degree forward lean. */ }
+        else if (kickPoseHeld) c.groupRot = rawTargetRotY; // Finish the 180° turn at impact rather than leaving the render rig slowly rotating through the held pose.
         else c.groupRot += angleDiff(rawTargetRotY, c.groupRot) * Math.min(1, dt * 10);
         grp.rotation.y = c.groupRot;
 
@@ -6192,7 +6200,9 @@
         c.perpState.correctiveYawOffset = -(c.def.aimAngleOffset || 0); // Convert world-bearing hints into this creature's sprite yaw convention.
         window.PerpRotation.setMovementHint(c.perpState, creatureIsMoving ? Math.atan2(creatureMoveX, creatureMoveY) : null);
         const shoulderPetBypassesPlaneDeadzone = c.stableRole === 'shoulderPet';
-        if (kickPoseHeld) {
+        if (headtakerOwnsFacing) {
+          c.pngRot = c.groupRot; // Portrait, legs, and hands stay in the grapple frame even while the victim turns or moves.
+        } else if (kickPoseHeld) {
           // Preserve the same camera-facing PNG orientation across the full kick hold. Camera deadzone easing must not keep turning a supposedly frozen silhouette.
         } else if (shoulderPetBypassesPlaneDeadzone) {
           // A perched animal already gets its final orientation from the authored

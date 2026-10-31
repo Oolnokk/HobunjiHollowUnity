@@ -208,7 +208,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
+  <script src="js/procedural-leg-animation.js?v=20261031footvisibility4"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -330,7 +330,7 @@
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
   <script src="js/combat/combat-animal-attacks.js?v=20261031responsive4"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
-  <script src="js/combat/combat-attach.js?v=20261031rescuecheck2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
+  <script src="js/combat/combat-attach.js?v=20261031portraitcenter2"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261030h5bdb79c"></script>
   <script src="js/combat/combat-progression.js?v=20261031aoeWidth1"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
@@ -374,7 +374,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261031h512399e"></script>
-  <script src="js/combat/combat-bandit.js?v=20261031he5e3a69"></script>
+  <script src="js/combat/combat-bandit.js?v=20261031necklock5"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -382,6 +382,7 @@
   <script src="js/combat/combat-minion.js?v=20261027maskbound1"></script>
   <script src="js/combat/combat-maskbound-guardian.js?v=20261031h552a81b"></script>
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
+  <script src="js/combat/combat-maskbound-headtaker.js?v=20261031headpitch5"></script> <!-- Unarmed Skyfall Head Grip: leap, dodge-only attached struggle, reversible headless portrait and thrown head. -->
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles and static Kanthic spell-plasm puddles, and summons ordinary Minions. -->
   <script src="js/combat/combat-lich.js?v=20261028h66c69cd"></script>
   <script src="js/combat/combat-special-liches.js?v=20261031h362266d"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
@@ -398,7 +399,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261031h944717c"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261031necklock5"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->

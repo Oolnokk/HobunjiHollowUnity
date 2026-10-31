@@ -32,6 +32,13 @@
       wood: SMOKY_YELLOW_ORANGE,
       weapons: Object.freeze(['hachutuTorchFlail']), // The Bulwark swings the torch-flail.
     }),
+    headtaker: Object.freeze({
+      label: 'Maskbound Headtaker',
+      anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.64, headScale: 1, headOffsetY: 0.1 }), // Reacher's narrow frame, about ten percent shorter.
+      gait: Object.freeze({ style: 'maskbound-lurch', dragSide: 'left', cadence: 0.94, stance: 0.62, dragLift: 0.2, lurchDegrees: 16 }),
+      wood: SMOKY_YELLOW_ORANGE,
+      weapons: Object.freeze([]), // Skyfall Head Grip is the only attack; no melee, ranged or held weapon.
+    }),
     reacher: Object.freeze({
       label: 'Maskbound Reacher',
       anatomy: Object.freeze({ rigScaleX: 0.72, rigScaleY: 1.82, headScale: 1, headOffsetY: 0.12 }),
@@ -126,6 +133,15 @@
     if (!entity) return null;
     entity.isMaskboundGuardian = true;
     entity.maskboundTroop = troop.key;
+    if (troop.key === 'headtaker') {
+      entity.def.weaponKey = null; entity.def.weaponShapeKey = null; entity.def.rangedWeaponKey = null;
+      entity.def.banditAbilityLoadout = { tap1: null, tap2: null, hold1: null, hold2: null }; // Prevent fallback weapon AI and exclude ordinary melee cooldowns.
+      if (entity._banditToolHolder) entity._banditToolHolder.visible = false; // Retain the holder only for canonical entity disposal.
+      if (entity._banditRangedToolHolder) entity._banditRangedToolHolder.visible = false;
+      entity.banditWeaponMeshAttached = false;
+      const driver = entity.avatarRef?.handRigAvatarRoot?.userData; // Procedural hands remain free until the head-grip action owns them.
+      if (driver) { driver.proceduralHandToolHolder = null; driver.proceduralHandToolKey = null; }
+    }
     entity.maskboundRigScale = { ...rigScale }; // Mobile-visible confirmation of the shape used in the 3D renderer.
     entity.maskboundGait = { ...(roster.maskboundGait || troop.gait) }; // Copyable per-troop gait values for mobile diagnostics.
     return entity;

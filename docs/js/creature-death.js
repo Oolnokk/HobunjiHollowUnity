@@ -174,6 +174,7 @@
   }
 
   function beginInternal(c, fromX, fromY) {
+    window.MaskboundHeadtaker?.cancel?.(c, 'attacker-died'); // Death immediately releases a puppet's grapple, grips, foot IK and temporary head art.
     // A corpse doesn't get further updateCreatureMesh() calls to keep
     // its resource ring synced/rebuilt, so drop it now rather than
     // leaving a stale 0-health ring hovering over the corpse forever.

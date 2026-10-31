@@ -281,29 +281,57 @@
   // A rider rests above the host; a swarm surrounds the host's *visible*
   // body center. Resolve that height through Combat's existing world-Y hook,
   // which supports differently sized portraits, cliffs and riding.
-  function syncAttachedPosition(c, host, cfg) {
-    const d = deps();
-    c.x = host.x; c.y = host.y;
-    c.facing = Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing);
-    c.vx = 0; c.vy = 0;
-    const authoredLift = Number(c.groundLift ?? c.halfHeight); // The creature renderer's floor-to-root offset; zero is a valid authored ground lift.
-    const ownLift = (Number.isFinite(authoredLift) ? authoredLift : 0.3) * (c.scaleY ?? 1); // Same baseline (and squash scale) used by updateCreatureMesh.
+  // Compute the exact same attachment anchor for a descending attacker without
+  // moving it. Only the Headtaker uses the optional read-only preview; every
+  // existing attach animal still calls syncAttachedPosition as before.
+  function resolveAttachedPose(c, host, cfg) {
+    const d = deps(); // Shared world-height and ground-height providers.
+    // Explicit per-attack pose overrides are optional; ordinary Honeyfuzzle/rider anchors remain unchanged.
+    const custom = cfg.resolvePose?.(c, host, d);
+    if (custom && [custom.x, custom.y, custom.hop, custom.worldY].every(Number.isFinite)) {
+      return {
+        ...custom,
+        facing: Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing),
+      };
+    }
+    const authoredLift = Number(c.groundLift ?? c.halfHeight); // Existing creature centre-to-floor distance.
+    const ownLift = (Number.isFinite(authoredLift) ? authoredLift : 0.3) * (c.scaleY ?? 1);
+    const facing = Number.isFinite(host.facing) ? host.facing : (Number.isFinite(host.angle) ? host.angle : c.facing);
     if (cfg.verticalAnchor === 'center' || cfg.verticalAnchor === 'upper-quarter') {
       const pivotOffset = (Number(c.avatarRef?.frontPlane?.position?.y) || 0) *
-        (Number(c.avatarRef?.group?.scale?.y) || 1); // Honeyfuzzle wing cloud hovers above its root; align the birds, not the root.
-      const hostY = d.getActorWorldY?.(host); // Target's real rendered body center (not its physical top); missing values must not turn into 0.
-      const groundY = d.worldSurfaceY?.(c.x, c.y); // Converts target center into the existing shared hop-offset slot, retaining undefined for the fallback.
-      const offset = (cfg.heightAboveHost ?? 0) + (cfg.verticalAnchor === 'upper-quarter' ? hostHeightUnits(host) * 0.375 : 0); // Center of the uppermost quarter, measured above the actor's body center.
-      c._banditLungeHopCurrent = Number.isFinite(hostY) && Number.isFinite(groundY)
-        ? hostY + offset - groundY - ownLift - pivotOffset
-        : hostHeightUnits(host) * 0.5 + offset - ownLift - pivotOffset;
-      if (Number.isFinite(hostY) && c.avatarRef?.group?.position) {
-        c.avatarRef.group.position.y = hostY + offset - pivotOffset; // Prevent height-lag as the target rises/falls.
-      }
-    } else {
-      c._banditLungeHopCurrent = Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0.1) - ownLift); // Preserve the legacy 0.1 above-head gap for other attach attacks.
+        (Number(c.avatarRef?.group?.scale?.y) || 1);
+      const hostY = d.getActorWorldY?.(host);
+      const groundY = d.worldSurfaceY?.(host.x, host.y);
+      const offset = (cfg.heightAboveHost ?? 0) + (cfg.verticalAnchor === 'upper-quarter' ? hostHeightUnits(host) * 0.375 : 0);
+      return {
+        x: host.x, y: host.y, facing,
+        hop: Number.isFinite(hostY) && Number.isFinite(groundY)
+          ? hostY + offset - groundY - ownLift - pivotOffset
+          : hostHeightUnits(host) * 0.5 + offset - ownLift - pivotOffset,
+        worldY: Number.isFinite(hostY) ? hostY + offset - pivotOffset : null,
+      };
+    }
+    return {
+      x: host.x, y: host.y, facing,
+      hop: Math.max(0, hostHeightUnits(host) + (cfg.heightAboveHost ?? 0.1) - ownLift),
+      worldY: null,
+    };
+  }
+
+  function syncAttachedPosition(c, host, cfg) {
+    const pose = resolveAttachedPose(c, host, cfg); // One source of truth for ordinary attaches and airborne Headtaker arrivals.
+    c.x = pose.x; c.y = pose.y; c.facing = pose.facing;
+    c.vx = 0; c.vy = 0;
+    c._banditLungeHopCurrent = pose.hop;
+    if (pose.worldY !== null && c.avatarRef?.group?.position) {
+      c.avatarRef.group.position.y = pose.worldY; // Preserve the original direct world-space upper-quarter anchor.
     }
     c._attachVisualSpread = cfg.visualSpreadScale ?? 1;
+  }
+
+  function poseFor(c, id, host) {
+    const cfg = configs.get(id); // The landing flight targets this same registered attach pose without taking ownership early.
+    return cfg && c && host ? resolveAttachedPose(c, host, cfg) : null;
   }
 
   function updateAttach(c, state, dt) {
@@ -312,6 +340,12 @@
     const host = state.host;
     if (!state.valid) return false;
     if (!hostAlive(host) || c.health <= 0 || !sameArea(c, host)) { detach(c, state, 'host-lost'); return false; }
+    // A ReDead-style rider is interrupted only by its host's actual dodge roll.
+    // This is opt-in: honeyfuzzle swarms retain all their previous detachment rules.
+    if (cfg.detachOnHostDodge && (host.dodging || Number(host.dodgeT) > 0 || host._enemyDodge)) {
+      detach(c, state, 'host-dodged');
+      return false;
+    }
     state.t += dt;
 
     if (state.stage === 'approach') {
@@ -375,7 +409,32 @@
     return cfg;
   }
 
-  window.Combat.attach = { register, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, isRescueAlly, get rescueCount() { return rescueCount; } };
+  // Non-animal combatants reuse the exact same attach bookkeeping, victim ownership,
+  // collision immunity and teardown; their own combat AI advances the clock.
+  function beginManual(attacker, id, host, options = {}) {
+    const cfg = configs.get(id); // Resolved attack configuration shared with animal-attack registrations.
+    if (!cfg || !attacker || attacker._attachment) return null;
+    const state = { id, cfg }; // Per-instance clock and attach target used by the normal scheduler.
+    startAttach(attacker, state, { target: host });
+    if (!state.valid) return null;
+    if (options.immediate) {
+      state.stage = 'attached'; state.t = 0;
+      attacker._attachment.stage = 'attached';
+      syncAttachedPosition(attacker, host, cfg);
+      cfg.onAttach?.(attacker, host);
+    }
+    return state;
+  }
+  function updateManual(attacker, state, dt) {
+    return !!state && !state.ended && updateAttach(attacker, state, Math.max(0, Number(dt) || 0));
+  }
+  function endManual(attacker, state, reason = 'cancelled') {
+    if (!state || state.ended || !attacker?._attachment) return false;
+    detach(attacker, state, reason);
+    return true;
+  }
+
+  window.Combat.attach = { register, beginManual, updateManual, endManual, poseFor, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, isRescueAlly, get rescueCount() { return rescueCount; } };
 
   // ── Swarm (honeyfuzzle) ──────────────────────────────────────────────
   // Picks a single target and sits on top of it. Almost no direct damage but a

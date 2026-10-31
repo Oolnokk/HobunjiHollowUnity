@@ -360,6 +360,10 @@
         "offsetY": -0.06
       }
     },
+    "maskbound:headtaker": {
+      "rigScale": { "offsetY": 0.1 },
+      "spine": { "hunch": 0.3, "kyphosis": 1 }
+    },
     "maskbound:reacher": {
       "clothing": {
         "hood": {

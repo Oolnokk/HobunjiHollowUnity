@@ -63,7 +63,7 @@ const spawnContext = {
     rollRoster(speciesId, name) {
       return { name, appearance: { speciesId, gender: 'male' }, equippedCosmetics: [], appliedDyes: {} };
     },
-    async makeEntity(opts) { captured = opts; return { enemyClass: opts.enemyClass, rosterRecord: opts.roster, avatarRef: { rigScale: opts.avatarRigScale } }; },
+    async makeEntity(opts) { captured = opts; return { enemyClass: opts.enemyClass, def: { weaponKey: 'dummy', weaponShapeKey: 'dummy', banditAbilityLoadout: { tap1:'swingCombo' } }, _banditToolHolder: { visible: true }, rosterRecord: opts.roster, avatarRef: { rigScale: opts.avatarRigScale } }; },
   },
   HobunjiCharacterRigScale: {
     scaleFor(_species,_gender,profile) {
@@ -86,6 +86,11 @@ vm.runInContext(read('docs/js/combat/combat-maskbound-guardian.js'), spawnContex
     assert.equal(captured.shamblingFootingFraction, 0);
     assert(captured.avatarRigScale.y > 0);
     assert(combat.formatDebug(creature).includes('mask=yes'));
+    if (type === 'headtaker') {
+      assert.equal(creature.def.weaponKey, null, 'Headtaker strips Minion default weapons');
+      assert.equal(creature._banditToolHolder.visible, false, 'Headtaker hides unused weapon visual');
+      assert.equal(creature.def.banditAbilityLoadout.tap1, null, 'Headtaker has no ordinary attack abilities');
+    }
   }
   spawnContext.GameRandom = {random:()=>0};
   const hooded = combat.rollRoster('sentinel');
@@ -99,6 +104,9 @@ vm.runInContext(read('docs/js/combat/combat-maskbound-guardian.js'), spawnContex
   const sentinel = combat.troopTypes.sentinel.anatomy;
   const bulwark = combat.troopTypes.bulwark.anatomy;
   const reacher = combat.troopTypes.reacher.anatomy;
+  const headtaker = combat.troopTypes.headtaker.anatomy;
+  assert(headtaker.rigScaleY < reacher.rigScaleY && headtaker.rigScaleY > sentinel.rigScaleY, 'Headtaker is slightly shorter than Reacher but taller than Sentinel');
+  assert.equal(combat.troopTypes.headtaker.weapons.length, 0, 'Headtaker does not hold a weapon');
   assert.notEqual(sentinel.rigScaleY, bulwark.rigScaleY);
   assert.notEqual(reacher.rigScaleX, bulwark.rigScaleX);
   assert.throws(() => combat.troopFor('__proto__'), /Unknown/);

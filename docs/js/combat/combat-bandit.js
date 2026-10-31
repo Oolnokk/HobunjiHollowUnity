@@ -2023,6 +2023,7 @@
   const BANDIT_NECK_LOOK_RAD = Math.PI / 180;
 
   function _updateBanditNeckYaw(c, targetDeg, dt) {
+    if (c?._maskboundHeadtakerNeckControlled) return; // Headtaker owns only scripted neck rotation; victim remains free to move and animate its body.
     const neck = c.avatarRef?.neckJoint;
     if (!neck?.front || !neck?.back) return;
     const state = c._banditNeckYaw || (c._banditNeckYaw = { currentDeg: 0 });

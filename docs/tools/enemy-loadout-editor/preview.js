@@ -32,7 +32,7 @@ const files = [
   'js/town-mine.js?v=20261028a',
   'js/npc-movement-head-target.js?v=20261028a',
   'js/leg-bones.js?v=20261028a',
-  'js/procedural-leg-animation.js?v=20261031h99e235f',
+  'js/procedural-leg-animation.js?v=20261031footvisibility4',
   'js/procedural-feet-outline-parity.js?v=20261029a',
   'js/png-plane-outline-occluder.js?v=20261029enemyParity1',
   'js/weather-fx.js?v=20261029enemyParity1',
@@ -63,18 +63,21 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261031hbad4f8b',
   'js/alchemy-system.js?v=20261028a',
   'js/combat/enemy-loadout-rules.js?v=20261031h512399e',
-  'js/combat/combat-bandit.js?v=20261031he5e3a69',
+  'js/combat/combat-bandit.js?v=20261031necklock5',
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
   'js/combat/combat-minion.js?v=20261028a',
   'js/combat/combat-maskbound-guardian.js?v=20261031h552a81b',
+  'js/combat/combat-animal-attacks.js?v=20261031headtaker2', // Real animal special registry underlies the shared attachment system.
+  'js/combat/combat-attach.js?v=20261031portraitcenter2', // One owner for attach/detach, dodge interruption and victim targeting.
+  'js/combat/combat-maskbound-headtaker.js?v=20261031headpitch5', // Actual Headtaker animation and head throw, not a fabricated preview-only pose.
   'js/combat/combat-lich.js?v=20261030namedboss2',
   'js/combat/combat-enchantments.js?v=20261031ghoulvar1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
   'js/combat/weapon-enchantment-vfx.js?v=20261031h6c09483',
   'js/combat/ghoul-special-variants.js?v=20261031ghoulvar1',
   'js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1',
   'js/combat/combat-special-liches.js?v=20261031h362266d', // Workshop loads the shipped boss runtime, not a copied test implementation.
-  'js/player-body-transform-composer.js?v=20261030hff4c1d3',
+  'js/player-body-transform-composer.js?v=20261031necklock5',
   'js/drunk-locomotion.js?v=20261029a',
   'js/drunk-prone-composition-bridge.js?v=20261029enemyParity1',
   'config/weapon-trust-visits.js?v=20261028a',
@@ -89,6 +92,10 @@ export class EnemyPreview {
     this.log = log;
     this.random = Math.random;
     this.actor = null;
+    this.headtakerVictim = null; // Transient random bandit used only during Headtaker attack preview.
+    this.headtakerSpawnVersion = 0; // Invalidates asynchronous victim builds when selection, replay or page changes.
+    this.headtakerBuildPending = false; // Prevents simultaneous attack spawns from stacking actors.
+    this.headtakerSeeking = false; // Suppresses background animation ticks during asynchronous preview scrubbing.
     this.paused = false;
     this.motion = 'idle';
     this.speed = 1;
@@ -275,6 +282,8 @@ export class EnemyPreview {
       getActiveRows: () => 1,
       tileSurfaceYInArea: () => 0,
       worldSurfaceY: () => 0,
+      getActorWorldY: entity => entity?.avatarRef?.group?.position?.y ?? entity?.halfHeight ?? 0, // Shared attachment reads the live bandit's actual portrait center.
+      damageCreature: (entity, amount) => { entity.health = Math.max(0, Number(entity.health || 0) - Math.max(0, Number(amount) || 0)); }, // Preview-only lethal hit; never mutate actual game saves.
       markPngPlane: (root) =>
         window.PngPlaneOutlineOccluder.markPngPlane(root),
       setRangedLoadedVisual: (key, loaded, owner) =>
@@ -565,6 +574,7 @@ export class EnemyPreview {
     return this.snapshot(kind, tier, seed);
   }
   replace(next) {
+    this.clearHeadtakerVictim(); // All random victims and attachment effects belong to the previous selected enemy.
     const old = this.actor;
     this.actor = next;
     this.attack = null;
@@ -653,6 +663,7 @@ export class EnemyPreview {
     this.update(0);
     this.scene.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(a.group);
+    if (this.headtakerVictim?.avatarRef?.group) bounds.expandByObject(this.headtakerVictim.avatarRef.group); // Keep both the attacker and generated victim in camera view.
     for (const holder of [
       actor._banditToolHolder,
       actor._banditRangedToolHolder,
@@ -678,11 +689,11 @@ export class EnemyPreview {
       size.z * referenceX * 0.5;
     this.currentFit = { center, distance };
     this.controls.target.copy(center);
-    this.camera.position.set(
-      center.x + distance * 0.08,
-      center.y + distance * 0.08,
-      center.z + distance,
-    );
+    if (this.attack?.id === 'skyfallHeadGrip' && this.headtakerVictim) {
+      this.camera.position.set(center.x, center.y + distance * 0.025, center.z + distance); // The two front-facing portraits read straight-on, not from the default three-quarter workshop angle.
+    } else {
+      this.camera.position.set(center.x + distance * 0.08, center.y + distance * 0.08, center.z + distance);
+    }
     this.controls.update();
   }
   view(back) {
@@ -700,6 +711,7 @@ export class EnemyPreview {
   attackOptions() {
     const actor = this.actor;
     if (!actor) return [];
+    if (actor.maskboundTroop === 'headtaker') return [{ id: 'skyfallHeadGrip', label: 'Skyfall Head Grip · leap / two tugs / final pull / throw' }];
     const list = Object.entries(actor.def.banditAbilityLoadout || {})
       .filter(([, v]) => v)
       .flatMap(([slot, id]) => {
@@ -743,9 +755,133 @@ export class EnemyPreview {
     }
     return list;
   }
+  clearHeadtakerVictim() {
+    this.headtakerSpawnVersion++; // Reject any asynchronous bandit factory result for the previous attack/selection.
+    window.MaskboundHeadtaker?.cancel?.(this.actor, 'workshop-reset'); // Restores head bones, contact legs and hand owners before disposing the victim.
+    const victim = this.headtakerVictim;
+    this.headtakerVictim = null;
+    if (victim) this.discard(victim); // Reuses the ordinary actor/tool/portrait GPU disposer.
+    if (this.dependencies) this.dependencies.hostileObjects = this.actor ? [this.actor] : [];
+    this.headtakerBuildPending = false;
+    this.headtakerSeeking = false;
+  }
+
+  async playHeadtakerAttack(progress = 0, frozen = false) {
+    const attacker = this.actor;
+    if (!attacker || attacker.maskboundTroop !== 'headtaker') return;
+    this.clearHeadtakerVictim();
+    const version = this.headtakerSpawnVersion;
+    this.headtakerBuildPending = true;
+    this.attack = null; // Never advance a stale timeline while the new victim is loading.
+    const ranks = ['grunt', 'lieutenant', 'captain']; // Real BanditCombat rank factories determine gear, anatomy and clothing, not a fixed dummy.
+    const kind = 'bandit:' + ranks[Math.floor(Math.random() * ranks.length)];
+    const seed = 'headtaker-victim-' + Math.random().toString(36).slice(2) + '-' + Date.now();
+    this.log('Generating random ' + kind + ' for the Headtaker grapple preview…'); // Visible progress while the real bandit portrait assets load.
+    const previousTextureTasks = this.textureTasks; // Existing selection's asynchronous weapon-image queue must not be overwritten by the victim.
+    const victimTextureTasks = []; // Isolated texture tasks for this one randomly spawned bandit.
+    this.textureTasks = victimTextureTasks;
+    let victim;
+    try {
+      victim = await window.EnemyLoadoutSourceData.spawn(kind, attacker.banditTier || 0, this.data, { seed });
+      await Promise.allSettled(victimTextureTasks);
+    } catch (error) {
+      if (victim) this.discard(victim);
+      if (version === this.headtakerSpawnVersion) {
+        this.headtakerBuildPending = false;
+        this.log('Headtaker victim spawn failed: ' + (error?.stack || error));
+      }
+      throw error;
+    } finally {
+      if (this.textureTasks === victimTextureTasks) this.textureTasks = previousTextureTasks; // Do not clobber another roll's newer queue.
+    }
+    if (version !== this.headtakerSpawnVersion || this.actor !== attacker) {
+      if (victim) this.discard(victim); // A reroll or fast repeated click must not leak a late-built bandit.
+      return;
+    }
+    this.headtakerBuildPending = false;
+    if (!victim?.avatarRef?.group) throw Error('Random bandit factory did not return a complete portrait actor');
+    this.headtakerVictim = victim;
+    this.dependencies.hostileObjects = [attacker, victim]; // The existing shared attach logic owns both actors for this one attack only.
+    const tile = this.dependencies.TILE; // Preview world-space coordinates use the same tile conversion as the real humanoid factory.
+    attacker.x = -tile * 1.35; attacker.y = 0; attacker.facing = 0;
+    attacker.attackCooldownT = 0; attacker.health = attacker.maxHealth || attacker.health;
+    attacker._banditLungeHopCurrent = 0;
+    attacker.avatarRef.group.position.set(attacker.x / tile, attacker.halfHeight || 0.45, 0);
+    attacker.avatarRef.group.visible = true;
+    victim.x = 0; victim.y = 0; victim.facing = 0;
+    victim.health = victim.maxHealth || victim.health;
+    victim.avatarRef.group.position.set(0, victim.halfHeight || 0.45, 0);
+    victim.avatarRef.group.visible = true;
+    for (const actor of [attacker, victim]) {
+      const avatar = actor.avatarRef;
+      actor.groupRot = actor.pngRot = -Math.PI / 2; // Both front planes face +Z (toward the workshop camera) in the native bandit +X plane convention.
+      avatar.group.rotation.y = -Math.PI / 2;
+      if (avatar.frontPlane) avatar.frontPlane.rotation.y = Math.PI / 2;
+      if (avatar.backPlane) avatar.backPlane.rotation.y = -Math.PI / 2;
+      if (avatar.legsPivot) avatar.legsPivot.rotation.y = 0;
+      avatar.syncHandFrame?.();
+    }
+    if (victim.groundShadow) victim.groundShadow.position.set(0, 0.003, 0);
+    if (attacker.groundShadow) attacker.groundShadow.position.set(-1.35, 0.003, 0);
+    const tuning = window.MaskboundHeadtaker?.tuning;
+    const duration = (tuning?.leapS || 1.15) + (tuning?.reversiblePullS || 1.5) * (tuning?.repetitions || 2)
+      + (tuning?.finalPullS || 5) + (tuning?.throwS || 1.3) + 0.15; // Adds the real tick scheduler's final fractional interval.
+    this.attack = { id: 'skyfallHeadGrip', elapsed: 0, duration, frozen: false, windup: tuning?.leapS || 1.15, strike: duration - (tuning?.leapS || 1.15), victim };
+    this.fit();
+    this.log('Headtaker attacking generated ' + kind + ' · ' + (victim.name || 'random bandit'));
+    if (progress > 0) {
+      // Scrubbing uses the real combat state machine. Wait for the head-only textures before fast-forwarding the lethal pull.
+      this.headtakerSeeking = true;
+      try {
+        const seekTo = Math.min(1, Math.max(0, Number(progress) || 0)) * duration;
+        let awaitedPortrait = false; // Only one asynchronous portrait readiness await per seek.
+        while (version === this.headtakerSpawnVersion && this.attack?.victim === victim && this.attack.elapsed + 0.0001 < seekTo) {
+          this.stepHeadtakerAttack(Math.min(0.05, seekTo - this.attack.elapsed));
+          if (!awaitedPortrait && attacker._attachment?.stage === 'attached') {
+            awaitedPortrait = true;
+            await window.MaskboundHeadtaker?.headArtReady?.(attacker);
+          }
+        }
+      } finally {
+        if (version === this.headtakerSpawnVersion) this.headtakerSeeking = false;
+      }
+    }
+    if (version === this.headtakerSpawnVersion && this.attack) this.attack.frozen = !!frozen;
+  }
+
+  stepHeadtakerAttack(dt) {
+    const attack = this.attack, c = this.actor, victim = this.headtakerVictim;
+    if (attack?.id !== 'skyfallHeadGrip' || !c || victim !== attack.victim || !victim) return;
+    if (!attack.frozen && dt > 0) {
+      window.MaskboundHeadtaker?.update?.(c, dt, victim); // Actual gameplay leap, attachment, 2 tugs, final pull and thrown head.
+      attack.elapsed = Math.min(attack.duration, attack.elapsed + dt);
+    }
+    const tile = this.dependencies.TILE, a = c.avatarRef;
+    a.group.position.x = c.x / tile;
+    a.group.position.z = c.y / tile;
+    // Shared attach already places Y relative to the victim's rendered head. Airborne phases own the usual hop slot.
+    if (c._attachment?.stage !== 'attached' && !window.MaskboundHeadtaker?.isDescending?.(c)) a.group.position.y = (c.halfHeight || 0.45) + (c._banditLungeHopCurrent || 0); // During descent, the combat module owns world-space Y up to the exact victim anchor.
+    a.legs?.update?.(0, 0, false, null, { combat: true }); // Reapply the external per-foot head-grip targets after the preview's ordinary walk update.
+    a.handRigAvatarRoot?.userData?.proceduralHandRig?.applyOwnedPose?.(); // Works without a running game frame scheduler; place hands directly on the bandit's head.
+    const t = attack.elapsed, leap = attack.windup;
+    const tuning = window.MaskboundHeadtaker?.tuning || {};
+    const twoPulls = (tuning.reversiblePullS || 1.5) * (tuning.repetitions || 2); // Shared combat constants own the workshop's phase boundaries.
+    const finalPull = tuning.finalPullS || 3; // Matches the actual three-second pitch/stretch before separation.
+    const phase = t < leap ? 'SKYFALL' : t < leap + twoPulls ? 'HEAD GRIP · TWO PULLS'
+      : t < leap + twoPulls + finalPull ? 'FINAL PULL · NECK PITCH' : 'HEAD THROW';
+    this.onTimeline?.(Math.min(1, t / attack.duration), phase);
+    if (t >= attack.duration && !attack.frozen && !this.headtakerSeeking) {
+      this.attack = null;
+      if (this.loop) void this.play('skyfallHeadGrip').catch(e => this.log(e?.stack || String(e)));
+      else this.onTimeline?.(1, 'FINISHED · PLAY TO REGENERATE');
+    }
+  }
+
   play(id, progress = 0, frozen = false) {
     const c = this.actor;
     if (!c) return;
+    if (id === 'skyfallHeadGrip' && c.maskboundTroop === 'headtaker') return this.playHeadtakerAttack(progress, frozen); // A real random bandit receives the full shared grapple.
+    this.clearHeadtakerVictim(); // Switching to an ordinary attack cleans the preview-only secondary actor.
     const selection = id;
     const parts = id.split(':');
     id = parts[0];
@@ -923,10 +1059,29 @@ export class EnemyPreview {
     }
     window.HarlyaoLichCombat.updateLichHoverPresentation(c, dt);
     const base = c.halfHeight || 0.45;
-    a.group.position.y = c.lichType
-      ? c.groundLift
-      : base + (hover ? 0.45 : 0);
+    if (!(c.maskboundTroop === 'headtaker' && this.attack?.id === 'skyfallHeadGrip')) {
+      a.group.position.y = c.lichType
+        ? c.groundLift
+        : base + (hover ? 0.45 : 0); // Preserve the held airborne/grip height while the Headtaker preview is frozen or seeking.
+    }
+    // Headtaker is now driven by the real combat module below (including disappearance and landing),
+    // rather than applying a second independent fake jump on top of its actual movement.
     if (move) this.grid.position.z = (this.clock * move) % 0.5;
+    if (this.attack?.id === 'skyfallHeadGrip') {
+      if (this.headtakerVictim) {
+        const target = this.headtakerVictim;
+        target.avatarRef.legs?.update?.(dt, 0, false, null, { combat: false }); // Stationary real humanoid with working head rig and costume textures.
+        window.CreatureGenetics?.applyCreatureBillboardScale?.(target.avatarRef.group, {
+          x: target.visualScaleX, y: target.visualScaleY, z: target.visualScaleZ,
+        }, target.scaleY);
+        target.avatarRef.group.position.x = target.x / this.dependencies.TILE;
+        target.avatarRef.group.position.z = target.y / this.dependencies.TILE;
+        target.avatarRef.group.updateWorldMatrix?.(true, true); // Skinning anchors and head-only clone use final world transforms.
+      }
+      this.stepHeadtakerAttack(this.attack.frozen || this.headtakerSeeking ? 0 : dt);
+      window.BanditCombat.updateToolMesh(c);
+      return; // Do not run the generic weapon timeline over the attached animation.
+    }
     if (this.attack) {
       const attack = this.attack;
       if (!attack.frozen) attack.elapsed += dt;
@@ -947,7 +1102,11 @@ export class EnemyPreview {
             );
         }
       }
-      this.onTimeline?.(
+      if (attack.id === 'skyfallHeadGrip') {
+        const time = attack.elapsed; // A labeled timeline distinguishes the two reversible pulls from the final lethal one.
+        const phase = time < 1.15 ? 'SKYFALL' : time < 4.15 ? 'HEAD GRIP · TWO PULLS' : time < 9.15 ? 'FINAL PULL' : 'HEAD THROW';
+        this.onTimeline?.(Math.min(1, time / attack.duration), phase);
+      } else this.onTimeline?.(
         Math.min(1, attack.elapsed / attack.duration),
         attack.elapsed < attack.windup
           ? 'WINDUP'
@@ -972,11 +1131,18 @@ export class EnemyPreview {
         else this.onTimeline?.(0, 'REST');
       }
     }
-    window.BanditCombat.updateToolMesh(c);
+    if (c.maskboundTroop === 'headtaker') {
+      if (c._banditToolHolder) c._banditToolHolder.visible = false; // Workshop only: the game unarms this same troop through its combat module.
+      if (a.handRigAvatarRoot?.userData) {
+        a.handRigAvatarRoot.userData.proceduralHandToolHolder = null;
+        a.handRigAvatarRoot.userData.proceduralHandToolKey = null;
+      }
+    } else window.BanditCombat.updateToolMesh(c);
     const travelGaze = window.BanditCombat.updateMovementHeadLook(c, dt, move > 0, c.facing);
     if (!travelGaze) window.BanditCombat.restNeckLook(c, dt); // Same idle neck update the game's hostile loop runs; applies the body-yaw counter-turn.
   }
   discard(actor) {
+    window.MaskboundHeadtaker?.cancel?.(actor, 'workshop-dispose'); // Clear any temporary rig ownership before freeing GPU objects.
     if(actor?.isSpecialLich) {
       window.SpecialHarlyaoLiches?.applyPlasmSkin?.(actor,false);
       window.SpecialHarlyaoLiches?.releaseWarhammer?.(actor);
@@ -998,6 +1164,7 @@ export class EnemyPreview {
     for (const texture of textures) texture.dispose();
   }
   dispose() {
+    this.clearHeadtakerVictim();
     cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();
     if (this.actor) this.discard(this.actor);
