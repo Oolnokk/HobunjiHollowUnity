@@ -379,13 +379,50 @@
     return { a, b, c, d, e: target.start.x + ox - a * src.start.x - c * src.start.y,
       f: target.start.y + oy - b * src.start.x - d * src.start.y }; // Exact Canvas affine matrix.
   }
+  function multiplyAffine(parent, child) {
+    // Compose a primitive's local transform underneath the attachment rig, never underneath the shaft sprite.
+    return {
+      a: parent.a * child.a + parent.c * child.b,
+      b: parent.b * child.a + parent.d * child.b,
+      c: parent.a * child.c + parent.c * child.d,
+      d: parent.b * child.c + parent.d * child.d,
+      e: parent.a * child.e + parent.c * child.f + parent.e,
+      f: parent.b * child.e + parent.d * child.f + parent.f,
+    };
+  }
+  function attachmentRig(shaft, head, values) {
+    const layout = shaft?.duplicateFrom ? duplicateTransform(shaft.duplicateTransform) : duplicateTransform();
+    const parent = {
+      a: layout.scaleX, b: 0, c: 0, d: layout.scaleY,
+      e: 225 + layout.x - 225 * layout.scaleX,
+      f: 602 + layout.y - 602 * layout.scaleY,
+    }; // Parent attachment primitive transform; shaft image and shaft VFX are intentionally siblings, not children.
+    const required = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
+    const compatible = (shaft?.mounts || []).map((mount, index) => ({ mount, index }))
+      .filter(entry => entry.mount.type === required);
+    const selected = compatible.length ? compatible : (shaft?.mounts || []).slice(0, 1).map((mount, index) => ({ mount, index }));
+    const children = selected.map(({ mount, index }) => {
+      const localMatrix = headTransform(mount, values, head.mount); // Fit the primitive inside the *unscaled* mounting rig.
+      return {
+        kind: 'mount', index, type: mount.type, localMount: mount,
+        worldMount: { type: mount.type, start: duplicatePoint(mount.start, layout), end: duplicatePoint(mount.end, layout) },
+        children: [{
+          kind: 'primitive', source: 'head', localMatrix,
+          worldMatrix: multiplyAffine(parent, localMatrix), // The child inherits translation and nonuniform scale in both axes.
+        }],
+      };
+    }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
+    return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
+  }
   function compositionFrame(shaft, head, bounds, values) {
-    let left = 0, top = 0, right = 450, bottom = 1204; // Fixed shaft envelope; only transformed attachment/head geometry can expand the frame.
-    for (const mount of renderingMounts(shaft, head)) {
-      const matrix = headTransform(mount, values, head.mount); // Same transform determines bounds and eventual drawing.
-      for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
-        const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
-        left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+    let left = 0, top = 0, right = 450, bottom = 1204; // Fixed shaft envelope; only the rig's child primitives can expand the frame.
+    for (const mount of attachmentRig(shaft, head, values).children) {
+      for (const primitive of mount.children) {
+        const matrix = primitive.worldMatrix; // Same parent*child transform that the canvas renderer uses.
+        for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
+          const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
+          left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+        }
       }
     }
     left = Math.floor(left) - 4; top = Math.floor(top) - 4;
@@ -473,15 +510,26 @@
         }
       }
       function paintHeads() {
-        for (const mount of renderingMounts(shaft, head)) {
-          const matrix = headTransform(mount, values, head.mount); // Each head uses the exact transform used to expand bounds.
-          ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-          ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
-          if (protectedCtx && values.layerOrder === 'head-over-haft') {
-            protectedCtx.save(); protectedCtx.globalCompositeOperation = 'destination-out'; // Metal head pixels occlude the underlying wood, not vice versa.
-            protectedCtx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
-            protectedCtx.drawImage(headImage, 0, 0, 450, 1204); protectedCtx.restore();
+        const rig = attachmentRig(shaft, head, values); // Explicit parent -> mounting lines -> head primitives hierarchy.
+        const needsParent = rig.parent.a !== 1 || rig.parent.d !== 1 || rig.parent.e !== 0 || rig.parent.f !== 0;
+        const drawChildren = (context, eraseShaft = false) => {
+          context.save(); // Parent is active ONLY around rig children, never around paintHaft().
+          if (eraseShaft) context.globalCompositeOperation = 'destination-out';
+          if (needsParent) {
+            const t = rig.parent;
+            context.transform(t.a, t.b, t.c, t.d, t.e, t.f); // One parent scaling rig; all primitives and sockets are its children.
           }
+          for (const mounting of rig.children) for (const primitive of mounting.children) {
+            const t = primitive.localMatrix; // Local fit is independent from the duplicated rig's scale/translation.
+            context.save(); context.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+            context.drawImage(headImage, 0, 0, 450, 1204);
+            context.restore();
+          }
+          context.restore();
+        };
+        drawChildren(ctx);
+        if (protectedCtx && values.layerOrder === 'head-over-haft') {
+          drawChildren(protectedCtx, true); // The same parent and descendants occlude only covered nonmetal-shaft pixels.
         }
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
@@ -539,6 +587,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftMounts, JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftMounts, attachmentRig, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);
