@@ -166,6 +166,22 @@
       }
       for(const m of syntheticMats)m.dispose();syntheticMats=[];
       upper.add(upperModel);lower.add(lowerModel);
+      // The Animation Author separately skins each NPC's real equipped
+      // trousers/skirt to the SAME procedural thigh/calf bones.
+      const garment=root.PantsGarmentRenderer;
+      const garmentId=garment?.garmentForCosmetics?.(rendered.portraitNpc.equippedCosmetics||[]);
+      const garmentRecord=garmentId?root.HOBUNJI_PANTS_RIGS?.garments?.[garmentId]:null;
+      const pantsHandle=garmentRecord&&garment?.attachToLegs?.(T,newLegs,{
+        avatarGroup:lowerModel,speciesId:side,gender,garmentId,garmentRecord,
+        appearance:garment.appearanceFromBodyColors?.(profile.bodyColors)||{},
+        name:'Actual NPC pants '+(npc.name||npc.id)
+      })||null;
+      if(pantsHandle&&garment.buildOverlayMask){
+        Promise.resolve(garment.buildOverlayMask(front,profile,{forceEyesOpen:true,seatId:'snare-pants:'+String(npc.id||npc.name)}))
+          .then(mask=>{if(!disposed&&actualAvatar?.upperModel===upperModel&&!pantsHandle.disposed){
+            pantsHandle.setOverlayMask?.(mask);pantsHandle.update?.();
+          }}).catch(()=>{}); // Clothing-mask optional; actual dyed pants remain usable without it.
+      }
       // Stretch the actual torso pigment instead of the old wooden-cylinder
       // stand-in: repeat a thin rendered portrait band across the gap.
       if(stretchBridge){stretchBridge.parent?.remove(stretchBridge);stretchBridge.geometry?.dispose();
@@ -179,7 +195,7 @@
         new T.MeshBasicMaterial({map:bandTexture,transparent:true,alphaTest:.05,side:T.DoubleSide}));
       stretchBridge.name='Actual NPC stretched waist portrait band';
       stretchBridge.visible=false;bodyPivot.add(stretchBridge);
-      legs=newLegs;actualAvatar={npc,profile,upperModel,lowerModel,canvases};
+      legs=newLegs;actualAvatar={npc,profile,upperModel,lowerModel,canvases,pantsHandle};
       modelHeight=h;pelvisY=Number.isFinite(posterior)?posterior:h*.42;
       footY=Number.isFinite(ankle)?ankle:h*.06;
       neckJoint=upperModel.userData?.neckRig?.neckJoint||null;
@@ -341,7 +357,7 @@
         dual:!!dual,stretchSeconds:dual?.time??0,stretchDistance:dual?.spread??0,
         tiltedDegrees:dual?.tiltDeg||0,separated:!!dual?.separated,splitCount,turns,
         authenticFeet:!!legs,npcRig:visualMode,npcName:actualAvatar?.npc?.name||null,
-        npcId:actualAvatar?.npc?.id||null,neckBone:!!neckJoint,
+        npcId:actualAvatar?.npc?.id||null,neckBone:!!neckJoint,authenticPants:!!actualAvatar?.pantsHandle,
         anatomy:{neckY,footY,pelvisY,modelHeight},elapsed:+elapsed.toFixed(2)};},
       dispose(){if(disposed)return;disposed=true;legs?.dispose?.();group.parent?.remove(group);
         if(actualAvatar){
