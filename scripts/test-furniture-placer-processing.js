@@ -119,7 +119,7 @@ assert.match(fs.readFileSync('docs/js/farm-surface-sample.js', 'utf8'),
   /function farmSurfaceYAtWorld\(worldX, worldZ\)[\s\S]{0,2200}tileSurface \+ exactLift - centerLift/,
   'farm surface resolver replaces the baked tile-center house sample with the exact rendered X/Z sample');
 assert.match(gameSource,
-  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,2600}farmSurfaceYAtWorld\(previewX, previewZ\)/,
+  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,4800}farmSurfaceYAtWorld\(previewX, previewZ\)/,
   'placement ghost previews the same farm surface used by committed furniture');
 assert.match(gameSource,
   /function makeProcessingFurniture\(col, row, furnitureKey[\s\S]{0,500}farmSurfaceYAtWorld\(col \+ 0\.5, row \+ 0\.5\)/,
@@ -131,7 +131,7 @@ assert.match(gameSource,
   /function makeDecorativeFurnitureMesh\(col, row, furnitureKey[\s\S]{0,900}furnitureSurfaceYAtWorld\(area, centerX, centerZ\)/,
   'decorative furniture, including benches, samples its rendered footprint center');
 assert.match(gameSource,
-  /function moveDecorativeFurniture\(id, col, row\)[\s\S]{0,1300}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
+  /function moveDecorativeFurniture\(id, col, row(?:, options = \{\})?\)[\s\S]{0,1300}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
   'moving decorative furniture recomputes its surface Y');
 assert.match(gameSource,
   /function rotateDecorativeFurniture\(id, degrees = 45\)[\s\S]{0,1500}furnitureSurfaceYAtWorld\(obj\.area, centerX, centerZ\)/,
@@ -171,16 +171,16 @@ assert.match(gameSource,
   'farm NPC surface queries share the corrected farmhouse/barn height');
 
 assert.match(gameSource,
-  /kind: 'processing'[\s\S]{0,1400}canPlaceFurnitureAt\(col, row, spec\.ignoreObject\)/,
+  /function showFurniturePlacementGhost\(col, row\)[\s\S]{0,1600}const isProcessing = spec\.kind === 'processing';[\s\S]{0,220}canPlaceFurnitureAt\(anchorCol, anchorRow, spec\.ignoreObject\)/,
   'processing furniture previews use the existing farm placement validation');
 assert.match(gameSource,
-  /function commitFurniturePlacementAt\(col, row\)[\s\S]{0,2600}placeDecorativeFurniture\(col, row, decorKey(?:, furniturePlacementSource)?\)/,
+  /function commitFurniturePlacementAt\(col, row\)[\s\S]{0,3200}placeDecorativeFurniture\(rugRect\?\.col \?\? col, rugRect\?\.row \?\? row, decorKey, furniturePlacementSource, rugRect\)/,
   'armed placement commits through one shared tile-targeted placement function');
 assert.match(gameSource,
   /if \(furniturePlacementModeArmed\(\)\) \{[\s\S]{0,420}getReticleTile\(\)[\s\S]{0,260}commitFurniturePlacementAt/,
   'gameplay furniture placement commits at the ordinary reticle tile');
 assert.match(gameSource,
-  /furniturePlacementModeArmed\(\)[\s\S]{0,1100}action: 'furniture_place_confirm'[\s\S]{0,420}action: 'furniture_place_cancel'/,
+  /if \(furniturePlacementModeArmed\(\)\) \{[\s\S]{0,1800}action: 'furniture_place_confirm'[\s\S]{0,420}action: 'furniture_place_cancel'/,
   'armed furniture placement explicitly populates mobile Place and Cancel actions');
 assert.match(gameSource,
   /furniturePlacementModeArmed\(\) && \(actionId === 'action1' \|\| actionId === 'interact' \|\| actionId === 'action2'\)/,

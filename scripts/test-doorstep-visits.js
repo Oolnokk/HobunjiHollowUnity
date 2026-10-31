@@ -304,7 +304,7 @@ for (const campsFirst of [false, true]) {
   record.featureId = 'mutated';
   assert.equal(pieces.lastEnteredEntrance().featureId, 'feat_east', 'callers get a copy, not the live record');
   const doorSource = read('docs/js/house-pieces-core.js');
-  assert(/recordEnteredEntrance\(entry\.id, f\.id\);\s*deps\.startSceneTransition\(\(\) => deps\.enterInterior\(entry\.id\)\)/.test(doorSource),
+  assert(/recordEnteredEntrance\(entry\.id, f\.id\);\s*deps\.startSceneTransition\(\(\) => deps\.enterInterior\(entry\.id, f\.id\)\)/.test(doorSource),
     'each door Enter action records its entrance before entering');
 }
 

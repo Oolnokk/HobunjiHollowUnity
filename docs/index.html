@@ -95,7 +95,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261028h06b160c&window=20260926rebase1"></script>
+  <script src="js/farm-editor.js?v=20261029roomspace3&window=20260926rebase1"></script>
   <script src="js/farm-plot-editor.js?v=20261029allberries4"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
@@ -179,7 +179,7 @@
   </script>
   <script src="js/portrait-utils.js?v=20261030headMask1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
-  <script src="js/npc-avatar-preview-utils.js?v=20261031he74eb11"></script>
+  <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/png-plane-avatar.js?v=20261031hacbff47"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261029maskSlots2"></script>
@@ -190,7 +190,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261029maskSlots2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261031hdf36c7e"></script>
+  <script src="js/held-action-animations.js?v=20261031h23dda4c"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -245,10 +245,11 @@
   <script src="js/procedural-furniture.js?v=20261025hab1da68"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
-  <script src="js/interior-door-tiles.js?v=20261027hfloorlessdoors1"></script>
+  <script src="js/interior-door-tiles.js?v=20261029farmhouse1"></script>
+<script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261022h6287322"></script>
+  <script src="js/furniture-table-system.js?v=20261031h9df6744"></script>
   <script src="js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
@@ -312,9 +313,9 @@
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261030h12f55f4"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261030worldrise1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
-  <script src="js/weapon-layer-effects.js?v=20261030worldrise1"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261030regions7"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="config/weapon-sprite-assemblies.js?v=20261031hebb47ac"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="js/weapon-layer-effects.js?v=20261031h7702074"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261031hebb47ac"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261030torchstaff1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261027h0d54145"></script>
@@ -349,7 +350,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20261027shape2"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261031worldaurafix4"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261031h6c09483"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
   <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
@@ -388,7 +389,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261031h78ef714"></script>
+  <script src="js/bandit-camps.js?v=20261031h8971d90"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -477,7 +478,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261031cohorts1&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261031farmhouseRebase1&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -687,7 +688,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20261028h9766cde&window=20260926rebase1"></script>
+  <script src="js/furniture-placer.js?v=20261029farmhouse1&window=20260926rebase1"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -713,7 +714,7 @@
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
   <!-- Farmhouse windows mirror one ordinary inventory-owned wall object across the exterior/interior 2x coordinate systems and expose their silhouettes to both wall builders. -->
-  <script src="js/house-window-linkage.js?v=20261013h3535ff0"></script>
+  <script src="js/house-window-linkage.js?v=20261029roomspace3"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <!-- Three reusable, UV-scrolling rain sheets in the existing world renderer. -->
   <script src="js/rain-planes.js?v=20261026hc187f70"></script>
@@ -2739,7 +2740,7 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20260925customsample1"></script>
+  <script src="js/kurraya-instrument.js?v=20261031hc1298e8"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
