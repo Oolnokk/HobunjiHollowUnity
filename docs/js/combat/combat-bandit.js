@@ -556,6 +556,14 @@
         headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
+    if (roster.specialLichId && window.SpecialHarlyaoLiches?.prepareHeadFire) { // Named guardians: hidden flame headband emitter pixels + circlet overlay (see combat-special-liches.js).
+      group.userData.specialHeadFire = await window.SpecialHarlyaoLiches.prepareHeadFire(profile, roster, async (renderProfile, renderOptions) => {
+        const fireCanvas = document.createElement('canvas');
+        fireCanvas.width = fireCanvas.height = PORTRAIT_SIZE;
+        await window.NpcAvatarPreview.renderProfileToCanvas(fireCanvas, renderProfile, renderOptions);
+        return fireCanvas;
+      }, PORTRAIT_SIZE).catch(error => { window.__farmLog?.('[special-lich] head fire setup failed: ' + (error?.message || error), 'warn'); return null; });
+    }
     group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.
     group.userData.portraitVerticalPlacementRatio = portrait.userData?.portraitVerticalPlacementRatio ?? 0.5;
     group.userData.portraitScaleMultiplier = portrait.userData?.portraitScaleMultiplier ?? 1;

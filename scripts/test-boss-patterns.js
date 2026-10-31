@@ -75,6 +75,35 @@ assert.match(armorSource, /active\?\.mode === 'painted'/, 'MetalArmorSystem rend
 assert.match(armorSource, /cannot be reworked at the smithy/, 'painted plating cannot be reworked');
 assert.match(armorSource, /cannot be re-patterned/, 'painted plating cannot be re-authored');
 
+// Flame headband: an invisible marker-dyed headband supplies emitter pixels; the circlet alone becomes the overlay drawn above the flames.
+(async () => {
+  const calls = [];
+  window.HobunjiLayeredWeaponEffects = { sourcePixels: (canvas, hex, kind) => { assert.equal(hex, '#7F00FF'); assert.equal(kind, 'marker'); return canvas.markers || []; } };
+  const circlet = { id: 'tangedcirclet', tintSlot: 'HAT', layers: [{ url: 'cosmetics/clothes/hat/tangedcirclet_m.png', ax: -0.2, sx: 2.55, sy: 2.55, xformPreset: 'B' }] };
+  const profile = { bodyColors: { C: { hex: '#123456' } }, hat: circlet, hood: { id: 'ragged_hood', layers: [{ url: 'hood.png' }] }, eyes: { id: 'eyes', layers: [{ url: 'eyes.png' }] }, pauldron: { id: 'p', layers: [{ url: 'p.png' }] }, hairFront: { id: 'hair', layers: [{ url: 'hair.png' }] } };
+  const render = async (rendered, options) => { const canvas = { rendered, options, markers: rendered.hat.id === 'special_flame_headband' ? [0, 1, 200 * 10 + 5, 200 * 199 + 199] : [] }; calls.push(canvas); return canvas; };
+  const roster = liches.specialRoster('hronal');
+  assert.deepEqual({ ...roster.flameHeadband }, { cosmeticId: 'basic_headband', hex: '#7F00FF', hidden: true }, 'the headband is recorded as a hidden marker-dyed item');
+  const fire = await liches.prepareHeadFire(profile, roster, render, 200);
+  const [band, overlay] = calls;
+  assert.equal(band.rendered.hat.layers[0].url, 'cosmetics/clothes/hat/headband.png', 'a regular headband stands in under the circlet');
+  assert.equal(band.rendered.bodyColors.HAT.hex, '#7F00FF', 'the headband is dyed the marker hex');
+  assert.equal(band.rendered.bodyColors.C.hex, '#123456', 'other body colors are untouched');
+  for (const slot of ['hood', 'eyes', 'pauldron', 'hairFront']) assert.equal(band.rendered[slot].id, 'none', slot + ' is not part of the emitter render');
+  assert.ok(band.options.headCosmeticsOnly && band.options.skipHeadSprite, 'only hat layers are rendered');
+  assert.equal(overlay.rendered.hat.id, 'tangedcirclet', 'the overlay carries only the circlet');
+  assert.equal(fire.sources.length, 4);
+  assert.deepEqual({ ...fire.sources[2] }, { x: 5.5 / 200, y: 10.5 / 200 }, 'emitters are normalized portrait coordinates');
+  assert.equal(fire.overlayCanvas, overlay);
+  assert.equal(await liches.prepareHeadFire({ ...profile, hat: { id: 'none', layers: [] } }, roster, render, 200), null, 'no circlet, no flames');
+  assert.equal(await liches.prepareHeadFire(profile, roster, async (rendered) => ({ markers: [] }), 200), null, 'no marker pixels, no flames');
+  assert.equal(await liches.prepareHeadFire(profile, { name: 'bandit' }, render, 200), null, 'only named guardians');
+  const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
+  assert.match(bandit, /group\.userData\.specialHeadFire = await window\.SpecialHarlyaoLiches\.prepareHeadFire/, 'the hostile builder requests the emitter data');
+  assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8'), /js\/weapon-layer-effects\.js\?v=/, 'the Workshop loads the marker-pixel scanner');
+  console.log('Flame headband: emitter pixels, hidden headband and circlet overlay verified');
+})().catch(error => { console.error(error); process.exit(1); });
+
 // Wired into the Workshop: shared Pattern editor scripts and both editor entry points.
 const preview = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 for (const file of ['pattern-authoring', 'pattern-library', 'repo-pattern-library', 'furniture-pattern-surfaces']) assert.match(preview, new RegExp(`js/${file}\\.js\\?v=`), file + ' loads in the Workshop');

@@ -128,6 +128,7 @@
     const roster = { name:def.name, appearance:{speciesId:'harlyao-skeleton',gender:type==='tothal'?'female':'male',cosmetics:{}},
       equippedCosmetics:cosmetics, cosmeticSlots:Object.fromEntries(cosmetics.map(id=>[id,slots[id]])), appliedDyes,
       lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
+      flameHeadband:{cosmeticId:'basic_headband',hex:MARKER_HEX,hidden:true}, // Invisible marker-dyed headband under the circlet; see prepareHeadFire.
       clothingPatterns:{forcedOverpassBySlot:{
         overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
         pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Every named guardian's pants carry the same woven glyph as the robe.
@@ -392,8 +393,103 @@
     parent.add(mesh);
     droplets.add({mesh,time:.45,velocity:.4+Math.random()*.9});
   }
+  // ── Flame headband ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Every guardian wears an invisible plain headband dyed the marker hex (#7F00FF) under its tanged circlet. It is never drawn into the portrait:
+  // it only supplies emitter pixels (same marker-pixel idea as a torch-flail's fuel sprite). Flames in Body Color 3 rise from those pixels, are
+  // drawn above the head but beneath an overlay plane carrying only the circlet, so the circlet occludes them like a brazier's top sprite.
+  const MARKER_HEX='#7F00FF';
+  const FIRE={rate:42,life:.8,speed:.18,size:.075,max:44,maxSources:320};
+  const headFires=new Set();
+  let fireTexture=null;
+  const blankPiece={id:'none',tintSlot:null,layers:[]};
+  async function prepareHeadFire(profile, roster, renderToCanvas, size=200) {
+    if(!profile?.hat?.layers?.length || !roster?.specialLichId || typeof renderToCanvas!=='function')return null;
+    const type=Object.keys(DATA).find(key=>DATA[key].id===roster.specialLichId);
+    if(!type)return null;
+    const isolate=(hat,bodyColors)=>({...profile,bodyColors:bodyColors||profile.bodyColors,hairFront:blankPiece,hairBack:blankPiece,hairSide:blankPiece,hairSideL:blankPiece,hood:blankPiece,mask:blankPiece,eyes:blankPiece,upperFace:blankPiece,facialHair:blankPiece,torsoCosmetic:blankPiece,armCosmetic:blankPiece,pauldron:blankPiece,hat});
+    const options={forceEyesOpen:true,headCosmeticsOnly:true,skipHeadSprite:true}; // Hat layers only.
+    const headband={...profile.hat,id:'special_flame_headband',layers:profile.hat.layers.map(layer=>({...layer,url:'cosmetics/clothes/hat/headband.png',pixelDye:null,materialKind:null}))};
+    const bandCanvas=await renderToCanvas(isolate(headband,{...(profile.bodyColors||{}),HAT:{hex:MARKER_HEX,tintMode:'hexShadeFill'}}),options); // Dyed in the marker hex.
+    const indices=window.HobunjiLayeredWeaponEffects?.sourcePixels?.(bandCanvas,MARKER_HEX,'marker') || [];
+    if(!indices.length)return null;
+    const stride=Math.max(1,Math.ceil(indices.length/FIRE.maxSources)), sources=[];
+    for(let i=0;i<indices.length;i+=stride)sources.push({x:((indices[i]%size)+.5)/size,y:(Math.floor(indices[i]/size)+.5)/size});
+    const overlayCanvas=await renderToCanvas(isolate(profile.hat),options); // Circlet only: drawn over the flames.
+    return {sources,overlayCanvas,type};
+  }
+  function fireSpriteTexture() {
+    if(fireTexture)return fireTexture;
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=32;
+    const ctx=canvas.getContext('2d'),gradient=ctx.createRadialGradient(16,19,1,16,17,16);
+    gradient.addColorStop(0,'rgba(255,255,255,1)');gradient.addColorStop(.35,'rgba(255,255,255,.9)');gradient.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=gradient;ctx.fillRect(0,0,32,32);
+    fireTexture=new window.THREE.CanvasTexture(canvas);
+    return fireTexture;
+  }
+  function ensureHeadFire(actor) {
+    if(actor._specialHeadFire || typeof document==='undefined')return;
+    const root=actor.avatarRef?.group, data=root?.userData?.specialHeadFire, rig=root?.userData?.neckRig, THREE=window.THREE;
+    const neck=rig?.neckJoint?.position, joint=rig?.headScaleJoint, plane=rig?.skinnedPlane;
+    if(!data?.sources?.length || !rig?.available || !joint || !neck || !plane || !THREE)return;
+    const width=root.userData.portraitModelWidth, height=root.userData.portraitModelHeight; // Same plane-to-bone mapping the portrait glow lights use.
+    const group=new THREE.Group();group.name='special_lich_headfire';
+    joint.add(group); // Flames follow every head turn, tilt and Head-scale change like skin weighted to the head.
+    const base=Number(plane.renderOrder)||0, flameOrder=base+.0003, circletOrder=base+.0006;
+    let overlay=null;
+    if(data.overlayCanvas) {
+      const surface=window.HobunjiSpritePngSurface;
+      const texture=surface?.makeCanvasTexture?.(THREE,data.overlayCanvas,'special_lich_circlet') || new THREE.CanvasTexture(data.overlayCanvas);
+      const material=surface?.makeMaterial?.(THREE,texture,'special_lich_circlet',{side:THREE.FrontSide}) || new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.05});
+      overlay=new THREE.Mesh(new THREE.PlaneGeometry(width,height),material);
+      overlay.name='special_lich_circlet_overlay';overlay.position.set(-neck.x,-neck.y,.003);overlay.renderOrder=circletOrder;overlay.frustumCulled=false;
+      group.add(overlay);
+    }
+    const fire={actor,group,overlay,joint,sources:data.sources,width,height,neck:{x:neck.x,y:neck.y},color:bodyColor3For(data.type),flameOrder,particles:[],pool:[],accumulation:0};
+    actor._specialHeadFire=fire;headFires.add(fire);
+  }
+  function disposeHeadFire(fire) {
+    for(const sprite of [...fire.particles.map(p=>p.sprite),...fire.pool]){fire.group.remove(sprite);sprite.material?.dispose?.();}
+    fire.overlay?.material?.map?.dispose?.();fire.overlay?.material?.dispose?.();fire.overlay?.geometry?.dispose?.();
+    fire.group.parent?.remove?.(fire.group);
+    fire.particles.length=0;fire.pool.length=0;
+    if(fire.actor)fire.actor._specialHeadFire=null;
+    headFires.delete(fire);
+  }
+  function stepHeadFires(dt) {
+    const THREE=window.THREE;
+    for(const fire of [...headFires]) {
+      const actor=fire.actor;
+      if(!fire.group.parent || !actor?.avatarRef?.group?.parent){disposeHeadFire(fire);continue;} // Avatar torn down.
+      const alive=Number(actor.health)>0 && actor.state!=='corpse';
+      if(fire.overlay)fire.overlay.visible=true;
+      for(let i=fire.particles.length-1;i>=0;i--) {
+        const particle=fire.particles[i];particle.age+=dt;
+        const t=particle.age/particle.life;
+        if(t>=1){particle.sprite.visible=false;fire.group.remove(particle.sprite);fire.pool.push(particle.sprite);fire.particles.splice(i,1);continue;}
+        particle.sprite.position.x=particle.x+Math.sin(particle.age*13+particle.phase)*.012*t;
+        particle.sprite.position.y=particle.y+particle.speed*particle.age;
+        particle.sprite.material.opacity=Math.sin(Math.PI*t)*.92;
+        particle.sprite.scale.setScalar(particle.size*(.5+t*1.5));
+      }
+      if(!alive)continue;
+      fire.accumulation=Math.min(2,fire.accumulation+dt*FIRE.rate);
+      while(fire.accumulation>=1 && fire.particles.length<FIRE.max) {
+        fire.accumulation-=1;
+        const source=fire.sources[Math.floor(Math.random()*fire.sources.length)];
+        let sprite=fire.pool.pop();
+        if(!sprite)sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:fireSpriteTexture(),transparent:true,opacity:0,depthWrite:false,depthTest:true,blending:THREE.AdditiveBlending}));
+        sprite.material.color.set(fire.color); // Tinted Body Color 3.
+        sprite.renderOrder=fire.flameOrder; // Above the head, beneath the circlet overlay.
+        const x=(source.x-.5)*fire.width-fire.neck.x, y=(.5-source.y)*fire.height-fire.neck.y;
+        sprite.position.set(x,y,.0015);sprite.visible=true;
+        fire.group.add(sprite);
+        fire.particles.push({sprite,age:0,life:FIRE.life,x,y,speed:FIRE.speed*(.5+Math.random()),phase:Math.random()*6.283,size:FIRE.size});
+      }
+    }
+  }
   function tick(actor,dt) {
     if(!actor?.isSpecialLich)return;
+    ensureHeadFire(actor);
     if(actor.lichType==='tothal') {
       const kneel=actor._specialStage?.kind==='kneel',avatar=actor.avatarRef;
       actor._specialKneelBlend=Math.min(1,Math.max(0,(actor._specialKneelBlend||0)+(kneel?dt*4:-dt*4)));
@@ -410,6 +506,7 @@
     }
   }
   function updateEffects(dt) {
+    stepHeadFires(dt);
     for(const item of [...activePatches]) {
       item.time-=dt;
       if(item.time>0)continue;
@@ -424,13 +521,14 @@
     }
   }
   function clear() {
+    for(const fire of [...headFires])disposeHeadFire(fire);
     for(const item of activePatches)item.handle.dispose?.();
     activePatches.clear();
     for(const item of droplets){item.mesh.parent?.remove?.(item.mesh);item.mesh.geometry.dispose?.();item.mesh.material.dispose?.();}
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,prepareHeadFire,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
