@@ -19,8 +19,9 @@
     const distanceToCompanion = Math.hypot(enemy.x - companion.x, enemy.y - companion.y); // Avoids running past enemies already in attack reach.
     const targetingOwner = enemy.targetPlayer === master || enemy.targetCreature === master ||
       enemy._banditTarget === master; // Prioritizes observed, actively aggressive hostiles.
+    const targetingPet = enemy.targetCreature === companion || enemy.targetPlayer === companion; // React to direct attacks even away from owner.
     return (distanceToMaster * MASTER_WEIGHT + distanceToCompanion * (1 - MASTER_WEIGHT)) *
-      (targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
+      (targetingPet ? 0.32 : targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
   }
 
   function chooseTarget(companion, master, enemies, areaId, alertPx) {
@@ -44,7 +45,10 @@
     const currentScore = currentEligible ? score(companion, master, current) : Infinity; // Compare against an established target without stale-entry bias.
     const chosenThreatensOwner = chosen && (chosen.targetPlayer === master || chosen.targetCreature === master || chosen._banditTarget === master);
     const currentThreatensOwner = current && (current.targetPlayer === master || current.targetCreature === master || current._banditTarget === master);
-    const urgentSwitch = chosenThreatensOwner && !currentThreatensOwner && chosenScore < currentScore; // An attacker already threatening the owner must beat the normal anti-thrashing margin.
+    const chosenThreatensPet = chosen && (chosen.targetCreature === companion || chosen.targetPlayer === companion);
+    const currentThreatensPet = current && (current.targetCreature === companion || current.targetPlayer === companion);
+    const urgentSwitch = ((chosenThreatensOwner && !currentThreatensOwner) ||
+      (chosenThreatensPet && !currentThreatensPet)) && chosenScore < currentScore; // Directly threatened allies beat the normal anti-thrashing margin.
     if (currentEligible && !urgentSwitch && (current === chosen || currentScore * SWITCH_RATIO <= chosenScore)) {
       chosen = current;
     }
