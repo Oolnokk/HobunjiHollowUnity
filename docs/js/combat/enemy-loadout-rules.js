@@ -111,7 +111,7 @@
           const label = kind + '.clothingPatterns.' + slot;
           if (!patternSlots.includes(slot)) throw Error(label + ' is not a patternable clothing slot');
           if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw Error(label + ' must be an object');
-          for (const key of Object.keys(entry)) if (!['patternLibraryId', 'pattern', 'scale', 'roles', 'color', 'baseUsesPatternColor'].includes(key)) throw Error(label + '.' + key + ' is unknown');
+          for (const key of Object.keys(entry)) if (!['patternLibraryId', 'pattern', 'scale', 'roles', 'color', 'baseUsesPatternColor', 'randomFrame'].includes(key)) throw Error(label + '.' + key + ' is unknown');
           if (entry.patternLibraryId != null && !/^[A-Za-z0-9_:.-]{1,120}$/.test(String(entry.patternLibraryId))) throw Error(label + '.patternLibraryId is not a library id');
           if (entry.pattern != null && (typeof entry.pattern !== 'object' || Array.isArray(entry.pattern) || JSON.stringify(entry.pattern).length > 900000)) throw Error(label + '.pattern must be a pattern object under 900 KB');
           if (entry.pattern == null && entry.patternLibraryId == null) throw Error(label + ' needs a pattern or a library id');
@@ -119,6 +119,16 @@
           if (entry.roles != null && (!Array.isArray(entry.roles) || entry.roles.length > 8 || entry.roles.some(role => typeof role !== 'string' || !/^[A-Za-z0-9_]{1,24}$/.test(role)))) throw Error(label + '.roles must list garment layer roles such as BASE or DRAPE');
           if (entry.color != null && !/^(#[0-9a-fA-F]{6}|dye:[A-Za-z0-9_:]{1,80})$/.test(String(entry.color))) throw Error(label + '.color needs #RRGGBB or a dye id');
           if (entry.baseUsesPatternColor != null && typeof entry.baseUsesPatternColor !== 'boolean') throw Error(label + '.baseUsesPatternColor must be true/false');
+          if (entry.randomFrame != null) { // Per-spawn random frame, like the Maskbound masks: rotate the frame and/or shrink it by a random factor.
+            const frame = entry.randomFrame;
+            if (typeof frame !== 'object' || Array.isArray(frame)) throw Error(label + '.randomFrame must be { rotate, shrink }');
+            for (const key of Object.keys(frame)) if (!['rotate', 'shrink'].includes(key)) throw Error(label + '.randomFrame.' + key + ' is unknown');
+            if (frame.rotate != null && typeof frame.rotate !== 'boolean') throw Error(label + '.randomFrame.rotate must be true/false');
+            if (frame.shrink != null) {
+              const range = frame.shrink;
+              if (typeof range !== 'object' || Array.isArray(range) || !(Number(range.min) >= 0.05) || !(Number(range.max) <= 1) || !(Number(range.min) <= Number(range.max))) throw Error(label + '.randomFrame.shrink needs { min, max } within 0.05-1 with min <= max');
+            }
+          }
         }
       }
       if (rule.bossAppearance != null) {
@@ -249,6 +259,8 @@
     if (opts.enemyLoadoutKind || opts.extra?.enemyLoadoutKind)
       return opts.enemyLoadoutKind || opts.extra.enemyLoadoutKind;
     const extra = opts.extra || {};
+    if (extra.isGhoulShadowknight) return 'ghoul:shadowknight'; // Special mine ghouls have their own Workshop rule; with none, they inherit the base Ghoul rule (see ruleFor).
+    if (extra.mineWyrmWitchType) return 'ghoul:wyrm-witch:' + extra.mineWyrmWitchType;
     if (extra.maskboundTroop) return 'maskbound:' + extra.maskboundTroop;
     if (extra.lichType || roster?.lichType)
       return 'lich:' + (extra.lichType || roster.lichType);
@@ -275,13 +287,15 @@
   }
   // Optional authored body proportions for one enemy kind: only the fields the rule sets, null when none.
   function rigScaleFor(kind) {
-    const scale = documentData.rules[kind]?.enabled === false ? null : documentData.rules[kind]?.rigScale;
+    const scale = ruleFor(kind).rigScale; // Inherits the base Ghoul rule for special ghoul variants.
     return scale && Object.keys(scale).length ? { ...scale } : null;
   }
-  const ruleFor = (kind) =>
-    documentData.rules[kind]?.enabled === false
-      ? {}
-      : documentData.rules[kind] || {};
+  const ruleFor = (kind) => {
+    const own = documentData.rules[kind];
+    if (own) return own.enabled === false ? {} : own;
+    const base = String(kind).startsWith('ghoul:') ? documentData.rules.ghoul : null; // Special ghoul variants inherit the base Ghoul rule until they get their own.
+    return base && base.enabled !== false ? base : {};
+  };
   function configFor(kind, config, rank, random) {
     const rule = ruleFor(kind);
     if (!Object.keys(rule).length) return config;
@@ -338,11 +352,17 @@
       if (!pattern) continue; // An unresolved library id leaves the garment as authored.
       const catalog = window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
       const colorHex = /^#[0-9a-f]{6}$/i.test(entry.color || '') ? entry.color : (entry.color ? catalog.find(dye => dye.id === entry.color)?.hex : null);
+      const framed = clone(pattern);
+      if (entry.randomFrame) { // Same method as the Maskbound masks' procedural patterns: random frame rotation, and a frame only ever shrunk from the authored one.
+        const lerp = (a, b, t) => a + (b - a) * t;
+        if (entry.randomFrame.shrink) framed.frameScale = Number((Math.max(0.05, Number(framed.frameScale) || 1) * lerp(Number(entry.randomFrame.shrink.min), Number(entry.randomFrame.shrink.max), random())).toFixed(4));
+        if (entry.randomFrame.rotate) framed.frameRotationDeg = Math.round(random() * 3600) / 10;
+      }
       roster.clothingPatterns ||= {};
       roster.clothingPatterns.forcedOverpassBySlot ||= {};
       roster.clothingPatterns.forcedOverpassBySlot[slot] = {
         ...(roster.clothingPatterns.forcedOverpassBySlot[slot] || {}),
-        pattern: clone(pattern),
+        pattern: framed, // The randomized frame lives on the roster, so a looted piece keeps the exact pattern.
         ...(entry.scale ? { scale: entry.scale } : {}),
         ...(entry.roles?.length ? { roles: [...entry.roles] } : {}),
         ...(/^#[0-9a-f]{6}$/i.test(colorHex || '') ? { fallbackColorC: { hex: colorHex } } : {}),

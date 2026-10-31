@@ -13,6 +13,9 @@
     ['mao-ao-skeleton', 'Mao’ao Skeleton', 'Undead'],
     ['harlyao-skeleton', 'Harlyao Skeleton', 'Undead'],
     ['ghoul', 'Ghoul', 'Undead'],
+    ['ghoul:shadowknight', 'Ghoul Shadowknight', 'Special Ghouls'], // Mine variants share the ghoul wardrobe/species; each can carry its own rule on top of the base Ghoul's.
+    ['ghoul:wyrm-witch:shadow-wind', 'Shadow-wind Wyrm-witch', 'Special Ghouls'],
+    ['ghoul:wyrm-witch:rend-water', 'Rend-water Wyrm-witch', 'Special Ghouls'],
     ['lich:tothal', 'Tothal Lich', 'Liches'],
     ['lich:hronal', 'Hronal Lich', 'Liches'],
     ['lich:kanthic', 'Kanthic Lich', 'Liches'],
@@ -226,7 +229,7 @@
         items: { ragged_hood: 1 },
       };
     }
-    if (kind === 'ghoul')
+    if (kind === 'ghoul' || kind.startsWith('ghoul:'))
       Object.assign(clothing, {
         overwear: {
           chance: 1,
@@ -263,7 +266,7 @@
         ? { ...window.MinionCombat.dyeWeights }
         : troop
           ? { '#7F00FF': 1 }
-          : kind === 'ghoul'
+          : kind === 'ghoul' || kind.startsWith('ghoul:')
             ? { 'dye:CLOTH:pale_blue': 1 }
             : Object.fromEntries(
                 data.gang.clothingPool.dyeVariantPool.flatMap((v) =>
@@ -336,10 +339,34 @@
         name: types.find((t) => t.id === kind).label,
         baseConfig: data.gang,
       });
-    const rank = kind.startsWith('bandit:') ? kind.split(':')[1] : 'grunt';
+    const shadowknight = kind === 'ghoul:shadowknight';
+    const witchType = kind.startsWith('ghoul:wyrm-witch:') ? kind.split(':')[2] : null;
+    const rank = kind.startsWith('bandit:') ? kind.split(':')[1] : shadowknight ? 'lieutenant' : 'grunt'; // Same rank mapping the mine uses.
     let config = data.gang;
-    if (kind === 'ghoul')
+    if (kind === 'ghoul' || kind.startsWith('ghoul:')) {
       config = { ...config, speciesWeights: { ghoul: 1 } };
+      if (shadowknight || witchType) {
+        const label = types.find((t) => t.id === kind).label;
+        // Mirrors the mine's spawn of these variants (game.js mineEnemySpawns): stats, flags and no ranged weapon for witches.
+        Object.assign(shared, {
+          nameOverride: label,
+          defOverride: {
+            label,
+            maxHealth: shadowknight ? 78 : 60,
+            maxStamina: shadowknight ? 75 : 55,
+            attackDamage: shadowknight ? 13 : 10,
+            ...(witchType ? { rangedWeaponKey: null } : {}),
+            ...(options.defOverride || {}),
+          },
+          extra: {
+            ...shared.extra,
+            isMineGhoul: true,
+            isGhoulShadowknight: shadowknight,
+            mineWyrmWitchType: witchType,
+          },
+        });
+      }
+    }
     const tribe = kind.split(':')[0];
     if (data.tribes[tribe]) {
       const source = data.tribes[tribe];

@@ -79,6 +79,36 @@
     const [rr, gg, bb] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
     return '#' + [rr, gg, bb].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
   }
+  // ── Ordinary liches share their tradition's named lich's glyph, with a per-spawn random frame and a random color from the SAME hue family. ──
+  function hexToHsl(hex) {
+    const n=parseInt(String(hex).slice(1),16), r=(n>>16&255)/255, g=(n>>8&255)/255, b=(n&255)/255, max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+    let h=0;if(d)h=max===r?((g-b)/d)%6:max===g?(b-r)/d+2:(r-g)/d+4;
+    const l=(max+min)/2;return {h:((h*60)%360+360)%360,s:d?d/(1-Math.abs(2*l-1)):0,l};
+  }
+  function hslToHex(h,s,l) {
+    const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;
+    const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+    return '#'+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('');
+  }
+  const FAMILY={hueSpreadDeg:18,saturation:[.6,1],lightness:[.5,.7]}; // "Same family": within a narrow hue band of the named lich's Body Color 3, with lively saturation/lightness.
+  function colorInFamily(baseHex,random) {
+    const base=hexToHsl(baseHex), pick=(range)=>range[0]+(range[1]-range[0])*random();
+    return hslToHex(((base.h+(random()*2-1)*FAMILY.hueSpreadDeg)%360+360)%360,pick(FAMILY.saturation),pick(FAMILY.lightness));
+  }
+  const ORDINARY_FRAME={shrink:{min:.4,max:1},rotate:true};
+  // clothingPatterns policy for one ordinary lich. Slots are patterned like the named guardians' (same glyph and per-piece scale); only the frame and color vary.
+  function ordinaryLichPatterns(type,random=Math.random) {
+    if(!DATA[type])return null;
+    const base=patternFor(type,'clothingPattern'), named=bodyColor3For(type), lerp=(a,b,t)=>a+(b-a)*t;
+    const forced={};
+    for(const [slot,scale] of [['overwear',PATTERN_SCALE.overwear],['pants',PATTERN_SCALE.pants],['hood',PATTERN_SCALE.faceCovering],['mask',PATTERN_SCALE.faceCovering]]) {
+      const pattern=JSON.parse(JSON.stringify(base)); // Each piece rolls its own frame, so a robe and its hood differ.
+      pattern.frameScale=Number((Math.max(.05,Number(pattern.frameScale)||1)*lerp(ORDINARY_FRAME.shrink.min,ORDINARY_FRAME.shrink.max,random())).toFixed(4));
+      pattern.frameRotationDeg=Math.round(random()*3600)/10;
+      forced[slot]={pattern,fallbackColorC:{hex:colorInFamily(named,random)},scale,...(slot==='pants'?{roles:['DRAPE'],baseUsesPatternColor:true}:{})};
+    }
+    return {forcedOverpassBySlot:forced};
+  }
   function applyBodyColor3ToRoster(roster,type) {
     if (!roster || !DATA[type]) return roster;
     const hex=bodyColor3For(type); // One actual body-color channel drives eye pixels, fake lights and every named ruin wall.
@@ -534,7 +564,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,prepareHeadFire,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,prepareHeadFire,ordinaryLichPatterns,colorInFamily,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),

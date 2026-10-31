@@ -291,6 +291,10 @@
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     const special = options.special === true ? window.SpecialHarlyaoLiches?.defFor?.(def.id) : null; // Boss-only identity; ordinary liches keep their original random cosmetics.
     const roster = options.roster || (special ? window.SpecialHarlyaoLiches.specialRoster(def.id) : rosterFor(def.id, options.gender)); // Fixed named-boss wardrobe uses the existing portrait pipeline.
+    if (!options.roster && !special) { // Ordinary liches wear their tradition's glyph (same planar family as the named lich) with a random frame and a same-family color, kept on the roster for loot.
+      const patterns = window.SpecialHarlyaoLiches?.ordinaryLichPatterns?.(def.id, random);
+      if (patterns) roster.clothingPatterns = patterns;
+    }
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const entity = await window.BanditCombat.makeEntity({

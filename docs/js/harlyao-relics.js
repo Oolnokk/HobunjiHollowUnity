@@ -255,6 +255,26 @@
     return false;
   }
 
+  // ── Cursed articles (looted lich circlets) ─────────────────────────────────────────────────────────────────────────────────────────────
+  const DISPEL_PRICE = 150; // Garanki's fee to lift a lich circlet's curse; same service gate as unbinding.
+  function cursedCircletsInPack() {
+    return (deps?.getPackClothing?.() || []).filter(item => item?.cursed?.dispelBy === 'garanki');
+  }
+  function dispelCurse(uid) {
+    if (!requireService('unbind')) return { ok: false, reason: 'collection' };
+    const item = cursedCircletsInPack().find(entry => entry.uid === uid);
+    if (!item) return { ok: false, reason: 'not-owned' };
+    if (!spendGold(DISPEL_PRICE)) return { ok: false, reason: 'gold' };
+    item.label = item.cursed.originalLabel || item.label; // Restores the pre-curse name; the article itself, pattern and all, is untouched.
+    delete item.cursed;
+    deps.showToast?.(`Garanki dispels the curse. The ${item.label} can be worn now.`, true);
+    deps.saveMemberWorldData?.();
+    deps.buildPackClothingSection?.();
+    deps.buildInventoryGrid?.();
+    render();
+    return { ok: true };
+  }
+
   function unbind(boundKey) {
     if (!requireService('unbind')) return { ok: false, reason: 'collection' };
     const relic = decodeBoundKey(boundKey);
@@ -435,6 +455,15 @@
         [button(`Unbind (${price}g)`, () => unbind(relic.key), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < price)]));
     }
 
+    // Cursed lich circlets
+    list.appendChild(heading('Cursed circlets'));
+    const cursed = cursedCircletsInPack();
+    if (!cursed.length) list.appendChild(note('Bring Garanki a circlet looted from a lich. It carries a curse that keeps it from being worn until he dispels it.'));
+    for (const item of cursed) {
+      list.appendChild(row('👑', esc(item.label), esc('Cursed. A lich’s old claim keeps it from being worn.'),
+        [button(`Dispel (${DISPEL_PRICE}g)`, () => dispelCurse(item.uid), !window.ArtifactCollection?.unlocked?.('unbind') || (window.DelversGuild && !window.DelversGuild.isMember()) || (deps.inventory.gold || 0) < DISPEL_PRICE)]));
+    }
+
     // Enchant a weapon
     list.appendChild(heading('Enchant a weapon'));
     if (window.DelversGuild && !window.DelversGuild.canEnchant()) list.appendChild(note('New enchanting is illegal. Bring Garanki four distinct artifacts and speak with him privately at his tent to earn his trust.'));
@@ -509,6 +538,9 @@
     init,
     render,
     restore,
+    dispelCurse,
+    cursedCircletsInPack,
+    DISPEL_PRICE,
     makeRelic,
     rollEnchantments,
     encodeBoundKey,

@@ -174,7 +174,7 @@ const read = (p) => fs.readFileSync(p, 'utf8');
     context,
   );
   const source = context.window.EnemyLoadoutSourceData;
-  assert.equal(source.types.length, 19);
+  assert.equal(source.types.length, 22);
   const game = read('docs/game.js');
   const shapes = source.declaration(game, 'MELEE_WEAPON_SHAPE_DEFS');
   assert.equal(shapes.harlyaoBroadsword.slots[0], 'weapon');

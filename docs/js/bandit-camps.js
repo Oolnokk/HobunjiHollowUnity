@@ -1282,9 +1282,10 @@
   function banditWornClothingItems(roster) {
     const catalog = deps.getDyeCatalog();
     const items = [];
+    const forcedBySlot = roster?.clothingPatterns?.forcedOverpassBySlot || {};
     for (const cosmeticId of (roster?.equippedCosmetics || [])) {
       const armor = roster.metalArmorItems?.find(item => window.MetalArmorSystem?.baseCosmeticId?.(item) === cosmeticId); // Preserve alloy, maximum Temper, and article identity instead of converting armor into dyed cloth.
-      if (armor) { items.push(JSON.parse(JSON.stringify(armor))); continue; }
+      if (armor) { items.push(applyLootCurse(JSON.parse(JSON.stringify(armor)), lootCurseFor(roster, cosmeticId, armor.slot))); continue; }
       const slot = roster.cosmeticSlots?.[cosmeticId] || 'torso';
       const piece = _banditClothingPiece(cosmeticId, slot);
       const tintSlot = window.BanditCombat.TINT_SLOT_BY_SLOT[piece.category]; // Loot uses the same clothing channel as the deceased humanoid's portrait.
@@ -1292,7 +1293,7 @@
       const dyeBId = tintSlot ? roster.appliedDyes?.[`${tintSlot}_B`] : null; // Preserves ghoul silver trims and draped-pants secondary color in actual looted items.
       const dye = dyeId ? catalog.find(d => d.id === dyeId) : null;
       const dyeB = dyeBId ? catalog.find(d => d.id === dyeBId) : null;
-      items.push({
+      const lootItem = {
         uid: 'citem_bandit_' + Date.now().toString(36) + '_' + Math.floor(deps.rnd() * 1e6),
         cosmeticId: piece.id,
         slot: piece.category,
@@ -1303,9 +1304,42 @@
         price: piece.price,
         sellPrice: Math.floor(piece.price * 0.4),
         sprite: deps.clothingSpriteForCosmetic(piece.id),
-      });
+      };
+      applyLootPattern(lootItem, forcedBySlot[slot], slot);
+      items.push(applyLootCurse(lootItem, lootCurseFor(roster, cosmeticId, slot)));
     }
     return items;
+  }
+
+  // Liches' circlets and face coverings are cursed when looted: they cannot be worn until dispelled (Garanki for circlets, Father Hunundi for
+  // masks later). Mirrors how enchanted relic weapons are looted bound.
+  function lootCurseFor(roster, cosmeticId, slot) {
+    if (!roster?.lichType && !roster?.specialLichId) return null;
+    if (/circlet/i.test(cosmeticId)) return { kind: 'circlet', dispelBy: 'garanki' };
+    if (slot === 'mask' || /facewrap|(^|::|_)mask/i.test(cosmeticId)) return { kind: 'mask', dispelBy: 'hunundi' };
+    return null;
+  }
+  function applyLootCurse(item, curse) {
+    if (!item || !curse) return item;
+    item.cursed = { ...curse, originalLabel: item.label }; // Dispelling restores the label and clears the flag.
+    item.label = 'Cursed ' + item.label;
+    return item;
+  }
+  // A forced woven pattern (including its per-spawn random frame and pattern color) travels with the looted piece as real weaving data.
+  function applyLootPattern(item, forced, slot) {
+    if (!item || !forced?.pattern) return item;
+    const pattern = window.NpcWardrobe?.forcedPatternForRender?.({}, slot, forced) || JSON.parse(JSON.stringify(forced.pattern)); // No body scale: the wearer's own rig differs.
+    item.weaving = { ...(item.weaving || {}), forcedOverpassPattern: pattern, ...(Array.isArray(forced.roles) && forced.roles.length ? { forcedOverpassRoles: [...forced.roles] } : {}) };
+    const patternHex = forced.fallbackColorC?.hex;
+    if (/^#[0-9a-f]{6}$/i.test(patternHex || '')) {
+      item.colorC = { hex: patternHex, label: 'Pattern' };
+      if (forced.baseUsesPatternColor) { // Draped pants: the base layer is the pattern color, the drape keeps the main color.
+        const main = item.colorA;
+        item.colorA = { hex: patternHex, label: 'Pattern' };
+        item.colorB = main || item.colorB;
+      }
+    }
+    return item;
   }
 
   function makeBanditCorpseWorldObject(c) {

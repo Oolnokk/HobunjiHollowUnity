@@ -719,6 +719,22 @@ function renderClothingPatterns() {
       colorOn.onchange = commitColor; color.onchange = commitColor;
       colorLabel.prepend(colorOn); colorLabel.append(color);
       row.append(scaleLabel, colorLabel);
+      // Like the Maskbound masks: each spawn rotates and/or shrinks the pattern's frame at random (the result is kept on the enemy and in its loot).
+      const frameOf = () => rule().clothingPatterns?.[slot]?.randomFrame || {};
+      const writeFrame = (patch) => { try { mutate((r) => { const next = { ...(r.clothingPatterns[slot].randomFrame || {}), ...patch }; if (!next.rotate) delete next.rotate; if (!next.shrink) delete next.shrink; if (Object.keys(next).length) r.clothingPatterns[slot].randomFrame = next; else delete r.clothingPatterns[slot].randomFrame; }); queueProportionPreview(); renderPools(); } catch (_) { renderPools(); } };
+      const rotateLabel = el('label', 'chance', 'Random rotation each spawn');
+      const rotate = el('input'); rotate.type = 'checkbox'; rotate.checked = frameOf().rotate === true;
+      rotate.onchange = () => writeFrame({ rotate: rotate.checked });
+      rotateLabel.prepend(rotate);
+      const shrinkLabel = el('label', 'chance', 'Random shrink each spawn (% of frame)');
+      const shrink = el('input'); shrink.type = 'checkbox'; shrink.checked = !!frameOf().shrink;
+      const shrinkMin = el('input'), shrinkMax = el('input');
+      for (const input of [shrinkMin, shrinkMax]) { input.type = 'number'; input.min = '5'; input.max = '100'; input.step = '5'; input.disabled = !shrink.checked; }
+      shrinkMin.value = String(Math.round((frameOf().shrink?.min ?? 0.25) * 100)); shrinkMax.value = String(Math.round((frameOf().shrink?.max ?? 1) * 100));
+      const commitShrink = () => writeFrame({ shrink: shrink.checked ? { min: Math.min(1, Math.max(0.05, Number(shrinkMin.value) / 100)), max: Math.min(1, Math.max(Math.max(0.05, Number(shrinkMin.value) / 100), Number(shrinkMax.value) / 100)) } : null });
+      shrink.onchange = commitShrink; shrinkMin.onchange = commitShrink; shrinkMax.onchange = commitShrink;
+      shrinkLabel.prepend(shrink); shrinkLabel.append(shrinkMin, ' – ', shrinkMax);
+      row.append(rotateLabel, shrinkLabel);
       if (slot === 'pants') {
         const drapeLabel = el('label', 'chance', 'Draped pants: pattern the drape, base takes the pattern color');
         const drape = el('input'); drape.type = 'checkbox'; drape.checked = entry.baseUsesPatternColor === true;
