@@ -487,6 +487,43 @@ async function run() {
   const editingLocal=recipeHelpers.recipePointInLocal([projectedCorner.x,projectedCorner.y],existingArea);
   assert(Math.hypot(editingLocal[0]-editableRecipe.box.x0,editingLocal[1]-editableRecipe.box.y0)<1e-8,
     'dragging the handle changes original local recipe geometry rather than baking parent scale');
+  // Run the actual preflight bridge-add handler, using a stroke whose endpoints
+  // lie OUTSIDE its chosen region but whose centroid is INSIDE. All points and
+  // the brush footprint must be projected by ONE region before validation.
+  const preflightStart=editor.indexOf('  function applyStrokes(strokes, label = ');
+  const preflightEnd=editor.indexOf("  previewCanvas.addEventListener('pointerup'",preflightStart);
+  assert(preflightStart>=0&&preflightEnd>preflightStart);
+  const captured=[],testPair={bridges:{strokes:[]}},marks={saved:0,synced:0};
+  const fillStub={
+    stampStroke(_mask,_w,_h,stroke,toPixel,scale) {
+      captured.push({rX:stroke.rX,rY:stroke.rY,
+        points:stroke.points.map(([x,y])=>toPixel(x,y)),scale});
+    },
+    fillBridge(){return {pixels:new Uint8ClampedArray(4)};}
+  };
+  const applyStrokes=new Function('bridgeView','window','chosenShaft','api','bridgeVisual',
+    'pendingStrokes','drawBridgeOverlay','bridgeStatus','pairOverride','bridgeSettings',
+    'save','syncBridgeControls','byId',
+    editor.slice(preflightStart,preflightEnd)+'\nreturn applyStrokes;')(
+      {composed:{width:450,height:1204,getContext:()=>({getImageData:()=>({data:new Uint8ClampedArray(4)})})},
+        frame:{left:0,top:0,width:450,height:1204}},
+      {ModularWeaponBridgeFill:fillStub},()=>fixture,api,bridgeHelpers.bridgeVisual,[],
+      ()=>{},()=>{},()=>testPair,()=>({outline:4,shade:0.3,light:null,seed:1}),
+      ()=>{marks.saved++;},()=>{marks.synced++;},()=>({textContent:''}));
+  const boundaryCrossing={r:10,points:[[100,240],[200,270],[300,300]]};
+  applyStrokes([boundaryCrossing]);
+  assert.equal(captured.length,1);
+  assert.equal(marks.saved,1);
+  assert.equal(captured[0].rX,10*fixture.attachmentRigTransform.scaleX*existingArea.transform.scaleX);
+  assert.equal(captured[0].rY,10*fixture.attachmentRigTransform.scaleY*existingArea.transform.scaleY);
+  for(let i=0;i<boundaryCrossing.points.length;i++){
+    const p=boundaryCrossing.points[i],expected=api.rigPoint(fixture,{x:p[0],y:p[1]},existingArea);
+    assert(Math.abs(captured[0].points[i].x-expected.x)<1e-8
+      && Math.abs(captured[0].points[i].y-expected.y)<1e-8,
+      'preflight fill tests the same region-transformed stroke point as the final compositor');
+  }
+  assert.deepEqual(testPair.bridges.strokes[0],boundaryCrossing,
+    'source bridge data is saved unchanged for future area-transform edits');
   delete fixture.rigRegions; // Later editor mount tests use the original unselected shaft fixture.
   assert(editor.includes('const [x0,y0]=bridgeVisual([box.x0,box.y0],area)'),
     'saved recipe boxes are rendered under their region and overall parent in the mobile preview');
