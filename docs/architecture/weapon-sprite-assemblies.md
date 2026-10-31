@@ -15,21 +15,27 @@ localStorage draft. An authored key must resolve to an existing
 `TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
 weapon definitions or acquisitions.
 
-## Hachutu Torch-Staff: two flame regions and no verdigris
+## Hachutu Torch-Staff: two flame regions
 
 `hachutuTorchStaff` uses the new
 `assets/toolsprites/hachutu_torch-staff.png` as its sole sprite, with the
 same sweep/melee style and long-haft two-hand grip windows as B'shuakauitl.
-It is a distinct melee-only weapon (not a blowgun, and not a metal-shape
-variant). The game registers both its tool and inventory metadata, without
-giving it to the player automatically.
+It is a distinct melee-only weapon (not a blowgun). Like the Torch-Flail it
+is a regular smithable weapon shape (`MELEE_WEAPON_SHAPE_DEFS` in `game.js`):
+smithing and enemy weapon pools use the crafted keys
+`hachutuTorchStaff_<metal>` / `hachutuTorchFlail_<metal>`, and the assembly,
+shape stats and stance all resolve through the shape key. The bare
+`hachutuTorchStaff` / `hachutuTorchFlail` tool keys remain as legacy unique
+items for saves and dev grants. The Maskbound troops carry them (Reacher: staff,
+Bulwark: flail, Sentinel: either), see `combat-maskbound-guardian.js`.
 
 The base PNG is authored with `base.material: 'marker'`,
 `sourceHex: '#7F00FF'`, and `targetHex: '#E7DDC9'`, exactly like
 the Torch-Flail brazier fuel. Recoloring and flame ignition sample the
-**original** PNG, never the already tinted canvas. It has no `metalKey`:
-there is no verdigris progress, plating recolor or visible-metal enchantment
-mask on this rigid sprite. Ordinary tool/weapon mastery XP still increases.
+**original** PNG, never the already tinted canvas. The bare legacy staff key
+has no `metalKey`, so it never grows verdigris; the smithed variants carry
+their metal's key like every other crafted weapon. Ordinary tool/weapon
+mastery XP still increases.
 
 The shared emitter's optional `vfx.masteryClusters: 2` splits the source
 marker pixels along their longest axis (the two staff ends) into stable
