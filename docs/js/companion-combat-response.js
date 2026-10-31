@@ -25,18 +25,22 @@
 
   function chooseTarget(companion, master, enemies, areaId, alertPx) {
     const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
-    let chosen = null, chosenScore = Infinity;
+    let chosen = null, chosenScore = Infinity, currentSeen = false; // Keep a stable target without creating a new array of hostile objects every frame.
+    const current = companion._companionCombatTarget; // Current committed enemy is retained unless it becomes invalid or an urgent threat supersedes it.
     for (const enemy of enemies || []) {
+      if (enemy === current) currentSeen = true;
       if (!validEnemy(enemy, areaId)) continue;
       if (Math.hypot(enemy.x - master.x, enemy.y - master.y) > radius) continue;
       const priority = score(companion, master, enemy);
       if (priority < chosenScore) { chosenScore = priority; chosen = enemy; }
     }
-    const current = companion._companionCombatTarget; // Target lock is retained until an enemy dies, leaves range, or becomes clearly less urgent.
-    const currentEligible = validEnemy(current, areaId) &&
-      Math.hypot(current.x - master.x, current.y - master.y) <= radius &&
-      Array.from(enemies || []).includes(current);
-    if (currentEligible && (current === chosen || score(companion, master, current) * SWITCH_RATIO <= chosenScore)) {
+    const currentEligible = currentSeen && validEnemy(current, areaId) &&
+      Math.hypot(current.x - master.x, current.y - master.y) <= radius;
+    const currentScore = currentEligible ? score(companion, master, current) : Infinity; // Compare against an established target without stale-entry bias.
+    const chosenThreatensOwner = chosen && (chosen.targetPlayer === master || chosen.targetCreature === master || chosen._banditTarget === master);
+    const currentThreatensOwner = current && (current.targetPlayer === master || current.targetCreature === master || current._banditTarget === master);
+    const urgentSwitch = chosenThreatensOwner && !currentThreatensOwner && chosenScore < currentScore; // An attacker already threatening the owner must beat the normal anti-thrashing margin.
+    if (currentEligible && !urgentSwitch && (current === chosen || currentScore * SWITCH_RATIO <= chosenScore)) {
       chosen = current;
     }
     if (chosen !== current) {
