@@ -146,8 +146,9 @@
   // landing 100% of the same hit on the swarm. One rescue strike detaches it.
   function isRescueAlly(host, ally) {
     if (!host || !ally || host === ally || ally.health <= 0 || ally._deathTransitionStarted ||
-        ally._attachment || ally.stableRole === 'shoulderPet' ||
-        (host.areaId && ally.areaId && host.areaId !== ally.areaId)) return false;
+        ally._attachment || ally._downed || ally.prone || ally._knockbackLedgeFall ||
+        Number(ally.knockbackT) > 0 || ally.stableRole === 'shoulderPet' || ally.stableRole === 'mount' ||
+        (host.areaId && ally.areaId && host.areaId !== ally.areaId)) return false; // Immobilized or non-fighting pets must not rescue.
     const d = deps();
     if (isPlayer(host)) return ally.isCompanion === true && !ally.banditCompanion && (ally.master || d.player) === host;
     if (host.isCompanion) return ally.isCompanion === true && !ally.banditCompanion &&
@@ -171,24 +172,38 @@
   let rescueCount = 0; // Read by mobile diagnostics to verify rescues are actually landing.
   function tryRescueSwarm(c, host, state, dt) {
     const d = deps();
-    for (const ally of rescueCandidates(host)) {
-      if (window.Combat.animalAttacks?.isBusy?.(ally) || window.Combat.telegraph?.isBusy?.(ally) || ally._banditAction) continue; // Never interrupt a committed special or NPC weapon attack.
-      state.rescuer = ally;
-      ally._honeyfuzzleRescueTarget = host; // Exposes the temporary ally target for debug/AI instrumentation.
+    const candidates = rescueCandidates(host).filter(ally =>
+      !window.Combat.animalAttacks?.isBusy?.(ally) &&
+      !window.Combat.telegraph?.isBusy?.(ally) && !ally._banditAction);
+    const isReady = ally => !(Number(ally.attackCooldownT) > 0); // A ready rescuer must not wait for a closer pet's attack cooldown.
+    const inReach = ally => Math.hypot(ally.x - host.x, ally.y - host.y) <=
+      Math.max(RESCUE_CONTACT_TILES * d.TILE, Number(ally.def?.attackRangePx) || 0);
+    candidates.sort((a, b) => {
+      const priority = ally => isReady(ally) && inReach(ally) ? 0 : isReady(ally) ? 1 : 2; // A contact-ready strike wins; then approaching ready allies, then cooldown-limited allies.
+      return priority(a) - priority(b) || Math.hypot(a.x - host.x, a.y - host.y) - Math.hypot(b.x - host.x, b.y - host.y);
+    });
+    for (const ally of candidates) {
       const dx = host.x - ally.x, dy = host.y - ally.y;
       const dist = Math.hypot(dx, dy);
       const reach = Math.max(RESCUE_CONTACT_TILES * d.TILE, Number(ally.def?.attackRangePx) || 0);
+      if (dist <= reach && !isReady(ally)) continue; // Another ready ally may strike this frame.
+      if (state.rescuer && state.rescuer !== ally && state.rescuer._honeyfuzzleRescueTarget === host) {
+        delete state.rescuer._honeyfuzzleRescueTarget; // Rescuer changes cannot leave a stale friendly target in another pet's AI.
+      }
+      state.rescuer = ally;
+      ally._honeyfuzzleRescueTarget = host; // Exposes the temporary ally target for debug/AI instrumentation.
       if (dist > reach) {
         const speed = Math.max(d.TILE * 2, Number(ally.def?.moveSpeed) || 0);
         const step = Math.min(Math.max(0, dist - reach * 0.8), speed * dt);
         if (step > 0 && dist > 0) {
           const nx = ally.x + dx / dist * step, ny = ally.y + dy / dist * step;
-          if (!d.canOccupyAt || d.canOccupyAt(nx, ny, d.TILE * 0.3)) { ally.x = nx; ally.y = ny; }
+          if (d.canOccupyAt && !d.canOccupyAt(nx, ny, d.TILE * 0.3)) continue; // An obstructed rescuer must not starve another ally.
+          ally.x = nx; ally.y = ny;
           ally.facing = Math.atan2(dy, dx);
         }
         return false;
       }
-      if (Number(ally.attackCooldownT) > 0) return false; // Same cooldown budget as its ordinary attack.
+      if (!isReady(ally)) continue;
       const tag = ally.def?.attackTag || 'blunt';
       const baseOpts = { tag, attacker: ally, rescueHit: true, friendlyFire: true,
         afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag?.(tag) || null };
@@ -216,6 +231,8 @@
         ' rescued ' + (host.name || (isPlayer(host) ? 'player' : 'ally')) + ' (25% friendly hit, full swarm hit)', 'wildlife');
       return true;
     }
+    if (state.rescuer?._honeyfuzzleRescueTarget === host) delete state.rescuer._honeyfuzzleRescueTarget; // No eligible ally remains; surrender temporary rescue ownership.
+    state.rescuer = null;
     return false;
   }
 
