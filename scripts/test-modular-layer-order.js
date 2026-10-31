@@ -319,7 +319,27 @@ async function run() {
   controls.get('duplicate-scale-y').value = '-';
   controls.get('duplicate-scale-y').listeners.get('input')();
   assert.equal(fixture.attachmentRigTransform.scaleY, .75, 'partial numeric entry does not corrupt the rig');
-  console.log('Modular layering: default, per-pair override, render order, cache, multi-mount, import and editor wiring passed.');
+  // Execute the very same input handler on an ORIGINAL shaft, which has no duplicateFrom.
+  // That used to short-circuit, leaving head primitives at their identity transform.
+  const originalFixture = JSON.parse(JSON.stringify(api.getConfig().shafts.bshuakauitl));
+  assert(!originalFixture.duplicateFrom);
+  const originalField = controls.get('duplicate-scale-x');
+  originalField.value = '1.65';
+  rigBinding(id => controls.get(id), () => originalFixture,
+    { replace() { changes.replaced++; }, shaftRigTransform: api.shaftRigTransform },
+    { shafts: { bshuakauitl: originalFixture } },
+    () => { changes.render++; }, () => { changes.tree++; },
+    () => { changes.preview++; }, () => { changes.save++; });
+  const prevRenders = changes.preview;
+  originalField.listeners.get('input')();
+  assert.equal(originalFixture.attachmentRigTransform.scaleX, 1.65,
+    'original shafts can move their attached primitives with no duplication requirement');
+  assert.equal(changes.preview, prevRenders + 1,
+    'original-shaft controls must refresh the visible preview too');
+  const recolorSource = fs.readFileSync('docs/js/tool-metal-recolor.js','utf8');
+  assert(recolorSource.includes('spritePath, modularRevision'),
+    'modular head textures must be keyed by composition revision, not stale before the rig moves');
+  console.log('Modular layering: transformed actual raster sample positions, original and cloned rig controls, saved drafts, revision cache and editor preview passed.');
 }
 
 module.exports = run; // Allows tests to run inside a library harness without spawning subprocesses.
