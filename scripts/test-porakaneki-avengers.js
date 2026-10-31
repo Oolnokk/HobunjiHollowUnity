@@ -27,8 +27,8 @@ assert.equal(cfg.avengers.retreatHours, 1);
 assert.equal(cfg.avengers.riderLossChance, 0.1);
 assert(cfg.avengers.rideSpeedTilesPerSecond > cfg.behavior.travelSpeedTilesPerSecond, 'mounted riders outpace walking hunters');
 assert.equal(omgurkuCfg.avengers, undefined, 'only the Porakaneki keep an Avenger band');
-assert.deepEqual([cfg.smallCamps.minResidents, cfg.smallCamps.maxResidents], [2, 4], 'Porakaneki ordinary hunting camp retains its original 2–4 residents');
-assert.deepEqual([omgurkuCfg.smallCamps.minResidents, omgurkuCfg.smallCamps.maxResidents], [2, 4], 'Omgurku ordinary hunting camp retains its original 2–4 residents');
+assert.deepEqual([cfg.smallCamps.minResidents, cfg.smallCamps.maxResidents], [2, 4], 'Porakaneki former per-camp cohort retains its original 2–4 resident roll');
+assert.deepEqual([omgurkuCfg.smallCamps.minResidents, omgurkuCfg.smallCamps.maxResidents], [2, 4], 'Omgurku former per-camp cohort retains its original 2–4 resident roll');
 
 let currentArea = 'town'; // Player stays off every wilderness map, so the whole hunt runs abstractly.
 let hour = 12;
