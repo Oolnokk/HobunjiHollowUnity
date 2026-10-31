@@ -110,7 +110,7 @@
 
   // A quarter-scale boulder field directly follows V50's real floor cells, instead
   // of repeating a rectangular texture over voids and rooms at different levels.
-  function ruinMappedFloorShell(meta,seed,floorHeights=null){
+  function ruinMappedFloorShell(meta,seed,floorHeights=null,options={}){
     const cols=Number(meta?.gridCols),rows=Number(meta?.gridRows),cellSize=Number(meta?.cellSize); // V50 grid bounds are the sole floor topology authority.
     if(!Number.isInteger(cols)||!Number.isInteger(rows)||cols<1||rows<1||cols>512||rows>512||
       !Number.isFinite(cellSize)||cellSize<=0||!Number.isFinite(Number(meta.worldWidth))||
@@ -157,7 +157,8 @@
       grid[r][c]={type:'rock',rockKind:'undiggableBoulder',boulderId:'stone:'+pieceByKey.get(idKey),elevTier:height};
     }
     const terrain=root.ZoneTerrainFeatures;
-    const shell=terrain.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}});
+    const subdivisions=options.subdivisions===4?4:2; // Runtime defaults to the final 2×2 quad density; 4×4 remains available for reference/parity testing.
+    const shell=terrain.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}},{subdivisions}); // Avoid generating the 75% of boulder quads immediately discarded by the final floor mesh.
     const pieceIds=new Float32Array(shell.pos.length/3); // Texture charts remain isolated per irregular source boulder.
     for(let i=0;i<shell.idx.length;i+=3){
       const indices=[shell.idx[i],shell.idx[i+1],shell.idx[i+2]];
@@ -176,7 +177,7 @@
       shell.pos[i+1]=y-.03+(shell.pos[i+1]-y)*reliefScale;
       shell.pos[i+2]=shell.pos[i+2]*cellSize-Number(meta.worldDepth)/2;
     }
-    return {...shell,pieceIds,featureScale:.25,reliefScale,levelCount:heights.size,minHeight,maxHeight,
+    return {...shell,pieceIds,featureScale:.25,reliefScale,subdivisions,levelCount:heights.size,minHeight,maxHeight,
       floorCells:floorSeen.size,voidCells:cols*rows-floorSeen.size,pieceCount:pieceHeights.length};
   }
 
@@ -185,7 +186,7 @@
     geometry.setAttribute('position',new T.Float32BufferAttribute(shell.pos,3));
     geometry.setAttribute('uv',new T.Float32BufferAttribute(shell.uv,2));
     geometry.setAttribute('surfacePieceId',new T.Float32BufferAttribute(shell.pieceIds,1));
-    geometry.setIndex(compactFloorStoneIndices(shell.idx));geometry.computeVertexNormals();
+    geometry.setIndex(shell.subdivisions===2?shell.idx:compactFloorStoneIndices(shell.idx));geometry.computeVertexNormals(); // The low-detail shell is already at final draw density.
     const mesh=new T.Mesh(geometry,material);mesh.name='Cell-masked quarter-scale ruin stone';
     mesh.userData={liveRootFloor:true,ruinPreviewRole:'floor',surfaceFoliageRole:'floors',
       floorStyle:'cell-masked-wilderness-skipping-stones',stoneCount:shell.componentCount,
