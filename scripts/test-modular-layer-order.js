@@ -259,7 +259,7 @@ async function run() {
   const rigBinding = new Function('byId', 'chosenShaft', 'api', 'data', 'drawLines',
     'updateRigTree', 'preview', 'save', editor.slice(controlsStart, controlsEnd));
   rigBinding(id => controls.get(id), () => fixture,
-    { replace() { changes.replaced++; } }, { shafts: { hachutuTorchStaff: fixture } },
+    { replace() { changes.replaced++; }, shaftRigTransform: api.shaftRigTransform }, { shafts: { hachutuTorchStaff: fixture } },
     () => { changes.render++; }, () => { changes.tree++; }, () => { changes.preview++; },
     () => { changes.save++; });
   controls.get('duplicate-scale-x').value = '2.4';
