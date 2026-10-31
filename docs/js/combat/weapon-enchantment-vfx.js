@@ -288,6 +288,7 @@
     if (!holder?.children) return null;
     const meshMap = handDeps?.toolMeshMap; // Optional authoritative slot map; the shipped hand runtime can omit it.
     const belongsToHolder = candidate => {
+      if (holder.children.includes(candidate)) return true; // Preserve the direct-child runtime and lightweight tool-holder contract even when the caller omits parent back-pointers.
       for (let ancestor = candidate?.parent; ancestor; ancestor = ancestor.parent) {
         if (ancestor === holder) return true; // Nested attachment/shaft rigs still belong to the exact player-held tool.
         if (ancestor.visible === false) return false; // A hidden intermediate rig cannot be the currently drawn weapon.
