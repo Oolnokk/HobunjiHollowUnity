@@ -23,10 +23,12 @@
 <script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></script>
 <script src="js/live-root-growth.js?v=20261031snare-guide1"></script>
 <script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></script>
+<script src="js/npc-avatar-preview-utils.js?v=20261031realnpc1"></script>
+<script src="js/png-plane-avatar.js?v=20261031realnpc1"></script>
 <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
 <script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
 <script src="js/root-snare-hands.js?v=20261031twogrip1"></script>
-<script src="js/root-snare-runner.js?v=20261031twogrip1"></script>
+<script src="js/root-snare-runner.js?v=20261031realnpc2"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -67,7 +69,9 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 </section>
 <section><h2>Wall-root snare hands · moving walker preview</h2>
 <p>Fixed root nodes on walls and floors can notice targets up to 15 units away. Arms grow slowly (0.2 progress/second) and actively reroute as the procedural runner moves at 5 units/second. The first collider catch grips the neck without freezing movement: running toward the hand source is 2× speed; away is 0.5×; angles blend smoothly. A second hand catches the feet, immobilizes and lifts the runner, and pulls neck and feet apart with a three-second cartoon stretch. The pants and procedural feet then separate in a stylized red particle splurt. This is an author-only visual test, not combat gameplay.</p>
-<label><input type="checkbox" id="snareEnabled"> Enable wandering walker + wall hands</label>
+<label><input type="checkbox" id="snareEnabled"> Enable wandering NPC + root hands</label>
+<label>Real repository NPC <select id="snareNpc"><option value="">Random NPC from repository</option></select></label>
+<p id="snareNpcStatus" role="status">Loads the same NPC database, front/back portrait, skinned neck and species-specific procedural feet used by the Animation Author.</p>
 <div class="controls">
 <label>Hidden hand nodes <input id="snareCount" type="number" min="1" max="14" step="1" value="7"></label>
 <label>Notice radius <input id="snareRadius" type="number" min=".5" max="15" step=".5" value="15"></label>
@@ -138,10 +142,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>Author-only dual grips: slow 15-unit pursuing arms, directional neck-tether tug, a second hand gripping the feet, three-second airborne stretch, separate pants/feet and stylized blood particles.</p></section>
+<section><h2>Latest change</h2><p>The root-snare runner now loads a selectable real repository NPC through the Animation Author portrait and PNG-plane rig pipeline, with authentic neck and procedural feet. The whole avatar tilts along the relative neck-hand and feet-hand grip axis while the real character portrait stretches and separates.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031twogrip1"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031realnpc1"></script>
 </body></html>
