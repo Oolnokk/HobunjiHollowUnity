@@ -150,4 +150,70 @@ assert.equal(new Set(junction.doorTiles.map(tile => tile.join(','))).size, 11, '
 for (const tile of junctionFloor) assert(junction.floorSet.has(tile), 'joining rooms must not lose preexisting floor tiles');
 assert.equal(planner.debug().skipped.length, 0, 'multi-room junctions must not silently skip a door');
 
+// Deterministic house-layout stress: additional attached sections must never
+// shrink room floor area, overlap, or leave a passage stranded at a T-junction.
+let topologySeed = 123451; // Reproducible placement sequence for this regression only.
+const topologyRandom = () => ((topologySeed = (1664525 * topologySeed + 1013904223) >>> 0) / 4294967296);
+const topologyInt = count => Math.floor(topologyRandom() * count);
+let topologyRoomsChecked = 0; // Assert that the generator actually constructed a substantial sample.
+for (let scenario = 0; scenario < 200; scenario++) {
+  const rooms = [{ id: 'r0', col: 20, row: 20, w: 1 + topologyInt(4), h: 1 + topologyInt(4), stage: 'built' }];
+  const goal = 2 + topologyInt(8); // Two to nine rooms, including irregular T/L connections.
+  for (let index = 1; index < goal; index++) {
+    let candidate = null; // Only rooms with a complete exterior edge-contact can be appended.
+    for (let attempt = 0; attempt < 120 && !candidate; attempt++) {
+      const previous = rooms[topologyInt(rooms.length)];
+      const w = 1 + topologyInt(4), h = 1 + topologyInt(4), direction = topologyInt(4);
+      const col = direction === 0 ? previous.col + previous.w : direction === 1 ? previous.col - w
+        : previous.col + topologyInt(previous.w + w - 1) - w + 1;
+      const row = direction === 2 ? previous.row + previous.h : direction === 3 ? previous.row - h
+        : previous.row + topologyInt(previous.h + h - 1) - h + 1;
+      if (col < 1 || row < 1 || col + w > 70 || row + h > 70) continue;
+      if (rooms.some(room => col < room.col + room.w && col + w > room.col
+          && row < room.row + room.h && row + h > room.row)) continue;
+      const touching = rooms.some(room => (
+        (col + w === room.col || col === room.col + room.w)
+          && Math.min(row + h, room.row + room.h) > Math.max(row, room.row)
+        || (row + h === room.row || row === room.row + room.h)
+          && Math.min(col + w, room.col + room.w) > Math.max(col, room.col)));
+      if (touching) candidate = { id: 'r' + index, col, row, w, h, stage: 'built' };
+    }
+    if (candidate) rooms.push(candidate);
+  }
+  if (rooms.length < 2) continue;
+  topologyRoomsChecked += rooms.length;
+  planner.restore(null);
+  planner.layoutBuiltRooms(rooms);
+  const baseFloor = new Set(); // Count every originally allotted tile in every undistorted room.
+  let completeArea = 0;
+  let origin = null;
+  for (const room of rooms) {
+    const rect = planner.roomRect(room);
+    completeArea += rect.w * rect.h;
+    if (!origin) origin = rect.col + ',' + rect.row;
+    for (let row = rect.row; row < rect.row + rect.h; row++)
+      for (let col = rect.col; col < rect.col + rect.w; col++) baseFloor.add(col + ',' + row);
+  }
+  assert.equal(baseFloor.size, completeArea, 'indoor section footprints never overlap');
+  const joined = planner.apply({ floorSet: baseFloor, exitSet: new Set(), doors: [], hearths: [] }, rooms);
+  for (const cell of baseFloor) assert(joined.floorSet.has(cell), 'a joined wall never consumes any room floor tile');
+  assert.equal(planner.debug().skipped.length, 0, 'every exterior-adjacent room pair retains its own doorway');
+  assert.equal(new Set(joined.doorTiles.map(tile => tile.join(','))).size, joined.doorTiles.length,
+    'two joins may not generate overlapping wooden doors');
+  const reachable = new Set(); // Four-direction player navigation from the first room through all new door passages.
+  const queue = [origin];
+  for (let i = 0; i < queue.length; i++) {
+    const point = queue[i];
+    if (reachable.has(point)) continue;
+    reachable.add(point);
+    const [col, row] = point.split(',').map(Number);
+    for (const neighbor of [[col+1,row],[col-1,row],[col,row+1],[col,row-1]]) {
+      const tile = neighbor.join(',');
+      if (joined.floorSet.has(tile) && !reachable.has(tile)) queue.push(tile);
+    }
+  }
+  assert.equal(reachable.size, joined.floorSet.size, 'all rooms and door corridors must remain reachable');
+}
+assert(topologyRoomsChecked >= 500, 'stress suite should exercise many distinct room geometries');
+
 console.log('Farmhouse room planner: complete-footprint and save regressions passed.');
