@@ -842,11 +842,13 @@
     for(const entry of entries){
       if(ruin!==owner)throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});
       const specification=owner.api.captureRootMechanismKeyframes(entry.source,{applyPose:entry.applyPose}),anchor=specification.anchor;
-      const floor=DS.sampleSupport(anchor.x,anchor.z,{minY:-12,maxY:anchor.y+.2,pad:.02}),closedBounds=new THREE.Box3().setFromObject(entry.source);
+      const closedBounds=new THREE.Box3().setFromObject(entry.source),cellKey=Math.floor((anchor.x-PAD)/floorCellSize)+','+Math.floor((anchor.z-PAD)/floorCellSize);
+      let groundY=floorHeights.get(cellKey);
+      if(!Number.isFinite(groundY)){let nearest=Infinity;groundY=Number(owner.meta?.floorSurfaceY)||0;for(const [key,height] of floorHeights){const [col,row]=key.split(',').map(Number),distance=(PAD+(col+.5)*floorCellSize-anchor.x)**2+(PAD+(row+.5)*floorCellSize-anchor.z)**2;if(distance<nearest){nearest=distance;groundY=height;}}} // Source vegetation belongs to real terrain, never the moving deck or bridge being replaced.
       const isDoor=entry.type==='stoneDoor'||entry.type==='transitDoor';
       const binding=await window.LiveRootMechanisms.bindRuntimeAsync({THREE,foliage:window.FoliageGenerator,specification,source:entry.source,scene:owner.scene,surfaces:DS,scope:SCOPE,id:'devruin-'+entry.id,type:entry.type,
         isOccupied:isDoor?()=>{const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE;return x+PLAYER_RADIUS>closedBounds.min.x&&x-PLAYER_RADIUS<closedBounds.max.x&&z+PLAYER_RADIUS>closedBounds.min.z&&z-PLAYER_RADIUS<closedBounds.max.z;}:null,
-        signal:owner.rootGrowthAbort.signal,recipe:{...options,seed:owner.sourceSeed+':'+entry.id,floorY:(floor?.y??0)-anchor.y,floorWidth:6,floorDepth:6,showGuide:false},rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+        signal:owner.rootGrowthAbort.signal,recipe:{...options,seed:owner.sourceSeed+':'+entry.id,floorY:groundY-anchor.y,floorWidth:6,floorDepth:6,showGuide:false},rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
       if(ruin!==owner){binding.dispose();throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});}owner.rootGrowthBindings.push(binding);
     }
     const occlusion=owner.occlusionMeshes; // Keep the same array referenced by the building map record.
