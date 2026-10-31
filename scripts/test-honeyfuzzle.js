@@ -315,8 +315,9 @@ function hiveWorld({ night = false } = {}) {
   grid[8][2] = { type: TileType.SHRUB, floraKind: 'bush' };
   const tiles = [];
   grid.forEach((row, r) => row.forEach((tile, c) => tiles.push({ c, r, ...tile })));
-  const state = { night, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
+  const state = { night, nowMs: 0, area: 'map_test', created: [], toasts: 0, removedVisual: 0, saves: 0, inventory: {}, felled: new Map(), calendar: { day: 3 }, hostile: new Set() };
   const player = { x: 5.5 * 40, y: 6.5 * 40 };
+  context.performance.now = () => state.nowMs; // Test-controlled monotonic time drives fifteen-second swarm replacement.
   context.HoneyfuzzleHives.init({
     TILE: 40, TileType, player, calendar: state.calendar, inventory: state.inventory, hostileObjects: state.hostile, rnd: () => 0.5,
     zoneLayouts: new Map([['map_test', { tiles }]]), felledPersist: state.felled,
@@ -409,6 +410,51 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(west.context.HoneyfuzzleHives.getHoldTarget(5, 4), null);
   assert.equal(west.context.HoneyfuzzleHives.senseTargets({}).length, 0, 'excluded Western Slope scenery is never a hive highlight');
   assert.equal(west.context.HoneyfuzzleColors.zonePalette('map_western_slope').length, 0);
+}
+
+// ---- respawn timing and nighttime honey-theft defense -----------------------------------------
+{
+  const { H, state, grid } = hiveWorld();
+  H.ensureCurrentZone();
+  const initial = state.created[0];
+  initial.health = 0; // Real death pipeline calls noteSwarmDown before beginning corpse cleanup.
+  assert.equal(H.noteSwarmDown(initial), true);
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 1, 'downed swarm cannot immediately respawn');
+  state.nowMs = 14999; H.ensureCurrentZone();
+  assert.equal(state.created.length, 1, '15-second deadline is exclusive');
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'intact hive respawns its defender at 15 seconds');
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'respawn is never duplicated');
+  assert.equal(H.census().hives[0].respawnRemainingS, null, 'mobile census clears its replacement countdown');
+  state.created[1].health = 0; H.noteSwarmDown(state.created[1]);
+  grid[4][5].type = TileType.GRASS; // Hive destroyed while the respawn timer is active.
+  state.nowMs = 40000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a collapsed hive cannot produce replacements');
+}
+{
+  const { H, state, grid } = hiveWorld({ night: true });
+  H.ensureCurrentZone();
+  assert.equal(state.created.length, 0, 'untouched swarms remain dormant at night');
+  const target = H.getHoldTarget(5, 4);
+  const startled = target.onHoldStart();
+  assert.equal(startled.interrupt, true, 'night harvest is interrupted on the first held frame');
+  assert.equal(startled.ok, false);
+  assert.equal(state.created.length, 1, 'the attempt wakes and spawns a defender');
+  const defender = state.created[0];
+  assert.equal(defender.state, 'chase');
+  assert.equal(defender.targetPlayer, state.created[0].targetPlayer);
+  assert.equal(defender._hiveTucked, false);
+  assert.equal(H.control(defender, 0.1), false, 'awakened swarms do not immediately tuck back into their stump');
+  target.onHoldStart();
+  assert.equal(state.created.length, 1, 'repeat attempts reuse the one live defender');
+  assert.equal(grid[4][5].type, TileType.SHRUB, 'the disturbed stump still stands');
+  assert.equal(state.inventory.honey, undefined, 'attempts cannot take free honey at night');
+  defender.health = 0; H.noteSwarmDown(defender);
+  state.nowMs = 15000; H.ensureCurrentZone();
+  assert.equal(state.created.length, 2, 'a killed defender also respawns during the night');
+  assert.equal(state.created[1].state, 'chase', 'night replacement stays aggressive rather than invisible');
 }
 
 // ---- Honeyfuzzle House (FarmProduction building) --------------------------------------------
