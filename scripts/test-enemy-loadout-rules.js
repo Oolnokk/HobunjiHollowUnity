@@ -174,7 +174,8 @@ const read = (p) => fs.readFileSync(p, 'utf8');
     context,
   );
   const source = context.window.EnemyLoadoutSourceData;
-  assert.equal(source.types.length, 22);
+  assert.equal(source.types.length, 23); // Additional unarmed Headtaker troop, keeping every previously listed kind.
+  assert(source.types.some(type => type[0] === 'maskbound:headtaker'),'Headtaker exists as a distinct workshop troop');
   const game = read('docs/game.js');
   const shapes = source.declaration(game, 'MELEE_WEAPON_SHAPE_DEFS');
   assert.equal(shapes.harlyaoBroadsword.slots[0], 'weapon');
