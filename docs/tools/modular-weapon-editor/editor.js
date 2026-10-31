@@ -665,12 +665,15 @@
     }
     return [parentLocal.x,parentLocal.y];
   }
-  function logicalPoint(event) {
+  function logicalPoint(event, rootOnly=false) {
     const canvas = byId('preview'), box = contentRect(canvas), frame = bridgeView.frame;
     const bx = (event.clientX - box.left) / box.scale, by = (event.clientY - box.top) / box.scale; // Bitmap pixels.
-    const local = bridgeLocal([frame.left + bx * frame.width / canvas.width,
-      frame.top + by * frame.height / canvas.height]);
-    return local.map(v => Math.round(v * 2) / 2); // Store gestures in rig-local coordinates, just like the source head/mount fittings.
+    const visible=[frame.left + bx * frame.width / canvas.width,
+      frame.top + by * frame.height / canvas.height];
+    const rig=api.shaftRigTransform(chosenShaft()); // New selection rectangles must not inherit an existing region's inverse.
+    const local=rootOnly ? [(visible[0]-225-rig.x)/rig.scaleX+225,
+      (visible[1]-602-rig.y)/rig.scaleY+602] : bridgeLocal(visible);
+    return local.map(v => Math.round(v * 2) / 2);
   }
   function drawRegionOverlay(ctx, sx, sy, frame) {
     const shaft=chosenShaft(), regions=shaft.rigRegions||[];
@@ -702,21 +705,27 @@
     else ctx.drawImage(bridgeView.composed, 0, 0);
     ctx.save(); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle = '#000';
     for (const stroke of pendingStrokes) {
+      const center={x:stroke.points.reduce((n,p)=>n+p[0],0)/stroke.points.length,
+        y:stroke.points.reduce((n,p)=>n+p[1],0)/stroke.points.length};
+      const area=api.regionAt(chosenShaft(),center); // A stroke is ONE child even when its points cross selection boundaries.
       const pts = stroke.points.map(point => {
-        const [x,y] = bridgeVisual(point); return [(x - frame.left) * sx, (y - frame.top) * sy];
+        const [x,y] = bridgeVisual(point,area); return [(x - frame.left) * sx, (y - frame.top) * sy];
       });
-      const rig = api.shaftRigTransform(chosenShaft());
-      ctx.lineWidth = stroke.r * 2 * sx * Math.sqrt(rig.scaleX * rig.scaleY);
+      const rig = api.shaftRigTransform(chosenShaft()),local=area?api.duplicateTransform(area.transform):{scaleX:1,scaleY:1};
+      ctx.lineWidth = stroke.r * 2 * sx * Math.sqrt(rig.scaleX * rig.scaleY * local.scaleX * local.scaleY);
       ctx.beginPath(); ctx.moveTo(...pts[0]);
       for (const pt of pts.slice(1)) ctx.lineTo(...pt);
       if (pts.length === 1) { ctx.beginPath(); ctx.ellipse(pts[0][0], pts[0][1],
-        stroke.r * sx * rig.scaleX, stroke.r * sy * rig.scaleY, 0, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
+        stroke.r * sx * rig.scaleX*local.scaleX, stroke.r * sy * rig.scaleY*local.scaleY, 0, 0, Math.PI * 2); ctx.fill(); } else ctx.stroke();
     }
     drawRecipeBoxes(ctx, sx, sy, frame);
     if (bridgeHover && byId('pair-bridge-on').checked && byId('pair-brush-mode').value === 'junction') {
       ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
-      const t = api.attachmentRig(chosenShaft()).parent;
-      ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f); // Ghost junction has the same parent scale as the final composed PNG.
+      const shaft=chosenShaft(),t=api.attachmentRig(shaft).parent;
+      ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+      const region=api.regionAt(shaft,{x:bridgeHover[0],y:bridgeHover[1]});
+      if(region){const area=api.regionAffine(region);ctx.transform(area.a,area.b,area.c,area.d,area.e,area.f);}
+      // Real junction compositing follows the same parent * region * junction matrices.
       window.ModularJunctionPicker.ghost(ctx, junctionPicker.placement(bridgeHover[0], bridgeHover[1]));
     } else if (bridgeHover && byId('pair-bridge-on').checked) {
       ctx.strokeStyle = '#ffce64'; ctx.lineWidth = 2;
@@ -735,7 +744,7 @@
   previewCanvas.addEventListener('pointerdown', event => {
     if(regionSelecting && bridgeView && event.isPrimary){
       event.preventDefault();
-      const p=logicalPoint(event); // Source rig-local rectangle selection, independent of the current parent transform.
+      const p=logicalPoint(event,true); // Region creation is always in the root rig's local frame, even over transformed children.
       regionDraft={pointer:event.pointerId,start:p,box:{x0:p[0],y0:p[1],x1:p[0],y1:p[1]}};
       previewCanvas.setPointerCapture(event.pointerId);drawBridgeOverlay();return;
     }
@@ -768,7 +777,7 @@
   });
   previewCanvas.addEventListener('pointermove', event => {
     if(regionDraft?.pointer===event.pointerId){
-      event.preventDefault();const p=logicalPoint(event),start=regionDraft.start;
+      event.preventDefault();const p=logicalPoint(event,true),start=regionDraft.start;
       regionDraft.box={x0:Math.min(start[0],p[0]),y0:Math.min(start[1],p[1]),
         x1:Math.max(start[0],p[0]),y1:Math.max(start[1],p[1])};
       drawBridgeOverlay();return;
