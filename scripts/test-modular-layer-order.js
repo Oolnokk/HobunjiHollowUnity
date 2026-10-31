@@ -193,6 +193,7 @@ async function run() {
     { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 },
     'existing exported duplicateTransform drafts migrate to the canonical rig transform');
 
+  vm.runInContext(fs.readFileSync('docs/js/modular-weapon-bridge-fill.js','utf8'), ctx); // Recipe expansion is required for actual area tests.
   // Independently transformed local area: only the TOP eye/head and the TOP
   // recipe box are children. The lower end of the same shaft must be untouched.
   const areaBase=JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
