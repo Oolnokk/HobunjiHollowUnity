@@ -97,6 +97,7 @@ const server=http.createServer((request,response)=>{
       const initial=runner.group.position.clone();
       for(let i=0;i<120;i++)runner.update(.033);
       assert(initial.distanceTo(runner.group.position)>.1,'running NPC should navigate the room');
+      runner.group.position.set(0,0,0); // Use the room center so direction checks cannot accidentally hit a boundary.
       runner.setNeckGrip({point:runner.group.position.clone().add(new T.Vector3(-1,0,0))});
       runner.headToAnchor(true);runner.update(.04);
       const away=runner.diagnostics().movementMultiplier;
@@ -109,6 +110,15 @@ const server=http.createServer((request,response)=>{
       const pair=window.RootSnareHands.create({THREE:T,room,rootLayers:[{layer,role:'wall'}],
         seed:'exact-fixed-seed',count:6,triggerRadius:15,reach:15,extendSpeed:.2});
       assert(pair.anchors.length>=2,'test room needs at least two hidden branch nodes');
+      const stationary=new T.Group();stationary.position.copy(pair.anchors[0].point);
+      stationary.position.addScaledVector(pair.anchors[0].direction,.62);stationary.position.y-=1.38;
+      const natural={group:stationary,grips:[],running:true,setNeckGrip(a){this.grips.push('neck');},
+        startDualCapture(a,b){this.grips.push('feet');this.running=false;},
+        clearNeckGrip(){this.grips=[];},setRunning(v){this.running=v;},chooseTarget(){}};
+      for(let i=0;i<440;i++)pair.update(.033,natural);
+      assert(pair.diagnostics().dual&&natural.grips.join(',')==='neck,feet',
+        'real sequential collider contacts must assign the first hand to the neck and second to the feet');
+      assert(pair.releaseCaptured(),'natural two-hand capture should reset before manual animation demo');
       assert(pair.previewDoubleGrip(runner),'author preview must provide a reproducible two-grip trigger');
       assert(pair.diagnostics().neckGrip&&pair.diagnostics().feetGrip&&pair.diagnostics().dual,
         'first hand binds the neck and second binds the feet');
