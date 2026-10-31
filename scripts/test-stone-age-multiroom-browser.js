@@ -61,7 +61,7 @@ const server=http.createServer((request,response)=>{
       check(root.children.length===2,'construction must remain hidden until activated');
       scenery.activate();
       check(root.children.includes(room.model),'the new scene must attach to the native V50 root');
-      check(floor.layers.isEnabled(0)===false&&wall.layers.isEnabled(0)===false,'only source rendering should be suppressed');
+      check((floor.layers.mask&1)===0&&(wall.layers.mask&1)===0,'only source rendering should be suppressed');
       check(floor.visible&&wall.visible&&wall.geometry===sourceGeometry,'native V50 source and collision visibility must be preserved');
       const stoneGeometry=visible.geometry,wallStone=room.model.children.find(child=>child.userData?.ruinPreviewRole==='wall')?.geometry;
       let floorDisposed=false,wallDisposed=false; // Real THREE dispose events detect GPU buffer leaks, not just detached Object3D parents.
