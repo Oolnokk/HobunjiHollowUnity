@@ -29,22 +29,22 @@
 .cut-stage.float-panel.has-max{max-width:none;justify-self:stretch}
 @media(max-width:760px){.float-panel.has-max{max-height:65vh}}
 </style></head><body>
-<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: complete shaft duplication with independent X/Y size and position, including copied mounting rules and live Torch-Staff fire in gameplay.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
+<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: duplicated attachment primitives and tang/sleeve rigs can be scaled and translated independently, leaving shaft artwork and fire untouched.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
 <div class="panel" id="shaft-duplicate-panel">
-<h2>Duplicate complete shaft</h2>
+<h2>Duplicate shaft attachment rig</h2>
 <button id="duplicate-shaft" type="button">Duplicate selected shaft + mounts + fitting rules</button>
-<p>Duplicates preserve all source mounting lines, permitted heads and per-pair transforms. Give the copy a different sprite if desired. The controls below scale and translate the <strong>entire duplicate</strong>: artwork, fitted head mounts and any live shaft fire. The original shaft remains unchanged.</p>
+<p>The duplicate retains the selected shaft's artwork, compatible heads, fitting rules and tang/sleeve mounting rig. <strong>Only the attachment primitive and its tang/sleeve rig move or scale with the four controls below.</strong> The shaft PNG, held pose and live shaft flames remain unchanged; mounted heads follow the adjusted rig.</p>
 <label>Duplicated shaft PNG <input id="duplicate-sprite" list="shaft-sprites" placeholder="assets/toolsprites/your_sprite.png"></label>
 <datalist id="shaft-sprites"><option value="assets/toolsprites/hachutu_torch-staff.png"></option></datalist>
 <div class="grid2">
-<label>X scale <input id="duplicate-scale-x" type="number" min=".05" max="8" step=".05"></label>
-<label>Y scale <input id="duplicate-scale-y" type="number" min=".05" max="8" step=".05"></label>
-<label>X translation (source px) <input id="duplicate-x" type="number" min="-2400" max="2400" step="1"></label>
-<label>Y translation (source px) <input id="duplicate-y" type="number" min="-2400" max="2400" step="1"></label>
+<label>Rig X scale <input id="duplicate-scale-x" type="number" min=".05" max="8" step=".05"></label>
+<label>Rig Y scale <input id="duplicate-scale-y" type="number" min=".05" max="8" step=".05"></label>
+<label>Rig X translation (source px) <input id="duplicate-x" type="number" min="-2400" max="2400" step="1"></label>
+<label>Rig Y translation (source px) <input id="duplicate-y" type="number" min="-2400" max="2400" step="1"></label>
 </div>
-<p id="duplicate-note" aria-live="polite">Choose a duplicated shaft to edit its full transform.</p><p>The combined preview shows the assembled shaft and heads; its live world-up flame particles render in gameplay and the Complex Tool Visuals editor rather than being baked into the modular PNG.</p>
+<p id="duplicate-note" aria-live="polite">Choose a duplicated shaft to edit its attachment rig.</p><p>The combined preview shows a fixed shaft and its fitted, transformed heads. The shaft flames remain attached to the original fuel markers in gameplay; they are not baked into the modular PNG.</p>
 </div>
 <label><input id="allow-shaft" type="checkbox"> Allow selected haft in Foundry after calibration</label>
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
