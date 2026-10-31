@@ -1,10 +1,12 @@
-# Multi-sprite weapon authoring
+# Complex tool visual authoring
 
-The **Tool Hub → Combat → Multi-sprite Weapons** editor lives in
+The **Tool Hub → Combat → Complex Tool Visuals** editor lives in
 [tools/multi-sprite-weapon-editor/](../tools/multi-sprite-weapon-editor/index.html).
-It has two tabs: **Flails** (haft, chain, attachment pixels, idle inertia and
-attack following) and **Multi-layer Parts** (ordered sprite layers and
-interleaved effects, usable on flails or ordinary weapons).
+It has three tabs: **Flails** (haft, connector, inertia and anchors),
+**Multi-layer Parts** (ordered sprite stacks and interleaved effects), and
+**Base sprite + VFX** (material/marker recolor and emission directly on an
+existing tool PNG, without requiring overlays or a flail). These tools share
+the same 3D gameplay assembly and mobile-friendly debug log.
 
 Edits stay in a device-local draft until exported and committed. Use **Export JS
 config** to replace [config/weapon-sprite-assemblies.js](../config/weapon-sprite-assemblies.js)
@@ -12,6 +14,41 @@ or **Export JSON** for a portable draft. The runtime never loads the author's
 localStorage draft. An authored key must resolve to an existing
 `TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
 weapon definitions or acquisitions.
+
+## Hachutu Torch-Staff: two flame regions and no verdigris
+
+`hachutuTorchStaff` uses the new
+`assets/toolsprites/hachutu_torch-staff.png` as its sole sprite, with the
+same sweep/melee style and long-haft two-hand grip windows as B'shuakauitl.
+It is a distinct melee-only weapon (not a blowgun, and not a metal-shape
+variant). The game registers both its tool and inventory metadata, without
+giving it to the player automatically.
+
+The base PNG is authored with `base.material: 'marker'`,
+`sourceHex: '#7F00FF'`, and `targetHex: '#E7DDC9'`, exactly like
+the Torch-Flail brazier fuel. Recoloring and flame ignition sample the
+**original** PNG, never the already tinted canvas. It has no `metalKey`:
+there is no verdigris progress, plating recolor or visible-metal enchantment
+mask on this rigid sprite. Ordinary tool/weapon mastery XP still increases.
+
+The shared emitter's optional `vfx.masteryClusters: 2` splits the source
+marker pixels along their longest axis (the two staff ends) into stable
+groups. At mastery 0 each region emits small, separately scattered motes.
+Mastery ranks 1–4 smoothly concentrate the origin points toward their two
+centroids while increasing each mote's size; at mastery 5 both regions
+produce single concentrated fire plumes. The final `size: 0.02`,
+`life: 0.35`, `speed: 0.12`, and palette match the calibrated
+Torch-Flail. `rate: 44` gives **each end** the Torch-Flail's 22
+motes/s budget at rank 5. The normal emitter has no mastery scaling,
+so existing flail fire is unchanged.
+
+Gameplay passes the live `ToolMastery.toolMasteryLevel(itemKey)` callback
+when constructing a weapon. The Tool Hub adds a **Preview mastery 0–5**
+slider which uses the same callback path in both 3D views. Its Base sprite
+tab allows other tools to opt into either standard fire or two-ended
+mastery fire, edit the marker colors and adjust rate/size/life/speed/palette.
+The existing recipe schema remains `hobunji_weapon_sprite_assemblies.v1`;
+existing drafts still load, and effects on a base sprite are opt-in.
 
 ## Runtime architecture
 
