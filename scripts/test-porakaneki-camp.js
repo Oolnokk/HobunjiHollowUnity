@@ -33,6 +33,8 @@ assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v3');
 assert.deepEqual(cfg.wildernessZones, ZONES);
 assert.equal(cfg.smallCamps.minPerZone, 1);
 assert.equal(cfg.smallCamps.maxPerZone, 1);
+assert.equal(cfg.smallCamps.huntingPartiesMinPerZone, 2);
+assert.equal(cfg.smallCamps.huntingPartiesMaxPerZone, 4);
 assert.equal(cfg.smallCamps.minResidents, 2);
 assert.equal(cfg.smallCamps.maxResidents, 4);
 assert.equal(cfg.chiefCamp.generatedResidents, 6);
@@ -399,18 +401,30 @@ function hunterDebug(api, zoneId, campId, index) {
     }
     assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
     for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) {
-      assert(camp.residents >= 2 && camp.residents <= 4);
-      assert(camp.huntingParty, `${zoneId} small camp forms an awake den-hunting party`);
-      assert(camp.huntingParty.memberCount >= 2 && camp.huntingParty.memberCount <= 3, 'den hunting party uses the configured small group size');
-      const den = zoneLayouts.get(zoneId).dens.find(entry => String(entry.id) === String(camp.huntingParty.denId));
-      assert(den, 'hunting party owns one specific authored den assignment');
-      assert.notEqual(den.isAnimalDen, false, 'hunting parties only target caves an animal den lives in');
-      const t = camp.huntingParty.target;
-      const insideDen = t.col >= den.x && t.col < den.x + den.w && t.row >= den.y && t.row < den.y + den.h;
-      assert.equal(insideDen, false, 'hunting party target remains outside the den footprint');
-      const assigned = camp.hunters.filter(hunter => hunter.huntPartyId === camp.huntingParty.id);
-      assert.equal(assigned.length, camp.huntingParty.memberCount, 'all party members share one party identity');
-      assert(assigned.every(hunter => hunter.activity === 'hunt-den' && hunter.huntDenId === camp.huntingParty.denId), 'party members share the same specific den target');
+      const oldCohorts = api.__test.historicalHuntingCohortsForZone(zoneId); // Uses each former 2–4-camp population roll to validate the consolidated count.
+      assert(oldCohorts.length >= 2 && oldCohorts.length <= 4, 'one physical camp retains the previous 2–4 independent hunting cohorts');
+      assert.deepEqual(camp.cohortSizes, oldCohorts, 'each cohort exactly preserves the population of its former physical camp');
+      assert.equal(camp.residents, oldCohorts.reduce((sum, count) => sum + count, 0), 'one camp contains the same total number of ordinary hunters as before');
+      assert.equal(camp.hunters.length, camp.residents, 'every consolidated hunter is spawned exactly once');
+      assert.equal(camp.huntingParties.length, oldCohorts.length, 'all former Porakaneki camps retain their own awake hunting parties');
+      const memberIds = new Set(); // Detects accidental double-assignment across independent den parties.
+      for (const party of camp.huntingParties) {
+        assert(party.memberCount >= 2 && party.memberCount <= 3, 'Porakaneki parties retain their previous 2–3 hunter group size');
+        const den = zoneLayouts.get(zoneId).dens.find(entry => String(entry.id) === String(party.denId));
+        assert(den, 'each party owns a specific authored den');
+        assert.notEqual(den.isAnimalDen, false, 'hunting parties only target caves an animal den lives in');
+        const t = party.target;
+        const insideDen = t.col >= den.x && t.col < den.x + den.w && t.row >= den.y && t.row < den.y + den.h;
+        assert.equal(insideDen, false, 'each party targets a point outside its den footprint');
+        const assigned = camp.hunters.filter(hunter => hunter.huntPartyId === party.id);
+        assert.equal(assigned.length, party.memberCount, 'each party has a distinct assigned membership');
+        for (const hunter of assigned) {
+          assert(!memberIds.has(hunter.index), 'a hunter cannot belong to two parties simultaneously');
+          memberIds.add(hunter.index);
+          assert.equal(hunter.huntDenId, party.denId, 'every member travels toward its own party den');
+          assert.equal(hunter.activity, 'hunt-den');
+        }
+      }
     }
   }
   assert.equal(api.__test.MIN_HUNTING_CAMPS_PER_ZONE, 1, 'runtime exposes the hard hunting-camp floor used by generation and bandit conflict resolution');
