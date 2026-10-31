@@ -44,7 +44,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 33049
+    "line": 33138
   },
   {
     "file": "docs/game.js",
@@ -53,7 +53,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 33056
+    "line": 33175
   },
   {
     "file": "docs/js/action-arc-ui.js",
