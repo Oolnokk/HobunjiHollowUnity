@@ -211,7 +211,8 @@
     return components;
   }
 
-  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null) {
+  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null, dependencyOverride = null) {
+    const terrainDeps = dependencyOverride || deps; // Optional private floor-build datum leaves normal wilderness initialization untouched.
     const range = normalizedBounds(zcols, zrows, bounds); // Current streaming chunk whose portion of each global shell is emitted.
     const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
     const pos = [], uv = [], idx = []; // World-space shell buffers returned to the Three.js wrapper.
@@ -298,10 +299,10 @@
         ]; // Four tiles potentially touching this exact grid vertex.
         for (const [c, r] of candidates) {
           if (!cellSet.has(c + ',' + r)) continue;
-          total += deps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * deps.PLATEAU_UNIT;
+          total += terrainDeps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * terrainDeps.PLATEAU_UNIT;
           count++;
         }
-        return count ? total / count : deps.NORMAL_TOP + (fallbackTile.elevTier || 0) * deps.PLATEAU_UNIT;
+        return count ? total / count : terrainDeps.NORMAL_TOP + (fallbackTile.elevTier || 0) * terrainDeps.PLATEAU_UNIT;
       };
       const topYAt = (x, z, fallbackTile) => {
         const edgeDistance = Math.min(...boundaryEdges.map(edge => pointSegmentDistance(x, z, edge))); // Nearest outer edge makes every silhouette vertex meet the ground.
@@ -332,7 +333,7 @@
           coverTopY = Math.max(coverTopY, pos[a * 3 + 1], pos[b * 3 + 1], pos[d * 3 + 1], pos[e * 3 + 1]);
           idx.push(a, d, e, a, e, b);
         }
-        tile.projectileCoverHeightTiles = coverTopY - (deps.NORMAL_TOP + (tile.elevTier || 0) * deps.PLATEAU_UNIT);
+        tile.projectileCoverHeightTiles = coverTopY - (terrainDeps.NORMAL_TOP + (tile.elevTier || 0) * terrainDeps.PLATEAU_UNIT);
         topTileCount++;
 
         for (const edge of boundaryEdges) if (edge.owner === c + ',' + r) perimeterEdgeCount++; // Count only true outer edges; the tapered top already meets the ground there.
