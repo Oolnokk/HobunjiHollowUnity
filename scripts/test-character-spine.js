@@ -89,35 +89,55 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1, placementRatio: 0.5, handAttachY: 0.6 }), 0.6 - 0.18 - 0.5, 'no rule: 18% below the hand anchor, like the legs');
   near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1 }), 0.5 - 0.18 - 0.5, 'no rule and no hand anchor: 18% below the plane middle');
 
-  // The curl: node 0 is pinned to the root; the neck-base node drops by exactly the profile's drop; the spline sweeps forward (+z) and, with a
-  // sway, sideways, off the root; segment lengths are preserved; the pitch peaks low in the back and relaxes toward the neck base, so the spline
-  // meets the upright head and shoulders without a hard angle.
-  const lengthOf = (nodes, k) => Math.hypot(nodes[k].x - nodes[k - 1].x, nodes[k].y - nodes[k - 1].y);
+  // The curl: node 0 is pinned to the root; the neck-base node drops by exactly the profile's drop; the spine keeps curving forward (+z) all
+  // the way up and, with a sway, sideways, off the root; the vertical compression tapers toward the neck base so it meets the rigid head and
+  // shoulders without a step.
   const stooped = spine.profileFor(0.8);
   const curve = spine.solveCurve(stooped, layout, H);
+  const step = (k) => ({ x: curve[k].x - curve[k - 1].x, y: curve[k].y - curve[k - 1].y, z: curve[k].z - curve[k - 1].z });
   assert.deepEqual([curve[0].x, curve[0].y, curve[0].z], [0, 0, 0], 'the posterior never leaves the root');
   near(curve[6].y, -stooped.shoulderDrop * H, 'the neck-base node drops by exactly the profile drop');
-  assert.ok(curve[6].z > 0, 'the neck base swings forward');
+  near(curve[6].z, stooped.shoulderDrop * H * spine.kyphosisForward * spine.defaultKyphosis, 'and swings forward in proportion to the default kyphosis');
   assert.ok(curve.slice(1).every((node, k) => node.z > curve[k].z && node.y < curve[k].y), 'the nodes sweep down and forward');
-  const pitches = [];
-  for (let k = 1; k < 7; k++) {
-    const dx = layout.offsets[k].x + curve[k].x - curve[k - 1].x, dy = layout.offsets[k].y + curve[k].y - curve[k - 1].y, dz = (curve[k].z - curve[k - 1].z) / spine.depthScale;
-    near(Math.hypot(dx, dy, dz), lengthOf(layout.nodes, k), 'each segment keeps its length');
-    pitches.push(Math.atan2(dz, dy));
-  }
-  const peak = pitches.indexOf(Math.max(...pitches));
-  assert.ok(peak >= 1 && peak <= 3, 'the curl peaks low in the back (' + pitches.map(p => (p * 180 / Math.PI).toFixed(0)).join(',') + ')');
-  for (let k = 1; k <= peak; k++) assert.ok(pitches[k] >= pitches[k - 1], 'the pitch rises up to the peak');
-  for (let k = peak + 1; k < pitches.length; k++) assert.ok(pitches[k] <= pitches[k - 1], 'and relaxes after it');
-  assert.ok(pitches[5] < 0.5 * pitches[peak], 'so the last segment is far from the squashed, near-horizontal one an ever-increasing curl would give');
-  assert.ok(Math.cos(pitches[5]) > 0.7, 'the shoulders under the head keep most of their height');
+  assert.ok(curve.every(node => node.x === 0), 'no sway, no sideways travel');
+  // Keeps curving forward: the lean of the spline (angle of each segment from vertical) only ever increases up the spline: no relaxing, no S.
+  const segmentHeight = (layout.nodes[6].y - layout.nodes[0].y) / 6;
+  const lean = [];
+  for (let k = 1; k < 7; k++) lean.push(Math.atan2(step(k).z, segmentHeight + step(k).y));
+  for (let k = 1; k < lean.length; k++) assert.ok(lean[k] > lean[k - 1], 'the lean keeps increasing up the spline (' + lean.map(l => (l * 180 / Math.PI).toFixed(0)).join(',') + ')');
+  assert.ok(lean[0] < 5 * Math.PI / 180 + lean[1] / 2 && lean[0] < lean[5] / 3, 'it starts nearly upright at the root');
+  // Compression: concentrated in the lower back, easing toward the neck, and never anywhere near flat.
+  const scale = [];
+  for (let k = 1; k < 7; k++) scale.push((segmentHeight + step(k).y) / segmentHeight);
+  for (let k = 1; k < scale.length; k++) assert.ok(scale[k] > scale[k - 1], 'the vertical scale recovers toward the neck (' + scale.map(x => x.toFixed(2)).join(',') + ')');
+  assert.ok(Math.min(...scale) > 0.3, 'no segment is squashed flat');
+  assert.ok(scale[5] > 0.75, 'and the last one, under the head, keeps most of its height: no step into the rigid head');
+  // Kyphosis: how far and how late the upper back hooks forward, independent of how far it stoops.
+  near(spine.profileFor(0.8).kyphosis, spine.defaultKyphosis, 'unauthored kyphosis is the default');
+  near(spine.profileFor(0.8, 0, 9).kyphosis, 1, 'kyphosis clamps to 1');
+  const flat = spine.solveCurve(spine.profileFor(0.8, 0, 0), layout, H), hooked = spine.solveCurve(spine.profileFor(0.8, 0, 1), layout, H);
+  assert.ok(flat.every(node => node.z === 0), 'kyphosis 0 is a pure stoop: no forward curl at all');
+  near(flat[6].y, curve[6].y, 'with the same vertical drop as any other kyphosis');
+  near(hooked[6].y, curve[6].y, 'kyphosis never changes how far it stoops');
+  near(hooked[6].z, 2 * curve[6].z, 'kyphosis 1 swings the neck base twice as far forward as the default');
+  assert.ok(hooked[3].z / hooked[6].z < curve[3].z / curve[6].z && curve[3].z / curve[6].z < spine.solveCurve(spine.profileFor(0.8, 0, 0.25), layout, H)[3].z / spine.solveCurve(spine.profileFor(0.8, 0, 0.25), layout, H)[6].z, 'a higher kyphosis keeps the back straighter and hooks the neck later');
+  const hookedLean = [];
+  for (let k = 1; k < 7; k++) hookedLean.push(Math.atan2(hooked[k].z - hooked[k - 1].z, segmentHeight + hooked[k].y - hooked[k - 1].y));
+  for (let k = 1; k < hookedLean.length; k++) assert.ok(hookedLean[k] > hookedLean[k - 1], 'and still only ever curves further forward up the spline');
+  near(spine.kyphosisFor({ spine: { hunch: 0.5, kyphosis: 0.9 } }), 0.9, 'kyphosis is read from an authored spine');
+  near(spine.kyphosisFor({ npcRecord: { appearance: { aging: { hunch: 0.4, kyphosis: 0.2 } } } }), 0.2, 'and from an NPC\'s authored aging block');
+  near(spine.kyphosisFor({ profile: { aging: { kyphosis: 0.7 } } }), 0.7, 'on the portrait profile too');
+  near(spine.kyphosisFor({ spine: { hunch: 0.5, kyphosis: 0.9 }, profile: { aging: { kyphosis: 0.1 } } }), 0.9, 'an explicit spine wins');
+  near(spine.kyphosisFor({}), spine.defaultKyphosis, 'and it defaults');
+  near(spine.resolve({ spine: { hunch: 0.5, sway: 0.1, kyphosis: 0.3 } }).kyphosis, 0.3, 'resolve carries it into the profile');
   const swayed = spine.solveCurve(spine.profileFor(0.8, 0.6), layout, H);
   assert.ok(swayed[6].x > 0 && swayed[3].x > 0 && swayed[6].x > swayed[3].x, 'a sway carries the spline sideways, off the root');
   near(swayed[6].y, -stooped.shoulderDrop * H, 'with the same vertical drop');
   assert.ok(spine.solveCurve(spine.profileFor(0.8, -0.6), layout, H)[6].x < 0, 'a negative sway goes the other way');
   assert.ok(spine.solveCurve(upright, layout, H).every(node => node.x === 0 && node.y === 0 && node.z === 0), 'an upright character does not move at all');
   const capped = spine.solveCurve({ ...stooped, shoulderDrop: 5 }, layout, H);
-  assert.ok(capped[6].y > -5 * H && capped[6].y < 0, 'an impossible drop is capped by the maximum curl');
+  near(capped[6].y, -0.6 * (layout.nodes[6].y - layout.nodes[0].y), 'an impossible drop is limited to a share of the span, never inverting it');
+  near(spine.solveCurve(spine.profileFor(1), layout, H)[6].y, -spine.profileFor(1).shoulderDrop * H, 'full hunch reaches its full drop: no curl cap');
 
   // Applying it to a rig: each node bone moves by its step along the curve from its bind-pose offset (never accumulating); the rear skin is the
   // same card turned around, so its x and z run the other way.
@@ -237,7 +257,15 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   assert.throws(() => rules.validate(doc({ lean: 0.5 })), /unknown field/);
   assert.doesNotThrow(() => rules.validate(doc({ hunch: 0.5, sway: -0.5 })), 'a sway rolls the curl sideways');
   assert.throws(() => rules.validate(doc({ hunch: 0.5, sway: 1.5 })), /spine\.sway/);
+  assert.doesNotThrow(() => rules.validate(doc({ hunch: 0.5, kyphosis: 0.8 })), 'kyphosis is an authorable setting');
+  assert.throws(() => rules.validate(doc({ hunch: 0.5, kyphosis: 1.2 })), /spine\.kyphosis/);
+  assert.throws(() => rules.validate(doc({ hunch: 0.5, kyphosis: -0.1 })), /spine\.kyphosis/);
   assert.throws(() => rules.validate(doc([0.5])), /spine/);
+
+  rules.set({ schema: 'hobunji_enemy_loadouts.v1', rules: { 'mao-ao-skeleton': { spine: { hunch: 0.6, kyphosis: 0.9, sway: -0.2 } }, 'harlyao-skeleton': { spine: { hunch: 0.6 } } } });
+  const authoredSpine = rules.spineFor('mao-ao-skeleton');
+  assert.deepEqual([authoredSpine.hunch, authoredSpine.kyphosis, authoredSpine.sway], [0.6, 0.9, -0.2], 'the loadout accessor carries hunch, kyphosis and sway');
+  assert.equal(rules.spineFor('harlyao-skeleton').kyphosis, undefined, 'an unauthored kyphosis stays unset, so the default applies');
 
   console.log('character spine OK');
 })().catch(error => { console.error(error); process.exit(1); });

@@ -8,10 +8,13 @@
 //                  and nothing else: no torso bone, no spine bone. The portrait
 //                  skin (png-plane-avatar.js) is weighted to the nodes by height,
 //                  so the PNG follows the curve. A hunch curls the spline with an
-//                  ease-out profile (the curvature sits low in the back) and
-//                  preserves each segment's length, so the nodes sweep down AND
-//                  forward (+z, `DEPTH_SCALE`d for the flat cards), and sideways
-//                  with a sway, naturally off the local root's x = 0, z = 0.
+//                  profile that keeps curving forward all the way to the neck
+//                  (the lean only ever increases up the spline, so the head
+//                  hangs out in front), with the vertical compression tapering
+//                  toward the neck so it meets the rigid head and shoulders
+//                  without a step; the nodes sweep down AND forward (+z), and
+//                  sideways with a sway, naturally off the local root's
+//                  x = 0, z = 0.
 //   shoulders,     the shoulder anchors and the attack-orbit centre keep their 2D
 //   orbit          portrait coordinates and ride the same curve (`deformAt`):
 //                  the orbit centre moves precisely with the shoulders.
@@ -23,7 +26,7 @@
 //   strideScale    multiplier on stride length (ProceduralLegAnimation).
 //
 // Nothing here animates: the hunch is fixed per character. Sources, in order:
-//   * an explicit `spine` (number or { hunch, sway }) on options/profile/
+//   * an explicit `spine` (number or { hunch, sway, kyphosis }) on options/profile/
 //     appearance/npcRecord — enemy-loadouts.json rules carry `spine`;
 //   * otherwise the NPC database's appearance.aging.hunch (via
 //     HobunjiCharacterRigScale.ageFor).
@@ -36,12 +39,13 @@
   const SHOULDER_DROP_RATIO = 1; // The spline carries this share of the total head drop at its neck-base node; the head bone supplies any rest. 1: nothing for the head bone to fight the spline over.
   const WAIST_BELOW_NECK = 0.42; // Fallback only: with no authored posterior the spline starts this far (fraction of model height) below the neck base.
   const NECK_BASE_BELOW_PIVOT = 0.08; // Fallback only: with no authored shoulders the neck base (where the spline ends) is this far (fraction of model height) below the head-turn pivot, which sits at the head's centre in x and its chin line in y.
-  const PITCH_PEAK_AT = 0.4; // The curl peaks this far up the spline (low in the back)...
-  const PITCH_END_SHARE = 0.3; // ...and relaxes to this share of the peak at the neck base, so the spline meets the upright head and shoulders without a hard angle.
   const SPLINE_NODES = 7; // Posterior (0) ... neck base (6).
   const SEGMENTS = SPLINE_NODES - 1;
-  const MAX_PITCH = 85 * Math.PI / 180; // The curl never exceeds this at the neck node.
-  const DEPTH_SCALE = 0.5; // The portrait is a flat card: how much of the curve's forward (+z) travel the skin, anchors and orbit really make.
+  const DEFAULT_KYPHOSIS = 0.5; // The look before kyphosis is authored: a moderate forward hook.
+  const KYPHOSIS_FORWARD = 1.6; // Kyphosis 1 swings the neck base forward by this much per unit of its vertical drop (the default 0.5 gives 0.8): the portrait is a flat card, so this is a look, not a length to preserve.
+  const KYPHOSIS_HOOK = 2; // Kyphosis sets how late the forward lean comes: the lean follows t^(1 + KYPHOSIS_HOOK * kyphosis), so a high setting keeps the back nearly straight and hooks the neck forward, a low one leans evenly.
+  const DROP_TAPER = 0.6; // The vertical drop is spread with a taper that eases toward the neck base (slope 1 - DROP_TAPER there, so the compression meets the rigid head and shoulders without a step) and concentrates in the lower back.
+  const MAX_DROP_OF_SPAN = 0.6; // The neck base never drops more than this share of the posterior-to-neck span.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.
 
@@ -50,8 +54,8 @@
   const smoothstep01 = t => { const x = clamp01(t); return x * x * (3 - 2 * x); };
 
   function explicitSpine(source) {
-    if (typeof source === 'number') return { hunch: source, sway: NaN };
-    if (!source || typeof source !== 'object') return { hunch: NaN, sway: NaN };
+    if (typeof source === 'number') return { hunch: source, sway: NaN, kyphosis: NaN };
+    if (!source || typeof source !== 'object') return { hunch: NaN, sway: NaN, kyphosis: NaN };
     const candidates = [
       source.spine,
       source.profile?.spine,
@@ -64,9 +68,9 @@
     for (const candidate of candidates) {
       const object = candidate && typeof candidate === 'object';
       const hunch = asNumber(object ? candidate.hunch : candidate);
-      if (Number.isFinite(hunch)) return { hunch, sway: object ? asNumber(candidate.sway) : NaN };
+      if (Number.isFinite(hunch)) return { hunch, sway: object ? asNumber(candidate.sway) : NaN, kyphosis: object ? asNumber(candidate.kyphosis) : NaN };
     }
-    return { hunch: NaN, sway: NaN };
+    return { hunch: NaN, sway: NaN, kyphosis: NaN };
   }
 
   // 0-1 hunch for whatever the caller has (options bag, profile, roster, number).
@@ -84,19 +88,34 @@
     return Number.isFinite(sway) ? Math.max(-1, Math.min(1, sway)) : 0;
   }
 
+  // 0-1 kyphosis: how far (and how late) the upper back hooks forward, independent of how far it stoops. From an explicit spine; for an NPC also
+  // from its authored aging block (appearance.aging.kyphosis); DEFAULT_KYPHOSIS otherwise.
+  function kyphosisFor(source) {
+    const explicit = explicitSpine(source).kyphosis;
+    if (Number.isFinite(explicit)) return clamp01(explicit);
+    if (source && typeof source === 'object') {
+      for (const aging of [source.aging, source.profile?.aging, source.appearance?.aging, source.npcRecord?.appearance?.aging, source.profile?.appearance?.aging]) {
+        const value = asNumber(aging?.kyphosis);
+        if (Number.isFinite(value)) return clamp01(value);
+      }
+    }
+    return DEFAULT_KYPHOSIS;
+  }
+
   function neckDropMax() {
     const max = Number(window.HobunjiCharacterRigScale?.maxAgeHunchFraction);
     return Number.isFinite(max) && max > 0 ? max : FALLBACK_NECK_DROP;
   }
 
   // Every derived number for a hunch. Drops are positive fractions of model height.
-  function profileFor(hunch, sway = 0) {
+  function profileFor(hunch, sway = 0, kyphosis = DEFAULT_KYPHOSIS) {
     const h = clamp01(Number(hunch) || 0);
     const totalDrop = h * neckDropMax(); // Where the head ends up: the NPC age-hunch amount.
     const shoulderDrop = totalDrop * SHOULDER_DROP_RATIO; // The vertical drop of the spline's neck-base node.
     return {
       hunch: h,
       sway: Math.max(-1, Math.min(1, Number(sway) || 0)),
+      kyphosis: Number.isFinite(Number(kyphosis)) ? clamp01(Number(kyphosis)) : DEFAULT_KYPHOSIS,
       neckDrop: totalDrop - shoulderDrop, // Extra head drop applied at the head bone, on top of the spline's.
       totalNeckDrop: totalDrop,
       shoulderDrop,
@@ -167,47 +186,30 @@
   }
 
   // Curls the rest spline by the profile and returns each node's displacement from its rest position (plane-local, node 0 pinned at {0,0,0}).
-  // The cumulative pitch rises quickly to its peak low in the back and relaxes toward the neck base (so the spline meets the upright head and
-  // shoulders without a hard angle), segment lengths are preserved, and the peak is solved so the neck-base node drops by exactly
-  // profile.shoulderDrop * modelHeight (capped at MAX_PITCH). The pitch swings the
-  // upper body down and forward (+z); sway rolls it sideways (+x). Forward travel is scaled by DEPTH_SCALE for the flat portrait cards.
-  // Share of the peak pitch at height t (0 at the posterior, 1 at the neck base): a quarter-sine up to the peak, then a smooth relax.
-  const pitchProfile = t => t <= PITCH_PEAK_AT
-    ? Math.sin(Math.PI / 2 * t / PITCH_PEAK_AT)
-    : 1 - (1 - PITCH_END_SHARE) * smoothstep01((t - PITCH_PEAK_AT) / (1 - PITCH_PEAK_AT));
-
+  // The curl is a smooth curve through the nodes, shaped per axis rather than by a bent chain of fixed-length bones (the portrait is a flat
+  // card, there are no lengths to preserve, and a fixed length forced the top segments flat and squashed the shoulders):
+  //   down     profile.shoulderDrop * modelHeight at the neck base, spread with a taper that eases toward the neck (the compression is gentle
+  //            there and concentrates in the lower back), so it meets the rigid head and shoulders without a step;
+  //   forward  profile.kyphosis * KYPHOSIS_FORWARD times that drop, as a convex curve (t to the power 1 + KYPHOSIS_HOOK * kyphosis): the lean only
+  //            ever increases up the spline, so the spine keeps curving forward to the neck base and the head hangs out in front; kyphosis sets
+  //            both how far and how late (0: no forward curl at all, a pure stoop; 1: a straight back with the neck hooked far forward);
+  //   sideways the same convex curve, scaled by profile.sway (+x).
+  // The neck base always reaches its drop exactly (no curl cap), limited only to MAX_DROP_OF_SPAN of the span so it can never invert.
   function solveCurve(profile, layout, modelHeight) {
-    const rest = layout.nodes, lengths = [];
-    for (let k = 1; k < SPLINE_NODES; k++) lengths.push(Math.hypot(rest[k].x - rest[k - 1].x, rest[k].y - rest[k - 1].y));
-    const total = lengths.reduce((sum, length) => sum + length, 0) || 1;
-    const rx = (rest[SEGMENTS].x - rest[0].x) / total, ry = (rest[SEGMENTS].y - rest[0].y) / total;
+    const rest = layout.nodes;
+    const span = rest[SEGMENTS].y - rest[0].y;
+    const drop = Math.min((profile.shoulderDrop || 0) * modelHeight, MAX_DROP_OF_SPAN * Math.max(0, span));
     const sway = Number(profile.sway) || 0;
-    const target = (profile.shoulderDrop || 0) * modelHeight;
-    const build = (pitch, displacement) => {
-      let x = rest[0].x, y = rest[0].y, z = 0;
-      for (let k = 1; k < SPLINE_NODES; k++) {
-        const t = (k - 0.5) / SEGMENTS;
-        const phi = pitch * pitchProfile(t); // Cumulative pitch at the segment's middle.
-        const psi = -sway * phi; // Roll about the facing axis: the same shape, sideways (a positive sway leans toward +x).
-        const dx = rx, dy = ry * Math.cos(phi), dz = ry * Math.sin(phi);
-        x += lengths[k - 1] * (dx * Math.cos(psi) - dy * Math.sin(psi));
-        y += lengths[k - 1] * (dx * Math.sin(psi) + dy * Math.cos(psi));
-        z += lengths[k - 1] * dz;
-        if (displacement) displacement[k] = { x: x - rest[k].x, y: y - rest[k].y, z: z * DEPTH_SCALE };
-      }
-      return rest[SEGMENTS].y - y; // Vertical drop of the neck-base node.
-    };
-    let pitch = 0;
-    if (target > 0) {
-      if (build(MAX_PITCH) <= target) pitch = MAX_PITCH; // More than the curl can give: capped.
-      else {
-        let low = 0, high = MAX_PITCH;
-        for (let i = 0; i < 40; i++) { const mid = (low + high) / 2; if (build(mid) < target) low = mid; else high = mid; }
-        pitch = (low + high) / 2;
-      }
-    }
+    const kyphosis = Number.isFinite(Number(profile.kyphosis)) ? clamp01(Number(profile.kyphosis)) : DEFAULT_KYPHOSIS;
+    const forward = drop * KYPHOSIS_FORWARD * kyphosis, hook = 1 + KYPHOSIS_HOOK * kyphosis;
     const displacement = Array.from({ length: SPLINE_NODES }, () => ({ x: 0, y: 0, z: 0 }));
-    if (pitch > 0) build(pitch, displacement); // An upright character is exactly the rest pose, not rest plus float noise.
+    if (!(drop > 0)) return displacement; // An upright character is exactly the rest pose.
+    for (let k = 1; k < SPLINE_NODES; k++) {
+      const t = k / SEGMENTS;
+      const down = t + DROP_TAPER * t * (1 - t); // 0 at the posterior, 1 at the neck base, slope 1 - DROP_TAPER there.
+      const lean = Math.pow(t, hook); // Convex: the forward lean keeps increasing up the spline.
+      displacement[k] = { x: sway * forward * lean, y: -drop * down, z: forward * lean };
+    }
     return displacement;
   }
 
@@ -320,7 +322,7 @@
     };
   }
 
-  const resolve = source => profileFor(hunchFor(source), swayFor(source));
+  const resolve = source => profileFor(hunchFor(source), swayFor(source), kyphosisFor(source));
 
   // Stores the profile on an avatar root for the layers that read it live (shoulder aim); null when upright.
   function bind(root, source) {
@@ -352,7 +354,9 @@
   window.HobunjiCharacterSpine = Object.freeze({
     splineNodes: SPLINE_NODES,
     shoulderDropRatio: SHOULDER_DROP_RATIO,
-    depthScale: DEPTH_SCALE,
+    kyphosisForward: KYPHOSIS_FORWARD,
+    defaultKyphosis: DEFAULT_KYPHOSIS,
+    dropTaper: DROP_TAPER,
     nodeWeightsAt,
     layoutFor,
     solveCurve,
@@ -365,6 +369,7 @@
     strideWiden: STRIDE_WIDEN,
     hunchFor,
     swayFor,
+    kyphosisFor,
     profileFor,
     resolve,
     bind,

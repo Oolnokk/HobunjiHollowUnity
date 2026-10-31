@@ -106,12 +106,13 @@
         if (!Object.keys(rule.rigScale).length) delete rule.rigScale;
       }
       if (rule.spine != null) {
-        // Static hunchback (js/character-spine.js): hunch 0 = upright, 1 = fully curled; optional sway -1..1 rolls the curl sideways. The spine is a
-        // spline from the posterior to the neck: it lowers the neck, shoulders and attack-orbit centre (down, forward and sideways) and widens the walk.
-        if (typeof rule.spine !== 'object' || Array.isArray(rule.spine)) throw Error(kind + '.spine: expected { hunch, sway }');
+        // Static hunchback (js/character-spine.js): hunch 0 = upright, 1 = fully curled; optional sway -1..1 rolls the curl sideways; optional
+        // kyphosis 0..1 sets how far and how late the upper back hooks forward (0: a pure stoop, 1: a straight back with a far-forward neck; unset: 0.5).
+        // The spine is a spline from the posterior to the neck: it lowers the neck, shoulders and attack-orbit centre (down, forward and sideways) and widens the walk.
+        if (typeof rule.spine !== 'object' || Array.isArray(rule.spine)) throw Error(kind + '.spine: expected { hunch, sway, kyphosis }');
         for (const [field, value] of Object.entries(rule.spine)) {
-          if (field !== 'hunch' && field !== 'sway') throw Error(kind + '.spine: unknown field ' + field);
-          const [low, high] = field === 'hunch' ? [0, 1] : [-1, 1];
+          if (!['hunch', 'sway', 'kyphosis'].includes(field)) throw Error(kind + '.spine: unknown field ' + field);
+          const [low, high] = field === 'sway' ? [-1, 1] : [0, 1];
           if (typeof value !== 'number' || !Number.isFinite(value) || value < low || value > high) throw Error(kind + '.spine.' + field + ' must be between ' + low + ' and ' + high);
         }
         if (!Object.keys(rule.spine).length) delete rule.spine;
@@ -317,10 +318,10 @@
     const scale = ruleFor(kind).rigScale; // Inherits the base Ghoul rule for special ghoul variants.
     return scale && Object.keys(scale).length ? { ...scale } : null;
   }
-  // Optional static hunchback for one enemy kind: { hunch, sway? } when the rule sets a positive hunch, else null.
+  // Optional static hunchback for one enemy kind: { hunch, sway?, kyphosis? } when the rule sets a positive hunch, else null.
   function spineFor(kind) {
-    const spine = ruleFor(kind).spine, hunch = Number(spine?.hunch), sway = Number(spine?.sway);
-    return hunch > 0 ? { hunch: Math.min(1, hunch), ...(sway ? { sway: Math.max(-1, Math.min(1, sway)) } : {}) } : null;
+    const spine = ruleFor(kind).spine, hunch = Number(spine?.hunch), sway = Number(spine?.sway), kyphosis = spine?.kyphosis == null ? NaN : Number(spine.kyphosis);
+    return hunch > 0 ? { hunch: Math.min(1, hunch), ...(sway ? { sway: Math.max(-1, Math.min(1, sway)) } : {}), ...(Number.isFinite(kyphosis) ? { kyphosis: Math.max(0, Math.min(1, kyphosis)) } : {}) } : null;
   }
   const ruleFor = (kind) => {
     const own = documentData.rules[kind];
