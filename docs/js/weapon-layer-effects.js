@@ -278,6 +278,9 @@
         config: spec, sourceLayer: layer.config, image: pix, sources,
         clusters, anchors, visualScale, // Geometric per-tip parent scaling matches the flail-head transform.
         group, renderOrder, unit, particles: [], pool: [], accumulation: 0,
+        worldRise: spec.worldRise === true, // Opt in: torch-staff and brazier particles travel along world-up even as their weapons rotate.
+        worldTarget: spec.worldRise === true ? new THREE.Vector3() : null, // Shared scratch vector avoids per-frame GC for world-space positions.
+        worldScale: spec.worldRise === true ? new THREE.Vector3() : null, // Capture parent/visual scale at emission, without changing world-up direction.
         texture: createFireTexture(THREE),
       });
     });
@@ -321,8 +324,17 @@
           fx.particles.splice(p, 1);
           continue;
         }
-        particle.sprite.position.x = particle.x + Math.sin(particle.age * 13 + particle.phase) * fx.unit * 6 * t;
-        particle.sprite.position.y = particle.y + particle.speed * particle.age;
+        if (fx.worldRise) {
+          // Existing motes keep the world-space origin captured at ignition; a moving or spinning
+          // weapon changes where NEW flames spawn, never the direction or position of old ones.
+          fx.worldTarget.copy(particle.spawnWorld);
+          fx.worldTarget.x += Math.sin(particle.age * 13 + particle.phase) * particle.worldDrift * t;
+          fx.worldTarget.y += particle.worldSpeed * particle.age; // World +Y is up, regardless of the head/staff pitch.
+          particle.sprite.position.copy(particle.sprite.parent.worldToLocal(fx.worldTarget));
+        } else {
+          particle.sprite.position.x = particle.x + Math.sin(particle.age * 13 + particle.phase) * fx.unit * 6 * t;
+          particle.sprite.position.y = particle.y + particle.speed * particle.age;
+        }
         const opacity = Number(fx.config.opacity); // Optional per-mote alpha controls overlap without shrinking flame geometry.
         particle.sprite.material.opacity = Math.sin(Math.PI * t) * (Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 0.92);
         particle.sprite.scale.setScalar(particle.size * (0.5 + t * 1.5));
@@ -361,10 +373,18 @@
         const localY = anchor ? py - anchor.y : py;
         sprite.position.set(localX, localY, FIRE_DEPTH_OFFSET / fx.visualScale);
         sprite.visible = true;
-        (anchor?.group || fx.group).add(sprite); // Each tip has its own geometric transform; no drifting away from the staff.
+        (anchor?.group || fx.group).add(sprite); // Keep the render-order stack and per-tip scale, even for world-moving particles.
+        const speed = (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()); // Local rise rate reused for world-up emission.
+        let spawnWorld = null, worldSpeed = 0, worldDrift = 0; // Per-particle ignition origin and parent-scale-adjusted world velocity.
+        if (fx.worldRise) {
+          spawnWorld = sprite.getWorldPosition(new THREE.Vector3()); // Capture actual tip position, after holder and flail motion.
+          sprite.parent.getWorldScale(fx.worldScale); // Head scale 2.5 or tip scale 4 changes distance, never world-up direction.
+          worldSpeed = speed * Math.abs(fx.worldScale.y);
+          worldDrift = fx.unit * 6 * Math.abs(fx.worldScale.x);
+        }
         fx.particles.push({
           sprite, age: 0, life: Math.max(0.1, Number(fx.config.life) || 0.65),
-          x: localX, y: localY, speed: (Number.isFinite(fx.config.speed) ? Math.max(0, fx.config.speed) : 0.12) * (0.5 + Math.random()),
+          x: localX, y: localY, speed, spawnWorld, worldSpeed, worldDrift,
           phase: Math.random() * 6.283,
           size: Math.max(0.001, (Number(fx.config.size) || 0.035) * (fx.config.masteryClusters ? 0.22 + 0.78 * growth : 1)), // Local mote size stays at brazier baseline; the pivot scales the entire fire.
         });
