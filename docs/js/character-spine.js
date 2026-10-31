@@ -34,7 +34,8 @@
   const FALLBACK_NECK_DROP = 0.25; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
   const SHOULDER_DROP_RATIO = 0.8; // The spine lowers the shoulders by this share of the total head drop; the head bone supplies the rest.
   const WAIST_BELOW_NECK = 0.42; // The spine bone's weight starts this far (fraction of model height) below the neck pivot...
-  const FULL_BELOW_NECK = 0.04; // ...and is complete by here, just under the shoulder line, so everything above rides the spine.
+  const FULL_BELOW_NECK = 0.21; // ...and is complete by here (halfway up the torso), so the bend is squeezed into the lower back and everything above, shoulders and neck included, rides the spine rigidly.
+  const BEND_FRACTION = 0.2; // The spine joint, where the new bend sits, is this far up the waist-to-neck span: low in the back, so the torso bone is short and the spine bone long.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.
 
@@ -92,6 +93,19 @@
 
   const smoothstep01 = t => { const x = clamp01(t); return x * x * (3 - 2 * x); };
 
+  // Bind-pose bone layout for a skinned portrait, in the local frames of the chain torso -> spine -> neck. The torso bone used to span the
+  // whole waist-to-neck stretch as a zero-length bone at the plane origin; it now covers only the low back (up to the bend, BEND_FRACTION of
+  // the span) and the spine bone starts at that bend and takes the freed length up to the neck pivot. The neck keeps its plane position.
+  // Skin weights are defined in plane coordinates, so the pose is identical until a hunch moves the spine bone.
+  function layoutFor(neckX, neckY, modelHeight) {
+    const waistY = neckY - WAIST_BELOW_NECK * modelHeight, jointY = waistY + BEND_FRACTION * (neckY - waistY);
+    return {
+      torso: { x: neckX, y: waistY, z: 0 }, // Plane-local origin of the torso bone (the waist).
+      spine: { x: 0, y: jointY - waistY, z: 0 }, // Relative to the torso: the bend, low in the span.
+      neck: { x: 0, y: neckY - jointY, z: 0 }, // Relative to the spine: the rest of the span, ending exactly at the neck pivot.
+    };
+  }
+
   // The spine bone's skin weight at plane-local height y (0 below the waist, 1 from just under the shoulders up).
   // buildSkinnedPlaneGeometry weights vertices with it and every CPU skinning resolver reuses it, so they all agree.
   const weightAt = (y, neckY, modelHeight) => {
@@ -116,26 +130,27 @@
     const drop = (profile?.shoulderDrop || 0) * modelHeight;
     for (const joint of [joints.position ? joints : joints.front, joints.back]) {
       if (!joint?.position) continue;
-      joint.position.y = -drop; // Pure translation: the weight ramp between waist and shoulders turns it into a stoop.
+      joint.userData ||= {};
+      if (!Number.isFinite(joint.userData.hobunjiSpineRestY)) joint.userData.hobunjiSpineRestY = joint.position.y; // The bind-pose offset from the torso bone (half the torso).
+      joint.position.y = joint.userData.hobunjiSpineRestY - drop; // A translation down: the weight ramp between waist and shoulders turns it into a stoop.
       joint.updateMatrix?.();
     }
     if (profile) Object.assign(profile, { dropLocal: drop, neckY: Number(rig.neckLocal?.y) || 0, modelHeight, blendHeight: rig.blendHeight || null });
     return true;
   }
 
-  // "Show bones" overlay for the portrait skin: waist -> shoulder line (spine bone, orange) -> neck (violet), drawn as children of the
-  // skinned plane so they sit in the same frame as the bones and show the stoop as it is. The leg solver owns the toggle
-  // (ProceduralLegAnimation.showBones): it calls sync(visible) every frame, so the guides appear with the leg guides, upright or not.
+  // "Show bones" overlay for the portrait skin: the real bind-pose bones, torso (waist -> spine joint, green), spine (spine joint -> neck,
+  // orange) and the neck joint (violet), drawn as children of the skinned plane so they sit in the bones' own frame and show the stoop as
+  // it is. The leg solver owns the toggle (ProceduralLegAnimation.showBones): it calls sync(visible) every frame, so the guides appear
+  // with the leg guides, upright or not.
   function makeBoneGuides(THREE, rig) {
     const plane = rig?.skinnedPlane;
     const spineBone = rig?.spineJoint?.position ? rig.spineJoint : rig?.spineJoint?.front;
-    const neckBone = rig?.neckJoint;
-    if (!plane?.isObject3D || !spineBone || !neckBone?.position) return null;
+    const torsoBone = rig?.torsoBone, neckBone = rig?.neckJoint;
+    if (!plane?.isObject3D || !spineBone || !torsoBone?.position || !neckBone?.position) return null;
     plane.geometry?.computeBoundingBox?.();
     const box = plane.geometry?.boundingBox;
     const H = box ? box.max.y - box.min.y : 0.9;
-    const neckY = Number(rig.neckLocal?.y ?? neckBone.position.y) || 0;
-    const waistY = neckY - WAIST_BELOW_NECK * H, shoulderY = neckY - FULL_BELOW_NECK * H;
     const group = new THREE.Group();
     group.name = 'spine_bone_guides';
     group.visible = false;
@@ -146,16 +161,15 @@
       materials.push(material);
       return material;
     };
-    const spineColor = 0xff9f1a, neckColor = 0xc77dff;
+    const torsoColor = 0x6fd17f, spineColor = 0xff9f1a, neckColor = 0xc77dff;
     const cylinderGeometry = new THREE.CylinderGeometry(0.012 * H / 0.9, 0.015 * H / 0.9, 1, 8);
     const jointGeometry = new THREE.SphereGeometry(0.021 * H / 0.9, 10, 8);
     geometries.push(cylinderGeometry, jointGeometry);
     const bone = color => { const mesh = new THREE.Mesh(cylinderGeometry, guideMaterial(color, 0.62)); mesh.renderOrder = 42; mesh.frustumCulled = false; group.add(mesh); return mesh; };
     const joint = color => { const mesh = new THREE.Mesh(jointGeometry, guideMaterial(color, 0.85)); mesh.renderOrder = 43; mesh.frustumCulled = false; group.add(mesh); return mesh; };
-    const spineGuide = bone(spineColor), neckGuide = bone(neckColor);
-    const waistJoint = joint(spineColor), shoulderJoint = joint(spineColor), neckJoint = joint(neckColor);
-    const x = Number(neckBone.position.x) || 0;
-    const waist = new THREE.Vector3(x, waistY, 0.01), shoulder = new THREE.Vector3(), neck = new THREE.Vector3();
+    const torsoGuide = bone(torsoColor), spineGuide = bone(spineColor);
+    const waistJoint = joint(torsoColor), spineJoint = joint(spineColor), neckJoint = joint(neckColor);
+    const waist = new THREE.Vector3(), mid = new THREE.Vector3(), neck = new THREE.Vector3();
     const span = (mesh, from, to) => {
       const dx = to.x - from.x, dy = to.y - from.y;
       mesh.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 0.01);
@@ -169,12 +183,13 @@
       sync(show) {
         if (show !== visible) { visible = !!show; group.visible = visible; }
         if (!visible) return;
-        spineBone.updateMatrix?.();
-        shoulder.set(x, shoulderY, 0.01).applyMatrix4(spineBone.matrix); // The shoulder line is fully weighted to the spine bone, so it rides the bone exactly.
-        neck.copy(neckBone.position).applyMatrix4(spineBone.matrix); neck.z = 0.01; // The neck bone is the spine bone's child.
-        waistJoint.position.copy(waist); shoulderJoint.position.copy(shoulder); neckJoint.position.copy(neck);
-        span(spineGuide, waist, shoulder);
-        span(neckGuide, shoulder, neck);
+        waist.copy(torsoBone.position); // The torso bone is a child of the plane, which is the frame the guides live in.
+        mid.copy(waist).add(spineBone.position); // Bone origins chain by their local offsets (the torso and spine carry no rotation or scale).
+        neck.copy(mid).add(neckBone.position);
+        waist.z = mid.z = neck.z = 0.01;
+        waistJoint.position.copy(waist); spineJoint.position.copy(mid); neckJoint.position.copy(neck);
+        span(torsoGuide, waist, mid);
+        span(spineGuide, mid, neck);
       },
       dispose() {
         group.parent?.remove(group);
@@ -218,6 +233,7 @@
     followAt,
     applyToRig,
     deformDrop,
+    layoutFor,
     makeBoneGuides,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,

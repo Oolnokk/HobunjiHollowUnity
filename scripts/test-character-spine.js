@@ -35,6 +35,7 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   // Skin weight: nothing below the waist moves, everything from just under the shoulders up rides the spine, monotonic between.
   const H = 0.9, neckY = 0.2;
   near(spine.weightAt(neckY - 0.5 * H, neckY, H), 0, 'legs/hips are not weighted to the spine');
+  near(spine.weightAt(neckY - 0.21 * H, neckY, H), 1, 'everything from mid-torso up rides the spine');
   near(spine.weightAt(neckY - 0.04 * H, neckY, H), 1, 'the shoulder line is fully weighted');
   near(spine.weightAt(neckY + 0.3 * H, neckY, H), 1, 'the head region is fully weighted');
   let last = -1;
@@ -43,6 +44,22 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
     assert.ok(w >= last - 1e-12 && w >= 0 && w <= 1, 'weight rises smoothly from 0 to 1');
     last = w;
   }
+  // Bind-pose layout: the torso bone covers only the lower half of the waist-to-neck span, the spine bone takes the freed upper half,
+  // and the chain still ends exactly on the plane-space neck pivot, so the skin weights (plane coordinates) are unaffected.
+  const layout = spine.layoutFor(0.05, neckY, H);
+  const span = layout.spine.y + layout.neck.y;
+  near(span, 0.42 * H, 'the chain covers the whole waist-to-neck stretch');
+  near(layout.spine.y, 0.2 * span, 'the bend sits low: the torso bone is only the lower fifth');
+  near(layout.neck.y, 0.8 * span, 'the spine bone takes the freed length up to the neck');
+  assert.ok(layout.spine.y < span / 2, 'the bend is well below the midpoint');
+  near(layout.torso.y + layout.spine.y + layout.neck.y, neckY, 'the chain ends exactly at the neck pivot');
+  near(layout.torso.x + layout.spine.x + layout.neck.x, 0.05, 'and at the neck pivot X');
+  const spineRest = { position: { y: layout.spine.y }, updateMatrix() {}, userData: {} };
+  spine.applyToRig({ spineJoint: spineRest, neckLocal: { y: neckY } }, spine.profileFor(1), H);
+  near(spineRest.position.y, layout.spine.y - spine.profileFor(1).shoulderDrop * H, 'a hunch lowers the spine bone from its bind-pose offset');
+  spine.applyToRig({ spineJoint: spineRest, neckLocal: { y: neckY } }, spine.profileFor(0.5), H);
+  near(spineRest.position.y, layout.spine.y - spine.profileFor(0.5).shoulderDrop * H, 'reapplying is relative to the bind pose, never cumulative');
+
   // Deformation: anchors keep their 2D coordinates and are carried down by the follow at their own height.
   const stooped = spine.profileFor(1);
   const rig = { spineJoint: { position: { y: 0 }, updateMatrix() {} }, neckLocal: { y: neckY } };

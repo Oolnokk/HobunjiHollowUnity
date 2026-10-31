@@ -517,6 +517,10 @@
   // therefore deformed by one coherent rig instead of becoming disconnected
   // alpha-shaped islands.
   // Spine-bone skin weight at plane-local height y (js/character-spine.js). Every skinned portrait carries the bone, so a hunch can be applied after build.
+  // Bind-pose bone offsets for the torso -> spine -> neck chain (js/character-spine.js): the torso bone covers the lower half of the waist-to-neck
+  // span and the spine bone the upper half. Without the module the bones keep their legacy layout (torso and spine at the plane origin).
+  const spineLayoutFor = (neckX, neckY, modelHeight) => window.HobunjiCharacterSpine?.layoutFor?.(neckX, neckY, modelHeight)
+    || { torso: { x: 0, y: 0, z: 0 }, spine: { x: 0, y: 0, z: 0 }, neck: { x: neckX, y: neckY, z: 0 } };
   const spineWeightAt = (y, neckY, modelHeight) => window.HobunjiCharacterSpine?.weightAt?.(y, neckY, modelHeight) || 0;
 
   function buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, options = {}) {
@@ -649,13 +653,16 @@
     frontMaterial.skinning = true;
     backMaterial.skinning = true;
 
+    const layout = spineLayoutFor(neckLocal.x, neckLocal.y, modelHeight);
     const torsoBone = new THREE.Bone();
     torsoBone.name = `${config.name}_torso_bone`;
+    torsoBone.position.set(layout.torso.x, layout.torso.y, layout.torso.z); // The waist; the bone now spans only the lower half of the torso.
     const neckJoint = new THREE.Bone();
     neckJoint.name = `${config.name}_neck_bone`;
-    neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
+    neckJoint.position.set(layout.neck.x, layout.neck.y, layout.neck.z); // Relative to the spine bone, ending at the plane-space neck pivot (neckLocal).
     const spineJoint = new THREE.Bone(); // Hunchback bone (js/character-spine.js): rest pose is identity; a hunch translates it down, and the neck/head bones below inherit that.
     spineJoint.name = `${config.name}_spine_bone`;
+    spineJoint.position.set(layout.spine.x, layout.spine.y, layout.spine.z); // Starts at the torso's midpoint and takes the freed upper half.
     torsoBone.add(spineJoint);
     spineJoint.add(neckJoint);
     // Child of neckJoint, not a torsoBone sibling: it inherits head-turn
@@ -765,13 +772,16 @@
     material.skinning = true;
     material.needsUpdate = true;
 
+    const layout = spineLayoutFor(pivotLocalX, pivotLocalY, planeHeight);
     const torsoBone = new THREE.Bone();
     torsoBone.name = `${plane.name}_torso_bone`;
+    torsoBone.position.set(layout.torso.x, layout.torso.y, layout.torso.z); // See buildSkinnedSinglePlaneAssembly: the torso covers the lower half, the spine the upper.
     const neckBone = new THREE.Bone();
     neckBone.name = `${plane.name}_neck_bone`;
-    neckBone.position.set(pivotLocalX, pivotLocalY, 0);
+    neckBone.position.set(layout.neck.x, layout.neck.y, layout.neck.z);
     const spineBone = new THREE.Bone(); // Hunchback bone between torso and neck; see buildSkinnedSinglePlaneAssembly.
     spineBone.name = `${plane.name}_spine_bone`;
+    spineBone.position.set(layout.spine.x, layout.spine.y, layout.spine.z);
     torsoBone.add(spineBone);
     spineBone.add(neckBone);
     const headScaleBone = new THREE.Bone();
@@ -791,7 +801,7 @@
     skinned.add(torsoBone);
     const skeleton = new THREE.Skeleton([torsoBone, neckBone, headScaleBone, spineBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, spineBone };
+    return { mesh: skinned, weightedGeometry, skeleton, neckBone, headScaleBone, spineBone, torsoBone, neckLocal: { x: pivotLocalX, y: pivotLocalY, z: 0 } };
   }
 
   function createSinglePlaneAssembly(THREE, config) {

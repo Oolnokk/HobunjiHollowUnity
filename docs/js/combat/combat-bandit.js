@@ -554,7 +554,7 @@
     if (portrait.userData?.portraitGlowLight) {
       const neck = frontNeckSkin?.headScaleBone || frontNeckSkin?.neckBone;
       window.PNGPlaneAvatar.setPortraitGlowAttachment?.(portrait, neck || frontPivot, {
-        x: frontNeckSkin?.neckBone?.position.x || 0, y: frontPivot.position.y + (frontNeckSkin?.neckBone?.position.y || 0), z: 0,
+        x: frontNeckSkin?.neckLocal?.x || 0, y: frontPivot.position.y + (frontNeckSkin?.neckLocal?.y || 0), z: 0,
       });
     }
 
@@ -578,7 +578,7 @@
       group.userData.neckRig = {
         available:true, skinnedPlane:frontNeckSkin.mesh,
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
-        neckLocal:{...frontNeckSkin.neckBone.position},
+        neckLocal:{...frontNeckSkin.neckLocal}, // Plane-space neck pivot; the bone's own position is now relative to the spine bone.
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
         headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false, roster.equippedCosmetics) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
@@ -630,7 +630,7 @@
     characterBuildStatus.stage = 'leg-rig';
     const spine = roster.spine ? window.HobunjiCharacterSpine?.bind(portrait, { spine: roster.spine }) : null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
-      window.HobunjiCharacterSpine.applyToRig({ spineJoint: { front: frontNeckSkin.spineBone, back: backNeckSkin?.spineBone }, neckLocal: { y: frontNeckSkin.neckBone.position.y } }, spine, modelHeight);
+      window.HobunjiCharacterSpine.applyToRig({ spineJoint: { front: frontNeckSkin.spineBone, back: backNeckSkin?.spineBone }, neckLocal: frontNeckSkin.neckLocal }, spine, modelHeight);
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
@@ -639,7 +639,7 @@
       name: roster.name || 'bandit', profile, portraitSize: PORTRAIT_SIZE,
       gaitProfile: roster.maskboundGait || null, // Independent troop lurch walks in the shared procedural leg solver; ordinary NPCs stay on normal gait.
       spine: spine || undefined, // Wider stance and stride for a hunched enemy.
-      portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, spineJoint: { front: frontNeckSkin.spineBone }, neckJoint: frontNeckSkin.neckBone, neckLocal: { y: frontNeckSkin.neckBone.position.y } } : undefined, // "Show bones" also draws the portrait's spine and neck.
+      portraitRig: frontNeckSkin ? { skinnedPlane: frontNeckSkin.mesh, spineJoint: { front: frontNeckSkin.spineBone }, neckJoint: frontNeckSkin.neckBone, torsoBone: frontNeckSkin.torsoBone, neckLocal: frontNeckSkin.neckLocal } : undefined, // "Show bones" also draws the portrait's spine and neck.
     }) || null;
 
     const enemyPants = window.PantsGarmentRenderer?.garmentForCosmetics(roster.equippedCosmetics); // Same rig, dyes, update and disposal owner as town NPCs.
