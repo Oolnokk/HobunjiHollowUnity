@@ -108,6 +108,16 @@ the same parent–child matrices, so the display, export and runtime agree.
 The unchanged shaft bitmap and its independent live-fire group are
 siblings, never descendants of the attachment rig.
 
+The Foundry editor now draws the **effective transformed mounting arrows and drag gizmos**
+over the unchanged shaft sprite, rather than drawing raw local coordinates on the
+canvas. Pointer gestures are inverse-transformed back to local mount data; this
+ensures editing a moved or stretched rig does not accidentally add the parent
+transform twice. The rig's numeric X/Y scale and translation controls update the
+assembled preview **on input** (while typing), before persisting on change.
+The mobile hierarchy diagnostic shows the same source/parent/child relationship
+used by the compositor. The assembled head primitives change, but the original
+shaft bitmap and flames do not.
+
 The original donor is unaffected and old saved `duplicateTransform`
 values are retained but interpreted as rig-only adjustments. The editor's
 **shaft arrow** view continues to show original untransformed source
