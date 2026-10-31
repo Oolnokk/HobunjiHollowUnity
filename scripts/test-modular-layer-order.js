@@ -98,6 +98,53 @@ async function run() {
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
   assert(transformed.modularNonMetalMask instanceof Uint8Array, 'the fixed shaft still preserves its independent nonmetal recolor mask');
 
+  const fireActivations = []; // Captures the actual modular weapon decorator's living flame carrier in a lightweight Three.js fixture.
+  const fireWindow = { ModularWeapons: api, HobunjiLayeredWeaponEffects: {
+    activateStatic(state, base, layers, meshes, image, unit) {
+      fireActivations.push({ carrier: state.plane, base, image, unit });
+    }, dispose() {}, stepFire() {},
+  } };
+  vm.runInContext(fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'),
+    vm.createContext({ window: fireWindow })); // Runtime uses the same committed staff VFX configuration.
+  class Vec3 {
+    constructor(x=0,y=0,z=0) { this.set(x,y,z); }
+    set(x,y,z) { this.x=x;this.y=y;this.z=z;return this; }
+    toArray() { return [this.x,this.y,this.z]; }
+  }
+  class Group3 {
+    constructor() {
+      this.children=[];this.userData={};this.position=new Vec3();this.scale=new Vec3(1,1,1);
+      this.renderOrder=0;
+    }
+    add(child) { this.children.push(child);child.parent=this; }
+    remove(child) { this.children=this.children.filter(x=>x!==child);child.parent=null; }
+  }
+  const modelImage={width:450,height:1204}; // Source dimensions match the existing modular PNG authoring frame.
+  const Three={Group:Group3,Vector3:Vec3,TextureLoader:class {
+    load(_url,done) { done({image:modelImage}); }
+  }}; // No WebGL is required to verify the real asynchronous decorator's source-transform behavior.
+  const fireDocument={currentScript:{src:'https://example.test/docs/js/weapon-sprite-assemblies.js'}};
+  vm.runInContext(fs.readFileSync('docs/js/weapon-sprite-assemblies.js','utf8'),
+    vm.createContext({window:fireWindow,document:fireDocument,URL,location:{href:'https://example.test/docs/index.html',pathname:'/index.html'},
+      performance:{now:()=>50},setTimeout(){},console})); // Separate living FX harness uses the real production assembler.
+  const carrierPlane=new Group3(); // The composite PNG stays as the unchanged main held weapon plane.
+  carrierPlane.material={map:{image:modelImage}};carrierPlane.geometry={parameters:{width:.5}};carrierPlane.renderOrder=1.5;
+  const heldRoot=new Group3();
+  heldRoot.userData.toolPlane=carrierPlane;heldRoot.add(carrierPlane);
+  const itemKey='modular:hachutuTorchStaff:warhammer:nativeCopper'; // One of the allowed B'shuakauitl head families.
+  fireWindow.HobunjiWeaponSpriteAssemblies.decorate(heldRoot,itemKey,{
+    modular:{shaft:'hachutuTorchStaff',head:'warhammer'},shapeKey:'hachutuTorchStaff',sprite:itemKey,
+  },{THREE:Three});
+  for(let i=0;i<12;i++)await Promise.resolve(); // Flush async image texture fixture without requiring an event loop.
+  assert.equal(fireActivations.length,1,'the complete modular staff has one independently animated source-shaft emitter');
+  assert.equal(fireActivations[0].base.vfx.worldRise,true,'the modular staff retains world-up particle motion');
+  assert.equal(fireActivations[0].carrier.parent,carrierPlane,'live flames stay under the fixed shaft pose');
+  assert.equal(fireActivations[0].carrier.position.x,0,'rig X translation does not drag shaft flame origins');
+  assert.equal(fireActivations[0].carrier.position.y,0,'rig Y translation does not drag shaft flame origins');
+  assert.equal(fireActivations[0].carrier.scale.x,1,'rig X scaling does not resize shaft flames');
+  assert.equal(fireActivations[0].carrier.scale.y,1,'rig Y scaling does not resize shaft flames');
+  assert.equal(carrierPlane.material.map.image,modelImage,'the real composite metal head texture remains unchanged');
+
   // Older imports inherit all committed, manually authored pair choices.
   api.replace({ schema: 'hobunji_modular_weapons.v1', heads: {}, shafts: {} });
   assert.equal(api.settings('dagger', 'fishing-spear').layerOrder, 'haft-over-head');
