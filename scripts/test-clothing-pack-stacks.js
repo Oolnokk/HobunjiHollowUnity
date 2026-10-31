@@ -134,6 +134,8 @@ assert.equal(gear.clothingItems.length, 1, 'the exact transferred item becomes p
 assert.equal(gear.clothing.overwear?.cosmeticId, base.cosmeticId, 'that garment is equipped in its authored slot');
 assert.equal(gearSaves, 1, 'the transfer persists the gear collection');
 
+pack = []; // Keep the bandit transfer regression independent of the initial dyed Pack-stack fixture.
+
 const banditWeave = (uid, motif) => ({
   ...copy(base),
   uid,
