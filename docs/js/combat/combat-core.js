@@ -562,34 +562,40 @@
     return Math.log1p(s * t) / Math.log1p(s);
   }
 
-  // Writes a tapered ribbon in a plane tilted to the attack's pitch. At zero
-  // pitch this is the familiar horizontal sweep; aiming up rotates the whole
-  // sweep plane upward instead of merely raising a flat ground arc.
+  // An attack's actual collider is an elevated pie-prism, not a flat sweep
+  // plane. Its outer edge is an XZ yaw arc with a constant pitch-dependent Y
+  // rise; every angle on that arc reaches the same real horizontal distance.
+  // Keep the existing two-vertex swipe strips, but give them vertical depth
+  // and a slight radial lean, so the luminous swipe reads as a 3D curved band
+  // across the *outer face* of the real hit volume rather than a 2D decal.
   function writeMeleeTrailRibbon(positionAttr, opts = {}) {
     const samples = Math.max(2, Math.floor(Number(opts.samples) || 16));
-    const origin = opts.origin?.isVector3 ? opts.origin : new THREE.Vector3();
+    const origin = opts.origin || { x: 0, y: 0, z: 0 };
     const direction = finiteDirection(opts.direction) || directionFromAngles(opts.yaw, opts.pitch);
-    const worldUp = new THREE.Vector3(0, 1, 0);
-    const side = new THREE.Vector3().crossVectors(direction, worldUp);
-    if (side.lengthSq() < 1e-6) side.set(0, 0, 1);
-    else side.normalize();
-    const planeUp = new THREE.Vector3().crossVectors(side, direction).normalize();
+    const yaw = Math.atan2(direction.z, direction.x); // Used by the exact same yaw-sector coordinates as meleeColliderPoint().
+    const pitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)); // Used to match the collider's angled rise without skewing its width.
     const rangeTiles = Math.max(0, Number(opts.rangeTiles) || 0);
-    const halfConeRad = Math.max(0, Number(opts.halfConeRad) || 0);
-    const halfThickness = Math.max(0.001, Number(opts.halfThickness) || 0.06);
-    const archUnits = Math.max(0, Number(opts.archUnits) || 0.22);
+    const halfConeRad = THREE.MathUtils.clamp(Number(opts.halfConeRad) || 0, 0, Math.PI);
+    const halfThickness = Math.max(0, Number(opts.halfThickness) || 0.06);
+    const halfHeightWorld = Math.max(0.01, Number(opts.halfHeightWorld) || 0.35); // Real actor half-height for NPCs, conservative player fallback for the shared game swipe.
+    const archUnits = Math.max(0, Number(opts.archUnits) || 0.22); // Subtle upward curvature constrained inside the hit volume.
+    const horizontalRange = rangeTiles * Math.cos(pitch);
+    const verticalRise = rangeTiles * Math.sin(pitch);
     for (let sample = 0; sample <= samples; sample++) {
       const u = sample / samples;
-      const sweepAngle = -halfConeRad + 2 * halfConeRad * u;
-      const radial = direction.clone().applyAxisAngle(planeUp, sweepAngle);
+      const angle = yaw - halfConeRad + 2 * halfConeRad * u;
       const taper = Math.sin(u * Math.PI);
-      const half = halfThickness * (0.25 + 0.75 * taper);
-      const arch = planeUp.clone().multiplyScalar(archUnits * taper);
-      const inner = origin.clone().addScaledVector(radial, Math.max(0, rangeTiles - half)).add(arch);
-      const outer = origin.clone().addScaledVector(radial, rangeTiles + half).add(arch);
+      const inset = Math.min(rangeTiles, halfThickness * taper); // Never extend beyond the actual hit radius.
+      const innerRange = rangeTiles - inset;
+      const outerX = origin.x + Math.cos(angle) * horizontalRange;
+      const outerZ = origin.z + Math.sin(angle) * horizontalRange;
+      const innerX = origin.x + Math.cos(angle) * innerRange * Math.cos(pitch);
+      const innerZ = origin.z + Math.sin(angle) * innerRange * Math.cos(pitch);
+      const vertical = halfHeightWorld * taper;
+      const lift = Math.min(archUnits, halfHeightWorld * 0.2) * taper; // Still below the collider's top at the widest point.
       const vi = sample * 2;
-      positionAttr.setXYZ(vi, inner.x, inner.y, inner.z);
-      positionAttr.setXYZ(vi + 1, outer.x, outer.y, outer.z);
+      positionAttr.setXYZ(vi, outerX, origin.y + verticalRise - vertical, outerZ);
+      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * Math.sin(pitch) + vertical - lift, innerZ);
     }
     positionAttr.needsUpdate = true;
   }
@@ -597,7 +603,9 @@
   function spawnMeleeTrail(opts = {}) {
     const actor = opts.actor;
     const target = opts.target || null;
-    const solution = meleeAimSolution(actor, target, opts.yaw ?? actor?.facing ?? actor?.angle ?? 0, opts.pitch ?? 0);
+    const solution = target && opts.yaw == null && opts.pitch == null && !opts.direction
+      ? meleeAimSolution(actor, target, actor?.facing ?? actor?.angle ?? 0, 0)
+      : meleeSolutionForOptions(actor, opts); // Explicit attack bearing/pitch must match the real damage cone, not auto-aim at a nearby target.
     const collider = meleeColliderVolume(actor, opts, solution); // Reused by Show Hitboxes so trail and damage volume share an origin.
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     if (opts.debugOnly) return null; // A multi-colored enemy trail uses several visual lanes but one full-cone hitbox.
@@ -614,6 +622,7 @@
       samples, origin: solution.origin, direction: solution.direction,
       rangeTiles: Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64),
       halfConeRad: opts.halfConeRad,
+      halfHeightWorld: collider.halfHeightWorld, // NPC swipe follows its own portrait-height collider.
       halfThickness: opts.halfThickness,
       archUnits: opts.archUnits,
     });
@@ -848,7 +857,7 @@
     get retainedColliderCount() { return activeMeleeColliderDebug.size; }, // Passive diagnostic; does not prune the map while measuring cleanup.
     get activeTrails() { return activeMeleeTrails.map(trail => ({ actor: trail.actor, age: trail.age, pitchDeg: trail.pitchDeg })); },
     snapshot: () => ({
-      latestChange: 'Melee cones and trails use portrait Box3 volumes; angled lunges use attacker-specific height budgets for distance and leap arcs.',
+      latestChange: 'Melee swipes now follow the true pitched outer face of their 3D hit cones, with curved vertical bands instead of flat ribbons.',
       lastResult: lastMelee3DResult,
       activeTrailCount: activeMeleeTrails.length,
       activeColliders: debugMeleeColliders().map(collider => ({
