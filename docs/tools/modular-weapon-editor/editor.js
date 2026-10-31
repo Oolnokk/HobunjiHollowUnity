@@ -16,6 +16,10 @@
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  let regionSelecting = false; // Preview is temporarily a rectangle picker rather than a bridge paint surface.
+  let regionDraft = null; // Active local selection box while dragging on the assembled preview.
+  let activeRegionId = null; // Stable ID prevents selection jumping when undo/import removes another region.
+  const activeRegion = () => (chosenShaft().rigRegions || []).find(region => region.id === activeRegionId);
   const msg = text => { byId('status').textContent = text; }; // Readable status without devtools.
   let bridgeView = null; // Last composed preview bitmap and its logical frame, for painting bridge strokes over it.
   let pendingStrokes = []; // Bridge stroke being drawn (applied on release), in composed-frame source-pixel coordinates.
@@ -126,7 +130,12 @@
     const image = cachedImages[id], canvas = byId(id); // Shaft bitmap is fixed, but child mounts visibly follow their rig.
     if (!image) return;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const art = id === 'shaft-canvas' ? api.shaftArtTransform(chosenShaft()) : null;
+    ctx.save();
+    if (art?.enabled) {ctx.translate(225+art.x,602+art.y);ctx.scale(art.scaleX,art.scaleY);ctx.translate(-225,-602);}
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.restore(); // Shaft artwork transform is optional; mounting overlays are painted outside it.
     const mounts = displayMounts(id); // What the player sees now matches the composed head and transform diagnostics.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
     drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
@@ -156,7 +165,8 @@
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
           duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
-          rigHierarchy: rig, effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
+          rigHierarchy: rig, localRegions: shaft.rigRegions||[], shaftArtTransform: api.shaftArtTransform(shaft),
+          effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices,
           rigOperationSummary: { saved: values.bridges?.strokes?.length || 0,
@@ -236,8 +246,10 @@
     const junctions = operations.filter(op => op.junction).length;
     const spatial = operations.filter(op => op.points).length;
     const effects = operations.length - junctions - spatial;
+    const art=api.shaftArtTransform(shaft),regions=shaft.rigRegions||[];
     byId('rig-tree').textContent = [
-      'Shaft sprite + live fire (OUTSIDE rig; unchanged)',
+      'Shaft sprite + live fire (OUTSIDE rig; '+(art.enabled?'opt-in scaled':'fixed')+')',
+      ...regions.map(region=>'  Area '+region.label+' ['+region.id+'] — local transform '+JSON.stringify(region.transform)),
       'Attachment scaling rig (PARENT)',
       '  X scale ' + transform.scaleX + ', Y scale ' + transform.scaleY + ', offset (' + transform.x + ', ' + transform.y + ')',
       ...rig.children.flatMap(mount => [
@@ -247,6 +259,31 @@
       '  ├ Bridge/recipe steps: ' + sourceOps.length + ' saved → ' + operations.length + ' child ops',
       '  │  ├ ' + junctions + ' junction sprites, ' + spatial + ' brush/smudge strokes, ' + effects + ' global cleanup passes',
     ].join('\n'); // The user can distinguish a missing recipe child from a head-fit or mount problem on mobile.
+  }
+  function updateRegionControls() {
+    const shaft = chosenShaft(), regions=shaft.rigRegions || [];
+    const list=byId('region-list');
+    list.replaceChildren(...regions.map(region=>{
+      const option=document.createElement('option'); option.value=region.id;option.textContent=region.label;return option;
+    }));
+    if (!regions.some(region=>region.id===activeRegionId)) activeRegionId=regions[0]?.id||null;
+    if (activeRegionId) list.value=activeRegionId;
+    const region=activeRegion();
+    byId('region-name').value=region?.label||'';
+    byId('region-name').disabled=!region;
+    byId('region-remove').disabled=!region;
+    const t=api.duplicateTransform(region?.transform);
+    for(const [id,value] of [['region-scale-x',t.scaleX],['region-scale-y',t.scaleY],
+      ['region-x',t.x],['region-y',t.y]]){
+      byId(id).value=String(value);byId(id).disabled=!region;
+    }
+    byId('region-select').setAttribute('aria-pressed',String(regionSelecting));
+    const count=regions.length, countOps=api.rigBridgeOperations(shaft,
+      api.settings(byId('shaft').value,byId('head').value).bridges?.strokes || [])
+      .filter(op=>op._rigRegionId===activeRegionId).length;
+    byId('region-status').textContent=count+' region(s). '+(region?
+      'Selected '+region.label+' — '+countOps+' bridge/recipe children. Draw another rectangle or edit its X/Y controls.'
+      :'Draw a rectangle on the assembled preview to create a region.');
   }
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
@@ -265,6 +302,11 @@
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
+    const art=api.shaftArtTransform(shaft);
+    byId('shaft-art-enabled').checked=art.enabled;
+    for(const [id,value] of [['shaft-art-scale-x',art.scaleX],['shaft-art-scale-y',art.scaleY],
+      ['shaft-art-x',art.x],['shaft-art-y',art.y]]) byId(id).value=String(value);
+    updateRegionControls(); // Selection survives pair previews and shaft imports while its options stay in sync.
     const layout = api.shaftRigTransform(shaft);
     for (const [id, value] of [['duplicate-scale-x', layout.scaleX],['duplicate-scale-y', layout.scaleY],
       ['duplicate-x',layout.x],['duplicate-y',layout.y]]) {
