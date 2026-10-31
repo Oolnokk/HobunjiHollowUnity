@@ -77,7 +77,7 @@
   // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
     const def = ATTACKS[id];
-    if (!def) return false;
+    if (!def || !c || c._animalAttack || (Number.isFinite(c.health) && c.health <= 0)) return false; // A second request must never overwrite an already committed attack or reanimate a defeated companion.
     const deps = window.Combat.deps;
     // game.js pays each species' generic attackStaminaCost immediately before
     // calling start(). Named attacks can top that payment up here without
