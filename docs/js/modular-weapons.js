@@ -459,34 +459,54 @@
       const ctx = canvas.getContext('2d'); // All drawing remains in original source-pixel coordinates.
       ctx.scale(canvas.width / frame.width, canvas.height / frame.height);
       ctx.translate(-frame.left, -frame.top);
+      const protectedCanvas = shaft.fireAssembly ? document.createElement('canvas') : null; // Preserve nonmetal living-shaft pixels when the forged HEAD receives metal/verdigris.
+      if (protectedCanvas) { protectedCanvas.width = canvas.width; protectedCanvas.height = canvas.height; }
+      const protectedCtx = protectedCanvas?.getContext('2d') || null; // Bound to this composition, not per-frame.
+      if (protectedCtx) {
+        protectedCtx.scale(canvas.width / frame.width, canvas.height / frame.height);
+        protectedCtx.translate(-frame.left, -frame.top);
+      }
       function paintHaft() {
-        ctx.save();
+        for (const context of [ctx, protectedCtx].filter(Boolean)) {
+        context.save();
         if (shaft.duplicateFrom) {
           const layout = duplicateTransform(shaft.duplicateTransform); // The entire source artwork follows its duplicated mounting lines.
-          ctx.translate(225 + layout.x, 602 + layout.y);
-          ctx.scale(layout.scaleX, layout.scaleY);
-          ctx.translate(-225, -602);
+          context.translate(225 + layout.x, 602 + layout.y);
+          context.scale(layout.scaleX, layout.scaleY);
+          context.translate(-225, -602);
         }
         if (shaft.crop) {
-          ctx.beginPath(); ctx.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); ctx.clip();
+          context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
         }
         const fire = shaft.fireAssembly && global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base;
         const image = fire?.material === 'marker'
           ? global.HobunjiLayeredWeaponEffects?.recolorMarker?.(shaftImage, fire.sourceHex, fire.targetHex) || shaftImage
           : shaftImage; // Recolor only the copied shaft's fuel markers; the forged metal head keeps its own plating pipeline.
-        ctx.drawImage(image, 0, 0, 450, 1204);
-        ctx.restore();
+        context.drawImage(image, 0, 0, 450, 1204);
+        context.restore();
+        }
       }
       function paintHeads() {
         for (const mount of renderingMounts(shaft, head)) {
           const matrix = headTransform(mount, values, head.mount); // Each head uses the exact transform used to expand bounds.
           ctx.save(); ctx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
           ctx.drawImage(headImage, 0, 0, 450, 1204); ctx.restore();
+          if (protectedCtx && values.layerOrder === 'head-over-haft') {
+            protectedCtx.save(); protectedCtx.globalCompositeOperation = 'destination-out'; // Metal head pixels occlude the underlying wood, not vice versa.
+            protectedCtx.transform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
+            protectedCtx.drawImage(headImage, 0, 0, 450, 1204); protectedCtx.restore();
+          }
         }
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
       applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList)); // Pair-specific brush work, cached with this canvas.
+      if (protectedCtx) {
+        const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const mask = new Uint8Array(canvas.width * canvas.height); // One byte per protected shaft pixel; head metal remains exposed.
+        for (let i = 0; i < mask.length; i++) mask[i] = rgba[i * 4 + 3] > 0 ? 1 : 0;
+        canvas.modularNonMetalMask = mask; // ToolMetalRecolor restores original full-shaft colors after tinting only metal head pixels.
+      }
       return canvas;
     });
     canvases.set(cacheKey, task);
