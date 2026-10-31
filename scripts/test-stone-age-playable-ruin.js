@@ -114,4 +114,5 @@ assert(shared.includes('item.mesh.layers.disable(0)')&&shared.includes('item.mes
 assert(!shared.includes('item.mesh.visible=false'),'hidden meshes are non-solid in the runtime footprint scanner');
 assert(runtime.includes('replaced.has(occlusion[i])'),'camera occlusion must remove the masked source walls explicitly');
 assert(runtime.includes('stoneAgeStats:ruin.stoneAgeStats||null'),'mobile debug must expose stone, floor and root counts');
+assert(runtime.includes('floorBuildMs:scenery.room.floorBuildMs'),'mobile debug must report real floor build timings');
 console.log('Stone Age playable integration: shared preview/game geometry, genuine Temple cover, isolated terrain deps, multiroom V50 type opt-in, teardown and diagnostics passed.');
