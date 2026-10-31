@@ -1,0 +1,65 @@
+// Companion combat responsiveness — target prioritization, commitment and rescue arbitration.
+// This module is pure except for per-companion diagnostics and remembered targets.
+// Keep the decisions out of game.js's render/movement loop so they can be tested independently.
+(() => {
+  'use strict';
+  const SWITCH_RATIO = 0.76; // A challenger must be at least 24% more urgent before breaking target commitment.
+  const MASTER_WEIGHT = 0.65; // Protecting the master matters more than the pet's personal convenience.
+  const ACTIVE_THREAT_MULTIPLIER = 0.67; // Enemies currently attacking the owner outrank passive enemies nearby.
+  const APPROACH_RESTART_RATIO = 1.05; // Leave backup early once the target has escaped beyond ordinary reach.
+
+  function validEnemy(enemy, areaId) {
+    return !!enemy && Number(enemy.health) > 0 && !enemy._downed &&
+      !enemy._deathTransitionStarted && !enemy._denHidden && enemy.def?.hostile !== false &&
+      (!areaId || !enemy.areaId || enemy.areaId === areaId);
+  }
+
+  function score(companion, master, enemy) {
+    const distanceToMaster = Math.hypot(enemy.x - master.x, enemy.y - master.y); // Protects the owner's immediate neighborhood.
+    const distanceToCompanion = Math.hypot(enemy.x - companion.x, enemy.y - companion.y); // Avoids running past enemies already in attack reach.
+    const targetingOwner = enemy.targetPlayer === master || enemy.targetCreature === master ||
+      enemy._banditTarget === master; // Prioritizes observed, actively aggressive hostiles.
+    return (distanceToMaster * MASTER_WEIGHT + distanceToCompanion * (1 - MASTER_WEIGHT)) *
+      (targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
+  }
+
+  function chooseTarget(companion, master, enemies, areaId, alertPx) {
+    const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
+    let chosen = null, chosenScore = Infinity;
+    for (const enemy of enemies || []) {
+      if (!validEnemy(enemy, areaId)) continue;
+      if (Math.hypot(enemy.x - master.x, enemy.y - master.y) > radius) continue;
+      const priority = score(companion, master, enemy);
+      if (priority < chosenScore) { chosenScore = priority; chosen = enemy; }
+    }
+    const current = companion._companionCombatTarget; // Target lock is retained until an enemy dies, leaves range, or becomes clearly less urgent.
+    const currentEligible = validEnemy(current, areaId) &&
+      Math.hypot(current.x - master.x, current.y - master.y) <= radius &&
+      Array.from(enemies || []).includes(current);
+    if (currentEligible && (current === chosen || score(companion, master, current) * SWITCH_RATIO <= chosenScore)) {
+      chosen = current;
+    }
+    if (chosen !== current) {
+      window.__farmLog?.('[companion-response] ' + (companion.id || companion.creatureKey || 'pet') +
+        ' target ' + (chosen?.id || chosen?.creatureKey || 'none'), 'combat');
+    }
+    companion._companionCombatTarget = chosen; // Mobile debug and future AI decisions read the committed target.
+    companion._companionCombatPriority = chosen ? score(companion, master, chosen) : null; // Diagnostic of why a target was selected.
+    return chosen;
+  }
+
+  function shouldRestartApproach(stage, targetDistance, attackReach) {
+    return stage?.mode === 'backingUp' && Number(targetDistance) > Math.max(0, Number(attackReach) || 0) * APPROACH_RESTART_RATIO;
+  }
+
+  function debugSnapshot(companion) {
+    return { target: companion?._companionCombatTarget?.id || companion?._companionCombatTarget?.creatureKey || null,
+      priority: companion?._companionCombatPriority ?? null,
+      rescuing: companion?._honeyfuzzleRescueTarget?.id || null,
+      backingUp: companion?._stage?.mode === 'backingUp',
+      cooldown: companion?.attackCooldownT ?? null };
+  }
+
+  window.CompanionCombatResponse = Object.freeze({ chooseTarget, validEnemy, shouldRestartApproach,
+    debugSnapshot, tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
+})();
