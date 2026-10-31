@@ -53,6 +53,28 @@ for (const type of ['hronal', 'tothal', 'kanthic']) {
   assert.equal(forced.pants.fallbackColorC.hex, liches.bodyColor3For(type), type + ' pants use Body Color 3 for the pattern');
 }
 
+// Armor and weapon: silver plating painted with the pattern (never verdigris removal), carried on the lootable items; circlets for all three.
+window.MetalArmorSystem = {
+  MAX_TEMPER_XP: 999, spriteForBlueprintAppearance: (id) => 'sprite:' + id,
+  makeCraftedItem: (id, metal) => ({ cosmeticId: id, slot: id === 'tangedcirclet' ? 'hat' : 'pauldron', metalKey: metal }),
+};
+for (const type of ['hronal', 'tothal', 'kanthic']) {
+  const roster = liches.specialRoster(type);
+  assert.ok(roster.equippedCosmetics.includes('tangedcirclet') && roster.cosmeticSlots.tangedcirclet === 'hat', type + ' wears a tanged circlet');
+  const items = roster.metalArmorItems;
+  assert.deepEqual([...items.map(item => item.cosmeticId)], type === 'hronal' ? ['rounded_pauldron', 'tangedcirclet'] : ['tangedcirclet']);
+  for (const item of items) {
+    assert.equal(item.smithTreatment.mode, 'painted', type + ' ' + item.cosmeticId + ' is painted');
+    assert.equal(item.smithTreatment.metalKey, 'silver', 'silver plating, not verdigris removal');
+    assert.equal(item.smithTreatment.paintHex, liches.bodyColor3For(type), 'paint defaults to Body Color 3 and is its own redye-able field');
+    assert.ok(item.smithTreatment.pattern, 'the pattern travels with the loot');
+  }
+}
+const armorSource = fs.readFileSync('docs/js/metal-armor-system.js', 'utf8');
+assert.match(armorSource, /active\?\.mode === 'painted'/, 'MetalArmorSystem renders painted plating');
+assert.match(armorSource, /cannot be reworked at the smithy/, 'painted plating cannot be reworked');
+assert.match(armorSource, /cannot be re-patterned/, 'painted plating cannot be re-authored');
+
 // Wired into the Workshop: shared Pattern editor scripts and both editor entry points.
 const preview = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 for (const file of ['pattern-authoring', 'pattern-library', 'repo-pattern-library', 'furniture-pattern-surfaces']) assert.match(preview, new RegExp(`js/${file}\\.js\\?v=`), file + ' loads in the Workshop');

@@ -518,14 +518,6 @@
       "rigScale": {
         "y": 2.5,
         "x": 0.5
-      },
-      "clothing": {
-        "hat": {
-          "chance": 1,
-          "items": {
-            "tangedcirclet": 1
-          }
-        }
       }
     },
     "lich:kanthic:imlao": {

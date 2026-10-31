@@ -56,7 +56,8 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
     eyes:{id:'randomEyes'},upperFace:{id:'randomFace'},facialHair:{id:'randomFacialHair'}
   },liches.specialRoster('kanthic'));
   for(const slot of ['hat','hood','mask','eyes','upperFace','facialHair'])
-    assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot);
+    assert.equal(imlaoBare[slot].id,'none','Imlao must not wear any '+slot+' other than his circlet');
+  assert.equal(liches.decoratePortraitProfile({bodyColors:{C:{hex:'#D4D6C9'}},hat:{id:'clothes::hat::tangedcirclet'}},liches.specialRoster('kanthic')).hat.id,'clothes::hat::tangedcirclet','Imlao keeps the tanged circlet every guardian wears');
   assert.equal(imlaoBare.bodyColors.C.hex,liches.bodyColor3For('kanthic'));
   const incorrectlyDressed=liches.specialRoster('kanthic');
   incorrectlyDressed.equippedCosmetics.push('ragged_hood','tangedcirclet','facewrap');
@@ -64,18 +65,20 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   incorrectlyDressed.cosmeticSlots.tangedcirclet='hat';
   incorrectlyDressed.cosmeticSlots.facewrap='mask';
   liches.applyBodyColor3ToRoster(incorrectlyDressed,'kanthic');
-  assert.ok(incorrectlyDressed.equippedCosmetics.every(id=>!['ragged_hood','tangedcirclet','facewrap'].includes(id)),'General clothing overrides cannot put headwear on Imlao');
+  assert.ok(incorrectlyDressed.equippedCosmetics.every(id=>!['ragged_hood','facewrap'].includes(id)),'General clothing overrides cannot put hoods or face coverings on Imlao');
+  assert.ok(incorrectlyDressed.equippedCosmetics.includes('tangedcirclet'),'...but his circlet stays');
   const nanahiWorn=window.NpcWardrobe.wornClothingItemsForRecord(liches.specialRoster('tothal'),true);
   assert.equal(nanahiWorn.find(item=>item.cosmeticId==='facewrap').slot,'hood','Explicit facewrap slot must survive NPC wardrobe processing');
   const nanahiRobe=nanahiWorn.find(item=>item.cosmeticId==='tankan_bodywrap');
   assert.equal(nanahiRobe.slot,'overwear');
   assert.equal(nanahiRobe.weaving.forcedOverpassPattern.motifUrl,'assets/patterns/motif_harlyao_glyph_servitude.png');
-  assert.equal(nanahiRobe.colorC.hex,liches.DATA.tothal.ink);
+  assert.equal(nanahiRobe.colorC.hex,liches.bodyColor3For('tothal'));
   const azgarlu=liches.specialRoster('hronal');
   const forgedWorn=window.NpcWardrobe.wornClothingItemsForRecord(azgarlu,true);
   const forgedPauldron=forgedWorn.find(item=>item.cosmeticId==='rounded_pauldron');
   assert.equal(forgedPauldron.temperXp,window.MetalArmorSystem.MAX_TEMPER_XP,'NPC clothing adapter must preserve forged armor Temper');
-  assert.equal(forgedPauldron.smithTreatment.mode,'pattern','NPC clothing adapter must preserve smith verdigris motifs');
+  assert.equal(forgedPauldron.smithTreatment.mode,'painted','NPC clothing adapter must preserve the painted silver guardian plating');
+  assert.equal(forgedPauldron.smithTreatment.metalKey,'silver');
   assert.equal(forgedPauldron.smithTreatment.pattern.motifUrl,'assets/patterns/motif_harlyao_glyph_entropy.png');
   const imlao={avatarRef:{group:{userData:{skullPixelsTransparent:true}},headScaleJoint:{front:{scale:{set(){throw Error('Head bone must not be collapsed');}}}}}};
   liches.init(imlao,'kanthic');

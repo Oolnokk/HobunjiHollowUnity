@@ -698,12 +698,11 @@ async function openBossPatternEditor(special, patternKind) {
   const ink = window.SpecialHarlyaoLiches.bodyColor3For(type); // Authored C swatch, Workshop override, else the inverse of the robe color.
   const toolKey = rule().bossAppearance?.weaponKey || special.weapon || 'warhammer_nativeCopper';
   const sprite = state.data?.shapes?.[toolKey.split('_')[0]]?.baseSprite || 'assets/toolsprites/warhammer.png';
-  const metalHex = '#B87333';
   const editable = { frameShape: 'triangle', frameScale: 1, frameRotationDeg: 0, frameX: 0, frameY: 0, motifScale: 1, tiling: true, ...((await window.FurniturePatternSurfaces?.editablePattern?.({ pattern: current })) || current) }; // The canonical glyph carries no frame fields; give the editor sane starting values.
   const authored = rule().bossAppearance?.[patternKind];
   window.PatternAuthoring.openEditor({
     title: (weapon ? 'Weapon pattern — ' : 'Robe and pants pattern — ') + special.name,
-    motifHint: weapon ? 'Draw the motif that strips the patina back to bare metal on the hammer head.' : 'Draw the motif woven into the robe and pants (it uses the guardian’s Body Color C).',
+    motifHint: weapon ? 'Draw the motif painted in Body Color 3 onto the hammer’s silver plating.' : 'Draw the motif woven into the robe and pants (it uses the guardian’s Body Color C).',
     initialPattern: editable,
     initialPatternLibraryId: authored?.patternLibraryId || null,
     library: window.PatternLibrary ? {
@@ -713,7 +712,7 @@ async function openBossPatternEditor(special, patternKind) {
       remove: (id) => window.PatternLibrary.removeSaved(id),
     } : null,
     renderPreview: (data) => weapon
-      ? window.ToolMetalRecolor.getRecoloredCanvas(sprite, { targetHex: metalHex, verdigrisHex: '#3FAF9F', oxidationAmount: 1, authoredPattern: data })
+      ? window.ToolMetalRecolor.getRecoloredCanvas(sprite, { targetHex: ink, verdigrisHex: '#C0C0C0', oxidationAmount: 1, authoredPattern: data }) // Silver plating painted in Body Color 3.
       : window.FurniturePatternSurfaces.renderTile({ solid: false, palette: [cloth, ink, ink] }, data),
     onSave: async (data, libraryId) => {
       mutate((r) => pathSet(r, ['bossAppearance', patternKind], libraryId ? { patternLibraryId: libraryId } : { pattern: JSON.parse(JSON.stringify(data)) }));

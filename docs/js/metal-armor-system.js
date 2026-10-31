@@ -372,6 +372,7 @@
     if (!active) return `Live verdigris: ${Math.round(verdigrisFraction(itemOrState) * 100)}%`;
     if (active.mode === 'cosmetic') return `Plated: ${metalDef(active.metalKey)?.label || active.metalKey}`;
     if (active.mode === 'pattern') return 'Authored verdigris-removal pattern';
+    if (active.mode === 'painted') return `${metalDef(active.metalKey || 'silver')?.label || 'Silver'}-plated, painted with a guardian pattern`;
     if (active.mode === 'resistant') return 'Verdigris-resistant coat';
     return 'Smith-treated';
   }
@@ -396,7 +397,7 @@
       }
       patternHash = hash.toString(16);
     }
-    return `${active.mode || 'unknown'}:${active.metalKey || ''}:${active.patternLibraryId || ''}:${patternHash}`;
+    return `${active.mode || 'unknown'}:${active.metalKey || ''}:${active.patternLibraryId || ''}:${active.paintHex || ''}:${patternHash}`;
   }
 
   function visualOptions(itemOrState) {
@@ -417,6 +418,20 @@
     }
     if (active?.mode === 'resistant') {
       return { ...sourceOptions, targetHex: baseMetal.hex, verdigrisHex: null, oxidationAmount: 0 };
+    }
+    if (active?.mode === 'painted') {
+      // Guardian plating: silver metal PAINTED with an authored pattern. The recolorer's "bare metal" motif pixels take the paint color and
+      // the rest takes the plating metal, so the painted motif can be re-dyed (paintHex) without ever re-authoring it.
+      const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
+      const plating = metalDef(active.metalKey || 'silver');
+      if (authoredPattern) {
+        const motifUrl = authoredPattern.motifUrl;
+        const resolvedPattern = motifUrl && !/^(?:[a-z]+:|\/\/)/i.test(motifUrl) && window.resolvePortraitAssetUrl
+          ? { ...authoredPattern, motifUrl: window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//, '')) }
+          : authoredPattern;
+        return { ...sourceOptions, targetHex: active.paintHex || plating.hex, verdigrisHex: plating.hex, oxidationAmount: 1, authoredPattern: resolvedPattern };
+      }
+      return { ...sourceOptions, targetHex: plating.hex, verdigrisHex: null, oxidationAmount: 0 };
     }
     if (active?.mode === 'pattern') {
       const authoredPattern = active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null;
@@ -697,6 +712,10 @@
       return false;
     }
     const active = treatment(item);
+    if (active?.mode === 'painted') {
+      deps?.showToast?.('Guardian plating is painted on and cannot be reworked at the smithy.', false);
+      return false;
+    }
     if (choice === 'clear') {
       if (!active) { deps.showToast?.('No metal-armor treatment to clear.', false); return false; }
       refundTreatmentBar(item, active);
@@ -731,6 +750,10 @@
   }
 
   async function openVerdigrisPatternEditor(item) {
+    if (treatment(item)?.mode === 'painted') {
+      deps?.showToast?.('Guardian plating is painted on and cannot be re-patterned.', false);
+      return false;
+    }
     if (!canTreat(item)) {
       deps?.showToast?.('Temper 5 is required to author a verdigris-removal pattern.', false);
       return false;

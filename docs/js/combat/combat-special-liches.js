@@ -89,12 +89,12 @@
       const forbidden=new Set(['hood','hat','mask','upperFace','eyes','facialHair']); // Imlao's bare head is canonical even if a general enemy-clothing preset supplies headwear.
       roster.equippedCosmetics=(roster.equippedCosmetics||[]).filter(id=>{
         const slot=roster.cosmeticSlots?.[id] || window.NpcWardrobe?.slotForCosmetic?.(id) || (/facewrap|hood/i.test(id)?'hood':/circlet|hat|helmet/i.test(id)?'hat':/mask/i.test(id)?'mask':'');
-        if(!forbidden.has(slot))return true;
+        if(!forbidden.has(slot) || (slot==='hat' && id==='tangedcirclet'))return true; // The circlet is the one allowed headwear.
         if(roster.cosmeticSlots)delete roster.cosmeticSlots[id];
         return false;
       });
-      roster.metalArmorItems=(roster.metalArmorItems||[]).filter(item=>!forbidden.has(item.slot)); // Do not retain invisible hats as potential corpse loot.
-      roster.appearance.cosmetics={...(roster.appearance.cosmetics||{}),hood:'none',hat:'none',mask:'none',upperFace:'none',eyes:'none',facialHair:'none'};
+      roster.metalArmorItems=(roster.metalArmorItems||[]).filter(item=>!forbidden.has(item.slot) || (item.slot==='hat' && window.MetalArmorSystem?.baseCosmeticId?.(item)==='tangedcirclet') || item.cosmeticId==='tangedcirclet'); // Do not retain invisible hats as potential corpse loot, other than the circlet.
+      roster.appearance.cosmetics={...(roster.appearance.cosmetics||{}),hood:'none',mask:'none',upperFace:'none',eyes:'none',facialHair:'none'};
     }
     return roster;
   }
@@ -105,7 +105,8 @@
     profile.bodyColors={...(profile.bodyColors || {}),C:{hex:roster.appearance?.bodyColors?.C?.hex || bodyColor3For(type)}}; // Override the ordinary skeleton's fixed bone-C guard only for named guardians.
     if (type==='kanthic') {
       const empty={id:'none',layers:[],tintSlot:null}; // Imlao has no hood, hat, face covering, or facial ornament, including randomly forced headwear.
-      profile.hat=empty;profile.hood=empty;profile.mask=empty;profile.upperFace=empty;
+      profile.hood=empty;profile.mask=empty;profile.upperFace=empty;
+      if(!/tangedcirclet/.test(profile.hat?.id || ''))profile.hat=empty; // Only the tanged circlet every guardian wears (over its hidden flame headband) is allowed.
       profile.facialHair=empty;profile.eyes=empty;
       return profile;
     }
@@ -121,7 +122,7 @@
     if (!def) return null;
     const cosmetics = type === 'hronal'
       ? ['draped_pants','tankan_bodywrap','rounded_pauldron','tangedcirclet']
-      : type === 'tothal' ? ['facewrap','tankan_bodywrap','draped_pants'] : ['tankan_bodywrap','draped_pants'];
+      : type === 'tothal' ? ['facewrap','tankan_bodywrap','draped_pants','tangedcirclet'] : ['tankan_bodywrap','draped_pants','tangedcirclet']; // All three guardians wear a tanged circlet.
     const slots = {draped_pants:'pants',tankan_bodywrap:'overwear',rounded_pauldron:'pauldron',tangedcirclet:'hat',facewrap:'hood'}; // Facewrap is the existing face-covering hood-slot cosmetic, not a floating mask attachment.
     const appliedDyes = {CLOTH:def.dye,HOOD:def.dye,PANTS:def.dye,MASK:def.dye}; // Existing authored dye channels, not shader-only cosmetic tint.
     const roster = { name:def.name, appearance:{speciesId:'harlyao-skeleton',gender:type==='tothal'?'female':'male',cosmetics:{}},
@@ -132,15 +133,18 @@
         pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Every named guardian's pants carry the same woven glyph as the robe.
       }},
     };
-    if (type==='hronal') {
-      const armor = window.MetalArmorSystem; // Existing forged pauldron and circlet must follow the same rendering/loot rules as skeletal minions.
-      roster.metalArmorItems = ['rounded_pauldron','tangedcirclet'].map(id => {
+    {
+      const armor = window.MetalArmorSystem; // Existing forged circlet (and Azgarlu's pauldron) must follow the same rendering/loot rules as skeletal minions.
+      const gender = type === 'tothal' ? 'female' : 'male';
+      roster.metalArmorItems = (type === 'hronal' ? ['rounded_pauldron','tangedcirclet'] : ['tangedcirclet']).map(id => {
         const item = armor?.makeCraftedItem?.(id,'nativeCopper');
         if (item) {
           item.temperXp = armor.MAX_TEMPER_XP;
-          item.sprite = armor.spriteForBlueprintAppearance?.(id,{speciesId:'harlyao-skeleton',gender:'male'});
-          item.verdigrisPatternId = def.glyph; // Diagnostic identity for the weapon/armor entropy design.
-          item.smithTreatment={mode:'pattern',pattern:patternFor(type,'clothingPattern')}; // Existing crafted-metal patina renderer applies entropy as a verdigris removal motif.
+          item.sprite = armor.spriteForBlueprintAppearance?.(id,{speciesId:'harlyao-skeleton',gender});
+          item.verdigrisPatternId = def.glyph; // Diagnostic identity for the guardian's glyph.
+          // Silver plating PAINTED with the guardian's pattern (not verdigris removal). It travels with the item as loot; the paint color is its own
+          // field, so it can be re-dyed, but the treatment cannot be re-authored or reworked (see MetalArmorSystem 'painted').
+          item.smithTreatment={mode:'painted',metalKey:'silver',pattern:patternFor(type,'clothingPattern'),paintHex:bodyColor3For(type)};
         }
         return item;
       }).filter(Boolean);
@@ -153,13 +157,14 @@
     const holder=actor._banditToolHolder; // The standard BanditCombat weapon holder already knows every grip, strike and two-handed scale.
     if (!holder?.parent) return;
     const mesh=holder.children?.[0]?.userData?.toolPlane; // Target the factory's actual painted weapon, never its shadow/outline or an empty grip placeholder.
-    const toolDef=actor._specialToolDeps?.TOOL_ITEM_DEFS?.[actor._specialWeaponKey], metal=actor._specialToolDeps?.METAL_DEFS?.[toolDef?.metalKey];
-    if(!mesh?.isMesh || !mesh.material?.map || !toolDef?.sprite || !metal || !window.ToolMetalRecolor?.getRecoloredCanvas)return; // Wait until the real weapon plane and game definitions exist.
+    const toolDef=actor._specialToolDeps?.TOOL_ITEM_DEFS?.[actor._specialWeaponKey];
+    if(!mesh?.isMesh || !mesh.material?.map || !toolDef?.sprite || !window.ToolMetalRecolor?.getRecoloredCanvas)return; // Wait until the real weapon plane and game definitions exist.
     actor._specialWarhammerPatternRequested=true; // The recolor is requested once per guardian instead of every frame.
     const original=mesh.material, authored=patternFor(actor.lichType,'weaponPattern');
     const motifUrl=authored.motifUrl, pattern=motifUrl && window.resolvePortraitAssetUrl ? {...authored,motifUrl:window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//,''))} : authored; // Same asset-root resolution metal armor uses for its authored patterns.
     // The tool-metal recolorer is the game's own weapon pattern path: it paints the authored motif only onto the metal-keyed pixels (head), leaving the shaft and outline alone.
-    window.ToolMetalRecolor.getRecoloredCanvas(toolDef.sprite,{targetHex:metal.hex,verdigrisHex:metal.verdigrisHex,oxidationAmount:1,authoredPattern:pattern}).then(canvas=>{
+    const silver=actor._specialToolDeps?.METAL_DEFS?.silver?.hex || '#C0C0C0'; // Silver-plated, with the pattern PAINTED in Body Color 3 (the recolorer's motif pixels take the paint, the rest the silver).
+    window.ToolMetalRecolor.getRecoloredCanvas(toolDef.sprite,{targetHex:bodyColor3For(actor.lichType),verdigrisHex:silver,oxidationAmount:1,authoredPattern:pattern}).then(canvas=>{
       if(!holder.parent || mesh.material!==original || actor._specialWarhammerMaterial)return;
       const texture=window.HobunjiSpritePngSurface.makeCanvasTexture(window.THREE,canvas,'special_warhammer_pattern'); // Shared PNG-plane texture settings, per AGENTS.md.
       const material=original.clone();material.map=texture;material.needsUpdate=true;
