@@ -45,5 +45,8 @@ assert(runtime.includes("pieceSet:'stoneAge',floorProps:'pillarsOnly',singleRoom
 assert(runtime.includes('await prepareStoneAgeScenery(ruin)'),'Stone Age environment must be built before entering gameplay');
 assert(runtime.includes('stoneAgeScenery?.cover?.dispose()')&&runtime.includes('stoneAgeScenery?.dispose()'),'clear/retry must restore V50 sources and release scenery buffers');
 assert(runtime.includes('rootMechanisms:selected,stoneAge:selected'),'the existing checkbox must enable the complete ruin type');
+assert(shared.includes('item.mesh.layers.disable(0)')&&shared.includes('item.mesh.layers.mask=item.layerMask'),'native wall rendering must be suppressed without disabling SolidFootprints collision');
+assert(!shared.includes('item.mesh.visible=false'),'hidden meshes are non-solid in the runtime footprint scanner');
+assert(runtime.includes('replaced.has(occlusion[i])'),'camera occlusion must remove the masked source walls explicitly');
 assert(runtime.includes('stoneAgeStats:ruin.stoneAgeStats||null'),'mobile debug must expose stone, floor and root counts');
 console.log('Stone Age playable integration: shared preview/game geometry, genuine Temple cover, isolated terrain deps, complete V50 type opt-in, teardown and diagnostics passed.');
