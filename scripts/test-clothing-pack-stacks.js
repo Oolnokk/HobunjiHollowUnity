@@ -134,6 +134,59 @@ assert.equal(gear.clothingItems.length, 1, 'the exact transferred item becomes p
 assert.equal(gear.clothing.overwear?.cosmeticId, base.cosmeticId, 'that garment is equipped in its authored slot');
 assert.equal(gearSaves, 1, 'the transfer persists the gear collection');
 
+const banditWeave = (uid, motif) => ({
+  ...copy(base),
+  uid,
+  weaving: { forcedOverpassPattern: { repoPatternId: motif, frameScale: 0.55 }, forcedOverpassRoles: ['wrap'] },
+  colorC: { hex: '#bada55', label: 'Pattern' },
+}); // Matches the forced-overpass data attached to a looted captain/flasker garment.
+const banditClothA = banditWeave('bandit-captain-1', 'glyphA'); // First looted patterned poncho.
+const banditClothB = banditWeave('bandit-captain-2', 'glyphB'); // Second independent random-pattern article.
+assert.notEqual(panel.__test.clothingGearCollectionKey(banditClothA), panel.__test.clothingGearCollectionKey(banditClothB),
+  'even cloth from the same bandit cosmetic type has a distinct patterned gear identity');
+assert.equal(panel.__test.clothingGearCollectionKey(copy(base)), panel.__test.clothingGearCollectionKey(copy(dyed)),
+  'ordinary differently dyed clothes keep their original shared gear identity');
+
+function transferTestClothing(item) {
+  pack.push(item);
+  panel.buildPackClothingSection();
+  const button = nodes.get('invPackClothing').children.find(node => node.getAttribute('data-key') === item.uid);
+  assert(button, 'the looted clothing can be selected in Pack');
+  button.click();
+  const action = nodes.get('iiActions').children.find(node => node.textContent.startsWith('Transfer to Gear'));
+  assert(action, 'the looted clothing exposes Transfer to Gear');
+  action.click();
+} // Drives the real UI rather than bypassing the transfer handler.
+
+transferTestClothing(banditClothA);
+assert.equal(gear.clothingItems.length, 2, 'a patterned bandit poncho joins the plain owned poncho instead of becoming a dye');
+assert.equal(gear.clothing.overwear.weaving.forcedOverpassPattern.repoPatternId, 'glyphA',
+  'the bandit pattern survives transfer and is equipped');
+assert.match(nodes.get('iiDesc').textContent || '', /^$|Patterned garment/,
+  'Gear selection may display a mobile-visible pattern marker');
+transferTestClothing(banditClothB);
+assert.equal(gear.clothingItems.length, 3, 'different looted bandit patterns remain separate Gear articles');
+assert.deepEqual(gear.clothingItems.slice(1).map(item => item.weaving?.forcedOverpassPattern?.repoPatternId),
+  ['glyphA', 'glyphB'], 'neither saved pattern is replaced by a later transfer');
+assert.equal(gear.clothing.overwear.uid, banditClothB.uid, 'the most recently transferred item is worn');
+
+// The ordinary color-unlock behavior must not swallow the patterned pieces or be broken by them.
+transferTestClothing({ ...copy(dyed), uid: 'new-plain-blue' });
+assert.equal(gear.clothingItems.length, 3, 'a non-patterned dye variant still collapses into the existing plain garment');
+assert.equal(gear.clothing.overwear.uid, gear.clothingItems[0].uid, 'the plain item remains independently equipable');
+
+// Simulate JSON save/load, where worn and owned references deserialize as different objects.
+const restoredGear = copy(gear); // Recreates the runtime's cold-start deserialization boundary.
+gear.clothing = restoredGear.clothing;
+gear.clothingItems = restoredGear.clothingItems;
+panel.ensureGearClothingCollection();
+assert.equal(gear.clothingItems.length, 3, 'save migration does not collapse patterned loot into its base cosmetic');
+assert.deepEqual(gear.clothingItems.slice(1).map(item => item.weaving?.forcedOverpassPattern?.repoPatternId),
+  ['glyphA', 'glyphB'], 'both pattern snapshots persist through save migration');
+gear.clothing.overwear = copy(gear.clothingItems[2]);
+panel.ensureGearClothingCollection();
+assert.equal(gear.clothing.overwear, gear.clothingItems[2], 'equipped patterned garment reconnects to its canonical Gear article');
+
 const duplicateSale = { ...copy(base), uid: 'duplicate-transaction' }; // Simulates a legacy collision introduced after UI selection.
 pack = [duplicateSale, { ...copy(base), uid: 'duplicate-transaction' }];
 panel.buildPackClothingSection(); // Migration gives the current rows distinct IDs.
