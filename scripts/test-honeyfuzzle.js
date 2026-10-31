@@ -136,6 +136,20 @@ function fakeThree() {
   assert.deepEqual(Array.from(avatar.swarm.instanceMatrix.array), poseBefore, 'bird matrices stay unchanged on intermediate frames');
   avatar.update(0, 1190, 0.016, 150);
   assert.equal(avatar.swarm.instanceMatrix.needsUpdate, true, 'later tick refreshes all three planes');
+  const outerDepth = avatar.sideSwarms[1].position.z; // Unattached distance is the reference for all three swarm layers.
+  avatar.swarm.instanceMatrix.needsUpdate = false;
+  avatar.update(0, 1230, 0.1, 150, 0.71); // Full contraction occurs before the next 8 Hz pose-matrix refresh.
+  assert(Math.abs(avatar.sideSwarms[0].position.z + outerDepth * 0.71) < 1e-8, 'rear plane contracts in local -Z');
+  assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth * 0.71) < 1e-8, 'front plane contracts in local +Z');
+  assert.equal(avatar.swarm.instanceMatrix.needsUpdate, false, 'depth spacing still animates on an intermediate frame');
+  avatar.update(0, 1400, 0.016, 150, 0.71);
+  assert(Math.abs(avatar.swarm.instanceMatrix.array[14] - (-1.5 * 0.003 * 0.71)) < 1e-6,
+    'per-bird Z offsets contract along with the layer spacing');
+  avatar.update(0, 1430, 0.1, 150, 1);
+  assert(avatar.sideSwarms[1].position.z > outerDepth * 0.71 && avatar.sideSwarms[1].position.z < outerDepth,
+    'detachment smoothly expands the layer spacing instead of snapping');
+  avatar.update(0, 1570, 0.2, 150, 1);
+  assert(Math.abs(avatar.sideSwarms[1].position.z - outerDepth) < 1e-8, 'unattached Z spacing returns to its original value');
   frameAttr.needsUpdate = false;
   const firstPhase = avatar.swarm.material.userData.honeyfuzzle.uWingPhase.value;
   avatar.update(0, 1001, 0.016, 150);
