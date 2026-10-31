@@ -36,9 +36,11 @@ marker pixels along their longest axis (the two staff ends) into stable
 groups. At mastery 0 each region emits small, separately scattered motes.
 Mastery ranks 1–4 smoothly concentrate the origin points toward their two
 centroids while increasing each mote's size; at mastery 5 both regions
-produce single concentrated fire plumes. The final `size: 0.02`,
-`life: 0.35`, `speed: 0.12`, and palette match the calibrated
-Torch-Flail. `rate: 44` gives **each end** the Torch-Flail's 22
+produce single concentrated fire plumes. The final Torch-Staff `size: 0.05` is **2.5×** the Torch-Flail's
+`size: 0.02`, because the Torch-Flail's entire brazier head (including
+its flame sprites) is scaled 2.5×. This produces equivalent **rendered**
+flame size without scaling the staff. `life: 0.35`, `speed: 0.12`, and
+the palette remain unchanged. `rate: 44` gives **each end** the Torch-Flail's 22
 motes/s budget at rank 5. The normal emitter has no mastery scaling,
 so existing flail fire is unchanged.
 
