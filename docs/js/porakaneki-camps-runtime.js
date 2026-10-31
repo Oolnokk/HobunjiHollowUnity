@@ -2123,13 +2123,18 @@
         quarryId: camp.avengerBand.quarry?.id || null,
         quarry: camp.avengerBand.quarry ? { col: Number(camp.avengerBand.quarry.x.toFixed(1)), row: Number(camp.avengerBand.quarry.y.toFixed(1)) } : null,
       } : null,
-      huntingParty: camp.huntingParty ? {
-        id: camp.huntingParty.id,
-        denId: camp.huntingParty.denId,
-        routeStep: camp.huntingParty.routeStep,
-        memberCount: huntingPartyMembers(camp).length,
-        target: camp.huntingParty.target ? { col: Number(camp.huntingParty.target.col.toFixed(1)), row: Number(camp.huntingParty.target.row.toFixed(1)) } : null,
-      } : null,
+      cohortSizes: [...camp.cohortSizes], // Copyable debug proof of exactly how many residents each former camp contributed.
+      huntingParties: camp.huntingParties.map(party => ({
+        id: party.id, cohortIndex: party.cohortIndex, denId: party.denId,
+        routeStep: party.routeStep, memberCount: huntingPartyMembers(camp, party).length,
+        target: party.target ? { col: Number(party.target.col.toFixed(1)), row: Number(party.target.row.toFixed(1)) } : null,
+      })), // All simultaneous independent den patrols, visible in mobile debug snapshots.
+      huntingParty: camp.huntingParties.length ? (() => {
+        const party = camp.huntingParties[0]; // Legacy single-party diagnostic remains available to existing tools.
+        return { id: party.id, denId: party.denId, routeStep: party.routeStep,
+          memberCount: huntingPartyMembers(camp, party).length,
+          target: party.target ? { col: Number(party.target.col.toFixed(1)), row: Number(party.target.row.toFixed(1)) } : null };
+      })() : null,
       hunters: camp.hunters.map(hunter => {
         const entity = hunter.entity;
         const group = entity?.avatarRef?.group;
@@ -2261,7 +2266,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, denExteriorPoint, chooseNextPartyDen, ensureHuntingParty, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, historicalHuntingPartyCountForZone, historicalHuntingCohortsForZone, denExteriorPoint, chooseNextPartyDen, ensureHuntingParties, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);
