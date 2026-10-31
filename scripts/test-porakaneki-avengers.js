@@ -129,10 +129,24 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(omg.debugSnapshot().zones[zoneId].smallCampCount, 1, `${zoneId} has one Omgurku hunting camp`);
     const poraResidents = pora.debugSnapshot().zones[zoneId].camps.find(camp => camp.kind === 'small'); // Single-camp baseline used for ordinary residents, excluding the separate Avenger band.
     const omgResidents = omg.debugSnapshot().zones[zoneId].camps.find(camp => camp.kind === 'small'); // Rival single-camp baseline, independent of the Porakaneki chief.
-    for (const camp of [poraResidents, omgResidents]) {
-      assert(camp.residents >= 2 && camp.residents <= 4, `${zoneId} ordinary hunting population retains its original 2–4 range`);
-      assert.equal(camp.hunters.filter(hunter => hunter.role === 'resident').length, camp.residents,
-        `${zoneId} spawns each ordinary hunter exactly once without counting Avengers as residents`);
+    for (const [runtime, camp, tribeCfg] of [[pora, poraResidents, cfg], [omg, omgResidents, omgurkuCfg]]) {
+      const cohortSizes = runtime.__test.historicalHuntingCohortsForZone(zoneId); // Exact previous per-camp population rolls.
+      assert(cohortSizes.length >= 2 && cohortSizes.length <= 4, 'former 2-4 camps now share one site');
+      assert.deepEqual(camp.cohortSizes, cohortSizes, 'each former population roll is retained');
+      assert.equal(camp.residents, cohortSizes.reduce((sum, size) => sum + size, 0), 'former total hunters remain unchanged');
+      assert.equal(camp.hunters.filter(h => h.role === 'resident').length, camp.residents, 'no duplicated residents or Avenger counts');
+      assert.equal(camp.huntingParties.length, cohortSizes.length, 'one independent party per former camp');
+      const seen = new Set(); // Verify independent party membership rather than duplicating the same hunter.
+      for (const party of camp.huntingParties) {
+        const members = camp.hunters.filter(h => h.huntPartyId === party.id);
+        assert.equal(members.length, party.memberCount, 'party membership matches debug');
+        assert(members.length >= 2 && members.length <= tribeCfg.behavior.denHuntGroupMax, 'original party-size bounds retained');
+        assert(members.every(h => h.role === 'resident'), 'Avengers never enter a den party');
+        for (const hunter of members) {
+          assert(!seen.has(hunter.index), 'no resident belongs to two parties');
+          seen.add(hunter.index);
+        }
+      }
     }
     const poraPoint = huntingSitePreferences.get(`porakaneki_small_${zoneId}_0`);
     const omgPoint = huntingSitePreferences.get(`omgurku_small_${zoneId}_0`);
@@ -155,8 +169,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     assert(riders.every(rider => rider.mount === 'nazgraku'), 'every Avenger rides a Nazgraku');
     assert(riders.every(rider => cfg.avengers.weaponShapes.includes(rider.weapon)));
     assert.equal(homes[0].residents, homes[0].hunters.length - riders.length, 'riders join on top of the ordinary residents');
-    assert(!homes[0].huntingParty || homes[0].hunters.filter(h => h.huntPartyId === homes[0].huntingParty.id).every(h => h.role === 'resident'),
-      'Avengers never join a den-hunting party');
+    assert(homes[0].huntingParties.every(party => homes[0].hunters.filter(h => h.huntPartyId === party.id).every(h => h.role === 'resident')),
+      'Avengers never join any of the independent den-hunting parties');
   }
   for (const zoneId of ZONES) assert(omg.debugSnapshot().zones[zoneId].camps.every(camp => !camp.avengers), 'Omgurku camps keep no band');
 
