@@ -6871,6 +6871,10 @@
             }
           } else if (c.combatTutorialTarget && !c.combatTutorialHostile) {
             c.vx = 0; c.vy = 0; // Passive previews still run normal resource and swept knockback physics above.
+          } else if (c.maskboundTroop === 'headtaker' && window.MaskboundHeadtaker?.isActive?.(c)) {
+            const result = window.BanditCombat.updateCombatAI(c, entityDt, c._attachment?.host || targetPlayer, distToPlayer);
+            aimAngle = result.aimAngle;
+            moving = result.moving; // Preserve a committed leap/grapple across search/flee AI transitions; otherwise a freely moving victim can strand the head lock.
           } else if (c.state === 'fleeing-low-health') {
             // Beelines home ignoring player/prey aggro (see the guards above)
             // until it settles, then starts its re-aggro cooldown — nothing
