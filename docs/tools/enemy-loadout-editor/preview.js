@@ -253,10 +253,7 @@ export class EnemyPreview {
       this.weaponTextures,
       d.heldObjectRenderOrder,
       (root) => window.PngPlaneOutlineOccluder.markPngPlane(root),
-      (itemKey) => { // The same recolor the plain weapon sprite gets below, for the assembly runtime's marker/fire pass.
-        const metal = this.items[itemKey]?.metalKey && this.data.metals[this.items[itemKey].metalKey];
-        return metal ? { targetHex: metal.hex, verdigrisHex: metal.verdigrisHex || '#3FAF9F', oxidationAmount: 0 } : null;
-      },
+      (itemKey) => this.weaponMetalOptions(itemKey), // The weapon-assembly runtime's recolor options, as in the game.
       () => 0, // Preview weapons are unmastered.
     );
     this.dependencies = {
@@ -373,6 +370,11 @@ export class EnemyPreview {
     this.camera.aspect = r.width / Math.max(1, r.height);
     this.camera.updateProjectionMatrix();
   }
+  // The recolor the plain weapon sprite gets, as the weapon-assembly runtime's metalOptions (null for a metal-less weapon).
+  weaponMetalOptions(itemKey) {
+    const metal = this.items[itemKey]?.metalKey && this.data.metals[this.items[itemKey].metalKey];
+    return metal ? { targetHex: metal.hex, verdigrisHex: metal.verdigrisHex || '#3FAF9F', oxidationAmount: 0 } : null;
+  }
   weaponMesh(key) {
     const def = this.items[key] || {
       sprite: 'assets/toolsprites/ranged_' + key + '.png',
@@ -442,6 +444,13 @@ export class EnemyPreview {
           (0.5 * def._imgH) / def._imgW,
         );
         group.userData.unloadedTexture = texture;
+        // The game builds a weapon mesh only after its texture has loaded; here the real image arrives after the mesh, so the layered assembly
+        // (flail chain and brazier, staff marker recolor and fire) is set up now, against the real sprite, replacing the one made on the blank placeholder.
+        const assemblies = window.HobunjiWeaponSpriteAssemblies;
+        if (assemblies) {
+          assemblies.drop(group);
+          assemblies.decorate(group, key, def, { THREE, metalOptions: () => this.weaponMetalOptions(key), masteryLevel: () => 0 });
+        }
         if (loadedImage) {
           const loaded = window.HobunjiSpritePngSurface.makeCanvasTexture(
             THREE,
