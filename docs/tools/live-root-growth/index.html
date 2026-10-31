@@ -25,8 +25,8 @@
 <script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></script>
 <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
 <script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
-<script src="js/root-snare-hands.js?v=20261031snare5"></script>
-<script src="js/root-snare-runner.js?v=20261031snare2"></script>
+<script src="js/root-snare-hands.js?v=20261031twogrip1"></script>
+<script src="js/root-snare-runner.js?v=20261031twogrip1"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -66,19 +66,21 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
 </section>
 <section><h2>Wall-root snare hands · moving walker preview</h2>
-<p>Simple three-branch hands bud from fixed, hidden wall or floor roots at varied angles. Two finger branches and an opposing thumb open as the arm grows and reroutes toward the running NPC. An actual palm collider triggers the grip; the whole arm then pulls the NPC back to its original node, still gripped. The NPC stays held until you release it. Preview-only: no actual gameplay combat or damage.</p>
+<p>Fixed root nodes on walls and floors can notice targets up to 15 units away. Arms grow slowly (0.2 progress/second) and actively reroute as the procedural runner moves at 5 units/second. The first collider catch grips the neck without freezing movement: running toward the hand source is 2× speed; away is 0.5×; angles blend smoothly. A second hand catches the feet, immobilizes and lifts the runner, and pulls neck and feet apart with a three-second cartoon stretch. The pants and procedural feet then separate in a stylized red particle splurt. This is an author-only visual test, not combat gameplay.</p>
 <label><input type="checkbox" id="snareEnabled"> Enable wandering walker + wall hands</label>
 <div class="controls">
 <label>Hidden hand nodes <input id="snareCount" type="number" min="1" max="14" step="1" value="7"></label>
-<label>Notice radius <input id="snareRadius" type="number" min=".5" max="7" step=".1" value="2.5"></label>
-<label>Arm extension <input id="snareReach" type="number" min=".3" max="4" step=".1" value="1.45"></label>
-<label>Extending speed <input id="snareExtend" type="number" min=".15" max="12" step=".1" value="2.4"></label>
+<label>Notice radius <input id="snareRadius" type="number" min=".5" max="15" step=".5" value="15"></label>
+<label>Arm extension <input id="snareReach" type="number" min=".3" max="15" step=".5" value="15"></label>
+<label>Extending speed <input id="snareExtend" type="number" min=".05" max="12" step=".05" value="0.2"></label>
 <label>Retracting speed <input id="snareRetract" type="number" min=".15" max="12" step=".1" value="1.1"></label>
-<label>Runner speed <input id="snareRunnerSpeed" type="number" min=".3" max="5" step=".1" value="2.5"></label>
+<label>Runner speed <input id="snareRunnerSpeed" type="number" min=".3" max="8" step=".1" value="5"></label>
 </div>
 <label><input type="checkbox" id="snareReveal"> Reveal the otherwise hidden root-node markers</label>
 <div class="controls"><button id="snareBuild" type="button">Rebuild hidden hands</button><button id="snareReroute" type="button">Change runner direction</button></div>
-<div class="controls"><button id="snareRunPast" type="button">Run past first hand</button><button id="snareRelease" type="button">Release captured runner</button></div>
+<div class="controls"><button id="snareRunPast" type="button">Run past first hand</button><button id="snareRelease" type="button">Reset / release runner</button></div>
+<div class="controls"><button id="snareRunAway" type="button">Pull away from hand</button><button id="snareRunToward" type="button">Run toward hand</button></div>
+<button id="snareDoubleGrip" type="button" style="width:100%;margin-top:7px">Preview two-hand neck + feet stretch</button>
 <p id="snareStatus" role="status" aria-live="polite">Build a ruin to place the fixed roots, then enable the walker.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
@@ -136,10 +138,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>The author now grows natural, three-digit branch hands from fixed wall or floor root nodes. Arms curve toward moving targets, grasp using a palm collider and pull the runner back to their hiding node, holding it until manually released. No devouring or disappearance sequence.</p></section>
+<section><h2>Latest change</h2><p>Author-only dual grips: slow 15-unit pursuing arms, directional neck-tether tug, a second hand gripping the feet, three-second airborne stretch, separate pants/feet and stylized blood particles.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031snare4"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031twogrip1"></script>
 </body></html>
