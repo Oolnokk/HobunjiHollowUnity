@@ -289,6 +289,39 @@
     }
   }
 
+
+  // Partition the same native, void-masked floor into 4×4 independent authored growth
+  // regions. Each keeps the Author's exact Temple layer strand budget, without
+  // filling holes/plateau gaps or creating sixteen copies of the source floor.
+  function buildFloorCoverSectors(floorPattern){
+    const geometry=floorPattern?.geometry,position=geometry?.getAttribute('position'),uv=geometry?.getAttribute('uv');
+    if(!position)throw new Error('No mapped ruin floor positions for region-aware vegetation.');
+    geometry.computeBoundingBox();const bounds=geometry.boundingBox;
+    const width=Math.max(.001,bounds.max.x-bounds.min.x),depth=Math.max(.001,bounds.max.z-bounds.min.z);
+    const buckets=Array.from({length:16},()=>({positions:[],uvs:[]}));
+    const indices=geometry.index,triangles=(indices?.count||position.count)/3;
+    for(let t=0;t<triangles;t++){
+      const ids=[0,1,2].map(i=>indices?indices.getX(t*3+i):t*3+i);
+      const x=ids.reduce((n,i)=>n+position.getX(i),0)/3,z=ids.reduce((n,i)=>n+position.getZ(i),0)/3;
+      const col=Math.max(0,Math.min(3,Math.floor((x-bounds.min.x)/width*4)));
+      const row=Math.max(0,Math.min(3,Math.floor((z-bounds.min.z)/depth*4)));
+      const bucket=buckets[row*4+col];
+      for(const id of ids){bucket.positions.push(position.getX(id),position.getY(id),position.getZ(id));bucket.uvs.push(uv?.getX(id)||0,uv?.getY(id)||0);}
+    }
+    const target=new T.Group();target.name='Root Author matching floor sectors';
+    for(let i=0;i<buckets.length;i++){
+      const data=buckets[i];if(!data.positions.length)continue;
+      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(data.positions,3));geo.setAttribute('uv',new T.Float32BufferAttribute(data.uvs,2));geo.computeVertexNormals();
+      const guide=new T.Mesh(geo,new T.MeshBasicMaterial({color:0x24211d,side:T.DoubleSide,visible:false}));
+      guide.visible=false;guide.name='Floor vegetation region '+(i+1);
+      guide.userData={surfaceFoliageGuide:true,surfaceFoliageGuideOwner:target.uuid,
+        surfaceFoliageRecognizedRegion:true,surfaceFoliageGuideId:'floor-quarter-'+i,surfaceFoliageRole:'floors'};
+      target.add(guide);
+    }
+    if(!target.children.length)throw new Error('Generated floor has no growable surface regions.');
+    return {target,regions:target.children.length,dispose(){for(const guide of target.children){guide.geometry.dispose();guide.material.dispose();}target.clear();}};
+  }
+
   async function prepareCover({room,templeRecipes,rootColor='#24211d',signal,onProgress}){
     if(!window.LiveRootGrowth?.createCoverAsync||!window.FoliageGenerator)throw new Error('Root vegetation runtime is missing.');
     const recipes=coverRecipes(templeRecipes,rootColor); // One source for wall/floor vegetation both in authoring and gameplay.
@@ -301,8 +334,11 @@
     let walls=null,floor=null,complete=false;const patches=[];
     try{
       walls=await build(room.model,wallRecipes);
-      const floorTarget=new T.Group();floorTarget.add(room.floorPattern.clone(false));
-      floor=await build(floorTarget,floorRecipes);
+      const sectors=room.floorLayout?null:buildFloorCoverSectors(room.floorPattern); // Multi-room floors share the author's sixteen independent patch budgets.
+      const floorTarget=sectors?.target||new T.Group();if(!sectors)floorTarget.add(room.floorPattern.clone(false));
+      try{floor=await build(floorTarget,sectors?floorRecipes.map(recipe=>({...recipe,perSurface:true})):floorRecipes);}
+      finally{sectors?.dispose();}
+      const floorRegionCount=sectors?.regions||1; // User-facing coverage diagnostics distinguish the sixteen native floor regions.
       compactFloorCover(floor.targetGrowth);
       if(room.floorLayout){
         for(const offset of room.floorLayout.offsets){
@@ -315,7 +351,8 @@
         patch.name='Cell-masked floor vegetation';walls.targetGrowth.add(patch);patches.push(patch);
       }
       const stats={wallStrands:walls.getDiagnostics().shapeStrands,floorPatternStrands:floor.getDiagnostics().shapeStrands,
-        copies:patches.length,visibleStrands:walls.getDiagnostics().shapeStrands+floor.getDiagnostics().shapeStrands*patches.length};
+        copies:patches.length,floorRegions:floorRegionCount,coverageMethod:room.floorLayout?'author-quarter-tiles':'author-16-region-native-footprint',
+        visibleStrands:walls.getDiagnostics().shapeStrands+floor.getDiagnostics().shapeStrands*patches.length};
       let disposed=false;
       const cover={stats,attach(){room.model.add(walls.targetGrowth);},dispose(){
         if(disposed)return;disposed=true;
@@ -334,6 +371,6 @@
   window.StoneAgeRuinScenery=Object.freeze({
     ruinRockGeometry,makeRuinStoneMaterial,mapRuinStoneSurfaces,ruinFloorShell,ruinFloorTileLayout,
     ruinMappedFloorShell,ruinMappedFloorMesh,
-    compactFloorStoneIndices,floorStrandRingIndices,compactFloorCover,ruinFloorMesh,coverRecipes,buildRoom,prepareCover,
+    compactFloorStoneIndices,floorStrandRingIndices,compactFloorCover,ruinFloorMesh,coverRecipes,buildRoom,prepareCover,buildFloorCoverSectors,
   });
 })(typeof window !== 'undefined' ? window : globalThis);
