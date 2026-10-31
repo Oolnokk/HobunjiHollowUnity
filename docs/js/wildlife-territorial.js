@@ -94,6 +94,7 @@
   }
 
   function utterWarning(creature) {
+    if (creature?.creatureKey === 'honeyfuzzle') return; // Swarm threat is conveyed by HoneyfuzzleAudio's live buzz/pitch, never an utterance.
     if (!window.AnimalVocalizations?.warning?.(creature, 'territorial-boundary')) {
       window.AudioSystem?.playCreatureBark?.(creature);
     }
