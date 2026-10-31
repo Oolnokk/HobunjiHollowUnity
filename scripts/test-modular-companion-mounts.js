@@ -12,7 +12,7 @@ function boot(storage = {}) {
 }
 const { api, committed } = boot();
 const eyeLocations = [
-  ['bshuakauitl', 0], ['bshuakauitl', 1],
+  ['bshuakauitl', 0], ['bshuakauitl', 1], ['hachutuTorchStaff', 0], ['hachutuTorchStaff', 1],
   ['fishing-mace', 0], ['warhammer', 0], ['bgungku', 0],
   ['hatchet', 0], ['hoe', 0], ['kylie', 0], ['pick-shovel', 0]
 ]; // All nine manually authored eye locations, including the two-ended and mixed-mount weapons.
@@ -23,7 +23,13 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   totalEye += eyes.length; totalTang += tangs.length;
   assert(shaft.mounts.length <= (shaft.maxAttachments || 8), shaftKey + ': exceeds mount limit');
   for (const eye of eyes) {
-    if (shaftKey === 'bshuakauitl') continue; // Editor export: eyes and tangs were independently moved/rotated for tang heads.
+    if (shaftKey === 'bshuakauitl' || shaftKey === 'hachutuTorchStaff') {
+      // Torch-Staff intentionally inherits the B'shuakauitl eye/tang rig verbatim,
+      // whose tangs are independently offset by the artist rather than center-snapped.
+      if (shaftKey === 'hachutuTorchStaff') assert.deepEqual(plain(shaft.mounts),
+        plain(committed.shafts.bshuakauitl.mounts), 'the copied source rig retains its authored attachment lines');
+      continue;
+    }
     if (shaftKey === 'kylie') {
       // This is an explicit editor export: Kylie mounts were independently moved/rotated after companion creation.
       assert.equal(eyes.length, 1);
@@ -53,8 +59,8 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   }
 }
 assert.equal(totalEye, eyeLocations.length);
-assert.equal(totalTang, 17, 'Nine additional tang lines plus eight previously authored tangs');
-assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 255);
+assert.equal(totalTang, 19, 'Torch-Staff adds both independently authored B\'shuakauitl tang copies');
+assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 272);
 assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'blade',
   start: { x: 207, y: 319 }, end: { x: 207, y: 239 } }, 'Pick arrow stays straight and unrotated');
 
@@ -105,4 +111,4 @@ storage['hobunji.modularWeapons.v5'] = JSON.stringify(current);
 const reloaded = boot(storage);
 assert.equal(reloaded.api.getConfig().shafts.warhammer.mounts.filter(m => m.type === 'tang').length, 0,
   'Do not repeatedly re-create manually removed tangs on current-version drafts');
-console.log('Companion mounts: 8 centered companions, manually adjusted Kylie lines, 255 explicit layer choices, pick unrotation, v4->v5 draft migration passed.');
+console.log('Companion mounts: 8 centered companions, Torch-Staff copied rig, 272 explicit layer choices, Kylie edits and v4->v5 draft migration passed.');
