@@ -594,8 +594,8 @@
       const vertical = halfHeightWorld * taper;
       const lift = Math.min(archUnits, halfHeightWorld * 0.2) * taper; // Still below the collider's top at the widest point.
       const vi = sample * 2;
-      positionAttr.setXYZ(vi, outerX, origin.y + verticalRise - vertical, outerZ);
-      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * Math.sin(pitch) + vertical - lift, innerZ);
+      positionAttr.setXYZ(vi, outerX, origin.y + verticalRise - vertical + lift, outerZ);
+      positionAttr.setXYZ(vi + 1, innerX, origin.y + innerRange * Math.sin(pitch) + vertical, innerZ);
     }
     positionAttr.needsUpdate = true;
   }
