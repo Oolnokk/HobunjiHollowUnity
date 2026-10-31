@@ -169,6 +169,15 @@
   function updateRescuer(actor, dt, adapters = {}) {
     const host = rescueHostFor(actor), previous = actor?._swarmRescue;
     if (!host) {
+      // The swarm detaches on the strike frame, but the rescuer must finish its
+      // visible strike pose instead of snapping back to normal AI immediately.
+      if (previous?.ownsTelegraph && previous.struck && window.Combat.telegraph?.isBusy?.(actor)) {
+        window.Combat.telegraph.update(actor, dt);
+        adapters.render?.(actor, dt, actor.facing);
+        adapters.animate?.(actor, dt, false);
+        adapters.updateTool?.(actor);
+        if (window.Combat.telegraph.isBusy(actor)) return true;
+      }
       if (previous?.ownsTelegraph) window.Combat.telegraph?.cancel?.(actor);
       if (actor) actor._swarmRescue = null;
       return false;
