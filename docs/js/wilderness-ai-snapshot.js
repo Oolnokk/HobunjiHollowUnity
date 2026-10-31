@@ -320,7 +320,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     const swarms = census.hives.filter(h => h.swarm).length;
     const lines = [`HIVES activeArea=${census.zoneId} hives=${census.hives.length} standing=${standing} swarmsOut=${swarms} night=${census.night ? 1 : 0} excludedZone=${census.excluded ? 1 : 0} spawnRadius=${census.spawnRadiusTiles} scope=active-zone-layout`];
     for (const h of census.hives) {
-      lines.push(`hive tile=(${h.col},${h.row}) standing=${h.standing ? 1 : 0} swarm=${h.swarm ? 1 : 0}${h.swarmState ? ` swarmState=${h.swarmState}` : ''}${h.killedOnDay != null ? ` killedOnDay=${h.killedOnDay}` : ''}`);
+      lines.push(`hive tile=(${h.col},${h.row}) standing=${h.standing ? 1 : 0} swarm=${h.swarm ? 1 : 0}${h.swarmState ? ` swarmState=${h.swarmState}` : ''}${h.respawnInSeconds != null ? ` respawnIn=${h.respawnInSeconds.toFixed(1)}s` : ''}`);
     }
     if (!census.hives.length) lines.push('(active area has no honeyfuzzle hive stumps in its layout)');
     return lines.join('\n');
