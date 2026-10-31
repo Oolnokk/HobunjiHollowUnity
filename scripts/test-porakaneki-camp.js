@@ -157,7 +157,7 @@ assert(devSpawnerSource.includes('window.HobunjiPorakanekiSpecies?.bodyColorsFor
 assert(socialSource.includes('canGiftToday'), 'chief gifting must retain the ordinary once-per-day NPC gate');
 assert(socialSource.includes('window.NpcRapport'), 'chief must retain the ordinary Rapport bridge');
 assert(runtimeSource.includes("activity: 'break'"), 'chief daytime behavior must remain free-time planner driven');
-assert(runtimeSource.includes('function ensureHuntingParty(camp)') && runtimeSource.includes("hunter.activity = 'hunt-den'"), 'camp residents must form explicit den-hunting parties rather than solo random hunt targets');
+assert(runtimeSource.includes('function ensureHuntingParties(camp)') && runtimeSource.includes("hunter.activity = 'hunt-den'"), 'camp residents must form explicit den-hunting parties rather than solo random hunt targets');
 assert(runtimeSource.includes('function occupiedSites(zoneId)') && runtimeSource.includes('occupiedSites,'), 'runtime must expose exact active camp footprints so relocated dens cannot spawn through Porakaneki camps');
 assert(runtimeSource.includes("dens.length > 1 ? dens.filter(den => String(den.id) !== String(party.denId)) : dens"), 'den patrols must pick a different specific den when more than one den exists');
 assert(runtimeSource.includes('Targets only exterior walkable tiles; hunters never invoke den transitions or enter cavern maps.'), 'den patrol destinations must remain outside den interiors');
