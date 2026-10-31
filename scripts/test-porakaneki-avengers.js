@@ -278,5 +278,52 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(omgEntity._chunkCombatTarget, riderEntity, 'the Omgurku can still chase it');
   hostileObjects.delete(riderEntity); hostileObjects.delete(omgEntity);
 
+  // Run the production temporary-locale finder and tribe placement policy,
+  // not only fakeStamp: the actual camps must occupy opposite ends on square,
+  // portrait and landscape wilderness maps, including after regeneration.
+  const realPlacementContext = vm.createContext({ window: contextWindow, globalThis: contextWindow, console, Math, Set, Map, Object, Date }); // Shared window permits the real placement modules to replace the earlier test-only stamper.
+  vm.runInContext(read('docs/js/temporary-locales.js'), realPlacementContext);
+  vm.runInContext(read('docs/js/porakaneki-camp-placement-policy.js'), realPlacementContext);
+  for (const { cols, rows } of [{ cols: 96, rows: 96 }, { cols: 64, rows: 96 }, { cols: 96, rows: 64 }]) {
+    const zone = ZONES[0]; // A single test zone is regenerated repeatedly while the other zone states remain intact.
+    const layout = makeLayout(); // Fresh map reference exercises the production regeneration path.
+    layout.cols = cols;
+    layout.rows = rows;
+    layout.tiles = layout.tiles.filter(tile => tile.c < cols && tile.r < rows);
+    layout.dens = [{ id: 'animalDen_placement', x: Math.floor(cols / 2), y: Math.floor(rows / 2), w: 3, h: 3 }];
+    zoneLayouts.set(zone, layout);
+    pora.ensureZoneState(zone);
+    omg.ensureZoneState(zone);
+    const poraSite = pora.occupiedSites(zone)[0]; // Porakaneki's first occupied site is its only hunting camp.
+    const omgSite = omg.occupiedSites(zone)[0]; // Omgurku's first occupied site is its only hunting camp.
+    assert.equal(pora.debugSnapshot().zones[zone].smallCampCount, 1, `Porakaneki single-camp count after regeneration on ${cols}x${rows}`);
+    assert.equal(omg.debugSnapshot().zones[zone].smallCampCount, 1, `Omgurku single-camp count after regeneration on ${cols}x${rows}`);
+    assert(poraSite && omgSite, 'both rival hunting camps received a legal site');
+    const longAxisDistance = cols >= rows ? omgSite.x - poraSite.x : omgSite.y - poraSite.y; // Positive and broad separation along the map's long axis.
+    assert(longAxisDistance > Math.max(cols, rows) / 2, `real opposing-end placement on ${cols}x${rows}`);
+    const poraChunks = new Set(pora.reservedCampChunks(zone)); // Includes Porakaneki's seasonal chief reservation.
+    const omgChunks = new Set(omg.reservedCampChunks(zone)); // Includes Omgurku's seasonal chief reservation.
+    assert([...poraChunks].every(chunk => !omgChunks.has(chunk)), 'rival hunting/chief camps never share a streamed wilderness chunk');
+  }
+
+  // In heavily obstructed wilderness, both tribes still get their minimum
+  // legal 2x2 outpost when a normal 13x13 footprint cannot be accommodated.
+  combatDeps.WATERWAY_TYPES.add('river');
+  const blockedZoneId = ZONES[0]; // Regenerate one more map with deterministic scattered impassable water.
+  const blockedLayout = makeLayout(); // Retains a few legal 2x2 clearings but no regular full-sized camp site.
+  for (const tile of blockedLayout.tiles) {
+    if ((tile.c * 97 + tile.r * 131 + 3 * 47) % 31 < 5) tile.type = 'river';
+  }
+  zoneLayouts.set(blockedZoneId, blockedLayout);
+  pora.ensureZoneState(blockedZoneId);
+  omg.ensureZoneState(blockedZoneId);
+  assert.equal(pora.debugSnapshot().zones[blockedZoneId].smallCampCount, 1, 'Porakaneki minimum camp survives obstructed regeneration');
+  assert.equal(omg.debugSnapshot().zones[blockedZoneId].smallCampCount, 1, 'Omgurku minimum camp survives obstructed regeneration');
+  const fallbackPora = pora.occupiedSites(blockedZoneId)[0]; // Fallback site's real footprint, not an assumed 13x13 locale.
+  const fallbackOmg = omg.occupiedSites(blockedZoneId)[0]; // Companion fallback site on the opposite edge.
+  assert(fallbackPora && fallbackOmg && fallbackPora.x < fallbackOmg.x, 'real compact/tent-only recovery preserves opposite-end ordering');
+  assert([...new Set(pora.reservedCampChunks(blockedZoneId))].every(chunk => !new Set(omg.reservedCampChunks(blockedZoneId)).has(chunk)),
+    'fallback camps still enforce exclusive stream chunks');
+
   console.log('Porakaneki Avengers regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
