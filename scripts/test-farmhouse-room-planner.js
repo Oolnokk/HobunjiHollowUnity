@@ -123,4 +123,31 @@ const narrowLayout = planner.apply({ floorSet:nFloor, exitSet:new Set(), doors:[
 assert.equal(narrowLayout.partitions.length, 1);
 assert.equal(narrowLayout.wallCells.size, 0);
 assert.equal(narrowLayout.floorSet.size, 4*2 + 2*2 + 1);
+// Multi-room T-junction: a first corridor can occupy another join's
+// preferred door. Each adjoining pair still gets a DISTINCT wooden door.
+const junctionPieces = [
+  { id:'0', col:5, row:5, w:1, h:1, stage:'built' },
+  { id:'1', col:2, row:0, w:5, h:5, stage:'built' },
+  { id:'2', col:6, row:5, w:3, h:5, stage:'built' },
+  { id:'3', col:5, row:10, w:2, h:1, stage:'built' },
+  { id:'4', col:7, row:10, w:1, h:3, stage:'built' },
+  { id:'5', col:3, row:5, w:2, h:1, stage:'built' },
+  { id:'6', col:3, row:9, w:2, h:3, stage:'built' },
+  { id:'7', col:2, row:5, w:1, h:3, stage:'built' },
+];
+planner.restore(null);
+planner.layoutBuiltRooms(junctionPieces);
+const junctionFloor = new Set(); // Union of unchanged, shifted full room rectangles.
+for (const piece of junctionPieces) {
+  const room = planner.roomRect(piece);
+  for (let r = room.row; r < room.row + room.h; r++) for (let c = room.col; c < room.col + room.w; c++) {
+    junctionFloor.add(`${c},${r}`);
+  }
+}
+const junction = planner.apply({ floorSet:junctionFloor, exitSet:new Set(), doors:[], hearths:[] }, junctionPieces);
+assert.equal(junction.partitions.filter(part => part.builtIn).length, 11, 'all eleven adjacent room pairs must receive passages');
+assert.equal(new Set(junction.doorTiles.map(tile => tile.join(','))).size, 11, 'no two joins may share the same door tile');
+for (const tile of junctionFloor) assert(junction.floorSet.has(tile), 'joining rooms must not lose preexisting floor tiles');
+assert.equal(planner.debug().skipped.length, 0, 'multi-room junctions must not silently skip a door');
+
 console.log('Farmhouse room planner: complete-footprint and save regressions passed.');
