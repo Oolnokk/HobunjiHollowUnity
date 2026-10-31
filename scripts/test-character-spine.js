@@ -12,7 +12,7 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   const window = { location: { pathname: '/game/' }, setInterval(fn) { fn(); return 1; }, clearInterval() {}, console, URL };
   window.window = window;
   const sandbox = vm.createContext(window); // The global object IS window, as in a browser (the modules read bare `location`).
-  for (const file of ['docs/config/character-rig-scale-defaults.js', 'docs/js/character-rig-scale.js', 'docs/js/character-spine.js', 'docs/js/species-pose-scaling.js']) {
+  for (const file of ['docs/config/attachment-rig-profiles.js', 'docs/config/character-rig-scale-defaults.js', 'docs/js/character-rig-scale.js', 'docs/js/character-spine.js', 'docs/js/species-pose-scaling.js']) {
     vm.runInContext(read(file), sandbox, { filename: file });
   }
   const spine = window.HobunjiCharacterSpine;
@@ -49,11 +49,28 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   const layout = spine.layoutFor(0.05, neckY, H);
   const span = layout.spine.y + layout.neck.y;
   near(span, 0.42 * H, 'the chain covers the whole waist-to-neck stretch');
-  near(layout.spine.y, 0.2 * span, 'the bend sits low: the torso bone is only the lower fifth');
-  near(layout.neck.y, 0.8 * span, 'the spine bone takes the freed length up to the neck');
+  near(layout.spine.y, 0.25 * span, 'the bend sits low: the torso bone is only the lower quarter');
+  near(layout.neck.y, 0.75 * span, 'the spine bone takes the freed length up to the neck');
   assert.ok(layout.spine.y < span / 2, 'the bend is well below the midpoint');
   near(layout.torso.y + layout.spine.y + layout.neck.y, neckY, 'the chain ends exactly at the neck pivot');
   near(layout.torso.x + layout.spine.x + layout.neck.x, 0.05, 'and at the neck pivot X');
+  // With an authored posterior the torso bone starts exactly there and the bend lies strictly between the posterior and the neck.
+  const posterior = neckY - 0.3 * H;
+  const anchored = spine.layoutFor(0.05, neckY, H, posterior);
+  near(anchored.torso.y, posterior, 'the torso bone starts at the posterior');
+  const bendY = anchored.torso.y + anchored.spine.y;
+  assert.ok(bendY > posterior && bendY < neckY, 'the bend is between the posterior and the neck');
+  near(anchored.torso.y + anchored.spine.y + anchored.neck.y, neckY, 'the anchored chain still ends at the neck pivot');
+  near(spine.weightAt(posterior, neckY, H, posterior), 0, 'nothing at the posterior moves');
+  near(spine.weightAt(posterior + 0.5 * (neckY - posterior), neckY, H, posterior), 1, 'halfway from the posterior to the neck rides the spine');
+  near(spine.weightAt(-H / 2, neckY, H, -H), 0, 'a posterior below the painted art never moves the art\'s bottom edge');
+  assert.equal(spine.layoutFor(0, neckY, H, neckY + 1).torso.y, neckY - 0.42 * H, 'an implausible posterior falls back to the neck-relative estimate');
+  // Plane-space posterior, resolved like the legs' hip: authored percent-of-height-from-floor (mao-ao male is 25%), shifted into the plane's
+  // frame (floor = modelHeight/2 + assemblyY + planeY), else the hand-anchor fallback for species without a rule (e.g. the skeletons).
+  near(spine.posteriorLocalY({ speciesId: 'mao-ao', gender: 'male', modelHeight: 1, placementRatio: 0.5 }), 0.25 - 0.5, 'authored posterior in plane space');
+  near(spine.posteriorLocalY({ speciesId: 'mao-ao', gender: 'male', modelHeight: 1, placementRatio: 0.6 }), 0.25 - 0.5 - 0.1, 'shifted by the portrait vertical placement');
+  near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1, placementRatio: 0.5, handAttachY: 0.6 }), 0.6 - 0.18 - 0.5, 'no rule: 18% below the hand anchor, like the legs');
+  near(spine.posteriorLocalY({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: 1 }), 0.5 - 0.18 - 0.5, 'no rule and no hand anchor: 18% below the plane middle');
   const spineRest = { position: { y: layout.spine.y }, updateMatrix() {}, userData: {} };
   spine.applyToRig({ spineJoint: spineRest, neckLocal: { y: neckY } }, spine.profileFor(1), H);
   near(spineRest.position.y, layout.spine.y - spine.profileFor(1).shoulderDrop * H, 'a hunch lowers the spine bone from its bind-pose offset');

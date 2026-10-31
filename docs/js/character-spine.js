@@ -33,9 +33,9 @@
 
   const FALLBACK_NECK_DROP = 0.25; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
   const SHOULDER_DROP_RATIO = 0.8; // The spine lowers the shoulders by this share of the total head drop; the head bone supplies the rest.
-  const WAIST_BELOW_NECK = 0.42; // The spine bone's weight starts this far (fraction of model height) below the neck pivot...
-  const FULL_BELOW_NECK = 0.21; // ...and is complete by here (halfway up the torso), so the bend is squeezed into the lower back and everything above, shoulders and neck included, rides the spine rigidly.
-  const BEND_FRACTION = 0.2; // The spine joint, where the new bend sits, is this far up the waist-to-neck span: low in the back, so the torso bone is short and the spine bone long.
+  const WAIST_BELOW_NECK = 0.42; // Fallback only: with no authored posterior the waist is this far (fraction of model height) below the neck pivot.
+  const RAMP_FRACTION = 0.5; // The spine bone's skin weight ramps from the posterior up to this share of the posterior-to-neck span, so the bend is squeezed into the lower back and everything above, shoulders and neck included, rides the spine rigidly.
+  const BEND_FRACTION = 0.25; // The spine joint, where the new bend sits, is this far up the posterior-to-neck span: low in the back, so the torso bone is short and the spine bone long.
   const STANCE_WIDEN = 0.5; // Fully hunched: feet 50% farther from the centreline.
   const STRIDE_WIDEN = 0.3; // Fully hunched: strides 30% longer, a lurching reach rather than a shuffle.
 
@@ -93,30 +93,47 @@
 
   const smoothstep01 = t => { const x = clamp01(t); return x * x * (3 - 2 * x); };
 
+  // The character's posterior (hip) anchor in the skinned plane's own frame, resolved exactly as the procedural legs resolve their hip: the
+  // shared attachment-rig resolver (authored percent-of-height-from-floor, else the hand-anchor fallback), looked up by the exact species key.
+  // That is a floor-relative height; the plane sits modelHeight/2 above the floor, shifted by the portrait's vertical placement
+  // (png-plane-avatar.js: floorY = modelHeight/2 + assemblyY + planeY). Null when the resolver is unavailable.
+  function posteriorLocalY({ speciesId, gender, modelHeight, placementRatio = 0.5, handAttachY }) {
+    const key = id => String(id || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    const g = String(gender || '').toLowerCase() === 'female' ? 'female' : 'male';
+    const rule = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${key(speciesId)}::${g}`]?.posteriorRule || null;
+    const floorY = window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(rule, modelHeight, handAttachY);
+    if (!Number.isFinite(floorY) || !(modelHeight > 0)) return null;
+    return floorY - modelHeight / 2 - (Number(placementRatio) - 0.5) * modelHeight;
+  }
+
+  // The waist (where the torso bone starts) for a given posterior; falls back to a fixed stretch below the neck when the posterior is unknown or implausible.
+  const waistFor = (neckY, modelHeight, posteriorY) =>
+    Number.isFinite(posteriorY) && posteriorY < neckY - 0.1 * modelHeight ? posteriorY : neckY - WAIST_BELOW_NECK * modelHeight;
+
   // Bind-pose bone layout for a skinned portrait, in the local frames of the chain torso -> spine -> neck. The torso bone used to span the
-  // whole waist-to-neck stretch as a zero-length bone at the plane origin; it now covers only the low back (up to the bend, BEND_FRACTION of
-  // the span) and the spine bone starts at that bend and takes the freed length up to the neck pivot. The neck keeps its plane position.
-  // Skin weights are defined in plane coordinates, so the pose is identical until a hunch moves the spine bone.
-  function layoutFor(neckX, neckY, modelHeight) {
-    const waistY = neckY - WAIST_BELOW_NECK * modelHeight, jointY = waistY + BEND_FRACTION * (neckY - waistY);
+  // whole posterior-to-neck stretch as a zero-length bone at the plane origin; it now starts at the posterior, covers only the low back (up to
+  // the bend, BEND_FRACTION of the span) and the spine bone starts at that bend and takes the freed length up to the neck pivot. The neck keeps
+  // its plane position. Skin weights are defined in plane coordinates, so the pose is identical until a hunch moves the spine bone.
+  function layoutFor(neckX, neckY, modelHeight, posteriorY) {
+    const waistY = waistFor(neckY, modelHeight, posteriorY), jointY = waistY + BEND_FRACTION * (neckY - waistY);
     return {
-      torso: { x: neckX, y: waistY, z: 0 }, // Plane-local origin of the torso bone (the waist).
-      spine: { x: 0, y: jointY - waistY, z: 0 }, // Relative to the torso: the bend, low in the span.
+      torso: { x: neckX, y: waistY, z: 0 }, // Plane-local origin of the torso bone (the posterior).
+      spine: { x: 0, y: jointY - waistY, z: 0 }, // Relative to the torso: the bend, between the posterior and the neck.
       neck: { x: 0, y: neckY - jointY, z: 0 }, // Relative to the spine: the rest of the span, ending exactly at the neck pivot.
     };
   }
 
-  // The spine bone's skin weight at plane-local height y (0 below the waist, 1 from just under the shoulders up).
+  // The spine bone's skin weight at plane-local height y (0 at and below the posterior, 1 from RAMP_FRACTION of the way to the neck up).
   // buildSkinnedPlaneGeometry weights vertices with it and every CPU skinning resolver reuses it, so they all agree.
-  const weightAt = (y, neckY, modelHeight) => {
-    const lo = neckY - WAIST_BELOW_NECK * modelHeight, hi = neckY - FULL_BELOW_NECK * modelHeight;
+  const weightAt = (y, neckY, modelHeight, posteriorY) => {
+    const lo = Math.max(waistFor(neckY, modelHeight, posteriorY), -modelHeight / 2), hi = lo + RAMP_FRACTION * (neckY - lo); // The posterior can sit below the painted art; its bottom edge stays anchored to the legs.
     return hi > lo ? smoothstep01((y - lo) / (hi - lo)) : 0;
   };
 
   // Total follow of a rest-pose point at plane-local height y: the spine bone's share plus whatever the head/neck bones
   // (which inherit the spine) carry on top, i.e. spine + turn - spine*turn, using the same broad head-turn falloff as the skin.
-  function followAt(y, neckY, modelHeight, blendHeight) {
-    const spineWeight = weightAt(y, neckY, modelHeight);
+  function followAt(y, neckY, modelHeight, blendHeight, posteriorY) {
+    const spineWeight = weightAt(y, neckY, modelHeight, posteriorY);
     const blend = Math.max(modelHeight * 0.012, Number(blendHeight) || modelHeight * 0.3);
     const turn = smoothstep01((y - (neckY - blend * 0.55)) / blend);
     return spineWeight + turn * (1 - spineWeight);
@@ -135,7 +152,7 @@
       joint.position.y = joint.userData.hobunjiSpineRestY - drop; // A translation down: the weight ramp between waist and shoulders turns it into a stoop.
       joint.updateMatrix?.();
     }
-    if (profile) Object.assign(profile, { dropLocal: drop, neckY: Number(rig.neckLocal?.y) || 0, modelHeight, blendHeight: rig.blendHeight || null });
+    if (profile) Object.assign(profile, { dropLocal: drop, neckY: Number(rig.neckLocal?.y) || 0, posteriorY: Number.isFinite(rig.spinePosteriorY) ? rig.spinePosteriorY : null, modelHeight, blendHeight: rig.blendHeight || null });
     return true;
   }
 
@@ -201,7 +218,7 @@
 
   // How far a rest-pose point at plane-local height y is carried down by the spine, in plane-local units (0 for an upright character).
   const deformDrop = (profile, y) => profile?.dropLocal > 0
-    ? profile.dropLocal * followAt(y, profile.neckY, profile.modelHeight, profile.blendHeight)
+    ? profile.dropLocal * followAt(y, profile.neckY, profile.modelHeight, profile.blendHeight, profile.posteriorY)
     : 0;
 
   const resolve = source => profileFor(hunchFor(source));
@@ -234,6 +251,7 @@
     applyToRig,
     deformDrop,
     layoutFor,
+    posteriorLocalY,
     makeBoneGuides,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,
