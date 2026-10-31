@@ -71,7 +71,7 @@ const server = http.createServer((req, res) => {
         weapon?.physics?.angularVelocity.every(Number.isFinite);
     });
     await page.locator('[data-tab="layers"]').click();
-    await page.locator('#layerList .layer > button').nth(2).click(); // Third head layer is the authored fuel.
+    await page.locator('#layerList .layer:nth-child(3) > button:first-child').click(); // Third head layer is the authored fuel.
     await page.locator('#fireSize').fill('0.04');
     await page.locator('#fireSize').dispatchEvent('change');
     await page.waitForFunction(() => window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot()
