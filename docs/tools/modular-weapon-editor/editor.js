@@ -33,6 +33,10 @@
       option.value = key; option.textContent = record.label; byId(id).appendChild(option);
     }
   }
+  function updateShaftList(active = byId('shaft').value) {
+    byId('shaft').replaceChildren(); options('shaft', data.shafts);
+    byId('shaft').value = data.shafts[active] ? active : Object.keys(data.shafts)[0];
+  } // New duplicate keys must stay selectable after import, undo and redo.
   // Undo/redo: every committed draft state (lines, corrections, layering, bridges, imports, resets) is a step.
   const undoStack = [], redoStack = [], MAX_HISTORY = 100;
   let savedState = JSON.stringify(data); // Draft as last committed, the state Undo returns from.
@@ -48,7 +52,7 @@
   function restore(state) {
     data = JSON.parse(JSON.stringify(api.replace(JSON.parse(state), true)));
     savedState = JSON.stringify(data); pendingStrokes = [];
-    render(); syncBridgeControls(); historyButtons();
+    updateShaftList(); render(); syncBridgeControls(); historyButtons();
   }
   function save() {
     try {
@@ -135,6 +139,8 @@
         const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
+          duplicateFrom: shaft.duplicateFrom || null, duplicateTransform: shaft.duplicateFrom ? api.duplicateTransform(shaft.duplicateTransform) : null,
+          effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
@@ -217,6 +223,16 @@
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
     byId('head-kind').value = head.mount.type;
+    const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Only copies expose the whole-shaft transform.
+    const layout = api.duplicateTransform(shaft.duplicateTransform);
+    for (const [id, value] of [['duplicate-scale-x', layout.scaleX],['duplicate-scale-y', layout.scaleY],
+      ['duplicate-x',layout.x],['duplicate-y',layout.y]]) {
+      byId(id).value = String(value); byId(id).disabled = !duplicated;
+    }
+    byId('duplicate-sprite').value = shaft.sprite || ''; byId('duplicate-sprite').disabled = !duplicated;
+    byId('duplicate-note').textContent = duplicated
+      ? 'Copied from ' + duplicated.label + '. Original shaft mounting coordinates are shown at left; final scaled/translated positions appear in the assembled preview.'
+      : 'This is an original shaft. Choose "Duplicate selected shaft" above to create an independently editable whole-shaft copy.';
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
@@ -352,6 +368,41 @@
     render(); msg('Compatible combination: ' + data.shafts[selected.shaft].label + ' / ' + data.heads[selected.head].label);
   };
   byId('shaft').onchange = () => { mountIndex = 0; render(); };
+  byId('duplicate-shaft').onclick = () => {
+    const from = byId('shaft').value, source = chosenShaft(); // Copy ALL source mount lines, pair overrides and optional living-shaft fire.
+    const id = prompt('New shaft key (letters/numbers, e.g. myTorchShaft):', from + 'Copy');
+    if (!id || !/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(id) || data.shafts[id]) {
+      msg('Choose a unique shaft key beginning with a letter.'); return;
+    }
+    const label = prompt('Name for the duplicated shaft:', source.label + ' Copy');
+    if (!label) return;
+    const sprite = prompt('Sprite path for the complete duplicate:', source.sprite);
+    if (!/^assets\/[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(sprite || '')) {
+      msg('The duplicate needs an asset PNG or WebP path.'); return;
+    }
+    const clone = JSON.parse(JSON.stringify(source)); // Keep pair-specific exclusions and sockets independent from donor edits.
+    clone.label = label.slice(0,96); clone.sprite = sprite; clone.duplicateFrom = from;
+    clone.duplicateTransform = { ...api.duplicateTransform(source.duplicateTransform) }; // Independent whole-shaft scale/translation for this copy.
+    data.shafts[id] = clone; updateShaftList(id); mountIndex = 0; save();
+    msg('Duplicated '+source.label+' into '+clone.label+'. Artwork, mounts and any living fire use one transform.');
+  };
+  for (const [id, key, fallback, min, max] of [
+    ['duplicate-scale-x','scaleX',1,.05,8],['duplicate-scale-y','scaleY',1,.05,8],
+    ['duplicate-x','x',0,-2400,2400],['duplicate-y','y',0,-2400,2400],
+  ]) byId(id).onchange = () => {
+    const shaft = chosenShaft(); if (!shaft.duplicateFrom) return;
+    const n = Number(byId(id).value);
+    (shaft.duplicateTransform ||= {})[key] = Number.isFinite(n) ? Math.max(min, Math.min(max,n)) : fallback;
+    save(); // One update rescales the entire shaft, its four (or more) mounts and the attached heads.
+  };
+  byId('duplicate-sprite').onchange = () => {
+    const shaft = chosenShaft(), sprite = byId('duplicate-sprite').value.trim();
+    if (!shaft.duplicateFrom) return;
+    if (!/^assets\/[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(sprite)) {
+      msg('Use an assets/... PNG or WebP path.'); byId('duplicate-sprite').value=shaft.sprite; return;
+    }
+    shaft.sprite = sprite; save(); // Replacement PNG is the entire shaft; copied sockets still align to its authoring frame.
+  };
   byId('head').onchange = render;
   byId('socket').onchange = () => { mountIndex = Number(byId('socket').value); render(); };
   byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
@@ -404,13 +455,13 @@
       const raw = await file.text(); // JSON or JS assignment exported by this tool; never eval.
       const json = raw.trim().startsWith('{') ? raw : raw.slice(raw.indexOf('=') + 1).trim().replace(/;\s*$/, '');
       data = JSON.parse(JSON.stringify(api.replace(JSON.parse(json), true)));
-      record(); mountIndex = 0; render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
+      record(); mountIndex = 0; updateShaftList(); render(); msg('Imported and validated directed mount config (legacy sockets are migrated).');
     } catch (error) { msg('Import failed: ' + error.message); }
     finally { byId('file').value = ''; }
   };
   byId('reset').onclick = () => {
     data = JSON.parse(JSON.stringify(api.replace(window.MODULAR_WEAPON_CONFIG, true))); // Restores shipped lines and pair corrections.
-    record(); mountIndex = 0; render(); msg('Restored committed directed mount data.');
+    record(); mountIndex = 0; updateShaftList(); render(); msg('Restored committed directed mount data.');
   };
   // Pair bridge brush: strokes painted on the assembled preview are stored on this pair and re-filled by
   // ModularWeapons.compose() (which the game also uses), so the preview shows exactly what gameplay renders.
