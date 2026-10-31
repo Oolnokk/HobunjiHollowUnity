@@ -629,6 +629,7 @@ function renderBodyProportions(species, gender) {
       if (hunch > 0) r.spine = { hunch };
       else delete r.spine;
     });
+    queueProportionPreview(); // The enemy is built from the saved rule, so replay the current seed to show the new stoop.
   };
   spineLabel.append(spineInput, el('span', 'muted', ' 0 = upright, 100 = fully stooped; saved with the spawn rules and used in game'));
   box.append(spineLabel);
