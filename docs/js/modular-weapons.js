@@ -101,11 +101,30 @@
     return { strokes, outline: Math.round(finite(raw.outline, 10, 0, 32)), light,
       shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
   }
-  function applyBridges(canvas, frame, bridges, junctionImages = {}) {
+  function rigBridgeOperations(shaft, strokes) {
+    const layout = shaftRigTransform(shaft); // Saved manual strokes and recipe steps are authored in the source rig's local coordinates.
+    const radiusScale = Math.sqrt(layout.scaleX * layout.scaleY); // Conservative scalar footprint for existing round smudge/brush kernels.
+    return expandOps(strokes).map(op => {
+      if (op.junction) return { ...op, _rigJunction: true }; // Draw junction PNG through the exact parent affine, preserving nonuniform X/Y scale.
+      if (!op.points) return { ...op }; // Clean/style/shading/revert markers act on the current changed region, not on a coordinate.
+      return {
+        ...op,
+        points: op.points.map(([x, y]) => {
+          const p = duplicatePoint({ x, y }, layout);
+          return [p.x, p.y];
+        }),
+        r: op.r * radiusScale,
+        rX: op.r * layout.scaleX, rY: op.r * layout.scaleY, // Preserve nonuniform radius for fill masks.
+        ...(op.smoothing != null ? { smoothing: op.smoothing * radiusScale } : {}),
+        ...(op.speck != null ? { speck: op.speck * radiusScale * radiusScale } : {}),
+      };
+    }); // Transform the expanded recipe's children, never mutate its original saved steps.
+  }
+  function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
     const fill = global.ModularWeaponBridgeFill;
     if (!fill || !bridges?.strokes?.length) return;
-    const ops = expandOps(bridges.strokes); // Recipe boxes become their re-mapped steps.
+    const ops = rigBridgeOperations(shaft, bridges.strokes); // Recipe expansion happens FIRST; all resulting strokes/junctions inherit the rig.
     if (!ops.length) return;
     const sx = canvas.width / frame.width, sy = canvas.height / frame.height; // Logical source pixels → bitmap pixels.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -151,6 +170,10 @@
         if (!piece) continue; // Missing upload: skip this piece, keep everything else.
         ctx.putImageData(image, 0, 0);
         ctx.save(); ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
+        if (shaft) {
+          const parent = attachmentRig(shaft).parent; // Junctions are true graphic children; Canvas parent handles nonuniform scaling.
+          ctx.transform(parent.a, parent.b, parent.c, parent.d, parent.e, parent.f);
+        }
         drawJunction(ctx, piece, stroke); ctx.restore();
         image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         continue;
@@ -420,7 +443,7 @@
     }); // Rig owns every fitted head primitive and tang/eye fitting as descendants, not just transformed coordinates.
     return { kind: 'attachmentRig', parent, children, shaftOutsideRig: true };
   }
-  function compositionFrame(shaft, head, bounds, values) {
+  function compositionFrame(shaft, head, bounds, values, bridgeOps = [], junctionImages = {}) {
     let left = 0, top = 0, right = 450, bottom = 1204; // Fixed shaft envelope; only the rig's child primitives can expand the frame.
     for (const mount of attachmentRig(shaft, head, values).children) {
       for (const primitive of mount.children) {
@@ -428,6 +451,28 @@
         for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
           const px = matrix.a * x + matrix.c * y + matrix.e, py = matrix.b * x + matrix.d * y + matrix.f;
           left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+        }
+      }
+    }
+    // A moved junction or bridge can extend further than the attached head. Include these children before allocating the bitmap.
+    const parent = attachmentRig(shaft).parent;
+    for (const op of bridgeOps) {
+      if (op.junction) {
+        const piece = junctionImages[op.junction];
+        if (!piece) continue;
+        const halfW = piece.width / 2 * op.scale, halfH = piece.height / 2 * op.scale;
+        const angle = op.rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+        for (const x of [-halfW, halfW]) for (const y of [-halfH, halfH]) {
+          const localX = op.x + cos * x - sin * y, localY = op.y + sin * x + cos * y;
+          const px = parent.a * localX + parent.c * localY + parent.e;
+          const py = parent.b * localX + parent.d * localY + parent.f;
+          left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+        }
+      } else if (op.points) {
+        for (const [x,y] of op.points) {
+          const rx = Math.max(0, op.rX || op.r || 0), ry = Math.max(0, op.rY || op.r || 0);
+          left = Math.min(left, x-rx); right = Math.max(right, x+rx);
+          top = Math.min(top, y-ry); bottom = Math.max(bottom, y+ry);
         }
       }
     }
@@ -481,7 +526,8 @@
       () => { global.console?.warn?.('Modular weapon junction piece missing:', name); return [name, null]; })));
     const task = Promise.all([loadImage(shaft.sprite, base), loadImage(head.sprite, base), junctionsReady]).then(([shaftImage, headImage, junctionList]) => {
       const values = settings(shaftKey, headKey); // Resolved authoring values are shared by bounds calculation and drawing.
-      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values); // Expand to contain every rotated, scaled and translated head.
+      const frame = compositionFrame(shaft, head, visibleBounds(headImage), values,
+        rigBridgeOperations(shaft, values.bridges?.strokes || []), Object.fromEntries(junctionList)); // Include movable bridge/junction children in bounds.
       let pixelScale = Math.min(1, 2048 / Math.max(frame.width, frame.height), Math.sqrt(2097152 / (frame.width * frame.height))); // Bound mobile texture memory without cropping logical geometry.
       if (pixelScale < 1) {
         const padding = Math.ceil(4 / pixelScale); // Retain several bitmap pixels of outline clearance even after extreme downsampling.
@@ -540,7 +586,7 @@
       }
       if (values.layerOrder === 'head-over-haft') { paintHaft(); paintHeads(); } // Specific pair opts into foreground heads.
       else { paintHeads(); paintHaft(); } // Default: all repeated heads behind the single, intact haft.
-      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList)); // Pair-specific brush work, cached with this canvas.
+      applyBridges(canvas, frame, values.bridges, Object.fromEntries(junctionList), shaft); // All strokes and expanded recipes follow the same parent rig as head primitives.
       if (protectedCtx) {
         const rgba = protectedCtx.getImageData(0, 0, canvas.width, canvas.height).data;
         const mask = new Uint8Array(canvas.width * canvas.height); // One byte per protected shaft pixel; head metal remains exposed.
@@ -593,6 +639,6 @@
     else if (oldest) replace(JSON.parse(oldest), true);
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftRigTransform, shaftMounts, attachmentRig, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key), cachedSprites: canvases.size, revision }) };
 })(window);
