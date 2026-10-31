@@ -31,7 +31,7 @@
 <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
 <script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
 <script src="js/root-snare-hands.js?v=20261031realnpc2"></script>
-<script src="js/root-snare-runner.js?v=20261031realnpc4"></script>
+<script src="js/root-snare-runner.js?v=20261031docsroot1"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -145,7 +145,7 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>The root-snare runner now loads a selectable real repository NPC through the Animation Author portrait and PNG-plane rig pipeline, with authentic neck and procedural feet. The whole avatar tilts along the relative neck-hand and feet-hand grip axis while the real character portrait stretches and separates.</p></section>
+<section><h2>Latest change</h2><p>Fixed real-NPC portrait loading in the nested Root Growth Author: species and cosmetic configurations now resolve from this page’s canonical docs root instead of requesting nonexistent tools/live-root-growth/config/species/ files. The live preview still uses selectable repository NPCs, skinned necks, procedural feet and authored pants, with whole-body tilt following both gripping hands.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
