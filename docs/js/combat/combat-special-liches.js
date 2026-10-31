@@ -43,6 +43,12 @@
     const fallback = 'assets/patterns/motif_' + def.glyph + '.png'; // Visible even when the pattern library has not loaded yet.
     return cached?.pattern || {repoPatternId:def.glyph,motifUrl:fallback,motifScale:1,tiling:true};
   }
+  // Workshop-authored cloth/weapon pattern (inline data or a library id) for one named guardian, else its canonical glyph.
+  function patternFor(type, kind) {
+    const authored = ruleFor(type).bossAppearance?.[kind]; // 'clothingPattern' | 'weaponPattern'
+    const resolved = authored?.pattern || (authored?.patternLibraryId && window.PatternLibrary?.getById?.(authored.patternLibraryId)) || null;
+    return resolved || glyphPattern(defFor(type));
+  }
   function bodyColor3For(type) {
     const rule = ruleFor(type); // Named guardian C is a single deterministic light color; the corresponding ruin must not roll a different shade.
     const choices = Object.entries(rule.dyes?.C || {}).filter(([,weight]) => Number(weight) > 0).sort((a,b) => Number(b[1])-Number(a[1]));
@@ -100,8 +106,8 @@
       equippedCosmetics:cosmetics, cosmeticSlots:Object.fromEntries(cosmetics.map(id=>[id,slots[id]])), appliedDyes,
       lichType:type, lichDyeId:def.dye, specialLichId:def.id, glyphPatternId:def.glyph,
       clothingPatterns:{forcedOverpassBySlot:{
-        overwear:{pattern:glyphPattern(def),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
-        ...(type==='hronal'?{pants:{pattern:glyphPattern(def),fallbackColorC:{hex:bodyColor3For(type)}}}:{}),
+        overwear:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}, // Garb is visibly woven with its own named Harlyao glyph.
+        ...(type==='hronal'?{pants:{pattern:patternFor(type,'clothingPattern'),fallbackColorC:{hex:bodyColor3For(type)}}}:{}),
       }},
     };
     if (type==='hronal') {
@@ -112,7 +118,7 @@
           item.temperXp = armor.MAX_TEMPER_XP;
           item.sprite = armor.spriteForBlueprintAppearance?.(id,{speciesId:'harlyao-skeleton',gender:'male'});
           item.verdigrisPatternId = def.glyph; // Diagnostic identity for the weapon/armor entropy design.
-          item.smithTreatment={mode:'pattern',pattern:glyphPattern(def)}; // Existing crafted-metal patina renderer applies entropy as a verdigris removal motif.
+          item.smithTreatment={mode:'pattern',pattern:patternFor(type,'clothingPattern')}; // Existing crafted-metal patina renderer applies entropy as a verdigris removal motif.
         }
         return item;
       }).filter(Boolean);
@@ -128,7 +134,7 @@
     const toolDef=actor._specialToolDeps?.TOOL_ITEM_DEFS?.[actor._specialWeaponKey], metal=actor._specialToolDeps?.METAL_DEFS?.[toolDef?.metalKey];
     if(!mesh?.isMesh || !mesh.material?.map || !toolDef?.sprite || !metal || !window.ToolMetalRecolor?.getRecoloredCanvas)return; // Wait until the real weapon plane and game definitions exist.
     actor._specialWarhammerPatternRequested=true; // The recolor is requested once per guardian instead of every frame.
-    const original=mesh.material, authored=glyphPattern(defFor(actor.lichType));
+    const original=mesh.material, authored=patternFor(actor.lichType,'weaponPattern');
     const motifUrl=authored.motifUrl, pattern=motifUrl && window.resolvePortraitAssetUrl ? {...authored,motifUrl:window.resolvePortraitAssetUrl(motifUrl.replace(/^\.?\/?assets\//,''))} : authored; // Same asset-root resolution metal armor uses for its authored patterns.
     // The tool-metal recolorer is the game's own weapon pattern path: it paints the authored motif only onto the metal-keyed pixels (head), leaving the shaft and outline alone.
     window.ToolMetalRecolor.getRecoloredCanvas(toolDef.sprite,{targetHex:metal.hex,verdigrisHex:metal.verdigrisHex,oxidationAmount:1,authoredPattern:pattern}).then(canvas=>{
@@ -397,7 +403,7 @@
     droplets.clear();
   }
   window.SpecialHarlyaoLiches=Object.freeze({
-    DATA,BOSS_DEFAULTS,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
+    DATA,BOSS_DEFAULTS,patternFor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
     onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),

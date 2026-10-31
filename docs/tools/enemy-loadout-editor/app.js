@@ -668,7 +668,60 @@ function renderBossAppearance(special, tab) {
     enabled.onchange=commit;input.onchange=commit;
     row.prepend(enabled);row.append(input);box.append(row);
   }
+  const patternKind = tab === 'weapons' ? 'weaponPattern' : 'clothingPattern';
+  const patternRow = el('div', 'chance');
+  const authored = rule().bossAppearance?.[patternKind];
+  patternRow.append(
+    el('span', 'muted', tab === 'weapons' ? 'Hammer metal pattern: ' : 'Robe and pants pattern: '),
+    el('span', 'muted', authored ? (authored.patternLibraryId ? 'library ' + authored.patternLibraryId : 'custom drawing') : 'canonical glyph '),
+  );
+  const open = el('button', null, authored ? 'Edit pattern…' : 'Author pattern…');
+  open.onclick = () => openBossPatternEditor(special, patternKind);
+  patternRow.append(open);
+  if (authored) {
+    const clear = el('button', null, 'Use canonical glyph');
+    clear.onclick = () => { mutate((r) => pathSet(r, ['bossAppearance', patternKind], undefined)); queueProportionPreview(); renderPools(); };
+    patternRow.append(clear);
+  }
+  box.append(patternRow);
   $('poolPanel').append(box);
+}
+// Opens the shared Pattern editor (the same UI the game, Pattern Editor and house/furniture tools use) for one named guardian.
+async function openBossPatternEditor(special, patternKind) {
+  if (!window.PatternAuthoring?.openEditor) { toast('Pattern editor is not loaded.'); return; }
+  await window.RepoPatternLibrary?.load?.().catch(() => {});
+  const type = state.kind.split(':')[1];
+  const weapon = patternKind === 'weaponPattern';
+  const current = window.SpecialHarlyaoLiches.patternFor(type, patternKind); // Authored pattern, else the canonical glyph.
+  const dye = (id) => window.ScratchbonesAccount?.getDyeCatalog?.().find((entry) => entry.id === id)?.hex;
+  const cloth = dye(rule().bossAppearance?.robeDye || special.dye) || '#c76a1f';
+  const ink = rule().bossAppearance?.ink || special.ink || '#ff8526';
+  const toolKey = rule().bossAppearance?.weaponKey || special.weapon || 'warhammer_nativeCopper';
+  const sprite = state.data?.shapes?.[toolKey.split('_')[0]]?.baseSprite || 'assets/toolsprites/warhammer.png';
+  const metalHex = '#B87333';
+  const editable = { frameShape: 'triangle', frameScale: 1, frameRotationDeg: 0, frameX: 0, frameY: 0, motifScale: 1, tiling: true, ...((await window.FurniturePatternSurfaces?.editablePattern?.({ pattern: current })) || current) }; // The canonical glyph carries no frame fields; give the editor sane starting values.
+  const authored = rule().bossAppearance?.[patternKind];
+  window.PatternAuthoring.openEditor({
+    title: (weapon ? 'Weapon pattern — ' : 'Robe and pants pattern — ') + special.name,
+    motifHint: weapon ? 'Draw the motif that strips the patina back to bare metal on the hammer head.' : 'Draw the motif woven into the robe and pants (it uses the guardian’s Body Color C).',
+    initialPattern: editable,
+    initialPatternLibraryId: authored?.patternLibraryId || null,
+    library: window.PatternLibrary ? {
+      list: () => window.PatternLibrary.listAvailable(),
+      get: (id) => window.PatternLibrary.getById(id),
+      save: (label, data) => window.PatternLibrary.saveToLibrary(label, data),
+      remove: (id) => window.PatternLibrary.removeSaved(id),
+    } : null,
+    renderPreview: (data) => weapon
+      ? window.ToolMetalRecolor.getRecoloredCanvas(sprite, { targetHex: metalHex, verdigrisHex: '#3FAF9F', oxidationAmount: 1, authoredPattern: data })
+      : window.FurniturePatternSurfaces.renderTile({ solid: false, palette: [cloth, ink, ink] }, data),
+    onSave: async (data, libraryId) => {
+      mutate((r) => pathSet(r, ['bossAppearance', patternKind], libraryId ? { patternLibraryId: libraryId } : { pattern: JSON.parse(JSON.stringify(data)) }));
+      queueProportionPreview();
+      renderPools();
+      return true;
+    },
+  });
 }
 function renderPools() {
   if (!state.ready) return;

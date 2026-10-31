@@ -119,7 +119,8 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.ok(preview.includes("key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png'"),'Workshop retains a concrete canonical warhammer sprite fallback');
   const hostileRenderer=read('docs/js/combat/combat-bandit.js');
   assert.ok(hostileRenderer.includes("roster.specialLichId === 'imlao'"),'Imlao alpha-mask must be in the shared hostile portrait builder');
-  assert.ok(hostileRenderer.includes("context.globalCompositeOperation = 'destination-out'"),'Skull pixels are removed without collapsing head joints');
+  assert.ok(hostileRenderer.includes('skipHeadSprite: true') && !hostileRenderer.includes("'destination-out'"),'Imlao re-renders without the head sprite instead of erasing a hole, so what the skull hid shows through');
+  assert.ok(read('docs/js/portrait-utils.js').includes('renderOptions?.skipHeadSprite === true'),'The portrait renderer supports a skipped head sprite');
   assert.ok(hostileRenderer.includes('originalHeadRigFront'),'Transparent head still retains the original neck skinning source');
   const map=read('docs/js/dev-random-ruin-interior-map.js');
   assert.ok(map.includes('specialBoss:!!specialDef'),'Ruin generation must pass named-boss marker to sanctum');

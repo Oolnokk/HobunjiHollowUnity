@@ -405,29 +405,30 @@
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
     await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-    // Imlao keeps an articulated, normally sized head; only the skull pixels become invisible.
-    // Keep the original mask-detection canvases so making the head transparent cannot remove its neck bones.
-    const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the alpha cutout to this named boss.
+    // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
+    // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
+    // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
+    const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the headless render to this named boss.
     const headCanvas = document.createElement('canvas'); // Shared front head-only portrait also locates every humanoid's neck pivot.
     headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
     await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
-    const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Uncut pixels retain correct head-skin weights.
+    const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Skull-bearing pixels retain correct head-skin weights.
     const originalHeadRigBack = transparentLichSkull ? document.createElement('canvas') : backCanvas; // The rear neck shares the same true head proportions.
     if (transparentLichSkull) {
       for (const [source, original] of [[frontCanvas, originalHeadRigFront], [backCanvas, originalHeadRigBack]]) {
         original.width = source.width; original.height = source.height;
         original.getContext('2d').drawImage(source, 0, 0);
       }
-      const rearHead = document.createElement('canvas'); // Back-specific skull mask avoids cutting unrelated rear garment pixels.
-      rearHead.width = rearHead.height = PORTRAIT_SIZE;
-      await window.NpcAvatarPreview.renderProfileToCanvas(rearHead, profile, { portraitView: 'behind', forceEyesOpen: true, onlyHeadSprite: true });
-      for (const [canvas, mask] of [[frontCanvas, headCanvas], [neutralFrontCanvas, headCanvas], [combatFrownCanvas, headCanvas], [backCanvas, rearHead]]) {
-        const context = canvas.getContext('2d');
-        context.save();
-        context.globalCompositeOperation = 'destination-out';
-        context.drawImage(mask, 0, 0); // Erases only the head mask's alpha; preserves shoulders, clothes and head rig.
-        context.restore();
-      }
+      const redraw = async (canvas, options) => {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        await window.NpcAvatarPreview.renderProfileToCanvas(canvas, profile, { forceEyesOpen: true, skipHeadSprite: true, ...options });
+      };
+      await redraw(frontCanvas, {});
+      const neutralContext = neutralFrontCanvas.getContext('2d');
+      neutralContext.clearRect(0, 0, neutralFrontCanvas.width, neutralFrontCanvas.height);
+      neutralContext.drawImage(frontCanvas, 0, 0);
+      await redraw(combatFrownCanvas, { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'bandit-combat-frown' });
+      await redraw(backCanvas, { portraitView: 'behind' });
     }
     characterBuildStatus.stage = 'portrait-model';
     const portrait = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(

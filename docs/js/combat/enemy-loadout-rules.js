@@ -112,7 +112,14 @@
           else if (field === 'ink' && !/^#[0-9a-fA-F]{6}$/.test(value)) throw Error(kind + '.bossAppearance.ink needs #RRGGBB');
           else if (field === 'robeDye' && (typeof value !== 'string' || !/^dye:CLOTH:[a-z0-9_]+$/.test(value))) throw Error(kind + '.bossAppearance.robeDye requires a cloth dye ID');
           else if (field === 'weaponKey' && (typeof value !== 'string' || !/^[a-zA-Z0-9_:-]{1,80}$/.test(value))) throw Error(kind + '.bossAppearance.weaponKey is not a tool key');
-          else if (!['glyphId','ink','robeDye','weaponKey'].includes(field)) throw Error(kind + '.bossAppearance.' + field + ' is unknown');
+          else if (field === 'clothingPattern' || field === 'weaponPattern') {
+            // Authored with the shared Pattern editor: a library reference and/or a full pattern snapshot.
+            if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(kind + '.bossAppearance.' + field + ' must be an object');
+            for (const key of Object.keys(value)) if (!['patternLibraryId', 'pattern'].includes(key)) throw Error(kind + '.bossAppearance.' + field + '.' + key + ' is unknown');
+            if (value.patternLibraryId != null && !/^[A-Za-z0-9_:.-]{1,120}$/.test(String(value.patternLibraryId))) throw Error(kind + '.bossAppearance.' + field + '.patternLibraryId is not a library id');
+            if (value.pattern != null && (typeof value.pattern !== 'object' || Array.isArray(value.pattern) || JSON.stringify(value.pattern).length > 900000)) throw Error(kind + '.bossAppearance.' + field + '.pattern must be a pattern object under 900 KB');
+            if (value.pattern == null && value.patternLibraryId == null) throw Error(kind + '.bossAppearance.' + field + ' needs a pattern or a library id');
+          } else if (!['glyphId','ink','robeDye','weaponKey'].includes(field)) throw Error(kind + '.bossAppearance.' + field + ' is unknown');
         }
       }
       for (const [ability, allowed] of Object.entries(
