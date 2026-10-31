@@ -710,7 +710,7 @@
         || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const baseDamage = baseAbil.damage * COUNTER_DAMAGE_MUL * (1 + (effects.stats.damageMul || 0)); // Existing riposte payload before cross-cutting enchantment modifiers.
       const rangePx = baseAbil.rangePx * COUNTER_RANGE_MUL * shapeStats.range;
-      const halfConeRad = Math.min(Math.PI, COUNTER_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range);
+      const halfConeRad = Math.min(Math.PI, COUNTER_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
       const baseKnockbackPxS = baseAbil.knockbackPxS * COUNTER_KNOCKBACK_MUL;
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
