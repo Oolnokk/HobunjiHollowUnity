@@ -10,9 +10,11 @@
     "localeId": "locale_porakaneki_camp_small",
     "minPerZone": 1,
     "maxPerZone": 1,
+    "huntingPartiesMinPerZone": 2,
+    "huntingPartiesMaxPerZone": 4,
     "minResidents": 2,
     "maxResidents": 4,
-    "notes": "Each wilderness map contains exactly one persistent Porakaneki hunting camp, positioned near the opposite end from the Omgurku camp. Its procedural residents do not migrate with the chief."
+    "notes": "Each wilderness map contains exactly one persistent Porakaneki hunting camp, positioned near the opposite end from the Omgurku camp. Its procedural residents do not migrate with the chief. The single camp preserves the former 2–4 separate camp-population rolls as 2–4 independent den-hunting cohorts, keeping their combined original resident count and routes."
   },
   "chiefCamp": {
     "localeId": "locale_porakaneki_camp_chief",
