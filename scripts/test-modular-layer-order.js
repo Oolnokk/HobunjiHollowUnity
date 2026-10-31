@@ -285,6 +285,27 @@ async function run() {
     'visible primitive mount lines are the fully transformed parent-rig children');
   assert.deepEqual(editorDrawnGizmos[0], editorDrawnMounts[0],
     'touch/drag gizmo is rendered at the actual visible transformed mount');
+  // Verify that bridge/recipe editor pointer coordinates are inverse-transformed
+  // from their visible positions, without overwriting the original source steps.
+  const bridgeHelpersStart = editor.indexOf('  function bridgeVisual(point) {');
+  const bridgeHelpersEnd = editor.indexOf('  function drawBridgeOverlay() {', bridgeHelpersStart);
+  assert(bridgeHelpersStart >= 0 && bridgeHelpersEnd > bridgeHelpersStart);
+  const bridgeCanvas = { width: 450, height: 1204 };
+  const bridgeHelpers = new Function('api','chosenShaft','byId','contentRect','bridgeView',
+    editor.slice(bridgeHelpersStart, bridgeHelpersEnd) +
+    '\nreturn {bridgeVisual,bridgeLocal,logicalPoint};')(
+      api, () => fixture, () => bridgeCanvas,
+      () => ({ left: 0, top: 0, scale: 1 }),
+      {frame:{left:0,top:0,width:450,height:1204}});
+  const localRecipePoint = [215, 480];
+  const shownRecipePoint = bridgeHelpers.bridgeVisual(localRecipePoint);
+  const pointerRecipePoint = bridgeHelpers.logicalPoint({clientX:shownRecipePoint[0],clientY:shownRecipePoint[1]});
+  assert.deepEqual(pointerRecipePoint,localRecipePoint,
+    'bridge and recipe touch inputs map back into the original saved rig-local frame');
+  assert(editor.includes('const [x0,y0] = bridgeVisual([box.x0,box.y0])'),
+    'saved recipe boxes are rendered under the parent transform in the mobile preview');
+  assert(editor.includes('ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f)'),
+    'junction ghost preview must inherit the same parent affine as the final sprite');
   const sourcePoint = fixture.mounts[0].start;
   const visiblePoint = api.duplicatePoint(sourcePoint, api.shaftRigTransform(fixture));
   const pointerBackToLocal = editorHelpers.rigToLocal(visiblePoint, 'shaft-canvas');
