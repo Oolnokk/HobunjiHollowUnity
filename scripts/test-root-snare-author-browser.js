@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
 let chromium;try{({chromium}=require('playwright'));}catch(error){if(error.code==='MODULE_NOT_FOUND'){console.log('skip: playwright unavailable');process.exit(0);}throw error;}
 const repo=path.resolve(__dirname,'..'),three=path.join(repo,'node_modules/three/build/three.min.js');
-const scripts=['config/scratchbones-config.js','js/color-fill.js','js/portrait-utils.js','js/portrait-breathing.js','js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
+const scripts=['config/scratchbones-config.js','js/color-fill.js','js/portrait-utils.js','js/portrait-breathing.js','js/npc-avatar-preview-utils.js','js/png-plane-avatar.js','config/pants-rigs.js','js/pants-rig-core.js','js/pants-garment-renderer.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
 const server=http.createServer((request,response)=>{
   const route=decodeURIComponent((request.url||'/').split('?')[0]);
   if(route==='/snare-fixture'){
@@ -154,6 +154,9 @@ const server=http.createServer((request,response)=>{
       assert(avatarRunner.installAvatar(rendered),'install the actual PNGPlaneAvatar and procedural feet');
       assert(avatarRunner.hasRepositoryNpc&&avatarRunner.diagnostics().authenticFeet,
         'an actual NPC must use its species-specific procedural foot rig');
+      const equippedPants=window.PantsGarmentRenderer?.garmentForCosmetics?.(rendered.portraitNpc.equippedCosmetics||[]);
+      if(equippedPants)assert(avatarRunner.diagnostics().authenticPants,
+        'NPC equipped with authored pants/skirt must bind that garment to the real leg bones');
       assert(avatarRunner.diagnostics().neckBone,'the live NPC must have a real skinned portrait neck joint');
       const allObjects=[];avatarRunner.group.traverse(node=>allObjects.push(node.name));
       assert(allObjects.some(name=>name.startsWith('Upper '))&&allObjects.some(name=>name.startsWith('Pants and lower ')),
