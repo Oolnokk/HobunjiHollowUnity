@@ -212,8 +212,9 @@
     return components;
   }
 
-  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null, dependencyOverride = null) {
-    const terrainDeps = dependencyOverride || deps; // Optional private floor-build datum leaves normal wilderness initialization untouched.
+  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null, dependencyOverride = null, options = null) {
+    const terrainDeps = dependencyOverride || deps;
+    const surfaceSubdivisions = options?.subdivisions === 2 ? 2 : BOULDER_SUBDIVISIONS; // Authoring-only low-detail builds skip vertices already discarded by the quarter-scale ruin mesh. // Optional private floor-build datum leaves normal wilderness initialization untouched.
     const range = normalizedBounds(zcols, zrows, bounds); // Current streaming chunk whose portion of each global shell is emitted.
     const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
     const pos = [], uv = [], idx = []; // World-space shell buffers returned to the Three.js wrapper.
@@ -314,7 +315,7 @@
         return baseYAt(x, z, fallbackTile) + peakHeight * edgeBlend * crown + roughness;
       };
       const vertexAt = (x, z, tile) => {
-        const key = componentIndex + ':' + Math.round(x * BOULDER_SUBDIVISIONS) + ',' + Math.round(z * BOULDER_SUBDIVISIONS); // Component-scoped sample key welds adjacent top patches.
+        const key = componentIndex + ':' + Math.round(x * surfaceSubdivisions) + ',' + Math.round(z * surfaceSubdivisions); // Component-scoped sample key welds adjacent top patches.
         const existing = vertexBySample.get(key); // Previously emitted shared vertex, including index zero.
         if (existing !== undefined) return existing;
         const vertex = pos.length / 3; // New exterior vertex index referenced by the top quads.
@@ -327,9 +328,9 @@
       for (const [c, r] of renderCells) {
         const tile = zGrid[r][c]; // Source tile supplies the base elevation for this shell patch.
         let coverTopY = -Infinity; // Maximum rendered shell height over this tile, cached for projectile occupancy.
-        for (let j = 0; j < BOULDER_SUBDIVISIONS; j++) for (let i = 0; i < BOULDER_SUBDIVISIONS; i++) {
-          const x0 = c + i / BOULDER_SUBDIVISIONS, x1 = c + (i + 1) / BOULDER_SUBDIVISIONS; // Horizontal limits of one exterior quad.
-          const z0 = r + j / BOULDER_SUBDIVISIONS, z1 = r + (j + 1) / BOULDER_SUBDIVISIONS; // Vertical limits of one exterior quad.
+        for (let j = 0; j < surfaceSubdivisions; j++) for (let i = 0; i < surfaceSubdivisions; i++) {
+          const x0 = c + i / surfaceSubdivisions, x1 = c + (i + 1) / surfaceSubdivisions; // Horizontal limits of one exterior quad.
+          const z0 = r + j / surfaceSubdivisions, z1 = r + (j + 1) / surfaceSubdivisions; // Vertical limits of one exterior quad.
           const a = vertexAt(x0, z0, tile), b = vertexAt(x1, z0, tile), d = vertexAt(x0, z1, tile), e = vertexAt(x1, z1, tile); // Welded quad corners.
           coverTopY = Math.max(coverTopY, pos[a * 3 + 1], pos[b * 3 + 1], pos[d * 3 + 1], pos[e * 3 + 1]);
           idx.push(a, d, e, a, e, b);
