@@ -167,6 +167,38 @@ boxes and junction ghosts through the rig parent. The mobile diagnostic
 tree now shows saved versus expanded bridge/recipe operations, junction
 count and brush count alongside the mount/head children.
 
+### Optional shaft artwork and local attachment-region transforms
+
+The overall `attachmentRigTransform` remains the parent of all fitted
+mounting primitives and bridge/recipe/junction operations. A separate
+`shaftArtTransform` has `enabled` defaulting to false. When enabled,
+its independent X/Y scale and translation are applied only to the shaft's
+source bitmap and its protected nonmetal mask. The live Torch-Staff
+fuel-marker source carrier inherits that same translation and scale,
+while world-up flame movement and the attachment rig remain independent.
+The composite frame includes the optional source-art envelope.
+
+Each shaft may also own up to 12 `rigRegions`, each with a stable ID,
+label, untransformed source-coordinate selection rectangle and independent
+X/Y scale/offset. Region transforms pivot at the center of their selection
+rectangle and are applied *between* the overall rig parent and their
+selected child geometry. A mount and its fitted head are selected together
+by the midpoint of the authored tang/sleeve; direct spatial operations
+are selected by their authored center; a placed recipe is selected as one
+group by its saved box center, so every expanded step retains the same
+area. Overlapping regions use last-in-order priority. Unselected heads and
+operations receive the identity local transform. Source mounts, bridge
+steps, recipes and art are not destructively rewritten.
+
+The mobile editor offers a rectangle picker on the assembled preview,
+per-region transform fields and a remove button; it shows selected head
+and expanded operation counts without developer tools. Local editing
+maps transformed pointer positions back to authored coordinates.
+The selections are whole child operations, **not arbitrary cutouts of
+head pixels or fractional brush strokes**; the selection has no effect
+on the unselected shaft bitmap. Older configurations with no regions
+or no enabled art transform keep their original output.
+
 The modular compositor recolors the original `#7F00FF` fuel markers
 off-white and records which source-shaft pixels are visible. The metal
 recolor pipeline restores **those pixels** after tinting/oxidizing the
