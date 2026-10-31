@@ -27,7 +27,7 @@
 
   function mostExpensiveCompanionSpecial(c, ctx) {
     const deps = window.Combat.deps; // Shared combat context owns the local player and species attack costs.
-    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || c.master !== deps?.player) return null;
+    if (!c?.isCompanion || c.banditCompanion || c.stableRole !== 'companion' || !deps?.player || (c.master || deps.player) !== deps.player) return null; // Legacy companions missing a master still belong to the local player.
     const enabledIds = window.StableAnimalTrainingRefinements?.enabledSpecialAttackIds?.(c) || c.def?.attacks || []; // Stable tactics exclude deliberately disabled special attacks.
     const tempo = window.StableAnimalTrainingRefinements?.combatTempo?.(c); // Matches the ordinary companion attack's tempo-adjusted base cost.
     const costTax = Math.max(0, Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1)); // Includes Taxed just as spendStamina does.
