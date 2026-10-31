@@ -192,7 +192,7 @@
     return {
       scaleX: finite(raw?.scaleX, 1, 0.05, 8), scaleY: finite(raw?.scaleY, 1, 0.05, 8),
       x: finite(raw?.x, 0, -2400, 2400), y: finite(raw?.y, 0, -2400, 2400),
-    }; // Scales about the shared 450x1204 donor center, then translates in original reference pixels.
+    }; // Attachment-rig-only transform about the 450x1204 shaft reference center; not applied to the shaft sprite.
   }
   function duplicatePoint(point, layout) {
     return { x: (point.x - 225) * layout.scaleX + 225 + layout.x,
@@ -204,7 +204,7 @@
     const layout = duplicateTransform(shaft.duplicateTransform);
     return mounts.map(mount => ({
       type: mount.type, start: duplicatePoint(mount.start, layout), end: duplicatePoint(mount.end, layout),
-    })); // Read-only fitted arrows; editor retains untransformed authoring coordinates for individual adjustments.
+    })); // Transformed rig drives head geometry; original shaft art and live effects never inherit the adjustment.
   }
   function matchingMounts(shaft, head) {
     const kind = head?.mount?.type === 'blade' ? 'tang' : head?.mount?.type === 'weight' ? 'eye' : '';
@@ -297,7 +297,7 @@
       const raw = incoming.shafts[key] || shaft; // Missing imports use committed lines and pair settings.
       if (typeof raw.editorOnly === 'boolean') shaft.editorOnly = raw.editorOnly;
       if (shaft.duplicateFrom && raw.duplicateFrom === shaft.duplicateFrom) {
-        shaft.duplicateTransform = duplicateTransform(raw.duplicateTransform); // A single transform moves/scales artwork, mounts and all live shaft effects.
+        shaft.duplicateTransform = duplicateTransform(raw.duplicateTransform); // Adjust ONLY the attachment primitive and tang/eye rig; shaft artwork/fire remain stationary.
       }
       shaft.mounts = (Array.isArray(raw.mounts) && raw.mounts.length ? raw.mounts : shaft.mounts)
         .slice(0, shaft.maxAttachments || 8).map((mount, index) => line(mount, 'shaft', shaft.mounts[Math.min(index, shaft.mounts.length - 1)]));
@@ -380,15 +380,7 @@
       f: target.start.y + oy - b * src.start.x - d * src.start.y }; // Exact Canvas affine matrix.
   }
   function compositionFrame(shaft, head, bounds, values) {
-    let left = 0, top = 0, right = 450, bottom = 1204; // Donor grip geometry always stays anchored to original source frame.
-    if (shaft.duplicateFrom) {
-      const layout = duplicateTransform(shaft.duplicateTransform); // Preserve visual bounds when copies extend beyond the ordinary shaft.
-      for (const x of [0, 450]) for (const y of [0, 1204]) {
-        const point = duplicatePoint({ x, y }, layout);
-        left = Math.min(left, point.x); top = Math.min(top, point.y);
-        right = Math.max(right, point.x); bottom = Math.max(bottom, point.y);
-      }
-    }
+    let left = 0, top = 0, right = 450, bottom = 1204; // Fixed shaft envelope; only transformed attachment/head geometry can expand the frame.
     for (const mount of renderingMounts(shaft, head)) {
       const matrix = headTransform(mount, values, head.mount); // Same transform determines bounds and eventual drawing.
       for (const x of [bounds.left, bounds.right]) for (const y of [bounds.top, bounds.bottom]) {
@@ -467,23 +459,17 @@
         protectedCtx.translate(-frame.left, -frame.top);
       }
       function paintHaft() {
-        for (const context of [ctx, protectedCtx].filter(Boolean)) {
-        context.save();
-        if (shaft.duplicateFrom) {
-          const layout = duplicateTransform(shaft.duplicateTransform); // The entire source artwork follows its duplicated mounting lines.
-          context.translate(225 + layout.x, 602 + layout.y);
-          context.scale(layout.scaleX, layout.scaleY);
-          context.translate(-225, -602);
-        }
-        if (shaft.crop) {
-          context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
-        }
         const fire = shaft.fireAssembly && global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.[shaft.fireAssembly]?.base;
         const image = fire?.material === 'marker'
           ? global.HobunjiLayeredWeaponEffects?.recolorMarker?.(shaftImage, fire.sourceHex, fire.targetHex) || shaftImage
-          : shaftImage; // Recolor only the copied shaft's fuel markers; the forged metal head keeps its own plating pipeline.
-        context.drawImage(image, 0, 0, 450, 1204);
-        context.restore();
+          : shaftImage; // The shaft's fixed artwork is recolored, but never scaled or translated with its mounting rig.
+        for (const context of [ctx, protectedCtx].filter(Boolean)) {
+          context.save();
+          if (shaft.crop) {
+            context.beginPath(); context.rect(shaft.crop.x, shaft.crop.y, shaft.crop.width, shaft.crop.height); context.clip();
+          }
+          context.drawImage(image, 0, 0, 450, 1204);
+          context.restore(); // Neither the head fit nor the mounting rig changes this source-to-output mapping.
         }
       }
       function paintHeads() {
