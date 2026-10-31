@@ -136,11 +136,12 @@
         ctx.drawImage(composed, 0, 0);
         bridgeView = { composed, frame: composed.modularFrame };
         drawBridgeOverlay();
-        const matrices = match.map(mount => api.headTransform(mount, values, head.mount)); // Debug exact affine transforms used in gameplay.
+        const rig = api.attachmentRig(shaft, head, values); // Same scene tree as production: one parent rig with mount/primitive descendants.
+        const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
           shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
           duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: shaft.duplicateFrom ? api.duplicateTransform(shaft.duplicateTransform) : null,
-          effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
+          rigHierarchy: rig, effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
           headArrow: head.mount, matchedMounts: match.length, corrections: values,
           matrices, frame: composed.modularFrame, bitmap: { width: composed.width, height: composed.height },
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
@@ -233,6 +234,17 @@
     byId('duplicate-note').textContent = duplicated
       ? 'Rig copied from ' + duplicated.label + '. Scaling/translation affects fitted head primitives and tang/sleeve mounts only; the shaft PNG and flames remain fixed.'
       : 'This is an original shaft. Choose "Duplicate selected shaft" to copy it, then adjust its mounting rig independently.';
+    const rig = api.attachmentRig(shaft, head, api.settings(byId('shaft').value, headKey)); // Live parent/child scene tree used by composition.
+    const transform = duplicated ? api.duplicateTransform(shaft.duplicateTransform) : api.duplicateTransform();
+    byId('rig-tree').textContent = [
+      'Shaft sprite + live fire (outside rig; unchanged)',
+      'Attachment scaling rig (PARENT)',
+      '  X scale ' + transform.scaleX + ', Y scale ' + transform.scaleY + ', offset (' + transform.x + ', ' + transform.y + ')',
+      ...rig.children.flatMap(mount => [
+        '  ├ ' + (mount.type === 'eye' ? 'Sleeve' : 'Tang') + ' #' + (mount.index + 1) + ' (child)',
+        ...mount.children.map(primitive => '  │ └ ' + primitive.source + ' primitive (grandchild)'),
+      ]),
+    ].join('\n'); // Visible hierarchy helps diagnose clipping and transforms on mobile without devtools.
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
     byId('allow-shaft').disabled = shaft.sourceShape === 'bgungku'; // This special uploaded shaft has no gameplay donor definition.
