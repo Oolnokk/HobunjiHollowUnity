@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
 let chromium;try{({chromium}=require('playwright'));}catch(error){if(error.code==='MODULE_NOT_FOUND'){console.log('skip: playwright unavailable');process.exit(0);}throw error;}
 const repo=path.resolve(__dirname,'..'),three=path.join(repo,'node_modules/three/build/three.min.js');
-const scripts=['config/scratchbones-config.js','js/leg-bones.js','js/procedural-leg-animation.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
+const scripts=['config/scratchbones-config.js','js/leg-bones.js','js/procedural-leg-animation.js','js/foliage-generator.js','js/live-root-growth.js','js/stone-age-ruin-scenery.js','js/root-snare-hands.js','js/root-snare-runner.js'];
 const server=http.createServer((request,response)=>{
   const route=decodeURIComponent((request.url||'/').split('?')[0]);
   if(route==='/snare-fixture'){
@@ -24,7 +24,7 @@ const server=http.createServer((request,response)=>{
     page.on('pageerror',error=>pageErrors.push(String(error)));
     await page.goto('http://127.0.0.1:'+server.address().port+'/snare-fixture',{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>!!(window.RootSnareHands?.create&&window.RootSnareRunner?.create&&window.ProceduralLegAnimation?.attach&&window.StoneAgeRuinScenery?.buildFloorCoverSectors));
-    const result=await page.evaluate(()=>{
+    const result=await page.evaluate(async()=>{
       const T=window.THREE;
       const assert=(condition,message)=>{if(!condition)throw Error(message);};
       const roomModel=new T.Group(),wall=new T.Mesh(new T.BoxGeometry(8,2.5,.10),new T.MeshBasicMaterial());
@@ -86,8 +86,19 @@ const server=http.createServer((request,response)=>{
       assert(sectors.regions===16,'gameplay must match the author’s sixteen quarter-floor growth budgets');
       const count=sectors.target.children.reduce((n,x)=>n+x.geometry.getAttribute('position').count/3,0);
       assert(count===verts.length/9,'sector bucketing must neither fill missing floor tiles nor drop real triangles');
-      sectors.dispose();
-      return {nodes:anchorsA.length,lunges:active.lungeCount,runnerTurns:traveled.turns,regions:16,triangles:count};
+      // The real Temple foliage renderer must recognize every region even after
+      // createCoverAsync() clones the original target and gives it a new UUID.
+      const actual=await window.LiveRootGrowth.createCoverAsync({THREE:T,foliage:window.FoliageGenerator,
+        target:sectors.target,seed:'sixteen-floor-regions',floorY:0,schedule:async()=>{},
+        recipes:[{kind:'roots',style:'natural',target:'floors',perSurface:true,
+          count:1,strandLimit:1,density:1,length:.8,radius:.025,color:'#24211d',texture:'',seed:'roots-test'}]});
+      const layerStats=actual.targetGrowth.children[0]?.userData?.surfaceGrowthStats;
+      assert(layerStats?.perSurface===true&&layerStats.surfaces===16,
+        'real surface-growth must assign the author’s per-region root budget to all sixteen cloned floor guides');
+      actual.dispose();sectors.dispose();
+      return {nodes:anchorsA.length,lunges:active.lungeCount,runnerTurns:traveled.turns,regions:16,triangles:count,
+        mappedFoliageRegions:layerStats.surfaces};
+
     });
     assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
     console.log('Wall-root hands and procedural walker author browser passed:',JSON.stringify(result));
