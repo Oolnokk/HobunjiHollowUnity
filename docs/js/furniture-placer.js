@@ -102,9 +102,10 @@
     btn.classList.toggle('fp-shifted', devSlotOccupied);
     if (!show && _open) close();
     if (!show) {
-      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId()) {
+      if (deps.getArmedFurniturePlacementKey() || deps.getArmedFurnitureMoveId() || window.FarmhouseRoomPlanner?.isArmed?.()) {
         deps.armFurniturePlacement(null);
         deps.armFurnitureMove(null);
+        window.FarmhouseRoomPlanner?.cancel?.(); // Leaving the farmhouse disarms its wall editor too.
       }
       window.WallOrnamentPlacement?.finishPlayerAdjustment?.(); // Reticle-only wall placement also cancels if the player leaves a valid furniture area.
     }
@@ -137,6 +138,7 @@
     if (!keepArmed) {
       deps.armFurniturePlacement(null);
       deps.armFurnitureMove(null);
+      window.FarmhouseRoomPlanner?.cancel?.(); // Explicitly closing the menu cancels an unfinished wall.
     }
     deps.resumeMouseCameraAfterUi?.();
     return true;
@@ -154,7 +156,12 @@
     const placed = deps.getPlacedFurniture().filter(obj => !obj?.derivedLinkedWindow); // Synthetic interior window copies are display-only and never get Move/Remove controls.
     const armed = deps.getArmedFurniturePlacementKey();
     const moveArmedId = deps.getArmedFurnitureMoveId();
-    if (hint) {
+    const roomPlanner = deps.getCurrentArea() === 'interior' ? window.FarmhouseRoomPlanner : null; // Farmhouse layout editing shares this furniture screen and reticle.
+    if (hint && roomPlanner?.isArmed?.()) {
+      hint.textContent = roomPlanner.stage() === 'second corner'
+        ? 'First corner set. Aim at the opposite wall corner and press Action 1 (Action 2 cancels).'
+        : 'Aim at an interior ground tile, then press Action 1 to confirm. Action 2 cancels.';
+    } else if (hint) {
       hint.textContent = moveArmedId
         ? 'Tap a clear tile to move the selected furniture there.'
         : (owned.length || placed.length)
@@ -162,6 +169,72 @@
           : "You don't own or have any furniture placed here yet.";
     }
     list.innerHTML = '';
+    if (roomPlanner) {
+      const heading = document.createElement('div'); // Dedicated structural controls are not inventory consumables.
+      heading.className = 'house-layout-section-title';
+      heading.textContent = 'Walls & Room Doors';
+      list.appendChild(heading);
+      const wallRow = document.createElement('div');
+      wallRow.className = 'farm-row';
+      const wallLabel = document.createElement('span');
+      wallLabel.className = 'farm-row-name'; wallLabel.textContent = 'Subdivide room';
+      wallRow.appendChild(wallLabel);
+      const wallButton = document.createElement('button');
+      wallButton.className = 'settings-small-btn';
+      wallButton.textContent = 'Place Wall';
+      wallButton.onclick = () => {
+        deps.armFurniturePlacement(null); deps.armFurnitureMove(null);
+        if (roomPlanner.armWall()) close({ keepArmed: true });
+        else deps.showToast('You cannot edit farmhouse walls here.', false);
+      };
+      wallRow.appendChild(wallButton);
+      list.appendChild(wallRow);
+      roomPlanner.segments().forEach(segment => {
+        const row = document.createElement('div'); // Stable ID is preserved when a built room moves.
+        row.className = 'farm-row';
+        const name = document.createElement('span');
+        name.className = 'farm-row-name';
+        name.textContent = segment.builtIn ? 'Between house sections' : 'Room partition';
+        const location = document.createElement('span');
+        location.className = 'farm-note';
+        location.textContent = 'Door: ' + segment.door.c + ', ' + segment.door.r;
+        row.append(name, location);
+        const move = document.createElement('button');
+        move.className = 'settings-small-btn';
+        move.textContent = 'Move Door';
+        move.setAttribute('aria-label', 'Move room door at ' + location.textContent);
+        move.onclick = () => {
+          deps.armFurniturePlacement(null); deps.armFurnitureMove(null);
+          if (roomPlanner.armDoor(segment.id)) close({ keepArmed: true });
+          else deps.showToast('Cannot edit that doorway.', false);
+        };
+        row.appendChild(move);
+        if (!segment.builtIn) {
+          const remove = document.createElement('button');
+          remove.className = 'settings-small-btn';
+          remove.textContent = 'Remove Wall';
+          remove.onclick = () => {
+            const result = roomPlanner.removeWall(segment.id);
+            deps.showToast(result.message, result.ok);
+            render();
+          };
+          row.appendChild(remove);
+        }
+        list.appendChild(row);
+      });
+      const debug = document.createElement('button'); // Visible diagnostic for players without desktop developer tools.
+      debug.className = 'settings-small-btn';
+      debug.textContent = 'Show Wall Debug';
+      debug.onclick = () => {
+        const output = document.getElementById('farmhouseRoomDebug') || document.createElement('pre');
+        output.id = 'farmhouseRoomDebug';
+        output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:11px';
+        output.textContent = JSON.stringify({ ...roomPlanner.debug(), furnitureRecovery: window.__farmhouseFurnitureRecovery || [] }, null, 2);
+        if (!output.parentElement) list.insertBefore(output, debug.nextSibling);
+        else output.hidden = !output.hidden;
+      };
+      list.appendChild(debug);
+    }
     owned.forEach(def => {
       const count = deps.inventory[def.itemKey] || 0;
       const isArmed = armed === def.itemKey;
@@ -245,7 +318,9 @@
       }
       if (obj.key === 'rug' || obj.key === 'hangingBanner' || window.HouseWindowLinkage?.isWindowKey?.(obj.key)) {
         const patternBtn = document.createElement('button'); // Ordinary ownership/permission checks from this panel govern pattern edits too.
-        patternBtn.textContent = 'Pattern'; patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
+        patternBtn.className = 'settings-small-btn'; patternBtn.textContent = 'Color / Pattern';
+        patternBtn.setAttribute('aria-label', 'Choose colors and pattern for ' + def.name);
+        patternBtn.onclick = () => deps.editFurniturePattern?.(obj.id);
         row.appendChild(patternBtn);
       }
       if (wallCapable) {

@@ -39,6 +39,7 @@
   // plain property would eagerly evaluate the still-undeclared `const`
   // the moment this init() object literal is built and throw.
   let deps = null;
+  let _restoringLayoutObjects = false; // Held across the full room/furniture/barn restoration transaction, never across worlds.
   function init(injectedDeps) {
     deps = injectedDeps;
     _bindListeners();
@@ -254,6 +255,7 @@
     const shippingBoxObject = deps.getShippingBoxObject();
     const supplyBoxObject = deps.getSupplyBoxObject();
     const layout = { version: 3, tiles: [], objects: {}, furniture: [], decor: [], productionBuildings: window.FarmProduction?.serialize?.() || previousLayout?.productionBuildings || [] };
+    layout.farmhousePartitions = window.FarmhouseRoomPlanner?.serialize?.() || previousLayout?.farmhousePartitions || null; // Saved per world, including custom walls and moved join doors.
     const farmPlots = window.FarmPlotEditor?.serialize?.() ?? previousLayout?.farmPlots;
     if (farmPlots?.length) layout.farmPlots = farmPlots; // Persist assigned family plot groups alongside normal layout.
     if (shippingBoxObject) layout.objects.sellCrate = [shippingBoxObject.col, shippingBoxObject.row];
@@ -279,6 +281,8 @@
         tableId: obj.tableId || null, surfaceItems: obj.surfaceItems || null, serviceId: obj.serviceId || null,
         npcWardrobeFor: obj.npcWardrobeFor || null, // Shared NPC inventory owner of this exact placed chest/wardrobe; duplicates intentionally use one character ID.
         patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
+        widthTiles: obj.key === 'rug' && Number.isInteger(obj.widthTiles) ? obj.widthTiles : null,
+        heightTiles: obj.key === 'rug' && Number.isInteger(obj.heightTiles) ? obj.heightTiles : null, // Per-instance woven-rug dimensions are kept across world reloads.
         localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
         localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
         wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
@@ -409,156 +413,175 @@
   }
 
   function applyFarmLayoutObjects(layout) {
-    if (!layout || layout.version !== 3) return;
-    // Repair extension-owned furniture definitions before saved decor is
-    // filtered. This keeps cloud/local farm-layout restores independent of
-    // whichever init wrapper happened to register daylight windows first.
-    window.DaylightWindowRuntime?.registerDecorDefs?.(deps.DECORATIVE_FURNITURE_DEFS);
-    if (layout.objects?.sellCrate) {
-      const [c, r] = layout.objects.sellCrate;
-      const shippingBoxObject = deps.getShippingBoxObject();
-      if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
-        deps.worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
-        shippingBoxObject.reset && shippingBoxObject.reset();
-        const nc = window.FarmCrates.makeSellCrate(c, r); deps.setShippingBoxObject(nc); deps.worldObjects.set(c + ',' + r, nc);
-      }
+    if (!layout || layout.version !== 3) {
+      window.FarmhouseRoomPlanner?.restore?.(null); // Fresh worlds must not inherit the previous world's custom partitions.
+      deps.rebuildInteriorGeometry?.(); // initWorldObjects may have rendered the prior world's walls during a scene switch.
+      return;
     }
-    if (layout.objects?.supplyBox) {
-      const [c, r] = layout.objects.supplyBox;
-      const supplyBoxObject = deps.getSupplyBoxObject();
-      if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
-        deps.worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
-        supplyBoxObject.reset && supplyBoxObject.reset();
-        const nb = window.FarmCrates.makeSupplyBox(c, r); deps.setSupplyBoxObject(nb); deps.worldObjects.set(c + ',' + r, nb);
-      }
-    }
-    (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
-      // Guarded per-entry: one malformed saved processing station must not
-      // throw and abort the rest of this restore (decor, house pieces,
-      // barns, dew-pile meshes all run after this loop in the same call).
-      try {
-        if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
-          const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
-          if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
+    _restoringLayoutObjects = true;
+    let complete = false; // Only a fully restored house can safely migrate formerly occupied wall tiles.
+    try {
+      // Repair extension-owned furniture definitions before saved decor is
+      // filtered. This keeps cloud/local farm-layout restores independent of
+      // whichever init wrapper happened to register daylight windows first.
+      window.DaylightWindowRuntime?.registerDecorDefs?.(deps.DECORATIVE_FURNITURE_DEFS);
+      if (layout.objects?.sellCrate) {
+        const [c, r] = layout.objects.sellCrate;
+        const shippingBoxObject = deps.getShippingBoxObject();
+        if (shippingBoxObject && (shippingBoxObject.col !== c || shippingBoxObject.row !== r)) {
+          deps.worldObjects.delete(shippingBoxObject.col + ',' + shippingBoxObject.row);
+          shippingBoxObject.reset && shippingBoxObject.reset();
+          const nc = window.FarmCrates.makeSellCrate(c, r); deps.setShippingBoxObject(nc); deps.worldObjects.set(c + ',' + r, nc);
         }
-      } catch (err) {
-        console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
       }
-    });
-    (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor }) => {
-      try {
-        if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
-        const def = deps.DECORATIVE_FURNITURE_DEFS[key];
-        if (!def) return;
-        const decorArea = area || 'farm';
-        const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
-        const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0);
-        const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
-        let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
-        if (result) {
-          restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-            mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-            ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-            localRow: Number.isFinite(localRow) ? localRow : owner.localRow };
-          restoredObject.tableId = tableId || ''; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
-          if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
-          window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
-          restoredObject.patternOverrides = patternOverrides || null;
-          window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
-          deps.interiorFurnitureObjects.push(restoredObject);
-          if (wallPlacement) {
-            const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
-            pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
+      if (layout.objects?.supplyBox) {
+        const [c, r] = layout.objects.supplyBox;
+        const supplyBoxObject = deps.getSupplyBoxObject();
+        if (supplyBoxObject && (supplyBoxObject.col !== c || supplyBoxObject.row !== r)) {
+          deps.worldObjects.delete(supplyBoxObject.col + ',' + supplyBoxObject.row);
+          supplyBoxObject.reset && supplyBoxObject.reset();
+          const nb = window.FarmCrates.makeSupplyBox(c, r); deps.setSupplyBoxObject(nb); deps.worldObjects.set(c + ',' + r, nb);
+        }
+      }
+      window.FarmhouseRoomPlanner?.restore?.(layout.farmhousePartitions); // Older saves default to no manual subdivisions.
+      (layout.furniture || []).forEach(({ key, col, row, job, rotYDeg }) => {
+        // Guarded per-entry: one malformed saved processing station must not
+        // throw and abort the rest of this restore (decor, house pieces,
+        // barns, dew-pile meshes all run after this loop in the same call).
+        try {
+          if (deps.PROCESSING_FURNITURE_DEFS[key] && deps.canPlaceFurnitureAt(col, row)) {
+            const obj = deps.makeProcessingFurniture(col, row, key, job, rotYDeg || 0);
+            if (obj) { deps.worldObjects.set(col + ',' + row, obj); deps.processingFurnitureObjects.add(obj); }
           }
+        } catch (err) {
+          console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
         }
-        if (result && decorArea === 'farm' && def.sit) {
-          const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
-          deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+      });
+      (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles }) => {
+        try {
+          if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
+          const def = deps.DECORATIVE_FURNITURE_DEFS[key];
+          if (!def) return;
+          const decorArea = area || 'farm';
+          const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
+          const dimensions = key === 'rug' && Number.isInteger(widthTiles) && Number.isInteger(heightTiles) ? { widthTiles, heightTiles } : null; // Older rug saves keep their authored default.
+          const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0, dimensions);
+          const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
+          let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.
+          if (result) {
+            restoredObject = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+              mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+              ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+              localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}) };
+            restoredObject.tableId = tableId || ''; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
+            if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
+            window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
+            restoredObject.patternOverrides = patternOverrides || null;
+            window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
+            deps.interiorFurnitureObjects.push(restoredObject);
+            if (wallPlacement) {
+              const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
+              pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
+            }
+          }
+          if (result && decorArea === 'farm' && def.sit) {
+            const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
+            deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
+          }
+          if (result) deps.registerChairNpcStation(key, col, row, rotYDeg || 0, deps.normalizeNpcArea(decorArea));
+        } catch (err) {
+          console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
         }
-        if (result) deps.registerChairNpcStation(key, col, row, rotYDeg || 0, deps.normalizeNpcArea(decorArea));
-      } catch (err) {
-        console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
-      }
-    });
-    // House pieces — initWorldObjects() already seeded the starter piece at
-    // its hard default position before this runs. A modern save's own
-    // housePieces array may have moved the starter (a legacy "Move
-    // Building" save carried forward) and/or built additional deed
-    // pieces; an old pre-modular-house save only ever has the legacy
-    // houseCol/houseRow fields, which just repositions the starter with
-    // nothing else to restore.
-    const housePieces = deps.getHousePieces();
-    let starterEntry = housePieces.find(p => p.id === 'house_starter');
-    if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
-      const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
-      const housePieceCatalog = deps.getHousePieceCatalog();
-      if (savedStarter) {
-        // Restore the saved records themselves instead of reseeding a
-        // default starter pair and skipping pieceKey:'starter'. The old
-        // path restored the main room but silently reset a rearranged
-        // starter annex to its default position on every reload.
+      });
+      // House pieces — initWorldObjects() already seeded the starter piece at
+      // its hard default position before this runs. A modern save's own
+      // housePieces array may have moved the starter (a legacy "Move
+      // Building" save carried forward) and/or built additional deed
+      // pieces; an old pre-modular-house save only ever has the legacy
+      // houseCol/houseRow fields, which just repositions the starter with
+      // nothing else to restore.
+      const housePieces = deps.getHousePieces();
+      let starterEntry = housePieces.find(p => p.id === 'house_starter');
+      if (Array.isArray(layout.housePieces) && layout.housePieces.length) {
+        const savedStarter = layout.housePieces.find(p => p.id === 'house_starter');
+        const housePieceCatalog = deps.getHousePieceCatalog();
+        if (savedStarter) {
+          // Restore the saved records themselves instead of reseeding a
+          // default starter pair and skipping pieceKey:'starter'. The old
+          // path restored the main room but silently reset a rearranged
+          // starter annex to its default position on every reload.
+          window.HousePieces.clearAll();
+          layout.housePieces.forEach(saved => {
+            const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
+            if (!def || !saved.id) return;
+            const entry = {
+              id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null,
+              features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
+            };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+          starterEntry = housePieces.find(p => p.id === 'house_starter');
+        } else {
+          // Transitional saves with deeds but no explicit main-room record.
+          layout.housePieces.forEach(saved => {
+            if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
+            const def = housePieceCatalog[saved.pieceKey];
+            const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
+              w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
+              roofAxis: saved.roofAxis || null, features: saved.features || [] };
+            housePieces.push(entry);
+            window.HousePieces.spawnEntry(entry);
+          });
+        }
+      } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
+                 && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
         window.HousePieces.clearAll();
-        layout.housePieces.forEach(saved => {
-          const def = saved.pieceKey === 'starter' ? housePieceCatalog.starter : housePieceCatalog[saved.pieceKey];
-          if (!def || !saved.id) return;
-          const entry = {
-            id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-            w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-            roofAxis: saved.roofAxis || null,
-            features: Array.isArray(saved.features) ? saved.features.map(f => ({ ...f })) : [],
-          };
-          housePieces.push(entry);
-          window.HousePieces.spawnEntry(entry);
-        });
-        starterEntry = housePieces.find(p => p.id === 'house_starter');
-      } else {
-        // Transitional saves with deeds but no explicit main-room record.
-        layout.housePieces.forEach(saved => {
-          if (saved.pieceKey === 'starter' || !housePieceCatalog[saved.pieceKey] || housePieces.some(p => p.id === saved.id)) return;
-          const def = housePieceCatalog[saved.pieceKey];
-          const entry = { id: saved.id, pieceKey: saved.pieceKey, col: saved.col, row: saved.row,
-            w: saved.w || def.w, h: saved.h || def.h, stage: saved.stage || 'foundation',
-            roofAxis: saved.roofAxis || null, features: saved.features || [] };
-          housePieces.push(entry);
-          window.HousePieces.spawnEntry(entry);
-        });
+        window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
       }
-    } else if (Number.isFinite(layout.houseCol) && Number.isFinite(layout.houseRow) && starterEntry
-               && (layout.houseCol !== starterEntry.col || layout.houseRow !== starterEntry.row)) {
-      window.HousePieces.clearAll();
-      window.HousePieces.seedStarter(layout.houseCol, layout.houseRow);
+      // Manual entrances/chimneys recovered by removal or a wall junction —
+      // independent of any one piece's position, so restored unconditionally
+      // here rather than inside either branch above.
+      window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
+      // Re-derive global furniture coordinates from the room-local values
+      // only after every room has been restored. This is deliberately a
+      // no-op transform: it repairs old/global coordinates while keeping
+      // the saved local placement unchanged.
+      housePieces.filter(p => p.stage === 'built').forEach(piece => {
+        const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
+        deps.transformFurnitureWithHousePiece(piece.id, rect, rect, false);
+      });
+      deps.rebuildInteriorGeometry();
+      const farmBuildings = deps.getFarmBuildings();
+      const barnTiers = deps.getBarnTiers();
+      (layout.buildings || []).forEach(saved => {
+        try {
+          if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
+          if (farmBuildings.some(b => b.id === saved.id)) return;
+          const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
+          farmBuildings.push(entry);
+          window.FarmBuildings.spawnEntry(entry);
+        } catch (err) {
+          console.error('[farm-editor] failed to restore barn', saved, err);
+        }
+      });
+      // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
+      // which always runs first (see the two call sites) — this just builds
+      // the meshes for whatever dew piles are already sitting in the grid,
+      // same two-phase split as furniture (data now, objects/meshes here).
+      window.DewVats.rebuildMeshesFromGrid();
+      complete = true;
+    } finally {
+      _restoringLayoutObjects = false;
+      if (complete) {
+        const recovered = deps.reconcileInteriorFurniture?.() || []; // One migration pass after every saved room and furnishing exists.
+        if (recovered.some(entry => entry.action === 'moved' || entry.action === 'stored')) {
+          saveFarmLayout(); // Persist the corrected furniture together with all restored barns and house features.
+        }
+      }
     }
-    // Manual entrances/chimneys recovered by removal or a wall junction —
-    // independent of any one piece's position, so restored unconditionally
-    // here rather than inside either branch above.
-    window.HousePieces.loadFixtureInventory(layout.architecturalInventory);
-    // Re-derive global furniture coordinates from the room-local values
-    // only after every room has been restored. This is deliberately a
-    // no-op transform: it repairs old/global coordinates while keeping
-    // the saved local placement unchanged.
-    housePieces.filter(p => p.stage === 'built').forEach(piece => {
-      const rect = { col: piece.col, row: piece.row, w: piece.w, h: piece.h };
-      deps.transformFurnitureWithHousePiece(piece.id, rect, rect, false);
-    });
-    deps.rebuildInteriorGeometry();
-    const farmBuildings = deps.getFarmBuildings();
-    const barnTiers = deps.getBarnTiers();
-    (layout.buildings || []).forEach(saved => {
-      try {
-        if (saved.kind !== 'barn' || !barnTiers[saved.tier]) return;
-        if (farmBuildings.some(b => b.id === saved.id)) return;
-        const entry = { id: saved.id, kind: 'barn', tier: saved.tier, col: saved.col, row: saved.row, w: saved.w || window.FarmBuildings.FOOTPRINT_W, h: saved.h || window.FarmBuildings.FOOTPRINT_D, stage: saved.stage || 'foundation', ...(Array.isArray(saved.troughs) ? { troughs: saved.troughs } : {}) };
-        farmBuildings.push(entry);
-        window.FarmBuildings.spawnEntry(entry);
-      } catch (err) {
-        console.error('[farm-editor] failed to restore barn', saved, err);
-      }
-    });
-    // Tile data (grid[r][c].dewPile) is restored by applyFarmLayoutToGrid,
-    // which always runs first (see the two call sites) — this just builds
-    // the meshes for whatever dew piles are already sitting in the grid,
-    // same two-phase split as furniture (data now, objects/meshes here).
-    window.DewVats.rebuildMeshesFromGrid();
   }
 
   // Normal-play Farmwork works on plot designations, never on the dev Farm Editor's terrain brush.
@@ -654,5 +677,6 @@
     toggleFarmEditMode, farmEditorSetBrush, applyFarmEditBrush, farmworkTileAccess,
     farmLayoutKey, captureFarmLayout, saveFarmLayout, loadFarmLayout, applyFarmLayoutToGrid,
     cleanupLegacyFarmEntranceRoad, applyFarmLayoutObjects,
+    isRestoringLayout: () => _restoringLayoutObjects, // Prevent intermediate house-piece rebuilds from moving furniture during load.
   };
 })();

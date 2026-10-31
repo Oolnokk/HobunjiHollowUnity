@@ -33,14 +33,11 @@
   // unenterable — placing any manual entrance makes that auto one disappear.
   // See _refreshArchitecturalFeatures/placeFeature/removeFeatureAt below.
   //
-  // All built pieces share ONE continuous interior (see game.js's
-  // rebuildInteriorGeometry()): every piece contributes a 2x2-interior-cell
-  // block per exterior farm tile, anchored directly at (farmCol*2, farmRow*2)
-  // — the interior grid is just the farm grid at 2x resolution, so no
-  // separate per-house coordinate origin bookkeeping is needed. Each door
-  // punches a 3-interior-cell-wide exit threshold through the boundary wall
-  // on whichever farm-tile side it faces — the same convention proven by the
-  // reference demo's entranceNubCells().
+  // Each built piece keeps its complete 2x interior floor footprint. The
+  // farmhouse planner offsets only indoor origins to create one-cell gaps
+  // between connected rooms; the exterior remains physically joined.
+  // Single floorless exit markers and generated join corridors use the same
+  // authored wooden doors as other building interiors.
   //
   // Interior furniture records the room piece and piece-local cell offset,
   // so moving or rotating a room carries its contents with it. demolish()
@@ -632,7 +629,7 @@
         onAction(action) {
           if (action === 'obj_enter_house') {
             recordEnteredEntrance(entry.id, f.id);
-            deps.startSceneTransition(() => deps.enterInterior(entry.id));
+            deps.startSceneTransition(() => deps.enterInterior(entry.id, f.id)); // Each attached doorway enters through its own interior landing, even when multiple doors share a room.
             return { ok: true, message: 'Entering the house…' };
           }
           return { ok: false, message: 'Unknown house action.' };
@@ -766,13 +763,16 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be demolished." };
+    const interiorRoom = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Recover only this full-size section's actual indoor furniture, not a neighbor's offset floor.
     const recovered = entry.stage === 'built'
-      ? deps.recoverFurnitureInInteriorRect(entry.col * 2, entry.row * 2, entry.w * 2, entry.h * 2)
+      ? deps.recoverFurnitureInInteriorRect(interiorRoom?.col ?? entry.col * 2, interiorRoom?.row ?? entry.row * 2,
+          interiorRoom?.w ?? entry.w * 2, interiorRoom?.h ?? entry.h * 2)
       : 0;
     _unregisterFeatureDoors(entry);
     _unregisterFootprint(entry);
     _disposeMesh(entry._mesh);
     deps.setHousePieces(pieces.filter(p => p.id !== id));
+    window.FarmhouseRoomPlanner?.onPieceRemoved?.(id); // Custom subdivisions belong to their wing; demolishing it removes their wall records.
     // Removing this piece can change its former neighbors' roof-axis vote
     // and/or same-direction extensions, not just its own geometry.
     _rebuildAllStructureMeshes();
@@ -1077,27 +1077,34 @@
   // auto-derived entrances, but reflects where the player actually tapped
   // for a manually placed one (see placeFeature).
   function _entranceNubCells(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') { const c = gx * 2 + slot, r = gy * 2 - 1; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'south') { const c = gx * 2 + slot, r = (gy + 1) * 2; return [-1, 0, 1].map(d => ({ c: c + d, r })); }
-    if (f.side === 'west')  { const r = gy * 2 + slot, c = gx * 2 - 1; return [-1, 0, 1].map(d => ({ c, r: r + d })); }
-    const r = gy * 2 + slot, c = (gx + 1) * 2; return [-1, 0, 1].map(d => ({ c, r: r + d }));
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = (f.edgeSlot === 0 ? 0 : 1);
+    // Exactly one floorless exit marker per entrance; the door is rendered
+    // at the floor boundary using InteriorDoorTiles, like an authored church.
+    if (f.side === 'north') return [{ c: gx + slot, r: gy - 1 }];
+    if (f.side === 'south') return [{ c: gx + slot, r: gy + 2 }];
+    if (f.side === 'west') return [{ c: gx - 1, r: gy + slot }];
+    return [{ c: gx + 2, r: gy + slot }];
   }
   // One interior cell inward from the nub's center — where the player
   // spawns when entering through this feature's door.
   function _entranceEnterCell(entry, f) {
-    const gx = entry.col + f.lx, gy = entry.row + f.ly, slot = (f.edgeSlot === 0 ? 0 : 1);
-    if (f.side === 'north') return { c: gx * 2 + slot, r: gy * 2 };
-    if (f.side === 'south') return { c: gx * 2 + slot, r: gy * 2 + 1 };
-    if (f.side === 'west')  return { c: gx * 2, r: gy * 2 + slot };
-    return { c: gx * 2 + 1, r: gy * 2 + slot };
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
+    const slot = (f.edgeSlot === 0 ? 0 : 1);
+    if (f.side === 'north') return { c: gx + slot, r: gy };
+    if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
+    if (f.side === 'west')  return { c: gx, r: gy + slot };
+    return { c: gx + 1, r: gy + slot };
   }
   const HEARTH_YAW = { north: 0, east: -Math.PI / 2, south: Math.PI, west: Math.PI / 2 };
   // World-space (interior-grid-unit) center + facing for a chimney's
   // derived hearth, glued to the same wall the chimney backs onto — exact
   // port of the reference demo's derivedHearthGroup positioning.
   function _chimneyHearthPlacement(entry, f) {
-    const gx = (entry.col + f.lx) * 2, gy = (entry.row + f.ly) * 2;
+    const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Hearth follows its room without modifying its exterior chimney.
+    const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
     let cx = gx + 1, cz = gy + 0.5;
     if (f.side === 'south') { cx = gx + 1; cz = gy + 1.5; }
     else if (f.side === 'west') { cx = gx + 0.5; cz = gy + 1; }
@@ -1114,9 +1121,12 @@
   // entrance feature (a piece can have more than one), for enterInterior(pieceId).
   function computeInteriorLayout() {
     const floorSet = new Set(), exitSet = new Set(), doors = [], hearths = [];
+    window.FarmhouseRoomPlanner?.layoutBuiltRooms?.(deps.getHousePieces()); // Resolve all indoor room origins before supplying floor/door positions.
     for (const entry of deps.getHousePieces()) {
       if (entry.stage !== 'built') continue;
-      const bx = entry.col * 2, by = entry.row * 2, w = entry.w * 2, h = entry.h * 2;
+      const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Preserve the complete doubled footprint for each individual section.
+      const bx = room?.col ?? entry.col * 2, by = room?.row ?? entry.row * 2;
+      const w = room?.w ?? entry.w * 2, h = room?.h ?? entry.h * 2;
       for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) floorSet.add((bx + c) + ',' + (by + r));
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
@@ -1124,14 +1134,14 @@
           if (!f._doorObj) return; // no farm-side entrance registered for this feature
           const nub = _entranceNubCells(entry, f);
           const enter = _entranceEnterCell(entry, f);
-          nub.forEach(q => { floorSet.add(q.c + ',' + q.r); exitSet.add(q.c + ',' + q.r); });
-          doors.push({ pieceId: entry.id, featureId: f.id, enter, exitCells: nub.map(q => q.c + ',' + q.r) });
+          nub.forEach(q => exitSet.add(q.c + ',' + q.r)); // Outside floor; one exit per door.
+           doors.push({ pieceId: entry.id, featureId: f.id, enter, side: f.side, exitCells: nub.map(q => q.c + ',' + q.r) });
         } else if (f.type === 'chimney') {
           hearths.push(_chimneyHearthPlacement(entry, f));
         }
       });
     }
-    return { floorSet, exitSet, doors, hearths };
+    return window.FarmhouseRoomPlanner?.apply?.({ floorSet, exitSet, doors, hearths }, deps.getHousePieces()) || { floorSet, exitSet, doors, hearths };
   }
 
   // Which entrance the player last went in by. Leaving the interior returns
