@@ -20,8 +20,10 @@ const far = { id: 'far', x: 80, y: 0, health: 20, areaId: 'forest', def: { hosti
 const close = { id: 'close', x: 35, y: 0, health: 20, areaId: 'forest', def: { hostile: true } };
 const distant = { id: 'distant', x: 220, y: 0, health: 20, areaId: 'forest', def: { hostile: true } };
 const herbivore = { id: 'grazer', x: 1, y: 0, health: 20, areaId: 'forest', def: { hostile: false } };
-const enemies = new Set([far, distant, herbivore, close]); // Deliberately wrong insertion order must not determine the pet's target.
+const unzoned = { id: 'unknown-zone', x: 0.1, y: 0, health: 20 }; // Transient or stale actors with no areaId must not be pursued across map changes.
+const enemies = new Set([far, distant, herbivore, unzoned, close]); // Deliberately wrong insertion order must not determine the pet's target.
 assert.equal(R.chooseTarget(pet, master, enemies, 'forest', 150), close, 'closest urgent enemy wins even if last in Set');
+assert.equal(R.validEnemy(unzoned, 'forest'), false, 'unknown-area actors are excluded just as they were in the original game loop');
 assert.equal(R.debugSnapshot(pet).target, 'close');
 
 pet._stage = { mode: 'backingUp', t: 0.9 }; // A stale retreat from a previous target should not delay response to a new enemy.
