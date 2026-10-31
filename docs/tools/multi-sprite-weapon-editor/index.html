@@ -108,9 +108,17 @@ h3{font-size:13px;margin:5px 0}
 <div><label for="baseFireSize">Rank-5 mote size</label><input id="baseFireSize" type="number" min=".001" max="2" step=".005"></div>
 <div><label for="baseFireLife">Life (s)</label><input id="baseFireLife" type="number" min=".1" max="5" step=".05"></div>
 </div>
-<label for="baseFireSpeed">Rise speed (world/s)</label><input id="baseFireSpeed" type="number" min="0" max="5" step=".01">
+<div class="grid2">
+<div><label for="baseFireVisualScale">Flame geometry scale (per tip; 1 = original)</label><input id="baseFireVisualScale" type="number" min=".1" max="8" step=".1"></div>
+<div><label for="baseFireFocus">Mastery 5 clustering (0 = spread, 1 = single pixel)</label><input id="baseFireFocus" type="number" min="0" max="1" step=".05"></div>
+</div>
+<div class="grid2">
+<div><label for="baseFireBlend">Particle blending</label><select id="baseFireBlend"><option value="additive">Additive (glowy)</option><option value="normal">Normal (preserves flame colors)</option></select></div>
+<div><label for="baseFireOpacity">Peak particle opacity</label><input id="baseFireOpacity" type="number" min="0" max="1" step=".05"></div>
+</div>
+<label for="baseFireSpeed">Rise speed (local/s; geometry scale also increases travel)</label><input id="baseFireSpeed" type="number" min="0" max="5" step=".01">
 <label for="baseFireColors">Fire palette (comma-separated hex)</label><input id="baseFireColors" placeholder="#FFE6A5, #FFAA3E, #FF5F20">
-<p class="help">Two-ended mode finds the two main fuel regions in the original PNG. Rank 0 distributes small separate flames over both regions; rank 5 concentrates each region into one full-size blaze.</p>
+<p class="help">Geometry scale enlarges the complete flame system around each tip, including motion and spacing, just like scaling a flail head; it does not increase particle count or brightness. Focus below 1 retains flame shape at rank 5. Use Normal blending to avoid additive whiteout.</p>
 </div>
 </div>
 </div>
