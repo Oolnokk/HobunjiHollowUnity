@@ -318,8 +318,12 @@
         surfaceFoliageRecognizedRegion:true,surfaceFoliageGuideId:'floor-quarter-'+i,surfaceFoliageRole:'floors'};
       target.add(guide);
     }
-    if(!target.children.length)throw new Error('Generated floor has no growable surface regions.');
-    return {target,regions:target.children.length,dispose(){for(const guide of target.children){guide.geometry.dispose();guide.material.dispose();}target.clear();}};
+    const regions=target.children.length;
+    if(!regions)throw new Error('Generated floor has no growable surface regions.');
+    const planner=floorPattern.clone(false);planner.visible=false;planner.name='Hidden native floor planning authority';
+    planner.userData={...floorPattern.userData,surfaceFoliageRole:'growthPlanOnly'}; // planFurnitureGrowth needs a real floor while the sixteen guides alone supply vegetation triangles.
+    target.add(planner);
+    return {target,regions,dispose(){for(const guide of target.children){if(guide.userData?.surfaceFoliageGuide){guide.geometry.dispose();guide.material.dispose();}}target.clear();}}; // Never dispose the native floor's shared geometry or material.
   }
 
   async function prepareCover({room,templeRecipes,rootColor='#24211d',signal,onProgress}){
