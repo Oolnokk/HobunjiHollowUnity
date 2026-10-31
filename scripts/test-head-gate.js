@@ -87,7 +87,7 @@ assert.equal(rules.applyRoster('bandit:grunt', { appearance: {} }, Math.random).
 // Wired into the hostile builder and the shared single-plane (player/NPC) builder, both species-aware.
 const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 assert.match(bandit, /const headGate = roster\.headGate;/);
-assert.equal((bandit.match(/headCanvas, headGate, headMaskCanvas, speciesId: roster\.appearance\?\.speciesId, cosmeticIds: roster\.equippedCosmetics \}\)/g) || []).length, 2, 'front and rear neck skins');
+assert.equal((bandit.match(/headCanvas, headGate, headMaskCanvas, speciesId: roster\.appearance\?\.speciesId,[^}]*cosmeticIds: roster\.equippedCosmetics \}\)/g) || []).length, 2, 'front and rear neck skins');
 assert.match(bandit, /headGateBounds\?\.\(headPixels\?\.boundsPx, headGate, roster\.appearance\?\.speciesId, headMaskCanvas, false, roster\.equippedCosmetics\)/);
 assert.match(bandit, /headCosmeticsOnly: true/, 'the mask render is requested only for the mask gate');
 assert.match(fs.readFileSync('docs/js/portrait-utils.js', 'utf8'), /headCosmeticsOnly = renderOptions\?\.headCosmeticsOnly === true/, 'the portrait renderer supports a head + cosmetics-only render');
