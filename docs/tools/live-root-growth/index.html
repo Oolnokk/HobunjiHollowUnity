@@ -21,8 +21,17 @@
 <script src="js/authored-furniture-runtime.js"></script>
 <script src="js/live-root-network.js?v=1"></script>
 <script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></script>
-<script src="js/live-root-growth.js?v=20261031hce7f09d"></script>
-<script src="js/stone-age-ruin-scenery.js?v=20261031scenery6"></script>
+<script src="js/live-root-growth.js?v=20261031snare-guide1"></script>
+<script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></script>
+<script src="js/npc-avatar-preview-utils.js?v=20261031realnpc1"></script>
+<script src="js/png-plane-avatar.js?v=20261031realnpc1"></script>
+<script src="config/pants-rigs.js?v=20261031pantsreal1"></script>
+<script src="js/pants-rig-core.js?v=20261031pantsreal1"></script>
+<script src="js/pants-garment-renderer.js?v=20261031pantsreal1"></script>
+<script src="js/leg-bones.js?v=20261013hb53d07e"></script>
+<script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
+<script src="js/root-snare-hands.js?v=20261031realnpc2"></script>
+<script src="js/root-snare-runner.js?v=20261031docsroot1"></script>
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
 button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
@@ -60,6 +69,26 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
 <p id="ruinStatus" role="status">Uses the existing ruin generator. Its stone floor and initial root/vine covering repeat in 4 × 4 quarter-scale tiles, including quarter-height relief. The farm cliff texture is fitted to detected surfaces after rockification, then the room receives denser roots and vines based on the Life Temple’s authored root and vine layers before you grow the selected furniture from that vegetation.</p>
 <p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
+</section>
+<section><h2>Wall-root snare hands · moving walker preview</h2>
+<p>Fixed root nodes on walls and floors can notice targets up to 15 units away. Arms grow slowly (0.2 progress/second) and actively reroute as the procedural runner moves at 5 units/second. The first collider catch grips the neck without freezing movement: running toward the hand source is 2× speed; away is 0.5×; angles blend smoothly. A second hand catches the feet, immobilizes and lifts the runner, and pulls neck and feet apart with a three-second cartoon stretch. The pants and procedural feet then separate in a stylized red particle splurt. This is an author-only visual test, not combat gameplay.</p>
+<label><input type="checkbox" id="snareEnabled"> Enable wandering NPC + root hands</label>
+<label>Real repository NPC <select id="snareNpc"><option value="">Random NPC from repository</option></select></label>
+<p id="snareNpcStatus" role="status">Loads the same NPC database, front/back portrait, skinned neck and species-specific procedural feet used by the Animation Author.</p>
+<div class="controls">
+<label>Hidden hand nodes <input id="snareCount" type="number" min="1" max="14" step="1" value="7"></label>
+<label>Notice radius <input id="snareRadius" type="number" min=".5" max="15" step=".5" value="15"></label>
+<label>Arm extension <input id="snareReach" type="number" min=".3" max="15" step=".5" value="15"></label>
+<label>Extending speed <input id="snareExtend" type="number" min=".05" max="12" step=".05" value="0.2"></label>
+<label>Retracting speed <input id="snareRetract" type="number" min=".15" max="12" step=".1" value="1.1"></label>
+<label>Runner speed <input id="snareRunnerSpeed" type="number" min=".3" max="8" step=".1" value="5"></label>
+</div>
+<label><input type="checkbox" id="snareReveal"> Reveal the otherwise hidden root-node markers</label>
+<div class="controls"><button id="snareBuild" type="button">Rebuild hidden hands</button><button id="snareReroute" type="button">Change runner direction</button></div>
+<div class="controls"><button id="snareRunPast" type="button">Run past first hand</button><button id="snareRelease" type="button">Reset / release runner</button></div>
+<div class="controls"><button id="snareRunAway" type="button">Pull away from hand</button><button id="snareRunToward" type="button">Run toward hand</button></div>
+<button id="snareDoubleGrip" type="button" style="width:100%;margin-top:7px">Preview two-hand neck + feet stretch</button>
+<p id="snareStatus" role="status" aria-live="polite">Build a ruin to place the fixed roots, then enable the walker.</p>
 </section>
 <section><h2>1 · Shape to grow</h2>
 <label for="repoFurnitureSearch">Browse furniture in repository</label>
@@ -116,10 +145,10 @@ label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
 <p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
 </section>
 <section id="errors" role="alert"></section>
-<section><h2>Latest change</h2><p>The quarter-scale stone/root/vine floor is tiled across the room. Ruin mechanisms now use their existing keyframe shapes as independent rooted states, transitioning through growth and retraction alone.</p></section>
+<section><h2>Latest change</h2><p>Fixed real-NPC portrait loading in the nested Root Growth Author: species and cosmetic configurations now resolve from this page’s canonical docs root instead of requesting nonexistent tools/live-root-growth/config/species/ files. The live preview still uses selectable repository NPCs, skinned necks, procedural feet and authored pants, with whole-body tilt following both gripping hands.</p></section>
 <section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
 </aside>
 <main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
 </div>
-<script src="tools/live-root-growth/tool.js?v=20261031scenery1"></script>
+<script src="tools/live-root-growth/tool.js?v=20261031realnpc2"></script>
 </body></html>

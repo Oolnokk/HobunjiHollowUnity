@@ -54,6 +54,8 @@ jobs:
         run: node scripts/test-root-mechanism-runtime-browser.js
       - name: Stone Age multiroom floor and texture lifecycle browser regression
         run: node scripts/test-stone-age-multiroom-browser.js
+      - name: Root snare author and procedural NPC browser regression
+        run: node scripts/test-root-snare-author-browser.js
       - name: Controller modal pin browser regression
         run: node scripts/test-controller-ui-modal-pin.js
       - name: Farmwork controller tile grid and stepper browser regression

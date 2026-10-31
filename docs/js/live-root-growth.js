@@ -784,6 +784,9 @@
     const recipes=options.recipes.map(recipe=>foliage.normalizeSurfaceGrowth({...recipe,seed:String(options.seed||'ruin-cover')+':'+recipe.seed,shrinkwrapHidden:true})); // Preserve each authored style, target, density, finish and signed inset.
     const group=new THREE.Group(),target=options.target.clone(true),targetGrowth=new THREE.Group(); // Source stone remains caller-owned; only generated vegetation is released by this instance.
     group.name='Prepared ruin with Life Temple vegetation';targetGrowth.userData.surfaceFoliage=true;targetGrowth.userData.generatedStrands=0;
+    // A cloned cover target receives a new UUID. Rebase only guides owned by its source root,
+    // so the per-surface root/vine authoring budgets still find the same named regions.
+    target.traverse(mesh=>{if(mesh.userData?.surfaceFoliageGuideOwner===options.target.uuid)mesh.userData.surfaceFoliageGuideOwner=target.uuid;});
     group.add(target);target.add(targetGrowth);
     const schedule=options.schedule||(()=>new Promise(resolve=>root.setTimeout(resolve,0))); // Yield between recipe layers for progress and cancellation.
     const checkCancelled=()=>{if(options.signal?.aborted)throw Object.assign(new Error('Ruin vegetation build cancelled.'),{name:'AbortError'});};

@@ -98,7 +98,8 @@
   $('render').appendChild(renderer.domElement);
   const orbit = new T.OrbitControls(camera, renderer.domElement);
   const watchedTextures=new Map();let renderedActive=null,renderedProgress=-1,renderedVersion=-1; // Redraw a static preview only for changed geometry, camera or asynchronously loaded texture pixels.
-  let previewDirty=true;orbit.addEventListener('change',()=>{previewDirty=true;}); // Keep orbit responsive during construction without redrawing a static dense scene between every layer.
+  let previewDirty=true;orbit.addEventListener('change',()=>{previewDirty=true;});
+  let rootHands=null,roamingNpc=null,lastHandStatus=0; // Current author preview owns these, never the game. // Keep orbit responsive during construction without redrawing a static dense scene between every layer.
   orbit.enableDamping = true; orbit.dampingFactor = .1; orbit.target.set(0, 1, 0);
   scene.add(new T.HemisphereLight(0xdcecff,0x33462d,1.5));
   const sun = new T.DirectionalLight(0xffefd6, 1.1);
@@ -299,13 +300,69 @@
       for(const offset of room.floorLayout.offsets){const patch=floor.targetGrowth.clone(true);patch.name='Quarter-scale floor vegetation';patch.scale.setScalar(room.floorLayout.scale);patch.position.set(...offset);walls.targetGrowth.add(patch);patches.push(patch);}
       const strands=wallInfo.shapeStrands+floorInfo.shapeStrands*patches.length;walls.targetGrowth.userData.generatedStrands=strands;
       let disposed=false; // Clones share floor geometry/materials; dispose the original generated floor resources exactly once.
-      const cover={...walls,getDiagnostics:()=>({...wallInfo,recipeCount:recipes.length,vegetationRecipes:recipes,shapeStrands:strands,
+      const wallRootLayers=walls.targetGrowth.children.filter((layer,index)=>wallRecipes[index]?.kind==='roots'); // Original fixed wall-root tubes host hidden branches.
+      const floorRootLayers=patches.flatMap(patch=>patch.children.filter((layer,index)=>floorRecipes[index]?.kind==='roots')); // Sixteen transformed floor patches provide equally fixed hiding nodes.
+      const rootLayers=[...wallRootLayers.map(layer=>({layer,role:'wall'})),...floorRootLayers.map(layer=>({layer,role:'floor'}))]; // Each generated root retains its original wall/floor surface association.
+      const cover={...walls,wallRootLayers,rootLayers,getDiagnostics:()=>({...wallInfo,recipeCount:recipes.length,vegetationRecipes:recipes,shapeStrands:strands,
         shrinkwrapRays:wallInfo.shrinkwrapRays+floorInfo.shrinkwrapRays,shrinkwrapHits:wallInfo.shrinkwrapHits+floorInfo.shrinkwrapHits,
         floorTileScale:room.floorLayout.scale,floorTileCopies:patches.length,floorPatternStrands:floorInfo.shapeStrands}),
         dispose(){if(disposed)return;disposed=true;for(const patch of patches)patch.parent?.remove(patch);walls.dispose();floor.dispose();}};
       complete=true;return {key,cover,room};
     }finally{if(!complete){for(const patch of patches)patch.parent?.remove(patch);walls?.dispose();floor?.dispose();}}
   }
+  let snareNpcRevision=0; // Invalidates stale real NPC portrait loads after rebuild.
+  let npcListLoaded=false; // Fetched once to populate the author's exact repository roster.
+  async function populateSnareNpcs(){
+    if(npcListLoaded||!window.RootSnareRunner?.npcDatabase)return;
+    try{const npcs=await window.RootSnareRunner.npcDatabase(),select=$('snareNpc'),selected=select.value;
+      for(const npc of npcs){const id=String(npc.id||npc.name||'');if(id)select.add(new Option(npc.name||npc.id,id));}
+      npcListLoaded=true;select.value=selected;
+      $('snareNpcStatus').textContent=npcs.length+' real NPCs in repository database.';
+    }catch(error){$('snareNpcStatus').textContent='NPC roster: '+error.message;reportError(error);}
+  }
+  function releaseRootSnare(){
+    snareNpcRevision++;
+    rootHands?.dispose();roamingNpc?.dispose();rootHands=null;roamingNpc=null;previewDirty=true;
+  }
+  function snareSettings(){
+    const numeric=(id,min,max,fallback)=>{const n=Number($(id).value);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;}; // All author values are bounded before instancing.
+    return {count:Math.round(numeric('snareCount',1,14,7)),triggerRadius:numeric('snareRadius',.5,15,15),
+      reach:numeric('snareReach',.3,15,15),extendSpeed:numeric('snareExtend',.05,12,.2),
+      retractSpeed:numeric('snareRetract',.15,12,1.1),runnerSpeed:numeric('snareRunnerSpeed',.3,8,5)};
+  }
+  function buildRootSnare(){
+    releaseRootSnare();
+    if(!$('snareEnabled').checked){$('snareStatus').textContent='Preview disabled; all branches remain normal.';return;}
+    if(!preparedRuin?.room||!preparedRuin.cover?.rootLayers?.length){
+      $('snareStatus').textContent='Build the ruin and its wall roots to locate hidden hand nodes.';return;
+    }
+    if(!window.RootSnareHands||!window.RootSnareRunner){
+      $('snareStatus').textContent='Root snare preview scripts are missing.';return;
+    }
+    const settings=snareSettings(),room=preparedRuin.room,revision=snareNpcRevision;
+    populateSnareNpcs();
+    try{
+      const hands=window.RootSnareHands.create({THREE:T,room,
+        rootLayers:preparedRuin.cover.rootLayers,seed:room.seed+':snare-nodes',
+        count:settings.count,triggerRadius:settings.triggerRadius,reach:settings.reach,
+        extendSpeed:settings.extendSpeed,retractSpeed:settings.retractSpeed,
+        showNodes:$('snareReveal').checked});
+      const runner=window.RootSnareRunner.create({THREE:T,room,seed:room.seed+':walker',speed:settings.runnerSpeed,requireNpc:true});
+      rootHands=hands;roamingNpc=runner;scene.add(hands.group,runner.group);
+      $('snareStatus').textContent=hands.anchors.length+' rooted nodes · loading real NPC portrait…';
+      $('snareNpcStatus').textContent='Rendering repository portrait, reverse portrait and skinned neck rig…';
+      window.RootSnareRunner.loadNpcPortrait({id:$('snareNpc').value||null,seed:room.seed+':walker'}).then(rendered=>{
+        if(revision!==snareNpcRevision||roamingNpc!==runner)return;
+        runner.installAvatar(rendered);
+        $('snareNpcStatus').textContent='Loaded '+(rendered.npc.name||rendered.npc.id)+' · '+rendered.portraitNpc.appearance.speciesId+' · neck bone '+(runner.diagnostics().neckBone?'yes':'unavailable')+' · legs '+(runner.diagnostics().authenticFeet?'yes':'missing')+' · pants '+(runner.diagnostics().authenticPants?'real rig':'none equipped');
+        previewDirty=true;
+      }).catch(error=>{if(revision!==snareNpcRevision||roamingNpc!==runner)return;
+        $('snareNpcStatus').textContent='Actual NPC load FAILED: '+error.message+' (no dummy substitute)';
+        reportError(error);previewDirty=true;});
+      previewDirty=true;
+    }catch(error){releaseRootSnare();$('snareStatus').textContent='Root-hand build error: '+error.message;reportError(error);}
+  }
+
   function frameEnvironment(room) {
     const key=room?room.seed+'|'+room.size:'flat'; // Roughness edits preserve the user's current view; each room's actual wall bounds determine a comfortable camera distance on desktop and mobile.
     if(key===framedEnvironment)return;
@@ -341,11 +398,11 @@
         await growth.createAsync({...options,target:place(source.model)});
       if(request!==buildRequestId)return;
       active?.dispose();active=next;next=null;const previousMechanism=activeMechanismSource;activeMechanismSource=source.mechanism;if(previousMechanism&&previousMechanism!==activeMechanismSource)previousMechanism.dispose();
-      if(preparedRuin!==pendingCover){const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
+      if(preparedRuin!==pendingCover){releaseRootSnare();const previous=preparedRuin; /* Release the old cover and any superseded stone only when the new scene is ready. */previous?.cover.dispose();if(previous?.room!==ruinRoom)disposeRoomModel(previous?.room);preparedRuin=pendingCover;if(preparedRuin)scene.add(preparedRuin.cover.group);}
       if(preparedRuin)for(const part of preparedRuin.cover.partPlan){part.mesh.visible=true;part.mesh.material=preparedRuin.room.stoneMaterial;} // Prepared scenery keeps one permanent stone finish; imported guides remain independent.
       if(room)$('ruinStatus').textContent=`1 room · ${room.walls} solid walls · ${room.roomWidth} × ${room.roomDepth} room · ${room.floorStones} quarter-scale floor stones (4 × 4 tiles) · ${room.pillars} plain pillars · ${room.pieces} Stone Age pieces (${Math.round(room.rockRoughness*100)}% roughness). Stone is always visible. Farm cliff texture fitted after rockification. Denser Temple roots (60–150%) + woven vines (100–150%) cover walls and floor; Grow/Reset affects only the new shape.`;
       buildState.running=false;buildMessage('ready','Preview ready. Press Grow to animate.');
-      scene.add(active.group); rebuildMarkers();watchSceneTextures();previewDirty=true;
+      scene.add(active.group); rebuildMarkers();buildRootSnare();watchSceneTextures();previewDirty=true;
       grid.visible=!room; // The generated room replaces the original flat preview substrate and its rectangular grid.
       frameEnvironment(room);
       $('sourceName').textContent = source.name + ' · hidden geometry; growth-only preview';
@@ -378,7 +435,7 @@
       source:{kind:source.kind,name:source.name,file:source.file}, recipe:active.recipe,appearance:readPreviewColors(),
       environment:$('previewEnvironment').value,ruin:$('previewEnvironment').value==='ruin'?
         {rooms:ruinRoom?.rooms,walls:ruinRoom?.walls,floors:ruinRoom?.floors,seed:ruinRoom?.seed,rockPieces:ruinRoom?.pieces,rockRoughness:ruinRoom?.rockRoughness,pieceSet:ruinRoom?.pieceSet,floorProps:ruinRoom?.floorProps,pillars:ruinRoom?.pillars,stoneTexture:ruinRoom?.stoneMaterial.map?.userData,stoneSurfaceMappings:ruinRoom?.model.children.map(mesh=>({role:mesh.userData.ruinPreviewRole,...mesh.userData.stoneSurfaceMapping})),wallPrismDepth:ruinRoom?.wallPrismDepth,floorStyle:ruinRoom?.floorStyle,floorStones:ruinRoom?.floorStones,floorYScale:ruinRoom?.floorYScale,floorTileScale:ruinRoom?.floorTileScale,floorTileCopies:ruinRoom?.floorTileCopies,roomWidth:ruinRoom?.roomWidth,roomDepth:ruinRoom?.roomDepth,cover:preparedRuin?.cover.getDiagnostics()}:null,
-      targetPosition:readPosition().toArray(), ...info
+      targetPosition:readPosition().toArray(),rootSnare:rootHands?.diagnostics()||null,roamingNpc:roamingNpc?.diagnostics()||null, ...info
     }, null, 2);
     if (force || details !== lastDebug) { diagnostics.textContent = details; lastDebug = details; }
   }
@@ -581,6 +638,8 @@
     return {schema:'hobunji_live_root_growth.v1',
       environment:$('previewEnvironment').value,ruinSize:$('ruinSize').value,ruinRoughness:readRuinRoughness(),appearance:readPreviewColors(),
       recipe:readRecipe(), position:readPosition().toArray(),
+      snare:{enabled:$('snareEnabled').checked,settings:snareSettings(),
+        fixedNodes:rootHands?.diagnostics().anchors||[]}, // Persist the authored hiding places and settings for later gameplay integration.
       target:{kind:source.kind,file:source.file,...(source.mechanism?{mechanism:{type:source.mechanism.type,seed:source.mechanism.seed,pose:active?.getPoseProgress?.()??Number($('mechanismPose').value)/100,duration:readMechanismDuration()}}:{}),
         ...((source.kind === 'authored-furniture' || source.kind === 'repo-authored' || source.kind === 'repo-procedural')
           ? {furniture:source.data} : {})}
@@ -602,9 +661,17 @@
     const json = JSON.parse(await file.text());
     if (json.schema !== 'hobunji_live_root_growth.v1') throw new Error('Not a live-root-growth recipe.');
     fillRecipe(json.recipe);
+    if(json.snare&&typeof json.snare==='object'){
+      $('snareEnabled').checked=json.snare.enabled===true;
+      const values=json.snare.settings||{};
+      for(const [id,key] of [['snareCount','count'],['snareRadius','triggerRadius'],['snareReach','reach'],
+        ['snareExtend','extendSpeed'],['snareRetract','retractSpeed'],['snareRunnerSpeed','runnerSpeed']]){
+        if(Number.isFinite(Number(values[key])))$(id).value=String(values[key]);
+      }
+    }
     syncPreviewColors(json.appearance||PREVIEW_COLORS);
     updatePreviewColor('stoneColor');
-    $('previewEnvironment').value=json.environment==='ruin'?'ruin':'flat';
+    $('previewEnvironment').value=json.snare?.enabled===true||json.environment==='ruin'?'ruin':'flat';
     $('ruinSize').value=['small','medium','large','vast'].includes(json.ruinSize)?json.ruinSize:'vast';
     $('ruinRoughness').value=String(readRuinRoughness(json.ruinRoughness??.3));
     if (Array.isArray(json.position) && json.position.length >= 3) ['targetX','targetY','targetZ'].forEach((id,i) => {
@@ -649,6 +716,17 @@
   $('mechanismPose').oninput=()=>{active?.setPoseProgress?.(Number($('mechanismPose').value)/100);previewDirty=true;updateStatus(true);};
   $('mechanismDuration').onchange=()=>{$('mechanismDuration').value=String(readMechanismDuration());if(source.mechanism)rebuild();};
   $('copyColors').onclick=()=>copyColors().catch(reportError);
+  $('snareEnabled').onchange=()=>{if($('snareEnabled').checked&&$('previewEnvironment').value!=='ruin'){$('previewEnvironment').value='ruin';rebuild(false);}else buildRootSnare();};
+  $('snareBuild').onclick=buildRootSnare;
+  $('snareNpc').onchange=buildRootSnare;
+  $('snareReroute').onclick=()=>roamingNpc?.chooseTarget();
+  $('snareRunAway').onclick=()=>{if(!roamingNpc?.headToAnchor(true))$('snareStatus').textContent='First catch a neck grip to test running away.';else previewDirty=true;};
+  $('snareRunToward').onclick=()=>{if(!roamingNpc?.headToAnchor(false))$('snareStatus').textContent='First catch a neck grip to test running toward the source.';else previewDirty=true;};
+  $('snareDoubleGrip').onclick=()=>{if(!roamingNpc?.hasRepositoryNpc||!rootHands?.previewDoubleGrip(roamingNpc))$('snareStatus').textContent='Build at least two root hands first.';else previewDirty=true;};
+  $('snareRunPast').onclick=()=>{rootHands?.releaseCaptured();if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
+  $('snareRelease').onclick=()=>{if(rootHands?.releaseCaptured())previewDirty=true;}; // Captive remains held indefinitely until manually released.
+  $('snareReveal').onchange=()=>{rootHands?.setNodeVisibility($('snareReveal').checked);previewDirty=true;};
+  for(const id of ['snareCount','snareRadius','snareReach','snareExtend','snareRetract','snareRunnerSpeed'])$(id).onchange=buildRootSnare;
   $('rebuild').onclick=()=>rebuild();
   $('cancelBuild').onclick=cancelBuild;
   $('previewEnvironment').onchange=()=>rebuild(false);
@@ -674,7 +752,9 @@
   window._liveRootGrowthAuthorBridge = {getRecipe:exportedRecipe, rebuild,
     getBuildState:()=>({...buildState}),cancelBuild, // Report loading versus geometry work even before an animated instance exists.
     getPreparedRuin:()=>preparedRuin,getInstance:()=>active,loadMechanism,setMechanismProgress:value=>{active?.setPoseProgress?.(value);previewDirty=true;}, // Allows exact hidden geometry, growth stages and disposal checks without renderer interception.
-    diagnostics:()=>active?.getDiagnostics(), refreshRepoFurniture, getRepoCount:()=>repoCatalog.size}; // Built-in mobile diagnostic hook for the Tools Hub.
+    diagnostics:()=>active?.getDiagnostics(),getRootSnareDiagnostics:()=>rootHands?.diagnostics(),getRoamingNpcDiagnostics:()=>roamingNpc?.diagnostics(),
+    moveRoamingNpcTo:(x,z)=>{if(!roamingNpc)return false;roamingNpc.group.position.x=Number(x);roamingNpc.group.position.z=Number(z);previewDirty=true;return true;},
+    refreshRepoFurniture, getRepoCount:()=>repoCatalog.size}; // Built-in mobile diagnostic hook for the Tools Hub.
   if (window.ResizeObserver) new ResizeObserver(resize).observe($('render'));else window.addEventListener('resize',resize);
   function watchSceneTextures(){
     watchedTextures.clear();scene.traverse(mesh=>{for(const material of Array.isArray(mesh.material)?mesh.material:[mesh.material])if(material?.map)watchedTextures.set(material.map,material.map.version);}); // Collect once after a rebuild, never traverse the scene in the animation loop.
@@ -697,7 +777,10 @@
   function frame(timestamp) {
     requestAnimationFrame(frame); // Isolated authoring preview, never part of the game's permanent frame scheduler.
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
-    lastTimestamp=timestamp;if(!buildState.running)active?.update(delta);orbit.update();
+    lastTimestamp=timestamp;if(!buildState.running){active?.update(delta);if(roamingNpc?.hasRepositoryNpc&&roamingNpc.update(delta))previewDirty=true;
+      if(roamingNpc?.hasRepositoryNpc&&rootHands?.update(delta,roamingNpc))previewDirty=true; // Pass the walker controller so capture freezes authentic procedural walking.
+      if(rootHands&&roamingNpc?.hasRepositoryNpc&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=(roamingNpc.diagnostics().npcName||'NPC')+' · tilt '+roamingNpc.diagnostics().tiltedDegrees.toFixed(0)+'° · '+info.anchors.length+' nodes · '+info.active+' active · '+(info.neckGrip?'neck grip':'no grip')+' · '+(info.feetGrip?'feet grip':'feet free')+' · tug '+Number(info.tugMultiplier).toFixed(2)+'× · '+(info.split?'separated':info.dual?'stretch '+info.stretchSeconds.toFixed(1)+'s':'running')+' · '+info.lungeCount+' lunges';lastHandStatus=timestamp;}}
+    orbit.update();
     const progress=active?.getProgress()??0; // Growth and particle playback still render while static repeated floor meshes can rest.
     const version=active?.getRenderVersion?.()??0;if(active!==renderedActive||progress!==renderedProgress||version!==renderedVersion)previewDirty=true;
     for(const [texture,version] of watchedTextures)if(texture.version!==version){watchedTextures.set(texture,texture.version);previewDirty=true;}
