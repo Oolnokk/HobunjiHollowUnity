@@ -323,8 +323,8 @@
     }
     byId('duplicate-sprite').value = shaft.sprite || ''; byId('duplicate-sprite').disabled = !duplicated;
     byId('duplicate-note').textContent = duplicated
-      ? 'Rig copied from ' + duplicated.label + '. Scaling/translation affects fitted head primitives and tang/sleeve mounts only; the shaft PNG and flames remain fixed.'
-      : 'Original shaft: its mounting rig is directly editable. The shaft PNG and flames remain fixed. Duplicate only if you want a separate copy.';
+      ? 'Rig copied from ' + duplicated.label + '. The attachment rig moves fitted heads, junctions, bridges and recipes. The separate, optional shaft-art controls below govern shaft PNG and flames.'
+      : 'Original shaft: its mounting rig is editable independently of the optional shaft-art scaling below. Duplicate only if you want a separate copy.';
     updateRigTree(); // Same live hierarchy is refreshed when editing values, not only after a full render.
     byId('disallow').checked = shaft.overrides[headKey]?.disallow === true;
     byId('allow-shaft').checked = shaft.editorOnly !== true;
