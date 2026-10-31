@@ -310,7 +310,18 @@
       complete=true;return {key,cover,room};
     }finally{if(!complete){for(const patch of patches)patch.parent?.remove(patch);walls?.dispose();floor?.dispose();}}
   }
+  let snareNpcRevision=0; // Invalidates stale real NPC portrait loads after rebuild.
+  let npcListLoaded=false; // Fetched once to populate the author's exact repository roster.
+  async function populateSnareNpcs(){
+    if(npcListLoaded||!window.RootSnareRunner?.npcDatabase)return;
+    try{const npcs=await window.RootSnareRunner.npcDatabase(),select=$('snareNpc'),selected=select.value;
+      for(const npc of npcs){const id=String(npc.id||npc.name||'');if(id)select.add(new Option(npc.name||npc.id,id));}
+      npcListLoaded=true;select.value=selected;
+      $('snareNpcStatus').textContent=npcs.length+' real NPCs in repository database.';
+    }catch(error){$('snareNpcStatus').textContent='NPC roster: '+error.message;reportError(error);}
+  }
   function releaseRootSnare(){
+    snareNpcRevision++;
     rootHands?.dispose();roamingNpc?.dispose();rootHands=null;roamingNpc=null;previewDirty=true;
   }
   function snareSettings(){
@@ -328,16 +339,26 @@
     if(!window.RootSnareHands||!window.RootSnareRunner){
       $('snareStatus').textContent='Root snare preview scripts are missing.';return;
     }
-    const settings=snareSettings(),room=preparedRuin.room;
+    const settings=snareSettings(),room=preparedRuin.room,revision=snareNpcRevision;
+    populateSnareNpcs();
     try{
       const hands=window.RootSnareHands.create({THREE:T,room,
         rootLayers:preparedRuin.cover.rootLayers,seed:room.seed+':snare-nodes',
         count:settings.count,triggerRadius:settings.triggerRadius,reach:settings.reach,
         extendSpeed:settings.extendSpeed,retractSpeed:settings.retractSpeed,
         showNodes:$('snareReveal').checked});
-      const runner=window.RootSnareRunner.create({THREE:T,room,seed:room.seed+':walker',speed:settings.runnerSpeed});
+      const runner=window.RootSnareRunner.create({THREE:T,room,seed:room.seed+':walker',speed:settings.runnerSpeed,requireNpc:true});
       rootHands=hands;roamingNpc=runner;scene.add(hands.group,runner.group);
-      $('snareStatus').textContent=hands.anchors.length+' fixed hidden root nodes placed. The runner is seeking them…';
+      $('snareStatus').textContent=hands.anchors.length+' rooted nodes · loading real NPC portrait…';
+      $('snareNpcStatus').textContent='Rendering repository portrait, reverse portrait and skinned neck rig…';
+      window.RootSnareRunner.loadNpcPortrait({id:$('snareNpc').value||null,seed:room.seed+':walker'}).then(rendered=>{
+        if(revision!==snareNpcRevision||roamingNpc!==runner)return;
+        runner.installAvatar(rendered);
+        $('snareNpcStatus').textContent='Loaded '+(rendered.npc.name||rendered.npc.id)+' · '+rendered.portraitNpc.appearance.speciesId+' · neck bone '+(runner.diagnostics().neckBone?'yes':'unavailable')+' · legs '+(runner.diagnostics().authenticFeet?'yes':'missing');
+        previewDirty=true;
+      }).catch(error=>{if(revision!==snareNpcRevision||roamingNpc!==runner)return;
+        $('snareNpcStatus').textContent='Actual NPC load FAILED: '+error.message+' (no dummy substitute)';
+        reportError(error);previewDirty=true;});
       previewDirty=true;
     }catch(error){releaseRootSnare();$('snareStatus').textContent='Root-hand build error: '+error.message;reportError(error);}
   }
@@ -697,10 +718,11 @@
   $('copyColors').onclick=()=>copyColors().catch(reportError);
   $('snareEnabled').onchange=()=>{if($('snareEnabled').checked&&$('previewEnvironment').value!=='ruin'){$('previewEnvironment').value='ruin';rebuild(false);}else buildRootSnare();};
   $('snareBuild').onclick=buildRootSnare;
+  $('snareNpc').onchange=buildRootSnare;
   $('snareReroute').onclick=()=>roamingNpc?.chooseTarget();
   $('snareRunAway').onclick=()=>{if(!roamingNpc?.headToAnchor(true))$('snareStatus').textContent='First catch a neck grip to test running away.';else previewDirty=true;};
   $('snareRunToward').onclick=()=>{if(!roamingNpc?.headToAnchor(false))$('snareStatus').textContent='First catch a neck grip to test running toward the source.';else previewDirty=true;};
-  $('snareDoubleGrip').onclick=()=>{if(!rootHands?.previewDoubleGrip(roamingNpc))$('snareStatus').textContent='Build at least two root hands first.';else previewDirty=true;};
+  $('snareDoubleGrip').onclick=()=>{if(!roamingNpc?.hasRepositoryNpc||!rootHands?.previewDoubleGrip(roamingNpc))$('snareStatus').textContent='Build at least two root hands first.';else previewDirty=true;};
   $('snareRunPast').onclick=()=>{rootHands?.releaseCaptured();if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
   $('snareRelease').onclick=()=>{if(rootHands?.releaseCaptured())previewDirty=true;}; // Captive remains held indefinitely until manually released.
   $('snareReveal').onchange=()=>{rootHands?.setNodeVisibility($('snareReveal').checked);previewDirty=true;};
@@ -755,9 +777,9 @@
   function frame(timestamp) {
     requestAnimationFrame(frame); // Isolated authoring preview, never part of the game's permanent frame scheduler.
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
-    lastTimestamp=timestamp;if(!buildState.running){active?.update(delta);if(roamingNpc?.update(delta))previewDirty=true;
-      if(rootHands?.update(delta,roamingNpc))previewDirty=true; // Pass the walker controller so capture freezes authentic procedural walking.
-      if(rootHands&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=info.anchors.length+' nodes · '+info.active+' active · '+(info.neckGrip?'neck grip':'no grip')+' · '+(info.feetGrip?'feet grip':'feet free')+' · tug '+Number(info.tugMultiplier).toFixed(2)+'× · '+(info.split?'separated':info.dual?'stretch '+info.stretchSeconds.toFixed(1)+'s':'running')+' · '+info.lungeCount+' lunges';lastHandStatus=timestamp;}}
+    lastTimestamp=timestamp;if(!buildState.running){active?.update(delta);if(roamingNpc?.hasRepositoryNpc&&roamingNpc.update(delta))previewDirty=true;
+      if(roamingNpc?.hasRepositoryNpc&&rootHands?.update(delta,roamingNpc))previewDirty=true; // Pass the walker controller so capture freezes authentic procedural walking.
+      if(rootHands&&roamingNpc?.hasRepositoryNpc&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=(roamingNpc.diagnostics().npcName||'NPC')+' · tilt '+roamingNpc.diagnostics().tiltedDegrees.toFixed(0)+'° · '+info.anchors.length+' nodes · '+info.active+' active · '+(info.neckGrip?'neck grip':'no grip')+' · '+(info.feetGrip?'feet grip':'feet free')+' · tug '+Number(info.tugMultiplier).toFixed(2)+'× · '+(info.split?'separated':info.dual?'stretch '+info.stretchSeconds.toFixed(1)+'s':'running')+' · '+info.lungeCount+' lunges';lastHandStatus=timestamp;}}
     orbit.update();
     const progress=active?.getProgress()??0; // Growth and particle playback still render while static repeated floor meshes can rest.
     const version=active?.getRenderVersion?.()??0;if(active!==renderedActive||progress!==renderedProgress||version!==renderedVersion)previewDirty=true;
