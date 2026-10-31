@@ -389,8 +389,8 @@ async function run() {
   const pointerRecipePoint = bridgeHelpers.logicalPoint({clientX:shownRecipePoint[0],clientY:shownRecipePoint[1]});
   assert.deepEqual(pointerRecipePoint,localRecipePoint,
     'bridge and recipe touch inputs map back into the original saved rig-local frame');
-  assert(editor.includes('const [x0,y0] = bridgeVisual([box.x0,box.y0])'),
-    'saved recipe boxes are rendered under the parent transform in the mobile preview');
+  assert(editor.includes('const [x0,y0]=bridgeVisual([box.x0,box.y0],area)'),
+    'saved recipe boxes are rendered under their region and overall parent in the mobile preview');
   assert(editor.includes('ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f)'),
     'junction ghost preview must inherit the same parent affine as the final sprite');
   const sourcePoint = fixture.mounts[0].start;
