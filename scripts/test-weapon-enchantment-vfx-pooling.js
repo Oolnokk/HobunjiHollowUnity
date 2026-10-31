@@ -118,7 +118,7 @@ context.window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: 29 };
 const heldPlane = new THREE.Group();
 heldPlane.geometry = { parameters: { width: 0.4, height: 1.2 } };
 heldPlane.layers.mask = (1 | (1 << 29)) >>> 0;
-const heldEmitter = makeEmitter(heldPlane);
+const heldEmitter = makeEmitter(heldPlane, true); // Gameplay marks only the player's actively held weapon as immune to replay sprite-culling.
 updateEmitters(0.5, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.length > 0, 'held-plane emitter spawns');
 const heldMask = (1 | (1 << 29)) >>> 0; // Kept on base for maps with no selective ground replay, and on overlay when the held plane is replayed.
@@ -131,6 +131,11 @@ assert.ok(heldEmitter.particles.every(p => p.sprite.userData.hobunjiHeldOverlayP
 heldPlane.layers.mask = heldMask; // The replay renderer can register/repair the weapon after particles already exist.
 updateEmitters(0.016, snapshot, [heldEmitter]);
 assert.ok(heldEmitter.particles.every(p => p.sprite.layers.mask === heldMask), 'existing particles rejoin the held overlay after a late layer repair');
+const enemyOverlayPlane = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 1.2 } } }); // NPCs may be drawn in the held overlay, but must retain the performance cull.
+enemyOverlayPlane.layers.mask = heldMask;
+const enemyEmitter = makeEmitter(enemyOverlayPlane); // createFixedEmitter uses the default non-player mode.
+updateEmitters(0.5, snapshot, [enemyEmitter]);
+assert.ok(enemyEmitter.particles.length > 0 && enemyEmitter.particles.every(p => p.sprite.userData.hobunjiHeldOverlayParticle === false), 'NPC enchantment motes remain eligible for replay culling');
 const plainEmitter = makeEmitter(Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 1.2 } } }));
 updateEmitters(0.5, snapshot, [plainEmitter]);
 assert.ok(plainEmitter.particles.every(p => p.sprite.layers.mask === 1), 'particles on an ordinary plane stay on the default layer');
