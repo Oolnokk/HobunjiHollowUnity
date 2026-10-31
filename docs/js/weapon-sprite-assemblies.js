@@ -183,6 +183,7 @@
     states.set(root, state);
     records.add(state);
     const layers = config.layers || def?.spriteLayers || []; // Committed Tool Hub recipe overrides shape defaults when both are present.
+    const modularShaft = def?.modular && global.ModularWeapons?.getConfig?.().shafts?.[def.modular.shaft]; // Foundry shaft can own the entire living weapon and its VFX.
     const setup = async () => {
       const baseImg = plane.material?.map?.image;
       if (!baseImg?.width && !baseImg?.naturalWidth) return;
@@ -200,7 +201,30 @@
         staticMeshes.push(mesh);
         effects?.registerLayer(state, mesh, layer, texture.image); // Ordinary layered weapons support both recolor and author-defined material roles.
       }
-      if (layers.length || config.base) {
+      if (modularShaft?.fireAssembly === def?.shapeKey && config.base?.vfx?.type === 'fire') {
+        // A modular weapon's visible plane contains a composed metal head AND its shaft.
+        // Never paint that composite with the shaft's marker recolor or erase the attached heads.
+        const raw = await textureFor(THREE, modularShaft.sprite);
+        if (state.dead) return;
+        const image = raw.image;
+        const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+        if (!(width > 0 && height > 0)) throw new Error('Modular fire shaft sprite missing dimensions.');
+        const authored = global.ModularWeapons?.duplicateTransform?.(modularShaft.duplicateTransform)
+          || { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+        const sourceUnit = 0.5 / width; // Foundry composes its source shaft to the canonical 450x1204 reference frame.
+        const frameUnit = 0.5 / 450;
+        const carrier = new THREE.Group(); // Hidden geometry is unnecessary: this transform holds only the live flame sprites.
+        carrier.name = itemKey + '_modular_shaft_fire';
+        carrier.position.set(authored.x * frameUnit, -authored.y * frameUnit, 0);
+        carrier.scale.set(authored.scaleX, authored.scaleY * (1204 / 450) * (width / height), 1); // Fire and shaft use identical X/Y scaling and placement even for nonstandard source PNG sizes.
+        carrier.renderOrder = order + 0.005;
+        plane.add(carrier); state.owned.push(carrier);
+        const visiblePlane = state.plane;
+        state.plane = carrier; // Reuse the ordinary marker/fire emitter without recoloring the composite head's texture.
+        try { effects?.activateStatic(state, config.base, [], [], image, sourceUnit); }
+        finally { state.plane = visiblePlane; }
+        state.staticReady = true;
+      } else if (layers.length || config.base) {
         const rawBase = config.sprite || def?.sprite ? await textureFor(THREE, config.sprite || def.sprite) : null; // Read authored source pixels, not the live metal/plating canvas.
         if (state.dead) return;
         const source = rawBase?.image || baseImg;
@@ -535,7 +559,7 @@
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
-      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, clusters: fx.clusters?.length || 0, masteryRank: Number(s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
+      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
