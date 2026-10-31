@@ -141,9 +141,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     },
   };
   for (const zoneId of ZONES) {
-    assert.deepEqual(pora.__test.historicalHuntingCohortsForZone(zoneId), originalCohortsByTribe.porakaneki[zoneId],
+    assert.deepEqual(Array.from(pora.__test.historicalHuntingCohortsForZone(zoneId)), originalCohortsByTribe.porakaneki[zoneId],
       `${zoneId} Porakaneki cohorts exactly match the original seeded multi-camp generator`);
-    assert.deepEqual(omg.__test.historicalHuntingCohortsForZone(zoneId), originalCohortsByTribe.omgurku[zoneId],
+    assert.deepEqual(Array.from(omg.__test.historicalHuntingCohortsForZone(zoneId)), originalCohortsByTribe.omgurku[zoneId],
       `${zoneId} Omgurku cohorts exactly match the original seeded multi-camp generator`);
   }
 
