@@ -107,6 +107,91 @@
     return {mesh,pattern,layout};
   }
 
+
+  // A quarter-scale boulder field directly follows V50's real floor cells, instead
+  // of repeating a rectangular texture over voids and rooms at different levels.
+  function ruinMappedFloorShell(meta,seed,floorHeights=null){
+    const cols=Number(meta?.gridCols),rows=Number(meta?.gridRows),cellSize=Number(meta?.cellSize); // V50 grid bounds are the sole floor topology authority.
+    if(!Number.isInteger(cols)||!Number.isInteger(rows)||cols<1||rows<1||cols>512||rows>512||
+      !Number.isFinite(cellSize)||cellSize<=0||!Number.isFinite(Number(meta.worldWidth))||
+      !Number.isFinite(Number(meta.worldDepth))||!Array.isArray(meta.floorCells)||!meta.floorCells.length)
+      throw new Error('The Stone Age floor needs a valid V50 footprint.');
+    const baseY=Number(meta.floorSurfaceY)||0,step=Number(meta.plateauModel?.stepHeight)||.42; // Used only when the runtime's authoritative sampled plateau map is unavailable.
+    const regions=Array.isArray(meta.plateauModel?.regions)?meta.plateauModel.regions:[]; // Replays V50's floor elevation overlays in their authored order.
+    const floorYAt=(c,r)=>{
+      const registered=floorHeights?.get?.(c+','+r); // Runtime supplies the actual floor mesh's levelByCell, including overlapping plateaus.
+      if(Number.isFinite(registered))return registered;
+      let elevation=baseY;
+      for(const region of regions){
+        if(c>=Number(region.col)&&r>=Number(region.row)&&c<Number(region.col)+Number(region.w)&&r<Number(region.row)+Number(region.h)&&
+          Number.isFinite(Number(region.level)))elevation=baseY+Number(region.level)*step;
+      }
+      return elevation;
+    };
+    let salt=0;for(const letter of String(seed))salt=(Math.imul(salt,31)+letter.charCodeAt(0))>>>0; // Stable world-space boulder joints regardless of room order.
+    const noise=(c,r,axis)=>{
+      let x=(salt^Math.imul(c,374761393)^Math.imul(r,668265263)^Math.imul(axis,1274126177))>>>0;
+      x=Math.imul(x^(x>>>15),2246822519)>>>0;x=Math.imul(x^(x>>>13),3266489917)>>>0;
+      return ((x^(x>>>16))>>>0)/4294967296;
+    };
+    const grid=Array.from({length:rows},()=>Array(cols).fill(null)); // Absent cells remain absent geometry: pits and gaps cannot become decorative bridges.
+    const pieceByKey=new Map(),pieceHeights=[],heights=new Set(); // Same-height boulders never merge the sides of a dais or sunken tier.
+    const floorSeen=new Set(); // Reject malformed/duplicate cells instead of drawing duplicate colliding surfaces.
+    for(const point of meta.floorCells){
+      const c=Number(point?.[0]),r=Number(point?.[1]);
+      if(!Number.isInteger(c)||!Number.isInteger(r)||c<0||r<0||c>=cols||r>=rows||floorSeen.has(c+','+r))
+        throw new Error('The Stone Age floor contains an invalid or duplicate cell.');
+      floorSeen.add(c+','+r);
+      const height=floorYAt(c,r);if(!Number.isFinite(height))throw new Error('The generated floor elevation is invalid.');
+      heights.add(Math.round(height*1000));
+      let chosen=null,distance=Infinity; // A fixed nine-candidate local Voronoi search bounds work even for a large multi-room dungeon.
+      for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+        const cx=c+dx,cz=r+dz,jx=cx+.5+(noise(cx,cz,0)-.5)*.65,jz=cz+.5+(noise(cx,cz,1)-.5)*.65;
+        const d=(jx-c-.5)**2+(jz-r-.5)**2;
+        if(d<distance){distance=d;chosen=cx+','+cz;}
+      }
+      const idKey=chosen+'@'+Math.round(height*1000); // Separates neighboring rocks at different elevations while preserving deterministic seams.
+      if(!pieceByKey.has(idKey)){pieceByKey.set(idKey,pieceHeights.length);pieceHeights.push(height);}
+      grid[r][c]={type:'rock',rockKind:'undiggableBoulder',boulderId:'stone:'+pieceByKey.get(idKey),elevTier:height};
+    }
+    const terrain=root.ZoneTerrainFeatures;
+    const shell=terrain.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}});
+    const pieceIds=new Float32Array(shell.pos.length/3); // Texture charts remain isolated per irregular source boulder.
+    for(let i=0;i<shell.idx.length;i+=3){
+      const indices=[shell.idx[i],shell.idx[i+1],shell.idx[i+2]];
+      const c=Math.floor(indices.reduce((sum,index)=>sum+shell.pos[index*3],0)/3);
+      const r=Math.floor(indices.reduce((sum,index)=>sum+shell.pos[index*3+2],0)/3);
+      const cell=grid[r]?.[c];
+      if(!cell)throw new Error('Stone geometry escaped the V50 floor footprint.');
+      const id=Number(cell.boulderId.slice(6));
+      for(const index of indices)pieceIds[index]=id;
+    }
+    const reliefScale=.0625; // Quarter-size feature spacing and quarter-size source height, both applied once in the final geometry.
+    const minHeight=Math.min(...pieceHeights),maxHeight=Math.max(...pieceHeights);
+    for(let i=0;i<shell.pos.length;i+=3){
+      const y=pieceHeights[pieceIds[i/3]]; // The component's native floor level is never scaled towards another room's datum.
+      shell.pos[i]=shell.pos[i]*cellSize-Number(meta.worldWidth)/2;
+      shell.pos[i+1]=y-.03+(shell.pos[i+1]-y)*reliefScale;
+      shell.pos[i+2]=shell.pos[i+2]*cellSize-Number(meta.worldDepth)/2;
+    }
+    return {...shell,pieceIds,featureScale:.25,reliefScale,levelCount:heights.size,minHeight,maxHeight,
+      floorCells:floorSeen.size,voidCells:cols*rows-floorSeen.size,pieceCount:pieceHeights.length};
+  }
+
+  function ruinMappedFloorMesh(meta,seed,material,floorHeights){
+    const shell=ruinMappedFloorShell(meta,seed,floorHeights),geometry=new T.BufferGeometry(); // Single compact mesh spans only truly walkable cells at their exact V50 elevations.
+    geometry.setAttribute('position',new T.Float32BufferAttribute(shell.pos,3));
+    geometry.setAttribute('uv',new T.Float32BufferAttribute(shell.uv,2));
+    geometry.setAttribute('surfacePieceId',new T.Float32BufferAttribute(shell.pieceIds,1));
+    geometry.setIndex(compactFloorStoneIndices(shell.idx));geometry.computeVertexNormals();
+    const mesh=new T.Mesh(geometry,material);mesh.name='Cell-masked quarter-scale ruin stone';
+    mesh.userData={liveRootFloor:true,ruinPreviewRole:'floor',surfaceFoliageRole:'floors',
+      floorStyle:'cell-masked-wilderness-skipping-stones',stoneCount:shell.componentCount,
+      tileScale:.25,tileCopies:1,levels:shell.levelCount,voidCells:shell.voidCells};
+    mapRuinStoneSurfaces(mesh);
+    return {mesh,pattern:mesh,layout:null,stats:shell};
+  }
+
   function coverRecipes(templeRecipes,rootColor='#24211d'){
     if(!Array.isArray(templeRecipes)||!templeRecipes.length)throw new Error('Temple vegetation layers are required.');
     const recipes=templeRecipes.map(recipe=>({...recipe,...(recipe.kind==='roots'?{color:rootColor}:{}),
@@ -121,7 +206,7 @@
   }
 
   // The playable generator owns collision and puzzle footprints; this layer owns only scenery.
-  function buildRoom({root,meta,seed,roughness=.3,color='#363733'}){
+  function buildRoom({root,meta,seed,roughness=.3,color='#363733',floorHeights=null}){
     if(!root?.isObject3D||!meta)throw new TypeError('Stone Age scenery needs the generated V50 root and shell metadata.');
     if(!window.ProceduralFurniture?.createRockGeometry||!window.NaturalSurfaceMaterials?.naturalizeMesh||
         !window.HobunjiSurfaceStretchUV?.mapMesh||!window.ZoneTerrainFeatures?.buildUndiggableBoulderShellData)
@@ -161,16 +246,17 @@
         mapRuinStoneSurfaces(copy);
         toLocal.clone().multiply(mesh.matrixWorld).decompose(copy.position,copy.quaternion,copy.scale);
         model.add(copy);
-        nativeMeshes.push({mesh,visible:mesh.visible});
+        nativeMeshes.push({mesh,layerMask:mesh.layers.mask}); // Keep exact V50 layer masks for collision-safe teardown.
         pieces+=mesh.isInstancedMesh?mesh.count:1;
         if(isPillar)pillars++;else walls++;
       }
       if(!walls)throw new Error('Stone Age ruin has no generated walls to replace.');
-      const floor=ruinFloorMesh(meta,seed,stoneMaterial); // Same wilderness stone/4×4 tiling as the standalone editor.
+      const floor=floorHeights?ruinMappedFloorMesh(meta,seed,stoneMaterial,floorHeights):ruinFloorMesh(meta,seed,stoneMaterial); // Multiroom gameplay uses exact V50 cells; the standalone preview retains its original 4×4 room tiles.
       model.add(floor.mesh);
       model.updateWorldMatrix(true,true);
       const room={model,seed,stoneMaterial,floorPattern:floor.pattern,floorLayout:floor.layout,
-        floorY:Number(meta.floorSurfaceY)||0,walls,pillars,pieces,floorStones:floor.mesh.userData.stoneCount};
+        floorY:Number(meta.floorSurfaceY)||0,walls,pillars,pieces,floorStones:floor.mesh.userData.stoneCount,
+        floorStats:floor.stats||null}; // Multi-elevation diagnostics stay attached to the same authored room object.
       const activate=()=>{
         if(active||closed)return;
         for(const item of nativeMeshes)item.mesh.layers.disable(0); // Keep source visible/material alive for stillOwnedByScanRoot() collision; only suppress main-camera drawing.
@@ -210,10 +296,15 @@
       const floorTarget=new T.Group();floorTarget.add(room.floorPattern.clone(false));
       floor=await build(floorTarget,floorRecipes);
       compactFloorCover(floor.targetGrowth);
-      for(const offset of room.floorLayout.offsets){
-        const patch=floor.targetGrowth.clone(true);patch.name='Quarter-scale floor vegetation';
-        patch.scale.setScalar(room.floorLayout.scale);patch.position.set(...offset);
-        walls.targetGrowth.add(patch);patches.push(patch);
+      if(room.floorLayout){
+        for(const offset of room.floorLayout.offsets){
+          const patch=floor.targetGrowth.clone(true);patch.name='Quarter-scale floor vegetation';
+          patch.scale.setScalar(room.floorLayout.scale);patch.position.set(...offset);
+          walls.targetGrowth.add(patch);patches.push(patch);
+        }
+      }else{ // Multi-room geometry is already quarter-scale and cell-masked: never repeat it over missing cells.
+        const patch=floor.targetGrowth;
+        patch.name='Cell-masked floor vegetation';walls.targetGrowth.add(patch);patches.push(patch);
       }
       const stats={wallStrands:walls.getDiagnostics().shapeStrands,floorPatternStrands:floor.getDiagnostics().shapeStrands,
         copies:patches.length,visibleStrands:walls.getDiagnostics().shapeStrands+floor.getDiagnostics().shapeStrands*patches.length};
@@ -234,6 +325,7 @@
   }
   window.StoneAgeRuinScenery=Object.freeze({
     ruinRockGeometry,makeRuinStoneMaterial,mapRuinStoneSurfaces,ruinFloorShell,ruinFloorTileLayout,
+    ruinMappedFloorShell,ruinMappedFloorMesh,
     compactFloorStoneIndices,floorStrandRingIndices,compactFloorCover,ruinFloorMesh,coverRecipes,buildRoom,prepareCover,
   });
 })(typeof window !== 'undefined' ? window : globalThis);
