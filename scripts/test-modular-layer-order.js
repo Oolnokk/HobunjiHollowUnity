@@ -25,7 +25,9 @@ async function run() {
         },
         save() { canvas.operations.push('save'); }, restore() { canvas.operations.push('restore'); },
         rect() {}, clip() { canvas.operations.push('clip'); }, beginPath() {},
-        scale() {}, translate() {}, transform() {}
+        scale(x,y) { canvas.operations.push('scale:' + x + ',' + y); },
+        translate(x,y) { canvas.operations.push('translate:' + x + ',' + y); },
+        transform(a,b,c,d,e,f) { canvas.operations.push('head-transform:' + [a,b,c,d,e,f].join(',')); }
       };
       canvas.getContext = () => ctx;
       canvases.push(canvas);
@@ -74,6 +76,27 @@ async function run() {
   api.replace(multi);
   assert.deepEqual(paints(await api.compose('bshuakauitl', 'warhammer')),
     ['paint:head', 'paint:head', 'paint:haft'], 'Manual per-pair override puts both sleeve heads below the shaft.');
+
+  // Cloned rig adjustments must affect fitted HEAD primitives, but never the shaft drawing
+  // or its original fuel-marker source (living flames have their own stationary carrier).
+  const resetStaff = JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG)); // Reset known source setup before the rig-transform test.
+  api.replace(resetStaff);
+  const staffIdentity = await api.compose('hachutuTorchStaff', 'warhammer'); // Original head fit and fixed nonmetal shaft.
+  const initialHeadTransforms = staffIdentity.operations.filter(op => op.startsWith('head-transform:'));
+  assert.equal(initialHeadTransforms.length, 2, 'Torch-Staff uses both mirrored B\'shuakauitl sleeve mounts');
+  const staffEdited = JSON.parse(JSON.stringify(api.getConfig()));
+  staffEdited.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.75, scaleY: 0.65, x: 125, y: -200 }; // Intentionally large attachment-only motion.
+  api.replace(staffEdited);
+  const transformed = await api.compose('hachutuTorchStaff', 'warhammer');
+  assert.deepEqual(paints(transformed), paints(staffIdentity), 'rig movement never removes or duplicates the staff PNG or the heads');
+  assert.notDeepEqual(transformed.operations.filter(op => op.startsWith('head-transform:')), initialHeadTransforms,
+    'fitted head primitive matrices must follow the transformed tang/sleeve rig');
+  const globalFrameTransformCount = transformed.operations.filter(op => op.startsWith('scale:') || op.startsWith('translate:')).length;
+  assert.equal(globalFrameTransformCount, 2,
+    'shaft rendering only uses output-frame scale/translation, with no duplicate-rig transform on the shaft PNG');
+  assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
+    'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
+  assert(transformed.modularNonMetalMask instanceof Uint8Array, 'the fixed shaft still preserves its independent nonmetal recolor mask');
 
   // Older imports inherit all committed, manually authored pair choices.
   api.replace({ schema: 'hobunji_modular_weapons.v1', heads: {}, shafts: {} });
