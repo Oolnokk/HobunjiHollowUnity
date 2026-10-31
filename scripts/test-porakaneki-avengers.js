@@ -393,5 +393,30 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert([...new Set(pora.reservedCampChunks(blockedZoneId))].every(chunk => !new Set(omg.reservedCampChunks(blockedZoneId)).has(chunk)),
     'fallback camps still enforce exclusive stream chunks');
 
+  // A casualty must remove only that cohort's party, leaving the other
+  // independent patrols untouched. When the existing replacement timer
+  // restores the missing hunter, its original party reforms at the same camp.
+  const casualtyZoneId = ZONES[1]; // Omgurku has a two-hunter last cohort here in the fixed cycle-1 fixture.
+  zoneLayouts.set(casualtyZoneId, makeLayout()); // Fresh layout clears earlier battle losses without increasing physical camp count.
+  pora.ensureZoneState(casualtyZoneId);
+  omg.ensureZoneState(casualtyZoneId);
+  currentArea = 'town'; // Keep test casualties abstract so slayHunter exercises normal off-screen replacement.
+  tick(0.21);
+  const intactCohorts = omg.debugSnapshot().zones[casualtyZoneId].camps.find(camp => camp.kind === 'small').cohortSizes; // Expected membership after regeneration.
+  const casualtyCohort = intactCohorts.findIndex((size, index) => size === 2 && index > 0); // A minimum-sized patrol with no spare members.
+  assert(casualtyCohort >= 0, 'the test fixture includes an independent two-member Omgurku party');
+  const victim = omg.travellingHunters(casualtyZoneId, 0).find(hunter => hunter.cohortIndex === casualtyCohort); // A real resident rather than an Avenger or cloned test-only character.
+  assert(victim && omg.slayHunter(victim, 'independent-party-regression'), 'one cohort hunter can die off-screen');
+  tick(0.21);
+  const reducedParties = omg.debugSnapshot().zones[casualtyZoneId].camps.find(camp => camp.kind === 'small').huntingParties;
+  assert.equal(reducedParties.length, intactCohorts.length - 1, 'only the affected two-hunter party dissolves after a death');
+  assert(reducedParties.every(party => party.cohortIndex !== casualtyCohort), 'other cohorts do not borrow the surviving hunter');
+  day += 2;
+  tick(0.21);
+  const revivedCamp = omg.debugSnapshot().zones[casualtyZoneId].camps.find(camp => camp.kind === 'small');
+  assert.equal(revivedCamp.huntingParties.length, intactCohorts.length, 'a replaced hunter restores the missing independent patrol');
+  assert.equal(revivedCamp.residents, intactCohorts.reduce((sum, n) => sum + n, 0), 'off-screen casualty does not change the target total population');
+  assert.equal(omg.debugSnapshot().zones[casualtyZoneId].smallCampCount, 1, 'casualty replacement never builds an additional physical camp');
+
   console.log('Porakaneki Avengers regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
