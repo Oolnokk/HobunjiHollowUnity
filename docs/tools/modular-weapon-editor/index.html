@@ -29,7 +29,7 @@
 .cut-stage.float-panel.has-max{max-width:none;justify-self:stretch}
 @media(max-width:760px){.float-panel.has-max{max-height:65vh}}
 </style></head><body>
-<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: companion tangs at every eye mount, explicit per-pair layer order, and automatic migration of earlier editor drafts.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
+<header><h1>Modular Weapon Attachment Editor</h1><div>Latest change: complete shaft duplication with independent X/Y size and position, including copied mounting rules and live Torch-Staff fire in gameplay.</div><div class="toolbar"><button id="random" type="button">Random valid combination</button><button id="export">Export game config</button><button id="import">Import config</button><button id="reset">Reset draft</button><input id="file" type="file" accept=".json,.js" hidden></div><p id="status" role="status">Loading…</p></header>
 <main><div class="pair-area"><section><h2>Directed head and haft mounts</h2>
 <label>Haft <select id="shaft"></select></label><label>Head <select id="head"></select></label>
 <div class="panel" id="shaft-duplicate-panel">
@@ -44,7 +44,7 @@
 <label>X translation (source px) <input id="duplicate-x" type="number" min="-2400" max="2400" step="1"></label>
 <label>Y translation (source px) <input id="duplicate-y" type="number" min="-2400" max="2400" step="1"></label>
 </div>
-<p id="duplicate-note" aria-live="polite">Choose a duplicated shaft to edit its full transform.</p>
+<p id="duplicate-note" aria-live="polite">Choose a duplicated shaft to edit its full transform.</p><p>The combined preview shows the assembled shaft and heads; its live world-up flame particles render in gameplay and the Complex Tool Visuals editor rather than being baked into the modular PNG.</p>
 </div>
 <label><input id="allow-shaft" type="checkbox"> Allow selected haft in Foundry after calibration</label>
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
