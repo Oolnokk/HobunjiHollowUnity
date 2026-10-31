@@ -31,8 +31,8 @@ const ZONES = [
 
 assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v3');
 assert.deepEqual(cfg.wildernessZones, ZONES);
-assert.equal(cfg.smallCamps.minPerZone, 2);
-assert.equal(cfg.smallCamps.maxPerZone, 4);
+assert.equal(cfg.smallCamps.minPerZone, 1);
+assert.equal(cfg.smallCamps.maxPerZone, 1);
 assert.equal(cfg.smallCamps.minResidents, 2);
 assert.equal(cfg.smallCamps.maxResidents, 4);
 assert.equal(cfg.chiefCamp.generatedResidents, 6);
@@ -81,7 +81,7 @@ assertTentsFaceFire(smallLocale, 'small camp');
 assertTentsFaceFire(chiefLocale, 'chief camp');
 
 assert.deepEqual(smallLocale.placement.allowedZones, ZONES);
-assert.equal(smallLocale.placement.maxInstances, 4);
+assert.equal(smallLocale.placement.maxInstances, 1);
 assert.equal(smallLocale.meta.namedNpcs, false);
 assert.deepEqual(chiefLocale.placement.allowedZones, ZONES);
 assert.equal(chiefLocale.placement.maxInstances, 1);
@@ -389,13 +389,13 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(debug.fullSimulationRadiusTiles, 18);
   assert.equal(debug.fullSimulationReleaseRadiusTiles, 24);
   assert.equal(Object.keys(debug.zones).length, 4);
-  assert(debug.totalSmallCamps >= 7 && debug.totalSmallCamps <= 13, 'three ordinary 2-4 camp zones plus the forced minimum-recovery zone produce 7-13 little camps total');
+  assert.equal(debug.totalSmallCamps, ZONES.length, 'each wilderness map has exactly one Porakaneki hunting camp, including minimum-recovery zones');
   for (const zoneId of ZONES) {
     if (zoneId === 'map_northern_cliffs') {
       assert.equal(debug.zones[zoneId].smallCampCount, 1, `${zoneId} recovers to exactly the hard one-camp minimum after all ordinary placements fail`);
       assert(debug.zones[zoneId].camps.some(camp => camp.id === 'porakaneki_small_map_northern_cliffs_minimum'), 'minimum recovery creates the dedicated fallback camp instance');
     } else {
-      assert(debug.zones[zoneId].smallCampCount >= 2 && debug.zones[zoneId].smallCampCount <= 4, `${zoneId} keeps its normal 2-4 little camps`);
+      assert.equal(debug.zones[zoneId].smallCampCount, 1, `${zoneId} has exactly one ordinary hunting camp`);
     }
     assert.equal(debug.zones[zoneId].chiefReserved, true, `${zoneId} reserves a valid future chief-camp site`);
     for (const camp of debug.zones[zoneId].camps.filter(camp => camp.kind === 'small')) {
@@ -712,14 +712,10 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.deepEqual(JSON.parse(JSON.stringify(api.__test.streamChunkOfTile(16, 0))), { x: 1, y: 0 });
 
   const easternBefore = api.debugSnapshot().zones.map_eastern_mire.smallCampCount;
-  const removedCampId = api.reduceHuntingCampsForBandit('map_eastern_mire');
-  assert(removedCampId, 'bandit placement may sacrifice one surplus Porakaneki hunting camp when chunk space is constrained');
-  let easternAfter = api.debugSnapshot().zones.map_eastern_mire;
-  assert.equal(easternAfter.smallCampCount, easternBefore - 1, 'only the hunting-camp count is reduced');
-  while (api.reduceHuntingCampsForBandit('map_eastern_mire')) {}
-  easternAfter = api.debugSnapshot().zones.map_eastern_mire;
-  assert.equal(easternAfter.smallCampCount, 1, 'repeated bandit pressure bottoms out at one Porakaneki hunting camp in the zone');
-  assert.equal(api.reduceHuntingCampsForBandit('map_eastern_mire'), null, 'the protected last hunting camp cannot be sacrificed');
+  assert.equal(easternBefore, 1);
+  assert.equal(api.reduceHuntingCampsForBandit('map_eastern_mire'), null, 'bandit placement cannot sacrifice the only Porakaneki hunting camp');
+  const easternAfter = api.debugSnapshot().zones.map_eastern_mire;
+  assert.equal(easternAfter.smallCampCount, 1, 'the one-hunting-camp cap and protected floor remain intact');
   assert.equal(easternAfter.chiefReserved, true, 'future chief-camp reservation is never sacrificed for bandit placement');
 
   console.log('Porakaneki distributed seasonal camp regression checks passed.');
