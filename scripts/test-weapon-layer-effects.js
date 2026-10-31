@@ -182,7 +182,7 @@ assert.equal(staffFx.anchors.length, 2, 'staff has two independent scaled groups
 assert.deepEqual(staffFx.anchors.map(anchor => anchor.group.scale.x), [4,4]);
 assert(Math.abs(staffFx.anchors[0].y - .018) < 1e-6);
 assert(Math.abs(staffFx.anchors[1].y + .018) < 1e-6);
-assert.equal(staffFx.group.scale.x, undefined, 'the overall weapon and its attachment points are not scaled');
+assert.equal(staffFx.group.scale.x, 1, 'the emitter root is not scaled; only individual tip pivots are');
 api.stepFire(staffState, .1);
 assert(staffFx.particles.length > 0);
 assert(staffFx.particles.every(p => Math.abs(p.size - .0044) < 1e-6), 'rank 0 uses small individual motes in the parent geometry scale');
@@ -202,7 +202,7 @@ assert(staffFx.particles.length > 0);
 assert(staffFx.particles.every(p => Math.abs(p.size - .02) < 1e-6), 'rank 5 uses the original sharp torch-flail particle size locally');
 assert(staffFx.particles.every(p => Math.abs(p.sprite.parent.scale.x * p.size - .08) < 1e-6), 'rank 5 renders larger by scaling the whole flame assembly, not additive glow strength');
 assert(staffFx.particles.some(p => p.y !== 0), 'mastery 5 retains nonzero fuel spread instead of stacking flames exactly on one pixel');
-assert(staffFx.particles.every(p => Math.abs(p.y) < .001), 'local coordinates stay near each ignition pivot');
+assert(staffFx.particles.every(p => Math.abs(p.y) < .001), 'recorded local ignition coordinates remain near each tip pivot');
 api.dispose(staffState);
 assert.equal(staffFx.group.parent, null);
 assert.match(game, /hachutuTorchStaff: \{[^\n]*shapeKey: 'hachutuTorchStaff'/);
