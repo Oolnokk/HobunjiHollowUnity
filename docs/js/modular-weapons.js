@@ -102,23 +102,32 @@
       shade: finite(raw.shade, 0.3, 0, 1), seed: Math.round(finite(raw.seed, 1, 0, 2147483647)) };
   }
   function rigBridgeOperations(shaft, strokes) {
-    const layout = shaftRigTransform(shaft); // Saved manual strokes and recipe steps are authored in the source rig's local coordinates.
-    const radiusScale = Math.sqrt(layout.scaleX * layout.scaleY); // Conservative scalar footprint for existing round smudge/brush kernels.
-    return expandOps(strokes).map(op => {
-      if (op.junction) return { ...op, _rigJunction: true }; // Draw junction PNG through the exact parent affine, preserving nonuniform X/Y scale.
-      if (!op.points) return { ...op }; // Clean/style/shading/revert markers act on the current changed region, not on a coordinate.
-      return {
-        ...op,
-        points: op.points.map(([x, y]) => {
-          const p = duplicatePoint({ x, y }, layout);
-          return [p.x, p.y];
+    // A placed recipe is one selectable child group: every expanded step inherits
+    // the area containing its authored placement box, not each individual point.
+    const expanded = strokes.flatMap(saved => {
+      const centroid = saved.recipe && saved.box ? {x:(saved.box.x0+saved.box.x1)/2,y:(saved.box.y0+saved.box.y1)/2} : null;
+      return expandOps([saved]).map(op => ({ op, groupRegion:centroid && regionAt(shaft,centroid) }));
+    });
+    const parent=shaftRigTransform(shaft);
+    return expanded.map(({op,groupRegion}) => {
+      const center = op.junction ? {x:op.x,y:op.y} : op.points?.length
+        ? {x:op.points.reduce((n,p)=>n+p[0],0)/op.points.length,
+           y:op.points.reduce((n,p)=>n+p[1],0)/op.points.length} : null;
+      const region=groupRegion || (center && regionAt(shaft,center));
+      const area=region ? duplicateTransform(region.transform) : duplicateTransform();
+      const sx=parent.scaleX*area.scaleX,sy=parent.scaleY*area.scaleY;
+      const mean=Math.sqrt(sx*sy);
+      if (op.junction) return { ...op, _rigJunction:true, _rigRegionId:region?.id||null };
+      if (!op.points) return { ...op }; // Region cleanup/revert markers operate on their changed pixels in order.
+      return { ...op, _rigRegionId:region?.id||null,
+        points:op.points.map(([x,y])=>{
+          const p=rigPoint(shaft,{x,y},region);return [p.x,p.y];
         }),
-        r: op.r * radiusScale,
-        rX: op.r * layout.scaleX, rY: op.r * layout.scaleY, // Preserve nonuniform radius for fill masks.
-        ...(op.smoothing != null ? { smoothing: op.smoothing * radiusScale } : {}),
-        ...(op.speck != null ? { speck: op.speck * radiusScale * radiusScale } : {}),
+        r:op.r*mean,rX:op.r*sx,rY:op.r*sy,
+        ...(op.smoothing!=null?{smoothing:op.smoothing*mean}:{}),
+        ...(op.speck!=null?{speck:op.speck*mean*mean}:{}),
       };
-    }); // Transform the expanded recipe's children, never mutate its original saved steps.
+    }); // Saved operations and shared recipes stay unchanged when their area is transformed.
   }
   function applyBridges(canvas, frame, bridges, junctionImages = {}, shaft = null) {
     // One-time pass when a pair is composed (the result is cached with the canvas), never per frame.
@@ -171,8 +180,10 @@
         ctx.putImageData(image, 0, 0);
         ctx.save(); ctx.setTransform(sx, 0, 0, sy, -frame.left * sx, -frame.top * sy);
         if (shaft) {
-          const parent = attachmentRig(shaft).parent; // Junctions are true graphic children; Canvas parent handles nonuniform scaling.
+          const parent = attachmentRig(shaft).parent; // Junction is nested under the overall parent and optional selected area.
           ctx.transform(parent.a, parent.b, parent.c, parent.d, parent.e, parent.f);
+          const area=(shaft.rigRegions||[]).find(region=>region.id===stroke._rigRegionId);
+          if (area) {const t=regionAffine(area);ctx.transform(t.a,t.b,t.c,t.d,t.e,t.f);}
         }
         drawJunction(ctx, piece, stroke); ctx.restore();
         image = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -509,8 +520,10 @@
         const angle = op.rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
         for (const x of [-halfW, halfW]) for (const y of [-halfH, halfH]) {
           const localX = op.x + cos * x - sin * y, localY = op.y + sin * x + cos * y;
-          const px = parent.a * localX + parent.c * localY + parent.e;
-          const py = parent.b * localX + parent.d * localY + parent.f;
+          const region=(shaft.rigRegions||[]).find(region=>region.id===op._rigRegionId);
+          const matrix=region ? multiplyAffine(parent,regionAffine(region)) : parent;
+          const px = matrix.a * localX + matrix.c * localY + matrix.e;
+          const py = matrix.b * localX + matrix.d * localY + matrix.f;
           left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
         }
       } else if (op.points) {
