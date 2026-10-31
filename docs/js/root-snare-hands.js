@@ -238,7 +238,7 @@
         if(entry.state==='retracting'){
           entry.progress=clamp(entry.progress-dt*settings.retractSpeed,0,1);
           hand.draw(dt,entry.progress,targetPoint,entry.reach,0,true);
-          if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;}
+          if(entry.progress<=0){entry.state='dormant';entry.cooldown=.6;hand.group.visible=false;} // A manually released captive must not leave an exposed palm knot.
         }else if(entry.state==='pulling'&&caught?.entry===entry){
           // The entire arm retreats along its own branch path while the hand
           // stays closed; the captive is lerped into that moving palm.
