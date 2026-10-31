@@ -492,7 +492,7 @@
   function centerForInstance(instance) {
     return instance ? { col: instance.site.x + instance.site.w * 0.5, row: instance.site.y + instance.site.h * 0.5 } : null;
   }
-  function makeCamp(zoneState, instance, kind, residentTarget, seedLabel) {
+  function makeCamp(zoneState, instance, kind, residentTarget, seedLabel, cohortSizes = [residentTarget]) {
     return {
       id: instance.id,
       kind,
@@ -502,9 +502,10 @@
       props: propsForInstance(zoneState.view, instance),
       center: centerForInstance(instance),
       residentTarget,
+      cohortSizes, // Former per-camp resident rolls, now sharing this one physical camp; consumed by resident assignment and independent parties.
       rng: seededRng(`${generationYear()}:${zoneState.zoneId}:${seedLabel}:residents`),
       hunters: [],
-      huntingParty: null, // One small surface hunting group per camp; it follows a shared random den-to-den patrol route.
+      huntingParties: [], // One independent den patrol for each former camp cohort; a chief camp still has one.
       huntingPartySeq: 0,
       propMeshes: new Map(),
       benchStationsRegistered: false,
@@ -552,6 +553,15 @@
     const small = cfg?.smallCamps || {};
     const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-${campIndex}:population`);
     return integerRoll(rng, num(small.minResidents, 2), num(small.maxResidents, 4));
+  }
+  function historicalHuntingPartyCountForZone(zoneId) {
+    const small = cfg?.smallCamps || {};
+    const rng = seededRng(`${generationYear()}:${zoneId}:${KEY}-small-count`); // Exact former 2–4 physical-camp seed now determines independent hunting cohorts.
+    return integerRoll(rng, num(small.huntingPartiesMinPerZone, 2), num(small.huntingPartiesMaxPerZone, 4));
+  }
+  function historicalHuntingCohortsForZone(zoneId) {
+    const count = historicalHuntingPartyCountForZone(zoneId); // Recreate each old camp's original population roll, with no extra physical stamps.
+    return Array.from({ length: count }, (_, index) => smallResidentCount(zoneId, index));
   }
 
   function earlierTribes() {
@@ -622,7 +632,9 @@
       instanceId,
     });
     if (!instance) return null;
-    const camp = makeCamp(zoneState, instance, 'small', smallResidentCount(zoneId, campIndex), `small-${minimumFallback ? 'minimum' : campIndex}`);
+    const cohortSizes = historicalHuntingCohortsForZone(zoneId); // Recover the former map-wide total instead of only the first camp's residents.
+    const camp = makeCamp(zoneState, instance, 'small', cohortSizes.reduce((sum, size) => sum + size, 0),
+      `small-${minimumFallback ? 'minimum' : campIndex}`, cohortSizes);
     zoneState.smallCamps.push(camp);
     state.stamps += 1;
     return camp;
@@ -1239,10 +1251,19 @@
   function makeResident(camp, id, rng, extra = null) {
     const index = camp.hunters.length;
     const spawn = randomCampPoint(camp, rng);
+    let cohortIndex = null; // Assign each ordinary hunter to its former camp cohort; Avengers are excluded below.
+    if (index < camp.residentTarget) {
+      let offset = index; // Position in the combined resident roll, used to find the cohort's original size.
+      for (let i = 0; i < camp.cohortSizes.length; i++) {
+        if (offset < camp.cohortSizes[i]) { cohortIndex = i; break; }
+        offset -= camp.cohortSizes[i];
+      }
+    }
     camp.hunters.push({
       id,
       index,
       camp,
+      cohortIndex,
       weaponShape: weaponRoll(rng),
       x: spawn.col,
       y: spawn.row,
