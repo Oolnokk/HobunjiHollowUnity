@@ -453,6 +453,37 @@
     return t * t * (3 - 2 * t);
   }
 
+  // 'mask' head gate: the opaque pixels of a head-only render (head sprite plus every equipped head cosmetic), box-averaged so the cutoff stays
+  // smooth and slightly dilated. Averages come from an integral image (four reads per lookup). `mirror` serves the rear mesh, whose texture
+  // space is flipped relative to the front render.
+  function buildHeadMaskWeights(maskCanvas, mirror = false, alphaThreshold = 12) {
+    const width = maskCanvas?.width, height = maskCanvas?.height;
+    if (!maskCanvas || !width || !height) return null;
+    let data;
+    try { data = maskCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data; }
+    catch (error) { return null; }
+    const stride = width + 1;
+    const integral = new Uint32Array(stride * (height + 1));
+    for (let y = 0; y < height; y++) {
+      let row = 0;
+      for (let x = 0; x < width; x++) {
+        if (data[(y * width + x) * 4 + 3] > alphaThreshold) row++;
+        integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + row;
+      }
+    }
+    const radius = Math.max(2, Math.round(width * .03));
+    return {
+      pixelWidth: width, pixelHeight: height,
+      weightAtPixel(pixelX, pixelY) {
+        const x = Math.round(mirror ? width - pixelX : pixelX), y = Math.round(pixelY);
+        const x0 = Math.max(0, x - radius), x1 = Math.min(width, x + radius + 1), y0 = Math.max(0, y - radius), y1 = Math.min(height, y + radius + 1);
+        if (x1 <= x0 || y1 <= y0) return 0;
+        const sum = integral[y1 * stride + x1] - integral[y0 * stride + x1] - integral[y1 * stride + x0] + integral[y0 * stride + x0];
+        return smoothstep01(sum / ((x1 - x0) * (y1 - y0)) / .4);
+      },
+    };
+  }
+
   // Shared by rendered vertices and CPU landmarks so head scaling agrees.
   function headScaleGateAtPixel(pixelX, headBoundsPx) {
     if (!headBoundsPx) return 1;
@@ -468,6 +499,7 @@
 
   function headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turnWeight) {
     if (!bounds) return turnWeight;
+    if (bounds.headMask) return bounds.headMask.weightAtPixel(pixelX, (modelHeight / 2 - y) / modelHeight * bounds.headMask.pixelHeight); // Mask gate: head scale follows the head and its equipped cosmetics.
     // The whole bare skull (and its mask) has one size. The broad head-turn
     // blend can still reach the shoulders, but scale fades only BELOW the
     // skull, with a grid-cell margin so its last painted row is fully rigid.
@@ -681,15 +713,21 @@
     return geometry;
   }
 
-  // Head-gate modes: 'tight' (head scale ends just below the skull, so a wide hood, shoulders and vest follow body width/height) and 'legacy'
-  // (the original wide box with a long fade). Mashtzarr and Mammakhbuur need the legacy box; every other species uses the tight one.
+  // Head-gate modes: 'tight' (head scale ends just below the skull, so a wide hood, shoulders and vest follow body width/height), 'legacy'
+  // (the original wide box with a long fade) and 'mask' (opt-in: the head plus its equipped head cosmetics, from a head-only render).
+  // Mashtzarr and Mammakhbuur default to the legacy box; every other species defaults to the tight one.
   const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur']);
   function defaultHeadGateFor(speciesId) {
     return LEGACY_HEAD_GATE_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-')) ? 'legacy' : 'tight';
   }
-  function headGateBounds(bounds, mode, speciesId) {
+  function headGateBounds(bounds, mode, speciesId, maskCanvas = null, mirror = false) {
     if (!bounds) return bounds;
-    return (mode || defaultHeadGateFor(speciesId)) === 'tight' ? { ...bounds, tightGate: true } : bounds; // The mode rides on the bounds so the renderer and every landmark resolver agree.
+    const gate = mode || defaultHeadGateFor(speciesId);
+    if (gate === 'mask') {
+      const headMask = buildHeadMaskWeights(maskCanvas, mirror);
+      return headMask ? { ...bounds, headMask } : { ...bounds, tightGate: true }; // An unreadable mask render falls back to the tight box.
+    }
+    return gate === 'tight' ? { ...bounds, tightGate: true } : bounds; // The mode rides on the bounds so the renderer and every landmark resolver agree.
   }
 
   function upgradePlaneToAutoNeckSkin(THREE, plane, pivotNormalized, mirrorX, fallbackDimensions = {}) {
@@ -702,11 +740,12 @@
     const pivotLocalY = (0.5 - pivotNormalized.y) * planeHeight;
     const sourceCanvas = fallbackDimensions.sourceCanvas;
     const detectedHead = sourceCanvas ? detectHeadRigPixels(fallbackDimensions.headCanvas, sourceCanvas, 12) : null;
-    const headBounds = headGateBounds(detectedHead?.boundsPx, fallbackDimensions.headGate, fallbackDimensions.speciesId);
+    const headBounds = headGateBounds(detectedHead?.boundsPx, fallbackDimensions.headGate, fallbackDimensions.speciesId, fallbackDimensions.headMaskCanvas, mirrorX);
     const pixelWidth = sourceCanvas?.width || 1;
     const weightedGeometry = buildSkinnedPlaneGeometry(THREE, planeWidth, planeHeight,
       {x:pivotLocalX,y:pivotLocalY,z:0}, {
         frontOnly:true, pixelWidth, pixelHeight:sourceCanvas?.height || 1,
+        ...(headBounds?.headMask ? { segmentsX: 48, segmentsY: 60 } : {}), // A finer grid keeps the mask-edge stretch band thin when body width is large.
         headBoundsPx:headBounds && mirrorX ? {...headBounds,left:pixelWidth-headBounds.right,right:pixelWidth-headBounds.left} : headBounds,
       });
     // The converted hostile keeps separate front/rear meshes. Reuse the exact

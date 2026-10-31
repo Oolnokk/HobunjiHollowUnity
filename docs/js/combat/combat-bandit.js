@@ -486,6 +486,12 @@
     // walkers (detectNeckPivotPx's full-body alpha-band scan), rather than
     // requiring one to be painted per species/gender.
     characterBuildStatus.stage = 'neck-rig';
+    let headMaskCanvas = null; // Only the opt-in 'mask' gate needs a head + head-cosmetics alpha render.
+    if (roster.headGate === 'mask') {
+      headMaskCanvas = document.createElement('canvas');
+      headMaskCanvas.width = headMaskCanvas.height = PORTRAIT_SIZE;
+      await window.NpcAvatarPreview.renderProfileToCanvas(headMaskCanvas, profile, { forceEyesOpen: true, headCosmeticsOnly: true });
+    }
     const headGate = roster.headGate; // An enemy rule's gate; unset uses the rig's species default (PNGPlaneAvatar.defaultHeadGateFor): tight, or legacy for Mashtzarr/Mammakhbuur.
     const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
       || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
@@ -493,10 +499,10 @@
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, speciesId: roster.appearance?.speciesId })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, speciesId: roster.appearance?.speciesId })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -547,7 +553,7 @@
         neckJoint:frontNeckSkin.neckBone, headScaleJoint:frontNeckSkin.headScaleBone,
         neckLocal:{...frontNeckSkin.neckBone.position},
         headCentroidPx:headPixels?.centroidPx || neckPivotPx,
-        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId) || headPixels?.boundsPx || null,
+        headBoundsPx:window.PNGPlaneAvatar.headGateBounds?.(headPixels?.boundsPx, headGate, roster.appearance?.speciesId, headMaskCanvas, false) || headPixels?.boundsPx || null,
       }; // Head-relative poses (including blowguns) now share the player's real mouth/head frame.
     }
     group.userData.skullPixelsTransparent = transparentLichSkull; // Mobile Pixel Probe/Workshop can verify that invisibility used a cutout rather than a scaled-away head.

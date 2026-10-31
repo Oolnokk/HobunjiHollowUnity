@@ -19,7 +19,7 @@ function extract(source, name) {
   return source.slice(start, end);
 }
 const context = vm.createContext({});
-for (const name of ['smoothstep01', 'headScaleGateAtPixel', 'headScaleWeightAt', 'defaultHeadGateFor', 'headGateBounds']) vm.runInContext(extract(avatarSource, name), context);
+for (const name of ['smoothstep01', 'buildHeadMaskWeights', 'headScaleGateAtPixel', 'headScaleWeightAt', 'defaultHeadGateFor', 'headGateBounds']) vm.runInContext(extract(avatarSource, name), context);
 
 
 const bounds = { left: 46, right: 154, top: 51, bottom: 148 };
@@ -46,6 +46,24 @@ assert.equal(context.headGateBounds(bounds, 'legacy', 'harlyao-skeleton'), bound
 assert.ok(context.headGateBounds(bounds, 'tight', 'mashtzarr').tightGate, 'an explicit tight wins');
 assert.equal(context.headGateBounds(null, 'tight', 'x'), null);
 
+// Opt-in mask gate: the opaque pixels of a head-only render (head plus equipped head cosmetics) drive head scale, with a thin smooth edge.
+const size = 100;
+const pixels = new Uint8ClampedArray(size * size * 4);
+for (let y = 30; y < 70; y++) for (let x = 20; x < 80; x++) pixels[(y * size + x) * 4 + 3] = 255; // A skull plus a wide hood.
+const canvas = { width: size, height: size, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
+const mask = context.buildHeadMaskWeights(canvas);
+assert.equal(mask.weightAtPixel(50, 50), 1, 'head interior is head-weighted');
+assert.equal(mask.weightAtPixel(25, 50), 1, 'an equipped hood counts as head');
+assert.equal(mask.weightAtPixel(5, 50), 0, 'torso outside the head render is body-weighted');
+assert.equal(mask.weightAtPixel(50, 95), 0, 'a vest below the head render is body-weighted');
+const rim = [84, 85, 86, 88, 92].map(x => mask.weightAtPixel(x, 50));
+assert.ok(rim.every((w, i) => i === 0 || w <= rim[i - 1]) && rim.at(-1) === 0, 'the edge fades monotonically to the body');
+assert.equal(context.buildHeadMaskWeights(canvas, true).weightAtPixel(100 - 50, 50), 1, 'the rear mesh samples the mirrored mask');
+const maskBounds = context.headGateBounds(bounds, 'mask', 'harlyao-skeleton', canvas, false);
+assert.equal(context.headScaleWeightAt(0, 0, 1, 50, maskBounds, 0), mask.weightAtPixel(50, 50), 'mask bounds drive headScaleWeightAt');
+assert.ok(context.headGateBounds(bounds, 'mask', 'harlyao-skeleton', { width: 0 }).tightGate, 'an unreadable mask render falls back to the tight box');
+assert.ok(!context.headGateBounds(bounds, undefined, 'harlyao-skeleton', canvas).headMask, 'the mask is never a default');
+
 // Rule: enum only, migrated from the first checkbox, copied onto the rolled roster.
 const win = {};
 vm.runInNewContext(fs.readFileSync('docs/js/combat/enemy-loadout-rules.js', 'utf8'), {
@@ -55,7 +73,7 @@ vm.runInNewContext(fs.readFileSync('docs/js/combat/enemy-loadout-rules.js', 'utf
 const rules = win.EnemyLoadoutRules;
 assert.throws(() => rules.set({ schema: rules.schema, rules: { 'lich:hronal:azgarlu': { headGate: 'wide' } } }), /headGate/);
 rules.set({ schema: rules.schema, rules: { 'lich:hronal:azgarlu': { headGate: 'tight' }, 'lich:tothal:nanahi': { tightHeadGate: true }, 'lich:kanthic:imlao': { headGate: 'mask' } } });
-assert.equal(rules.snapshot().rules['lich:kanthic:imlao']?.headGate, undefined, 'the removed skull-mask value is dropped');
+assert.equal(rules.snapshot().rules['lich:kanthic:imlao'].headGate, 'mask', 'the opt-in mask gate is a valid rule value');
 assert.equal(rules.applyRoster('lich:hronal:azgarlu', { appearance: {} }, Math.random).headGate, 'tight');
 assert.equal(rules.snapshot().rules['lich:tothal:nanahi'].headGate, 'tight', 'the first checkbox migrates');
 assert.equal(rules.applyRoster('bandit:grunt', { appearance: {} }, Math.random).headGate, undefined, 'unruled enemies keep the global default');
@@ -63,9 +81,10 @@ assert.equal(rules.applyRoster('bandit:grunt', { appearance: {} }, Math.random).
 // Wired into the hostile builder and the shared single-plane (player/NPC) builder, both species-aware.
 const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
 assert.match(bandit, /const headGate = roster\.headGate;/);
-assert.equal((bandit.match(/headCanvas, headGate, speciesId: roster\.appearance\?\.speciesId \}\)/g) || []).length, 2, 'front and rear neck skins');
-assert.match(bandit, /headGateBounds\?\.\(headPixels\?\.boundsPx, headGate, roster\.appearance\?\.speciesId\)/);
+assert.equal((bandit.match(/headCanvas, headGate, headMaskCanvas, speciesId: roster\.appearance\?\.speciesId \}\)/g) || []).length, 2, 'front and rear neck skins');
+assert.match(bandit, /headGateBounds\?\.\(headPixels\?\.boundsPx, headGate, roster\.appearance\?\.speciesId, headMaskCanvas, false\)/);
+assert.match(bandit, /headCosmeticsOnly: true/, 'the mask render is requested only for the mask gate');
+assert.match(fs.readFileSync('docs/js/portrait-utils.js', 'utf8'), /headCosmeticsOnly = renderOptions\?\.headCosmeticsOnly === true/, 'the portrait renderer supports a head + cosmetics-only render');
 assert.match(avatarSource, /headGateBounds\(detectedHead\.boundsPx, config\.headGate, config\.speciesId\)/, 'player/NPC skinned assembly uses the species default');
 assert.match(avatarSource, /speciesId, headGate: options\.headGate,/, 'buildSinglePlaneAvatarModel passes its species through');
-assert.doesNotMatch(avatarSource, /buildHeadMaskWeights|headMask\.weightAtPixel/, 'the skull-mask experiment is gone');
 console.log('Head gate: species defaults, tight box, rule migration and builder wiring verified');

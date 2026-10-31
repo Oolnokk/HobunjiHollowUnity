@@ -1428,6 +1428,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const bodyColors = profile.bodyColors || {};
   const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
+  const headCosmeticsOnly = renderOptions?.headCosmeticsOnly === true; // Front-view alpha source for the 'mask' head gate: the head sprite plus every head-slot cosmetic, without arms, torso, clothing or pauldrons.
   const skipHeadSprite = renderOptions?.skipHeadSprite === true; // Headless characters (Imlao): the head sprite is simply not drawn, so everything it would have hidden shows through.
   const onlyHeadSprite = renderOptions?.onlyHeadSprite === true; // Used below to render an alpha mask from the fighter's undecorated base head only.
   const renderBehindView = renderOptions?.portraitView === 'behind' || renderOptions?.view === 'behind';
@@ -1953,11 +1954,13 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
 
   drawEmoteLayers(preBackLayers);
-  drawBreathingLayers(baseLeftArmLayers);
-  drawBreathingLayers(baseTorsoLayers);
-  drawBreathingLayers(baseRightArmLayers);
-  drawBreathingLayers(torsoClothingLayers);
-  drawBreathingLayers(overwearLayers);
+  if (!headCosmeticsOnly) {
+    drawBreathingLayers(baseLeftArmLayers);
+    drawBreathingLayers(baseTorsoLayers);
+    drawBreathingLayers(baseRightArmLayers);
+    drawBreathingLayers(torsoClothingLayers);
+    drawBreathingLayers(overwearLayers);
+  }
   drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
@@ -2025,7 +2028,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(elevatedEyeAccessoryLayers);
   drawBreathingLayers(hoodLayers);
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
-  drawEmoteLayers(pauldronLayers);
+  if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
     const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
