@@ -315,9 +315,9 @@
   }
   function snareSettings(){
     const numeric=(id,min,max,fallback)=>{const n=Number($(id).value);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;}; // All author values are bounded before instancing.
-    return {count:Math.round(numeric('snareCount',1,14,7)),triggerRadius:numeric('snareRadius',.5,7,2.5),
-      reach:numeric('snareReach',.3,4,1.45),extendSpeed:numeric('snareExtend',.15,12,2.4),
-      retractSpeed:numeric('snareRetract',.15,12,1.1),runnerSpeed:numeric('snareRunnerSpeed',.3,5,2.5)};
+    return {count:Math.round(numeric('snareCount',1,14,7)),triggerRadius:numeric('snareRadius',.5,15,15),
+      reach:numeric('snareReach',.3,15,15),extendSpeed:numeric('snareExtend',.05,12,.2),
+      retractSpeed:numeric('snareRetract',.15,12,1.1),runnerSpeed:numeric('snareRunnerSpeed',.3,8,5)};
   }
   function buildRootSnare(){
     releaseRootSnare();
@@ -698,6 +698,9 @@
   $('snareEnabled').onchange=()=>{if($('snareEnabled').checked&&$('previewEnvironment').value!=='ruin'){$('previewEnvironment').value='ruin';rebuild(false);}else buildRootSnare();};
   $('snareBuild').onclick=buildRootSnare;
   $('snareReroute').onclick=()=>roamingNpc?.chooseTarget();
+  $('snareRunAway').onclick=()=>{if(!roamingNpc?.headToAnchor(true))$('snareStatus').textContent='First catch a neck grip to test running away.';else previewDirty=true;};
+  $('snareRunToward').onclick=()=>{if(!roamingNpc?.headToAnchor(false))$('snareStatus').textContent='First catch a neck grip to test running toward the source.';else previewDirty=true;};
+  $('snareDoubleGrip').onclick=()=>{if(!rootHands?.previewDoubleGrip(roamingNpc))$('snareStatus').textContent='Build at least two root hands first.';else previewDirty=true;};
   $('snareRunPast').onclick=()=>{rootHands?.releaseCaptured();if(roamingNpc?.runPastHand(rootHands?.anchors?.[0]))previewDirty=true;};
   $('snareRelease').onclick=()=>{if(rootHands?.releaseCaptured())previewDirty=true;}; // Captive remains held indefinitely until manually released.
   $('snareReveal').onchange=()=>{rootHands?.setNodeVisibility($('snareReveal').checked);previewDirty=true;};
@@ -754,7 +757,7 @@
     const delta=lastTimestamp?Math.max(0,Math.min(.05,(timestamp-lastTimestamp)/1000)):0;
     lastTimestamp=timestamp;if(!buildState.running){active?.update(delta);if(roamingNpc?.update(delta))previewDirty=true;
       if(rootHands?.update(delta,roamingNpc))previewDirty=true; // Pass the walker controller so capture freezes authentic procedural walking.
-      if(rootHands&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=info.anchors.length+' fixed nodes · '+info.active+' active · '+info.held+' held · '+info.lungeCount+' triggered · runner: '+(roamingNpc?.diagnostics().authenticFeet?'procedural feet':'torso only');lastHandStatus=timestamp;}}
+      if(rootHands&&timestamp-lastHandStatus>300){const info=rootHands.diagnostics();$('snareStatus').textContent=info.anchors.length+' nodes · '+info.active+' active · '+(info.neckGrip?'neck grip':'no grip')+' · '+(info.feetGrip?'feet grip':'feet free')+' · tug '+Number(info.tugMultiplier).toFixed(2)+'× · '+(info.split?'separated':info.dual?'stretch '+info.stretchSeconds.toFixed(1)+'s':'running')+' · '+info.lungeCount+' lunges';lastHandStatus=timestamp;}}
     orbit.update();
     const progress=active?.getProgress()??0; // Growth and particle playback still render while static repeated floor meshes can rest.
     const version=active?.getRenderVersion?.()??0;if(active!==renderedActive||progress!==renderedProgress||version!==renderedVersion)previewDirty=true;
