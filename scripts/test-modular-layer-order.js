@@ -267,6 +267,7 @@ async function run() {
     getContext: () => ({
       clearRect: (...args) => editorCanvasOps.push(['clear', ...args]),
       drawImage: () => editorCanvasOps.push(['haft']),
+      save() {}, restore() {}, translate() {}, scale() {},
     }),
   };
   const editorDrawnMounts = []; // Receives positions of actual overlay lines, not just source draft values.
