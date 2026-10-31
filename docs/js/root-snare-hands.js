@@ -108,10 +108,13 @@
     if(!THREE||!room?.model)throw new TypeError('Root snare preview requires THREE and a prepared author ruin room.');
     const anchors=findWallRootNodes(THREE,room,wallRootLayers,seed,count);
     const group=new THREE.Group();group.name='Wall-bound root snare hands';
-    const material=new THREE.MeshBasicMaterial({color:0x24211d,side:THREE.DoubleSide});
+    let sourceMaterial=null; // Match the exact authored Temple root texture and tint, including custom root colour edits.
+    for(const layer of wallRootLayers||[]){layer?.traverse?.(mesh=>{if(!sourceMaterial&&mesh.isMesh&&mesh.material)sourceMaterial=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;});if(sourceMaterial)break;}
+    const material=sourceMaterial?.clone?.()||new THREE.MeshBasicMaterial({color:0x24211d,side:THREE.DoubleSide});
+    material.side=THREE.DoubleSide;
     const markerMaterial=new THREE.MeshBasicMaterial({color:0xffae6b,depthTest:false});
     const entries=anchors.map(anchor=>{
-      const hand=createHand(THREE,anchor,material);group.add(hand.group);
+      const hand=createHand(THREE,anchor,material);hand.group.traverse(mesh=>{if(mesh.isMesh)mesh.layers.enable(1);});group.add(hand.group); // Share the editor's root silhouette outline pass.
       const marker=new THREE.Mesh(new THREE.SphereGeometry(.065,7,5),markerMaterial);
       marker.position.copy(anchor.point);marker.visible=!!showNodes;marker.name='Show hidden branch node '+anchor.id;group.add(marker);
       return {hand,marker,progress:0,cooldown:0,lunges:0,state:'dormant'};
