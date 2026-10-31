@@ -120,7 +120,7 @@ async function run() {
     remove(child) { this.children=this.children.filter(x=>x!==child);child.parent=null; }
   }
   const modelImage={width:450,height:1204}; // Source dimensions match the existing modular PNG authoring frame.
-  const Three={Group:Group3,Vector3:Vec3,TextureLoader:class {
+  const Three={Group:Group3,Vector3:Vec3,Quaternion:class {},Matrix4:class {},TextureLoader:class {
     load(_url,done) { done({image:modelImage}); }
   }}; // No WebGL is required to verify the real asynchronous decorator's source-transform behavior.
   const fireDocument={currentScript:{src:'https://example.test/docs/js/weapon-sprite-assemblies.js'}};
