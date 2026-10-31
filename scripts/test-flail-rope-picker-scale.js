@@ -57,7 +57,8 @@ const document={createElement(tag){
 vm.runInNewContext(config,{window});
 vm.runInNewContext(render,{window,document});
 const registry=window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons;
-assert.deepEqual(Object.keys(registry),['hachutuTorchFlail','grappleFlail']);
+assert.deepEqual(Object.keys(registry),['hachutuTorchFlail','hachutuTorchStaff','grappleFlail']);
+assert.equal(registry.hachutuTorchStaff.flail, undefined, 'a complex tool may have effects without a flail assembly');
 assert.deepEqual(Array.from(registry.grappleFlail.flail.head.layers,l=>l.id),['back','front']);
 assert.equal(registry.grappleFlail.flail.chain.type,'rope');
 assert.equal(registry.grappleFlail.flail.head.anchorSpace,'composite');
