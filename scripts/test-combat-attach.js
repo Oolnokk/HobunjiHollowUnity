@@ -48,7 +48,7 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.Combat.attach.isAttached(swarm), true, 'it reaches the target and attaches');
   assert.equal(w.Combat.attach.hostOf(swarm), host);
   same(w.Combat.attach.attachersOf(host), [swarm]);
-  // The swarm inherits the host's X/Y and occupies its visible body center,
+  // The swarm inherits the host's X/Y and occupies the upper quarter of its visible body,
   // correcting for its own hovering wing-cloud pivot rather than sitting above the head.
   w.deps.getActorWorldY = actor => actor === host ? 2.83 : 0.85;
   w.deps.worldSurfaceY = () => 2;
@@ -57,7 +57,7 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   run(w, swarm, 0.05);
   assert.deepEqual([swarm.x, swarm.y, swarm.facing], [360, 260, 1.2]);
   assert(Math.abs(swarm._banditLungeHopCurrent - (0.41 + 1.8 * 0.375)) < 1e-9, 'upper-quarter anchor minus the swarm floor lift and hover pivot');
-  assert(Math.abs(swarm.avatarRef.group.position.y - (2.71 + 1.8 * 0.375)) < 1e-9, 'visible wing cloud sits exactly at host world-Y center');
+  assert(Math.abs(swarm.avatarRef.group.position.y - (2.71 + 1.8 * 0.375)) < 1e-9, 'visible wing cloud sits in the upper quarter of the host');
   assert.equal(swarm._attachVisualSpread, 0.71, 'attachment is less densely clustered than ordinary flight');
   host.y += 40; run(w, swarm, 0.05);
   assert.equal(swarm.y, host.y, 'swarm tracks the target as it moves');
@@ -268,8 +268,8 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   w.Combat.animalAttacks.applyConfig(authored.creatureAttacks);
   const loaded = w.Combat.attach.config('swarm');
   assert.equal(loaded.durationS, 6); assert.equal(loaded.hostReaction.kind, 'flail'); assert.equal(loaded.tick.playerScale, 0.6);
-  assert.equal(loaded.verticalAnchor, 'center'); assert.equal(loaded.heightAboveHost, 0);
-  assert.equal(loaded.visualSpreadScale, 0.42, 'authoring keeps the compact attached-state visual');
+  assert.equal(loaded.verticalAnchor, 'upper-quarter'); assert.equal(loaded.heightAboveHost, 0);
+  assert.equal(loaded.visualSpreadScale, 0.71, 'authoring keeps the compact attached-state visual');
 }
 
 // Companion Swarm must use its own flying approach rather than taking an
