@@ -156,7 +156,7 @@
     const plane = root.userData.toolPlane;
     const state = {
       root, plane, itemKey, THREE, config, owned: [], headParts: [], chain: null,
-      metalOptions: options.metalOptions || null, resolveAsset: imageUrl, // Uses game's live plating/mastery resolver and the same canonical asset URL for every layer.
+      metalOptions: options.metalOptions || null, masteryLevel: options.masteryLevel || (() => 0), resolveAsset: imageUrl, // Live XP rank drives authored non-metal VFX, while metal still uses plating/mastery options.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
@@ -200,10 +200,16 @@
         staticMeshes.push(mesh);
         effects?.registerLayer(state, mesh, layer, texture.image); // Ordinary layered weapons support both recolor and author-defined material roles.
       }
-      if (layers.length) {
-        const rawBase = def?.sprite ? await textureFor(THREE, def.sprite) : null; // Authored metal key, never a live oxide/plating texture.
+      if (layers.length || config.base) {
+        const rawBase = config.sprite || def?.sprite ? await textureFor(THREE, config.sprite || def.sprite) : null; // Read authored source pixels, not the live metal/plating canvas.
         if (state.dead) return;
-        effects?.activateStatic(state, layers, staticMeshes, rawBase?.image || baseImg, unit);
+        const source = rawBase?.image || baseImg;
+        if (config.base?.material === 'marker' && plane.material?.map) {
+          plane.material.map = plane.material.map.clone(); // Do not recolor the shared in-hand texture used by other actors or inventory previews.
+          plane.material.map.needsUpdate = true;
+        }
+        if (config.base) effects?.registerLayer(state, plane, { id: 'base', ...config.base }, source);
+        effects?.activateStatic(state, config.base, layers, staticMeshes, source, unit); // Base-sprite fire also works with zero overlay layers.
       }
       if (!config.flail) return;
       const f = config.flail;
@@ -527,7 +533,7 @@
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
-      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, size: fx.config.size, rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
+      fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, clusters: fx.clusters?.length || 0, masteryRank: Number(s.masteryLevel?.()) || 0, size: fx.config.size, rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
