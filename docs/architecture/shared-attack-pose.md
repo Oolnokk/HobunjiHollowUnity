@@ -68,6 +68,7 @@ A pose that is neither 2H nor Dual Wield used to leave the free hand on the loco
 - **Weight:** `animationGripAt` returns `offhandIdleBlend` (1 when the pose is neither 2H nor Dual Wield, easing with the grip lerp) and `offhandIdlePose` (null = stance, else lerped channel by channel).
 - **Placement:** `procedural-hand-frame-driver.js` grips the invisible tool in its not-2H / not-dual branch. `setCarriedPose` / `setCarriedSample` tell the visuals module which pose the holder carries right now, so the offhand stays put on the body through a swing instead of following it.
 - **Editor:** each pose in the hand panel has "Idle offhand pose (invisible tool)" and "Custom pose" (six sliders, starting from the stance values).
+- **Species override:** `HobunjiHandToolGrips.usesLegacyOffhandIdle(speciesId)` selects the old locomotion fallback (no invisible offhand grip) for Kenkari, Tletingan, Rakako'an and Nuhongan, including their NPCs. Dual-wield and true two-hand grips still take precedence. Add future exceptions to the centralized species set in `hand-tool-grips.js`.
 - **Scope:** the local player, the attack editor, enemies and watchman NPCs. Enemies read the weight from their own animation grip (`restGripFor` gives stance weapons a rest grip with `offhandIdleBlend`) and report each frame's sample through `setCarriedSample`; watchmen, which place their own hands, use the stateless `invisibleOffhandSocket` (`npc-held-equipment-v4.js attachOffhandIdle`).
 
 ## Held windups and hands
