@@ -3678,7 +3678,7 @@
             interactLabel: 'Sleep',
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
-              return sleepInBed();
+              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
             },
           };
         }
@@ -18136,6 +18136,7 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
+        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -24666,6 +24667,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -26282,6 +26284,12 @@
         _saveWorldCalendar();
         return { ok: true, message: msg };
       }
+
+      window.BedLiePose?.init?.({
+        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
+        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
+        showToast, isPaused: () => paused,
+      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -29195,6 +29203,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
+        bedPose: () => window.BedLiePose?.debug?.() || null, // On-device sleeping posture, surface and x-ray status.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
