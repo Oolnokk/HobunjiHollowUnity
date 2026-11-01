@@ -30,15 +30,21 @@
     if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
     const insideFacingCone = window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
     if (!insideFacingCone) return false;
-    return window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile/cover LOS blocks acquisition and reacquisition, never an already-running chase by itself.
+    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile and real scene-geometry occlusion gate acquisition/reacquisition.
+    if (visible) {
+      c._enemyLastSeenX = target.x; // Updated only when the target is actually inside range, facing cone, and clear sight.
+      c._enemyLastSeenY = target.y; // The search destination must never follow an unseen player's current position.
+      c._enemyLastSeenAt = performance.now(); // Useful for future diagnostics and bounded stale-target policies.
+    }
+    return visible;
   }
 
   function beginEnemySearch(c, target) {
     c.state = 'searching';
     c.targetPlayer = target;
     c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
-    c._enemySearchLastKnownX = target.x; // Pursuit destination is frozen when sight is lost; unseen player movement is not tracked.
-    c._enemySearchLastKnownY = target.y; // Paired with X for the last-known world position.
+    c._enemySearchLastKnownX = Number.isFinite(c._enemyLastSeenX) ? c._enemyLastSeenX : target.x; // Reuse the last position confirmed visible; fallback only for externally forced chases without a sight sample.
+    c._enemySearchLastKnownY = Number.isFinite(c._enemyLastSeenY) ? c._enemyLastSeenY : target.y; // Paired with X for the last-known world position.
     c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
     c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
     const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);

@@ -21286,6 +21286,20 @@
         }
         return meshes;
       }
+      let enemySightOccluderFrame = -1; // Rebuilds the NPC sight obstacle list once per gameplay frame, not once per hostile.
+      let enemySightOccluderArea = null; // Prevents an old area's wall meshes surviving a fast doorway transition.
+      let enemySightOccluderMeshes = []; // Shared geometry list for every hostile's cached visibility ray this frame.
+      function enemySightOccluders() {
+        if (enemySightOccluderFrame !== gameFrameSerial || enemySightOccluderArea !== currentArea) {
+          enemySightOccluderMeshes = currentAreaOcclusionMeshes();
+          if (currentArea === 'interior' && interiorWallGroup && !enemySightOccluderMeshes.includes(interiorWallGroup)) {
+            enemySightOccluderMeshes.push(interiorWallGroup); // NPC sight must see interior walls even when the player camera is in its ordinary follow mode.
+          }
+          enemySightOccluderFrame = gameFrameSerial;
+          enemySightOccluderArea = currentArea;
+        }
+        return enemySightOccluderMeshes;
+      }
       // Pulls the camera in along the target→camera line if something from
       // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
       // player follow camera has no other way to keep the player visible
@@ -29690,6 +29704,7 @@
         hostileObjects,
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
+        getSightOccluders: enemySightOccluders,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         // Same live render-height lookup Combat.init supplies for named
         // animal projectiles (see its own getActorWorldY) — a shooter or

@@ -39,6 +39,9 @@
   const _projectileLocalPlaneZ = new THREE.Vector3(0, 0, 1); // Local sprite-plane normal: held Tool End Flip and projectileBasisDeg are both visible in-plane rotations around this axis.
   const _projectileFallbackEndFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(_projectileLocalPlaneZ, Math.PI); // Unsampled throws reproduce the same visible tip↔handle reversal as the held PNG plane.
   const _projectileBasisQuaternion = new THREE.Quaternion(); // Reused when applying projectileBasisDeg without allocating a quaternion per shot.
+  const _enemySightRaycaster = new THREE.Raycaster(); // Reuses real scene-geometry ray tests for NPC perception without allocating a raycaster per hostile.
+  const _enemySightDirection = new THREE.Vector3(); // Reused normalized observer-to-target ray direction.
+  const _enemySightHits = []; // Reused ray hit list; the nearest opaque scene mesh is enough to block perception.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -1529,9 +1532,32 @@
     return { start, end };
   }
 
+  function sightObjectIsVisible(object) {
+    for (let node = object; node; node = node.parent) if (node.visible === false) return false;
+    return true;
+  }
+
+  function sceneGeometrySightBlock(segment) {
+    const obstacles = deps.getSightOccluders?.() || [];
+    if (!obstacles.length) return null;
+    _enemySightDirection.subVectors(segment.end, segment.start);
+    const distance = _enemySightDirection.length();
+    if (!(distance > 0.05)) return null;
+    _enemySightDirection.multiplyScalar(1 / distance);
+    _enemySightRaycaster.set(segment.start, _enemySightDirection);
+    _enemySightRaycaster.near = 0.02;
+    _enemySightRaycaster.far = Math.max(0.02, distance - 0.03); // Ignore the observer and target's own surface volumes.
+    _enemySightHits.length = 0;
+    _enemySightRaycaster.intersectObjects(obstacles, true, _enemySightHits);
+    const hit = _enemySightHits.find(entry => entry?.object && sightObjectIsVisible(entry.object));
+    return hit ? { clear: false, kind: 'geometry', id: hit.object.name || 'opaque-geometry' } : null;
+  }
+
   function computeBanditLos(c, targetPlayer, def) {
     const segment = banditLosSegment(c, targetPlayer);
     const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
+    const geometryHit = sceneGeometrySightBlock(segment);
+    if (geometryHit) return geometryHit;
     const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null;
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
 
@@ -1550,16 +1576,18 @@
     const distancePx = Math.hypot(dxPx, dyPx);
     const terrainStepTiles = Math.max(0.15, Number(def.losTerrainStepTiles) || BANDIT_LOS_TERRAIN_STEP_TILES);
     const stepPx = deps.TILE * terrainStepTiles; // Sight uses quarter-tile samples so a narrow wall crossing cannot fall between coarse projectile samples.
-    if (distancePx > stepPx) {
+    if (distancePx > 0.001) {
       const ux = dxPx / distancePx, uy = dyPx / distancePx;
-      for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
+      const sampleCount = Math.max(2, Math.ceil(distancePx / stepPx)); // Always inspect at least the midpoint, including very close doorways.
+      for (let i = 1; i < sampleCount; i++) {
+        const travel = distancePx * i / sampleCount;
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
         const rayWorldY = segment.start.y + dWorldY * (travel / distancePx); // AI visibility uses the same finite-height cover check as projectile flight.
         if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld)) {
           return { clear: false, kind: 'door', id: 'closed-interior-door' }; // Closed authored doors are separate from the terrain grid and need their own opaque test.
         }
-        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
+        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
       }
@@ -1582,15 +1610,16 @@
   function hasLineOfSight(observer, target) {
     if (!deps || !observer || !target) return true; // Missing optional runtime dependencies must not make every hostile blind.
     const now = performance.now();
+    const area = deps.getCurrentArea?.() ?? null;
     const cached = observer._enemyVisibilityLosCache;
     const moved = cached ? Math.hypot(observer.x - cached.x, observer.y - cached.y) : Infinity;
     const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
-    if (cached && now - cached.at < BANDIT_LOS_CACHE_MS
+    if (cached && cached.area === area && cached.target === target && now - cached.at < BANDIT_LOS_CACHE_MS
       && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.clear;
     const result = computeBanditLos(observer, target, { projectileRadiusPx: 0, losTerrainStepTiles: 0.25 });
     observer._enemyVisibilityLosCache = {
-      at: now, x: observer.x, y: observer.y, tx: target.x, ty: target.y, clear: !!result.clear,
-    }; // Shared tactical LOS cache avoids repeating tile/cover sweeps for every render frame.
+      at: now, area, target, x: observer.x, y: observer.y, tx: target.x, ty: target.y, clear: !!result.clear,
+    }; // Area and target identity prevent stale LOS being reused across a doorway or target switch.
     observer._enemyVisibilityLosDebug = { ...result, at: now }; // Available to mobile combat diagnostics without allocating a full scene report.
     return !!result.clear;
   }
