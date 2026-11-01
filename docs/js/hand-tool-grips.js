@@ -214,6 +214,11 @@
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
+  const LEGACY_OFFHAND_IDLE_SPECIES = new Set(['kenkari', 'tletingan', 'rakakoan', 'nuhongan']); // Species whose free arm keeps the original locomotion idle instead of the invisible one-grip offhand pose.
+  function usesLegacyOffhandIdle(speciesId) {
+    return LEGACY_OFFHAND_IDLE_SPECIES.has(normalizeKey(speciesId));
+  }
+
   function toolKeyFor(value) {
     const source = global.ModularWeapons?.sourceShape?.(value); // Custom gear inherits the live donor grip and scale rather than copying stale values.
     const key = normalizeKey(source || value).replace(CRAFTED_METAL_SUFFIX, '');
@@ -888,7 +893,7 @@
   function currentSecondaryGripAnimationState() { return inAttackEditor() ? editorAnimationGripState() : runtimeAnimationGripState(); }
   // The invisible offhand tool for the hand driver: weight + the pose the free hand should hold (null = the dual-wield offhand stance). Melee only.
   function offhandIdleStateForTool(value, context = currentGripContext(), identity = null) {
-    if (normalizeGripContext(context) === 'ranged' || weaponHandModeForTool(value) === 'single') return null;
+    if (usesLegacyOffhandIdle(identity?.speciesId) || normalizeGripContext(context) === 'ranged' || weaponHandModeForTool(value) === 'single') return null;
     const state = identity?.animationGripState !== undefined ? identity.animationGripState : currentSecondaryGripAnimationState();
     const blend = clamp01(state?.offhandIdleBlend);
     return blend > 0.0001 ? { blend, pose: state.offhandIdlePose || null } : null;
@@ -1476,7 +1481,7 @@
     clone: cleanClone,
     toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool,
+    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {
