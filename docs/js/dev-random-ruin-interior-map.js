@@ -932,6 +932,7 @@
       const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
       const themeTypes = cfg('sanctum.boss.types', ['tothal', 'hronal', 'kanthic']).filter(type => ['tothal', 'hronal', 'kanthic'].includes(type)); // One seeded tradition owns this ruin's lich, loot and future themed features.
       const theme = ['tothal', 'hronal', 'kanthic'].includes(opts.theme) ? opts.theme : (themeTypes.length ? themeTypes : ['tothal', 'hronal', 'kanthic'])[requestedSeed % (themeTypes.length || 3)]; // Requested site seed keeps the theme stable across solvability retries.
+      if(requestedRuinType==='hachutu')Object.assign(puzzleOptions,{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}); // Freeze the separate Hachutu selection before every V50 solvability retry.
       puzzleOptions.lavaBasin = theme === 'hronal' && puzzleOptions.lavaBasin; // Only Hronal sites contain lava, including rope-basin set pieces.
       const rootMechanismsRequested=requestedRuinType==='hachutu'||(typeof opts.rootMechanisms==='boolean'?opts.rootMechanisms:cfg('generation.rootMechanisms',false)===true); // Frozen for rerolls and this specific generation.
       const stoneAgeRequested=requestedRuinType==='hachutu'||opts.stoneAge===true||(opts.stoneAge!==false&&!opts.site&&rootMechanismsRequested); // The Dev checkbox builds a whole Stone Age ruin; external legacy site generation is unchanged.
@@ -945,7 +946,7 @@
         if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
-          roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:requestedRuinType==='hachutu'?{...puzzleOptions,pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}:puzzleOptions,
+          roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions,
           ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
