@@ -25,6 +25,8 @@
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
   let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
   let heldXrayTaggedMeshes = 0; // Current-or-former procedural hand meshes registered with the selective ground x-ray system.
+  let visualMatrixResyncs = 0; // Counts visible hand meshes repaired after late socket/body transforms.
+  let largestVisualMatrixDrift = 0; // Largest repaired hand-origin displacement in world units for Pixel Probe.
 
   function isShellMaterial(material) {
     return !!(
@@ -89,6 +91,31 @@
     return true;
   }
 
+  // Body/weapon poses can move sockets after Three has traversed the scene.
+  // Rebuild only the hand descendants against the ALREADY-BAKED parent world
+  // matrix. Object3D.updateWorldMatrix(true) would recompute the entire parent
+  // hierarchy and discard PlayerBodyTransformComposer's temporary render pose.
+  function refreshVisibleHandMatrix(mesh, rig) {
+    const authority = rig?.group?.parent; // The existing floor/body transform owns the final frame; never update it here.
+    if (!authority?.matrixWorld || !mesh?.matrixWorld) return 0;
+    const chain = []; // Small socket -> calibration -> visual -> GLB chain refreshed only for the visible color draw.
+    for (let node = mesh; node && node !== authority; node = node.parent) {
+      if (!node.matrixWorld || !node.matrix || typeof node.updateMatrix !== 'function') return 0;
+      chain.push(node);
+    }
+    if (!chain.length || chain[chain.length - 1].parent !== authority) return 0;
+    const old = mesh.matrixWorld.elements;
+    const oldX = old[12], oldY = old[13], oldZ = old[14]; // Detects the detached-hand case without relying on debug-only ray casts.
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const node = chain[i];
+      if (node.matrixAutoUpdate !== false) node.updateMatrix();
+      node.matrixWorld.multiplyMatrices(node.parent.matrixWorld, node.matrix);
+    }
+    const current = mesh.matrixWorld.elements;
+    const drift = Math.hypot(current[12] - oldX, current[13] - oldY, current[14] - oldZ);
+    return Number.isFinite(drift) ? drift : 0;
+  }
+
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
     if (mesh.userData?.noOutline !== true) mesh.layers.enable(1); // Visual replacement/x-ray routing must never drop either hand from the shell layer.
@@ -116,6 +143,17 @@
       const now = performance.now();
 
       if (isVisibleHandDraw(scene, material)) {
+        // HeldObjectRenderOrder can draw this mesh after the base scene's
+        // autoUpdate pass; use the final socket and cached body world transform.
+        // Never perform this rebuild in outline/depth passes: those reuse the
+        // exact visible matrix captured here.
+        const drift = refreshVisibleHandMatrix(this, rigState.rig);
+        if (drift > 0.0001) {
+          rigState.visualMatrixResyncs++;
+          visualMatrixResyncs++;
+          rigState.largestVisualMatrixDrift = Math.max(rigState.largestVisualMatrixDrift, drift);
+          largestVisualMatrixDrift = Math.max(largestVisualMatrixDrift, drift);
+        }
         state.visibleMatrixWorld.copy(this.matrixWorld);
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
@@ -259,6 +297,9 @@
     if (!rig) return rig;
 
     const rigState = {
+      rig, // Owner of the hand sockets, used to preserve its baked body transform when rebuilding visual matrices.
+      visualMatrixResyncs: 0, // Visible draws where a stale hand origin was repaired.
+      largestVisualMatrixDrift: 0, // Worst repaired origin discrepancy on this rig.
       hookedMeshes: 0, // Number of current-or-former hand meshes that received matrix-lock hooks.
       heldXrayMeshes: 0, // Hand meshes registered with selective ground/grass x-ray.
       baseMatrixCaptures: 0, // Visible hand draws captured for this hand rig.
@@ -292,6 +333,8 @@
           ...originalDebug(),
           outlineMatrixParity: true,
           outlineMatrixSource: 'visible-hand-pre-render',
+          visualMatrixResyncs: rigState.visualMatrixResyncs,
+          largestVisualMatrixDrift: rigState.largestVisualMatrixDrift,
           outlineHookedMeshes: rigState.hookedMeshes,
           heldXrayMeshes: rigState.heldXrayMeshes,
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,
@@ -333,10 +376,12 @@
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         heldXrayTaggedMeshes,
+        visualMatrixResyncs,
+        largestVisualMatrixDrift,
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Hand outlines match foot thickness nearby and shrink farther away without close-camera inflation.',
+        latestChange: 'Visible procedural hands now refresh stale world matrices from their live sockets without rebuilding temporary body-composer transforms; depth and outline passes reuse the corrected capture.'
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
