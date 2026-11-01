@@ -27,7 +27,9 @@
   }
 
   function enemyCanSeeTarget(c, target, maxDistancePx = Infinity) {
-    if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
+    const rangedRadiusPx = window.RangedWeapons?.rangedAttackRadiusPx?.(c) || 0; // Ranged actors may acquire targets across their weapon's true projectile reach, independently of their home leash.
+    const acquisitionRadiusPx = Math.max(maxDistancePx, rangedRadiusPx);
+    if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > acquisitionRadiusPx) return false;
     const insideFacingCone = window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
     if (!insideFacingCone) return false;
     const visible = window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile and real scene-geometry occlusion gate acquisition/reacquisition.
