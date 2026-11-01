@@ -22,8 +22,12 @@ const ctx={window:W,THREE:W.THREE,console,performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/authored-furniture-runtime.js'),ctx);
 const bed=furniture('basicBed'),double=furniture('doubleBed'),chair=furniture('chairSimple');
 assert(W.AuthoredFurniture.seatedKneeReach(chair)<chair.footprint.d/2);
-assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.4); // The broad mattress top is below its raised pillow.
-assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.4);
+assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(bed)<.25); // Half-height bed: fabric mattress, not pillow, defines contact.
+assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(double)<.25); // Double-bed headboard must not be mistaken for its mattress.
+for (const data of [bed,double]) for (const part of data.parts) {
+  assert(part.transform.y < .3, 'bed part vertical position is halved');
+  assert(part.transform.sy < .12, 'bed part vertical thickness is halved');
+}
 const data={basicBed:bed,doubleBed:double,chairSimple:chair,rug:furniture('rug')};
 W.AuthoredFurniture.peek=k=>data[k]||null;
 W.AuthoredFurniture.load=async k=>data[k]||null;
@@ -54,7 +58,7 @@ const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
  root:{isObject3D:true,position:new V(3.5,0,5.5),rotation:{y:0}},
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
-for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',area:'interior'},.1,{x:3.5,z:5.5,y:.58,facingRad:0});
+for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie'},.1,{x:3.5,z:5.5,y:.58,facingRad:0}); // Spouse activity targets may omit area even while correctly scheduled in this room.
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
 assert(Math.abs(rig.position.y+hip.y-.615)<.001,'scaled NPC hip rests on authored mattress top');
