@@ -125,6 +125,39 @@ fall back to the full tint path. Framebuffers with no usable stencil
 keep conservative cover occlusion rather than painting unsupported
 partial tint.
 
+## Shell outlines inherit the source object's ground-x-ray visibility
+
+The inverted-hull shell pass is a separate render from the visible object draw.
+Without an explicit parity step, the base mesh can correctly x-ray through
+classified ground while its shell is still rejected by the ordinary ground
+depth left in the framebuffer.
+
+HeldObjectRenderOrder applies the same rule to both representations:
+
+1. The normal layer-1 shell pass temporarily omits registered held/foot x-ray
+   meshes, preventing a duplicate shell draw under ordinary ground depth.
+2. A scissored replay clears depth only around those meshes and reconstructs
+   solid depth while excluding the exact groundKind() set used by the
+   visible held/foot x-ray. Snow, water, slush, furniture, rocks, walls and
+   other non-ground occluders remain in this depth reconstruction. Carved
+   cavern shells use their non-floor occluder geometry, so their walls and
+   ceilings continue to block outlines.
+3. Only the registered x-ray meshes' layer-1 shells are drawn against that
+   reconstructed depth. Their shell therefore follows the same ground
+   visibility exception as the underlying mesh without becoming visible
+   through unrelated solid objects.
+4. The ordinary scene depth is rebuilt colorlessly before later target and
+   outline consumers run. The replay restores the camera mask, override
+   material, visibility, geometry, scissor, shadow and renderer state.
+
+This is deliberately tied to the shared x-ray participant registries and
+ground classifier, rather than adding separate per-material or per-species
+shell exceptions. When another object type joins the selective ground-x-ray
+system, its registered shell automatically receives the same visibility
+policy. The shell replay is limited to the projected bounds of the affected
+objects when safe; skinned, instanced, morphed or near-plane-uncertain bounds
+fall back to a full-frame replay.
+
 ## The confirmed regression: teal patches in raised flooded grass
 
 Two Pixel Probes were captured on the **farm**, with Painterly **Off**.
