@@ -778,7 +778,8 @@
   }
 
   function ordinaryBuildingInterior(area) {
-    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area) || lightingDeps?.getActiveScene?.()?.userData?.hobunjiPlayerFarmhouseInterior === true); // A farmhouse can become active before its area id switches; keep the indoor light profile.
+    const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area) || activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true); // Scene identity remains authoritative while the area id catches up.
   }
 
   function enclosedLightingArea(area) {
