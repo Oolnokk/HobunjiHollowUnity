@@ -9,6 +9,8 @@ on:
       - 'docs/js/dev-hachutu-ruin.js'
       - 'docs/js/hachutu-relics.js'
       - 'scripts/test-hachutu-rooted-ruins.js'
+      - 'scripts/test-hachutu-root-tear.js'
+      - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
   pull_request:
@@ -18,6 +20,8 @@ on:
       - 'docs/js/dev-hachutu-ruin.js'
       - 'docs/js/hachutu-relics.js'
       - 'scripts/test-hachutu-rooted-ruins.js'
+      - 'scripts/test-hachutu-root-tear.js'
+      - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
   workflow_dispatch:
@@ -38,6 +42,8 @@ jobs:
         run: |
           node scripts/test-dev-random-ruin-integration.js
           node scripts/test-hachutu-rooted-ruins.js
+          node scripts/test-hachutu-root-tear.js
+          node --check docs/js/root-snare-player-tear.js
           node --check docs/js/dev-hachutu-ruin.js
           node --check docs/js/hachutu-relics.js
           node --check docs/js/dynamic-surfaces.js
