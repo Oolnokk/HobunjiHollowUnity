@@ -4573,6 +4573,11 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
+        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
+          playerNeckJoint.rotation.x = 0; playerNeckJoint.rotation.y = 0;
+          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
+          return;
+        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
