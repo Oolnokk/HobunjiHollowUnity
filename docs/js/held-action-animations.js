@@ -323,7 +323,7 @@
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
     new URL('js/procedural-hand-attachments.js?v=20261019h0cfa905', docsBase).href,
-    new URL('js/procedural-hand-outline-parity.js?v=20261016h5318a2d', docsBase).href,
+    new URL('js/procedural-hand-outline-parity.js?v=20261101handmatrix3', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261031ha3e6192', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261031h6987021', docsBase).href,
@@ -349,7 +349,7 @@
     handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261030a', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
-    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261016ha981d6f', docsBase).href);
+    handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);
   }
 
   function loadSequentially(urls) {
