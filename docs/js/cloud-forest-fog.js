@@ -521,10 +521,8 @@
       lightToSource.set(x, y, z).sub(lightPlayerPosition);
       lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
       lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
-      const depthOffset = lightToSource.dot(lightViewDirection);
-      const radiusSquared = tiles * tiles - depthOffset * depthOffset;
-      if (!(radiusSquared > 0)) return null;
-      projectedRadius = Math.sqrt(radiusSquared);
+      const distanceSquared = lightToSource.x * lightToSource.x + lightToSource.y * lightToSource.y + lightToSource.z * lightToSource.z;
+      if (distanceSquared > tiles * tiles) return null; // The player must be inside the fixture's world-space range; camera rotation cannot change that distance.
       const lateralX = lightToSource.dot(lightCamRight);
       const lateralY = lightToSource.dot(lightCamUp);
       projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
