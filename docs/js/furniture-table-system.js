@@ -78,7 +78,7 @@
     const yaw = rootYaw + (anchor.rotationDeg?.y || 0);
     return { x: location.x, y: location.y - floor, z: location.z, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
       normalDeg: { x: anchor.rotationDeg?.x || 0, z: anchor.rotationDeg?.z || 0 },
-      footprintHalfDepth: (data.footprint?.d || 1) * (entry.root.scale?.z || 1) / 2, anchorZ: anchor.position.z || 0 };
+      footprintHalfDepth: (window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11) * (entry.root.scale?.z || 1), anchorZ: anchor.position.z || 0 }; // Calves bend at the actual seat edge, not the tile footprint.
   }
   function members(area, tableId) {
     area = areaId(area);
