@@ -357,6 +357,7 @@
   // A watchman's free hand holds an INVISIBLE copy of the weapon at the dual-wield offhand stance (js/dual-wield-weapon-visuals.js invisibleOffhandSocket)
   // instead of the locomotion idle. The NPC owns its own hands, so this claims the left hand and places it exactly like attachPrimaryHand does the right.
   function attachOffhandIdle(state, walker, holder, key, pose) {
+    if (grips()?.usesLegacyOffhandIdle?.(gripIdentity(walker).speciesId)) return false; // Keep the free arm on its normal NPC locomotion idle for the species exceptions.
     const visuals = window.HobunjiDualWieldWeaponVisuals, rig = rigFor(walker), hand = handFrame(walker), socket = worldFrame(holder);
     const plane = findToolPlane(holder), body = avatarRootFor(walker);
     if (!visuals?.invisibleOffhandSocket || !rig?.placeHandWorld || !hand || !socket || !plane || !body || !pose) return false;
