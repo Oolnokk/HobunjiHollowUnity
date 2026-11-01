@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
-  <link rel="stylesheet" href="utility-spyglass.css?v=20261101spyglass1" />
+  <link rel="stylesheet" href="utility-spyglass.css?v=20261101spyglassToggle1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Parser-time dependency gate used by modules that may be dynamically
        injected long before game.js. Keep this near the top: livestock
@@ -400,7 +400,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261101spyglassReview2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261101spyglassLookCloser1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -893,7 +893,7 @@
   <script src="js/crop-growth.js?v=20261015hcrop001"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261028h336f2e0"></script>
+  <script src="js/perception-mode.js?v=20261101spyglassNames1"></script>
   <script src="js/world-portrait-life.js?v=20261031headtakerlife6"></script>
 </head>
 <body>
@@ -2833,7 +2833,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; HUD is created at DOM ready. -->
-  <script src="js/utility-spyglass.js?v=20261101spyglass1"></script>
+  <script src="js/utility-spyglass.js?v=20261101spyglassToggle1"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/dev-random-ruin-bootstrap.js?v=20261101h9a1cd90"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
