@@ -208,6 +208,14 @@ setElevationFilter([{ material: filterMaterial }], 2.5);
 assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 1,
   'a resolved map elevation enables the depth filter');
 assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.elevation.value, 2.5);
+const sharedGroundMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([
+  { material: sharedGroundMaterial, geometry: { attributes: { normal: {} } } },
+  { material: sharedGroundMaterial, geometry: { attributes: {} } },
+], 1);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
+  'a shared unlit ground material fails closed if any registered mesh lacks normals');
+
 assert.ok(heldRender.includes('groupXrayMeshesByElevation(xrayMeshes'),
   'shell outlines are grouped by the same actor elevations as visible overlays');
 assert.ok(heldRender.includes('setGroundElevationFilter(groundMeshes, group.elevation)'),
