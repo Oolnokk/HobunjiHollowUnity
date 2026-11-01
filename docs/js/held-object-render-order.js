@@ -1066,8 +1066,15 @@
   }
 
   function actorRootForXrayMesh(mesh, scene) {
-    const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    const composer = window.PlayerBodyTransformComposer;
+    const playerMesh = composer?.getPlayerMesh?.();
     if (playerMesh && isDescendantOf(mesh, playerMesh)) return { root: playerMesh, isPlayer: true };
+    // Some player hand/foot rigs are composer-owned external roots rather
+    // than children of playerMesh. They still share the player's floor.
+    const playerVisualRoots = composer?.getVisualRoots?.() || [];
+    if (playerMesh && playerVisualRoots.some(root => root && isDescendantOf(mesh, root))) return { root: playerMesh, isPlayer: true };
+    const playerLegHandle = composer?.getPlayerLegHandle?.();
+    if (playerMesh && playerLegHandle && isDescendantOf(mesh, playerLegHandle.group || playerLegHandle)) return { root: playerMesh, isPlayer: true };
     for (let node = mesh; node && node !== scene; node = node.parent) {
       const data = node.userData || {};
       if (data.hobunjiXrayActorRoot === true
