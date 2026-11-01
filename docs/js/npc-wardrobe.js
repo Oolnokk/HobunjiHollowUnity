@@ -486,6 +486,12 @@
     function render() {
       const { worn, stored: storedItems } = getWardrobeContents(npcId);
       const packItems = spouseOverride ? (window.EquipmentPanel?.getPackClothingForWardrobe?.() || []) : []; // The assigned spouse wardrobe reads the live Pack through the inventory owner.
+      const packRows = packItems.length ? packItems.map(item => {
+        const label = String(item.label || 'Clothing').replace(/[&<>\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[character]));
+        const uid = String(item.uid || '').replace(/[&<>\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[character]));
+        return `<div style=\"display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px\"><span style=\"flex:1;font-size:12px\">${label}</span>${item.cursed ? '<span style=\"font-size:10px;color:#d99696\">cursed</span>' : `<button class=\"npc-wardrobe-pack\" data-uid=\"${uid}\" style=\"border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer\">Move here</button>`}</div>`;
+      }).join('') : '<p style=\"color:#9fb2cc;font-size:12px\">No clothing in your Pack.</p>';
+      const spousePackSection = spouseOverride ? `<p style=\"font-size:11px;color:#9fb2cc;margin:10px 0 0\">Your spouse can wear any non-cursed clothing, regardless of their usual style or preferences.</p><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px\">Clothing in Pack</div><div>${packRows}</div>` : '';
       panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h2 style="margin:0;font-size:15px;color:#6aa7ff">${name}'s Wardrobe</h2>
@@ -495,7 +501,7 @@
         <div>${worn.length ? worn.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing on hand.</p>'}</div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px">Stored</div>
         <div>${storedItems.length ? storedItems.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing stored yet — gift them clothing they\'ll wear.</p>'}</div>
-        ${spouseOverride ? '<p style="font-size:11px;color:#9fb2cc;margin:10px 0 0">Your spouse can wear any non-cursed clothing, regardless of their usual style or preferences.</p><div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px">Clothing in Pack</div><div>${packItems.length ? packItems.map(item => `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px"><span style="flex:1;font-size:12px">${item.label}</span>${item.cursed ? '<span style="font-size:10px;color:#d99696">cursed</span>' : `<button class="npc-wardrobe-pack" data-uid="${item.uid}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Move here</button>`}</div>`).join('') : '<p style="color:#9fb2cc;font-size:12px">No clothing in your Pack.</p>'}</div>' : ''}
+        ${spousePackSection}
       `;
       panel.querySelector('#npcWardrobeClose').addEventListener('click', closeWardrobePanel);
       panel.querySelectorAll('.npc-wardrobe-store').forEach(btn => btn.addEventListener('click', async () => {
