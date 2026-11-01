@@ -777,7 +777,11 @@
     const currentArea = lightingDeps?.getCurrentArea?.();
     const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
     const farmhouseActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true;
-    if (!ordinaryBuildingInterior(currentArea) && !farmhouseActive) return 1;
+    const enclosedArea = farmhouseActive || currentArea === 'interior'
+      || !!lightingDeps?._isBuildingArea?.(currentArea)
+      || isMineArea(currentArea) || isDenArea(currentArea)
+      || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
+    if (!enclosedArea) return 1;
     const player = lightingDeps.player;
     const fromX = finiteOr(player?.x, 0) / lightingDeps.TILE;
     const fromZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
