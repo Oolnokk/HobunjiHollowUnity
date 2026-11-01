@@ -1361,24 +1361,23 @@
   function replayShellOutlineXray(renderer, scene, camera, xrayMeshes, ground, topFaceGround, scissored) {
     if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) return;
 
-    const oldAutoClear = renderer.autoClear; // Restored after the private depth/shell passes.
-    const oldAutoClearColor = renderer.autoClearColor; // Preserves the caller's color-clear policy.
-    const oldAutoClearDepth = renderer.autoClearDepth; // Preserves the caller's depth-clear policy.
-    const oldAutoClearStencil = renderer.autoClearStencil; // Preserves the caller's stencil-clear policy.
-    const oldBackground = scene.background; // Restored after suppressing the background during depth-only draws.
-    const oldOverride = scene.overrideMaterial; // The shell shader reused for the selective shell draw.
-    const oldCameraMask = camera.layers.mask; // Restored after switching between world and shell layers.
-    const oldSceneAutoUpdate = scene.autoUpdate; // Restored after reusing base-pass world matrices.
-    const shadowMap = renderer.shadowMap; // Shadow auto-update is suspended while depth is reconstructed.
-    const oldShadowAutoUpdate = shadowMap?.autoUpdate; // Restored with the rest of the render state.
-    const previousInternalReplay = internalReplay; // Nested renderer calls must preserve the prior replay guard.
-    const glState = renderer.state; // Supplies the temporary screen-space scissor.
-    const xraySet = new Set(xrayMeshes); // Identifies shell meshes retained in the selective outline draw.
-    let depthVisibility = null; // Temporarily hidden ground meshes during the depth reconstruction.
-    let shellVisibility = null; // Non-x-ray shell meshes hidden during the selective shell draw.
-    let swappedGeometry = []; // Carved floor meshes temporarily replaced by wall/ceiling-only occluders.
-    let scissorActive = false; // Controls restoration of the temporary screen-space clip.
-    let depthWasCleared = false; // Ensures the ordinary depth buffer is rebuilt after any partial replay.
+    const oldAutoClear = renderer.autoClear;
+    const oldAutoClearColor = renderer.autoClearColor;
+    const oldAutoClearDepth = renderer.autoClearDepth;
+    const oldAutoClearStencil = renderer.autoClearStencil;
+    const oldBackground = scene.background;
+    const oldOverride = scene.overrideMaterial;
+    const oldCameraMask = camera.layers.mask;
+    const oldSceneAutoUpdate = scene.autoUpdate;
+    const shadowMap = renderer.shadowMap;
+    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
+    const previousInternalReplay = internalReplay;
+    const glState = renderer.state;
+    const groundMeshes = [...ground, ...topFaceGround];
+    const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene));
+    let swappedGeometry = [];
+    let scissorActive = false;
+    let depthWasCleared = false;
 
     internalReplay = true;
     try {
@@ -1399,69 +1398,66 @@
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
-
-      // Reconstruct solid depth with the exact same ground exclusions used by
-      // the visible x-ray object. Keep the source meshes in depth so their own
-      // front faces still mask the inflated shell; water, snow, props and walls remain.
-      renderer.clearDepth();
-      depthWasCleared = true;
-      depthVisibility = hideObjects(ground);
       swappedGeometry = swapToOccluderGeometry(topFaceGround);
-      scene.overrideMaterial = null;
-      camera.layers.mask = MASK_ALL;
-      const depthStates = prepareNonGroundDepthMaterials(scene);
-      // Shell back-faces need the source surface in depth even when its normal
-      // material opts out of depth writes (as held/overlay materials sometimes do).
-      for (const mesh of xrayMeshes) {
-        forEachMaterial(mesh.material, material => {
-          saveMaterialState(depthStates, material);
-          material.depthTest = true;
-          material.depthWrite = true;
-        });
-      }
-      try {
-        rawRender.call(renderer, scene, camera);
-        nonGroundDepthReplayCount++;
-      } finally {
-        restoreMaterialStates(depthStates);
-        restoreSwappedGeometry(swappedGeometry);
-        swappedGeometry = [];
-        restoreVisibility(depthVisibility);
-        depthVisibility = null;
-      }
 
-      // Draw only the x-ray objects' shells. Their own front-face depth is
-      // present, so only the expanded silhouette escapes; ordinary non-ground
-      // geometry still blocks the shell exactly as it blocks the visible object.
-      shellVisibility = hideNonXrayShellMeshes(scene, xraySet);
-      scene.overrideMaterial = oldOverride;
-      camera.layers.mask = SHELL_MASK;
-      rawRender.call(renderer, scene, camera);
-      shellXrayPassCount++;
-      shellXrayMeshDrawCount += xrayMeshes.length;
-      restoreVisibility(shellVisibility);
-      shellVisibility = null;
+      // Use the same actor-elevation groups and ground-fragment filter as the
+      // visible tool/hand/foot replay. The shell cannot become visible through
+      // a different floor than its source object.
+      for (const group of groups) {
+        const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
+        renderer.clearDepth();
+        depthWasCleared = true;
+        scene.overrideMaterial = null;
+        camera.layers.mask = MASK_ALL;
+        const depthStates = prepareNonGroundDepthMaterials(scene);
+        for (const mesh of xrayMeshes) {
+          forEachMaterial(mesh.material, material => {
+            saveMaterialState(depthStates, material);
+            material.depthTest = true;
+            material.depthWrite = true;
+          });
+        }
+        try {
+          rawRender.call(renderer, scene, camera);
+          nonGroundDepthReplayCount++;
+        } finally {
+          restoreMaterialStates(depthStates);
+          clearGroundElevationFilter(filterStates);
+        }
+
+        const groupSet = new Set(group.meshes);
+        const shellVisibility = hideNonXrayShellMeshes(scene, groupSet);
+        try {
+          scene.overrideMaterial = oldOverride;
+          camera.layers.mask = SHELL_MASK;
+          rawRender.call(renderer, scene, camera);
+          shellXrayPassCount++;
+          shellXrayMeshDrawCount += group.meshes.length;
+        } finally {
+          restoreVisibility(shellVisibility);
+        }
+      }
     } finally {
-      // Restore the framebuffer depth before target/material-ID consumers.
-      // This is colorless and confined to the same scissor as the x-ray shell.
+      // Rebuild complete, unfiltered scene depth before later outline and
+      // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
         if (depthWasCleared) {
-          if (depthVisibility) {
-            restoreVisibility(depthVisibility);
-            depthVisibility = null;
-          }
           if (swappedGeometry.length) {
             restoreSwappedGeometry(swappedGeometry);
             swappedGeometry = [];
           }
-          if (shellVisibility) {
-            restoreVisibility(shellVisibility);
-            shellVisibility = null;
-          }
+          clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
           renderer.clearDepth();
           const restoreStates = prepareNonGroundDepthMaterials(scene);
+          for (const mesh of xrayMeshes) {
+            forEachMaterial(mesh.material, material => {
+              saveMaterialState(restoreStates, material);
+              material.depthTest = true;
+              material.depthWrite = true;
+            });
+          }
           try {
             rawRender.call(renderer, scene, camera);
           } finally {
@@ -1469,9 +1465,8 @@
           }
         }
       } finally {
-        if (depthVisibility) restoreVisibility(depthVisibility);
         if (swappedGeometry.length) restoreSwappedGeometry(swappedGeometry);
-        if (shellVisibility) restoreVisibility(shellVisibility);
+        clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
         if (scissorActive) restoreRendererScissor(renderer);
         camera.layers.mask = oldCameraMask;
         scene.overrideMaterial = oldOverride;
