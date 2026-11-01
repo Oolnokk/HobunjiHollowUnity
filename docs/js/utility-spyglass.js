@@ -11,6 +11,7 @@
   let viewDeps = null; // Captured from ActionArcUI.init and used to restore Character View and detect held equipment.
   let savedCamera = null; // Original camera mode/target/view restored when the spyglass is put away.
   let savedActionAria = null; // Existing Action 1 accessibility label restored after spyglass use.
+  let savedActionPressed = null; // Existing pressed-state attribute restored when the temporary arch prompt is removed.
   let equipped = false; // True while selected from the Utility Arch.
   let aiming = false; // True while the spyglass lens is raised.
   let lookingCloser = false; // True after the second Action 1 press activates perception and extra magnification.
@@ -53,10 +54,16 @@
       icon?.remove?.();
       label?.remove?.();
       if (savedActionAria != null) button.setAttribute?.('aria-label', savedActionAria);
+      if (savedActionPressed == null) button.removeAttribute?.('aria-pressed');
+      else button.setAttribute?.('aria-pressed', savedActionPressed);
       savedActionAria = null;
+      savedActionPressed = null;
       return;
     }
-    if (savedActionAria == null) savedActionAria = button.getAttribute?.('aria-label') || 'Primary action';
+    if (savedActionAria == null) {
+      savedActionAria = button.getAttribute?.('aria-label') || 'Primary action';
+      savedActionPressed = button.getAttribute?.('aria-pressed');
+    }
     if (!icon) {
       icon = document.createElement('span');
       icon.className = 'abt-icon spyglass-action-icon';
@@ -211,6 +218,7 @@
     }; // Restores precisely the camera and Character View state the player had before selection.
     const actionButton = document.getElementById?.('btnAction1');
     savedActionAria = actionButton?.getAttribute?.('aria-label') || 'Primary action';
+    savedActionPressed = actionButton?.getAttribute?.('aria-pressed');
     window.ActionArcUI?.stowForCarry?.(); // Clear held combat/tool state so the scope cannot fire or mine.
     viewDeps?.setCharacterViewMode?.(false, 'spyglass');
     cameraDeps.setCameraTarget?.(null);
@@ -222,6 +230,7 @@
       if (previous.mode != null) cameraDeps.setCameraMode(previous.mode);
       cameraDeps.setCameraTarget?.(previous.target);
       savedActionAria = null;
+      savedActionPressed = null;
       lastReason = 'shoulder camera unavailable';
       return false;
     }
