@@ -482,14 +482,17 @@
   // state as the skydome and now also applies the skydome's ambient-darkness
   // lantern activation curve to outdoor player/watch lantern masks.
   let lightingDeps = null;
+  const LIGHTING_OVERLAY_MIN_INTERVAL_MS = 1000 / 60; // Camera rotation and moving lights need frame-rate projection, not 10 Hz screen-space steps.
   let lastUnifiedLightingDraw = 0;
   let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
   let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
   let lastInteriorDarknessDraw = null; // Mobile diagnostics of the shared compositor's actual enclosed base fill.
   const lightCamRight = new window.THREE.Vector3(); // Reused camera-right axis for stable screen-space light radii.
+  const lightCamUp = new window.THREE.Vector3(); // Reused camera-up axis for camera-independent farmhouse light projection.
   const lightCameraPosition = new window.THREE.Vector3(); // Reused camera position for off-screen source depth checks.
   const lightViewDirection = new window.THREE.Vector3(); // Reused camera forward direction for off-screen source depth checks.
   const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
+  const lightPlayerPosition = new window.THREE.Vector3(); // Reused player-depth plane origin for farmhouse light projection.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
   const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
@@ -502,6 +505,34 @@
       z + lightCamRight.z * tiles,
     );
     return Math.hypot(e.x - c.x, e.y - c.y);
+  }
+
+  function projectInteriorLightMask(x, y, z, tiles, context, rangeTiles = tiles) {
+    let projectedX = x, projectedY = y, projectedZ = z, projectedRadius = tiles;
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    if (activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true) {
+      const camera = lightingDeps.camera;
+      camera.getWorldDirection(lightViewDirection);
+      const player = lightingDeps.player;
+      const playerX = finiteOr(player?.x, 0) / lightingDeps.TILE;
+      const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0);
+      const playerZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
+      lightPlayerPosition.set(playerX, playerY, playerZ);
+      lightToSource.set(x, y, z).sub(lightPlayerPosition);
+      lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
+      lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
+      const distanceSquared = lightToSource.x * lightToSource.x + lightToSource.y * lightToSource.y + lightToSource.z * lightToSource.z;
+      if (distanceSquared > rangeTiles * rangeTiles) return null; // The visual mask radius and the fixture's actual influence range are separate.
+      const lateralX = lightToSource.dot(lightCamRight);
+      const lateralY = lightToSource.dot(lightCamUp);
+      projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
+      projectedY = playerY + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
+      projectedZ = playerZ + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
+    }
+    const center = lightingDeps.worldToOverlay(projectedX, projectedY, projectedZ);
+    const radius = lightScreenRadius(projectedX, projectedZ, projectedY, projectedRadius);
+    if (!lightMaskIntersectsViewport(center, radius, context, projectedX, projectedY, projectedZ, projectedRadius)) return null;
+    return { center, radius, x: projectedX, y: projectedY, z: projectedZ };
   }
 
   function lightMaskIntersectsViewport(center, radius, context, x, y, z, worldRadius) {
@@ -631,10 +662,9 @@
     const visible = [];
     const linearInterior = ordinaryBuildingInterior(lightingDeps.getCurrentArea()) && !isUndergroundLanternArea(lightingDeps.getCurrentArea()); // Only ordinary buildings use the broad linear profile.
     for (const light of lightingDeps.getFurnitureLightSources()) {
-      const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
-      if (!lightMaskIntersectsViewport(center, shineR, ctx, light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1))) continue;
-      visible.push({ light, center, shineR });
+      const projected = projectInteriorLightMask(light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
+      if (!projected) continue;
+      visible.push({ light, center: projected.center, shineR: projected.radius });
     }
 
     ctx.globalCompositeOperation = 'destination-out';
@@ -796,30 +826,29 @@
     ctx.globalCompositeOperation = 'destination-out';
     for (const source of sources) {
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
-      const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
-      const glowR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, WINDOW_PANE_GLOW_RADIUS);
-      if (lightMaskIntersectsViewport(center, glowR, ctx, ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS)) {
-        drawWindowRevealCircle(ctx, center, glowR, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
+      const paneRange = Math.max(WINDOW_PANE_GLOW_RADIUS, finiteOr(source.radiusTiles, 2.8) * INTERIOR_LIGHT_RADIUS_MULTIPLIER); // Keep the small pane glow visible throughout the window's actual room-light range, including at night.
+      const pane = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS, ctx, paneRange);
+      if (pane) {
+        drawWindowRevealCircle(ctx, pane.center, pane.radius, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
         windowMaskStats.glows += 1;
       }
       if (daylight <= 0.02) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
-      const shineR = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER);
+      const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
-      if (!(strength > 0) || !lightMaskIntersectsViewport(center, shineR, ctx, ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER)) continue;
-      drawWindowRevealCircle(ctx, center, shineR, strength, 0.35, true); // Daylight pool spreading into the room.
+      if (!(strength > 0) || !projected) continue;
+      drawWindowRevealCircle(ctx, projected.center, projected.radius, strength, 0.35, true); // Daylight pool spreading into the room.
       windowMaskStats.drawn += 1;
     }
     ctx.globalCompositeOperation = 'screen'; // Add only soft color to the shared fake-daylight mask; never draw an exact textured floor projection.
     if (daylight > 0.02) for (const source of sources) {
       if (!source.projectionPalette?.length && !source.glassTint) continue; // Plain daylight windows keep their existing neutral illumination.
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
-      const center = lightingDeps.worldToOverlay(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z);
-      if (!center?.visible) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
-      const radius = lightScreenRadius(ambientWindowScratch.x, ambientWindowScratch.z, ambientWindowScratch.y, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER);
+      const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
+      if (!projected) continue;
       const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
-      if (drawStainedGlassAura(ctx, source, center, radius, strength)) windowMaskStats.colorAuras++;
+      if (drawStainedGlassAura(ctx, source, projected.center, projected.radius, strength)) windowMaskStats.colorAuras++;
     }
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -832,7 +861,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Selects room darkness and detects transitions that must bypass the normal redraw throttle.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
-    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0
+    if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
         && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
     lastUnifiedLightingArea = currentArea;
