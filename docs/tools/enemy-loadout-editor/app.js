@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261031headtakerpreview8';
+import { EnemyPreview } from './preview.js?v=20261031headtakerfatal1';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -974,7 +974,7 @@ function renderPools() {
   }
   if (state.tab === 'weapons') {
     if (state.kind === 'maskbound:headtaker') {
-      $('poolPanel').append(el('p', 'help', 'Unarmed. Its only attack is Skyfall Head Grip: a high, off-screen leap ending in a one-tile circular landing, followed by two 1.5-second head pulls and a final 5-second pull. Dodge-roll to detach; ordinary hits do not interrupt it.'));
+      $('poolPanel').append(el('p', 'help', 'Unarmed. Its only attack is Skyfall Head Grip: a high, off-screen leap ending in a one-tile circular landing, followed by two 1.5-second head pulls, a final 3-second pull, and a 1.3-second head throw. A completed attack kills immediately without Second Wind; dodge-roll during the sequence detaches it. Ordinary hits do not interrupt it.'));
       updateRuleJson();
       return;
     }
@@ -1225,7 +1225,7 @@ function renderPools() {
       );
   } else if (state.tab === 'attacks') {
     if (state.kind === 'maskbound:headtaker') {
-      $('poolPanel').append(el('p', 'help', 'Skyfall Head Grip is a unique non-weapon attack. It targets humanoids only, falls within a 1-tile circular impact zone, and uses the shared attachment mechanic. Dodge-rolling is its exclusive interrupt.'));
+      $('poolPanel').append(el('p', 'help', 'Skyfall Head Grip is a unique non-weapon attack. It targets humanoids only, falls within a 1-tile circular impact zone, and uses the shared attachment mechanic. A finished sequence kills immediately without entering the downed state. Dodge-rolling before completion is its exclusive interrupt.'));
     } else if (d.lich) {
       const exclusive = d.special
         ? [state.kind.includes('hronal')?'melee':state.kind.includes('tothal')?'blizzard':'plasmCharge']
