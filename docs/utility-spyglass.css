@@ -38,7 +38,7 @@
   visibility: visible !important;
   opacity: 1 !important;
 }
-#btnAction1.spyglass-action-visible > :not(.spyglass-action-icon):not(.spyglass-action-label):not(.arch-meaning-label):not(.arch-input-binding) {
+#btnAction1.spyglass-action-visible > :not(.spyglass-action-icon):not(.spyglass-action-label):not(.arch-meaning-label):not(.arch-input-binding):not(.abt-key) {
   visibility: hidden !important;
 }
 #btnAction1 .spyglass-action-icon,
