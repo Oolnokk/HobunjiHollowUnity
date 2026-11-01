@@ -397,6 +397,9 @@
   let _layoutAdapter = null; // Barn-specific data/actions use the same house modal, renderer, and pointer handlers.
   const HOUSE_LAYOUT_MARGIN = 2;
   function _layoutPieces() { return _layoutAdapter ? _layoutAdapter.getPieces() : deps.getHousePieces(); }
+  const _layoutCursor = { active: false, col: 0, row: 0, carry: null, direction: '', nextMove: 0, confirmDown: false, cancelDown: false }; // Shared by farm/house/barn top-down controller editing; pointer handling remains independent.
+  const LAYOUT_CURSOR_INITIAL_REPEAT = 380; // Matching ControllerUI's first held-direction repeat.
+  const LAYOUT_CURSOR_REPEAT = 140; // Matching ControllerUI's subsequent tile steps.
 
   function openHouseLayoutModal(adapter = null) {
     const modal = document.getElementById('houseLayoutModal');
@@ -404,6 +407,7 @@
     closeHouseLayoutModal();
     _layoutAdapter = adapter;
     _houseLayoutSelectedId = adapter?.selectedId || null;
+    _setLayoutCursorActive(false); // The previous editor must not leave its cursor/carry state behind.
     const title = adapter?.title || 'House Layout'; // Shared header reflects the currently edited building.
     modal.querySelector('.house-layout-title').textContent = title;
     const listTitle = modal.querySelector('.house-layout-side > .house-layout-section-title'); // Adapters name their own piece list (rooms, structures).
@@ -449,6 +453,7 @@
     _houseLayoutPlacementMode = null;
     _houseLayoutFeatureMode = null;
     _layoutCancelPointer?.();
+    _setLayoutCursorActive(false);
     _houseLayoutDrag = null;
     _houseLayoutSelectedId = null;
     _layoutAdapter = null;
@@ -504,6 +509,12 @@
     );
     selectBox.visible = false;
     overlayScene.add(selectBox);
+    const cursorBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(0.96, 0.08, 0.96)),
+      new THREE.LineBasicMaterial({ color: 0x64e7ff, depthTest: false })
+    ); // A one-ground-tile outline, independent of the selected building's bounding box.
+    cursorBox.visible = false;
+    overlayScene.add(cursorBox);
 
     // House pieces render with plain MeshLambertMaterial (see HousePieceGen.js)
     // and no emissive boost — the same "reads as a solid black blob under
@@ -519,7 +530,7 @@
     // observes it and gameplay lighting/mood is untouched.
     const fillLight = new THREE.AmbientLight(0xffffff, 1.1);
 
-    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox, fillLight };
+    _houseLayout3d = { renderer, camera, overlayScene, ghostMesh, selectBox, cursorBox, fillLight };
     return _houseLayout3d;
   }
   // Sizes the renderer to the viewport container's actual CSS size and
@@ -550,7 +561,9 @@
     const ctx3d = _ensureHouseLayout3d();
     if (!ctx3d) return;
     _resizeAndFrameHouseLayout3d();
-    const { renderer, camera, overlayScene, selectBox, fillLight } = ctx3d;
+    const { renderer, camera, overlayScene, selectBox, cursorBox, fillLight } = ctx3d;
+    cursorBox.visible = _layoutCursor.active;
+    if (_layoutCursor.active) cursorBox.position.set(_layoutCursor.col + 0.5, 1.9, _layoutCursor.row + 0.5);
     const selected = _layoutPieces().find(p => p.id === _houseLayoutSelectedId);
     if (selected) {
       selectBox.visible = true;
@@ -659,6 +672,171 @@
     return null;
   }
 
+  function _setLayoutCursorActive(active) {
+    const enabled = !!active; // Only the open layout editor may own directional controller input.
+    _layoutCursor.active = enabled;
+    _layoutCursor.carry = null;
+    _layoutCursor.direction = '';
+    _layoutCursor.nextMove = 0;
+    _hideGhost();
+    const button = document.getElementById('houseLayoutCursorToggle'); // The same action is available to touch/keyboard as well as the controller.
+    if (button) {
+      button.textContent = enabled ? 'Tile Cursor Active · B to exit' : 'Use Tile Cursor (A)';
+      button.setAttribute('aria-pressed', String(enabled));
+    }
+    if (!enabled) { _layoutCursor.confirmDown = false; _layoutCursor.cancelDown = false; }
+    _renderHouseLayoutHint();
+  }
+
+  function _startLayoutCursor() {
+    if (_layoutCursor.active) { _setLayoutCursorActive(false); return; }
+    const bounds = _houseLayoutViewBounds(); // Start over the selected piece, or the center of this particular layout's visible area.
+    const piece = _layoutPieces().find(p => p.id === _houseLayoutSelectedId) || _layoutPieces()[0];
+    const targetCol = piece ? piece.col + Math.floor(piece.w / 2) : Math.floor(bounds.col + bounds.w / 2);
+    const targetRow = piece ? piece.row + Math.floor(piece.h / 2) : Math.floor(bounds.row + bounds.h / 2);
+    _layoutCursor.col = Math.max(0, Math.min(deps.COLS - 1, targetCol));
+    _layoutCursor.row = Math.max(0, Math.min(deps.ROWS - 1, targetRow));
+    _setLayoutCursorActive(true);
+    _layoutCursor.confirmDown = true; // The opening A press must be released before A can pick up a room.
+    _layoutCursor.cancelDown = false;
+  }
+
+  function _commitHouseLayoutMove(drag) {
+    let result;
+    if (_layoutAdapter) result = _layoutAdapter.move(drag.entry, drag.candidateCol, drag.candidateRow);
+    else if (drag.isWholeHouse) {
+      const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
+      const starter = _layoutPieces().find(p => p.id === 'house_starter'); // Same anchor translation used for pointer and controller movement.
+      result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
+    } else result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
+    deps.showToast(result.message, result.ok);
+    renderHouseLayoutModal();
+    renderFarmBuildings();
+  }
+
+  function _applyHouseLayoutTile(world) {
+    if (_layoutAdapter && _houseLayoutPlacementMode) {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const result = _layoutAdapter.place(world, _houseLayoutPlacementMode); // Existing structure-placement rules handle tap and controller equally.
+      deps.showToast(result.message, result.ok);
+      if (result.ok) {
+        _houseLayoutPlacementMode = null;
+        _houseLayoutSelectedId = result.addition?.id || _houseLayoutSelectedId;
+      }
+      renderHouseLayoutModal();
+      renderFarmBuildings();
+      return;
+    }
+    if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
+      deps.showToast(result.message, result.ok);
+      if (result.ok) _houseLayoutPlacementMode = null;
+      renderHouseLayoutModal();
+      renderFarmBuildings();
+      return;
+    }
+    if (_houseLayoutFeatureMode) {
+      if (!deps.hasFarmPermission('alterFarm')) return;
+      const col = Math.floor(world.x), row = Math.floor(world.z);
+      const result = _houseLayoutFeatureMode === 'remove'
+        ? deps.removeHouseFeatureAt(col, row)
+        : deps.placeHouseFeature(col, row, world.x, world.z, _houseLayoutFeatureMode);
+      deps.showToast(result.message, result.ok);
+      renderHouseLayoutModal();
+      return;
+    }
+    const piece = _housePieceAt(world.x, world.z);
+    _houseLayoutSelectedId = piece ? piece.id : null;
+    renderHouseLayoutModal();
+  }
+
+  function _stepLayoutCursor(dx, dy) {
+    const col = Math.max(0, Math.min(deps.COLS - 1, _layoutCursor.col + dx)); // Snap to authored farm grid, never fractional world space.
+    const row = Math.max(0, Math.min(deps.ROWS - 1, _layoutCursor.row + dy));
+    if (col === _layoutCursor.col && row === _layoutCursor.row) return;
+    _layoutCursor.col = col;
+    _layoutCursor.row = row;
+    if (_layoutCursor.carry) {
+      const drag = _layoutCursor.carry; // Preserve grab offset so picking up near a corner does not jump the structure.
+      drag.candidateCol = col - drag.grabDX;
+      drag.candidateRow = row - drag.grabDZ;
+      _updateGhost(drag);
+    }
+  }
+
+  function _confirmLayoutCursor() {
+    const world = { x: _layoutCursor.col + 0.5, z: _layoutCursor.row + 0.5 }; // Reuses the exact tap tile for selection, features and deed placement.
+    if (_layoutCursor.carry) {
+      const drag = _layoutCursor.carry;
+      _layoutCursor.carry = null;
+      _hideGhost();
+      _commitHouseLayoutMove(drag);
+      return;
+    }
+    if (_houseLayoutPlacementMode || _houseLayoutFeatureMode) { _applyHouseLayoutTile(world); return; }
+    const piece = _housePieceAt(world.x, world.z);
+    if (piece && piece.id === _houseLayoutSelectedId && deps.hasFarmPermission('alterFarm') && (!_layoutAdapter || _layoutAdapter.canDrag(piece))) {
+      _layoutCursor.carry = {
+        entry: piece, moved: true,
+        grabDX: _layoutCursor.col - piece.col, grabDZ: _layoutCursor.row - piece.row,
+        candidateCol: piece.col, candidateRow: piece.row,
+        isWholeHouse: !_layoutAdapter && piece.id === 'house_starter',
+      }; // A on an already selected building picks it up; A again drops using the existing move authority.
+      _updateGhost(_layoutCursor.carry);
+      _renderHouseLayoutHint();
+      return;
+    }
+    _applyHouseLayoutTile(world);
+  }
+
+  function _cancelLayoutCursor() {
+    if (_layoutCursor.carry) {
+      _layoutCursor.carry = null;
+      _hideGhost();
+    } else if (_houseLayoutPlacementMode || _houseLayoutFeatureMode) {
+      _houseLayoutPlacementMode = null;
+      _houseLayoutFeatureMode = null;
+      renderHouseLayoutModal();
+    } else _setLayoutCursorActive(false); // B hands focus back to the normal menu navigator without closing the editor.
+    _renderHouseLayoutHint();
+  }
+
+  function _handleLayoutControllerFrame(frame, actionDown) {
+    if (!_layoutCursor.active || !frame.focused || !frame.pad || window.ControllerUI?.activePanel?.() !== document.getElementById('houseLayoutModal')) return false;
+    const digitalX = Number(actionDown('uiRight')) - Number(actionDown('uiLeft')); // Live remapped D-pad bindings take precedence over left stick.
+    const digitalY = Number(actionDown('uiDown')) - Number(actionDown('uiUp'));
+    const dx = digitalX || (Math.abs(frame.move.x) >= 0.5 ? Math.sign(frame.move.x) : 0);
+    const dy = digitalY || (Math.abs(frame.move.y) >= 0.5 ? Math.sign(frame.move.y) : 0);
+    const direction = dx + ',' + dy; // Held directions repeat by one tile; changes take effect immediately.
+    if (dx || dy) {
+      if (direction !== _layoutCursor.direction || frame.now >= _layoutCursor.nextMove) {
+        _stepLayoutCursor(dx, dy);
+        _layoutCursor.nextMove = frame.now + (direction !== _layoutCursor.direction ? LAYOUT_CURSOR_INITIAL_REPEAT : LAYOUT_CURSOR_REPEAT);
+      }
+    }
+    _layoutCursor.direction = (dx || dy) ? direction : '';
+    const confirm = actionDown('uiConfirm');
+    const cancel = actionDown('uiCancel');
+    if (confirm && !_layoutCursor.confirmDown) _confirmLayoutCursor();
+    if (cancel && !_layoutCursor.cancelDown) _cancelLayoutCursor();
+    _layoutCursor.confirmDown = confirm;
+    _layoutCursor.cancelDown = cancel;
+    return true; // Suppresses ControllerUI's spatial navigation/Confirm/Back only while the cursor owns the viewport.
+  }
+
+  function _handleLayoutCursorKey(event) {
+    if (!_layoutCursor.active || document.getElementById('houseLayoutModal')?.classList.contains('open') !== true) return false;
+    if (event.key === 'Tab') { _setLayoutCursorActive(false); return false; } // Keyboard users can move back to ordinary sidebar navigation.
+    if (event.repeat && (event.key === 'Enter' || event.key === ' ')) return true;
+    const steps = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }; // Keyboard parity for debugging without a physical gamepad.
+    if (steps[event.key]) _stepLayoutCursor(...steps[event.key]);
+    else if (event.key === 'Enter' || event.key === ' ') _confirmLayoutCursor();
+    else if (event.key === 'Escape') _cancelLayoutCursor();
+    else return false;
+    return true;
+  }
+
   function _bindHouseLayoutPointer() {
     const canvas = document.getElementById('houseLayout3dCanvas');
     if (!canvas || canvas.dataset.pointerBound) return;
@@ -672,6 +850,7 @@
 
     canvas.addEventListener('pointerdown', (e) => {
       if (ptrId !== null) return;
+      if (_layoutCursor.active) _setLayoutCursorActive(false); // Direct touch/mouse input retakes the viewport without leaving a virtual cursor overlay.
       ptrId = e.pointerId; startX = e.clientX; startY = e.clientY;
       try { canvas.setPointerCapture(e.pointerId); } catch (_e) { /* degrade gracefully */ }
       if (_houseLayoutPlacementMode || _houseLayoutFeatureMode || !deps.hasFarmPermission('alterFarm')) return;
@@ -707,69 +886,9 @@
       ptrId = null;
       const drag = _houseLayoutDrag; _houseLayoutDrag = null;
       _hideGhost();
-      if (drag && drag.moved) {
-        let result;
-        if (_layoutAdapter) {
-          result = _layoutAdapter.move(drag.entry, drag.candidateCol, drag.candidateRow);
-        } else if (drag.isWholeHouse) {
-          // drag.candidateCol/Row track whichever starter-tagged piece was
-          // actually grabbed (main room or annex) — moveHouse always wants
-          // the MAIN room's new position, so translate by the same delta
-          // _updateGhost already uses for the preview, not the raw grabbed
-          // piece's own candidate position.
-          const dCol = drag.candidateCol - drag.entry.col, dRow = drag.candidateRow - drag.entry.row;
-          const starter = _layoutPieces().find(p => p.id === 'house_starter');
-          result = starter ? deps.moveHouse(starter.col + dCol, starter.row + dRow) : { ok: false, message: 'House not found.' };
-        } else {
-          result = deps.movePiece(drag.entry.id, drag.candidateCol, drag.candidateRow);
-        }
-        deps.showToast(result.message, result.ok);
-        renderHouseLayoutModal();
-        renderFarmBuildings(); // keep the main list's room-count note in sync
-        return;
-      }
-      // A plain tap (no meaningful drag): commit an armed deed placement or
-      // architecture-feature action, or select whatever piece (if any) sits
-      // under the tap.
+      if (drag && drag.moved) { _commitHouseLayoutMove(drag); return; }
       const world = _screenToWorldXZ(e.clientX, e.clientY);
-      if (!world) return;
-      if (_layoutAdapter && _houseLayoutPlacementMode) {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const result = _layoutAdapter.place(world, _houseLayoutPlacementMode); // Uses existing plan-consumption and placement validation.
-        deps.showToast(result.message, result.ok);
-        if (result.ok) {
-          _houseLayoutPlacementMode = null;
-          _houseLayoutSelectedId = result.addition?.id || _houseLayoutSelectedId;
-        }
-        renderHouseLayoutModal();
-        renderFarmBuildings();
-        return;
-      }
-      if (_houseLayoutPlacementMode?.type === 'placeHouseDeed') {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const result = deps.placeHouseDeed(_houseLayoutPlacementMode.pieceKey, Math.floor(world.x), Math.floor(world.z));
-        deps.showToast(result.message, result.ok);
-        if (result.ok) _houseLayoutPlacementMode = null;
-        renderHouseLayoutModal();
-        renderFarmBuildings();
-        return;
-      }
-      if (_houseLayoutFeatureMode) {
-        if (!deps.hasFarmPermission('alterFarm')) return;
-        const col = Math.floor(world.x), row = Math.floor(world.z);
-        const result = _houseLayoutFeatureMode === 'remove'
-          ? deps.removeHouseFeatureAt(col, row)
-          : deps.placeHouseFeature(col, row, world.x, world.z, _houseLayoutFeatureMode);
-        deps.showToast(result.message, result.ok);
-        // Stays armed on success too — placing/removing several fixtures in
-        // a row shouldn't need re-toggling the mode each time; only a
-        // failure or the explicit toggle button clears it.
-        renderHouseLayoutModal();
-        return;
-      }
-      const piece = _housePieceAt(world.x, world.z);
-      _houseLayoutSelectedId = piece ? piece.id : null;
-      renderHouseLayoutModal();
+      if (world) _applyHouseLayoutTile(world); // Mouse/touch and cursor share placement validation and selections.
     });
 
     canvas.addEventListener('pointercancel', (e) => {
@@ -786,6 +905,7 @@
     if (!hint) return;
     if (_layoutAdapter) {
       hint.textContent = !deps.hasFarmPermission('alterFarm') ? (_layoutAdapter.noPermissionHint || "Only the farm's owner (or a granted farmhand) can edit the barn.") : _layoutAdapter.getHint(_houseLayoutPlacementMode);
+      if (_layoutCursor.active) hint.textContent += _layoutCursor.carry ? ' · Move with stick/D-pad · A drop · B cancel move' : ' · Stick/D-pad: tile · A select/pick up/place · B back';
       return;
     }
     const HOUSE_PIECE_CATALOG = deps.getHousePieceCatalog();
@@ -798,6 +918,7 @@
       : _houseLayoutPlacementMode ? `Tap where the ${HOUSE_PIECE_CATALOG[_houseLayoutPlacementMode.pieceKey]?.label || 'piece'} should go.`
       : _houseLayoutFeatureMode ? featureHints[_houseLayoutFeatureMode]
       : 'Drag a room to move it. Tap a room to select it and see its options.';
+    if (_layoutCursor.active) hint.textContent += _layoutCursor.carry ? ' · Move with stick/D-pad · A drop · B cancel move' : ' · Stick/D-pad: tile · A select/pick up/place · B back';
   }
 
   function _renderHouseLayoutPieceList() {
@@ -938,6 +1059,11 @@
   function renderHouseLayoutModal() {
     _layoutAdapter?.refresh?.(); // Barn pieces/view bounds are refreshed on edits, not allocated every render frame.
     _bindHouseLayoutPointer();
+    const cursorToggle = document.getElementById('houseLayoutCursorToggle'); // One persistent controller entry action, not recreated with the sidebar.
+    if (cursorToggle && !cursorToggle.dataset.bound) {
+      cursorToggle.dataset.bound = '1';
+      cursorToggle.addEventListener('click', _startLayoutCursor);
+    }
     _renderHouseLayoutHint();
     _renderHouseLayoutPieceList();
     if (_layoutAdapter) {
@@ -1756,12 +1882,15 @@
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,
     closeLayoutEditor: closeHouseLayoutModal,
+    handleLayoutControllerFrame: _handleLayoutControllerFrame, // ControllerUI delegates remapped input while the tile cursor is active.
+    handleLayoutCursorKey: _handleLayoutCursorKey, // Keyboard-accessible cursor and Escape handling use the same state machine.
     refreshLayoutEditor: () => { if (document.getElementById('houseLayoutModal')?.classList.contains('open')) renderHouseLayoutModal(); },
     layoutEditorDebug: () => ({
-      mostRecentChange: 'House and barn layouts share one live 3D viewport, selection, drag preview, and responsive controls.',
+      mostRecentChange: 'Farm, house and barn layout editors share a controller tile cursor with pick-up/drop and placement, retaining touch drag support.',
       editor: _layoutAdapter?.kind || 'house', selectedId: _houseLayoutSelectedId,
       open: !!document.getElementById('houseLayoutModal')?.classList.contains('open'),
       placing: _houseLayoutPlacementMode, draggingId: _houseLayoutDrag?.entry?.id || null,
+      cursor: { active: _layoutCursor.active, col: _layoutCursor.col, row: _layoutCursor.row, carryingId: _layoutCursor.carry?.entry?.id || null }, // Mobile-visible diagnostics.
     }),
     cancelBarnPlacement: () => { _farmPlacementMode = null; },
   };

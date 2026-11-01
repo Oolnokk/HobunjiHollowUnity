@@ -164,7 +164,7 @@
   <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261029maskSlots2">
+  <link rel="stylesheet" href="style.css?v=20261031layoutCursor1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -747,7 +747,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261031furniturecontrols1"></script>
+  <script src="js/farm-panel.js?v=20261031layoutCursor1"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -2495,6 +2495,7 @@
     <div class="house-layout-body">
       <div class="house-layout-viewport">
         <canvas id="houseLayout3dCanvas"></canvas>
+        <button type="button" id="houseLayoutCursorToggle" class="house-layout-cursor-toggle" data-ctrl-default aria-pressed="false">Use Tile Cursor (A)</button>
         <div id="houseLayoutHint" class="house-layout-hint"></div>
       </div>
       <div class="house-layout-side">
@@ -2879,7 +2880,7 @@
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261028packpreview2"></script>
+  <script src="js/controller-ui-nav.js?v=20261031layoutCursor1"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
