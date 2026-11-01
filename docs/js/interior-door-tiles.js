@@ -255,7 +255,7 @@
     threeRef = THREE || threeRef;
     discard(mapId);
     const tiles = doorGroupsOf(mapData, floorSet); // Includes map-switch doors without changing their travel action.
-    const state = { mapId, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
+    const state = { mapId, scene, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
     maps.set(mapId, state);
     if (!tiles.length) return state;
     const data = await loadDoorData();
@@ -339,8 +339,9 @@
     }));
   }
 
-  function getLightBlockers(mapId) {
-    const state = maps.get(String(mapId));
+  function getLightBlockers(mapId, activeScene = null) {
+    const requested = mapId == null ? null : maps.get(String(mapId));
+    const state = requested || (activeScene ? [...maps.values()].find(candidate => candidate.scene === activeScene) : null);
     if (!state) return [];
     return state.doors.map(entry => {
       const THREE = threeRef || deps?.THREE || window.THREE;
