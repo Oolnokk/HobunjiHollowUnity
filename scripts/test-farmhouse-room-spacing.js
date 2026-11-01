@@ -20,7 +20,7 @@ const pieces = [ // One exterior boundary shared by the starter section and anne
   { id:'house_starter_annex', col:6, row:2, w:3, h:3, stage:'built', features:[] },
 ];
 let saveCount = 0;
-house.init({ TileType:{}, getHousePieces:() => pieces, hasFarmPermission:() => true, saveFarmLayout:() => { saveCount++; } });
+house.init({ TileType:{}, getHousePieces:() => pieces, hasFarmPermission:() => true, saveFarmLayout:() => { saveCount++; }, debugLog() {} });
 planner.restore(null);
 let layout = house.computeInteriorLayout();
 const main = planner.roomRect(pieces[0]), annex = planner.roomRect(pieces[1]);
