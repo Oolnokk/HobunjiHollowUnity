@@ -54,6 +54,7 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.HachutuRelics?.init?.(injectedDeps); // Share the exact gear/inventory save seam with the dev-only Hachutu weapon drop.
   }
 
   const ES = () => window.EnchantmentSystem;
@@ -240,6 +241,7 @@
   // Called once gearInventory is loaded (game.js hobunjiPlayerReady), before
   // equipment slots render, so a relic equipped last session is a known tool.
   function restore() {
+    window.HachutuRelics?.restore?.(); // Hachutu duplicate torch definitions must exist before the loadout panel is rebuilt.
     const g = gear();
     if (!g) return 0;
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object' || Array.isArray(g.harlyaoRelics)) g.harlyaoRelics = {};
