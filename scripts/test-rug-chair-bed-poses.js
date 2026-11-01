@@ -15,7 +15,8 @@ class Q {
 }
 class E {constructor(x,y,z){this.x=x;this.y=y;this.z=z;}}
 const W={THREE:{Vector3:V,Quaternion:Q,Euler:E},HobunjiWalkableElevation:{unregister(){}}};
-const ctx={window:W,console,performance:{now:()=>0}};
+W.THREE.Matrix4=class {}; // AuthoredFurniture allocates reusable warp matrices at module load, even though these tests use only pure metadata accessors.
+const ctx={window:W,THREE:W.THREE,console,performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/authored-furniture-runtime.js'),ctx);
 const bed=furniture('basicBed'),double=furniture('doubleBed'),chair=furniture('chairSimple');
 assert(W.AuthoredFurniture.seatedKneeReach(chair)<chair.footprint.d/2);
