@@ -114,13 +114,13 @@ draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'windowless rooms are 80% dark outside local light pools');
 draw(17);
 assert.equal(fills.length, 1, 'camera-following lighting redraws at approximately 60 Hz');
-assert.equal(gradients[0].radius, 4.8, 'carried interior lantern radius doubles');
-assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 1], 'interior lantern fades linearly across its whole radius');
+assert.equal(gradients[0].radius, 6, 'carried interior lantern radius doubles');
+assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'interior lantern fades linearly across its whole radius');
 localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert.equal(gradients[1].radius, 6, 'furniture light reaches twice its former radius');
-assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 1], 'lamp reveal has no bright plateau or abrupt knee');
-assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color glow fades linearly too');
+assert.equal(gradients[1].radius, 7.5, 'furniture light reaches twice its former radius');
+assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp reveal has no bright plateau or abrupt knee');
+assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp color glow fades linearly too');
 
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Both the candle and window retain their full range while the camera turns a quarter-circle.
@@ -130,11 +130,11 @@ cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 0; point.y = 1; point.z = -4; } } }];
 draw();
-assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
+assert.equal(gradients.filter(entry => Math.abs(entry.radius - 7.5) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow remains visible when the player is within the window light range but farther than the pane radius');
 cameraAngle = Math.PI / 2;
 draw();
-assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
+assert.equal(gradients.filter(entry => Math.abs(entry.radius - 7.5) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow also survives the 90-degree camera turn');
 localLights = [{ x: 0, y: 1, z: -20, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [];
@@ -159,8 +159,8 @@ assert(!gradients.some(entry => Math.abs(entry.radius - 10) < 0.001), 'light is 
 localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }];
 draw();
-assert.equal(gradients.at(-1).radius, 6, 'window daylight has a broad pool');
-assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 1], 'window daylight pool uses linear falloff');
+assert.equal(gradients.at(-1).radius, 7.5, 'window daylight has a broad pool');
+assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'window daylight pool uses linear falloff');
 
 sources = [{ radiusTiles: 3, strength: 1, projectionPalette: ['#ff2040', '#20a0ff', '#ffe060'], mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }]; // A patterned Life Temple pane supplies dye colors, not a screen-projected texture.
 draw();
@@ -179,7 +179,7 @@ sources = [];
 localLights = [];
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
-assert.equal(gradients[0].radius, 4.8, 'farmhouse carried light uses the same doubled, linear indoor radius');
+assert.equal(gradients[0].radius, 6, 'farmhouse carried light uses the same doubled, linear indoor radius');
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } }; // Real player farmhouse scene suppresses the old unconditional player-lit circle.
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'ordinary farmhouse base darkness is painted even without any local light source');
