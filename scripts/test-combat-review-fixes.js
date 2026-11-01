@@ -64,6 +64,8 @@ assert.match(reticle, /if \(outOfReach \|\| !profile\.attackId/, 'out-of-reach h
 
 // ── EnemySearchAI extraction ──────────────────────────────────────────
 assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted enemy search module');
+assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
+assert.match(game, /lastKnownDistance > TILE \* 0\.45[\s\S]{0,180}moveCreatureToward\(c, lastKnownX, lastKnownY, def\.chaseSpeed, entityDt\)/, 'searching hostiles navigate toward their last-known player position');
 assert.doesNotMatch(game, /function (enemyCanSeeTarget|beginEnemySearch|updateEnemySearch|enemyAttackAlignment|enemyAttackBusy)\(/, 'no duplicate enemy search implementation remains in game.js');
 const coreTag = html.indexOf('js/combat/combat-core.js?v=');
 const searchTag = html.indexOf('js/combat/enemy-search-ai.js?v=');
@@ -88,6 +90,9 @@ assert.equal(hostile._enemySearchDirection, 1, 'first sweep turns toward the sid
 assert.equal(hostile._enemySearchLastKnownX, target.x, 'search stores the player X position at loss of sight');
 assert.equal(hostile._enemySearchLastKnownY, target.y, 'search stores the player Y position at loss of sight');
 assert.equal(AI.ENEMY_SEARCH_DURATION_S, 8, 'search lasts long enough to pursue and investigate the last-known position');
+target.x = 25;
+AI.updateEnemySearch(hostile, 0.1, target);
+assert.equal(hostile._enemySearchLastKnownX, 0, 'unseen player movement does not update the last-known position');
 AI.updateEnemySearch(hostile, 0.1, target);
 assert(hostile.facing > 0, 'search sweep rotates the hostile');
 inCone = true;
