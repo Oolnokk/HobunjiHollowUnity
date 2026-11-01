@@ -16687,6 +16687,7 @@
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
         const spritePath = 'assets/objectsprites/' + def.spriteIcon;
+        const frameFlask = def.spriteIcon === 'throwing_flask.png'; // Uses the equipment thumbnail's opaque-pixel trim for flasks in Pack, the item arch and HUD.
         const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Used below to keep source-colored PNGs untouched while explicitly tinted items still use SpriteRecolor.
         const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Used by the recolor request/log only when this definition actually authors a tint.
         const spriteMode = def.spriteMode || 'direct';
@@ -16701,12 +16702,35 @@
         el.dataset.itemSpriteState = 'pending';
         el.style.backgroundImage = `url("${spritePath}")`;
         el.classList.add('sprited-icon');
-        if (!hasSpriteColor) { el.dataset.itemSpriteState = 'source'; return; }
+        if (!hasSpriteColor) {
+          if (!frameFlask || !window.EquipmentPanel?.squareToolIcon) { el.dataset.itemSpriteState = 'source'; return; }
+          const image = new Image(); // Direct-color flask icons also use the shared equipment thumbnail framing.
+          image.onload = () => {
+            if (el.dataset.itemSpriteRequest !== requestKey) return;
+            try {
+              el.style.backgroundImage = `url(${window.EquipmentPanel.squareToolIcon(image, true)})`;
+              el.dataset.itemSpriteState = 'ready';
+            } catch (error) {
+              el.dataset.itemSpriteState = 'fallback';
+              el.dataset.itemSpriteError = String(error?.message || error);
+              window.__farmLog?.(`[item-icon] flask framing failed: ${error.message}`, 'warn');
+            }
+          };
+          image.onerror = () => {
+            if (el.dataset.itemSpriteRequest !== requestKey) return;
+            el.dataset.itemSpriteState = 'fallback';
+            el.dataset.itemSpriteError = 'flask source failed to load';
+          };
+          image.src = spritePath;
+          return;
+        }
         if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
         window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
           .then(canvas => {
             if (el.dataset.itemSpriteRequest !== requestKey) return;
-            el.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            const iconUrl = frameFlask && window.EquipmentPanel?.squareToolIcon
+              ? window.EquipmentPanel.squareToolIcon(canvas, true) : canvas.toDataURL(); // Frames the recolored flask once without changing its in-world sprite or color mapping.
+            el.style.backgroundImage = `url(${iconUrl})`;
             el.dataset.itemSpriteState = 'ready';
             if (!_itemSpriteReadyLogged.has(requestKey)) {
               _itemSpriteReadyLogged.add(requestKey);
