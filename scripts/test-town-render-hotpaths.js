@@ -134,6 +134,41 @@ assert.equal(classifyTintCover(coverMesh({ waterSurfaceRole: 'local' })), true, 
 assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, slushMaterial)), true, 'translucent slush tints feet');
 assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true }, null, snowMaterial)), false, 'opaque snow hides feet instead of tinting');
 assert.equal(classifyTintCover(coverMesh({ isWildernessGrassChunk: true })), false, 'billboard grass occludes rather than tints feet');
+const elevationNewline = String.fromCharCode(10);
+const elevationHelperStart = heldRender.indexOf('  function isDescendantOf(');
+const elevationHelperEnd = heldRender.indexOf('  function groupXrayMeshesByElevation(', elevationHelperStart);
+assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'elevation resolver helper');
+const actorScene = { isScene: true, position: { y: 0 }, matrixWorld: { elements: Array(16).fill(0) } };
+const playerRoot = { name: 'player_mesh', position: { x: 2, y: 1, z: 3 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 2, 13: 1, 14: 3 }) }, parent: actorScene, userData: {} };
+const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) }, GridTileAccessors: { getCurrentArea: () => 'town' } };
+const resolveActorElevation = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorElevationForXrayMesh;')(elevationWindow);
+assert.equal(resolveActorElevation({ parent: playerRoot }, actorScene), 1.3, 'player body elevation');
+const npcRoot = { name: 'npc_walker_test', position: { x: 4, y: 2.5, z: 6 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 4, 13: 2.5, 14: 6 }) }, parent: actorScene, userData: {} };
+assert.equal(resolveActorElevation({ parent: npcRoot }, actorScene), 2.5, 'NPC root elevation');
+assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, position: { y: 0 } } }, actorScene)), true, 'unknown actor fails closed');
+const groupStart = heldRender.indexOf('  function groupXrayMeshesByElevation(');
+const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', groupStart);
+const groupMeshes = new Function('XRAY_ELEVATION_GROUP_EPSILON', heldRender.slice(groupStart, groupEnd) + elevationNewline + 'return groupXrayMeshesByElevation;')(0.05);
+const grouped = groupMeshes([{ level: 1 }, { level: 1.02 }, { level: 3.5 }, { level: NaN }], mesh => mesh.level);
+assert.equal(grouped.length, 3, 'distinct surface elevations get separate replay groups');
+assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1], 'unknown actors share a fail-closed group');
+const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
+const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', shaderStart);
+const installElevationShader = new Function(heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')();
+const groundMaterial = { userData: {}, needsUpdate: false };
+const groundShaderState = installElevationShader(groundMaterial);
+const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+groundMaterial.onBeforeCompile(standardGroundShader, {});
+assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
+assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = worldPosition.y'));
+assert.ok(standardGroundShader.vertexShader.includes('transpose(mat3(viewMatrix))'), 'world normals use the view rotation inverse');
+assert.ok(standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
+assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const customMaterial = { userData: {}, needsUpdate: false };
+const customState = installElevationShader(customMaterial);
+customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
+assert.equal(customState.supported, false, 'unsupported custom terrain shaders keep full depth occlusion');
+
 assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\) && isTerrainSurface\(object\)/,
   'only surfaces carrying the base grass material can be removed from held-overlay depth');
 assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180}hobunjiBaseGrassTerrainMaterial = true/,
