@@ -113,8 +113,12 @@ depth of foreground opaque ground is still missing.
 
 The overlay's normal x-ray exemption is intentionally narrow:
 `groundKind` exempts authored paths and **tagged base-grass terrain**;
-it never classifies ordinary raised geometry, cave walls, snow/slush
-caps, water, or grass billboards as ignorable base ground.
+it also classifies explicitly tagged interior floors (farmhouse, authored, cavern walkable,
+V50 ruin plateau, and rooted Stone Age) while preserving ordinary raised
+geometry, cave walls, snow/slush caps, water, and grass billboards as
+occluders. Carved cave shells are never removed wholesale: only upward-facing
+floor triangles are omitted from their depth-reconstruction geometry;
+their vertical walls and ceiling still write depth.
 The screen-space scissor, per-scene registries, and conservative cover/
 overlay overlap check limit the cost. Near-plane/uncertain geometry can
 fall back to the full tint path. Framebuffers with no usable stencil

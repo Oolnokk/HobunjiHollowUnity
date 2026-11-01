@@ -120,7 +120,12 @@ assert.equal(classifyGround(coverMesh({ environmentSurfaceMicroPlateau: true }, 
 assert.equal(classifyGround(coverMesh({ waterSurfaceRole: 'flood' }, pavingGroup)), null, 'water blocks x-ray even on paving');
 assert.equal(classifyGround(coverMesh({ isWildernessGrassChunk: true }, pavingGroup)), null, 'billboard grass blocks x-ray even on paving');
 assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true }, null, { userData: { hobunjiBaseGrassTerrainMaterial: true } })), 'terrain', 'underlying grass x-rays');
-assert.equal(classifyGround(coverMesh({ cavernWalkableFloor: true })), null, 'cavern floors remain solid occluders');
+assert.equal(classifyGround(coverMesh({ cavernWalkableFloor: true })), 'interior-floor', 'separate cavern walkable floors now x-ray weapons');
+assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json', plateauModel: { levelByCell: { '1,1': 0 } } })), 'interior-floor', "V50 rooted ruin's height-aware floor x-rays");
+assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'floor' })), 'interior-floor', 'stone-age instanced floor x-rays');
+assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'wall' })), null, 'rooted walls remain solid even when they share a floor material family');
+assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json' })), null, 'a V50 non-floor WallBuilder mesh cannot be removed');
+assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true })), null, 'an unqualified outdoor/raised mesh is never removed based only on generic ground tags');
 const classifyTintCover = new Function('MATERIAL_ID_LAYER',
   heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3);
 const slushMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } };
@@ -135,8 +140,14 @@ assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180
   'the live game tags the native base grass material');
 assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
   'authored texture overrides keep the exact same base grass tag');
-assert.doesNotMatch(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
-  'cavern shells are not hidden just because they contain an upward-facing floor');
+assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
+  'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
+assert.match(heldRender, /faceB\.y \/ length >= TOP_FACE_MIN_NORMAL_Y/,
+  'the shell occluder geometry excludes upward-facing triangles only');
+assert.match(heldRender, /const swappedGeometry = swapToOccluderGeometry\(topFaceGround\)/,
+  'cave shells swap to wall-and-ceiling-only geometry during the depth rebuild');
+assert.match(heldRender, /restoreSwappedGeometry\(swappedGeometry\)/,
+  'shell geometry is restored after the selective depth reconstruction');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
