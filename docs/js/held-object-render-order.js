@@ -1155,7 +1155,8 @@
       const requiredVertex = ['#include <common>', '#include <worldpos_vertex>'];
       const requiredFragment = ['#include <common>', '#include <clipping_planes_fragment>'];
       state.compileAttempted = true;
-      if ((!hasDefaultNormal && state.geometryHasNormals !== true)
+      if (state.geometryHasNormals === false
+          || (!hasDefaultNormal && state.geometryHasNormals !== true)
           || !requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
         state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
         return;
