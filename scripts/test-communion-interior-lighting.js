@@ -124,7 +124,7 @@ draw();
 assert(!gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'a closed interior door blocks the furniture light behind it');
 lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0.5 }] };
 draw();
-assert(gradients.some(entry => entry.stops.some(([, color]) => /rgba\\(0,0,0,0\\.4/.test(color))), 'half-open door restores light in proportion to its animation progress');
+assert(gradients.some(entry => entry.stops.some(([, color]) => /rgba\(0,0,0,0\.4/.test(color))), 'half-open door restores light in proportion to its animation progress');
 lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
 draw();
 assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'fully open door allows the furniture light through');
