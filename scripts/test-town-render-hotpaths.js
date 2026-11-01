@@ -193,6 +193,17 @@ const noNormalState = installElevationShader(noNormalMaterial);
 const noNormalShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
 noNormalMaterial.onBeforeCompile(noNormalShader, {});
 assert.equal(noNormalState.supported, false, 'unlit ground without a normal attribute remains a full-depth occluder');
+const missingLitMaterial = { userData: {}, needsUpdate: false };
+const missingLitState = installElevationShader(missingLitMaterial);
+missingLitState.geometryHasNormals = false;
+const missingLitShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+missingLitMaterial.onBeforeCompile(missingLitShader, {});
+assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
+
 
 const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
 const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
