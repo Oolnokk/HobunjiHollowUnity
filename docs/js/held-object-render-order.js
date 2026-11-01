@@ -1240,13 +1240,14 @@
     internalReplay = true;
     const glState = renderer.state;
     const overlayMeshes = [...held, ...feet];
+    const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
     const groundMeshes = [...ground, ...topFaceGround];
     window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
     const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
     recordElevationGroups(groups);
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
-    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, overlayMeshes, scissorRect);
+    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     let replayCulled = null;
     let overlayHidden = null;
     let swappedGeometry = [];
@@ -1259,7 +1260,7 @@
         scissoredReplayCount++;
         if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
           const cullPerf = window.PerfProfiler?.begin('held-overlay: scissor cull');
-          replayCulled = hideObjects(collectReplayCulled(scene, new Set(overlayMeshes)));
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(scissorMeshes)));
           window.PerfProfiler?.end(cullPerf);
         }
       } else {
