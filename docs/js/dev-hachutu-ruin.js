@@ -386,7 +386,7 @@
     }
     if(session.snare&&target){
       target.group.position.set(p.x,session.floor,p.z);
-      if(deps.player?.dodging&&!tear?.split?.()){
+      if((window.Combat?.attach?.hostDodgeEscapes?.(deps.player) === true || (deps.player?.dodging && deps.player?._grappleEscapeDodgePaid === true))&&!tear?.split?.()){
         session.snare.releaseCaptured();
         tear?.stop?.('dodge'); // The dodge remains a counter until the finishing pull actually separates the halves.
         return;
