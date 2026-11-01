@@ -3846,6 +3846,7 @@
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        window.FurnitureTableSystem?.unregisterPlacement?.(obj.area, obj.id || obj.mesh); // Removes precisely this furniture instance, leaving stacked rugs registered.
         targetScene.remove(obj.mesh);
         obj.mesh?.traverse?.(child => {
           if (child.geometry) child.geometry.dispose();
