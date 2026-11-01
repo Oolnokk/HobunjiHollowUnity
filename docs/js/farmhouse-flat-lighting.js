@@ -18,6 +18,7 @@
   const stats = { installed: false, installs: 0, authoredBuildingInstalls: 0, overlayOnlyLights: 0, lastMapId: null, lastError: null }; // Exposed below for mobile-friendly lighting diagnostics.
   let buildingSceneMap = null; // Captured from GridTileAccessors.init so authored building scene creation can be routed through the same flat-lighting path as the farmhouse.
   let isBuildingArea = () => false; // Captured from GridTileAccessors.init and used below to exclude dens/mines/caverns from ordinary-building routing.
+  let playerFarmhouseSceneCount = 0; // Counts farmhouse scene generations connected to overlay lighting and held-object floor replay, reported by debugSnapshot.
 
   function protectBaselineIntensity(light) {
     try {
@@ -82,6 +83,32 @@
     return !/^map_i_(?:den_|town_mine_)/i.test(String(mapId || ''));
   }
 
+  function ensurePlayerFarmhouseLighting(scene) {
+    if (!scene?.isScene) return scene;
+    scene.userData = scene.userData || {};
+    const firstRegistration = scene.userData.hobunjiPlayerFarmhouseInterior !== true; // Used to distinguish player farmhouse floors from authored buildings, dens and mine floors in the held-object compositor.
+    scene.userData.hobunjiPlayerFarmhouseInterior = true;
+    const newlyInstalled = install(scene); // Same neutral Three.js baseline and shared 2D darkness/light masks as authored building interiors.
+    if (firstRegistration) {
+      playerFarmhouseSceneCount++;
+      window.HeldObjectRenderOrder?.scanScene?.(scene, true); // Existing floor meshes may predate the scene tag; classify them now rather than waiting for the fallback scan.
+    }
+    if (firstRegistration || newlyInstalled) window.CloudForestFog?.refreshLightingOverlay?.();
+    return scene;
+  }
+
+  function hookPlayerFarmhouseSceneGetter(injectedDeps) {
+    const originalGet = injectedDeps?.getInteriorScene; // GridTileAccessors' live farmhouse scene getter also follows replacements/rebuilds.
+    if (typeof originalGet !== 'function' || originalGet.__hobunjiPlayerFarmhouseLightingHook) return false;
+    function getInteriorSceneWithFarmhouseLighting(...args) {
+      const scene = originalGet.apply(this, args);
+      return ensurePlayerFarmhouseLighting(scene);
+    }
+    getInteriorSceneWithFarmhouseLighting.__hobunjiPlayerFarmhouseLightingHook = true;
+    injectedDeps.getInteriorScene = getInteriorSceneWithFarmhouseLighting;
+    return true;
+  }
+
   function applyAuthoredBuildingFlatLighting(mapId, sceneRecord) {
     if (!sceneRecord?.scene || !isOrdinaryBuilding(mapId, sceneRecord)) return false;
     const changed = install(sceneRecord.scene);
@@ -128,7 +155,14 @@
     const originalInit = namespace.init;
     namespace.init = function initWithFlatBuildingLighting(injectedDeps) {
       hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
-      return originalInit.call(this, injectedDeps);
+      hookPlayerFarmhouseSceneGetter(injectedDeps);
+      const result = originalInit.call(this, injectedDeps);
+      try {
+        ensurePlayerFarmhouseLighting(injectedDeps?.getInteriorScene?.()); // Covers the already-built farmhouse scene even before its first active-area accessor call.
+      } catch (error) {
+        stats.lastError = 'farmhouse: ' + String(error?.message || error);
+      }
+      return result;
     };
     namespace.__hobunjiFlatBuildingLightingInitHook = true;
     return true;
@@ -142,6 +176,7 @@
 
   window.FarmhouseFlatLighting = {
     install,
+    ensurePlayerFarmhouseLighting,
     applyAuthoredBuildingFlatLighting,
     queueAuthoredBuildingFlatLighting,
     makeOverlayOnly,
@@ -149,6 +184,7 @@
     debugSnapshot: () => ({
       ...stats,
       buildingSceneMapHooked: !!buildingSceneMap?.__hobunjiFlatBuildingLightingSetHook,
+      playerFarmhouseSceneCount,
       windowLightingAuthority: window.DaylightWindowRuntime?.version || null,
       overlayLightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'shared-2d' : 'legacy',
     }),
