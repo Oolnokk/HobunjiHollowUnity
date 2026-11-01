@@ -20,7 +20,14 @@
       for(let parent=node.parent;parent&&parent!==root.parent;parent=parent.parent)if(parent.visible===false)return;
       // Held tools, outline proxies and collider helpers are not part of a person's skin.
       if(node.userData?.hobunjiHeldObjectPlane||node.userData?.hobunjiWeaponAssemblyPart
-        ||node.userData?.noCharacterTear||/shadow|hitbox|collision|debug/i.test(node.name||''))return;
+        ||node.userData?.noCharacterTear||/shadow|hitbox|collision|debug|occlusion_ghost|hat_xray/i.test(node.name||''))return;
+      // PlayerBodyTransformComposer identifies the unnamed immediate child
+      // carrying isPngPlane as the held-item holder, not the painted body.
+      for(let cursor=node;cursor&&cursor!==root;cursor=cursor.parent){
+        if(cursor.parent===root&&cursor.type==='Group'
+          &&cursor.userData?.isPngPlane===true&&!String(cursor.name||'').trim())return;
+        if(cursor.userData?.hobunjiHeldObjectPlane||cursor.userData?.noCharacterTear)return;
+      }
       if(node.material?.visible===false)return;
       meshes.push(node);
     });
