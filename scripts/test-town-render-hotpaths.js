@@ -193,7 +193,7 @@ const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
 const unrelatedMesh = { isMesh: true, visible: true, layers: { mask: 1 } };
 const shellScene = { traverseVisible(fn) { [xrayShell, ordinaryShell, unrelatedMesh].forEach(fn); } };
 const shellHidden = hideNonXrayShellMeshes(shellScene, new Set([xrayShell]));
-assert.equal(xrayShell.visible, true, 'the x-rayed object's own shell remains visible in its replay');
+assert.equal(xrayShell.visible, true, 'the x-rayed object shell remains visible in its replay');
 assert.equal(ordinaryShell.visible, false, 'other shell objects are excluded from the selective replay');
 assert.equal(unrelatedMesh.visible, true, 'non-shell geometry is not hidden by shell filtering');
 for (const [object, visible] of shellHidden) object.visible = visible;
