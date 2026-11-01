@@ -25,7 +25,6 @@
     chest: 'furniture/chest_storage.glb',
     hearth: 'furniture/hearth_fireplace.glb',
     crateStack: 'furniture/crate_stack.glb',
-    standingLamp: 'furniture/standing_lamp_bronze.glb',
     bucket: 'furniture/bucket_tin.glb',
     stool: 'furniture/stool_round.glb',
     dryingRack: 'furniture/station_drying_rack.glb',
