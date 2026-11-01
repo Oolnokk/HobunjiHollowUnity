@@ -1142,7 +1142,7 @@
       }
       shader.vertexShader = vertex
         .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvHobunjiXrayWorldY = worldPosition.y;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\n#endif\n#ifdef USE_BATCHING\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\n#endif\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;')
         .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
       shader.fragmentShader = fragment
         .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
