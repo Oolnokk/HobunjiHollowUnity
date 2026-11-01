@@ -58,6 +58,7 @@ const cameraEnv = {
   furniturePlacementArmedKey: null, furnitureMoveArmedId: null,
   dialogueZoomActive: () => false, cutscenePreviewActive: false,
 };
+cameraEnv.furniturePlacementModeArmed = () => !!(cameraEnv.furniturePlacementArmedKey || cameraEnv.furnitureMoveArmedId); // Evaluates the same armed states as gameplay for the isolated camera function.
 const canDrag = vm.runInNewContext(`(function(){${cameraBody}})`, cameraEnv);
 const blocksLock = vm.runInNewContext(`(${pointerPolicy})`, cameraEnv);
 assert.equal(canDrag(), false, 'settings panel prevents camera rotation');
@@ -65,6 +66,33 @@ assert.equal(blocksLock(), true, 'settings panel prevents pointer-lock reacquisi
 planning = true;
 assert.equal(canDrag(), true, 'equipped tool permits camera aiming');
 assert.equal(blocksLock(), false, 'equipped tool permits cursorless aiming');
+// Reticle placement consumes action buttons, never the look stick or Shift+mouse movement.
+cameraEnv.furniturePlacementArmedKey = 'wovenRugFurniture';
+assert.equal(canDrag(), true, 'placing furniture must still allow camera rotation');
+cameraEnv.furniturePlacementArmedKey = null;
+cameraEnv.furnitureMoveArmedId = 'existing-chair';
+assert.equal(canDrag(), true, 'moving furniture must still allow camera rotation');
+cameraEnv.furnitureMoveArmedId = null;
+cameraEnv.farmEditMode = true;
+assert.equal(canDrag(), false, 'Farm Editor alone still reserves the camera for painting');
+cameraEnv.furniturePlacementArmedKey = 'wovenRugFurniture';
+assert.equal(canDrag(), true, 'an armed furniture placement takes precedence over Farm Editor camera suppression');
+cameraEnv.furniturePlacementArmedKey = null;
+cameraEnv.furnitureMoveArmedId = 'existing-chair';
+assert.equal(canDrag(), true, 'an armed furniture move takes precedence over Farm Editor camera suppression');
+cameraEnv.furnitureMoveArmedId = null;
+cameraEnv.farmEditMode = false;
+win.FurniturePlacer = { isOpen: () => true };
+assert.equal(canDrag(), false, 'furniture picker overlay still blocks background camera look');
+win.FurniturePlacer.isOpen = () => false;
+win.__furniturePlacerPanelOpen = true;
+assert.equal(canDrag(), false, 'picker panel flag independently prevents touch look while visible');
+win.__furniturePlacerPanelOpen = false;
+win.__mapEditorPanelOpen = true;
+assert.equal(canDrag(), false, 'visible map editor panel still blocks camera input');
+win.__mapEditorPanelOpen = false;
+assert.match(game, /\(farmEditMode && !furniturePlacementModeArmed\(\)\)/,
+  'desktop clicks must reach reticle furniture placement even when Farm Editor was active');
 open = false;
 assert.equal(canDrag(), true);
 assert.equal(blocksLock(), false);
