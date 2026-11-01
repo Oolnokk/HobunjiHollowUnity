@@ -47,7 +47,7 @@ assert(registry.seatTransform('interior',{furnitureId:'chair'}).footprintHalfDep
 registry.registerPlacement('bedroom',{id:'bed',key:'doubleBed',col:3,row:5},root(4,0,6),{fw:2,fd:2});
 const left=registry.lieTransform('bedroom',{pose:'lie',c:3,r:5});
 const right=registry.lieTransform('bedroom',{pose:'lie',c:4,r:5});
-assert(left&&right&&left.y>.4&&right.x>left.x);
+assert(left&&right&&left.y>.20&&left.y<.25&&right.x>left.x); // Both double-bed stations resolve to the newly lowered mattress.
 vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
 const material={clone(){return{depthTest:true,depthWrite:true,dispose(){}};}};
@@ -58,10 +58,10 @@ const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
  root:{isObject3D:true,position:new V(3.5,0,5.5),rotation:{y:0}},
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
-for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie'},.1,{x:3.5,z:5.5,y:.58,facingRad:0}); // Spouse activity targets may omit area even while correctly scheduled in this room.
+for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie'},.1,{x:3.5,z:5.5,y:.22,facingRad:0}); // Spouse activity targets may omit area even while correctly scheduled in this room.
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
-assert(Math.abs(rig.position.y+hip.y-.615)<.001,'scaled NPC hip rests on authored mattress top');
+assert(Math.abs(rig.position.y+hip.y-.255)<.001,'scaled NPC hip rests on the half-height authored mattress');
 assert.notEqual(skin.material[0],material);
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'stand',area:'interior'},.1,null);
 assert(!npc._bedLieActive&&skin.material[0]===material&&skin.renderOrder===2);
