@@ -10,6 +10,7 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
 const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
 const readme = read('README.md');
 const terrainTileMaterials = read('docs/js/terrain-tile-materials.js'); // Guards grass-only material tags against seasonal texture overrides.
@@ -147,6 +148,11 @@ assert.equal(resolveActorElevation({ parent: playerRoot }, actorScene), 1.3, 'pl
 assert.equal(resolveActorElevation({ parent: playerHandRoot }, actorScene), 1.3, 'composer-owned external hand/foot roots inherit the player standing elevation');
 const npcRoot = { name: 'npc_walker_test', position: { x: 4, y: 2.5, z: 6 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 4, 13: 2.5, 14: 6 }) }, parent: actorScene, userData: {} };
 assert.equal(resolveActorElevation({ parent: npcRoot }, actorScene), 2.5, 'NPC root elevation');
+const animalVisual = { name: 'animal_avatar_visual', position: { y: 8 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 13: 8 }) }, parent: npcRoot, userData: { namedAnimalNpc: true } };
+assert.equal(resolveActorElevation({ parent: animalVisual }, actorScene), 2.5,
+  'named-animal visual offsets defer to the enclosing floor-level walker root');
+assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot = true'),
+  'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
 assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, position: { y: 0 } } }, actorScene)), true, 'unknown actor fails closed');
 const groupStart = heldRender.indexOf('  function groupXrayMeshesByElevation(');
 const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', groupStart);
