@@ -901,18 +901,7 @@
       } else {
         mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
         const spouseWardrobe = window.NpcWardrobe?.getActiveSpouseWardrobeTarget?.(); // Only a currently open, assigned spouse wardrobe exposes this direct Pack action.
-        if (spouseWardrobe) mkBtn(`Move to ${spouseWardrobe.name}'s Wardrobe`, 'equip', () => {
-          const pack = deps.getPackClothing(); // Re-resolve the exact article so stale detail panels cannot move a replacement item.
-          const index = pack.findIndex(entry => entry?.uid === uid);
-          const current = index >= 0 ? pack[index] : null;
-          if (!current || current.cursed || !window.NpcWardrobe?.storePackItem?.(spouseWardrobe.npcId, current)) return;
-          pack.splice(index, 1);
-          if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
-          deps.saveMemberWorldData(); // One save commits both the Pack removal and spouse wardrobe addition.
-          deps.showToast(`${current.label || 'Clothing'} moved to ${spouseWardrobe.name}'s Wardrobe.`, true);
-          buildPackClothingSection(); deps.buildInventoryGrid(); deps.clearInventoryDetail();
-          window.NpcWardrobe?.refreshOpenPanel?.();
-        });
+        if (spouseWardrobe) mkBtn(`Move to ${spouseWardrobe.name}'s Wardrobe`, 'equip', () => transferPackClothingToNpcWardrobe(spouseWardrobe.npcId, uid));
       }
       if (salePrice > 0) {
         mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
@@ -1363,6 +1352,28 @@
     window.TrinketSystem?.renderEquipmentSection?.(sec); // Attunement-budget trinkets (js/trinket-system.js).
   }
 
+  function getPackClothingForWardrobe() {
+    return (deps?.getPackClothing?.() || []).filter(Boolean).map(item => ({
+      uid: item.uid, label: item.label || item.cosmeticId || 'Clothing', cursed: !!item.cursed,
+    })); // Only the small display fields cross into the wardrobe panel; the inventory remains owned here.
+  }
+
+  function transferPackClothingToNpcWardrobe(npcId, uid) {
+    const target = window.NpcWardrobe?.getActiveSpouseWardrobeTarget?.();
+    if (!target || target.npcId !== npcId) return false;
+    const pack = deps?.getPackClothing?.();
+    const index = pack?.findIndex(item => item?.uid === uid) ?? -1;
+    const item = index >= 0 ? pack[index] : null;
+    if (!item || item.cursed || !window.NpcWardrobe?.storePackItem?.(npcId, item)) return false;
+    pack.splice(index, 1);
+    if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
+    deps.saveMemberWorldData?.(); // One save commits the Pack removal and spouse wardrobe addition together.
+    deps.showToast?.(`${item.label || 'Clothing'} moved to ${target.name}'s Wardrobe.`, true);
+    buildPackClothingSection(); deps.buildInventoryGrid?.(); deps.clearInventoryDetail?.();
+    window.NpcWardrobe?.refreshOpenPanel?.();
+    return true;
+  }
+
   // Read-only bridge for the Loadout's 3D viewport. The equipment panel
   // already owns the complete map, including meshes that are currently holstered.
   function getEquippedWeaponPreviewPlane(itemKey) {
@@ -1384,6 +1395,8 @@
     clothingSpriteForCosmetic,
     ensureGearClothingCollection,
     buildPackClothingSection,
+    getPackClothingForWardrobe,
+    transferPackClothingToNpcWardrobe,
     previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
     getClothingStackDebug: () => { // Compact diagnostic usable on mobile without developer tools.
