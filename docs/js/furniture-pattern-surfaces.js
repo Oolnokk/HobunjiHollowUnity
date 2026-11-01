@@ -78,8 +78,8 @@
         <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
         <label>Scale multiplier <input data-zoom-${index} type="range" min="0.1" max="20" step="0.1" value="1" aria-label="${index ? "Overpass" : "Primary"} pattern scale"></label><output data-zoom-value-${index}>1.0×</output>
         <label>Rotation (degrees) <input data-rotation-${index} type="range" min="-180" max="180" step="1" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern rotation"></label><output data-rotation-value-${index}>0°</output>
-        <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label>
-        <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label></fieldset>`).join('');
+        <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
+        <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
     host.appendChild(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
     for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
