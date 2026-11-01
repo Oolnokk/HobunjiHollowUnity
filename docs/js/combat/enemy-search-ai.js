@@ -10,7 +10,7 @@
 (() => {
   'use strict';
 
-  const ENEMY_SEARCH_DURATION_S = 3.4; // Time a hostile scans after the player leaves its shared ±45° sight cone.
+  const ENEMY_SEARCH_DURATION_S = 8; // Gives a hostile time to reach the last-known position and search nearby.
   const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
   const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
 
@@ -35,6 +35,8 @@
     c.state = 'searching';
     c.targetPlayer = target;
     c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
+    c._enemySearchLastKnownX = target.x; // Pursuit destination is frozen when sight is lost; unseen player movement is not tracked.
+    c._enemySearchLastKnownY = target.y; // Paired with X for the last-known world position.
     c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
     c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
     const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);
@@ -46,6 +48,8 @@
     if (enemyCanSeeTarget(c, target, c.def.aggroRangePx)) {
       c.state = 'chase';
       c.targetPlayer = target;
+      c._enemySearchLastKnownX = target.x; // Refresh only after legitimate reacquisition.
+      c._enemySearchLastKnownY = target.y; // Never follows the player while unseen.
       return c.facing || 0;
     }
     const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(c) ?? 1; // Search honors the same post-attack recovery slowdown.
