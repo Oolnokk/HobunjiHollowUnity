@@ -337,5 +337,23 @@
     }));
   }
 
-  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
+  function getLightBlockers(mapId) {
+    const state = maps.get(String(mapId));
+    if (!state) return [];
+    return state.doors.filter(entry => !entry.exitId).map(entry => {
+      const position = new THREE.Vector3();
+      const normal = new THREE.Vector3(0, 0, 1);
+      entry.group.getWorldPosition?.(position);
+      entry.group.getWorldDirection?.(normal);
+      const progress = Number(entry.group.userData?.puzzleProgress);
+      return {
+        x: position.x, z: position.z,
+        normalX: normal.x, normalZ: normal.z,
+        halfWidth: Math.max(0.5, entry.tiles.length * 0.5),
+        openProgress: Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : (entry.active ? 1 : 0),
+      };
+    });
+  }
+
+  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, getLightBlockers, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
 })();
