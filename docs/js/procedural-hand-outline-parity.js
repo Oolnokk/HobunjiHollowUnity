@@ -16,6 +16,7 @@
   if (!THREE || !hands?.attach || hands.attach.__hobunjiHandOutlineParityWrapped) return;
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
+  const meshRigStates = new WeakMap(); // Mesh -> owning rig, so held-overlay scissor bounds can be corrected before they are measured.
   const MAX_SNAPSHOT_AGE_MS = 160;
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Shared shell uniform is restored after each hand draw.
   const OUTLINE_REFERENCE_DEPTH = 5; // Distant outlines shrink beyond this depth; closer hands keep the feet's baseline thickness.
@@ -116,10 +117,22 @@
     return Number.isFinite(drift) ? drift : 0;
   }
 
+  function syncHandMatrix(mesh, rigState) {
+    const drift = refreshVisibleHandMatrix(mesh, rigState?.rig);
+    if (drift > 0.0001 && rigState) {
+      rigState.visualMatrixResyncs++;
+      visualMatrixResyncs++;
+      rigState.largestVisualMatrixDrift = Math.max(rigState.largestVisualMatrixDrift, drift);
+      largestVisualMatrixDrift = Math.max(largestVisualMatrixDrift, drift);
+    }
+    return drift;
+  }
+
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
     if (mesh.userData?.noOutline !== true) mesh.layers.enable(1); // Visual replacement/x-ray routing must never drop either hand from the shell layer.
     markHeldXray(mesh, rigState, side);
+    meshRigStates.set(mesh, rigState); // Overlay scissor prep uses the same rig owner as the visible hand callback.
     if (mesh.userData?.__hobunjiHandOutlineParity) return false;
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
@@ -147,13 +160,7 @@
         // autoUpdate pass; use the final socket and cached body world transform.
         // Never perform this rebuild in outline/depth passes: those reuse the
         // exact visible matrix captured here.
-        const drift = refreshVisibleHandMatrix(this, rigState.rig);
-        if (drift > 0.0001) {
-          rigState.visualMatrixResyncs++;
-          visualMatrixResyncs++;
-          rigState.largestVisualMatrixDrift = Math.max(rigState.largestVisualMatrixDrift, drift);
-          largestVisualMatrixDrift = Math.max(largestVisualMatrixDrift, drift);
-        }
+        syncHandMatrix(this, rigState);
         state.visibleMatrixWorld.copy(this.matrixWorld);
         state.visibleCapturedAt = now;
         state.restoreStack.push(null);
@@ -367,6 +374,19 @@
   hands.attach = wrappedAttach;
 
   global.HobunjiHandOutlineParity = Object.freeze({
+    refreshHeldMatrices(meshes) {
+      // Called after the ordinary frame's hand-driver sentinel has positioned
+      // sockets, but BEFORE HeldObjectRenderOrder measures overlay scissor
+      // bounds/culls meshes. A late visible-draw repair alone would be clipped.
+      let refreshed = 0;
+      for (const mesh of meshes || []) {
+        const rigState = meshRigStates.get(mesh);
+        if (!rigState || !activeRigs.has(rigState.rig)) continue;
+        syncHandMatrix(mesh, rigState);
+        refreshed++;
+      }
+      return refreshed;
+    },
     getDebug() {
       return {
         activeRigs: activeRigs.size,
@@ -381,7 +401,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Visible procedural hands now refresh stale world matrices from their live sockets without rebuilding temporary body-composer transforms; depth and outline passes reuse the corrected capture.',
+        latestChange: 'Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
