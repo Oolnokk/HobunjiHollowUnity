@@ -12924,7 +12924,9 @@
               const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
-            const target = resolveNpcScheduleTarget(this.rec);
+            const scheduledTarget = resolveNpcScheduleTarget(this.rec); // Raw schedule target; spouse/child overrides historically describe sleeping without a pose.
+            const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
+              ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             // Running remains limited to player-following, combat escape and flood evacuation.
