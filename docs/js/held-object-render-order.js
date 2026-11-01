@@ -32,6 +32,8 @@
 
   const LEGACY_HELD_RENDER_ORDER = 1.5;
   const DEFAULT_LAYER = 0;
+  const SHELL_LAYER = 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
+  const SHELL_MASK = (1 << SHELL_LAYER) >>> 0;
   const MATERIAL_ID_LAYER = 3;
   const PNG_OCCLUDER_LAYER = 4;
   const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
@@ -127,6 +129,8 @@
   let nonGroundDepthReplayCount = 0;
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
+  let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects without classified ground depth.
+  let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let internalReplay = false;
   let lastDebugSignature = '';
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
@@ -1222,12 +1226,190 @@
     }
   }
 
+  function isShellOutlinePass(scene, camera) {
+    const material = scene?.overrideMaterial;
+    return Number(camera?.layers?.mask ?? 0) >>> 0 === SHELL_MASK
+      && material?.isShaderMaterial
+      && material.side === THREE.BackSide
+      && !!material.uniforms?.uThickness;
+  }
+
+  function hideNonXrayShellMeshes(scene, xraySet) {
+    const states = new Map();
+    scene.traverseVisible((object) => {
+      if (!object?.isMesh || !hasLayer(object, SHELL_LAYER) || xraySet.has(object)) return;
+      states.set(object, object.visible);
+      object.visible = false;
+    });
+    return states;
+  }
+
+  // Replays shell outlines for the same meshes that receive the selective
+  // ground x-ray. The ordinary shell pass omits those meshes; this pass rebuilds
+  // depth without x-ray ground, draws only their shells against every other
+  // solid occluder, then restores ordinary scene depth for later outline passes.
+  function replayShellOutlineXray(renderer, scene, camera, xrayMeshes, ground, topFaceGround, scissored) {
+    if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) return;
+
+    const oldAutoClear = renderer.autoClear; // Restored after the private depth/shell passes.
+    const oldAutoClearColor = renderer.autoClearColor; // Preserves the caller's color-clear policy.
+    const oldAutoClearDepth = renderer.autoClearDepth; // Preserves the caller's depth-clear policy.
+    const oldAutoClearStencil = renderer.autoClearStencil; // Preserves the caller's stencil-clear policy.
+    const oldBackground = scene.background; // Restored after suppressing the background during depth-only draws.
+    const oldOverride = scene.overrideMaterial; // The shell shader reused for the selective shell draw.
+    const oldCameraMask = camera.layers.mask; // Restored after switching between world and shell layers.
+    const oldSceneAutoUpdate = scene.autoUpdate; // Restored after reusing base-pass world matrices.
+    const shadowMap = renderer.shadowMap; // Shadow auto-update is suspended while depth is reconstructed.
+    const oldShadowAutoUpdate = shadowMap?.autoUpdate; // Restored with the rest of the render state.
+    const previousInternalReplay = internalReplay; // Nested renderer calls must preserve the prior replay guard.
+    const glState = renderer.state; // Supplies the temporary screen-space scissor.
+    const xraySet = new Set(xrayMeshes); // Identifies shell meshes retained in the selective outline draw.
+    let depthVisibility = null; // Temporarily hidden ground meshes during the depth reconstruction.
+    let shellVisibility = null; // Non-x-ray shell meshes hidden during the selective shell draw.
+    let swappedGeometry = []; // Carved floor meshes temporarily replaced by wall/ceiling-only occluders.
+    let scissorActive = false; // Controls restoration of the temporary screen-space clip.
+    let depthWasCleared = false; // Ensures the ordinary depth buffer is rebuilt after any partial replay.
+
+    internalReplay = true;
+    try {
+      if (scissored) {
+        glState.scissor(scissorRect);
+        glState.setScissorTest(true);
+        scissorActive = true;
+        scissoredReplayCount++;
+      } else {
+        fullscreenReplayCount++;
+        lastReplayScissorCoverage = 1;
+      }
+
+      renderer.autoClear = false;
+      renderer.autoClearColor = false;
+      renderer.autoClearDepth = false;
+      renderer.autoClearStencil = false;
+      scene.background = null;
+      scene.autoUpdate = false;
+      if (shadowMap) shadowMap.autoUpdate = false;
+
+      // Reconstruct solid depth with the exact same ground exclusions used by
+      // the visible x-ray object. Keep the source meshes in depth so their own
+      // front faces still mask the inflated shell; water, snow, props and walls remain.
+      renderer.clearDepth();
+      depthWasCleared = true;
+      depthVisibility = hideObjects(ground);
+      swappedGeometry = swapToOccluderGeometry(topFaceGround);
+      scene.overrideMaterial = null;
+      camera.layers.mask = MASK_ALL;
+      const depthStates = prepareNonGroundDepthMaterials(scene);
+      // Shell back-faces need the source surface in depth even when its normal
+      // material opts out of depth writes (as held/overlay materials sometimes do).
+      for (const mesh of xrayMeshes) {
+        forEachMaterial(mesh.material, material => {
+          saveMaterialState(depthStates, material);
+          material.depthTest = true;
+          material.depthWrite = true;
+        });
+      }
+      try {
+        rawRender.call(renderer, scene, camera);
+        nonGroundDepthReplayCount++;
+      } finally {
+        restoreMaterialStates(depthStates);
+        restoreSwappedGeometry(swappedGeometry);
+        swappedGeometry = [];
+        restoreVisibility(depthVisibility);
+        depthVisibility = null;
+      }
+
+      // Draw only the x-ray objects' shells. Their own front-face depth is
+      // present, so only the expanded silhouette escapes; ordinary non-ground
+      // geometry still blocks the shell exactly as it blocks the visible object.
+      shellVisibility = hideNonXrayShellMeshes(scene, xraySet);
+      scene.overrideMaterial = oldOverride;
+      camera.layers.mask = SHELL_MASK;
+      rawRender.call(renderer, scene, camera);
+      shellXrayPassCount++;
+      shellXrayMeshDrawCount += xrayMeshes.length;
+      restoreVisibility(shellVisibility);
+      shellVisibility = null;
+    } finally {
+      // Restore the framebuffer depth before target/material-ID consumers.
+      // This is colorless and confined to the same scissor as the x-ray shell.
+      try {
+        if (depthWasCleared) {
+          if (depthVisibility) {
+            restoreVisibility(depthVisibility);
+            depthVisibility = null;
+          }
+          if (swappedGeometry.length) {
+            restoreSwappedGeometry(swappedGeometry);
+            swappedGeometry = [];
+          }
+          if (shellVisibility) {
+            restoreVisibility(shellVisibility);
+            shellVisibility = null;
+          }
+          scene.overrideMaterial = null;
+          camera.layers.mask = MASK_ALL;
+          renderer.clearDepth();
+          const restoreStates = prepareNonGroundDepthMaterials(scene);
+          try {
+            rawRender.call(renderer, scene, camera);
+          } finally {
+            restoreMaterialStates(restoreStates);
+          }
+        }
+      } finally {
+        if (depthVisibility) restoreVisibility(depthVisibility);
+        if (swappedGeometry.length) restoreSwappedGeometry(swappedGeometry);
+        if (shellVisibility) restoreVisibility(shellVisibility);
+        if (scissorActive) restoreRendererScissor(renderer);
+        camera.layers.mask = oldCameraMask;
+        scene.overrideMaterial = oldOverride;
+        if (shadowMap) shadowMap.autoUpdate = oldShadowAutoUpdate;
+        scene.autoUpdate = oldSceneAutoUpdate;
+        scene.background = oldBackground;
+        renderer.autoClear = oldAutoClear;
+        renderer.autoClearColor = oldAutoClearColor;
+        renderer.autoClearDepth = oldAutoClearDepth;
+        renderer.autoClearStencil = oldAutoClearStencil;
+        internalReplay = previousInternalReplay;
+      }
+    }
+  }
+
   function wrappedRender(scene, camera) {
     if (internalReplay || !scene?.isScene || !camera?.isCamera) {
       return originalRender.call(this, scene, camera);
     }
 
     scanScene(scene);
+    if (isShellOutlinePass(scene, camera)) {
+      const held = collectVisible(heldRegistry, scene);
+      const feet = collectVisible(waterOccludedRegistry, scene);
+      const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      const ground = collectVisible(groundRegistry, scene);
+      const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
+      if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
+        return originalRender.call(this, scene, camera);
+      }
+      const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
+      const scissored = replayScissorEnabled && !!(shellGlState?.scissor && shellGlState?.setScissorTest)
+        && replayScissorRect(this, camera, xrayMeshes, scissorRect);
+      if (scissored && (scissorRect.z <= 0 || scissorRect.w <= 0)) {
+        return originalRender.call(this, scene, camera);
+      }
+      // Avoid drawing these shells once under normal ground depth and again in
+      // the selective replay. The replay redraws their complete visible shell.
+      const hiddenXrayShells = hideObjects(xrayMeshes); // Avoid a normal-depth shell draw before the selective replay.
+      let shellResult; // Return value of the ordinary shell pass, excluding x-ray participants.
+      try {
+        shellResult = originalRender.call(this, scene, camera);
+      } finally {
+        restoreVisibility(hiddenXrayShells);
+      }
+      replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored);
+      return shellResult;
+    }
     if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
@@ -1305,6 +1487,8 @@
       nonGroundDepthReplays: nonGroundDepthReplayCount,
       groundDepthRestores: groundDepthRestoreCount,
       invariantRepairs: invariantRepairCount,
+      shellXrayPasses: shellXrayPassCount,
+      shellXrayMeshes: shellXrayMeshDrawCount,
     };
   }
 
@@ -1313,7 +1497,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
