@@ -1103,7 +1103,7 @@
   function _entranceNubCells(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1)));
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1))));
     // Exactly one floorless exit marker per entrance; the door is rendered
     // at the floor boundary using InteriorDoorTiles, like an authored church.
     if (f.side === 'north') return [{ c: gx + slot, r: gy - 1 }];
@@ -1116,7 +1116,7 @@
   function _entranceEnterCell(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1)));
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1))));
     if (f.side === 'north') return { c: gx + slot, r: gy };
     if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
     if (f.side === 'west')  return { c: gx, r: gy + slot };
