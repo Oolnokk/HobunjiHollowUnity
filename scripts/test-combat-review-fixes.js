@@ -14,6 +14,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const game = read('docs/game.js');
 const core = read('docs/js/combat/combat-core.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
+const nv = read('docs/js/nearby-volume-collision.js');
 const reticle = read('docs/js/combat/melee-hud-reticle.js');
 const dodge = read('docs/js/combat/combat-enemy-dodge.js');
 const enemySearch = read('docs/js/combat/enemy-search-ai.js');
