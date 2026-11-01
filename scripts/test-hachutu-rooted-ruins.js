@@ -38,6 +38,23 @@ for(let seed=1;seed<=128;seed++){
   }
   assert.equal(visited.size,81,'maze never strands its central binding weed');
 }
+// Labyrinth ember seeds: three distinct, reachable dead ends, never the entrance or the weed cell.
+for(let seed=1;seed<=128;seed++){
+  let n=seed>>>0;
+  const random=()=>((n=(Math.imul(n,1664525)+1013904223)>>>0)/4294967296);
+  const maze=api.generateMaze(random,9);
+  const cells=api.pickSeedCells(maze,3);
+  assert.equal(cells.length,3,'three seed cells for seed '+seed);
+  assert.equal(new Set(cells.map(c=>c.join(','))).size,3,'seed cells are distinct');
+  const degree=new Map();
+  for(const [a,b] of maze.edges)for(const c of [a.join(','),b.join(',')])degree.set(c,(degree.get(c)||0)+1);
+  for(const cell of cells){
+    const key=cell.join(',');
+    assert.equal(degree.get(key),1,'seed sits in a dead end');
+    assert.notEqual(key,'0,0','seed is never on the entrance cell');
+    assert.notEqual(key,'4,4','seed is never on the weed cell');
+  }
+}
 const boss={maxHealth:100,health:100,maxStamina:80,stamina:80,maxFooting:25,footing:25,
   visualScaleX:1,visualScaleY:1,visualScaleZ:1,halfHeight:1,
   maskboundTroop:'reacher',groundShadow:{scale:{multiplyScalar(){}}},

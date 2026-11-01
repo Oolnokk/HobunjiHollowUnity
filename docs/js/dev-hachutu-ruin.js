@@ -128,11 +128,13 @@
     // Melee and projectile collision can both damage the crown; the
     // interaction fallback is controller-accessible and visible on phones.
     session.kit.registerProjectileTarget({id:'hachutu-weed-'+part.name,object:crown,hitMesh:crown,active:false,
-      hittable:()=>!weed.done&&rings.every(r=>!r.torus.visible),onHit:()=>strikeWeed(weed)});
+      hittable:()=>weedExposed(weed),onHit:()=>strikeWeed(weed)});
     return weed;
   }
+  // A weed can be hurt once its fire rings are out AND its hall's own puzzle (weed.requires) is solved.
+  function weedExposed(weed){return !!weed&&!weed.done&&weed.rings.every(r=>!r.torus.visible)&&(!weed.requires||weed.requires());}
   function strikeWeed(weed){
-    if(!weed||weed.done||weed.rings.some(r=>r.torus.visible))return false;
+    if(!weedExposed(weed))return false;
     weed.damage++;
     weed.crown.scale.setScalar(Math.max(.25,1-weed.damage*.3));
     if(weed.damage<3)return true;
@@ -338,6 +340,7 @@
     // depend on the room bounds but never move the centerpiece.
     const center=weed.part.center;weed.group.position.set(center.x,y,center.z);
     session.maze=maze;
+    buildSeeds(weed,x0,z0,scale);
     // Grabby hands are separate mobile-visible hazards; a failed grasp
     // releases after a dodge, while a second completed grasp is lethal.
     const hands=[];
@@ -540,6 +543,83 @@
     session.coffins=session.coffins.filter(c=>!c.finished);
     for(const minion of [...session.minions])if(!(Number(minion.health)>0)||minion.dead===true||!deps?.hostileObjects?.has?.(minion))session.minions.delete(minion);
   }
+  // ---- Hall puzzles --------------------------------------------------------------------------------------
+  // Labyrinth: each binding-fire ring is fed by an ember seed hidden at a far dead end of the DFS maze.
+  // Trial: three sap bulbs must all be lit at once (each stays lit eight seconds) while coffins attack.
+  const BULB_LIT_MS=8000;
+  function pickSeedCells(maze,count=3){
+    const adj=new Map(),key=(x,z)=>x+','+z;
+    for(const [a,b] of maze.edges){
+      const ka=key(...a),kb=key(...b);
+      if(!adj.has(ka))adj.set(ka,[]);if(!adj.has(kb))adj.set(kb,[]);adj.get(ka).push(kb);adj.get(kb).push(ka);
+    }
+    const dist=new Map([['0,0',0]]),queue=['0,0'];
+    for(let i=0;i<queue.length;i++)for(const next of adj.get(queue[i])||[])if(!dist.has(next)){dist.set(next,dist.get(queue[i])+1);queue.push(next);}
+    const centre=Math.floor(maze.n/2)+','+Math.floor(maze.n/2);
+    const ends=[...dist.keys()].filter(k=>k!=='0,0'&&k!==centre&&(adj.get(k)||[]).length===1).sort((a,b)=>dist.get(b)-dist.get(a)||(a<b?-1:1));
+    const picked=[],far=(a,b)=>{const [ax,az]=a.split(',').map(Number),[bx,bz]=b.split(',').map(Number);return Math.abs(ax-bx)+Math.abs(az-bz)>=4;};
+    for(const cell of ends)if(picked.length<count&&picked.every(o=>far(o,cell)))picked.push(cell);
+    for(const cell of ends)if(picked.length<count&&!picked.includes(cell))picked.push(cell); // Small mazes: relax the spread rule.
+    return picked.map(k=>k.split(',').map(Number));
+  }
+  function buildSeeds(weed,x0,z0,scale){
+    session.seeds=[];
+    pickSeedCells(session.maze,3).forEach(([cx,cz],i)=>{
+      const color=weed.rings[i]?.torus.material.color.getHex()??COLORS[i];
+      const x=x0+cx*scale,z=z0+cz*scale,group=new THREE.Group();group.position.set(x,session.floor,z);session.group.add(group);
+      const gem=mesh(group,'ember seed',new THREE.IcosahedronGeometry(.28,0),material(color),0,.9,0);
+      const beam=cylinder(group,'ember seed beam',.04,.04,2.2,0,1.1,0,color);
+      gem.userData.devRuinFootprintIgnore=true;beam.userData.devRuinFootprintIgnore=true;gem.userData.interactive3D=true;
+      session.seeds.push({index:i,group,gem,x,z,taken:false});
+    });
+  }
+  function takeSeed(seed){
+    if(!seed||seed.taken)return false;
+    seed.taken=true;seed.group.visible=false;
+    const left=session.seeds.filter(s=>!s.taken).length;
+    session.deps?.showToast?.(left?'An ember seed quenches a ring of binding fire — '+left+' to find.':'The last ember seed is spent. The labyrinth weed lies bare.',true);
+    takeRing(session.weeds[1],seed.index);
+    return true;
+  }
+  function updateSeeds(now){
+    for(const seed of session.seeds||[])if(!seed.taken){seed.gem.rotation.y=now*.002;seed.gem.position.y=.9+.08*Math.sin(now*.003+seed.index);}
+  }
+  function buildBulbs(){
+    const b=session.layout.parts[2].bounds,y=session.floor;
+    session.bulbs=[];
+    for(let i=0;i<3;i++){
+      const x=b.minX+(i+1)*(b.maxX-b.minX)/4,z=b.minZ+1.6;
+      const stalk=cylinder(session.group,'sap bulb stalk',.07,.12,2.0,x,y+1.0,z,0x2d2a22);stalk.userData.devRuinFootprintIgnore=true;
+      const bulb={index:i,x,z,litUntil:0,lit:false,
+        mesh:mesh(session.group,'sap bulb',new THREE.IcosahedronGeometry(.4,1),new THREE.MeshBasicMaterial({color:0x4a3f1f}),x,y+2.3,z)};
+      bulb.mesh.userData.devRuinFootprintIgnore=true;bulb.mesh.userData.interactive3D=true;
+      bulb.target=session.kit.registerProjectileTarget({id:'hachutu-sap-bulb-'+i,object:bulb.mesh,hitMesh:bulb.mesh,active:false,
+        hittable:()=>!session.trial?.resonance,onHit:()=>strikeBulb(bulb)});
+      session.bulbs.push(bulb);
+    }
+  }
+  function strikeBulb(bulb,now=performance.now()){
+    const trial=session.trial;
+    if(!bulb||!trial||trial.resonance)return false;
+    bulb.litUntil=now+BULB_LIT_MS;
+    if(session.bulbs.every(item=>item.litUntil>now)){
+      trial.resonance=true;session.bulbs.forEach(item=>{item.target.active=true;});
+      session.deps?.showToast?.('The sap bulbs sing in unison — the Binding Weed stirs.',true);
+      window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    }else session.deps?.showToast?.(session.bulbs.filter(item=>item.litUntil>now).length+' of 3 sap bulbs lit — strike them all within '+BULB_LIT_MS/1000+' seconds.',false);
+    return true;
+  }
+  function updateBulbs(){
+    const trial=session.trial,now=performance.now();if(!trial)return; // Same clock as strikeBulb, independent of the scheduler's timestamp.
+    for(const bulb of session.bulbs||[]){
+      const lit=trial.resonance||bulb.litUntil>now;
+      if(lit!==bulb.lit){bulb.lit=lit;bulb.mesh.material.color.setHex(lit?0xffd24a:0x4a3f1f);}
+      if(lit)bulb.mesh.scale.setScalar(1+.08*Math.sin(now*.008+bulb.index));
+    }
+    if(!trial.hinted&&!trial.resonance&&session.weeds[2].rings.every(r=>!r.torus.visible)){
+      trial.hinted=true;session.deps?.showToast?.('The weed\'s roots hum. Light all three sap bulbs on the north wall at once.',true);
+    }
+  }
   function buildTrial(weed,rng){
     const b=weed.part.bounds,y=session.floor;
     for(let i=0;i<12;i++){
@@ -548,7 +628,9 @@
       cylinder(session.group,'combat cover standing stone',.45,.67,1.8,x,y+.9,z,0x45463c);
       roots(session.group,x,y,z,2,.08);
     }
-    session.trial={wave:0,remaining:0,pending:0,started:false,nextAt:0,cleared:false};
+    session.trial={wave:0,remaining:0,pending:0,started:false,nextAt:0,cleared:false,resonance:false,hinted:false};
+    weed.requires=()=>session.trial.resonance;
+    buildBulbs();
   }
   function startWave(){
     const trial=session.trial;if(!trial||trial.wave>=3)return;
@@ -703,9 +785,17 @@
       controls.push({kind:'hachutuReturn',object:session.returnMarker,promptRoot:session.returnMarker,range:2.1,priority:21,claimAction1:true,
         label:'Return to the Ruin',touchIcon:'🚪',onPress:()=>{session.entered=false;session.kit.setPlayerWorld(session.entry,true,true);}}); // entered=false re-arms the entrance gate and the abyss/encounter updates.
     }
-    for(const weed of session.weeds)if(!weed.done&&weed.rings.every(r=>!r.torus.visible))controls.push({
+    for(const weed of session.weeds)if(weedExposed(weed))controls.push({
       kind:'bindingWeed',object:weed.crown,promptRoot:weed.group,range:2.8,priority:28,claimAction1:true,
       label:()=>weed.damage?'Sever Binding Weed ('+weed.damage+'/3)':'Attack Binding Weed',touchIcon:'🌱',onPress:()=>strikeWeed(weed),
+    });
+    for(const seed of session.seeds||[])if(!seed.taken)controls.push({
+      kind:'hachutuSeed',object:seed.gem,promptRoot:seed.group,range:2.2,priority:27,claimAction1:true,
+      label:'Take Ember Seed',touchIcon:'🔥',onPress:()=>takeSeed(seed),
+    });
+    if(session.trial&&!session.trial.resonance)for(const bulb of session.bulbs||[])controls.push({
+      kind:'hachutuSapBulb',object:bulb.mesh,promptRoot:bulb.mesh,range:2.6,priority:27,claimAction1:true,
+      label:()=>bulb.litUntil>performance.now()?'Sap Bulb (lit)':'Strike Sap Bulb',touchIcon:'🟡',onPress:()=>strikeBulb(bulb),
     });
     if(session.heart?.defeated)controls.push(...(window.DevRandomRuinDungeonChests?.controlsFor?.(session.chests)||[]));
     return controls;
@@ -769,7 +859,7 @@
     if(context.hachutu!==true)return;
     deps=kit.deps;const layout=reserved;
     if(!layout)throw new Error('Hachutu reserved rooms were not projected.');
-    session={kit,context,deps,layout,gates:[],group:new THREE.Group(),floor:Number(context.meta?.floorSurfaceY)||0,
+    session={kit,context,deps,layout,gates:[],seeds:[],bulbs:[],group:new THREE.Group(),floor:Number(context.meta?.floorSurfaceY)||0,
       rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),ownedEntities:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
       entry:{x:context.spawn.x,z:context.spawn.z,y:Number(context.meta?.floorSurfaceY)||0}};
     kit.group().add(session.group);session.group.name='hachutu-root-temple';
@@ -793,7 +883,6 @@
     buildPassages();
     for(const index of [0,1,2])session.weeds.push(createWeed(layout.parts[index],session.rng));
     buildSwing(session.weeds[0],session.rng);
-    for(let i=0;i<3;i++)takeRing(session.weeds[1],i); // Labyrinth weed is exposed from the start, unlike the fire-protected trials.
     buildLabyrinth(session.weeds[1],session.rng);
     buildTrial(session.weeds[2],session.rng);
     buildGate('swing',layout.passages[0],()=>session.weeds[0].done);
@@ -820,7 +909,7 @@
     if(!session||session.ended)return;
     updateCoffins(dt);
     if(session.entered){
-      updateSwing(dt,now);updateHands(now,dt);updateTrial(now);updateDoor(dt);updateHeart(now);
+      updateSwing(dt,now);updateHands(now,dt);updateSeeds(now);updateBulbs();updateTrial(now);updateDoor(dt);updateHeart(now);
       const p=kit.playerWorld();
       updateGates(dt,now,p);
       if(p&&inside(p,session.layout.parts[1].bounds,1)&&now-session.lastLabyrinthSpawnAt>9500){
@@ -864,7 +953,8 @@
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
       rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null})),floorRoots:(session.cover||[]).map(c=>({room:c.name,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
-      trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
+      trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared,resonance:session.trial.resonance}:null,
+      seeds:(session.seeds||[]).map(seed=>({index:seed.index,taken:seed.taken})),bulbs:(session.bulbs||[]).map(bulb=>({index:bulb.index,lit:bulb.lit})),
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};
   }
@@ -882,5 +972,8 @@
     debug:()=>snapshot(),brief:()=>session?{weeds:session.weedsKilled,wave:session.trial?.wave||0,boss:session.heart?.boss?.maskboundTroop||'-',tear:window.RootSnarePlayerTear?.active?.()?(window.RootSnarePlayerTear.split?.()?'split':'pull'):'-',issue:session.errors.at(-1)||null}:null, // No animated-hand diagnostics allocation per rendered frame.
     debugPreviewSnare,
     debugSever:index=>strikeWeed(session?.weeds?.[index]),
+    debugTakeSeed:index=>takeSeed(session?.seeds?.[index]),
+    debugStrikeBulb:index=>strikeBulb(session?.bulbs?.[index]),
+    pickSeedCells,
     debugClearRing:(weed,ring)=>takeRing(session?.weeds?.[weed],ring)});
 })();

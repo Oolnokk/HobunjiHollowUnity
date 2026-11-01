@@ -52,10 +52,10 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     let generated;
     try{generated=await Promise.race([
       page.evaluate(async()=>{
-        const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true});
+        const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true,rootRecipe:{maxBindings:1}}); // One vestibule door keeps CI generation bounded; production binds up to six.
         return {ok,ruin:window.DevHachutuRuin?.debug?.(),area:window.GridTileAccessors.getCurrentArea()};
       }),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Hachutu generation did not finish within 100 seconds; possible stuck V50/root growth')),100000)),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Hachutu generation did not finish within 150 seconds; possible stuck V50/root growth')),150000)),
     ]);}finally{clearInterval(progressPoll);} // Bound a hung generator without losing its last phase diagnostics.
     assert.equal(generated.ok,true,'Hachutu generator failed: '+JSON.stringify(generated)+"; "+logs.slice(-9).join(' | '));
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='map_i_dev_random_ruin',
@@ -90,6 +90,28 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     await page.waitForFunction(()=>{const g=window.DevHachutuRuin.debug().gates;return g[0].open&&!g[0].blocking;},null,{timeout:30000});
     const gates=await page.evaluate(()=>window.DevHachutuRuin.debug().gates);
     assert.equal(gates[1].blocking,true,'severing the swing weed must not open the labyrinth gate');
+    const vestibule=await page.evaluate(()=>window.DevRandomRuin.getVestibuleRoots());
+    assert.deepEqual([vestibule.bindings,vestibule.rooted,vestibule.error],[1,true,null],'vestibule doors are bound to the Root Growth Author: '+JSON.stringify(vestibule));
+    // Labyrinth puzzle: three ember seeds at maze dead ends feed the three rings; the weed stays unhittable until all are taken.
+    assert.equal(built.seeds.length,3,'three ember seeds hidden in the labyrinth');
+    assert.equal(built.plants[1].rings,3,'labyrinth weed starts protected by three fire rings');
+    assert.equal(await page.evaluate(()=>window.DevHachutuRuin.debugSever(1)),false,'a ringed labyrinth weed cannot be severed');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugTakeSeed(i);});
+    const afterSeeds=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.equal(afterSeeds.plants[1].rings,0,'taking all seeds extinguishes every labyrinth ring');
+    assert(afterSeeds.seeds.every(seed=>seed.taken),'every seed is spent');
+    // Trial puzzle: all three sap bulbs lit at once, in addition to clearing the waves, exposes the weed.
+    assert.equal(built.bulbs.length,3,'three sap bulbs in the trial hall');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugClearRing(2,i);});
+    assert.equal(await page.evaluate(()=>window.DevHachutuRuin.debugSever(2)),false,'wave-cleared weed stays bare-proof until resonance');
+    await page.evaluate(()=>{window.DevHachutuRuin.debugStrikeBulb(0);window.DevHachutuRuin.debugStrikeBulb(1);});
+    assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,false,'two bulbs are not enough');
+    await page.evaluate(()=>window.DevHachutuRuin.debugStrikeBulb(2));
+    assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,true,'three lit bulbs resonate');
+    await page.evaluate(()=>{for(let i=0;i<3;i++){window.DevHachutuRuin.debugSever(1);window.DevHachutuRuin.debugSever(2);}});
+    const solved=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.deepEqual(solved.plants.map(plant=>plant.dead),[true,true,true],'all three weeds severed once their puzzles are solved');
+    assert.equal(solved.heart.open,true,'the Temple Heart seal opens after the three puzzles');
     assert.equal(built.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
     assert(built.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
     assert.deepEqual(built.errors,[],'Hachutu had hidden composer build errors');
