@@ -719,7 +719,7 @@
       return;
     }
     if (isDisabled(currentTarget)) return; // Inspectable locked effects can glow without bypassing purchase prerequisites.
-    if (currentTarget.tagName === 'SELECT') { currentTarget.focus(); return; }
+    if (currentTarget.tagName === 'SELECT' || (currentTarget.tagName === 'INPUT' && currentTarget.type === 'range')) { currentTarget.focus(); return; }
     if (isTextEditable(currentTarget)) { currentTarget.blur(); return; }
     if (currentTarget.tagName === 'INPUT' && (currentTarget.type === 'checkbox' || currentTarget.type === 'radio')) {
       currentTarget.click();
