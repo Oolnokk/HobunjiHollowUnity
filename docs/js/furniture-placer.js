@@ -235,7 +235,7 @@
       };
       list.appendChild(debug);
     }
-    if (deps.getCurrentArea() === 'farm') {
+    if (['farm', 'interior'].includes(deps.getCurrentArea())) {
       const fixtures = window.HousePieces?.getInteriorShiftableFeatures?.() || [];
       if (fixtures.length) {
         const heading = document.createElement('div');
