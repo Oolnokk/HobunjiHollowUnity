@@ -185,9 +185,9 @@ assert.equal(isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 
 
 const shellFilterStart = shellPassEnd;
 const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
-const hideNonXrayShellMeshes = new Function('hasLayer',
-  heldRender.slice(shellFilterStart, shellFilterEnd) + '\nreturn hideNonXrayShellMeshes;')(
-  (object, layer) => !!(object.layers.mask & (1 << layer)));
+const hideNonXrayShellMeshes = new Function('hasLayer', 'SHELL_LAYER',
+  heldRender.slice(shellFilterStart, shellFilterEnd) + '\\nreturn hideNonXrayShellMeshes;')(
+  (object, layer) => !!(object.layers.mask & (1 << layer)), 1);
 const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
 const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
 const unrelatedMesh = { isMesh: true, visible: true, layers: { mask: 1 } };
@@ -216,7 +216,7 @@ assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
   'shell replay excludes classified ground, draws only matching shells, then restores full scene depth');
 assert.ok(heldRender.includes('const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))'),
   'all existing held/foot ground-x-ray participants share shell visibility parity');
-assert.match(heldRender, /replayShellOutlineXray\(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored\)/,
+assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored)'),
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
 
 // This hard-won ordering contract must stay discoverable to subsequent
