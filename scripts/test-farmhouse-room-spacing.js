@@ -48,6 +48,19 @@ assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', -1).ok, true);
 assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', -1).ok, true);
 layout = house.computeInteriorLayout();
 assert.equal(layout.doors[0].enter.c, beforeShiftExit, 'left adjustment reverses entrance shift');
+const entry = pieces[0].features.find(feature => feature.id === 'entry');
+for (const [side, edgeSlot, axis, delta] of [
+  ['north', 0, 'c', 1], ['south', 1, 'c', -1],
+  ['west', 1, 'r', -1], ['east', 0, 'r', 1],
+]) {
+  entry.side = side; entry.edgeSlot = edgeSlot; entry.interiorShift = 0;
+  const before = house.computeInteriorLayout().doors.find(door => door.featureId === 'entry').enter;
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', 1).ok, true, side + ' entrance shifts right');
+  const after = house.computeInteriorLayout().doors.find(door => door.featureId === 'entry').enter;
+  assert.equal(after[axis] - before[axis], delta, side + ' entrance right follows the wall tangent');
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', 1).ok, false, side + ' entrance cannot leave its two-cell wall span');
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', -1).ok, true, side + ' entrance shift reverses');
+}
 assert.equal(layout.hearths[0].cx, beforeShiftHearth, 'left adjustment reverses fireplace shift');
 const join = layout.partitions[0];
 assert.equal(join.door.c, main.col + main.w);
@@ -69,7 +82,7 @@ assert.equal(interiorPoint[0], annex.col + 2);
 assert.equal(interiorPoint[2], annex.row);
 const back = windows.__test.fromIndoorPoint(directRun, interiorPoint);
 assert.equal(back[0], 7); assert.equal(back[1], 2);
-for (const [side, expected] of [['north', 11], ['south', 9], ['west', 21], ['east', 19]]) {
+for (const [side, expected] of [['north', 11], ['south', 9], ['west', 19], ['east', 21]]) {
   const shifted = windows.__test.shiftInteriorPoint([10, 0, 20], side, 1);
   assert.equal(side === 'north' || side === 'south' ? shifted[0] : shifted[2], expected,
     side + ' interior right shift follows the wall-local tangent');
