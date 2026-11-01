@@ -87,14 +87,14 @@ const lightingWindow = { // Loads the complete lighting module, without initiali
 vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow, performance: { now: () => now }, console });
 lightingWindow.WeatherFX.init({
   lctx: ctx, camera: {
-    matrixWorld: {}, near: 0.1, far: 100,
-    getWorldPosition(target) { return target.set(0, 0, 0); },
+    matrixWorld: {}, near: 0.1, far: 110,
+    getWorldPosition(target) { return target.set(0, 0, -10); },
     getWorldDirection(target) { return target.set(0, 0, 1); },
   },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
   getCurrentArea: () => area, _isBuildingArea: id => id.startsWith('map_i_'),
   getActiveScene: () => activeScene, getThreeRect: () => ({ width: 100, height: 100 }),
-  worldToOverlay: (x, y, z) => ({ x, y: 50, visible: z > 0.1 && z < 100 }),
+  worldToOverlay: (x, y, z) => ({ x, y: 50, visible: z + 10 > 0.1 && z + 10 < 110 }),
   getFurnitureLightSources: () => localLights, getLightningAlpha: () => 0, getSceneTransAlpha: () => 0,
 });
 function draw() {
