@@ -369,7 +369,7 @@
   }
   async function spawnMaskbound(record,owner=session,titan=false){
     const combat=window.MaskboundGuardianCombat;
-    if(!combat?.makeEntity||!owner||owner.ended)return null;
+    if(!combat?.makeEntity||!owner||owner.ended||owner.minions.size>=14)return null; // Cap concurrent scripted masks, including unsignaled headtakers.
     const tile=Number(owner.deps?.TILE)||64;
     try{
       const enemy=await combat.makeEntity({troopType:record.troop,tier:titan?4:2,x:record.x*tile,y:record.z*tile,
@@ -382,7 +382,7 @@
         const s=DS.sampleSupport?.(enemy.x/tile,enemy.y/tile,{minY:-50,maxY:10,pad:.02});
         return Number.isFinite(s?.y)?s.y:owner.floor;
       };
-      owner.deps.hostileObjects?.add?.(enemy);owner.minions.add(enemy);
+      owner.deps.hostileObjects?.add?.(enemy);owner.minions.add(enemy);owner.ownedEntities.add(enemy); // Retain corpses for deterministic reroll disposal.
       record.spawned=enemy;return enemy;
     }catch(error){owner.errors.push(String(error?.message||error));return null;}
   }
@@ -512,8 +512,9 @@
       });
       h.lastAddAt=now;
     }
-    if(h.boss&&h.boss.health<=0&&!h.defeated){
+    if(h.boss&&(!(Number(h.boss.health)>0)||h.boss.dead===true||!deps.hostileObjects?.has?.(h.boss))&&!h.defeated){
       h.defeated=true;session.deps?.showToast?.('The Temple Heart falls silent. Its ancestor vault opens.',true);
+      for(const enemy of session.minions){if(enemy!==h.boss&&enemy.health>0)deps?.damageCreature?.(enemy,enemy.health+999,undefined,undefined,0,{});} // Ads fall with their Titan; corpse cleanup remains session-owned.
     }
     if(h.boss&&!h.defeated&&now-h.lastAddAt>12000){
       h.lastAddAt=now;const b=session.layout.parts[3].bounds;
@@ -556,7 +557,7 @@
     deps=kit.deps;const layout=reserved;
     if(!layout)throw new Error('Hachutu reserved rooms were not projected.');
     session={kit,context,deps,layout,group:new THREE.Group(),floor:Number(context.meta?.floorSurfaceY)||0,
-      rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
+      rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),ownedEntities:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
       entry:{x:context.spawn.x,z:context.spawn.z,y:Number(context.meta?.floorSurfaceY)||0}};
     kit.group().add(session.group);session.group.name='hachutu-root-temple';
     // The V50 floor registry only creates surfaces for interiorShell.floorCells.
@@ -616,8 +617,8 @@
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
     for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
-    for(const enemy of session.minions)retireEntity(enemy,session);
-    session.minions.clear();
+    for(const enemy of session.ownedEntities)retireEntity(enemy,session);
+    session.minions.clear();session.ownedEntities.clear();
     session.group.parent?.remove(session.group);
     session.group.traverse(obj=>{if(obj.geometry&&!obj.geometry.userData?.devRuinSharedPrimitive)obj.geometry.dispose?.();
       if(obj.material){for(const m of Array.isArray(obj.material)?obj.material:[obj.material])m.dispose?.();}});
