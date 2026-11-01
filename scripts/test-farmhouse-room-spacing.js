@@ -61,6 +61,18 @@ for (const [side, edgeSlot, axis, delta] of [
   assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', 1).ok, false, side + ' entrance cannot leave its two-cell wall span');
   assert.equal(house.shiftInteriorFeature(pieces[0].id, 'entry', -1).ok, true, side + ' entrance shift reverses');
 }
+const chimney = pieces[0].features.find(feature => feature.id === 'chimney');
+for (const [side, axis, delta] of [
+  ['north', 'cx', 1], ['south', 'cx', -1],
+  ['west', 'cz', -1], ['east', 'cz', 1],
+]) {
+  chimney.side = side; chimney.interiorShift = 0;
+  const before = house.computeInteriorLayout().hearths[0][axis];
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', 1).ok, true, side + ' fireplace shifts right');
+  const after = house.computeInteriorLayout().hearths[0][axis];
+  assert.equal(after - before, delta, side + ' fireplace right follows the wall tangent');
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', -1).ok, true, side + ' fireplace shift reverses');
+}
 assert.equal(layout.hearths[0].cx, beforeShiftHearth, 'left adjustment reverses fireplace shift');
 const join = layout.partitions[0];
 assert.equal(join.door.c, main.col + main.w);
