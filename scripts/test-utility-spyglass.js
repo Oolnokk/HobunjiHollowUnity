@@ -171,13 +171,13 @@ assert.equal(game.api.getDebug().ownsAction1, true, 'Action 1 belongs exclusivel
 assert.equal(game.actionButton.classList.contains('spyglass-action-visible'), true, 'normal Action 1 arch button is exposed');
 assert.equal(game.actionButton.querySelector('.spyglass-action-label').textContent, 'Raise Spyglass', 'initial arch prompt says Raise Spyglass');
 
-game.claim.onPress();
+game.window.WorldActionInputClaims.dispatch('action1', 'press');
 assert.equal(game.api.isAiming(), true, 'first Action 1 press raises the lens');
 assert.equal(game.actionButton.querySelector('.spyglass-action-label').textContent, 'Look Closer', 'raised spyglass changes Action 1 to Look Closer');
-game.claim.onRelease();
+game.window.WorldActionInputClaims.dispatch('action1', 'release');
 assert.equal(game.api.isAiming(), true, 'releasing Action 1 does not lower the toggle');
 game.advance();
-game.claim.onPress();
+game.window.WorldActionInputClaims.dispatch('action1', 'press');
 assert.equal(game.api.isLookingCloser(), true, 'second Action 1 press enters Look Closer');
 assert.equal(game.perceptionActive, true, 'Look Closer activates the shared perception effect');
 assert.equal(game.actionButton.querySelector('.spyglass-action-label').textContent, 'Lower Spyglass', 'close-look state exposes a clear lower action');
@@ -237,11 +237,18 @@ assert.equal(touchGame.api.isEquipped(), false, 'other touch input stows the spy
 
 const padGame = environment(); // Controller Action 1 toggles and any other controller button interrupts.
 padGame.api.equip();
-padGame.controllerFrame({ focused: true, pad: {}, down: new Set(['RightTrigger']), pressed: new Set(['Button7']), isDown: name => name === 'RightTrigger' });
+padGame.controllerFrame({ focused: true, pad: {}, down: new Set(['RightTrigger']), pressed: new Set(['RightTrigger']), isDown: name => name === 'RightTrigger' });
 assert.equal(padGame.api.isAiming(), true, 'controller Action 1 raises the lens');
+padGame.window.WorldActionInputClaims.dispatch('action1', 'press');
+assert.equal(padGame.api.isAiming(), true, 'shared controller claim and direct frame observer cannot double-toggle Action 1');
+padGame.window.WorldActionInputClaims.dispatch('action1', 'release');
 padGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(['Button1']), isDown: () => false });
 assert.equal(padGame.api.isEquipped(), false, 'controller dodge/other button stows the spyglass');
 assert.equal(padGame.claim, null, 'controller interruption releases the Action 1 claim');
+const movingPadGame = environment();
+movingPadGame.api.equip();
+movingPadGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(), move: { magnitude: 0.4 }, isDown: () => false });
+assert.equal(movingPadGame.api.isEquipped(), false, 'left-stick movement stows the spyglass while right-stick look remains available');
 
 const menuGame = environment();
 menuGame.api.equip();
