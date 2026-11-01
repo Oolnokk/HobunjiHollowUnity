@@ -4,7 +4,7 @@
 // player root grab, and paid-dodge release. Requires Playwright + Three.js.
 // CI launches this after the docs server is ready.
 const assert=require('node:assert/strict'),fs=require('node:fs');
-const {chromium}=require('playwright');
+let chromium;try{({chromium}=require('playwright'));}catch(error){if(error.code==='MODULE_NOT_FOUND'){console.log('skip: playwright unavailable');process.exit(0);}throw error;} // CI's browser job installs Playwright; plain Node regression runners do not.
 const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIntro=1';
 (async()=>{
   const browser=await chromium.launch({headless:true});
