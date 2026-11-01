@@ -24,7 +24,7 @@
   });
   const bossGlyphIds = Object.freeze(['harlyao_glyph_entropy','harlyao_glyph_servitude','harlyao_glyph_ignorance']); // Only existing authored motifs are allowed for a boss's symbolic inscription.
   const patternSlots = Object.freeze(['overwear', 'pants', 'torso', 'hat', 'hood', 'mask']); // Slots whose worn garment can be forced to carry a woven pattern.
-  const headGates = Object.freeze(['tight', 'legacy', 'mask']); // Portrait head-scale gate: box just below the skull, the original wide box, or (opt-in) the head plus its equipped head cosmetics. Unset uses legacy for non-Harlyao NPCs, and the species default for Harlyao skeletons.
+  const headGates = Object.freeze(['tight', 'legacy', 'mask']); // Portrait head-scale gate: box just below the skull, the original wide box, or (opt-in) the head plus its equipped head cosmetics. Unset uses legacy for players and ordinary NPCs; Harlyao skeletons keep their tight default.
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const unsafe = (key) =>
     ['__proto__', 'prototype', 'constructor'].includes(key);
