@@ -34,6 +34,7 @@ const context={console,Combat:{deps:{player:empty},animalAttacks:{register(){}}}
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-attach.js','utf8'),context);
 const escape=context.Combat.attach.hostDodgeEscapes;
 assert.equal(escape(empty),false,'shared attachment predicate rejects unpaid player rolls');
+context.Combat.deps.player=partial;
 assert.equal(escape(partial),false,'shared attachment predicate rejects partially funded rolls');
 context.Combat.deps.player=full;
 assert.equal(escape(full),true,'shared attachment predicate accepts the paid roll');
