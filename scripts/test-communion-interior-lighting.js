@@ -215,11 +215,16 @@ activeScene = {};
 draw();
 assert.notEqual(fills[0], 'rgba(0,0,0,0.8)', 'returning to the farm restores outdoor lighting');
 area = 'map_i_town_mine_f_1';
+localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] };
 draw();
 assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 0,
   'a stray glass source never tints underground mine darkness (the building-area selector includes mines)');
 assert.equal(fills[0], 'rgba(0,0,0,0.99)', 'mine darkness is preserved');
 assert.equal(gradients[0].radius, 2.4, 'mine lantern radius keeps its existing tuning');
+assert(!gradients.some(entry => Math.abs(entry.radius - 3) < 0.001), 'closed interior doors also block light in underground rooms');
+lightingWindow.InteriorDoorTiles = null;
+localLights = [];
 assert.equal(gradients[0].stops.length, 4, 'mine lantern profile remains unchanged');
 area = 'farm';
 draw();
