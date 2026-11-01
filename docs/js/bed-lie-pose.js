@@ -57,6 +57,9 @@
     if (restorePosition) {
       const player = deps?.player?.();
       if (player) { player.x = prior.startX; player.y = prior.startY; player.vx = 0; player.vy = 0; }
+      const root = deps?.playerRoot?.(); // Waking snaps the visual root back to its safe standing tile instead of drifting through the bed collider.
+      const size = Number(deps?.tileSize?.());
+      if (root && size > 0) { root.position.x = prior.startX / size; root.position.z = prior.startY / size; }
     }
     active = null;
     diagnostics.last = { ...diagnostics.last, reason }; // Last reported state stays available after the animation ends.
@@ -76,7 +79,8 @@
     const contact = furniture.mesh.localToWorld(new THREE.Vector3(0, height, 0)); // Mattress top; child guide geometry never controls placement.
     if (![contact.x, contact.y, contact.z].every(Number.isFinite)) return { ok: false, message: 'Invalid mattress position.' };
     const player = deps.player();
-    const tileSize = deps.tileSize(); // Game coordinates use pixels while the avatar/furniture scene uses world tiles.
+    const tileSize = Number(deps.tileSize()); // Game coordinates use pixels while the avatar/furniture scene uses world tiles.
+    if (!Number.isFinite(tileSize) || tileSize <= 0) return { ok: false, message: 'Bed position scale is unavailable.' };
     active = {
       furniture, area: deps.area(), elapsed: 0,
       startX: player.x, startY: player.y,
@@ -93,7 +97,7 @@
     if (!active) return;
     if (deps.area() !== active.area || !active.furniture.mesh.parent || !deps.playerRoot()) {
       diagnostics.cancelled++;
-      clear('area-changed');
+      clear('area-changed', false); // An area transition already assigned a new spawn; never teleport back to the old room.
       return;
     }
     if (deps.isPaused?.()) return;
