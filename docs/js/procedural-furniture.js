@@ -840,9 +840,22 @@ function campfireRecipe() {
   ];
 
   CATALOG.standingLamp = [
-    roundLeg(0, 0, 1.3, .07, .85),
-    cyl(0, 1.42, 0, .4, .22, .4, 1, { topScaleX: .55, topScaleZ: .55, segments: 14 }),
-    disc(0, 1.0, 0, .26, .03, .26, .85, { segments: 10 }),
+    box(0, .62, 0, .88, .09, .76, 1, { color: '#765236' }),
+    box(0, .53, .31, .72, .12, .055, .85, { color: '#634329' }),
+    box(0, .53, -.31, .72, .12, .055, .85, { color: '#634329' }),
+    box(-.34, .28, -.27, .075, .56, .075, .85, { color: '#765236' }),
+    box(.34, .28, -.27, .075, .56, .075, .85, { color: '#765236' }),
+    box(-.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
+    box(.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
+    box(0, .72, 0, .34, .055, .34, 1, { color: '#9b672f' }),
+    box(0, .96, 0, .265, .39, .265, 1, { color: '#e7ad55', surfaceOpacity: .62, materialLighting: 'unlit' }),
+    ...[[-.15, -.15], [.15, -.15], [-.15, .15], [.15, .15]].map(([x, z]) =>
+      cyl(x, .96, z, .025, .42, .025, 1, { color: '#9b672f', segments: 8 })),
+    cyl(0, 1.19, 0, .36, .12, .36, 1, { color: '#9b672f', topScaleX: .48, topScaleZ: .48, segments: 12 }),
+    cyl(0, 1.27, 0, .09, .08, .09, 1, { color: '#b98243', segments: 8 }),
+    box(0, 1.41, 0, .20, .025, .025, 1, { color: '#9b672f' }),
+    box(-.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
+    box(.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
   ];
 
   // Placeholder weathered-stone statue/totem: a plinth, a tapered column, and
