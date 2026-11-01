@@ -89,6 +89,7 @@ let inCone = false;
 let lineOfSightClear = true;
 const searchRuntime = {
   THREE: { MathUtils },
+  performance: { now: () => 1000 },
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
