@@ -84,7 +84,7 @@ const server=http.createServer((req,res)=>{
           extra:{homeX:x,homeY:y,state:'idle',isTribeHunter:true,tribeId,isPorakanekiHunter:tribeId==='porakaneki',porakanekiCampId:tribeId+'_qa_camp',_porakanekiPlannerControlled:true}});
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
-      const omg=await spawn('omgurku',-0.45),pora=await spawn('porakaneki',0.45);
+      const omg=await spawn('omgurku',-0.25),pora=await spawn('porakaneki',0.25);
       window.__tribeQa={omg,pora};
       const ref=omg.avatarRef;
       for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
