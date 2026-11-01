@@ -77,6 +77,7 @@ const ctx = { // Minimal Canvas2D draw recorder.
 let area = 'map_i_temple'; // Switches between interior, mine and outdoor policies.
 let activeScene = {}; // Test the live scene independently of the player-area value.
 let now = 1000; // Advances past the overlay's existing redraw throttle.
+let cameraZ = -10; // Moves the test camera behind a nearby farmhouse light to verify orbit-independent projection.
 let localLights = []; // Opt-in local light fixtures.
 let sources = []; // Active daylight windows only.
 const lightingWindow = { // Loads the complete lighting module, without initializing unrelated mist geometry.
@@ -88,7 +89,7 @@ vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow
 lightingWindow.WeatherFX.init({
   lctx: ctx, camera: {
     matrixWorld: {}, near: 0.1, far: 110,
-    getWorldPosition(target) { return target.set(0, 0, -10); },
+    getWorldPosition(target) { return target.set(0, 0, cameraZ); },
     getWorldDirection(target) { return target.set(0, 0, 1); },
   },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
@@ -118,15 +119,17 @@ assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color gl
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Their screen-space proxy is flattened onto the player-depth plane, retaining lateral position and radius.
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
-localLights = [{ x: 3, y: 1, z: -12, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+cameraZ = -3;
+localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse candle still illuminates the view when behind the camera');
+assert(gradients.some(entry => entry.radius > 4.4 && entry.radius < 4.5), 'a farmhouse candle still illuminates the view when behind the camera');
 localLights = [];
-sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = -12; } } }];
+sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = -4; } } }];
 draw();
-assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse window still admits daylight when behind the camera');
+assert(gradients.some(entry => entry.radius > 4.4 && entry.radius < 4.5), 'a farmhouse window still admits daylight when behind the camera');
 activeScene = {};
 sources = [];
+cameraZ = -10;
 
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
 localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
