@@ -696,9 +696,9 @@
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
-      for (const { light, center, shineR } of visible) {
+      for (const { light, center, shineR, transmission } of visible) {
         const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22);
+        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission;
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
           grad,
@@ -723,7 +723,10 @@
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
-      if (!linearInterior) glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
+      if (linearInterior) {
+        glow.addColorStop(0.36, `rgba(${r},${g},${b},${glowAlpha * 0.82})`);
+        glow.addColorStop(0.72, `rgba(${r},${g},${b},${glowAlpha * 0.32})`);
+      } else glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = glow;
       ctx.beginPath();
@@ -738,26 +741,29 @@
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
     for (const light of lights) {
+      const transmission = interiorLightTransmission(light.x, light.z);
+      if (transmission <= 0.005) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
       if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, light.radius)) continue;
-      visible.push({light,center,radius});
+      visible.push({light,center,radius,transmission});
     }
     ctx.globalCompositeOperation = 'destination-out';
-    for (const {light,center,radius} of visible) {
+    for (const {light,center,radius,transmission} of visible) {
+      const strength = light.strength * transmission;
       const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      grad.addColorStop(0,'rgba(0,0,0,'+light.strength+')');
-      grad.addColorStop(.42,'rgba(0,0,0,'+(light.strength*.42)+')');
+      grad.addColorStop(0,'rgba(0,0,0,'+strength+')');
+      grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
       grad.addColorStop(1,'rgba(0,0,0,0)'); // Steep local falloff for Hronal; blue Tothal sources have larger radii.
       ctx.fillStyle=grad;
       ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
     }
     ctx.globalCompositeOperation='source-over';
-    for (const {light,center,radius} of visible) {
+    for (const {light,center,radius,transmission} of visible) {
       const [r,g,b]=light.color;
       const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      grad.addColorStop(0,'rgba('+r+','+g+','+b+',.18)');
-      grad.addColorStop(.35,'rgba('+r+','+g+','+b+',.065)');
+      grad.addColorStop(0,'rgba('+r+','+g+','+b+','+(.18*transmission)+')');
+      grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
       grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
       ctx.fillStyle=grad;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
     }
@@ -899,10 +905,12 @@
     if (daylight > 0.02) for (const source of sources) {
       if (!source.projectionPalette?.length && !source.glassTint) continue; // Plain daylight windows keep their existing neutral illumination.
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
+      const transmission = interiorLightTransmission(ambientWindowScratch.x, ambientWindowScratch.z);
+      if (transmission <= 0.005) continue;
       const radiusTiles = Math.max(0.25, finiteOr(source.radiusTiles, 2.8));
       const projected = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, radiusTiles * INTERIOR_LIGHT_RADIUS_MULTIPLIER, ctx);
       if (!projected) continue;
-      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85);
+      const strength = Math.min(0.9, clamp01(source.strength) * daylight * 0.85) * transmission;
       if (drawStainedGlassAura(ctx, source, projected.center, projected.radius, strength)) windowMaskStats.colorAuras++;
     }
     ctx.globalCompositeOperation = 'source-over';
