@@ -20,8 +20,8 @@ const ctx={window:W,THREE:W.THREE,console,performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/authored-furniture-runtime.js'),ctx);
 const bed=furniture('basicBed'),double=furniture('doubleBed'),chair=furniture('chairSimple');
 assert(W.AuthoredFurniture.seatedKneeReach(chair)<chair.footprint.d/2);
-assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.5);
-assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.5);
+assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.4); // The broad mattress top is below its raised pillow.
+assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.4);
 const data={basicBed:bed,doubleBed:double,chairSimple:chair,rug:furniture('rug')};
 W.AuthoredFurniture.peek=k=>data[k]||null;
 W.AuthoredFurniture.load=async k=>data[k]||null;
@@ -41,7 +41,7 @@ assert(registry.seatTransform('interior',{furnitureId:'chair'}).footprintHalfDep
 registry.registerPlacement('bedroom',{id:'bed',key:'doubleBed',col:3,row:5},root(4,0,6),{fw:2,fd:2});
 const left=registry.lieTransform('bedroom',{pose:'lie',c:3,r:5});
 const right=registry.lieTransform('bedroom',{pose:'lie',c:4,r:5});
-assert(left&&right&&left.y>.5&&right.x>left.x);
+assert(left&&right&&left.y>.4&&right.x>left.x);
 vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
 const material={clone(){return{depthTest:true,depthWrite:true,dispose(){}};}};
