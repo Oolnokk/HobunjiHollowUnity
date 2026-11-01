@@ -898,7 +898,22 @@
       if (item.cursed) {
         mkBtn('Cursed — cannot be worn', 'secondary', () => deps.showToast(cursedMessage(item), false));
         actEl.lastChild.disabled = true;
-      } else mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+      } else {
+        mkBtn('Transfer to Gear (permanent)', 'equip', () => transferClothingToGear(uid));
+        const spouseWardrobe = window.NpcWardrobe?.getActiveSpouseWardrobeTarget?.(); // Only a currently open, assigned spouse wardrobe exposes this direct Pack action.
+        if (spouseWardrobe) mkBtn(`Move to ${spouseWardrobe.name}'s Wardrobe`, 'equip', () => {
+          const pack = deps.getPackClothing(); // Re-resolve the exact article so stale detail panels cannot move a replacement item.
+          const index = pack.findIndex(entry => entry?.uid === uid);
+          const current = index >= 0 ? pack[index] : null;
+          if (!current || current.cursed || !window.NpcWardrobe?.storePackItem?.(spouseWardrobe.npcId, current)) return;
+          pack.splice(index, 1);
+          if (deps.getManualHeldItem?.()?.kind === 'clothing' && deps.getManualHeldItem().uid === uid) deps.setManualHeldItem?.(null);
+          deps.saveMemberWorldData(); // One save commits both the Pack removal and spouse wardrobe addition.
+          deps.showToast(`${current.label || 'Clothing'} moved to ${spouseWardrobe.name}'s Wardrobe.`, true);
+          buildPackClothingSection(); deps.buildInventoryGrid(); deps.clearInventoryDetail();
+          window.NpcWardrobe?.refreshOpenPanel?.();
+        });
+      }
       if (salePrice > 0) {
         mkBtn('Sell (' + salePrice + 'g)', 'sell', () => {
           const owned = deps.getPackClothing(); // Read the current saved articles, not a stale detail-panel snapshot.
