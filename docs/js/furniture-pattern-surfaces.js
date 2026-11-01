@@ -76,12 +76,13 @@
       '<p>Offsets use surface tile units: X right, Y down. A non-tiling layer stamps its motif once.</p>' +
       [0,1].map(index => `<fieldset><legend>${index ? 'Overpass' : 'Primary pattern'}</legend>${index ? '<label>Overpass pattern <select data-overpass></select></label>' : ''}
         <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
-        <label>Scale multiplier <input data-zoom-${index} type="number" min="0.1" max="20" step="0.1" value="1"></label>
-        <label>Rotation (degrees) <input data-rotation-${index} type="number" step="1" value="0"></label>
-        <label>X offset <input data-x-${index} type="number" step="0.05" value="0"></label>
-        <label>Y offset <input data-y-${index} type="number" step="0.05" value="0"></label></fieldset>`).join('');
+        <label>Scale multiplier <input data-zoom-${index} type="range" min="0.1" max="20" step="0.1" value="1" aria-label="${index ? "Overpass" : "Primary"} pattern scale"></label><output data-zoom-value-${index}>1.0×</output>
+        <label>Rotation (degrees) <input data-rotation-${index} type="range" min="-180" max="180" step="1" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern rotation"></label><output data-rotation-value-${index}>0°</output>
+        <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
+        <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
     host.appendChild(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
+    for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
     const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
     const populate = (select, entries, first, selected) => {
       select.replaceChildren(); select.add(new Option(first,''));
@@ -103,7 +104,7 @@
         for(let index=0;index<2;index++) {
           const transform=record.layerTransforms?.[index] || {}, pattern=record.patterns?.[index] || (index===0 ? resolvePattern(record) : null);
           field(`repeat-${index}`).checked=transform.tiling ?? pattern?.tiling !== false;
-          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]])field(`${name}-${index}`).value=finite(transform[key],fallback);
+          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
         }
       },
       read(record) {
@@ -509,8 +510,8 @@
     if (!candidates.length) return false;
     const panel = document.createElement('div'); // Touch-sized controls share the player's unlocked/saved pattern library.
     panel.setAttribute('data-ctrl-panel', ''); // Lets controller navigation reach the surface dropdown and buttons.
-    panel.style.cssText = 'position:fixed;inset:10% 5%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px';
-    panel.innerHTML = '<h3>Furniture pattern</h3><label>Surface <select data-part></select></label><br><label>Pattern tile size <input data-scale type="number" min="0.05" max="20" step="0.05"></label><br><label>Base dye <input data-base type="color"></label><br><label>Pattern dye <input data-dye type="color"></label><br><label>Overpass dye <input data-overpass-ink type="color"></label><br><label>Pattern <select data-pattern></select></label><br><label><input data-solid type="checkbox">Solid color (no motif)</label><br><button data-edit>Choose / draw pattern</button> <button data-apply>Apply settings</button> <button data-close data-ctrl-cancel>Close</button><pre data-debug style="white-space:pre-wrap"></pre>';
+    panel.style.cssText = 'position:fixed;inset:5% 3%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px;box-shadow:0 12px 40px #000b;display:flex;flex-direction:column;gap:12px;max-height:90dvh';
+    panel.innerHTML = '<h2 style="margin:0">Furniture pattern</h2><p style="margin:0;color:#c6d0d2">Choose a surface, motif and dyes. Sliders are directly focusable with a controller.</p><section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Surface <select data-part data-ctrl-default></select></label><label>Pattern <select data-pattern></select></label><label>Pattern tile size <input data-scale-range type="range" min="0.05" max="20" step="0.05" aria-label="Pattern tile size"></label><output data-scale-value aria-live="polite"></output><label>Base dye <input data-base type="color"></label><label>Pattern dye <input data-dye type="color"></label><label>Overpass dye <input data-overpass-ink type="color"></label><label><input data-solid type="checkbox">Solid color (no motif)</label></section><h3 style="margin:4px 0 0">Pattern placement</h3><p style="margin:0;color:#c6d0d2">Adjust each layer independently. Repeat controls whether the motif tiles or appears once.</p><button data-edit>Choose / draw pattern</button><button data-apply>Apply settings</button><button data-close data-ctrl-cancel>Close</button><details><summary>Pattern diagnostics</summary><pre data-debug style="white-space:pre-wrap;max-height:180px;overflow:auto"></pre></details>';
     const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'),panel.querySelector('[data-overpass-ink]'));
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
@@ -519,14 +520,14 @@
       const part = selected().part;
       return normalize(object.patternOverrides?.[part.id]?.[0] || part.patternSurfaces?.[0] || {slot:'stained-glass',mode:'glass',selector:'all',normal:[0,0,1],patternId:'diamond-ring',solid:true});
     };
-    const refresh = () => { const record = current(); find('scale').value = record.scale; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('overpass-ink').value = record.palette[2] || record.palette[1]; find('solid').checked=!!record.solid;
+    const refresh = () => { const record = current(); find('scale-range').value = record.scale; find('scale-value').textContent = `Tile size: ${record.scale.toFixed(2)}×`; find('base').value = record.palette[0]; find('dye').value = record.palette[1]; find('overpass-ink').value = record.palette[2] || record.palette[1]; find('solid').checked=!!record.solid;
       const catalog=[...(window.PatternLibrary?.getCatalog?.()||[]),...(window.RepoPatternLibrary?.listCached?.()||[])]; // Every authored/saved motif is selectable without redrawing it.
       find('pattern').replaceChildren();const ids=new Set();for(const entry of [{id:record.patternId,name:record.patternId},...catalog])if(entry.id&&!ids.has(entry.id)){ids.add(entry.id);find('pattern').add(new Option(entry.name||entry.label||entry.id,entry.id));}
       find('pattern').value=record.patternId||'';placement.refresh(record);find('debug').textContent = JSON.stringify(debug(object.mesh), null, 2); };
     const settings = () => {
       const record=placement.read(current()),patternId=find('pattern').value;
       if(patternId!==record.patternId){record.pattern=null;record.patterns[0]=resolvePattern({patternId});}
-      return normalize({...record,patternId,solid:find('solid').checked,scale:find('scale').value,palette:[find('base').value,find('dye').value,find('overpass-ink').value]});
+      return normalize({...record,patternId,solid:find('solid').checked,scale:find('scale-range').value,palette:[find('base').value,find('dye').value,find('overpass-ink').value]});
     };
     const save = record => {
       const overrides = {...object.patternOverrides, [selected().part.id]: [record]}; // Per-instance only; does not edit shared furniture definitions.
@@ -535,7 +536,7 @@
     };
     panel.querySelector('[data-overpass]').onchange = () => { if(panel.querySelector('[data-overpass]').value)find('solid').checked=false; }; // Adding an overpass enables patterned glass.
     find('pattern').onchange = () => { find('solid').checked=false; }; // Choosing a motif switches plain glass back to patterned glass.
-    find('part').onchange = refresh; find('close').onclick = () => panel.remove();
+    find('part').onchange = refresh; find('scale-range').addEventListener('input', () => { find('scale-value').textContent = `Tile size: ${Number(find('scale-range').value).toFixed(2)}×`; }); find('close').onclick = () => panel.remove();
     find('apply').onclick = () => save(settings());
     find('edit').onclick = async () => {
       const record = {...settings(),solid:false}; // Preview and save use the same record and shared compositor.
