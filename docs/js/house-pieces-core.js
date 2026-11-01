@@ -1112,7 +1112,7 @@
   function _entranceEnterCell(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const slot = (f.edgeSlot === 0 ? 0 : 1);
+    const slot = (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'west') ? 1 : -1));
     if (f.side === 'north') return { c: gx + slot, r: gy };
     if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
     if (f.side === 'west')  return { c: gx, r: gy + slot };
