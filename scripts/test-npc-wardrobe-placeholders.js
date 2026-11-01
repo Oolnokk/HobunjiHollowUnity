@@ -34,6 +34,7 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
 
 (async () => {
   const opened = []; // Tracks the existing NPC wardrobe's actual ID-keyed opening.
+  const openedContexts = []; // Verifies the targeter passes validated furniture assignment provenance to the wardrobe.
   let spouseId = 'aliri_ginju'; // Live spouse changes validate assignments, not a stale snapshot.
   let familySnapshotCalls = 0; // Ensures per-frame focus checks do not repeatedly allocate full family snapshots.
   const popup = { syncInteractionPrompts() {} }; // An ordinary popup must survive untouched by the bridge.
@@ -41,7 +42,7 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
     WorldPopupText: popup,
     SCRATCHBONES_CONFIG: { game: {} },
     LocalDBOverrides: { loadDatabase: async () => runtimeDb },
-    NpcWardrobe: { openWardrobePanel: id => { opened.push(id); return true; } },
+    NpcWardrobe: { openWardrobePanel: (id, context) => { opened.push(id); openedContexts.push(context); return true; } },
     RomanceSystem: { getSpouse: () => spouseId ? { npcId: spouseId } : null, helpers: { npcName: id => id === 'aliri_ginju' ? 'Aliri' : id } },
     RomanceFamily: { snapshot: () => { familySnapshotCalls++; return { children: [{ id: 'child_tester', name: 'Hushka' }] }; },
       isWardrobeChild: id => id === 'child_tester', wardrobeChildName: id => id === 'child_tester' ? 'Hushka' : null },
@@ -113,6 +114,8 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
   assert.equal(target?.getButtons()[0].promptRoot, mesh3);
   target.onAction('obj_open_wardrobe');
   assert.deepEqual(opened, ['aliri_ginju', 'aliri_ginju', 'child_tester'], 'two chests share spouse contents, while child inventory is distinct');
+  assert.deepEqual(openedContexts.map(context => context?.source), ['family', 'family', 'family'], 'only furniture already validated as family storage is marked with family provenance');
+  assert.ok(openedContexts.every(context => context?.area === 'interior'), 'wardrobe bridge preserves the physical furniture area for spouse override validation');
 
   aimedX = 20; frame++;
   assert.equal(tables.objectAt('interior', 20, 2), null, 'no floating prompt or wardrobe action for an unaimed object');

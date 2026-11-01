@@ -172,7 +172,9 @@
 
   function openWardrobe(npcId, area = null, furnitureId = null) {
     if (!safeId(npcId) || !window.NpcWardrobe?.openWardrobePanel) return false;
-    window.NpcWardrobe.openWardrobePanel(npcId); // Existing per-NPC inventory, clothing rules and save data are reused unchanged.
+    const binding = areaBindings.get(area)?.get(safeId(furnitureId)); // Map interiors use this exact binding; the farmhouse's special interior is validated by ownerForPlacement before this call.
+    const source = area === 'interior' && isFamilyOwner(npcId) ? 'family' : (binding?.source || 'authored'); // The family source is trusted here only after the furniture targeter has verified an assigned family-storage piece.
+    window.NpcWardrobe.openWardrobePanel(npcId, { area, source, furnitureId }); // Only the actual family-assigned spouse furniture receives the special clothing override.
     lastOpened = { npcId, area, furnitureId };
     return true;
   }
