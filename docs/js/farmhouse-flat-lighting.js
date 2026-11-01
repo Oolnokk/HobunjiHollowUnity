@@ -95,26 +95,6 @@
     return !/^map_i_(?:den_|town_mine_)/i.test(String(mapId || ''));
   }
 
-  function ensurePlayerFarmhouseLighting(scene) {
-    if (!scene?.isScene) return scene;
-    const firstRegistration = registerPlayerFarmhouseScene(scene); // Shared farmhouse scene tag excludes unrelated authored buildings from the floor x-ray rule.
-    const newlyInstalled = install(scene); // Same neutral Three.js baseline and shared 2D darkness/light masks as authored building interiors.
-    if (firstRegistration || newlyInstalled) window.CloudForestFog?.refreshLightingOverlay?.();
-    return scene;
-  }
-
-  function hookPlayerFarmhouseSceneGetter(injectedDeps) {
-    const originalGet = injectedDeps?.getInteriorScene; // GridTileAccessors' live farmhouse scene getter also follows replacements/rebuilds.
-    if (typeof originalGet !== 'function' || originalGet.__hobunjiPlayerFarmhouseLightingHook) return false;
-    function getInteriorSceneWithFarmhouseLighting(...args) {
-      const scene = originalGet.apply(this, args);
-      return ensurePlayerFarmhouseLighting(scene);
-    }
-    getInteriorSceneWithFarmhouseLighting.__hobunjiPlayerFarmhouseLightingHook = true;
-    injectedDeps.getInteriorScene = getInteriorSceneWithFarmhouseLighting;
-    return true;
-  }
-
   function applyAuthoredBuildingFlatLighting(mapId, sceneRecord) {
     if (!sceneRecord?.scene || !isOrdinaryBuilding(mapId, sceneRecord)) return false;
     const changed = install(sceneRecord.scene);
@@ -161,8 +141,7 @@
     const originalInit = namespace.init;
     namespace.init = function initWithFlatBuildingLighting(injectedDeps) {
       hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
-      hookPlayerFarmhouseSceneGetter(injectedDeps);
-      return originalInit.call(this, injectedDeps); // Do not dereference getInteriorScene yet: game.js declares that scene later in initialization.
+      return originalInit.call(this, injectedDeps); // The farmhouse is registered once by game.js's FarmhouseFlatLighting.install scene-construction call.
     };
     namespace.__hobunjiFlatBuildingLightingInitHook = true;
     return true;
@@ -176,7 +155,6 @@
 
   window.FarmhouseFlatLighting = {
     install,
-    ensurePlayerFarmhouseLighting,
     applyAuthoredBuildingFlatLighting,
     queueAuthoredBuildingFlatLighting,
     makeOverlayOnly,
