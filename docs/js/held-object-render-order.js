@@ -1159,7 +1159,7 @@
         state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
         return;
       }
-      const worldPositionCode = '#include <worldpos_vertex>\\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\\n#ifdef USE_INSTANCING\\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\\n#endif\\n#ifdef USE_BATCHING\\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\\n#endif\\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;';
+      const worldPositionCode = '#include <worldpos_vertex>\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_BATCHING\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\n#endif\n#ifdef USE_INSTANCING\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\n#endif\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;';
       let elevationVertex = vertex
         .replace('#include <common>', '#include <common>\\nvarying float vHobunjiXrayWorldY;\\nvarying vec3 vHobunjiXrayWorldNormal;')
         .replace('#include <worldpos_vertex>', worldPositionCode);
