@@ -304,6 +304,15 @@
       room.piece.row + (finite(point[2]) - room.row) / INTERIOR_SCALE] : null;
   }
 
+  function shiftInteriorPoint(point, side, shift) {
+    if (!Array.isArray(point)) return point;
+    const amount = Math.max(-4, Math.min(4, Math.trunc(Number(shift) || 0)))
+      * ((side === 'north' || side === 'west') ? 1 : -1); // Positive means right when viewed from inside facing the wall.
+    if (side === 'north' || side === 'south') point[0] += amount;
+    else point[2] += amount;
+    return point;
+  }
+
   function bindingFromPlacement(area, placement, key, previousBinding = null) {
     const point = placementTargetPoint(placement); // Furniture attachment target after U/V/N offsets, in the active area's world units.
     const sourceHeight = area === 'interior' ? INTERIOR_WALL_HEIGHT : EXTERIOR_WALL_HEIGHT; // Same normalized vertical coordinate maps between unequal wall heights.
@@ -369,10 +378,7 @@
       point = run.side === 'north' || run.side === 'south'
         ? toIndoorPoint(run, canonicalAlong, fixed, normalized.v01 * INTERIOR_WALL_HEIGHT)
         : toIndoorPoint(run, fixed, canonicalAlong, normalized.v01 * INTERIOR_WALL_HEIGHT);
-      const shift = Math.max(-4, Math.min(4, Math.trunc(Number(normalized.interiorShift) || 0)))
-        * ((run.side === 'north' || run.side === 'west') ? 1 : -1); // Positive means right when viewed from inside facing this wall.
-      if (run.side === 'north' || run.side === 'south') point[0] += shift;
-      else point[2] += shift;
+      shiftInteriorPoint(point, run.side, normalized.interiorShift);
       normal = outward.map(value => -value); // A window seen from inside attaches to the inward-facing side of the same physical wall.
     } else point = exteriorSlotSurface(run, normalized)?.center;
     if (!point) return null;
@@ -744,10 +750,7 @@
       const center = run.side === 'north' || run.side === 'south'
         ? toIndoorPoint(run, canonicalAlong, fixed, binding.v01 * INTERIOR_WALL_HEIGHT)
         : toIndoorPoint(run, fixed, canonicalAlong, binding.v01 * INTERIOR_WALL_HEIGHT);
-      const shift = Math.max(-4, Math.min(4, Math.trunc(Number(binding.interiorShift) || 0)))
-        * ((run.side === 'north' || run.side === 'west') ? 1 : -1);
-      if (run.side === 'north' || run.side === 'south') center[0] += shift;
-      else center[2] += shift; // Interior aperture follows its display-only frame; exterior brick cuts remain unchanged.
+      shiftInteriorPoint(center, run.side, binding.interiorShift); // Interior aperture follows its display-only frame; exterior brick cuts remain unchanged.
       if (!center) return null;
       const silhouette = windowSilhouette(record.key); // Brick omission follows the full visible frame silhouette.
       return { id: record.primaryId, center, normal: outwardNormal(run.side).map(value => -value), width: silhouette.width, height: silhouette.height };
@@ -851,7 +854,7 @@
     isWindowKey,
     shiftInteriorWindow,
     snapExteriorPlayerPlacement,
-    __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, fromIndoorPoint, toIndoorPoint, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
+    __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, fromIndoorPoint, toIndoorPoint, shiftInteriorPoint, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
   });
   window.__houseWindowLinkDebug = debugSnapshot;
 
