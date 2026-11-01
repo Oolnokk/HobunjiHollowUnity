@@ -138,8 +138,10 @@ HeldObjectRenderOrder applies the same rule to both representations:
    meshes, preventing a duplicate shell draw under ordinary ground depth.
 2. A scissored replay clears depth only around those meshes and reconstructs
    solid depth while excluding the exact groundKind() set used by the
-   visible held/foot x-ray. Snow, water, slush, furniture, rocks, walls and
-   other non-ground occluders remain in this depth reconstruction. Carved
+   visible held/foot x-ray. The source meshes remain in the depth replay (with
+   depth writes temporarily enabled) so their front faces still mask the
+   expanded shell. Snow, water, slush, furniture, rocks, walls and other
+   non-ground occluders remain in this depth reconstruction. Carved
    cavern shells use their non-floor occluder geometry, so their walls and
    ceilings continue to block outlines.
 3. Only the registered x-ray meshes' layer-1 shells are drawn against that
