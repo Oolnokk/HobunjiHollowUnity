@@ -55,13 +55,10 @@
   const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
-  // A shot doesn't just vanish once it passes a weapon's tuned rangeTiles —
-  // it keeps flying, shedding damage/knockback as it goes, until it
-  // actually runs out of momentum at rangeTiles * this multiplier. AI
-  // engagement range, the HUD "would hit" reticle, and bandit LOS all still
-  // key off the base rangeTiles (that's still "the range this weapon is
-  // built to fight at"); this only softens what happens to a shot that
-  // outran its intended reach instead of hard-despawning it.
+  // A shot doesn't vanish at its tuned rangeTiles: it keeps flying with
+  // reduced damage/knockback until rangeTiles * this multiplier. Ranged NPCs
+  // use that full travel envelope as their stand-ground attack radius, while
+  // the HUD and ordinary weapon-range checks retain the authored base range.
   const RANGE_FALLOFF_DISTANCE_MULTIPLIER = 1.6;
   const RANGE_FALLOFF_MIN_FRACTION = 0.15; // Damage/knockback floor at the true despawn distance — never fully free damage, but a spent arrow still stings.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
@@ -1920,7 +1917,7 @@
     },
     get npcRangedActions() {
       return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.def?.rangedWeaponKey).slice(0, 24).map(c => ({
-        id: c.id || c.name, weapon: c.def.rangedWeaponKey, type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
+        id: c.id || c.name, weapon: c.def.rangedWeaponKey, attackRadiusTiles: rangedAttackRadiusPx(c) / (deps?.TILE || 1), type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
         action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
         chargedForS: c._rangedAction?.chargeDurationS || 0, releaseAtS: c._rangedAction?.releaseAtS ?? null, loaded: c._rangedLoaded !== false,
       })); // Mobile debug: inspect up to 24 active humanoids without holding references to unloaded actors.
