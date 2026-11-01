@@ -251,7 +251,7 @@
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261101rugchairbednpc4"></script>
+  <script src="js/furniture-table-system.js?v=20261101spousebed2"></script>
   <script src="js/authored-furniture-runtime.js?v=20261101bedsleep1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
@@ -2857,10 +2857,10 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261028spouse1"></script>
-  <script src="js/romance-family.js?v=20261028h6c603d7"></script>
+  <script src="js/romance-family.js?v=20261101spousebed2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
-  <script src="js/romance-system.js?v=20261028spouse1"></script>
+  <script src="js/romance-system.js?v=20261101spousebed2"></script>
   <script src="js/npc-command-wheel.js?v=20261022hd6fb14a"></script>
   <script src="js/npc-seat-request.js?v=20261021a"></script>
   <!-- Tool mastery XP/level/award helpers extracted out of game.js; must
@@ -2877,7 +2877,7 @@
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
-  <script src="js/bed-lie-pose.js?v=20261101bedsleep1"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
+  <script src="js/bed-lie-pose.js?v=20261101spousebed2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="game.js?v=20261101rugchairbednpc4"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
