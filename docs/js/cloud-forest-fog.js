@@ -608,7 +608,8 @@
     }
     ctx.globalCompositeOperation = 'destination-out';
     const lanternTuning = tuning.lantern;
-    const linearInterior = ordinaryBuildingInterior(currentArea) && !isUndergroundLanternArea(currentArea); // Cavern and outdoor lantern tuning remains independent.
+    const softInterior = enclosedLightingArea(currentArea); // Every enclosed room uses the eased edge, including mines and dens.
+    const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
@@ -619,7 +620,7 @@
       if (transmission <= 0.005) continue;
       const effectiveStrength = lanternStrength * transmission;
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
-      if (linearInterior) {
+      if (softInterior) {
         addInteriorFalloffStops(grad, lanternTuning.centerMaskAlpha * effectiveStrength);
       } else {
         grad.addColorStop(clarityFrac, `rgba(0,0,0,${lanternTuning.clarityMaskAlpha * effectiveStrength})`);
@@ -665,7 +666,9 @@
   function drawFurnitureLightMasksCompat(preserveOutdoorWeatherTint = false) {
     const ctx = lightingDeps.lctx;
     const visible = [];
-    const linearInterior = ordinaryBuildingInterior(lightingDeps.getCurrentArea()) && !isUndergroundLanternArea(lightingDeps.getCurrentArea()); // Only ordinary buildings use the broad linear profile.
+    const currentArea = lightingDeps.getCurrentArea();
+    const softInterior = enclosedLightingArea(currentArea); // All enclosed spaces fade softly into their own darkness.
+    const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand the physical light radius.
     for (const light of lightingDeps.getFurnitureLightSources()) {
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
@@ -680,7 +683,7 @@
       const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission;
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-      if (linearInterior) {
+      if (softInterior) {
         addInteriorFalloffStops(grad, strength);
       } else {
         grad.addColorStop(clarityFrac, `rgba(0,0,0,${strength * 0.78})`);
@@ -723,7 +726,7 @@
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
-      if (linearInterior) {
+      if (softInterior) {
         glow.addColorStop(0.36, `rgba(${r},${g},${b},${glowAlpha * 0.82})`);
         glow.addColorStop(0.72, `rgba(${r},${g},${b},${glowAlpha * 0.32})`);
       } else glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
@@ -753,8 +756,9 @@
       const strength = light.strength * transmission;
       const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
       grad.addColorStop(0,'rgba(0,0,0,'+strength+')');
-      grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
-      grad.addColorStop(1,'rgba(0,0,0,0)'); // Steep local falloff for Hronal; blue Tothal sources have larger radii.
+      if (enclosedLightingArea(lightingDeps.getCurrentArea())) addInteriorFalloffStops(grad,strength);
+      else grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
+      grad.addColorStop(1,'rgba(0,0,0,0)'); // Special-ruin light now shares the enclosed-room eased edge.
       ctx.fillStyle=grad;
       ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
     }
@@ -762,8 +766,12 @@
     for (const {light,center,radius,transmission} of visible) {
       const [r,g,b]=light.color;
       const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      grad.addColorStop(0,'rgba('+r+','+g+','+b+','+(.18*transmission)+')');
-      grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
+      const glowStrength = .18 * transmission;
+      grad.addColorStop(0,'rgba('+r+','+g+','+b+','+glowStrength+')');
+      if (enclosedLightingArea(lightingDeps.getCurrentArea())) {
+        grad.addColorStop(.36,'rgba('+r+','+g+','+b+','+(glowStrength*.82)+')');
+        grad.addColorStop(.72,'rgba('+r+','+g+','+b+','+(glowStrength*.32)+')');
+      } else grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
       grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
       ctx.fillStyle=grad;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
     }
@@ -773,15 +781,15 @@
     return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area) || lightingDeps?.getActiveScene?.()?.userData?.hobunjiPlayerFarmhouseInterior === true); // A farmhouse can become active before its area id switches; keep the indoor light profile.
   }
 
+  function enclosedLightingArea(area) {
+    return ordinaryBuildingInterior(area) || isMineArea(area) || isDenArea(area)
+      || (isNoSkyArea(area) && !isCloudForestMap(area));
+  }
+
   function interiorLightTransmission(sourceX, sourceZ) {
     const currentArea = lightingDeps?.getCurrentArea?.();
     const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
-    const farmhouseActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true;
-    const enclosedArea = farmhouseActive || currentArea === 'interior'
-      || !!lightingDeps?._isBuildingArea?.(currentArea)
-      || isMineArea(currentArea) || isDenArea(currentArea)
-      || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
-    if (!enclosedArea) return 1;
+    if (!enclosedLightingArea(currentArea)) return 1;
     const player = lightingDeps.player;
     const fromX = finiteOr(player?.x, 0) / lightingDeps.TILE;
     const fromZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
