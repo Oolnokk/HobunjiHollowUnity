@@ -307,7 +307,7 @@
   function shiftInteriorPoint(point, side, shift) {
     if (!Array.isArray(point)) return point;
     const amount = Math.max(-4, Math.min(4, Math.trunc(Number(shift) || 0)))
-      * ((side === 'north' || side === 'west') ? 1 : -1); // Positive means right when viewed from inside facing the wall.
+      * ((side === 'north' || side === 'east') ? 1 : -1); // Positive means right when viewed from inside facing the wall.
     if (side === 'north' || side === 'south') point[0] += amount;
     else point[2] += amount;
     return point;
