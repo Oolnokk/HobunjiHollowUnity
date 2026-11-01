@@ -243,6 +243,8 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.clothingWearability(spouseRec, { ...foreignStyle, cosmeticId: 'garish_hat' }, { spouseOverride: true }).allowed, true, 'assigned spouse wardrobe bypasses both style and disliked/hated clothing vetoes');
   assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-coat', cosmeticId: 'foreign_style_coat', slot: 'torso' }), true, 'pack clothing can be moved directly into the active spouse wardrobe');
   assert.equal(wardrobe.getWardrobeContents(spouseRec.id).stored.some(item => item.cosmeticId === 'foreign_style_coat'), true, 'direct transfer stores the complete clothing instance for later wearing');
+  assert.equal(await wardrobe.wearStoredItem(spouseRec.id, wardrobe.getWardrobeContents(spouseRec.id).stored.find(item => item.cosmeticId === 'foreign_style_coat').uid, { spouseOverride: true }), true, 'assigned spouse can actually equip a stored clothing item outside their default style');
+  assert.ok(spouseRec.equippedCosmetics.includes('foreign_style_coat'), 'spouse override writes the new garment into the canonical NPC outfit');
   wardrobe.closeWardrobePanel();
   assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'closing the spouse wardrobe removes the override context');
   assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-after-close', cosmeticId: 'foreign_style_coat' }), false, 'pack transfer cannot target a closed or unassigned wardrobe');
