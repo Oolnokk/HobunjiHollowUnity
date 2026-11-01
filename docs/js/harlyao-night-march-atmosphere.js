@@ -9,6 +9,9 @@
   let installed = false;
   let priorDrawLightingOverlay = null;
   let cameraRight = null;
+  let cameraPosition = null; // Reused camera position for local-light depth checks.
+  let cameraForward = null; // Reused camera direction for local-light depth checks.
+  let lightToSource = null; // Reused camera-to-light vector; avoids allocations per source.
   let extraDraws = 0;
   let drawInstalls = 0;
 
@@ -69,6 +72,28 @@
     return Math.hypot(edge.x - center.x, edge.y - center.y);
   }
 
+  function lightMaskIntersectsViewport(center, screenRadius, x, y, z, worldRadius) {
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(screenRadius > 0) || !Number.isFinite(screenRadius)) return false;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+    if (!cameraPosition) cameraPosition = new window.THREE.Vector3();
+    if (!cameraForward) cameraForward = new window.THREE.Vector3();
+    if (!lightToSource) lightToSource = new window.THREE.Vector3();
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(cameraPosition);
+    camera.getWorldDirection(cameraForward);
+    lightToSource.set(x, y, z).sub(cameraPosition);
+    const depth = lightToSource.dot(cameraForward);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || lightingDeps.lctx?.canvas?.clientWidth || lightingDeps.lctx?.canvas?.width);
+    const height = Number(rect?.height || lightingDeps.lctx?.canvas?.clientHeight || lightingDeps.lctx?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + screenRadius >= 0 && center.x - screenRadius <= width
+      && center.y + screenRadius >= 0 && center.y - screenRadius <= height;
+  }
+
   function drawLanternMasks() {
     const ctx = lightingDeps.lctx;
     const tuning = lanternTuning();
@@ -85,9 +110,8 @@
     ctx.globalCompositeOperation = 'destination-out';
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, tuning.radiusTiles);
-      if (!(shineR > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, shineR, carrier.x, carrier.y, carrier.z, tuning.radiusTiles)) continue;
       const clarityFrac = clamp01(tuning.clarityRadiusTiles / Math.max(0.000001, tuning.radiusTiles));
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       gradient.addColorStop(0, `rgba(0,0,0,${tuning.centerMaskAlpha})`);
@@ -107,9 +131,8 @@
     const visible = [];
     for (const light of (lightingDeps.getFurnitureLightSources?.() || [])) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance);
-      if (!(shineR > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, shineR, light.x, light.y, light.z, light.distance)) continue;
       visible.push({ light, center, shineR });
     }
 
