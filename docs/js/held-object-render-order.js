@@ -1107,7 +1107,7 @@
       if (Number.isFinite(parentY) && Number.isFinite(localY)) elevation = parentY + localY;
       const channels = window.PlayerBodyTransformComposer?.getDebug?.()?.channels || [];
       for (const channel of channels) {
-        if (channel.enabled === false || channel.name !== 'townSubtleElevation') continue;
+        if (channel.enabled === false || channel.includePlayer === false || channel.name !== 'townSubtleElevation') continue;
         elevation += Number(channel.translation?.y) || 0;
       }
     }
