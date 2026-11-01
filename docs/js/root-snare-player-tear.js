@@ -138,6 +138,29 @@
     });
     root.parent?.remove(root);
   }
+  function splurt(s){
+    const count=24; // Same bounded stylized burst budget as the Root Growth Author.
+    const geometry=new THREE.SphereGeometry(.027,5,4),material=new THREE.MeshBasicMaterial({color:0xbd2634,transparent:true,opacity:.94});
+    const particles=[];
+    for(let i=0;i<count;i++){
+      const sprite=new THREE.Mesh(geometry,material);
+      sprite.name='visual-only tear spray';
+      sprite.position.set(0,0,0);s.anchor.add(sprite);
+      particles.push({sprite,velocity:new THREE.Vector3((Math.random()-.5)*3,
+        .8+Math.random()*2.8,(Math.random()-.5)*3),life:.35+Math.random()*.5});
+    }
+    s.spray={geometry,material,particles}; // Reused materials and geometry; no source-avatar textures are owned here.
+  }
+  function updateSpray(s,dt){
+    for(const particle of s.spray?.particles||[]){
+      if(particle.life<=0)continue;
+      particle.life=Math.max(0,particle.life-dt);
+      particle.velocity.y-=5*dt;
+      particle.sprite.position.addScaledVector(particle.velocity,dt);
+      particle.sprite.visible=particle.life>0;
+      particle.sprite.scale.setScalar(Math.max(.1,particle.life/.85));
+    }
+  }
   function begin({player,areaId,scene,floorY,neckAnchor,feetAnchor}={}){
     if(current)return false;
     const realRoot=assets();
@@ -241,10 +264,12 @@
           });
           if(!s.toss)throw Error('RootSnareToss not loaded');
           s.tossed=true;s.upper.visible=false;s.lower.visible=false;s.bridge.visible=false;
+          splurt(s); // The authored finishing yank emits a small burst only after the visual cut is complete.
         }catch(error){lastError=String(error?.stack||error);lastEvent='throw snapshot failed, death remains authoritative';}
       }
     }else{
       s.toss?.update?.(dt);
+      updateSpray(s,dt);
       if(s.elapsed>=DURATION+THROW_VIEW_S&&!s.finished){
         s.finished=true;
         // Death is never a downed state. Restoring visibility occurs in the
@@ -278,7 +303,7 @@
     const camera=window.CinematicCameraRuntime;
     if(s.cameraRecord&&camera?.activeRecord?.()===s.cameraRecord)camera.deactivate();
     s.toss?.dispose?.();
-    disposeGroup(s.anchor);
+    disposeGroup(s.anchor); // Shared spray geometry/material are disposed with the same visual-only scene node.
     if(reason==='dodge'||reason==='dodge-or-release')counts.interrupts++;
     lastEvent=reason;return true;
   }
