@@ -109,8 +109,9 @@
     player.x = lerp(active.startX, active.targetX, approach);
     player.y = lerp(active.startY, active.targetY, approach);
     player.vx = player.vy = 0;
-    const hips = Number(deps.playerLegs?.()?.standingPosteriorY); // The current species' own posterior height, not a hardcoded human hip.
-    const posterior = Number.isFinite(hips) ? hips : (Number(window.PlayerBodyTransformComposer?.getPosteriorY?.()) || 0.3);
+    const hips = Number(deps.playerLegs?.()?.standingPosteriorY); // Anatomical fallback for a rig that has not yet exposed its composer pivot.
+    const pivot = Number(window.PlayerBodyTransformComposer?.getPosteriorY?.()); // This is the ACTUAL pivot around which PlayerBodyTransformComposer rotates the portrait.
+    const posterior = Number.isFinite(pivot) ? pivot : (Number.isFinite(hips) ? hips : 0.3);
     const surfaceLift = active.surfaceY + 0.035 - root.position.y - posterior; // Keeps the horizontal plane slightly above the mattress's actual top.
     window.PlayerBodyTransformComposer.setChannel(CHANNEL, {
       priority: 950, absoluteYaw: active.yaw, rotation: { pitch: -Math.PI / 2 * flatten },
