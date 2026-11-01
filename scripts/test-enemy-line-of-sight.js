@@ -96,6 +96,7 @@ hostileObjects.push(ally);
 assert.equal(window.RangedWeapons.hasLineOfSight(allyObserver, allyTarget), false, 'a living hostile body blocks sight to actors behind it');
 hostileObjects.length = 0;
 
+terrainBlock = false;
 area = 'interior';
 sightObjects = [{ name: 'area-wall', blocksSight: true, visible: true }];
 const areaObserver = actor(64, 384);

@@ -24,8 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 33313
-
+    "line": 33407
   },
   {
     "file": "docs/game.js",
@@ -35,7 +34,6 @@
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
     "line": 33469
-
   },
   {
     "file": "docs/game.js",
@@ -44,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 33488
+    "line": 33582
   },
   {
     "file": "docs/game.js",
