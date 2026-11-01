@@ -82,6 +82,8 @@ stagedSocket.children.push(detachedHand);
 stagedSocket.traverse = fn => { fn(stagedSocket); stagedSocket.children.forEach(child => child.traverse(fn)); };
 const handRig = { group: stagedHandRoot, getDebug: () => ({}), dispose() {} }; // Same public hand-attachment surface as the game.
 const staged = loadParity('hand', handRig);
+assert.equal(staged.window.HobunjiHandOutlineParity.refreshHeldMatrices([detachedHand]), 1, 'the held renderer can refresh hand matrices before calculating scissor bounds');
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'pre-scissor refresh reanchors a floating hand before overlay clipping');
 draw(detachedHand, {}, camera, { colorWrite: true })();
 assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'visible hand is reanchored to its live socket, not its stale mesh world matrix');
 assert.equal(bakedBody.matrixWorld.elements[13], 0.2, 'the temporary player-body world transform is never recomputed');
@@ -113,6 +115,8 @@ assert.equal(bakedBody.matrixWorld.elements[12], 10, 'render-time body position 
 assert.equal(bakedBody.matrixWorld.elements[5], 0.6375, 'render-time body scale is retained unchanged');
 assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw is detected');
 assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
+const overlaySource = read('docs/js/held-object-render-order.js'); // Production overlay must refresh hands before projecting their screen-space bounds.
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*replayScissorRect\(renderer, camera, scissorMeshes, scissorRect\)/, 'held renderer refreshes hand matrices before scissor bounds');
 
 
 
