@@ -61,7 +61,7 @@ class Vector3 { // Only the projection operations used by the real overlay compo
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
   dot(other) { return this.x * other.x + this.y * other.y + this.z * other.z; }
-  setFromMatrixColumn() { this.x = 1; this.y = 0; this.z = 0; return this; }
+  setFromMatrixColumn(_matrix, index = 0) { this.x = index === 0 ? 1 : 0; this.y = index === 1 ? 1 : 0; this.z = index === 2 ? 1 : 0; return this; }
 }
 const gradients = []; // Captures actual radial stop positions and radii from compositor draws.
 const fills = []; // Captures the room's darkness independently of light pools.
@@ -114,6 +114,19 @@ draw();
 assert.equal(gradients[1].radius, 6, 'furniture light reaches twice its former radius');
 assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 1], 'lamp reveal has no bright plateau or abrupt knee');
 assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color glow fades linearly too');
+
+// Farmhouse lights remain present when their sources rotate behind the camera.
+// Their screen-space proxy is flattened onto the player-depth plane, retaining lateral position and radius.
+activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
+localLights = [{ x: 3, y: 1, z: -12, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse candle still illuminates the view when behind the camera');
+localLights = [];
+sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = -12; } } }];
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse window still admits daylight when behind the camera');
+activeScene = {};
+sources = [];
 
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
 localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
