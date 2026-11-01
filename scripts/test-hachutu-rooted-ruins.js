@@ -106,7 +106,7 @@ const chestWindow={
   LootRolling:{rollLootPool:()=>{throw new Error('Harlyao loot pool leaked into Hachutu vault');}},
   HobunjiActivityEvents:{emit(){}},
 };
-vm.runInNewContext(source('docs/js/dev-random-ruin-dungeon-chests.js'),{window:chestWindow,console});
+vm.runInNewContext(source('docs/js/dev-random-ruin-dungeon-chests.js'),{window:chestWindow,console,performance:{now:()=>0}});
 let chestLoot=null;
 chestWindow.DevSpawner.init({grantLoot:loot=>{chestLoot=loot;return Object.keys(loot);},showToast(){}});
 const dummyChest={tier:4,theme:'tothal',culture:'hachutu',boss:true,poolId:'dungeonChest_tier4',id:'hachutu-test'};
