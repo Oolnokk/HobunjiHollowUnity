@@ -83,6 +83,7 @@ let area = 'map_i_temple'; // Switches between interior, mine and outdoor polici
 let activeScene = {}; // Test the live scene independently of the player-area value.
 let now = 1000; // Advances past the overlay's existing redraw throttle.
 let cameraAngle = 0; // Orbits the test camera around the player to verify farmhouse light projection across a quarter turn.
+let cameraDistance = 10; // Preserves the original far-plane fixture while allowing a close third-person orbit test.
 let localLights = []; // Opt-in local light fixtures.
 let sources = []; // Active daylight windows only.
 const lightingWindow = { // Loads the complete lighting module, without initializing unrelated mist geometry.
@@ -94,7 +95,7 @@ vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow
 lightingWindow.WeatherFX.init({
   lctx: ctx, camera: {
     matrixWorld: {}, near: 0.1, far: 110,
-    getWorldPosition(target) { return target.set(-3 * Math.sin(cameraAngle), 0, -3 * Math.cos(cameraAngle)); },
+    getWorldPosition(target) { return target.set(-cameraDistance * Math.sin(cameraAngle), 0, -cameraDistance * Math.cos(cameraAngle)); },
     getWorldDirection(target) { return target.set(Math.sin(cameraAngle), 0, Math.cos(cameraAngle)); },
   },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
@@ -124,6 +125,7 @@ assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color gl
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Their screen-space proxy is flattened onto the player-depth plane, retaining lateral position and radius.
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
+cameraDistance = 3;
 cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
@@ -135,6 +137,7 @@ draw();
 assert(gradients.some(entry => entry.radius > 5.1 && entry.radius < 5.3), 'a farmhouse window still admits daylight when behind the camera after a quarter-turn');
 activeScene = {};
 sources = [];
+cameraDistance = 10;
 cameraAngle = 0;
 
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
