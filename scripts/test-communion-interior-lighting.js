@@ -58,6 +58,9 @@ for (let i = 1; i <= 11; i++) {
 
 class Vector3 { // Only the projection operations used by the real overlay compositor.
   constructor() { this.x = 0; this.y = 0; this.z = 0; }
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+  dot(other) { return this.x * other.x + this.y * other.y + this.z * other.z; }
   setFromMatrixColumn() { this.x = 1; this.y = 0; this.z = 0; return this; }
 }
 const gradients = []; // Captures actual radial stop positions and radii from compositor draws.
@@ -83,11 +86,15 @@ const lightingWindow = { // Loads the complete lighting module, without initiali
 };
 vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow, performance: { now: () => now }, console });
 lightingWindow.WeatherFX.init({
-  lctx: ctx, camera: { matrixWorld: {} },
+  lctx: ctx, camera: {
+    matrixWorld: {}, near: 0.1, far: 100,
+    getWorldPosition(target) { return target.set(0, 0, 0); },
+    getWorldDirection(target) { return target.set(0, 0, 1); },
+  },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
   getCurrentArea: () => area, _isBuildingArea: id => id.startsWith('map_i_'),
   getActiveScene: () => activeScene, getThreeRect: () => ({ width: 100, height: 100 }),
-  worldToOverlay: (x, y, z) => ({ x, y: z, visible: true }),
+  worldToOverlay: (x, y, z) => ({ x, y: 50, visible: z > 0.1 && z < 100 }),
   getFurnitureLightSources: () => localLights, getLightningAlpha: () => 0, getSceneTransAlpha: () => 0,
 });
 function draw() {
@@ -105,6 +112,18 @@ draw();
 assert.equal(gradients[1].radius, 6, 'furniture light reaches twice its former radius');
 assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 1], 'lamp reveal has no bright plateau or abrupt knee');
 assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color glow fades linearly too');
+
+// A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
+localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 5) < 0.001), 'off-screen light center remains active while its influence sphere overlaps the far clip plane');
+
+// Once the entire light volume is beyond the far plane, it must not leak into the scene.
+localLights = [{ x: 95, y: 1, z: 106, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+draw();
+assert(!gradients.some(entry => Math.abs(entry.radius - 5) < 0.001), 'light is clipped after its entire influence sphere passes the far plane');
+
+localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }];
 draw();
 assert.equal(gradients.at(-1).radius, 6, 'window daylight has a broad pool');
