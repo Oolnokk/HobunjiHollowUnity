@@ -379,11 +379,11 @@
   }
   function updateHands(now,dt){
     const p=session.kit.playerWorld(),target=session.snareTarget,tear=window.RootSnarePlayerTear;
-    if(!p||!inside(p,session.layout.parts[1].bounds,1)){
+    if(!p||(!inside(p,session.layout.parts[1].bounds,1)&&!tear?.active?.())){
       tear?.stop?.('outside-labyrinth');
       session.snare?.releaseCaptured?.();
       return;
-    }
+    } // A captured player cannot end a lethal grab by rolling across the labyrinth boundary without paying Stamina.
     if(session.snare&&target){
       target.group.position.set(p.x,session.floor,p.z);
       if((window.Combat?.attach?.hostDodgeEscapes?.(deps.player) === true || (deps.player?.dodging && deps.player?._grappleEscapeDodgePaid === true))&&!tear?.split?.()){
