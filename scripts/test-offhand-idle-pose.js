@@ -76,6 +76,21 @@ for (const speciesId of ['maoao', 'slagothim', '', null]) {
 }
 assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId: 'kenkari', animationGripState: { offhandIdleBlend: 0 } }), null, 'a released one-grip pose stays released');
 assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId: 'maoao', animationGripState: { offhandIdleBlend: 0 } }), null, 'other species keep their per-pose release');
+
+// Full grip-mode check: species exceptions must not disable real 2H or Dual Wield hand ownership.
+for (const speciesId of ['kenkari', 'tletingan', 'rakakoan', 'nuhongan', 'maoao']) {
+  const identity = { speciesId };
+  const attackGrip = grips.animationGripAt(0, timing, oneHand, 'attack', 'hatchet');
+  const single = { ...identity, animationGripState: attackGrip };
+  assert.equal(!!grips.offhandIdleStateForTool('hatchet', 'melee', single), !grips.usesLegacyOffhandIdle(speciesId), `${speciesId}: correct one-grip free-hand owner`);
+  const twoHandGrip = grips.animationGripAt(0.2, timing, twoHandSwing, 'attack', 'hatchet');
+  assert.ok(grips.secondaryGripForTool('hatchet', 'melee', { ...identity, animationGripState: twoHandGrip }), `${speciesId}: two-handed grip stays enabled`);
+  assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { ...identity, animationGripState: twoHandGrip }), null, `${speciesId}: no invisible tool during 2H`);
+  const dualGrip = grips.animationGripAt(0.3, timing, dualSwing, 'attack', 'dagger');
+  assert.ok(grips.dualWieldStateForTool('dagger', 'melee', { ...identity, animationGripState: dualGrip }), `${speciesId}: dual wield stays enabled`);
+  assert.equal(grips.offhandIdleStateForTool('dagger', 'melee', { ...identity, animationGripState: dualGrip }), null, `${speciesId}: no invisible offhand when holding a real weapon`);
+}
+
 visuals.setCarriedSample({ x: 0.1, y: 0.2, z: 0.3, pitchRad: Math.PI / 2, yawRad: 0, rollRad: 0 });
 assert.equal(typeof visuals.setCarriedPose, 'function');
 // A real authored export (Forehand Swing): Neutral owns a custom offhand pose, 2H windup/strike release the hand to the grip.
