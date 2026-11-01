@@ -1052,7 +1052,11 @@
     const step = Math.sign(Number(direction) || 0);
     if (!feature || !step) return { ok: false, message: 'That farmhouse fixture cannot be shifted.' };
     const current = Math.max(-4, Math.min(4, Math.trunc(Number(feature.interiorShift) || 0)));
-    const next = Math.max(-4, Math.min(4, current + step));
+    const baseSlot = feature.edgeSlot === 0 ? 0 : 1;
+    const rightAlongPositive = feature.side === 'north' || feature.side === 'east';
+    const minShift = feature.type === 'entrance' ? (rightAlongPositive ? -baseSlot : baseSlot - 1) : -4;
+    const maxShift = feature.type === 'entrance' ? (rightAlongPositive ? 1 - baseSlot : baseSlot) : 4;
+    const next = Math.max(minShift, Math.min(maxShift, current + step));
     if (next === current) return { ok: false, message: 'The interior fixture has reached its adjustment limit.' };
     feature.interiorShift = next; // Positive means right when viewed from inside facing the fixture wall.
     _rebuildAllStructureMeshes();
@@ -1099,7 +1103,7 @@
   function _entranceNubCells(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const slot = (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'west') ? 1 : -1));
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1)));
     // Exactly one floorless exit marker per entrance; the door is rendered
     // at the floor boundary using InteriorDoorTiles, like an authored church.
     if (f.side === 'north') return [{ c: gx + slot, r: gy - 1 }];
@@ -1112,7 +1116,7 @@
   function _entranceEnterCell(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Exterior positions remain untouched; indoor origin includes room-only separation.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const slot = (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'west') ? 1 : -1));
+    const slot = Math.max(0, Math.min(1, (f.edgeSlot === 0 ? 0 : 1) + (Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1)));
     if (f.side === 'north') return { c: gx + slot, r: gy };
     if (f.side === 'south') return { c: gx + slot, r: gy + 1 };
     if (f.side === 'west')  return { c: gx, r: gy + slot };
@@ -1125,11 +1129,11 @@
   function _chimneyHearthPlacement(entry, f) {
     const room = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Hearth follows its room without modifying its exterior chimney.
     const gx = (room?.col ?? entry.col * 2) + f.lx * 2, gy = (room?.row ?? entry.row * 2) + f.ly * 2;
-    const shift = Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'west') ? 1 : -1); // Positive shifts to the viewer's right from inside the room.
+    const shift = Math.trunc(Number(f.interiorShift) || 0) * ((f.side === 'north' || f.side === 'east') ? 1 : -1); // Positive shifts to the viewer's right from inside the room.
     let cx = gx + 1, cz = gy + 0.5;
     if (f.side === 'south') { cx = gx + 1 + shift; cz = gy + 1.5; }
     else if (f.side === 'west') { cx = gx + 0.5; cz = gy + 1 + shift; }
-    else if (f.side === 'east') { cx = gx + 1.5; cz = gy + 1 - shift; }
+    else if (f.side === 'east') { cx = gx + 1.5; cz = gy + 1 + shift; }
     else cx += shift;
     return { pieceId: entry.id, featureId: f.id, cx, cz, yaw: HEARTH_YAW[f.side] ?? 0 };
   }
