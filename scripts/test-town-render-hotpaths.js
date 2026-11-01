@@ -186,7 +186,7 @@ assert.equal(isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 
 const shellFilterStart = shellPassEnd;
 const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
 const hideNonXrayShellMeshes = new Function('hasLayer', 'SHELL_LAYER',
-  heldRender.slice(shellFilterStart, shellFilterEnd) + '\\nreturn hideNonXrayShellMeshes;')(
+  heldRender.slice(shellFilterStart, shellFilterEnd) + '\nreturn hideNonXrayShellMeshes;')(
   (object, layer) => !!(object.layers.mask & (1 << layer)), 1);
 const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
 const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
