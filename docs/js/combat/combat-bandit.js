@@ -2128,7 +2128,7 @@
     if (c.retreatT > 0) {
       c.retreatT = Math.max(0, c.retreatT - dt);
       const awayAng = towardAngle + Math.PI;
-      const moving = deps.moveCreatureToward(c, c.x + Math.cos(awayAng) * deps.TILE, c.y + Math.sin(awayAng) * deps.TILE, deps.JUMP_BACK_SPEED, dt);
+      const moving = deps.moveCreatureToward(c, c.x + Math.cos(awayAng) * deps.TILE, c.y + Math.sin(awayAng) * deps.TILE, deps.JUMP_BACK_SPEED * (c.hachutuTitanTuning?.speed || 1), dt);
       return { aimAngle: towardAngle, moving };
     }
     if (c._banditAction) {
