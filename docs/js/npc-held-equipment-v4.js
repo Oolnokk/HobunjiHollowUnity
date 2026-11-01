@@ -147,6 +147,10 @@
 
   function setHolderPose(state, holder, pose) {
     const three = T(), walker = state?.walker, rig = rigFor(walker);
+    if (walker?.root) {
+      walker.root.userData = walker.root.userData || {};
+      walker.root.userData.hobunjiXrayActorRoot = true; // Held equipment shares this walker's authoritative standing elevation during terrain-depth replay.
+    }
     const separatedBodyYaw = applyBodyYaw(state, pose?.bodyYaw); // Mirrors WeaponIdleBodyYawRuntime instead of baking bodyYaw into the item.
     const sourceParent = rig?.parent || walker?.root;
     const holderParent = holder?.parent || walker?.root;
