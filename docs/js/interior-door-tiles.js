@@ -340,7 +340,9 @@
   function getLightBlockers(mapId) {
     const state = maps.get(String(mapId));
     if (!state) return [];
-    return state.doors.filter(entry => !entry.exitId).map(entry => {
+    return state.doors.map(entry => {
+      const THREE = deps?.THREE || window.THREE;
+      if (!THREE?.Vector3) return null;
       const position = new THREE.Vector3();
       const normal = new THREE.Vector3(0, 0, 1);
       entry.group.getWorldPosition?.(position);
