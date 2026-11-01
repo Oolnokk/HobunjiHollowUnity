@@ -216,8 +216,10 @@ assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
   'held gear and feet both participate in the selective overlay and screen scissor');
 assert.match(heldRender, /const heldVisibility = hideObjects\(\[\.\.\.held, \.\.\.feet\]\)/,
   'feet are absent from the original color pass so they cannot pop over transparent water');
-assert.match(heldRender, /const hidden = hideObjects\(tintOverlay \? \[\.\.\.ground, \.\.\.overlayMeshes, \.\.\.tintCovers\]/,
-  'the rebuilt solid depth excludes grass, paths and translucent covers for submerged held objects');
+assert.match(heldRender, /overlayHidden = hideObjects\(\[\.\.\.overlayMeshes, \.\.\.\(tintOverlay \? tintCovers : \[\]\)\]\)/,
+  'the elevation rebuild retains ground while excluding held meshes and deferred translucent covers');
+assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+  'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
@@ -262,18 +264,19 @@ const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellRepl
 assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
-const shellGroundHideAt = shellReplay.indexOf('hideObjects(ground)');
-const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)');
-const shellDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
-const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, xraySet)');
-const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellDrawAt);
+const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMeshes, group.elevation)');
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellGroundFilterAt);
+const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
+const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet)');
+const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
+const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellOutlineDrawAt);
 const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellRestoreAt);
 assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
   'source-mesh depth remains available to mask the expanded back-face shell');
-assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
-  && shellDepthAt < shellDrawAt && shellDrawAt < shellOnlyAt
-  && shellOnlyAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
-  'shell replay excludes classified ground, draws only matching shells, then restores full scene depth');
+assert.ok(shellGroundFilterAt >= 0 && shellGroundFilterAt < shellDepthAt
+  && shellDepthAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
+  && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
+  'shell replay filters only same-elevation ground, draws the matching shells, then restores full scene depth');
 assert.ok(heldRender.includes('const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))'),
   'all existing held/foot ground-x-ray participants share shell visibility parity');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
@@ -303,13 +306,15 @@ for (const phrase of [
     'compositor documentation retains critical regression explanation: ' + phrase);
 }
 
-const depthClearAt = heldRender.indexOf('renderer.clearDepth();');
-const stencilAt = heldRender.indexOf('const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(overlayMeshes) : null;');
-const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: overlay render')");
+const selectiveReplayStart = heldRender.indexOf('  function replaySelectiveHeldOverlay(');
+const depthClearAt = heldRender.indexOf('renderer.clearDepth();', selectiveReplayStart);
+const depthDrawAt = heldRender.indexOf('rawRender.call(renderer, scene, camera)', depthClearAt);
+const stencilAt = heldRender.indexOf('prepareSubmergedOverlayStencilMaterials(group.meshes)', depthDrawAt);
+const heldDrawAt = heldRender.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
 const tintAt = heldRender.indexOf('const tintStates = prepareOverlayCoverTintMaterials(tintCovers);');
 const coverDepthAt = heldRender.indexOf('const coverDepthStates = prepareTintCoverDepthMaterials(tintCovers);');
 const groundDepthRestoreAt = heldRender.indexOf('const groundMaterialStates = prepareGroundDepthMaterials(', heldDrawAt);
-assert.ok(depthClearAt >= 0 && depthClearAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
+assert.ok(depthClearAt >= 0 && depthClearAt < depthDrawAt && depthDrawAt < stencilAt && stencilAt < heldDrawAt && heldDrawAt < groundDepthRestoreAt && groundDepthRestoreAt < tintAt && tintAt < coverDepthAt,
   'reconstructed solid depth, gear/hand/foot draw, opaque grass-depth restore BEFORE tint, then translucent depth restore');
 
 // Two user Pixel Probes on flooded farm grass have the exact same water
@@ -336,12 +341,12 @@ assert.match(heldRender, /function prepareGroundDepthMaterials\(ground\)[\s\S]*?
   'restoring ground cannot overwrite the already drawn visible held/hand/foot colors');
 assert.match(heldRender, /camera.layers.mask = WATER_REPLAY_MASK[\s\S]{0,160}rawRender.call\(renderer, scene, camera\)/,
   'translucent water and slush render through their dedicated private layer');
-assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(overlayMeshes\)/,
-  'all held objects, hands and feet receive visible-silhouette stencil tags');
+assert.match(heldRender, /prepareSubmergedOverlayStencilMaterials\(group\.meshes\)/,
+  'each actor-elevation group stamps its visible held/hand/foot silhouettes into the shared stencil bit');
 assert.match(heldRender, /material.depthTest = true;\s*material.depthWrite = true;\s*material.stencilWrite = true/,
   'temporary held depth writes ensure water behind a PNG cannot tint it');
-assert.equal((heldRender.match(/window.PerfProfiler\?\.begin\('held-overlay: overlay render'\)/g) || []).length, 1,
-  'held weapons and feet draw once rather than twice');
+assert.equal((heldRender.match(/window.PerfProfiler\?\.begin\('held-overlay: elevation overlay render'\)/g) || []).length, 1,
+  'the grouped overlay draw is issued once per elevation group, not as a duplicate full-scene pass');
 assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
   'the old patchy foot-water tint path is not used');
 const overlapStart = heldRender.indexOf('  function hasOverlappingHeldCover(');
