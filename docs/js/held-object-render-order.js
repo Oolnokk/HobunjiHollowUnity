@@ -1251,24 +1251,24 @@
   function replayShellOutlineXray(renderer, scene, camera, xrayMeshes, ground, topFaceGround, scissored) {
     if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) return;
 
-    const oldAutoClear = renderer.autoClear;
-    const oldAutoClearColor = renderer.autoClearColor;
-    const oldAutoClearDepth = renderer.autoClearDepth;
-    const oldAutoClearStencil = renderer.autoClearStencil;
-    const oldBackground = scene.background;
-    const oldOverride = scene.overrideMaterial;
-    const oldCameraMask = camera.layers.mask;
-    const oldSceneAutoUpdate = scene.autoUpdate;
-    const shadowMap = renderer.shadowMap;
-    const oldShadowAutoUpdate = shadowMap?.autoUpdate;
-    const previousInternalReplay = internalReplay;
-    const glState = renderer.state;
-    const xraySet = new Set(xrayMeshes);
-    let depthVisibility = null;
-    let shellVisibility = null;
-    let swappedGeometry = [];
-    let scissorActive = false;
-    let depthWasCleared = false;
+    const oldAutoClear = renderer.autoClear; // Restored after the private depth/shell passes.
+    const oldAutoClearColor = renderer.autoClearColor; // Preserves the caller's color-clear policy.
+    const oldAutoClearDepth = renderer.autoClearDepth; // Preserves the caller's depth-clear policy.
+    const oldAutoClearStencil = renderer.autoClearStencil; // Preserves the caller's stencil-clear policy.
+    const oldBackground = scene.background; // Restored after suppressing the background during depth-only draws.
+    const oldOverride = scene.overrideMaterial; // The shell shader reused for the selective shell draw.
+    const oldCameraMask = camera.layers.mask; // Restored after switching between world and shell layers.
+    const oldSceneAutoUpdate = scene.autoUpdate; // Restored after reusing base-pass world matrices.
+    const shadowMap = renderer.shadowMap; // Shadow auto-update is suspended while depth is reconstructed.
+    const oldShadowAutoUpdate = shadowMap?.autoUpdate; // Restored with the rest of the render state.
+    const previousInternalReplay = internalReplay; // Nested renderer calls must preserve the prior replay guard.
+    const glState = renderer.state; // Supplies the temporary screen-space scissor.
+    const xraySet = new Set(xrayMeshes); // Identifies shell meshes retained in the selective outline draw.
+    let depthVisibility = null; // Temporarily hidden ground meshes during the depth reconstruction.
+    let shellVisibility = null; // Non-x-ray shell meshes hidden during the selective shell draw.
+    let swappedGeometry = []; // Carved floor meshes temporarily replaced by wall/ceiling-only occluders.
+    let scissorActive = false; // Controls restoration of the temporary screen-space clip.
+    let depthWasCleared = false; // Ensures the ordinary depth buffer is rebuilt after any partial replay.
 
     internalReplay = true;
     try {
@@ -1392,14 +1392,16 @@
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
         return originalRender.call(this, scene, camera);
       }
-      const scissored = replayScissorRect(this, camera, xrayMeshes, scissorRect);
+      const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
+      const scissored = replayScissorEnabled && !!(shellGlState?.scissor && shellGlState?.setScissorTest)
+        && replayScissorRect(this, camera, xrayMeshes, scissorRect);
       if (scissored && (scissorRect.z <= 0 || scissorRect.w <= 0)) {
         return originalRender.call(this, scene, camera);
       }
       // Avoid drawing these shells once under normal ground depth and again in
       // the selective replay. The replay redraws their complete visible shell.
-      const hiddenXrayShells = hideObjects(xrayMeshes);
-      let shellResult;
+      const hiddenXrayShells = hideObjects(xrayMeshes); // Avoid a normal-depth shell draw before the selective replay.
+      let shellResult; // Return value of the ordinary shell pass, excluding x-ray participants.
       try {
         shellResult = originalRender.call(this, scene, camera);
       } finally {
