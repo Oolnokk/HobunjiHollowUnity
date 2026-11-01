@@ -42,6 +42,15 @@
     if (root?.userData) root.userData.furnitureRelationship = { id, area, tableId: record.tableId || null };
     return entry;
   }
+  function unregisterPlacement(area, idOrRoot) {
+    const list = entries(area); // Removing one overlapping rug must not evict any unrelated instance on the same tile.
+    for (const [id, entry] of list) if (id === idOrRoot || entry.root === idOrRoot) {
+      list.delete(id);
+      collisionAreas.delete(areaId(area)); focusStamp = null; surfaceProbe.valid = false;
+      return true;
+    }
+    return false;
+  }
   function entries(area) { return areas.get(areaId(area)) || EMPTY; }
   function findSeat(area, seat) {
     if (!seat) return null;
@@ -471,5 +480,5 @@
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();
