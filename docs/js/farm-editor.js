@@ -283,6 +283,7 @@
         patternOverrides: obj.patternOverrides || null, rotYDeg: obj.rotYDeg || 0, ownerPieceId: obj.ownerPieceId || null,
         widthTiles: obj.key === 'rug' && Number.isInteger(obj.widthTiles) ? obj.widthTiles : null,
         heightTiles: obj.key === 'rug' && Number.isInteger(obj.heightTiles) ? obj.heightTiles : null, // Per-instance woven-rug dimensions are kept across world reloads.
+        rugLayer: obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) : null, // Rug stack layer survives reloads independently of its size.
         localCol: Number.isFinite(obj.localCol) ? obj.localCol : null,
         localRow: Number.isFinite(obj.localRow) ? obj.localRow : null,
         wallPlacement: window.WallOrnamentPlacement?.getPlayerPlacement?.(obj.id) || null }); // Primary wall-space link is sufficient to deterministically regenerate the opposite-side peer after rebuild.
@@ -457,14 +458,15 @@
           console.error('[farm-editor] failed to restore processing furniture', { key, col, row }, err);
         }
       });
-      (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles }) => {
+      (layout.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, derivedLinkedWindow, wallPlacement, patternOverrides, tableId, surfaceItems, serviceId, npcWardrobeFor, widthTiles, heightTiles, rugLayer }) => {
         try {
           if (derivedLinkedWindow) return; // One development build serialized peers directly; ignore those transitional duplicate records and regenerate from the primary instead.
           const def = deps.DECORATIVE_FURNITURE_DEFS[key];
           if (!def) return;
           const decorArea = area || 'farm';
           const targetScene = decorArea === 'interior' ? deps.getInteriorScene() : deps.getScene();
-          const dimensions = key === 'rug' && Number.isInteger(widthTiles) && Number.isInteger(heightTiles) ? { widthTiles, heightTiles } : null; // Older rug saves keep their authored default.
+          const dimensions = key === 'rug' ? { widthTiles: Number.isInteger(widthTiles) ? widthTiles : 2, heightTiles: Number.isInteger(heightTiles) ? heightTiles : 2,
+             rugLayer: Math.max(0, Math.min(32, Number(rugLayer) || 0)) } : null; // Older rug saves keep their authored default.
           const result = deps.makeDecorativeFurnitureMesh(col, row, key, targetScene, decorArea, rotYDeg || 0, dimensions);
           const owner = decorArea === 'interior' && !ownerPieceId ? deps.furnitureOwnerFields(col, row) : {};
           let restoredObject = null; // Stable object reference lets the embedded wall backup be rehydrated before linked-window peer restoration runs.

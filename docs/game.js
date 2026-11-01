@@ -3185,6 +3185,7 @@
         // or moving a farm-placed sittable piece doesn't see its own
         // pre-move registration as a collision.
         const ignoreObj = ignoreId ? interiorFurnitureObjects.find(o => o.id === ignoreId) : null;
+        const placingRug = furnitureKey === 'rug'; // Rugs never claim collision occupancy, even beneath an existing chest, chair or other rug.
         for (let r = row; r < row + fd; r++) {
           for (let c = col; c < col + fw; c++) {
             const tile = g[r]?.[c];
@@ -3195,12 +3196,12 @@
               if (window.GridTileAccessors.isHouseFootprint(c, r)) return false;
               const occupyingWorldObject = getWorldObjectAt(c, r);
               const isOwnCurrentTile = ignoreObj && ignoreObj.col === c && ignoreObj.row === r;
-              if (occupyingWorldObject && !isOwnCurrentTile) return false;
+              if (!placingRug && occupyingWorldObject && !isOwnCurrentTile) return false;
             }
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== area) return false;
+          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Existing rugs never block new furniture either.
           const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
@@ -3661,7 +3662,7 @@
         });
         if (derivedHearth) return makeCookingInteractable();
         const o = interiorFurnitureObjects.find(f => {
-          if (f.area !== 'interior') return false;
+          if (f.area !== 'interior' || f.key === 'rug') return false; // A rug under a bed/chair must never steal that furniture's interaction.
           const size = decorativeFurnitureSize(f.key, f.rotYDeg || 0, f); // Each resizable rug retains its actual tile footprint.
           return col >= f.col && col < f.col + size.fw && row >= f.row && row < f.row + size.fd;
         });
@@ -3677,7 +3678,8 @@
             interactLabel: 'Sleep',
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
-              return sleepInBed();
+              if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
+              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
             },
           };
         }
@@ -3709,14 +3711,16 @@
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
         if (furnitureKey === 'rug' && dimensions) {
           const rugSize = decorativeFurnitureSize('rug', 0, dimensions); // Sanitize saved sizes before any visual scale.
-          group.scale.set(rugSize.fw / def.fw, 1, rugSize.fd / def.fd);
+          const farmhouseInset = area === 'interior' ? 1 : 0; // Half-tile inset on each side; logical footprint remains unchanged.
+          group.scale.set(Math.max(0.05, rugSize.fw - farmhouseInset) / def.fw, 1, Math.max(0.05, rugSize.fd - farmhouseInset) / def.fd);
         } // Stretch the authored woven-rug visual to its two selected tile dimensions.
-        group.position.set(centerX, surfaceY, centerZ);
+        const rugLayer = furnitureKey === 'rug' ? Math.max(0, Math.min(32, Number(dimensions?.rugLayer) || 0)) : 0; // Render-only rug stack index; each full layer clears the prior rug's thickness.
+        group.position.set(centerX, surfaceY + rugLayer * 0.032, centerZ);
         group.rotation.y = rotYDeg * Math.PI / 180;
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
-        window.FurnitureTableSystem?.registerPlacement(area, { key:furnitureKey, col, row, rotY:rotYDeg }, group, def); // Inventory furniture shares map-authored chair and table relationships.
+        // Registration happens only after the owning placed record receives its stable id. Rug overlaps cannot share fallback tile ids.
 
         let light = null;
         if (def.light) {
@@ -3789,7 +3793,7 @@
         const owner = isInInterior ? furnitureOwnerFields(col, row) : {};
         const placedFurniture = { id: 'decor_' + Math.random().toString(36).slice(2, 10), key: furnitureKey, col, row,
           mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: currentArea, rotYDeg: 0,
-          ...(furnitureKey === 'rug' && dimensions ? { widthTiles: dimensions.widthTiles, heightTiles: dimensions.heightTiles } : {}), ...owner }; // Every rug owns the dimensions chosen with its two corners.
+          ...(furnitureKey === 'rug' && dimensions ? { widthTiles: dimensions.widthTiles, heightTiles: dimensions.heightTiles, rugLayer: 0 } : {}), ...owner }; // Every rug owns the dimensions chosen with its two corners.
         interiorFurnitureObjects.push(placedFurniture);
         window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
         if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
@@ -3827,7 +3831,9 @@
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, interiorScene, 'interior');
         if (!result) return null;
         const id = 'decor_' + Math.random().toString(36).slice(2, 10);
-        interiorFurnitureObjects.push({ id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) });
+        const fixture = { id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) }; // Stable fixture id is registered once after spawning.
+        interiorFurnitureObjects.push(fixture);
+        window.FurnitureTableSystem?.registerPlacement('interior', fixture, result.mesh, DECORATIVE_FURNITURE_DEFS[furnitureKey]);
         window.FarmEditor.saveFarmLayout();
         return { id, col, row, stored };
       }
@@ -3841,6 +3847,7 @@
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        window.FurnitureTableSystem?.unregisterPlacement?.(obj.area, obj.id || obj.mesh); // Removes precisely this furniture instance, leaving stacked rugs registered.
         targetScene.remove(obj.mesh);
         obj.mesh?.traverse?.(child => {
           if (child.geometry) child.geometry.dispose();
@@ -3862,16 +3869,22 @@
         const area = options.area || currentArea; // Partition migration may move indoor furniture while the player is still outside.
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === area);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
-        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, obj)) return { ok: false, message: 'Cannot move furniture there.' };
+        const dimensions = obj.key === 'rug' && options.dimensions ? { ...options.dimensions, rugLayer: obj.rugLayer || 0 } : obj; // Two-corner moves can resize while retaining the rug's stack layer.
+        if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, dimensions)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+        const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, dimensions);
+        if (obj.key === 'rug' && options.dimensions) {
+          obj.widthTiles = dimensions.widthTiles; obj.heightTiles = dimensions.heightTiles; // Persist the moved rug's freshly selected rectangle.
+          const farmhouseInset = obj.area === 'interior' ? 1 : 0; // Match initial placement when an interior rug is moved or resized.
+          obj.mesh.scale.set(Math.max(0.05, dimensions.widthTiles - farmhouseInset) / def.fw, 1, Math.max(0.05, dimensions.heightTiles - farmhouseInset) / def.fd);
+        }
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
         obj.col = col; obj.row = row;
         const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
         const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
         const surfaceY = furnitureSurfaceYAtWorld(obj.area, centerX, centerZ); // Recomputed so moving onto/off the farmhouse incline cannot retain stale Y.
-        obj.mesh.position.set(centerX, surfaceY, centerZ);
+        obj.mesh.position.set(centerX, surfaceY + (obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0), centerZ);
         if (obj.light) obj.light.position.set(centerX, surfaceY + (def?.light?.height || 0.6), centerZ);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -3881,6 +3894,16 @@
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         if (!options.skipSave) window.FarmEditor.saveFarmLayout(); // The caller batches migration saves only after all furniture and rooms have loaded.
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
+      }
+
+      function setRugLayer(id, value) {
+        const obj = interiorFurnitureObjects.find(entry => entry.id === id && entry.area === currentArea && entry.key === 'rug'); // Only the placed rug's authoritative record is mutable.
+        const layer = Number(value); // Reject fractional, missing or out-of-range UI input rather than silently changing another rug.
+        if (!obj || !Number.isInteger(layer) || layer < 0 || layer > 32) return { ok: false, message: 'Rug layer must be a whole number from 0 to 32.' };
+        obj.rugLayer = layer;
+        obj.mesh.position.y = furnitureSurfaceYAtWorld(obj.area, obj.mesh.position.x, obj.mesh.position.z) + layer * 0.032;
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Rug now uses layer ' + layer + '.' };
       }
 
       function reconcileFurnitureWithFarmhousePartitions() {
@@ -4029,7 +4052,7 @@
           const def = DECORATIVE_FURNITURE_DEFS[obj.key];
           unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
           obj.col = col; obj.row = row;
-          obj.mesh.position.set(col + size.fw * 0.5, 0, row + size.fd * 0.5);
+          obj.mesh.position.set(col + size.fw * 0.5, obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0, row + size.fd * 0.5); // Room moves preserve the rug's own visual stack level.
           if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', col + size.fw * 0.5, row + size.fd * 0.5, window.Music?.resolveFurnitureSfx(def));
@@ -4130,7 +4153,7 @@
       function getArmedFurniturePlacementKey() { return furniturePlacementArmedKey; }
       function armFurnitureMove(id) {
         furnitureMoveArmedId = id || null;
-        rugFirstCorner = null; // Moving an existing rug uses its saved dimensions, not a fresh two-corner selection.
+        rugFirstCorner = null; // Moving a rug starts a NEW two-corner rectangle, exactly like placing one.
         if (furnitureMoveArmedId) furniturePlacementArmedKey = null;
         clearFurniturePlacementGhost();
         window.FurniturePlacer?.render();
@@ -4201,9 +4224,9 @@
         if (window.FarmhouseRoomPlanner?.isArmed?.()) { showFarmhousePartitionGhost(col, row); return; }
         const spec = furniturePlacementSpec();
         if (!spec) { clearFurniturePlacementGhost(); return; }
-        const rect = spec.key === 'rug' && !spec.ignoreId ? rugRectangleAt(col, row) : null;
+        const rect = spec.key === 'rug' ? rugRectangleAt(col, row) : null;
         const anchorCol = rect?.col ?? col, anchorRow = rect?.row ?? row; // The top-left rug tile becomes its permanent placement anchor.
-        const dimensions = rect || spec.dimensions || (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1 } : null); // First rug click previews one tile; dragged opposite corner sets its final bounds.
+        const dimensions = rect ? { ...rect, rugLayer: spec.dimensions?.rugLayer || 0 } : (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1, rugLayer: spec.dimensions?.rugLayer || 0 } : spec.dimensions); // Moving/placing rugs share the same live rectangle while the preview retains the saved stack level.
         const dimensionsValid = !rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16);
         const isProcessing = spec.kind === 'processing';
         const valid = dimensionsValid && (isProcessing
@@ -4228,7 +4251,7 @@
         const previewBaseY = currentArea === 'farm'
           ? farmSurfaceYAtWorld(previewX, previewZ)
           : (isProcessing ? tileSurfaceY(grid[row]?.[col]?.type) : 0); // Interior decor stays on its local floor.
-        const previewY = previewBaseY + (isProcessing ? 0 : 0.04); // Preserve the decor ghost's tiny anti-z-fighting hover.
+        const previewY = previewBaseY + (isProcessing ? 0 : 0.04) + (spec.key === 'rug' ? Math.max(0, Math.min(32, Number(dimensions?.rugLayer) || 0)) * 0.032 : 0); // Preview the destination rug layer.
         furniturePlacementGhost.group.position.set(previewX, previewY, previewZ);
         furniturePlacementGhost.group.visible = true;
         furniturePlacementGhost.group.traverse(child => {
@@ -4443,7 +4466,7 @@
           // rotation applied for rotYDeg. Yaw is already represented by
           // facingRad; the leg solver consumes seat-local pitch/roll.
           normalDeg: { x: anchor.rotationDeg.x || 0, z: anchor.rotationDeg.z || 0 },
-          footprintHalfDepth: Math.max(0.05, (Number(data.footprint?.d) || 1) / 2),
+          footprintHalfDepth: window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11, // Match the chair seat front, not the full tile footprint.
           anchorZ: az,
         };
       }
@@ -4556,6 +4579,11 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
+        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
+          playerNeckJoint.rotation.set(0, 0, 0);
+          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
+          return;
+        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -12604,7 +12632,8 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
-          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
+          legs, _npcCharacterRigRoot: namedAnimalDef ? null : npcCharacterRigRoot, // BedLiePose tilts this floor-relative body/feet root while NPC pathing remains attached to root.
+          _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           _npcRunning: false, _npcRunMode: null, _npcRunLeanActive: false, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
@@ -12903,7 +12932,9 @@
               const breathScaleY = window.CreatureGenetics.creatureBreathScaleY(this.animalAvatarRef, performance.now()); // Named animals keep the same subtle alive-at-rest scale cycle as ordinary creatures.
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
-            const target = resolveNpcScheduleTarget(this.rec);
+            const scheduledTarget = resolveNpcScheduleTarget(this.rec); // Raw schedule target; spouse/child overrides historically describe sleeping without a pose.
+            const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
+              ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             // Running remains limited to player-following, combat escape and flood evacuation.
@@ -12921,8 +12952,10 @@
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
-            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
-            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            const bedTransform = targetArea === this.area && target?.pose === 'lie' ? window.FurnitureTableSystem?.lieTransform?.(this.area, target) : null; // NPC beds follow real authored mattress position/height, not an arbitrary tile Y.
+            const tx = seatTransform?.x ?? bedTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? bedTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            this._bedLieSurface = target?.pose === 'lie' ? (bedTransform || { x: tx, z: tz, y: npcSurfaceY(this.area, target.c, target.r), facingRad: THREE.MathUtils.degToRad(Number(target.rotY) || 0) }) : null; // Non-bed tent sleepers lie on the existing floor surface instead.
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
             const seatedPose = seatedAtTarget ? {
@@ -13071,16 +13104,19 @@
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
-                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
-                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY
+                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Per-species hip in the floor-relative leg rig.
+                const visualRigScaleY = Number(this._npcCharacterRigRoot?.scale?.y); // NPC species/age scaling lives on this shared parent of legs, torso and hands.
+                const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
+                const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
-                root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+                if (bedTransform) { root.position.x = bedTransform.x; root.position.z = bedTransform.z; } // Real mattress's placed center offsets win over legacy station tile.
+                root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
-              _applyNpcAmbientLook(this, target);
+              if (target.pose !== 'lie') _applyNpcAmbientLook(this, target); // A sleeper keeps their neck neutral instead of following an ambient gaze marker.
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 const toolFlip = target.toolFlip === true;
@@ -13151,7 +13187,7 @@
             }
             if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -13372,6 +13408,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(dt);
               if (npcWalkers[i] === w) {
+                window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -18125,6 +18162,7 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
+        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -24655,6 +24693,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -24707,9 +24746,12 @@
         // sink correctly instead of one fixed guess.
         let chairSeatSink = 0;
         if (sitInteraction && sitInteraction.phase !== 'out') {
-          const standingPosteriorY = playerAttachmentAnchorY('posterior');
+          const rigPosteriorY = Number(playerLegs?.standingPosteriorY); // The procedural-leg hip and the whole-body sink must refer to the same posterior height.
+          const standingPosteriorY = Number.isFinite(rigPosteriorY) ? rigPosteriorY : playerAttachmentAnchorY('posterior');
+          const playerRigScaleY = Number(playerMesh.scale?.y); // Player whole-rig species/age scale is applied above the leg-IK chain.
+          const scaledPosteriorY = standingPosteriorY * (Number.isFinite(playerRigScaleY) && playerRigScaleY > 0 ? playerRigScaleY : 1);
           chairSeatSink = standingPosteriorY != null
-            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            ? (Number(sitInteraction.seatWorldY) || 0) - scaledPosteriorY
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
@@ -26271,6 +26313,12 @@
         return { ok: true, message: msg };
       }
 
+      window.BedLiePose?.init?.({
+        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
+        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
+        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
+      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
+
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
 
@@ -27517,18 +27565,24 @@
                 if (obj) { worldObjects.set(col + ',' + row, obj); processingFurnitureObjects.add(obj); }
               }
             });
-            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, widthTiles, heightTiles, patternOverrides }) => {
+            (_rl.decor || []).forEach(({ id, key, col, row, area, rotYDeg, ownerPieceId, localCol, localRow, widthTiles, heightTiles, rugLayer, patternOverrides }) => {
               const def = DECORATIVE_FURNITURE_DEFS[key];
               if (!def) return;
               const decorArea = area || 'farm';
               const tgt = decorArea === 'interior' ? interiorScene : scene;
-              const dimensions = key === 'rug' && Number.isInteger(widthTiles) && Number.isInteger(heightTiles) && widthTiles > 0 && heightTiles > 0 && widthTiles <= 16 && heightTiles <= 16 ? { widthTiles, heightTiles } : null; // Prototype reset honors existing rug dimensions.
+              const dimensions = key === 'rug' ? { widthTiles: Number.isInteger(widthTiles) && widthTiles > 0 && widthTiles <= 16 ? widthTiles : 2,
+                 heightTiles: Number.isInteger(heightTiles) && heightTiles > 0 && heightTiles <= 16 ? heightTiles : 2,
+                 rugLayer: Math.max(0, Math.min(32, Number(rugLayer) || 0)) } : null; // Prototype reset restores both rug size and stack layer.
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0, dimensions);
               const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
-              if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-                mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-                ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-                localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null });
+              if (r) {
+                const restored = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+                  mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+                  ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+                  localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null };
+                interiorFurnitureObjects.push(restored);
+                window.FurnitureTableSystem?.registerPlacement(decorArea, restored, r.mesh, def);
+              } // Prototype reset must register every stacked rug under its stable id.
               if (r && patternOverrides) window.FurniturePatternSurfaces?.applyOverrides?.(r.mesh, patternOverrides); // Do not discard the player's color choices on prototype reset.
               if (r && decorArea === 'farm') {
                 const size = decorativeFurnitureSize(key, rotYDeg || 0, dimensions);
@@ -29089,7 +29143,8 @@
           showToast(result.message, result.ok);
           return result.ok;
         }
-        const rugKey = getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
+        const movingRug = furnitureMoveArmedId && interiorFurnitureObjects.find(obj => obj.id === furnitureMoveArmedId && obj.area === currentArea && obj.key === 'rug'); // A moved rug uses the same two-action reticle workflow as a fresh one.
+        const rugKey = movingRug ? 'rug' : getDecorativeFurnitureKeyByItemKey(furniturePlacementArmedKey);
         if (rugKey === 'rug' && !rugFirstCorner) {
           if (!canPlaceDecorativeFurnitureAt(col, row, null, 'rug', 0, currentArea, { widthTiles: 1, heightTiles: 1 })) {
             showToast('Choose a clear first rug corner.', false);
@@ -29107,9 +29162,13 @@
         if (furnitureMoveArmedId) {
           result = processingFurnitureById(furnitureMoveArmedId)
             ? moveProcessingFurniture(furnitureMoveArmedId, col, row)
-            : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
+            : movingRug ? (() => {
+              const rect = rugRectangleAt(col, row); // Inclusive opposite corners replace rather than translate the saved rug footprint.
+              return rect.widthTiles > 16 || rect.heightTiles > 16 ? { ok: false, message: 'Woven rugs are limited to 16 × 16 tiles.' }
+                : moveDecorativeFurniture(furnitureMoveArmedId, rect.col, rect.row, { dimensions: rect });
+            })() : moveDecorativeFurniture(furnitureMoveArmedId, col, row);
           showToast(result.message, result.ok);
-          if (result.ok) furnitureMoveArmedId = null;
+          if (result.ok) { furnitureMoveArmedId = null; rugFirstCorner = null; }
         } else {
           const itemKey = furniturePlacementArmedKey;
           const decorKey = getDecorativeFurnitureKeyByItemKey(itemKey);
@@ -29176,6 +29235,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
+        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
@@ -29209,6 +29269,7 @@
             remaining: furnitureStock(furniturePlacementArmedKey, furniturePlacementSource),
             moveId: furnitureMoveArmedId,
             rugFirstCorner: rugFirstCorner ? { ...rugFirstCorner } : null, // Mobile diagnostics expose both stages of rug placement.
+            rugs: interiorFurnitureObjects.filter(obj => obj.area === currentArea && obj.key === 'rug').map(obj => ({ id: obj.id, col: obj.col, row: obj.row, widthTiles: obj.widthTiles, heightTiles: obj.heightTiles, layer: obj.rugLayer || 0 })), // On-device layer/resize diagnostics.
             reticle: { col: furniturePlacementReticle.col, row: furniturePlacementReticle.row },
             ghost: furniturePlacementGhost ? { col: furniturePlacementGhost.col, row: furniturePlacementGhost.row, valid: !!furniturePlacementGhost.valid } : null,
           };
@@ -31075,6 +31136,7 @@
             window.FarmEditor.saveFarmLayout();
           });
         },
+        setRugLayer,
         removeFurniture: id => processingFurnitureById(id) ? removeProcessingFurniture(id) : removeDecorativeFurniture(id),
         rotateFurniture: (id, degrees) => processingFurnitureById(id) ? rotateProcessingFurniture(id, degrees) : rotateDecorativeFurniture(id, degrees),
         showToast,
@@ -32202,9 +32264,11 @@
             const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
             const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
             if (starterBed) {
-              interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
+              const starter = { id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
                 mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
-                ...furnitureOwnerFields(bedCol, bedRow) });
+                ...furnitureOwnerFields(bedCol, bedRow) }; // Preserve the original starter bed's fixed identity for NPC bed discovery.
+              interiorFurnitureObjects.push(starter);
+              window.FurnitureTableSystem?.registerPlacement('interior', starter, starterBed.mesh, DECORATIVE_FURNITURE_DEFS.basicBed);
               window.FarmEditor.saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }

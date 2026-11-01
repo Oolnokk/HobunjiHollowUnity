@@ -163,7 +163,7 @@
         : 'Aim at an interior ground tile, then press Action 1 to confirm. Action 2 cancels.';
     } else if (hint) {
       hint.textContent = moveArmedId
-        ? 'Tap a clear tile to move the selected furniture there.'
+        ? 'Aim and press Action 1 to move furniture; rugs use two opposite corners to resize.'
         : (owned.length || placed.length)
           ? 'Choose furniture once, aim with the reticle, and press Action 1. Windows are placed only outside and snap to fixed 2-tile wall slots.'
           : "You don't own or have any furniture placed here yet.";
@@ -315,6 +315,24 @@
         });
         selectorLabel.appendChild(select);
         row.appendChild(selectorLabel);
+      }
+      if (obj.key === 'rug') {
+        const layerLabel = document.createElement('label'); // Each placed rug owns its independently saved overlap stack height.
+        layerLabel.className = 'farm-note';
+        layerLabel.textContent = 'Layer ';
+        const layerInput = document.createElement('input'); // Touch/keyboard-friendly layer count editor, bounded to prevent runaway floating carpets.
+        layerInput.type = 'number'; layerInput.min = '0'; layerInput.max = '32'; layerInput.step = '1';
+        layerInput.value = String(Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)));
+        layerInput.style.width = '3.7em';
+        layerInput.setAttribute('aria-label', 'Woven rug layer count at ' + locationLabel);
+        layerInput.addEventListener('change', () => {
+          const level = Number(layerInput.value); // Validation at the control boundary mirrors the authoritative setter.
+          const result = deps.setRugLayer?.(obj.id, level) || { ok: false, message: 'Rug layering unavailable.' };
+          deps.showToast(result.message, result.ok);
+          render();
+        });
+        layerLabel.appendChild(layerInput);
+        row.appendChild(layerLabel);
       }
       if (obj.key === 'rug' || obj.key === 'hangingBanner' || window.HouseWindowLinkage?.isWindowKey?.(obj.key)) {
         const patternBtn = document.createElement('button'); // Ordinary ownership/permission checks from this panel govern pattern edits too.

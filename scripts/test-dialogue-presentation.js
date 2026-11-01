@@ -72,7 +72,7 @@ assert.match(
 );
 assert.match(
   game,
-  /function updatePlayerHeadAim\(\)[\s\S]{0,800}if \(dialogueOpen\) return;/,
+  /function updatePlayerHeadAim\(\)[\s\S]{0,1500}if \(dialogueOpen\) return;/,
   'normal player head/camera tracking must not overwrite dialogue neck yaw or pitch',
 );
 

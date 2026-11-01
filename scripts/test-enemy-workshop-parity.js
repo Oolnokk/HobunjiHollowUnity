@@ -5,6 +5,9 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '../docs');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 class Vector3 {
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+  dot(other) { return this.x * other.x + this.y * other.y + this.z * other.z; }
   setFromMatrixColumn() {
     this.x = 1;
     this.y = this.z = 0;
@@ -54,7 +57,12 @@ weather.drawSkyTint(ctx, 980, 600, weather.lightingStateFor(22));
 assert.equal(ops[1][1], 'multiply');
 weather.drawFurnitureLightMasks({
   lctx: ctx,
-  camera: { matrixWorld: {} },
+  camera: {
+    matrixWorld: {}, near: 0.1, far: 1000,
+    getWorldPosition(target) { return target.set(0, 0, 0); },
+    getWorldDirection(target) { return target.set(0, 0, 1); },
+  },
+  getThreeRect: () => ({ width: 980, height: 600 }),
   worldToOverlay: (x, y, z) => ({ x: x * 100, y: z * 100, visible: true }),
   getFurnitureLightSources: () => [
     {

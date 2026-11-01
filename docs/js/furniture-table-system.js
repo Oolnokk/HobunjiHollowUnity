@@ -18,7 +18,7 @@
     let entries = areas.get(area); // One registry per map, so identical table ids never cross interiors.
     if (!entries) areas.set(area, entries = new Map());
     const id = String(record.id || `${record.key || record.itemKey}:${record.col},${record.row}`); // Stable authored id; inventory placements retain a coordinate fallback.
-    for (const [key, entry] of entries) if (entry.root === root || (entry.record.col === record.col && entry.record.row === record.row && entry.record.key === record.key)) entries.delete(key);
+    for (const [key, entry] of entries) if (entry.root === root || (record.id && key === id)) entries.delete(key); // Overlapping rugs own distinct ids; a coincident tile cannot evict another rug or table entry.
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
@@ -42,6 +42,15 @@
     if (root?.userData) root.userData.furnitureRelationship = { id, area, tableId: record.tableId || null };
     return entry;
   }
+  function unregisterPlacement(area, idOrRoot) {
+    const list = entries(area); // Removing one overlapping rug must not evict any unrelated instance on the same tile.
+    for (const [id, entry] of list) if (id === idOrRoot || entry.root === idOrRoot) {
+      list.delete(id);
+      collisionAreas.delete(areaId(area)); focusStamp = null; surfaceProbe.valid = false;
+      return true;
+    }
+    return false;
+  }
   function entries(area) { return areas.get(areaId(area)) || EMPTY; }
   function findSeat(area, seat) {
     if (!seat) return null;
@@ -51,6 +60,43 @@
     for (const entry of list.values()) if (entry.def.sit && entry.root?.parent && entry.record.col === (seat.col ?? seat.c) && entry.record.row === (seat.row ?? seat.r)) return entry;
     return null;
   }
+  // Resolve a scheduled bed from the exact placed surface, including building-map post offsets/scale.
+  // Station tiles may occupy either half of a double bed, so keep that tile's lateral position.
+  // Scheduled sleepers retain their authored station location for navigation while matching the mattress surface.
+  function lieTransform(area, target) {
+    if (!target || target.pose !== 'lie' || !window.THREE) return null;
+    const stationCol = Number(target.c ?? target.col), stationRow = Number(target.r ?? target.row); // Walkable navigation tile; may sit just beside the bed collider.
+    const col = Number(target.bedCol ?? stationCol), row = Number(target.bedRow ?? stationRow); // Explicit bed origin lets spouse sleep targets resolve even when navigation uses an adjacent tile.
+    if (![stationCol, stationRow, col, row].every(Number.isFinite)) return null;
+    const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Only actual sleeping furniture can supply a mattress, never a nearby wardrobe/table.
+    const id = target.furnitureId || target.bedId || null; // Map-editor furnished stations may have a specific bed reference.
+    let entry = id ? entries(area).get(String(id)) : null;
+    if (!entry || !bedKeys.has(entry.record.key)) {
+      entry = [...entries(area).values()].find(item => {
+        if (!item.root?.parent || !bedKeys.has(item.record.key)) return false;
+        const w = Number(item.def?.fw) || 1, d = Number(item.def?.fd) || 1;
+        return col >= item.record.col && row >= item.record.row && col < item.record.col + w && row < item.record.row + d;
+      });
+    }
+    if (!entry?.root?.parent) return null;
+    const data = window.AuthoredFurniture?.peek?.(entry.record.key);
+    const top = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
+    if (!Number.isFinite(top)) return null;
+    entry.root.updateWorldMatrix?.(true, false);
+    const location = new window.THREE.Vector3(0, top, 0);
+    entry.root.localToWorld(location);
+    const centerX = Number(entry.record.col) + (Number(entry.def?.fw) || 1) * 0.5;
+    const centerZ = Number(entry.record.row) + (Number(entry.def?.fd) || 1) * 0.5;
+    const stationOffsetX = target.bedCenter ? 0 : stationCol + 0.5 - centerX;
+    const stationOffsetZ = target.bedCenter ? 0 : stationRow + 0.5 - centerZ; // Spouses sleep on the mattress center; authored multi-station beds retain their individual side offsets.
+    const rot = (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180;
+    const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
+    const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);
+    const floor = deps?.surfaceY?.(areaId(area), x, z) || 0;
+    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key };
+  }
+
+
   function tableForSeat(area, seat) {
     const entry = findSeat(area, seat); // Membership is explicit, never inferred from whichever table happens to be nearest.
     const table = entry?.record.tableId ? entries(area).get(entry.record.tableId) : null; // Deleted/moved-away furniture cannot retain ghost members.
@@ -78,8 +124,9 @@
     const yaw = rootYaw + (anchor.rotationDeg?.y || 0);
     return { x: location.x, y: location.y - floor, z: location.z, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
       normalDeg: { x: anchor.rotationDeg?.x || 0, z: anchor.rotationDeg?.z || 0 },
-      footprintHalfDepth: (data.footprint?.d || 1) * (entry.root.scale?.z || 1) / 2, anchorZ: anchor.position.z || 0 };
+      footprintHalfDepth: (window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11) * (entry.root.scale?.z || 1), anchorZ: anchor.position.z || 0 }; // Calves bend at the actual seat edge, not the tile footprint.
   }
+
   function members(area, tableId) {
     area = areaId(area);
     if (!entries(area).has(tableId)) return [];
@@ -435,5 +482,5 @@
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();
