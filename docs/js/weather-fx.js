@@ -438,14 +438,19 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  function _lightMaskIntersectsViewport(center, radius, projection, context, x, y, z) {
+  function _lightMaskIntersectsViewport(center, radius, projection, context, x, y, z, worldRadius) {
     if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(radius > 0) || !Number.isFinite(radius)) return false;
-    if (center.visible) return true;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
     const camera = projection.camera;
     camera.getWorldPosition(_lightCameraPosition);
     camera.getWorldDirection(_lightViewDirection);
     _lightToSource.set(x, y, z).sub(_lightCameraPosition);
-    if (_lightToSource.dot(_lightViewDirection) <= 0) return false; // Off-screen sources remain eligible only while they are in front of the camera.
+    const depth = _lightToSource.dot(_lightViewDirection);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    // Keep a light while its world-space influence sphere overlaps the camera depth range.
+    // Its projected center may leave the near/far clip planes while the soft edge is still visible.
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
     const rect = projection.getThreeRect?.();
     const width = Number(rect?.width || context?.canvas?.clientWidth || context?.canvas?.width);
     const height = Number(rect?.height || context?.canvas?.clientHeight || context?.canvas?.height);
@@ -477,7 +482,7 @@
     for (const c of carriers) {
       const center = deps.worldToOverlay(c.x, c.y, c.z);
       const shineR = _lightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES);
-      if (!_lightMaskIntersectsViewport(center, shineR, deps, lctx, c.x, c.y, c.z)) continue;
+      if (!_lightMaskIntersectsViewport(center, shineR, deps, lctx, c.x, c.y, c.z, LANTERN_SHINE_TILES)) continue;
       const clarityFrac = Math.min(0.9, LANTERN_CLARITY_TILES / LANTERN_SHINE_TILES);
       const grad = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0,                              'rgba(0,0,0,0.92)');
@@ -495,7 +500,7 @@
       if (!c.warm) continue;
       const center = deps.worldToOverlay(c.x, c.y, c.z);
       const glowR = _lightScreenRadius(c.x, c.z, c.y, LANTERN_SHINE_TILES) * 0.55;
-      if (!_lightMaskIntersectsViewport(center, glowR, deps, lctx, c.x, c.y, c.z)) continue;
+      if (!_lightMaskIntersectsViewport(center, glowR, deps, lctx, c.x, c.y, c.z, LANTERN_SHINE_TILES * 0.55)) continue;
       const glow = lctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0,   'rgba(255,196,110,0.20)');
       glow.addColorStop(0.4, 'rgba(255,170,80,0.09)');
@@ -515,7 +520,7 @@
     for (const light of projection.getFurnitureLightSources()) {
       const center = projection.worldToOverlay(light.x, light.y, light.z);
       const shineR = _lightScreenRadius(light.x, light.z, light.y, light.distance, projection);
-      if (!_lightMaskIntersectsViewport(center, shineR, projection, lctx, light.x, light.y, light.z)) continue;
+      if (!_lightMaskIntersectsViewport(center, shineR, projection, lctx, light.x, light.y, light.z, light.distance)) continue;
       visibleLights.push({ light, center, shineR });
     }
 
