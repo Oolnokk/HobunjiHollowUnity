@@ -84,7 +84,7 @@ function mesh(scene, material, userData = {}) {
 }
 const xray = window.HeldObjectRenderOrder;
 const farmhouse = farmhouseScene = new StubScene();
-const firstFloor = mesh(farmhouse, plankMaterial); // Built before the scene is marked.
+const firstFloor = mesh(farmhouse, plankMaterial); // Models a floor created before scene registration (defensive fallback).
 window.FarmhouseFlatLighting.install(farmhouse, { ambient: {}, key: {}, fill: {} });
 assert.equal(farmhouse.userData.hobunjiPlayerFarmhouseInterior, true);
 assert.equal(farmhouse.userData.farmhouseFlatLighting, true);
@@ -109,9 +109,9 @@ assert.equal(authored.userData.farmhouseFlatLighting, true, 'authored interiors 
 assert.notEqual(authored.userData.hobunjiPlayerFarmhouseInterior, true,
   'authored interiors do not receive the special farmhouse floor X-ray');
 
-farmhouseScene = new StubScene();
-assert.equal(dependencies.getInteriorScene(), farmhouseScene);
-assert.equal(farmhouseScene.userData.hobunjiPlayerFarmhouseInterior, true,
-  'a replacement farmhouse scene receives the same lighting/X-ray registration');
+assert.equal(dependencies.getInteriorScene(), farmhouse,
+  'the stable farmhouse scene getter is left untouched by the lighting adapter');
+assert.equal(window.FarmhouseFlatLighting.debugSnapshot().playerFarmhouseSceneCount, 1,
+  'rebuilding floor geometry does not install a fresh lighting adapter');
 
 console.log('Farmhouse darkness registration and selective floor X-ray regressions passed.');
