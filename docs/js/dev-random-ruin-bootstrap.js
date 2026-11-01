@@ -46,6 +46,9 @@
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
   document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261101hachutusanctum2"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
+  document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
+  document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
+  document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody1"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261101hachutu1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261101hachutulich2"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261016h0a192e6"></scr' + 'ipt>');

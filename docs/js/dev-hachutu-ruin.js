@@ -309,44 +309,86 @@
         triggerRadius:3.7,reach:5,extendSpeed:2.4,retractSpeed:2.1,
       });
       session.group.add(session.snare.group);
-      const actorGroup=new THREE.Group(); // Used only for grip point calculation; the player's canonical rendering remains owned by game.js.
-      const target={group:actorGroup,dualSince:0,grips:0,
-        getGripPoint(role,out){out.copy(actorGroup.position);out.y+=role==='neck'?1.35:.18;return out;},
+      const actorGroup=new THREE.Group(); // The target root drives hand AI without reparenting the live player mesh.
+      let lastMeasuredAt=-Infinity; // Bounds are sampled at most 5 Hz, not once per root hand and render frame.
+      let neckY=1.4,feetY=.08; // Used below for the real neck/sole approach before the full snapshot is taken.
+      function refreshAnatomy(){
+        const time=performance.now();
+        if(time-lastMeasuredAt<200)return;
+        lastMeasuredAt=time;
+        const playerRoot=window.PlayerBodyTransformComposer?.getPlayerMesh?.()
+          ||window.WorldPortraitLife?.getPlayerAvatar?.()?.group;
+        if(!playerRoot?.isObject3D)return;
+        const size=new THREE.Box3().setFromObject(playerRoot);
+        if(Number.isFinite(size.min.y)&&Number.isFinite(size.max.y)&&size.max.y-size.min.y>.3){
+          feetY=size.min.y;neckY=size.max.y-.1*(size.max.y-size.min.y);
+        }
+      }
+      const target={
+        group:actorGroup,dualSince:0,grips:0,captureFailed:false,
+        getGripPoint(role,out){
+          refreshAnatomy();
+          out.copy(actorGroup.position);
+          out.y=role==='neck'?neckY:feetY;
+          return out;
+        },
+        getGripTarget(role,out){
+          if(window.RootSnarePlayerTear?.active?.())return window.RootSnarePlayerTear.gripTarget(role,out);
+          return this.getGripPoint(role,out);
+        },
+        diagnostics(){
+          const tear=window.RootSnarePlayerTear?.debug?.();
+          return {dual:this.grips===2,tossed:!!tear?.tossed,separated:tear?.stage==='toss',
+            stretchSeconds:tear?.seconds||0};
+        },
         setNeckGrip(){this.grips=1;},
-        startDualCapture(){this.grips=2;this.dualSince=performance.now();},
-        clearNeckGrip(){this.grips=0;this.dualSince=0;},
-        resetAfterSnare(){this.grips=0;this.dualSince=0;},
-      }; // Uses the Root Author's exact neck/foot role assignment and actual hand fork/arm animation.
+        startDualCapture(neckAnchor,feetAnchor){
+          this.dualSince=performance.now();
+          const started=window.RootSnarePlayerTear?.begin?.({
+            player:deps.player,areaId:MAP,scene:session.context.scene,floorY:session.floor,
+            neckAnchor,feetAnchor,
+          })===true;
+          this.captureFailed=!started;
+          this.grips=started?2:0;
+          if(!started)session.errors.push('Player root-tear snapshot unavailable: '+JSON.stringify(window.RootSnarePlayerTear?.debug?.()||{}));
+        },
+        clearNeckGrip(){if(this.grips!==2)this.grips=0;},
+        resetAfterSnare(){
+          window.RootSnarePlayerTear?.stop?.('dodge-or-release');
+          this.grips=0;this.dualSince=0;this.captureFailed=false;
+        },
+      }; // Real live portrait/legs are bone-baked by the player tear module; no disconnected placeholder halves.
       session.snareTarget=target;
     }
   }
   function updateHands(now,dt){
-    const p=session.kit.playerWorld();if(!p||!inside(p,session.layout.parts[1].bounds,1)){
-      session.snare?.releaseCaptured?.();return;
+    const p=session.kit.playerWorld(),target=session.snareTarget,tear=window.RootSnarePlayerTear;
+    if(!p||!inside(p,session.layout.parts[1].bounds,1)){
+      tear?.stop?.('outside-labyrinth');
+      session.snare?.releaseCaptured?.();
+      return;
     }
-    if(session.snare&&session.snareTarget){
-      const target=session.snareTarget;
+    if(session.snare&&target){
       target.group.position.set(p.x,session.floor,p.z);
-      if(deps?.player?.dodging){session.snare.releaseCaptured();return;} // Native Dodge works on touch, controller and keyboard.
-      session.snare.update(dt,target);
-      if(target.grips===2&&now-target.dualSince>=6000){
+      if(deps.player?.dodging&&!tear?.split?.()){
         session.snare.releaseCaptured();
-        window.PlayerDowned?.dieImmediately?.('hachutu-root-hands');
+        tear?.stop?.('dodge'); // The dodge remains a counter until the finishing pull actually separates the halves.
+        return;
+      }
+      // Render-only split drives the cinematic camera/hand targets, then the
+      // authored hands follow the resulting exact neck and foot endpoints.
+      if(tear?.active?.())tear.update(dt);
+      session.snare.update(dt,target);
+      if(target.captureFailed){
+        session.snare.releaseCaptured(); // A failed snapshot cannot result in an invisible, uninterruptible kill.
       }
       return;
     }
-    for(const h of session.hands){
-      if(now-h.last<1800)continue;
-      const dist=Math.hypot(p.x-h.x,p.z-h.z);
-      if(dist>1.35)continue;
-      h.last=now;h.grasp++;
-      window.ResourceSystem?.spendFooting?.(deps.player,20,'Hachutu root snare');
-      deps.showToast?.('The labyrinth roots grab at your limbs — dodge free!',false);
-      if(h.grasp>1){
-        // The author preview's full two-hand pull has not yet been ported to
-        // the player's skinned rig. Do not claim to run that animation.
-        window.PlayerDowned?.dieImmediately?.('hachutu-root-snare');
-      }
+    // Missing authored hand geometry is a reported encounter failure, never
+    // replaced with unanimated instant death; diagnostics stay mobile-visible.
+    if(!session.fallbackWarned){
+      session.fallbackWarned=true;
+      session.errors.push('RootSnareHands unavailable; labyrinth grab hazard disabled.');
     }
   }
   function spawnCoffin(x,z,troop='sentinel',owner=session){
@@ -621,6 +663,7 @@
   function clear(){
     if(!session)return;
     session.ended=true;
+    window.RootSnarePlayerTear?.stop?.('ruin-cleanup'); // Restore original model, camera and owned fragments on reroll/exit.
     window.DevRandomRuinTileOccupancy?.clearSolids?.('hachutu-door'); // Release the mutable Temple Heart gate before the next ruin build.
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
     for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
@@ -639,7 +682,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};
