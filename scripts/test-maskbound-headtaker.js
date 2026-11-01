@@ -87,8 +87,13 @@ assert.equal(neckLockEvents.length,1,'player neck-only lock acquired at contact'
 assert.equal(neckLockEvents[0].participants[0].channels.join(','),'head','movement and dodge remain unlocked');
 assert.equal(context.Combat.attach.suppressesStagger(enemy), true, 'ordinary hit stagger cannot detach');
 player.dodging = true;
+player._grappleEscapeDodgePaid = false; // Real game rolls can begin while overdrawn into Exhausted.
 context.BanditCombat.updateCombatAI(enemy, 0.06, player);
-assert.equal(enemy._attachment, null, 'dodge roll detaches');
+assert.equal(enemy._attachment?.stage, 'attached', 'unfunded dodge cannot dislodge the attacker');
+assert.equal(api.getDebug().dodges, 0, 'unfunded dodge does not count as a Headtaker escape');
+player._grappleEscapeDodgePaid = true;
+context.BanditCombat.updateCombatAI(enemy, 0.06, player);
+assert.equal(enemy._attachment, null, 'funded dodge roll detaches');
 assert.equal(player._attachedBy?.size ?? 0, 0, 'host attachment set cleaned'); // Shared detach removes an empty Set entirely (null is also clean).
 assert.equal(api.getDebug().dodges, 1, 'dodge reported in mobile diagnostics');
 assert.equal(neckLockEvents.at(-1).type,'release','dodge releases scripted player neck ownership');
@@ -107,7 +112,7 @@ const evasive = {
 };
 player.dodging=false; player.dodgeT=0;
 context.BanditCombat.updateCombatAI(evasive,.016,player);
-player.dodging=true; player.dodgeT=.2;
+player.dodging=true; player.dodgeT=.2;player._grappleEscapeDodgePaid=true;
 for(let i=0;i<14;i++) context.BanditCombat.updateCombatAI(evasive,.1,player);
 assert(!evasive._attachment,'dodge on the landing frame prevents any transient grapple');
 assert.equal(neckLockEvents.length,2,'dodge before contact acquires no second neck lock');
@@ -124,9 +129,12 @@ for (let i = 0; i < 14; i++) context.BanditCombat.updateCombatAI(lastSecondEscap
 assert.equal(lastSecondEscape._attachment?.stage, 'attached');
 for (let i = 0; i < 70; i++) context.BanditCombat.updateCombatAI(lastSecondEscape, 0.1, player);
 assert.equal(directDeaths.length, 0, 'no lethal hit before the completed pull and throw');
-player.dodging = true;
+player.dodging = true;player._grappleEscapeDodgePaid=false;
 context.BanditCombat.updateCombatAI(lastSecondEscape, 0.05, player);
-assert.equal(lastSecondEscape._attachment, null, 'rolling late dislodges the Headtaker');
+assert.equal(lastSecondEscape._attachment?.stage, 'attached', 'late exhausted roll also fails to detach');
+player._grappleEscapeDodgePaid=true;
+context.BanditCombat.updateCombatAI(lastSecondEscape, 0.05, player);
+assert.equal(lastSecondEscape._attachment, null, 'a fully funded late roll dislodges the Headtaker');
 assert.equal(directDeaths.length, 0, 'late dodge prevents execution');
 assert(player.health > 0, 'late dodge leaves player alive');
 

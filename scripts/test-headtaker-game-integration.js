@@ -34,6 +34,12 @@ assert.equal(actualPriority.aimAngle,1.2,'active combat controller continues tic
 assert(head.includes('immuneToHost: false'),'player attacks can still damage the Headtaker');
 assert(head.includes('staggerImmune: true'),'other incoming damage does not automatically break the grip');
 assert(game.includes('player.dodging = true;'),'game dodge input still functions normally');
+assert(game.includes('player._grappleEscapeDodgePaid = !!(dodgeSpendResult'), 'game derives grapple eligibility from actual successful resource payment');
+assert(head.includes('validEscapeDodge(state.target)'), 'Headtaker landing honors the funded-roll requirement');
+const attach=fs.readFileSync('docs/js/combat/combat-attach.js','utf8');
+assert(attach.includes('hostDodgeEscapes(host)'), 'attached Headtaker uses the shared player/NPC dodge predicate');
+const root=fs.readFileSync('docs/js/dev-hachutu-ruin.js','utf8');
+assert(root.includes('hostDodgeEscapes?.(deps.player)'), 'root hands use the identical paid-dodge check');
 assert(game.includes('die: reason => respawnPlayer(reason)'),'PlayerDowned direct-death callback invokes the actual player respawn flow');
 assert(head.includes("dieImmediately?.('maskbound-headtaker')"),'completed Headtaker grip uses the bypass-Second-Wind death endpoint');
 assert(head.indexOf("endManual?.(state.attacker, state.shared, 'completed')") < head.indexOf("dieImmediately?.('maskbound-headtaker')"),'grapple cleanup occurs before player respawn, so Headtaker stays at the original site');
