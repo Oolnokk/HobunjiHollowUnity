@@ -1387,7 +1387,7 @@
     const darkness=getDarknessSettings(); // Shows whether the test-only darkness override is active without requiring desktop devtools.
     const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'% override'):'themed';
     const hachutu=ruin.hachutu?window.DevHachutuRuin?.brief?.():null; // A compact mobile-facing meter; full detailed snapshot remains accessible on the Dev Ruin API.
-    setDebugBadgePart('hachutu',hachutu?(' · Hachutu weeds '+hachutu.weeds+'/3, wave '+hachutu.wave+'/3, boss '+hachutu.boss+' · root '+hachutu.tear):'');
+    setDebugBadgePart('hachutu',hachutu?(' · Hachutu weeds '+hachutu.weeds+'/3, wave '+hachutu.wave+'/3, boss '+hachutu.boss+' · root '+hachutu.tear+(hachutu.issue?' · ERR '+hachutu.issue.slice(0,120):'')):'');
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
