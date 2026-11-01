@@ -121,6 +121,12 @@ for (const rgb of ['255,32,64', '32,160,255', '255,224,96']) {
 assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 3,
   'one stained pane softly blends its three palette colors without a separate floor-projection draw');
 
+area = 'interior'; // Live player farmhouse, rather than a map_i_* authored building.
+sources = [];
+localLights = [];
+draw();
+assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
+assert.equal(gradients[0].radius, 4.8, 'farmhouse carried light uses the same doubled, linear indoor radius');
 area = 'map_i_town_mine_f_1';
 draw();
 assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 0,
