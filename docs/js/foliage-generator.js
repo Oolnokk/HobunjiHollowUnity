@@ -1869,14 +1869,19 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     value = value && typeof value === 'object' ? value : {}; // Malformed imported layers use safe defaults.
     const defaults = surfaceGrowthDefaults(value.kind); // Also fills missing texture fields on existing saved layers.
     const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
+    const radiusScaleMin=finite('radiusScaleMin',1,.1,3),radiusScaleMax=Math.max(radiusScaleMin,finite('radiusScaleMax',1,.1,3)); // Optional per-strand thickness bounds leave existing layers unchanged by default.
     return { kind: value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       style: ['cornerFill','wrap'].includes(value.style) ? value.style : 'natural', // Absent styles keep legacy recipes unchanged.
       density: finite('density',.45,.05,1), // Wrap density determines requested strands as a fraction of the per-surface limit.
       count: Math.floor(finite('count', 12, 1, 80)), strandLimit: Math.floor(finite('strandLimit', 80, 1, 80)),
       perSurface: value.perSurface === true, // Legacy Natural stays on original meshes unless explicitly opted into region-aware budgets.
       tunnelAsOpening: value.tunnelAsOpening === true, shrinkwrapFinal: value.shrinkwrapFinal === true,
+      shrinkwrapHidden: value.shrinkwrapHidden === true, // Only purpose-built invisible geometry opts into final-surface ray targets.
+      shrinkwrapInside: value.shrinkwrapInside === true, // Move tube centerlines INTO the source volume, never outward from its skin.
+      targetMeshId: typeof value.targetMeshId === 'string' ? value.targetMeshId.slice(0,128) : '', // Transient per-piece root staging scope.
       inset: finite('inset',0,-.5,.5), // Signed placement relative to the simplified surface, independent of positive clearance.
       length: finite('length', 3, .05, 30),
+      radiusScaleMin,radiusScaleMax,
       radius: finite('radius', .025, .002, .3), offset: finite('offset', .008, 0, .2),
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
@@ -2227,7 +2232,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   function surfaceTargets(parent, settings) {
     const targets = []; // Only authored surface meshes enter the sampler; generated growth and editor helpers are excluded.
     parent.traverse(object => {
-      if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      if (!object.isMesh || !object.geometry?.attributes?.position ||
+          (settings.targetMeshId && object.uuid !== settings.targetMeshId)) return;
       if (settings.target === 'shingles' && /shinglebone/i.test(object.name || '')) return; // Hidden length-control bones are not roof surfaces and must never collect vines.
       let node = object, role = '', selected = false, excluded = false; // Ancestor tags keep grouped brick/log gables and multi-mesh furniture selectable.
       while (node) {
@@ -2575,12 +2581,31 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // Optional finishing pass: leave path planning on the clean, authored surface
   // and displace complete tube rings onto the outermost visible cladding. Sampling
   // is budgeted and interpolated along each strand, avoiding per-vertex raycasts.
+  function varySurfaceStrandRadii(geometries,settings,seed){
+    let radiusMin=Infinity,radiusMax=0; // Record actual strand base radii for on-device cover diagnostics.
+    for(const [index,geometry] of geometries.entries()){
+      const amount=index===0?0:index===1?1:hash3(index,0,0,seed),scale=lerp(settings.radiusScaleMin,settings.radiusScaleMax,amount); // Separate seeded sampling does not change existing path planning.
+      const radius=settings.radius*scale,position=geometry.getAttribute('position');
+      geometry.userData=geometry.userData||{};geometry.userData.surfaceGrowthRadius=radius;
+      radiusMin=Math.min(radiusMin,radius);radiusMax=Math.max(radiusMax,radius);
+      if(scale===1)continue;
+      for(let start=0;start+5<position.count;start+=6){
+        let x=0,y=0,z=0; // Shared five-sided tube center; the sixth vertex closes the seam.
+        for(let side=0;side<5;side++){x+=position.getX(start+side)/5;y+=position.getY(start+side)/5;z+=position.getZ(start+side)/5;}
+        for(let side=0;side<6;side++){const vertex=start+side;position.setXYZ(vertex,x+(position.getX(vertex)-x)*scale,y+(position.getY(vertex)-y)*scale,z+(position.getZ(vertex)-z)*scale);}
+      }
+      position.needsUpdate=true;geometry.computeBoundingSphere();
+    }
+    return {strandRadiusMin:Number.isFinite(radiusMin)?radiusMin:settings.radius,strandRadiusMax:radiusMax||settings.radius};
+  }
+
   function shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize) {
     if(!settings.shrinkwrapFinal||!geometries.length)return {rays:0,hits:0};
     parent.updateWorldMatrix(true,true);
     const visible=[],wallCladding=[];
     parent.traverse(mesh=>{
-      if(!mesh.isMesh||!mesh.visible||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage) return;
+      if(!mesh.isMesh||(!mesh.visible&&!settings.shrinkwrapHidden)||mesh.userData?.surfaceFoliageGuide||mesh.userData?.surfaceFoliage ||
+          (settings.targetMeshId && mesh.uuid !== settings.targetMeshId)) return;
       let node=mesh,role='',clad=false,excluded=false;
       while(node){
         if(node.userData?.surfaceFoliage || node.userData?.surfaceFoliageExclude)excluded=true;
@@ -2597,10 +2622,16 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if(!physical.length)return {rays:0,hits:0};
     const toWorld=parent.matrixWorld,toLocal=parent.matrixWorld.clone().invert(),normalMat=new T.Matrix3().getNormalMatrix(toWorld);
     const raycaster=new T.Raycaster(), scratch=new T.Vector3(),candidate=new T.Vector3(),origin=new T.Vector3(),direction=new T.Vector3();
+    // The outside normal hits the true guide skin first. Inside mode also needs
+    // the reverse-facing exit of a closed part to cap how deeply roots can enter.
+    // Raycast against temporary double-sided materials on this private query only.
+    const originalMaterials=new Map();
+    const rayMaterial=settings.shrinkwrapInside?new T.MeshBasicMaterial({side:T.DoubleSide}):null;
+    if(rayMaterial) for(const mesh of physical){originalMaterials.set(mesh,mesh.material);mesh.material=rayMaterial;}
     const budget=1200, totalRings=geometries.reduce((n,g)=>n+Math.floor(g.getAttribute('position').count/6),0);
     const stride=Math.max(1,Math.ceil(totalRings/budget));let rays=0,hits=0;
     for(const geometry of geometries){
-      const pos=geometry.getAttribute('position'),rings=Math.floor(pos.count/6),movements=new Array(rings);
+      const pos=geometry.getAttribute('position'),rings=Math.floor(pos.count/6),movements=new Array(rings),strandRadius=geometry.userData?.surfaceGrowthRadius??settings.radius; // Shrinkwrap clearance follows each strand's actual thickness.
       const centers=[];
       for(let i=0;i<rings;i++){
         const center=new T.Vector3();
@@ -2627,12 +2658,28 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         origin.copy(center).applyMatrix4(toWorld).addScaledVector(direction,.8);
         raycaster.set(origin,direction.clone().negate());
         raycaster.far=1.7;rays++;
-        const hit=raycaster.intersectObjects(physical,false)[0];
+        const intersections=raycaster.intersectObjects(physical,false);
+        const hit=intersections[0];
         if(!hit){movements[i]=new T.Vector3();continue;}
         hits++;
-        // Follow the actual visible surface, retaining tube radius and the
-        // signed user inset. The original guide's renderLift is superseded.
-        const physicalPoint=hit.point.clone().addScaledVector(direction,settings.radius+settings.offset+settings.inset);
+        // For inward shrinkwrap, the first face is the guide's real exterior
+        // and the next opposite-facing face on the same mesh is the interior
+        // thickness limit. Keep the entire strand inside even on thin parts.
+        let depth=strandRadius+settings.offset+settings.inset;
+        if(settings.shrinkwrapInside){
+          const exit=intersections.find(next=>next.distance>hit.distance+0.0001 &&
+            next.object===hit.object &&
+            next.face?.normal && hit.face?.normal &&
+            next.face.normal.dot(hit.face.normal)<-0.25);
+          if(exit){
+            const thickness=exit.distance-hit.distance;
+            // At narrow sections, the tube itself may be wider than the part.
+            // Center the strand within that thickness instead of crossing the far side.
+            depth=Math.min(Math.max(strandRadius,depth),thickness*.5);
+          } else depth=Math.max(strandRadius,depth);
+        }
+        const physicalPoint=hit.point.clone().addScaledVector(direction,
+          settings.shrinkwrapInside?-depth:depth);
         movements[i]=physicalPoint.applyMatrix4(toLocal).sub(center);
       }
       for(let stop=1;stop<stops.length;stop++){
@@ -2643,6 +2690,10 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
       }
       pos.needsUpdate=true;geometry.computeBoundingSphere();
+    }
+    if(rayMaterial){
+      for(const [mesh,material] of originalMaterials) mesh.material=material;
+      rayMaterial.dispose();
     }
     return {rays,hits};
   }
@@ -2830,6 +2881,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       geometries.push(buildMeshFromSpineWithRadiusFn({seedU32:seed+strand,spine:framesFromPoints(points),radiusFn:t=>settings.radius*lerp(1,.18,t),radialSegments:5,twist:0,noiseAmt:.15,noiseScale:1.2,noiseOctaves:2,stretchUv:true}));
     }
     if(geometries.length){
+      Object.assign(group.userData.surfaceGrowthStats,varySurfaceStrandRadii(geometries,settings,seed));
       const shrinkReport=shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize);
       group.userData.surfaceGrowthStats.shrinkwrapRays=shrinkReport.rays;
       group.userData.surfaceGrowthStats.shrinkwrapHits=shrinkReport.hits;

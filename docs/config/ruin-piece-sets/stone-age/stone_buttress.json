@@ -1,0 +1,41 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_stone_buttress",
+  "pieceId": "stone_age_stone_buttress",
+  "name": "Leaning Support Stone",
+  "equivalentTo": "stone_buttress",
+  "notes": "Stone Age equivalent of stone_buttress. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "stone_buttress_leaning_support",
+      "name": "Leaning Support",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0,
+        "y": 0.735,
+        "z": 0,
+        "rx": -9,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.6396,
+        "sy": 1.47,
+        "sz": 0.81
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

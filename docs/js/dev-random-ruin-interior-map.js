@@ -431,7 +431,7 @@
   }
   function registerSurface(id, object, priority = 5) {
     DS.registerSurface({ id, scope:SCOPE, bounds:() => boundsFor(object), topY:() => boxFor(object)?.max.y ?? 0,
-      enabled:() => object.visible !== false, priority });
+      enabled:() => object.visible !== false&&!object.userData?.rootGrowthSurfaceSuppressed, priority });
   }
   // A moving dais deck without whatever V50 grounded on it (the goal
   // pedestal/coffin and its brazier): measuring the whole subtree put the
@@ -455,7 +455,7 @@
   }
   function registerDaisSurface(id, platform, priority) {
     DS.registerSurface({ id, scope:SCOPE, bounds:() => { const b = deckBoxFor(platform); return b ? { minX:b.min.x,maxX:b.max.x,minZ:b.min.z,maxZ:b.max.z } : {minX:0,maxX:0,minZ:0,maxZ:0}; },
-      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false, priority });
+      topY:() => deckBoxFor(platform)?.max.y ?? 0, enabled:() => platform.visible !== false&&!platform.userData?.rootGrowthSurfaceSuppressed, priority });
   }
   // Real floor height per V50 cell (basins, plateaus). Grid tiles stay flat
   // (camera/presentation assume that), so this is published separately for
@@ -834,6 +834,87 @@
   // opts.site: a wilderness ruin site (js/ruin-sites.js) is generating this
   // ruin for ordinary play, so Dev Mode is not required; opts.returnAnchor is
   // where the entrance exit puts the player back.
+  let stoneAgeDependencies=null; // Single-flight lazy loader; normal Harlyao ruins never install additional stone-surface hooks.
+  async function ensureStoneAgeSceneryDependencies(){
+    if(window.NaturalSurfaceMaterials?.naturalizeMesh&&window.HobunjiSurfaceStretchUV?.mapMesh)return;
+    if(!stoneAgeDependencies)stoneAgeDependencies=(async()=>{
+      const libraries=[ // Shared preview versions; preserve ordering so the UV patch can wrap the natural material factory.
+        ['config/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterialConfig],
+        ['js/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterials?.naturalizeMesh],
+        ['js/surface-stretch-uv-furniture.js?v=20261031h5856d5a',()=>!!window.HobunjiSurfaceStretchUV?.mapMesh],
+      ];
+      for(const [path,ready] of libraries){
+        if(ready())continue;
+        await new Promise((resolve,reject)=>{
+          const element=document.createElement('script'); // Loaded only for this opt-in ruin, keeping default worlds free of extra surface hooks.
+          const timeout=setTimeout(()=>{element.remove();reject(new Error('Timed out loading '+path));},30000);
+          element.src=new URL(path,document.baseURI).href;
+          element.onload=()=>{clearTimeout(timeout);ready()?resolve():reject(new Error('Stone surface module did not initialize: '+path));};
+          element.onerror=()=>{clearTimeout(timeout);element.remove();reject(new Error('Stone surface module unavailable: '+path));};
+          document.head.appendChild(element);
+        });
+      }
+    })().catch(error=>{stoneAgeDependencies=null;throw error;});
+    await stoneAgeDependencies;
+  }
+
+  async function prepareStoneAgeScenery(owner){
+    await ensureStoneAgeSceneryDependencies(); // The real game does not normally load author-only natural stone UV tools.
+    const builder=window.StoneAgeRuinScenery; // Shared with the preview: authored rock walls/pillars, quarter-scale wilderness floor, Temple cover.
+    if(!builder?.buildRoom||!builder?.prepareCover)throw new Error('Stone Age ruin scenery module is unavailable.');
+    owner.stoneAgeAbort=new AbortController(); // Cancels Temple downloads and long vegetation builds when a generation is replaced.
+    const signal=owner.stoneAgeAbort.signal;
+    const response=await fetch(new URL('config/pieces/temple.json',document.baseURI),{signal});
+    if(!response.ok)throw new Error('Temple vegetation settings HTTP '+response.status);
+    const temple=await response.json();
+    const layers=temple.surfaceGrowth?.filter(item=>item.kind==='roots'||item.kind==='vines'); // Reuse actual Life Temple authoring rather than approximating its foliage.
+    if(!layers?.some(item=>item.kind==='roots')||!layers.some(item=>item.kind==='vines'))throw new Error('Temple roots and vines are required for a Stone Age ruin.');
+    if(ruin!==owner||signal.aborted)throw Object.assign(new Error('Stone Age ruin build cancelled.'),{name:'AbortError'});
+    const scenery=builder.buildRoom({root:owner.localeRoot,meta:owner.meta,seed:owner.sourceSeed,roughness:.3,color:'#363733',floorHeights}); // The existing collision/support map owns every cell's elevation and missing-floor footprint.
+    owner.stoneAgeScenery=scenery; // Cleanup owns all original visibility, stone buffers, cloned materials and prepared root/vine geometry.
+    const button=document.getElementById('devRandomTestRuinBtn');
+    const cover=await builder.prepareCover({room:scenery.room,templeRecipes:layers,rootColor:'#24211d',signal,
+      onProgress:step=>{if(ruin===owner&&button)button.textContent='Growing '+step.part+' '+step.layer+'/'+step.layers+'…';}});
+    scenery.cover=cover;
+    if(ruin!==owner||signal.aborted)throw Object.assign(new Error('Stone Age ruin build cancelled.'),{name:'AbortError'});
+    cover.attach();scenery.activate();
+    // The native geometry remains authoritative for navigation and puzzle collision, but only the visible roughened walls occlude the camera.
+    const occlusion=owner.occlusionMeshes; // This is the same mutable array referenced by the registered building scene.
+    const replaced=new Set(scenery.nativeMeshes.map(item=>item.mesh)); // Remove visually suppressed V50 walls, but keep protected native puzzle objects.
+    for(let i=occlusion.length-1;i>=0;i--)if(replaced.has(occlusion[i]))occlusion.splice(i,1);
+    scenery.room.model.traverse(mesh=>{if(mesh.isMesh&&mesh.userData?.ruinPreviewRole==='wall')occlusion.push(mesh);});
+    owner.stoneAge=true;
+    owner.stoneAgeStats={pieceSet:'stoneAge',rooms:owner.meta?.rooms?.length||0,walls:scenery.room.walls,pillars:scenery.room.pillars,
+      floorStones:scenery.room.floorStones,floorTileScale:scenery.room.floorLayout?.scale||scenery.room.floorStats?.featureScale||.25,
+      floorTileCopies:scenery.room.floorLayout?.offsets.length||1,maskedFloorCells:scenery.room.floorStats?.floorCells||0,
+      floorLevels:scenery.room.floorStats?.levelCount||1,floorVoids:scenery.room.floorStats?.voidCells||0,
+      floorBuildMs:scenery.room.floorBuildMs, // On-device measurement of the optimized geometry and texture build.
+      cover:cover.stats}; // On-device debug badge exposes actual geometry and decorative cover counts.
+  }
+
+  async function prepareRootMechanisms(owner,options={}){
+    if(!window.LiveRootMechanisms||!owner.api.captureRootMechanismKeyframes)throw new Error('Root mechanism runtime is unavailable.');
+    owner.rootGrowthAbort=new AbortController();owner.rootGrowthBindings=[];
+    const entries=[...owner.mechanisms.values()].map(mechanism=>({id:mechanism.id,type:mechanism.type,source:mechanism.root}));
+    for(const state of owner.transitDoorStates)entries.push({id:'transit-'+state.door.id,type:'transitDoor',source:state.door,applyPose:progress=>{const eased=progress*progress*(3-2*progress);state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;}});
+    for(const entry of entries){
+      if(ruin!==owner)throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});
+      const specification=owner.api.captureRootMechanismKeyframes(entry.source,{applyPose:entry.applyPose}),anchor=specification.anchor;
+      const closedBounds=new THREE.Box3().setFromObject(entry.source),cellKey=Math.floor((anchor.x-PAD)/floorCellSize)+','+Math.floor((anchor.z-PAD)/floorCellSize);
+      let groundY=floorHeights.get(cellKey);
+      if(!Number.isFinite(groundY)){let nearest=Infinity;groundY=Number(owner.meta?.floorSurfaceY)||0;for(const [key,height] of floorHeights){const [col,row]=key.split(',').map(Number),distance=(PAD+(col+.5)*floorCellSize-anchor.x)**2+(PAD+(row+.5)*floorCellSize-anchor.z)**2;if(distance<nearest){nearest=distance;groundY=height;}}} // Source vegetation belongs to real terrain, never the moving deck or bridge being replaced.
+      const isDoor=entry.type==='stoneDoor'||entry.type==='transitDoor';
+      const binding=await window.LiveRootMechanisms.bindRuntimeAsync({THREE,foliage:window.FoliageGenerator,specification,source:entry.source,scene:owner.scene,surfaces:DS,scope:SCOPE,id:'devruin-'+entry.id,type:entry.type,
+        isOccupied:isDoor?()=>{const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE;return x+PLAYER_RADIUS>closedBounds.min.x&&x-PLAYER_RADIUS<closedBounds.max.x&&z+PLAYER_RADIUS>closedBounds.min.z&&z-PLAYER_RADIUS<closedBounds.max.z;}:null,
+        signal:owner.rootGrowthAbort.signal,recipe:{...options,seed:owner.sourceSeed+':'+entry.id,floorY:groundY-anchor.y,floorWidth:6,floorDepth:6,showGuide:false},rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+      if(ruin!==owner){binding.dispose();throw Object.assign(new Error('Rooted ruin build cancelled.'),{name:'AbortError'});}owner.rootGrowthBindings.push(binding);
+    }
+    const occlusion=owner.occlusionMeshes; // Keep the same array referenced by the building map record.
+    for(let index=occlusion.length-1;index>=0;index--)if(occlusion[index].userData?.rootGrowthSurfaceSuppressed)occlusion.splice(index,1);
+    for(const binding of owner.rootGrowthBindings){const controller=binding.controller,guides=new Set();for(const state of [...(controller.commonState?[controller.commonState]:[]),...controller.states])for(const part of state.partPlan)guides.add(part.mesh);controller.group.traverse(mesh=>{if(mesh.isMesh&&!guides.has(mesh))occlusion.push(mesh);});}
+    owner.rootedMechanisms=true;owner.occupancy?.refresh();
+  }
+
   async function generate(seed=randomSeed(),opts={}) {
     if ((!devModeEnabled()&&!opts.site) || !deps || !buildingScenes) return false;
     const specialDef = opts.specialBoss === true ? window.SpecialHarlyaoLiches?.defFor?.(opts.theme) : null; // Named guardian is explicit per wilderness site.
@@ -849,6 +930,8 @@
       const themeTypes = cfg('sanctum.boss.types', ['tothal', 'hronal', 'kanthic']).filter(type => ['tothal', 'hronal', 'kanthic'].includes(type)); // One seeded tradition owns this ruin's lich, loot and future themed features.
       const theme = ['tothal', 'hronal', 'kanthic'].includes(opts.theme) ? opts.theme : (themeTypes.length ? themeTypes : ['tothal', 'hronal', 'kanthic'])[requestedSeed % (themeTypes.length || 3)]; // Requested site seed keeps the theme stable across solvability retries.
       puzzleOptions.lavaBasin = theme === 'hronal' && puzzleOptions.lavaBasin; // Only Hronal sites contain lava, including rope-basin set pieces.
+      const rootMechanismsRequested=typeof opts.rootMechanisms==='boolean'?opts.rootMechanisms:cfg('generation.rootMechanisms',false)===true; // Frozen for rerolls and this specific generation.
+      const stoneAgeRequested=opts.stoneAge===true||(opts.stoneAge!==false&&!opts.site&&rootMechanismsRequested); // The Dev checkbox builds a whole Stone Age ruin; external legacy site generation is unchanged.
        const maxAttempts=Math.max(1,Math.round(cfg('generation.maxSolvabilityAttempts',MAX_SOLVABILITY_ATTEMPTS)));
       const api=await ensureGeneratorFrame();
       lastGenerationAudit={requestedSeed,acceptedSeed:null,attempts:[]};
@@ -857,11 +940,14 @@
         if(attempt>0) clearRuntime(false);
         const candidateSeed=generationCandidateSeed(requestedSeed,attempt); // Deterministic retry seed so rejected layouts can be reproduced from diagnostics.
         if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
-        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),size:cfg('generation.size','medium'),density:cfg('generation.density',62),roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions});
+        const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
+          size:cfg('generation.size','medium'),density:cfg('generation.density',62),
+          roomMin:cfg('generation.roomMin',3),roomMax:cfg('generation.roomMax',6),puzzles:puzzleOptions,
+          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
-        ruin={seed:candidateSeed,theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1}; // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
+        ruin={seed:candidateSeed,theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false}; // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
 
         const solvability=Solvability.audit(ruin,{scope:SCOPE,pad:PAD,tileScale:RUIN_TILE_SCALE,controlRange:CONTROL_RANGE,playerRadius:PLAYER_RADIUS,maxStepHeight:MAX_STEP_HEIGHT}); // Runs before entry against the same collision/support runtime the player will use.
@@ -877,6 +963,8 @@
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
         window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
+        if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
+        if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
         lastGenerationAudit.acceptedSeed=candidateSeed;
         await enterRuin(); updateBadge();
         const retryCount=attempt;
@@ -1095,6 +1183,8 @@
   }
 
   function clearRuntime(removeMap=true) {
+    ruin?.rootGrowthAbort?.abort();for(const binding of ruin?.rootGrowthBindings||[])binding.dispose();
+    ruin?.stoneAgeAbort?.abort();ruin?.stoneAgeScenery?.cover?.dispose();ruin?.stoneAgeScenery?.dispose(); // Restore native V50 visibility before the hidden generator reclaims its preview roots.
     ruin?.occupancy?.destroy?.();
     if(ruin?.storyVault && ruin.localeRoot) {
       const geometries=new Set(),materials=new Set(); // Static story rooms are rebuilt on each visit; release their owned GPU resources exactly once.
@@ -1181,7 +1271,8 @@
       state.open+=clamp(state.target-state.open,-dt*2.4,dt*2.4);
       if(Math.abs(state.open-state.target)<.001)state.open=state.target;
       const eased=state.open*state.open*(3-2*state.open);
-      state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
+      if(state.door.rootGrowthBinding)state.door.rootGrowthBinding.setProgress(state.open);
+      else state.panel.position.y=state.closedY+(state.openY-state.closedY)*eased;
       if(state.target>.5&&state.open>.9&&player&&state.openingSide){
         const center=centerFor(state.door),signed=(state.crossingAxis==='x'?player.x-center.x:player.z-center.z);
         if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
@@ -1296,9 +1387,12 @@
     const row=document.createElement('div'); // Used for the existing Generate action.
     row.className='settings-row';
     row.setAttribute('data-dev-only','');
-    row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only V50 ruin as a real interior map with 2x horizontal tiles and enter it. Nothing is saved.</div></div><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';
+    row.innerHTML='<div class="settings-label"><div class="settings-name">Random Test Ruin</div><div class="settings-desc">Generate a session-only playable V50 ruin. Rooted Stone Age mode uses the new rockified architecture, tiled boulder floor, Temple vegetation and growing puzzle mechanisms.</div></div><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="devRandomRuinRootMechanisms">Rooted Stone Age ruin</label><button type="button" id="devRandomTestRuinBtn" class="settings-small-btn">Generate</button>';
     arena.closest('.settings-row')?.insertAdjacentElement('afterend',row);
-    row.querySelector('button')?.addEventListener('click',()=>generate(randomSeed()));
+    row.querySelector('button')?.addEventListener('click',()=>{
+      const selected=document.getElementById('devRandomRuinRootMechanisms')?.checked===true; // Single switch enables both the complete Stone Age environment and rooted mechanisms.
+      generate(randomSeed(),{rootMechanisms:selected,stoneAge:selected});
+    });
 
     const optionsRow=document.createElement('div'); // Used to host the collapsed per-generator puzzle controls directly beneath Generate.
     optionsRow.className='settings-row';
@@ -1318,5 +1412,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({generate,generateStoryVault,reroll:()=>generate(randomSeed()),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({generate,generateStoryVault,reroll:()=>generate(randomSeed(),{rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,stoneAge:!!ruin.stoneAge,stoneAgeRequested:!!ruin.stoneAgeRequested,stoneAgeStats:ruin.stoneAgeStats||null,rootedMechanisms:!!ruin.rootedMechanisms,rootedMechanismCount:ruin.rootGrowthBindings?.length||0,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,controls:ruin.controls.length,mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

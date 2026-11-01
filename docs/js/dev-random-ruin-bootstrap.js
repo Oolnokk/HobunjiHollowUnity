@@ -25,14 +25,18 @@
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261015h7327f5e"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261015h65cbbc1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261015hd0935ed"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20260928puzzles2"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261031hcefb03e"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261031hb8f20da"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261031storyVault1"></scr' + 'ipt>');
+  document.write('<script src="js/live-root-network.js?v=1"></scr' + 'ipt>');
+  document.write('<script src="js/live-root-growth.js?v=20261031snare-guide1"></scr' + 'ipt>');
+  document.write('<script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></scr' + 'ipt>');
+  document.write('<script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261101rootrebase1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260930plaquesources1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261018badge1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261031hcccaf2d"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261025hbronzechest1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261018targethum1"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261019h50eef9d"></scr' + 'ipt>');

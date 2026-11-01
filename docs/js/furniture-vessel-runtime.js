@@ -189,6 +189,7 @@
   function buildPartMesh(part, baseColor) {
     const mesh = originalBuildPartMesh(part, baseColor);
     if (!part || !mesh) return mesh;
+    if(part.rockShape?.enabled)return mesh; // Stone conversion already owns the final geometry/finish, including cup and liquid-shaped components.
 
     if (part.kind === 'cup') {
       const replacement = createCupGeometry(part);

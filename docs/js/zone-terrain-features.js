@@ -162,14 +162,15 @@
     return !!grid && boulderComponentCache.delete(grid); // Called after a tribal-camp footprint replaces whole boulders on a live wilderness grid.
   }
 
-  function isUndiggableBoulderTile(zGrid, c, r) {
+  function isUndiggableBoulderTile(zGrid, c, r, terrainDeps = deps) {
     const tile = zGrid?.[r]?.[c]; // Tile inspected by component collection and perimeter tests.
-    return tile?.type === deps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
+    return tile?.type === terrainDeps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
   }
 
-  function collectUndiggableBoulderComponents(zGrid, zcols, zrows) {
+  function collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps = deps) {
+    const rockTileType=terrainDeps?.TileType?.ROCK; // Cached indexes are keyed by rock tile type as well as grid identity.
     const cached = boulderComponentCache.get(zGrid); // Grid identity remains stable across every chunk in one zone visit.
-    if (cached && cached.zcols === zcols && cached.zrows === zrows) {
+    if (cached && cached.zcols === zcols && cached.zrows === zrows && cached.rockTileType === rockTileType) {
       boulderShellStats.indexHits++;
       return cached.components;
     }
@@ -177,7 +178,7 @@
     const legacyCells = new Set(); // Old cached/generated maps without IDs retain a connected-component fallback.
     for (let r = 0; r < zrows; r++) for (let c = 0; c < zcols; c++) {
       boulderShellStats.gridTilesScanned++;
-      if (!isUndiggableBoulderTile(zGrid, c, r)) continue;
+      if (!isUndiggableBoulderTile(zGrid, c, r, terrainDeps)) continue;
       const tile = zGrid[r][c]; // Source tile carries the preserved generator object ID when available.
       if (tile.boulderId) {
         let cells = groupedCells.get(tile.boulderId); // Shared tile list becomes one authored boulder shell.
@@ -206,14 +207,16 @@
       }
       components.push(cells);
     }
-    boulderComponentCache.set(zGrid, { zcols, zrows, components });
+    boulderComponentCache.set(zGrid, { zcols, zrows, rockTileType, components });
     boulderShellStats.indexBuilds++;
     return components;
   }
 
-  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null) {
+  function buildUndiggableBoulderShellData(zGrid, zcols, zrows, bounds = null, dependencyOverride = null, options = null) {
+    const terrainDeps = dependencyOverride || deps;
+    const surfaceSubdivisions = options?.subdivisions === 2 ? 2 : BOULDER_SUBDIVISIONS; // Authoring-only low-detail builds skip vertices already discarded by the quarter-scale ruin mesh. // Optional private floor-build datum leaves normal wilderness initialization untouched.
     const range = normalizedBounds(zcols, zrows, bounds); // Current streaming chunk whose portion of each global shell is emitted.
-    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
+    const components = collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps); // Cached full-zone footprints keep peaks and seams stable across chunk borders.
     const pos = [], uv = [], idx = []; // World-space shell buffers returned to the Three.js wrapper.
     const vertexBySample = new Map(); // Reuses top vertices shared by neighboring source tiles instead of duplicating each patch edge.
     let topTileCount = 0; // Diagnostic count of footprint tiles emitted in this chunk.
@@ -298,10 +301,10 @@
         ]; // Four tiles potentially touching this exact grid vertex.
         for (const [c, r] of candidates) {
           if (!cellSet.has(c + ',' + r)) continue;
-          total += deps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * deps.PLATEAU_UNIT;
+          total += terrainDeps.NORMAL_TOP + (zGrid[r][c].elevTier || 0) * terrainDeps.PLATEAU_UNIT;
           count++;
         }
-        return count ? total / count : deps.NORMAL_TOP + (fallbackTile.elevTier || 0) * deps.PLATEAU_UNIT;
+        return count ? total / count : terrainDeps.NORMAL_TOP + (fallbackTile.elevTier || 0) * terrainDeps.PLATEAU_UNIT;
       };
       const topYAt = (x, z, fallbackTile) => {
         const edgeDistance = Math.min(...boundaryEdges.map(edge => pointSegmentDistance(x, z, edge))); // Nearest outer edge makes every silhouette vertex meet the ground.
@@ -312,7 +315,7 @@
         return baseYAt(x, z, fallbackTile) + peakHeight * edgeBlend * crown + roughness;
       };
       const vertexAt = (x, z, tile) => {
-        const key = componentIndex + ':' + Math.round(x * BOULDER_SUBDIVISIONS) + ',' + Math.round(z * BOULDER_SUBDIVISIONS); // Component-scoped sample key welds adjacent top patches.
+        const key = componentIndex + ':' + Math.round(x * surfaceSubdivisions) + ',' + Math.round(z * surfaceSubdivisions); // Component-scoped sample key welds adjacent top patches.
         const existing = vertexBySample.get(key); // Previously emitted shared vertex, including index zero.
         if (existing !== undefined) return existing;
         const vertex = pos.length / 3; // New exterior vertex index referenced by the top quads.
@@ -325,14 +328,14 @@
       for (const [c, r] of renderCells) {
         const tile = zGrid[r][c]; // Source tile supplies the base elevation for this shell patch.
         let coverTopY = -Infinity; // Maximum rendered shell height over this tile, cached for projectile occupancy.
-        for (let j = 0; j < BOULDER_SUBDIVISIONS; j++) for (let i = 0; i < BOULDER_SUBDIVISIONS; i++) {
-          const x0 = c + i / BOULDER_SUBDIVISIONS, x1 = c + (i + 1) / BOULDER_SUBDIVISIONS; // Horizontal limits of one exterior quad.
-          const z0 = r + j / BOULDER_SUBDIVISIONS, z1 = r + (j + 1) / BOULDER_SUBDIVISIONS; // Vertical limits of one exterior quad.
+        for (let j = 0; j < surfaceSubdivisions; j++) for (let i = 0; i < surfaceSubdivisions; i++) {
+          const x0 = c + i / surfaceSubdivisions, x1 = c + (i + 1) / surfaceSubdivisions; // Horizontal limits of one exterior quad.
+          const z0 = r + j / surfaceSubdivisions, z1 = r + (j + 1) / surfaceSubdivisions; // Vertical limits of one exterior quad.
           const a = vertexAt(x0, z0, tile), b = vertexAt(x1, z0, tile), d = vertexAt(x0, z1, tile), e = vertexAt(x1, z1, tile); // Welded quad corners.
           coverTopY = Math.max(coverTopY, pos[a * 3 + 1], pos[b * 3 + 1], pos[d * 3 + 1], pos[e * 3 + 1]);
           idx.push(a, d, e, a, e, b);
         }
-        tile.projectileCoverHeightTiles = coverTopY - (deps.NORMAL_TOP + (tile.elevTier || 0) * deps.PLATEAU_UNIT);
+        tile.projectileCoverHeightTiles = coverTopY - (terrainDeps.NORMAL_TOP + (tile.elevTier || 0) * terrainDeps.PLATEAU_UNIT);
         topTileCount++;
 
         for (const edge of boundaryEdges) if (edge.owner === c + ',' + r) perimeterEdgeCount++; // Count only true outer edges; the tapered top already meets the ground there.

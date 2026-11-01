@@ -57,7 +57,7 @@
     for (const part of data.parts) partById.set(part.id, part);
     for (const part of data.parts) {
       const mesh = window.ProceduralFurniture.buildPartMesh(part, baseColor);
-      if (part.kind === 'liquidSurface') {
+      if (part.kind === 'liquidSurface'&&!part.rockShape?.enabled) {
         const liquidGeometry = _liquidSurfaceGeometry(part, partById, Number(part.liquidLevel) || 0);
         if (liquidGeometry) { mesh.geometry?.dispose?.(); mesh.geometry = liquidGeometry; }
         _setLiquidMaterial(mesh, part, {
@@ -76,6 +76,11 @@
     }
     group.userData.meshById = meshById;
     group.userData.partById = partById;
+    if(data.parts.some(part=>part.rockShape?.enabled)&&window.ProceduralFurniture.applyRockContacts){
+      const refreshRockContacts=()=>{group.userData.rockContactReport=window.ProceduralFurniture.applyRockContacts(meshById,data.parts);}; // Recompute the authored contact interfaces without modifying cached furniture definitions.
+      for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
+      refreshRockContacts();
+    }
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
@@ -522,7 +527,7 @@
     for (const track of timeline?.warpTracks || []) warpOverrides.set(track.warpId, sampleTimelineTrack(track, p));
     for (const track of timeline?.liquidTracks || []) {
       const part = group.userData.partById?.get(track.partId), mesh = group.userData.meshById?.get(track.partId);
-      if (!part || !mesh) continue;
+      if (!part || !mesh || part.rockShape?.enabled) continue; // A converted stone keeps its rocky geometry/finish while the existing rigid and processing animations still move its owner.
       const value = sampleTimelineTrack(track, p);
       if (track.useSubstanceColor) value.substanceColor = substance;
       if (track.colorFromSubstance) value.color = substance;

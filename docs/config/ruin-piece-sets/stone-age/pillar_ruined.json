@@ -1,0 +1,64 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_pillar_ruined",
+  "pieceId": "stone_age_pillar_ruined",
+  "name": "Broken Standing Stone",
+  "equivalentTo": "pillar_ruined",
+  "notes": "Stone Age equivalent of pillar_ruined. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 2,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "pillar_ruined_broken_stump",
+      "name": "Broken Stump",
+      "kind": "legSquare",
+      "transform": {
+        "x": -0.18,
+        "y": 0.49,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.6,
+        "sy": 0.98,
+        "sz": 0.65
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    },
+    {
+      "id": "pillar_ruined_fallen_fragment",
+      "name": "Fallen Fragment",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0.52,
+        "y": 0.18,
+        "z": 0.06,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.62,
+        "sy": 0.36,
+        "sz": 0.5
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

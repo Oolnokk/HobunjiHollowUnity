@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261002ruin-materials', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261031h72b24e2', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js?v=20261002ruin-materials';
+    api.src = 'debrisifier-v50-api.js?v=20261031h72b24e2';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }
@@ -53,7 +53,7 @@
     const treeNeedle = "const REPO_TREE_URL='https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/git/trees/main?recursive=1';";
     const treeReplacement = `const REPO_TREE_URL='${EMBEDDED_TREE}';`;
     const rawNeedle = "function rawTextureUrl(path){return REPO_RAW_ROOT+String(path||'').replace(/^\\/+/, '');}";
-    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;return new URL('../../'+fromDocsRoot,location.href).href;}";
+    const rawReplacement = "function rawTextureUrl(path){const clean=String(path||'').replace(/^\\/+/, '');const fromDocsRoot=clean.startsWith('docs/')?clean.slice(5):clean;const resolved=new URL('../../'+fromDocsRoot,location.href);const attempt=new URLSearchParams(location.search).get('assetAttempt');if(attempt)resolved.searchParams.set('assetAttempt',attempt);return resolved.href;}";
     const brickNeedle = 'new THREE.GLTFLoader().load(REPO_RAW_ROOT+WALL_BRICK_GLB_PATH,gltf=>';
     const brickReplacement = 'new THREE.GLTFLoader().load(rawTextureUrl(WALL_BRICK_GLB_PATH),gltf=>';
     const decalNeedle = 'const texture=loader.load(REPO_RAW_ROOT+path,loaded=>';
@@ -121,6 +121,10 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const elevatorSocketCallReplacement = "const socketExit=path?.[1]?{dx:Math.sign(path[1].x-source.x),dz:Math.sign(path[1].z-source.z)}:null,elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07,socketExit);";
 
     const patches = [
+      // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
+      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomLarge===true)forcedLabel='veryLarge';"],
+      ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
+      ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],

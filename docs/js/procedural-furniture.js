@@ -225,15 +225,26 @@
     (loadRoofShingle(path) || loadFurnitureGlb(path).then(template => template.clone(true))).then(instance => {
       if (mesh.userData.glbDisposed) return; // A world reset/move can dispose the owner while the GLB is still loading.
       // Cached materials/geometries are never mutated or disposed by a furniture instance.
+      const convertedSkins=[];let sourceMeshIndex=0; // Converted model parts keep stable source keys under the same animated GLB owner.
       instance.traverse(child => {
         if (/^(?:shinglebone|.*_bone|bone)$/i.test(child.name || '')) child.visible = false;
         if (!child.isMesh) return;
-        if (child.userData.sharedShingle) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look.
+        child.userData.rockSourceKey=String(sourceMeshIndex++);
+        if (child.userData.sharedShingle&&!part.rockShape?.enabled) { child.castShadow = child.receiveShadow = true; return; } // Keeps the roofs' shared look unless this furniture explicitly requests stone.
         child.geometry = child.geometry.clone();
-        const color = material => { const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
-        child.material = Array.isArray(child.material) ? child.material.map(color) : color(child.material);
+        if(part.rockShape?.enabled){const original=child.geometry;rockSourceGeometries.set(child,original.clone());child.geometry=createRockGeometry(original,part.rockShape,child.userData.rockSourceKey);original.dispose();if(child.isSkinnedMesh)convertedSkins.push(child);}
+        const color = material => {const result = material.clone(); result.color?.set(resolveColor(part, baseColor)); if (part.materialTexture) applyPartTexture(result, part); return result; }; // Existing per-part furniture texture/color pipeline.
+        child.material = part.rockShape?.enabled?makePartMaterial(rockMaterialPart(part),baseColor):Array.isArray(child.material) ? child.material.map(color) : color(child.material);
         child.castShadow = child.receiveShadow = true;
       });
+      for(const skin of convertedSkins){
+        const stone=new THREE.Mesh(skin.geometry,skin.material); // Rigid furniture animation still targets the original wrapper; rocks need no missing skin vertex attributes.
+        stone.name=skin.name;stone.position.copy(skin.position);stone.quaternion.copy(skin.quaternion);stone.scale.copy(skin.scale);stone.visible=skin.visible;
+        stone.castShadow=stone.receiveShadow=true;stone.userData={...skin.userData,rockShape:true};
+        rockSourceGeometries.set(stone,rockSourceGeometries.get(skin));
+        for(const child of [...skin.children])stone.add(child);
+        skin.parent.add(stone);skin.parent.remove(skin);
+      }
       instance.updateMatrixWorld(true);
       const box = new THREE.Box3(); // Visible geometry only; the hidden alignment bone cannot inflate the model bounds.
       instance.traverse(child => { if (child.isMesh && child.visible) { child.geometry.computeBoundingBox(); box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld)); } });
@@ -243,6 +254,7 @@
       instance.position.sub(center); holder.add(instance); mesh.add(holder);
       mesh.material.colorWrite = false; mesh.material.depthWrite = false; mesh.castShadow = false; mesh.receiveShadow = false; // Keeps a tiny renderable driver for existing rigid-piece animation hooks.
       mesh.userData.glbReady = true;
+      mesh.userData.onRockSourceReady?.(); // Resolve contacts against real imported geometry after all asynchronous model parts become available.
     }).catch(error => { mesh.userData.glbError = String(error); window.__farmLog?.('Furniture GLB: ' + error.message, 'error'); });
   }
 
@@ -313,6 +325,174 @@
     return geo;
   }
 
+  function rockMaterialPart(part) {
+    return {...part,color:'#808080',materialRole:'stone',materialTexture:'carved_smooth.png',
+      materialCapTexture:null,materialFillEnabled:true,materialFillColor:'#808080',materialFillMode:'always',
+      materialLighting:'unlit',surfaceOpacity:1,textureTransparent:false,patternSurfaces:[]}; // Keep the authored source finish intact so the editor can restore it.
+  }
+  const rockSourceGeometries=new WeakMap(); // Keep original CPU geometry outside serializable userData so contact detection never samples an already-rounded rock.
+  function rockSourceRecords(meshById,parts){
+    const records=[]; // All positions are measured in the furniture's authored rest frame, independent of active animations.
+    for(const part of parts){
+      const owner=meshById.get(part.id);if(!owner)continue;
+      owner.updateWorldMatrix(true,true);
+      const t=part.transform||{};
+      const authored=new THREE.Matrix4().compose(new THREE.Vector3(t.x||0,t.y||0,t.z||0),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler((t.rx||0)*DEG,(t.ry||0)*DEG,(t.rz||0)*DEG)),new THREE.Vector3(1,1,1));
+      owner.traverse(mesh=>{
+        if(!mesh.isMesh||mesh.userData?.furnitureGlbPart||mesh!==owner&&(part.kind!=='glb'||mesh.visible===false||mesh.userData?.rockSourceKey==null))return;
+        const geometry=rockSourceGeometries.get(mesh)||mesh.geometry; // Unconverted neighboring pieces also support rock joints.
+        if(!geometry?.getAttribute('position'))return;
+        geometry.computeBoundingBox();
+        const matrix=authored.clone(),key=mesh===owner?'body':mesh.userData.rockSourceKey;
+        if(mesh!==owner){const relative=mesh.matrix.clone();for(let parent=mesh.parent;parent&&parent!==owner;parent=parent.parent)relative.premultiply(parent.matrix);matrix.multiply(relative);} // Local ancestor matrices avoid animation-dependent floating-point cancellation in world inverses.
+        records.push({part,mesh,geometry,matrix,key,bounds:geometry.boundingBox.clone().applyMatrix4(matrix),planes:new Map()});
+      });
+    }
+    return records;
+  }
+  function rockTriangles(record){
+    if(record.triangles)return record.triangles;
+    const geometry=record.geometry,positions=geometry.getAttribute('position'),index=geometry.index;
+    const size=geometry.boundingBox.getSize(new THREE.Vector3()),center=geometry.boundingBox.getCenter(new THREE.Vector3()),triangles=[]; // Local normalized planes remain valid when a saved piece is resized.
+    for(let offset=0;offset+2<(index?index.count:positions.count);offset+=3){
+      const local=[0,1,2].map(corner=>new THREE.Vector3().fromBufferAttribute(positions,index?index.getX(offset+corner):offset+corner));
+      const points=local.map(point=>point.clone().applyMatrix4(record.matrix)),triangle=new THREE.Triangle(...points);
+      if(triangle.getArea()<1e-12)continue;
+      const normalized=local.map(point=>new THREE.Vector3(size.x?(point.x-center.x)/size.x:0,size.y?(point.y-center.y)/size.y:0,size.z?(point.z-center.z)/size.z:0));
+      const normal=new THREE.Triangle(...normalized).getNormal(new THREE.Vector3()),offsetPlane=normal.dot(normalized[0]);
+      triangles.push({triangle,points,sourceFace:offset/3,bounds:new THREE.Box3().setFromPoints(points),plane:{source:record.key,normal:normal.toArray(),offset:offsetPlane}});
+    }
+    record.triangles=triangles;return triangles;
+  }
+  function applyRockContacts(meshById,parts,options={}){
+    if(!parts.some(part=>part.rockShape?.enabled))return {contacts:0,protectedFaces:0};
+    const records=rockSourceRecords(meshById,parts),epsilon=.0001,epsilonSq=epsilon*epsilon; // Exact face contacts/intersections count; nearby disconnected surfaces do not.
+    const closest=new THREE.Vector3(),direction=new THREE.Vector3(),onRay=new THREE.Vector3(),onEdge=new THREE.Vector3(),ray=new THREE.Ray();
+    const touch=(a,b)=>{
+      if(!a.bounds.clone().expandByScalar(epsilon).intersectsBox(b.bounds))return false;
+      for(const point of a.points){b.triangle.closestPointToPoint(point,closest);if(point.distanceToSquared(closest)<=epsilonSq)return true;}
+      for(const point of b.points){a.triangle.closestPointToPoint(point,closest);if(point.distanceToSquared(closest)<=epsilonSq)return true;}
+      for(const [from,to] of [[a,b],[b,a]])for(let edge=0;edge<3;edge++){
+        const origin=from.points[edge],end=from.points[(edge+1)%3],length=direction.subVectors(end,origin).length();
+        if(length<epsilon)continue;
+        ray.set(origin,direction.multiplyScalar(1/length));
+        const hit=ray.intersectTriangle(...to.points,false,closest);
+        if(hit&&origin.distanceToSquared(hit)<=(length+epsilon)**2)return true;
+        for(let other=0;other<3;other++)if(ray.distanceSqToSegment(to.points[other],to.points[(other+1)%3],onRay,onEdge)<=epsilonSq&&origin.distanceToSquared(onRay)<=(length+epsilon)**2)return true;
+      }
+      return false;
+    };
+    const protect=(record,face,other,neighbor)=>{
+      if(!record.part.rockShape?.enabled)return;
+      const patch=face.bounds.clone().expandByScalar(epsilon).intersect(other.bounds.clone().expandByScalar(epsilon)).applyMatrix4(record.matrix.clone().invert()); // Preserve the joint patch, rather than straightening the full length of an embedded leg.
+      const size=record.geometry.boundingBox.getSize(new THREE.Vector3()),center=record.geometry.boundingBox.getCenter(new THREE.Vector3());
+      const normalized=point=>[size.x?(point.x-center.x)/size.x:0,size.y?(point.y-center.y)/size.y:0,size.z?(point.z-center.z)/size.z:0];
+      const plane={...face.plane,sourceFaces:[face.sourceFace],min:normalized(patch.min),max:normalized(patch.max)},key=plane.normal.map(value=>value.toFixed(5)).join(',')+':'+plane.offset.toFixed(5)+':'+neighbor,previous=record.planes.get(key);
+      if(previous){plane.sourceFaces=[...new Set([...previous.sourceFaces,face.sourceFace])];plane.min=plane.min.map((value,axis)=>Math.min(value,previous.min[axis]));plane.max=plane.max.map((value,axis)=>Math.max(value,previous.max[axis]));}
+      record.planes.set(key,plane);
+    };
+    let contacts=0; // Build-time diagnostics, never a per-frame collision query.
+    for(let a=0;a<records.length;a++)for(let b=a+1;b<records.length;b++){
+      const first=records[a],second=records[b];
+      if(!first.part.rockShape?.enabled&&!second.part.rockShape?.enabled||!first.bounds.clone().expandByScalar(epsilon).intersectsBox(second.bounds))continue;
+      const left=rockTriangles(first).filter(face=>face.bounds.clone().expandByScalar(epsilon).intersectsBox(second.bounds));
+      const right=rockTriangles(second).filter(face=>face.bounds.clone().expandByScalar(epsilon).intersectsBox(first.bounds));
+      for(const face of left)for(const other of right)if(touch(face,other)){
+        protect(first,face,other,b);protect(second,other,face,a);contacts++;
+      }
+    }
+    const facesByPart=new Map(); // Save only compact contact planes; animation records and original source definitions remain intact.
+    for(const record of records){const faces=facesByPart.get(record.part.id)||[];if(record.part.rockShape?.enabled)faces.push(...record.planes.values());facesByPart.set(record.part.id,faces);}
+    let protectedFaces=0; // Count active attachment groups for the editor diagnostics.
+    for(const record of records)if(record.part.rockShape?.enabled){
+      const faces=facesByPart.get(record.part.id)||[],settings={...record.part.rockShape,contactFaces:faces};
+      const geometry=createRockGeometry(record.geometry,settings,record.key); // Extend joint surfaces after final bounds fitting, so refitting cannot open the joint again.
+      if(Array.isArray(record.mesh.material))for(const group of record.mesh.geometry.groups.length?record.mesh.geometry.groups:[{start:0,count:geometry.getAttribute('position').count,materialIndex:0}])geometry.addGroup(group.start,group.count,group.materialIndex); // Retain the editor's material/picking groups on replacement geometry.
+      record.mesh.geometry.dispose();record.mesh.geometry=geometry;
+      const activeFaces=getRockContactArea(settings)>0?record.planes.size:0; // A zero area keeps all of the unconstrained rock shape.
+      record.mesh.userData.rockContactFaceCount=activeFaces;protectedFaces+=activeFaces;
+      if(options.persist)record.part.rockShape={...record.part.rockShape,contactFaces:faces}; // Only the editor opts into modifying its owned recipe.
+    }
+    return {contacts,protectedFaces};
+  }
+  function getRockContactArea(settings={}){
+    const value=Number(settings?.contactArea??.35); // Shared default/validation for saved recipes and editor diagnostics.
+    return Number.isFinite(value)?Math.max(0,Math.min(1,value)):.35;
+  }
+  function createRockGeometry(source,settings={},sourceKey='body') {
+    const terrain=window.TerrainPreview; // The same seeded boulder-mound solver used by terrain/cavern previews supplies the stone lobes.
+    if(!terrain?.buildRockMoundBumpField||!terrain?.sampleRockMoundBump)throw new Error('Rock conversion requires TerrainPreview.');
+    const input=source.index?source.toNonIndexed():source.clone(); // Never mutate cached GLB/primitive buffers.
+    input.computeBoundingBox();
+    const bounds=input.boundingBox.clone(),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3()); // Preserve each original piece's dimensions and local pivot.
+    if(!Number.isFinite(size.x+size.y+size.z)||Math.max(size.x,size.y,size.z)<=0){input.dispose();throw new Error('The furniture piece has no finite rock shape.');}
+    let salt=2166136261; // A saved part ID/seed keeps the same stone shape through exports, animation and rebuilds.
+    for(const character of String(settings.seed||'furniture-rock').slice(0,128))salt=Math.imul(salt^character.charCodeAt(0),16777619)>>>0;
+    const fields=[0,1,2].map(axis=>terrain.buildRockMoundBumpField(3,3,0,0,(salt+axis*7919)>>>0)); // Triplanar samples avoid seams at coincident vertices.
+    const roughness=Number.isFinite(Number(settings.roughness))?Math.max(0,Math.min(1,Number(settings.roughness))):.35; // Thin legs and oversized inputs retain bounded shape changes.
+    const sourcePositions=input.getAttribute('position'); // Imported GLBs may use interleaved attributes with no direct .array property.
+    let vertices=[]; // Subdivide coarse boxes enough to show lobes without replacing holes or disconnected sections.
+    for(let index=0;index<sourcePositions.count;index++)vertices.push(sourcePositions.getX(index),sourcePositions.getY(index),sourcePositions.getZ(index));
+    const levels=vertices.length/9<256?2:vertices.length/9<1024?1:0; // At most 4,096 new triangles; detailed imports reuse their existing tessellation.
+    for(let level=0;level<levels;level++){
+      const next=[]; // Temporary triangle buffer used only while authoring/building.
+      for(let offset=0;offset+8<vertices.length;offset+=9){
+        const a=vertices.slice(offset,offset+3),b=vertices.slice(offset+3,offset+6),c=vertices.slice(offset+6,offset+9);
+        const ab=a.map((value,axis)=>(value+b[axis])*.5),bc=b.map((value,axis)=>(value+c[axis])*.5),ca=c.map((value,axis)=>(value+a[axis])*.5);
+        next.push(...a,...ab,...ca,...ab,...b,...bc,...ca,...bc,...c,...ab,...bc,...ca);
+      }
+      vertices=next;
+    }
+    const geometry=new THREE.BufferGeometry(); // Rock topology remains under the original independently animated piece owner.
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+    geometry.setAttribute('rockSourceFace',new THREE.Float32BufferAttribute(Array.from({length:vertices.length/3},(_,index)=>Math.floor(index/(3*4**levels))),1)); // Every child triangle remembers its original surface through subdivision and roughening.
+    const positions=geometry.getAttribute('position'); // Deterministic deformation is evaluated once, never during animation frames.
+    for(let index=0;index<positions.count;index++){
+      const x=size.x>.000001?(positions.getX(index)-center.x)/size.x:0,y=size.y>.000001?(positions.getY(index)-center.y)/size.y:0,z=size.z>.000001?(positions.getZ(index)-center.z)/size.z:0;
+      const weight=Math.abs(x)+Math.abs(y)+Math.abs(z)||1;
+      const bump=(Math.abs(x)*terrain.sampleRockMoundBump(fields[0],y+.5,z+.5)+Math.abs(y)*terrain.sampleRockMoundBump(fields[1],x+.5,z+.5)+Math.abs(z)*terrain.sampleRockMoundBump(fields[2],x+.5,y+.5))/weight;
+      const rounding=1-roughness*.5*Math.max(0,Math.hypot(x,y,z)-.5),scale=rounding*(1+roughness*(bump-.12)); // Rounded edges and the existing rock ridges soften each source silhouette.
+      positions.setXYZ(index,center.x+x*size.x*scale,center.y+y*size.y*scale,center.z+z*size.z*scale);
+    }
+    geometry.computeBoundingBox();
+    const rockSize=geometry.boundingBox.getSize(new THREE.Vector3()),rockMin=geometry.boundingBox.min.clone(); // Fit the rough result back to authored bounds so attachments/pivots do not drift.
+    for(let index=0;index<positions.count;index++)positions.setXYZ(index,
+      rockSize.x>.000001?bounds.min.x+(positions.getX(index)-rockMin.x)*size.x/rockSize.x:center.x,
+      rockSize.y>.000001?bounds.min.y+(positions.getY(index)-rockMin.y)*size.y/rockSize.y:center.y,
+      rockSize.z>.000001?bounds.min.z+(positions.getZ(index)-rockMin.z)*size.z/rockSize.z:center.z);
+    const contactArea=getRockContactArea(settings),patchScale=Math.sqrt(contactArea); // Area changes patch width, not the strength of the attachment.
+    const contactFaces=contactArea>0&&Array.isArray(settings.contactFaces)?settings.contactFaces.filter(face=>face?.source===sourceKey&&Array.isArray(face.normal)&&face.normal.length===3&&face.normal.every(Number.isFinite)&&Number.isFinite(face.offset)&&Array.isArray(face.min)&&Array.isArray(face.max)&&face.min.length===3&&face.max.length===3&&[...face.min,...face.max].every(Number.isFinite)).map(face=>{
+      const midpoint=face.min.map((value,axis)=>(value+face.max[axis])*.5); // Center each attachment on its original contact region.
+      return {...face,min:midpoint.map((value,axis)=>value+(face.min[axis]-value)*patchScale),max:midpoint.map((value,axis)=>value+(face.max[axis]-value)*patchScale)};
+    }):[]; // Legacy stretch targets are ignored; source contact patches are the only attachment authority.
+    const normalizedAt=index=>[size.x?(vertices[index*3]-center.x)/size.x:0,size.y?(vertices[index*3+1]-center.y)/size.y:0,size.z?(vertices[index*3+2]-center.z)/size.z:0];
+    const lockKey=point=>point.map(value=>value.toFixed(7)).join(','),jointVertices=new Set(); // Shared edge vertices must agree across separate non-indexed faces to keep the rock watertight.
+    for(let first=0;first+2<positions.count&&contactFaces.length;first+=3){
+      const corners=[0,1,2].map(offset=>normalizedAt(first+offset));
+      for(const face of contactFaces){
+        if(Array.isArray(face.sourceFaces)&&!face.sourceFaces.includes(geometry.getAttribute('rockSourceFace').getX(first)))continue;
+        if(!corners.every(point=>Math.abs(face.normal.reduce((sum,value,axis)=>sum+value*point[axis],0)-face.offset)<.00001))continue;
+        const patch=Array.isArray(face.min)&&Array.isArray(face.max)&&face.min.length===3&&face.max.length===3&&[...face.min,...face.max].every(Number.isFinite);
+        if(patch&&[0,1,2].some(axis=>Math.max(...corners.map(point=>point[axis]))<face.min[axis]||Math.min(...corners.map(point=>point[axis]))>face.max[axis]))continue;
+        for(const point of corners)jointVertices.add(lockKey(point)); // Even a small foot between vertices extends its supporting triangle to the joint.
+      }
+    }
+    for(let index=0;index<positions.count&&contactFaces.length;index++){
+      const x=vertices[index*3],y=vertices[index*3+1],z=vertices[index*3+2];
+      const normalized=[size.x?(x-center.x)/size.x:0,size.y?(y-center.y)/size.y:0,size.z?(z-center.z)/size.z:0];
+      let lock=jointVertices.has(lockKey(normalized))?1:0; // Hold the patch in its shared source position; adjacent sides follow the same edge vertices.
+      for(const face of contactFaces){let distance=Math.abs(face.normal.reduce((sum,value,axis)=>sum+value*normalized[axis],0)-face.offset);
+        for(let axis=0;axis<3;axis++)distance=Math.max(distance,face.min[axis]-normalized[axis],normalized[axis]-face.max[axis]);
+        lock=Math.max(lock,Math.max(0,1-distance/.06)); // Blend the attachment into the surrounding rock instead of creating a sharp transition.
+      }
+      if(lock)positions.setXYZ(index,positions.getX(index)*(1-lock)+x*lock,positions.getY(index)*(1-lock)+y*lock,positions.getZ(index)*(1-lock)+z*lock);
+    }
+    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+    input.dispose();
+    return ensureUvs(geometry);
+  }
+
   function buildPartMesh(part, baseColor) {
     let geo;
     const t = part.transform;
@@ -334,21 +514,28 @@
     } else {
       geo = createTaperedBoxGeometry(part);
     }
-    const mat = partMaterial(part, baseColor);
-    applySurfaceOpacity(mat, part);
+    const rock=part.rockShape?.enabled===true,renderPart=rock?rockMaterialPart(part):part; // Conversion changes geometry/finish, never kind, transform, part ID or animation bindings.
+    if(rock&&part.kind==='banner'){geo.dispose();geo=new THREE.BoxGeometry(Math.max(.01,t.sx),Math.max(.01,t.sy),Math.max(.01,t.sz||.02));} // A formerly flat fabric guide becomes a thin stone slab.
+    const rockSource=rock?geo.clone():null; // Rest geometry survives rounding without bloating cloned/serialized mesh userData.
+    if(rock){const original=geo;geo=createRockGeometry(original,part.rockShape);original.dispose();}
+    const mat = partMaterial(renderPart, baseColor);
+    applySurfaceOpacity(mat, renderPart);
     const mesh = new THREE.Mesh(geo, mat);
+    if(rockSource)rockSourceGeometries.set(mesh,rockSource);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.position.set(t.x || 0, t.y || 0, t.z || 0);
     mesh.rotation.set((t.rx || 0) * DEG, (t.ry || 0) * DEG, (t.rz || 0) * DEG);
     mesh.name = part.name || part.kind;
-    if (part.materialTexture) applyPartTexture(mat, part);
-    applyAuthoredSurfaceMapping(mesh, part); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
-    if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes may stay opaque visually without hiding later transparent VFX.
+    if (renderPart.materialTexture) applyPartTexture(mat, renderPart);
+    applyAuthoredSurfaceMapping(mesh, renderPart); // Must run after the final primitive geometry exists; material assignment above remains authoritative.
+    if (part.depthWrite === false) mat.depthWrite = false; // Background/firebox planes stay visible behind transparent effects.
+    if(rock)mat.depthWrite=true; // Converted stone is solid even when its source was a VFX backdrop.
     mesh.userData ||= {};
     mesh.userData.authoredPart = part; // Pattern placement/instance edits use the same immutable authored definition.
-    window.FurniturePatternSurfaces?.applyPart?.(mesh, part);
-    if (part.kind === 'banner') { mat.visible = false; mesh.castShadow = false; } // Patterned child is the visible wind-warped fabric.
+    mesh.userData.rockShape=rock;
+    window.FurniturePatternSurfaces?.applyPart?.(mesh, renderPart);
+    if (part.kind === 'banner'&&!rock) { mat.visible = false; mesh.castShadow = false; } // Converted banners are visible stone rather than hidden fabric guides.
     return mesh;
   }
 
@@ -819,8 +1006,11 @@ function campfireRecipe() {
     hangingSignSupportPart,
     buildFurnitureGroup,
     buildPartMesh,
+    createRockGeometry,
+    applyRockContacts,
+    getRockContactArea,
     makePartMaterial,
-    latestChange: 'Fixed textured furniture startup crashes on Three.js r128 by initializing clone metadata.',
+    latestChange: 'Contact area now controls shared attachment patches before roughening: small patches preserve more rock detail; large patches hold broader joints together.',
     shade,
     CATALOG,
   };

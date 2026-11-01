@@ -44,12 +44,12 @@
     return Math.max(1e-6, diagonal * 1e-6);
   }
 
-  function vertexKey(position, index, epsilon) {
+  function vertexKey(position, index, epsilon, pieceIds) {
     const inv = 1 / epsilon; // Used to quantize duplicated triangle corners back into logical topology vertices.
     const x = Math.round(position.getX(index) * inv); // Used as the topology key's X component.
     const y = Math.round(position.getY(index) * inv); // Used as the topology key's Y component.
     const z = Math.round(position.getZ(index) * inv); // Used as the topology key's Z component.
-    return `${x},${y},${z}`;
+    return `${pieceIds ? pieceIds.getX(index) + ':' : ''}${x},${y},${z}`; // Explicit piece identity keeps touching batched rocks in independent texture charts.
   }
 
   function selectedTriangleSet(geometry, materialIndex) {
@@ -89,6 +89,7 @@
 
   function collectTriangles(geometry, materialIndex, epsilon) {
     const position = geometry.getAttribute('position'); // Used to read each non-indexed triangle corner.
+    const pieceIds = geometry.getAttribute('surfacePieceId'); // Optional caller-authored boundaries survive cloning and non-indexing.
     const selected = selectedTriangleSet(geometry, materialIndex); // Used to omit non-cliff triangles on shared plateau geometry.
     const triangleCount = Math.floor(position.count / 3); // Used as the source triangle count in the expanded geometry.
     const triangles = []; // Used by adjacency recognition and UV writing.
@@ -98,7 +99,7 @@
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
       if (selected && !selected.has(triangleIndex)) continue;
       const base = triangleIndex * 3; // Used as the first BufferAttribute vertex for this triangle.
-      const keys = [vertexKey(position, base, epsilon), vertexKey(position, base + 1, epsilon), vertexKey(position, base + 2, epsilon)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
+      const keys = [vertexKey(position, base, epsilon, pieceIds), vertexKey(position, base + 1, epsilon, pieceIds), vertexKey(position, base + 2, epsilon, pieceIds)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base)); // Used to calculate the face normal.
       const b = new THREE.Vector3(position.getX(base + 1), position.getY(base + 1), position.getZ(base + 1)); // Used to calculate the face normal.
       const c = new THREE.Vector3(position.getX(base + 2), position.getY(base + 2), position.getZ(base + 2)); // Used to calculate the face normal.
@@ -505,7 +506,7 @@
     const preserveQuadPairs = options.preserveQuadPairs === true && options.materialIndex == null; // Ore-rock-only opt-in: treat each indexed mound cell's two triangles as one surface, not two degenerate triangular patches.
     const materialIndex = options.materialIndex == null ? null : Number(options.materialIndex); // Used to isolate only the cliff material slot on a shared grass/cliff mesh.
     const edgeOptions = mappingOptions(options); // Used as the single centralized edge-preserving stretch policy for every caller.
-    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}${splitAtThreshold ? '|split-at-threshold' : ''}${ignoreReversedCoplanarFaces ? '|repair-cap-winding' : ''}${edgeOptions.avoidCollapsedUvs ? '|preserve-triangle-coverage' : ''}${preserveQuadPairs ? '|keep-source-quads' : ''}`; // Separates shingle-side UVs from the default natural-surface cache.
+    const signature = `surface-island-v3|furniture-adjacency|angle=${splitAngleDeg}|material=${materialIndex == null ? '*' : materialIndex}|edge=${edgeOptions.edgeSourceFraction}|reference=${edgeOptions.edgeReferenceWorldSize}${splitAtThreshold ? '|split-at-threshold' : ''}${ignoreReversedCoplanarFaces ? '|repair-cap-winding' : ''}${edgeOptions.avoidCollapsedUvs ? '|preserve-triangle-coverage' : ''}${preserveQuadPairs ? '|keep-source-quads' : ''}${sourceGeometry.getAttribute('surfacePieceId') ? '|piece-boundaries' : ''}`; // Separates shingle-side UVs from the default natural-surface cache.
     const sourcePosition = sourceGeometry.getAttribute('position'); // Used to validate a cached signature against the actual surviving vertex buffer.
     const sourceUv = sourceGeometry.getAttribute('uv'); // Used to reject stale metadata when downstream code lost the UV attribute.
     const cachedUvValid = !!(sourcePosition && sourceUv?.count === sourcePosition.count && Number(sourceUv.itemSize || 2) >= 2); // Used to trust the v3 signature only when real UV data still exists.
