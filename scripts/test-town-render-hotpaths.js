@@ -165,6 +165,8 @@ assert.equal(groundShaderState.supported, true, 'standard terrain shader is supp
 assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y'));
 assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') && standardGroundShader.vertexShader.includes('#ifdef USE_BATCHING'),
   'world height includes instancing and batching transforms before comparison');
+assert.ok(standardGroundShader.vertexShader.indexOf('#ifdef USE_BATCHING') < standardGroundShader.vertexShader.indexOf('#ifdef USE_INSTANCING'),
+  'world position follows Three.js batching-then-instancing transform order');
 assert.ok(standardGroundShader.vertexShader.includes('transpose(mat3(viewMatrix))'), 'world normals use the view rotation inverse');
 assert.ok(standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
