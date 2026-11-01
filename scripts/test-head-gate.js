@@ -19,7 +19,7 @@ function extract(source, name) {
   return source.slice(start, end);
 }
 const context = vm.createContext({});
-for (const name of ['smoothstep01', 'buildHeadMaskWeights', 'headScaleGateAtPixel', 'headScaleWeightAt', 'defaultHeadGateFor', 'headGateBounds']) vm.runInContext(extract(avatarSource, name), context);
+for (const name of ['smoothstep01', 'buildHeadMaskWeights', 'headScaleGateAtPixel', 'headScaleWeightAt', 'defaultHeadGateFor', 'npcHeadGateFor', 'headGateBounds']) vm.runInContext(extract(avatarSource, name), context);
 
 
 const bounds = { left: 46, right: 154, top: 51, bottom: 148 };
@@ -36,7 +36,7 @@ assert.ok(context.headScaleWeightAt(belowChin, neckY, model, nearPixelX, bounds,
 assert.equal(context.headScaleWeightAt(belowChin, neckY, model, nearPixelX, tight, 0), 0, 'tight gate stops just below the skull');
 assert.equal(context.headScaleWeightAt(neckY + 0.2, neckY, model, nearPixelX, tight, 0), 1, 'skull height stays fully head-weighted');
 
-// Species default: tight for everyone, legacy for Mashtzarr and Mammakhbuur; an explicit mode always wins.
+// Species default remains unchanged for player rigs; NPCs use the legacy gate except Harlyao skeletons.
 vm.runInContext("const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur', 'maskbound-guardian']); const LEGACY_HEAD_GATE_COSMETICS = [/binding_mask/i];", context);
 for (const species of ['mashtzarr', 'mammakhbuur', 'Mashtzarr', 'maskbound-guardian', 'MASKBOUND_GUARDIAN']) assert.equal(context.defaultHeadGateFor(species), 'legacy', species);
 for (const species of ['harlyao-skeleton', 'mao-ao', 'engh-sho', 'ghoul', 'porakaneki', null, undefined]) assert.equal(context.defaultHeadGateFor(species), 'tight', String(species));
@@ -45,6 +45,13 @@ assert.equal(context.headGateBounds(bounds, undefined, 'mashtzarr'), bounds, 'un
 assert.equal(context.headGateBounds(bounds, 'legacy', 'harlyao-skeleton'), bounds, 'an explicit legacy wins');
 assert.ok(context.headGateBounds(bounds, 'tight', 'mashtzarr').tightGate, 'an explicit tight wins');
 assert.equal(context.headGateBounds(null, 'tight', 'x'), null);
+for (const species of ['mao-ao', 'engh-sho', 'ghoul', 'porakaneki', 'maskbound-guardian', null]) {
+  assert.equal(context.npcHeadGateFor(species), 'legacy', String(species) + ' NPC uses legacy head skinning');
+}
+assert.equal(context.npcHeadGateFor('harlyao-skeleton'), undefined, 'Harlyao skeleton keeps the tight species default');
+assert.equal(context.npcHeadGateFor('HARLYAO_SKELETON'), undefined, 'underscore/case spellings still preserve the skeleton exception');
+assert.equal(context.npcHeadGateFor('harlyao-skeleton', 'mask'), 'mask', 'authored skeleton gate is preserved');
+assert.equal(context.npcHeadGateFor('ghoul', 'tight'), 'tight', 'authored workshop override is preserved');
 // Clothing can override the species rule: a Hachutu binding mask forces legacy on any wearer; other pieces do not.
 assert.equal(context.defaultHeadGateFor('harlyao-skeleton', ['hachutu_binding_mask_ii']), 'legacy', 'the oversized binding mask forces the wide gate');
 assert.equal(context.defaultHeadGateFor('harlyao-skeleton', ['tangedcirclet', 'ragged_hood']), 'tight', 'ordinary headwear keeps the species default');
@@ -86,11 +93,12 @@ assert.equal(rules.applyRoster('bandit:grunt', { appearance: {} }, Math.random).
 
 // Wired into the hostile builder and the shared single-plane (player/NPC) builder, both species-aware.
 const bandit = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
-assert.match(bandit, /const headGate = roster\.headGate;/);
+assert.match(bandit, /const headGate = window\.PNGPlaneAvatar\.npcHeadGateFor\?\.\(roster\.appearance\?\.speciesId, roster\.headGate\)/);
 assert.equal((bandit.match(/headCanvas, headGate, headMaskCanvas, speciesId: roster\.appearance\?\.speciesId,[^}]*cosmeticIds: roster\.equippedCosmetics \}\)/g) || []).length, 2, 'front and rear neck skins');
 assert.match(bandit, /headGateBounds\?\.\(headPixels\?\.boundsPx, headGate, roster\.appearance\?\.speciesId, headMaskCanvas, false, roster\.equippedCosmetics\)/);
 assert.match(bandit, /headCosmeticsOnly: true/, 'the mask render is requested only for the mask gate');
 assert.match(fs.readFileSync('docs/js/portrait-utils.js', 'utf8'), /headCosmeticsOnly = renderOptions\?\.headCosmeticsOnly === true/, 'the portrait renderer supports a head + cosmetics-only render');
 assert.match(avatarSource, /headGateBounds\(detectedHead\.boundsPx, config\.headGate, config\.speciesId, null, false, config\.cosmeticIds\)/, 'player/NPC skinned assembly uses the species and clothing default');
-assert.match(avatarSource, /speciesId, headGate: options\.headGate,/, 'buildSinglePlaneAvatarModel passes its species through');
+assert.match(avatarSource, /speciesId, headGate,/, 'buildSinglePlaneAvatarModel passes the resolved NPC head gate through');
+assert.match(avatarSource, /options\.npcRecord \|\| options\.profile\?\.npcRecord/, 'only NPC records receive the legacy default (not the player)');
 console.log('Head gate: species defaults, tight box, rule migration and builder wiring verified');
