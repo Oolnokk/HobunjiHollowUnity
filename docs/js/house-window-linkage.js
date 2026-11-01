@@ -306,7 +306,7 @@
 
   function shiftInteriorPoint(point, side, shift) {
     if (!Array.isArray(point)) return point;
-    const amount = Math.max(-4, Math.min(4, Math.trunc(Number(shift) || 0)))
+    const amount = Math.max(-1, Math.min(1, Math.trunc(Number(shift) || 0)))
       * ((side === 'north' || side === 'east') ? 1 : -1); // Positive means right when viewed from inside facing the wall.
     if (side === 'north' || side === 'south') point[0] += amount;
     else point[2] += amount;
@@ -360,7 +360,7 @@
     return clampBindingForWindow(Object.assign({}, localized, {
       u01: (best.canonicalAlong - best.run.start) / runLength,
       v01,
-      interiorShift: Math.max(-4, Math.min(4, Math.trunc(Number(previousBinding?.interiorShift) || 0))),
+      interiorShift: Math.max(-1, Math.min(1, Math.trunc(Number(previousBinding?.interiorShift) || 0))),
     }), key);
   }
 
@@ -632,8 +632,8 @@
     if (!object || object.derivedLinkedWindow || object.area !== 'farm' || !isWindowKey(object.key)
       || link?.role !== 'primary' || !step) return { ok: false, message: 'That window cannot be shifted.' };
     const binding = clone(link.binding || {});
-    const current = Math.max(-4, Math.min(4, Math.trunc(Number(binding.interiorShift) || 0)));
-    const next = Math.max(-4, Math.min(4, current + step));
+    const current = Math.max(-1, Math.min(1, Math.trunc(Number(binding.interiorShift) || 0)));
+    const next = Math.max(-1, Math.min(1, current + step));
     if (next === current) return { ok: false, message: 'The interior window has reached its adjustment limit.' };
     binding.interiorShift = next;
     const updated = Object.assign({}, stored, { houseWindowLink: Object.assign({}, link, { binding }) });
