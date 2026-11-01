@@ -115,7 +115,7 @@ target.x = 40;
 AI.updateEnemySearch(hostile, 0.1, target);
 assert.equal(hostile._enemySearchLastKnownX, 0, 'unseen player movement does not update the last-known position');
 AI.updateEnemySearch(hostile, 0.1, target);
-assert(hostile.facing > 0, 'search sweep rotates the hostile');
+assert(hostile.facing < 0, 'search sweep rotates toward the last-seen side');
 inCone = true;
 lineOfSightClear = false;
 AI.updateEnemySearch(hostile, 0.1, target);
