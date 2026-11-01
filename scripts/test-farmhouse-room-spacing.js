@@ -74,6 +74,7 @@ for (const [side, axis, delta] of [
   assert.equal(after - before, delta, side + ' fireplace right follows the wall tangent');
   assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', -1).ok, true, side + ' fireplace shift reverses');
 }
+chimney.side = 'north';
 assert.equal(layout.hearths[0].cx, beforeShiftHearth, 'left adjustment reverses fireplace shift');
 const join = layout.partitions[0];
 assert.equal(join.door.c, main.col + main.w);
