@@ -480,6 +480,7 @@
       layers.push({group:g,ember,fx,color});
     }
     session.door={layers,open:false};
+    window.DevRandomRuinTileOccupancy?.addSolidBox?.('hachutu-temple-heart-lock',{cx:x,cz:z,halfX:.52,halfZ:2.45},()=>!!session&&!session.door?.open,'hachutu-door'); // One semantic collision seal; retracting visual roots are non-solid.
   }
   function updateDoor(dt){
     const count=session.weedsKilled;
@@ -614,6 +615,7 @@
   function clear(){
     if(!session)return;
     session.ended=true;
+    window.DevRandomRuinTileOccupancy?.clearSolids?.('hachutu-door'); // Release the mutable Temple Heart gate before the next ruin build.
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
     for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
