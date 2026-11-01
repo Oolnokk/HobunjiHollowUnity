@@ -9,11 +9,12 @@ class Matrix4 {
   constructor() { this.elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
   copy(other) { this.elements = other.elements.slice(); return this; }
   clone() { return new Matrix4().copy(this); }
-  multiplyMatrices(parent, local) { // Translation-only fixture checks that hand descendants inherit the baked parent without recomputing it.
-    this.elements = parent.elements.slice();
-    this.elements[12] += local.elements[12];
-    this.elements[13] += local.elements[13];
-    this.elements[14] += local.elements[14];
+  multiplyMatrices(parent, local) { // Full column-major composition covers body rotations, mirrored axes and nonuniform species scales.
+    const p = parent.elements, l = local.elements; // Parent and child matrices stay unchanged while this receives their product.
+    const out = Array(16).fill(0); // Final composed transform for each late-visible hand primitive.
+    for (let column = 0; column < 4; column++) for (let row = 0; row < 4; row++)
+      for (let axis = 0; axis < 4; axis++) out[column * 4 + row] += p[axis * 4 + row] * l[column * 4 + axis];
+    this.elements = out;
     return this;
   }
 }
@@ -91,6 +92,29 @@ assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'outline d
 restoreStaged();
 assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'the pre-outline matrix is restored without compounding transforms');
 assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().visualMatrixResyncs, 1);
+
+// Nonuniform Nuhongan-like body scale and mirrored handedness must be composed
+// through the socket chain, not applied by rewriting authored hand coordinates.
+bakedBody.matrixWorld.elements[0] = -0.68;
+bakedBody.matrixWorld.elements[5] = 0.6375;
+bakedBody.matrixWorld.elements[10] = 0.68;
+bakedBody.matrixWorld.elements[12] = 10;
+bakedBody.matrixWorld.elements[14] = 4;
+stagedSocket.matrix.elements[12] = -0.38;
+stagedSocket.matrix.elements[13] = 0.224;
+detachedHand.matrix.elements[12] = 0.4;
+detachedHand.matrix.elements[13] = 0.15;
+draw(detachedHand, {}, camera, { colorWrite: true })();
+const expectedX = 10 - 0.68 * (-0.38 + 0.4); // Mirrored/scaled X offset, with no assumptions about portrait facing.
+const expectedY = 0.2 + 0.6375 * (0.01 + 0.224 + 0.15); // Nonuniform body Y scale keeps the hand relative to its shoulder.
+assert(Math.abs(detachedHand.matrixWorld.elements[12] - expectedX) < 1e-9, 'mirrored hand position composes through the current rig');
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - expectedY) < 1e-9, 'species height scale is inherited once, not bypassed or doubled');
+assert.equal(bakedBody.matrixWorld.elements[12], 10, 'render-time body position is retained unchanged');
+assert.equal(bakedBody.matrixWorld.elements[5], 0.6375, 'render-time body scale is retained unchanged');
+assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw is detected');
+assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
+
+
 
 assert.equal(handThickness(5), 0.012, 'reference distance preserves existing hand thickness');
 assert.equal(handThickness(10), 0.006, 'doubling distance halves hand outline width');
