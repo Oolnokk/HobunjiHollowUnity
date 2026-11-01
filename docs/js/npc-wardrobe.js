@@ -213,7 +213,7 @@
     const hatedTrait = (rec?.gifts?.hated || []).find(trait => traits.includes(trait)); // Hated traits take precedence in refusal feedback when both bad tiers match.
     const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto ordinary NPC wear.
     const defaults = ensureDefaults(rec?.id, rec);
-    const styleMatch = defaults.size === 0 || traits.some(trait => defaults.has(trait)); // Mirrors gift acceptance: an ordinary NPC only wears clothing matching their immutable authored style.
+    const styleMatch = defaults.size > 0 && traits.some(trait => defaults.has(trait)); // Missing style data is not a blanket permission: only a known authored-style match allows ordinary NPC wear.
     const spouseOverride = options.spouseOverride === true && isActiveSpouseWardrobe(rec?.id);
     const blockedTrait = hatedTrait || dislikedTrait || null;
     const styleBlocked = !spouseOverride && !styleMatch;
