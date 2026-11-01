@@ -21,7 +21,7 @@
   const ATTACKER_LEAN_RAD = -15 * Math.PI / 180; // Group-local Z pitches the attacker forward (+portrait normal) by 15 degrees.
   const ATTACH_DURATION_S = PULL_S * 2 + FINAL_PULL_S + THROW_S + 0.3;
   const active = new WeakMap(); // Enemy -> active per-attack resources; never retains removed enemies.
-  const telemetry = { begins: 0, landings: 0, grabs: 0, dodges: 0, finishes: 0, errors: 0, last: 'ready' }; // Mobile-visible state without DevTools.
+  const telemetry = { begins: 0, landings: 0, grabs: 0, dodges: 0, finishes: 0, instantDeaths: 0, errors: 0, last: 'ready' }; // Mobile-visible state without DevTools.
 
   const clamp01 = v => Math.max(0, Math.min(1, v));
   const smoothstep = t => { const p = clamp01(t); return p * p * (3 - 2 * p); }; // Continuous endpoint velocity avoids an artificial snap at grip contact.
@@ -527,11 +527,14 @@
     state.completed = true;
     const d = deps();
     const host = state.host;
-    if (player(host)) restoreHead(state, true); // The existing downed/respawn pipeline must never inherit a missing player head.
-    const amount = Math.max(1000, Number(host.health) + 1000);
+    if (player(host)) restoreHead(state, true); // The respawned player must retain their real head, not the temporary severed portrait.
+    const amount = Math.max(1000, Number(host.health) + 1000); // Retained for NPCs and previews without the downed/respawn module.
     const opts = { attacker: state.attacker, tag: 'sharp', noStagger: true, maskboundHeadtaker: true };
-    if (player(host)) d.damagePlayer?.(amount, state.attacker.x, state.attacker.y, 0, opts);
-    else d.damageCreature?.(host, amount, state.attacker.x, state.attacker.y, 0, opts);
+    if (player(host)) {
+      const fatal = window.PlayerDowned?.dieImmediately?.('maskbound-headtaker') === true; // Bypass Second Wind, defensive damage modifiers, and invulnerability on a completed grab only.
+      if (fatal) telemetry.instantDeaths++;
+      else d.damagePlayer?.(amount, state.attacker.x, state.attacker.y, 0, opts); // Workshop/legacy fallback when PlayerDowned is unavailable.
+    } else d.damageCreature?.(host, amount, state.attacker.x, state.attacker.y, 0, opts);
     telemetry.finishes++;
   }
 
@@ -691,8 +694,8 @@
     if (!state.headRemoved) stretch(state, state.stretch);
     applyVictimNeckPose(state); // Restore owned neck pitch after any competing head-look writer, preserving body locomotion.
     poseFeet(state);
-    if (t >= PULL_S * 2 + FINAL_PULL_S + THROW_S && state.headRemoved) {
-      killTarget(state);
+    if (t >= PULL_S * 2 + FINAL_PULL_S + THROW_S) {
+      killTarget(state); // Finisher is lethal even if the optional temporary head-art composite failed or loaded late.
       state.endRequested = true; // Manual attachment ends after onTick unwinds, avoiding double callbacks.
     }
   }
