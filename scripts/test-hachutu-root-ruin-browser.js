@@ -44,10 +44,13 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       null,{timeout:120000});
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:15000});
-    const generated=await page.evaluate(async()=>{
-      const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true});
-      return {ok,ruin:window.DevHachutuRuin?.debug?.(),area:window.GridTileAccessors.getCurrentArea()};
-    });
+    const generated=await Promise.race([
+      page.evaluate(async()=>{
+        const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true});
+        return {ok,ruin:window.DevHachutuRuin?.debug?.(),area:window.GridTileAccessors.getCurrentArea()};
+      }),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Hachutu generation did not finish within 100 seconds; possible stuck V50/root growth')),100000)),
+    ]); // A hung generator can no longer occupy the browser smoke job for the full workflow timeout.
     assert.equal(generated.ok,true,'Hachutu generator failed: '+JSON.stringify(generated)+"; "+logs.slice(-9).join(' | '));
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='map_i_dev_random_ruin',
       null,{timeout:30000});
