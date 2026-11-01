@@ -11,6 +11,7 @@ on:
       - 'scripts/test-hachutu-rooted-ruins.js'
       - 'scripts/test-hachutu-root-tear.js'
       - 'scripts/test-hachutu-root-tear-browser.js'
+      - 'scripts/test-hachutu-root-ruin-browser.js'
       - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
@@ -24,6 +25,7 @@ on:
       - 'scripts/test-hachutu-rooted-ruins.js'
       - 'scripts/test-hachutu-root-tear.js'
       - 'scripts/test-hachutu-root-tear-browser.js'
+      - 'scripts/test-hachutu-root-ruin-browser.js'
       - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
@@ -64,6 +66,8 @@ jobs:
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
       - name: Exercise real skinned Hachutu player tearing and cinematic cleanup
         run: node scripts/test-hachutu-root-tear-browser.js
+      - name: Verify Hachutu game generation, authentic root hands and paid escape
+        run: node scripts/test-hachutu-root-ruin-browser.js
       - name: Verify shared occupancy and puzzle visibility
         run: node scripts/test-dev-random-ruin-collision-browser.js
       - name: Isolate previously failing seed
