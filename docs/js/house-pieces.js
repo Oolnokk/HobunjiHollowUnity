@@ -66,7 +66,7 @@
     // depth writes, so provide a colorless order-889 depth copy before mist 890-892
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
-    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20260924perf1'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261101hd336ac7'],
     // Rocks and cliffs already use the farm-cliff-style irregular-surface PNG mapper; this policy makes that authored edge treatment authoritative and removes redundant shell participation.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20261026orefaces3'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],
