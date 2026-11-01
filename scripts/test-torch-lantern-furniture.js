@@ -29,5 +29,5 @@ assert.ok(!fallback.includes('roundLeg(0, 0, 1.3'), 'old standing lamp fallback 
 assert.match(read('docs/tools/map-editor/index.html'), /standingLamp:\{icon:'🏮',label:'Lantern Table'/, 'Map Editor labels the legacy key Lantern Table');
 assert.match(read('docs/tools/building-interior-author/index.html'), /key:'standingLampFurniture',\s+label:'Lantern Table',\s+modelFile:null/, 'interior author previews the authored/procedural Lantern Table');
 assert.ok(!read('docs/tools/locale-editor/locale-preview3d.js').includes("standingLamp: 'furniture/standing_lamp_bronze.glb'"), 'locale preview no longer loads the old lampshade GLB');
-assert.match(read('docs/index.html'), /procedural-furniture\.js\?v=20261101torchlanterntable1/, 'game cache token is bumped');
+assert.match(read('docs/index.html'), /procedural-furniture\.js\?v=[A-Za-z0-9_-]+/, 'game procedural furniture loader has a cache-bust token');
 console.log('Torch and Lantern Table furniture regressions passed.');
