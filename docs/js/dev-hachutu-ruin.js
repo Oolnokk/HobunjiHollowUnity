@@ -706,10 +706,19 @@
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};
   }
+  function debugPreviewSnare(){
+    if(!session?.snare?.previewDoubleGrip||!session?.snareTarget||session.ended)return false;
+    const b=session.layout.parts[1].bounds,p={x:b.minX+2,z:b.minZ+2,y:session.floor}; // Dev-only reproducible full-player capture position near the maze entrance.
+    session.entered=true;
+    session.kit.setPlayerWorld(p,true,true);
+    session.snareTarget.group.position.set(p.x,session.floor,p.z);
+    return session.snare.previewDoubleGrip(session.snareTarget); // Invoke the authoring tool's exact two-hand-grip path against the real player.
+  }
   SP.registerComposer({id:'hachutuTemple',buildRooms,update,controls,snapshot,clear});
   window.DevHachutuRuin=Object.freeze({reserve,makePlan,generateMaze,applyTitanStats,titanStats:TITAN,
     isDeadlyPit:(x,z)=>!!session&&session.entered&&inside({x,z},session.abyss),
     debug:()=>snapshot(),brief:()=>session?{weeds:session.weedsKilled,wave:session.trial?.wave||0,boss:session.heart?.boss?.maskboundTroop||'-',tear:window.RootSnarePlayerTear?.active?.()?(window.RootSnarePlayerTear.split?.()?'split':'pull'):'-',issue:session.errors.at(-1)||null}:null, // No animated-hand diagnostics allocation per rendered frame.
+    debugPreviewSnare,
     debugSever:index=>strikeWeed(session?.weeds?.[index]),
     debugClearRing:(weed,ring)=>takeRing(session?.weeds?.[weed],ring)});
 })();
