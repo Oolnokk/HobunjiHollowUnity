@@ -159,7 +159,7 @@
         floorY:Number.isFinite(floorY)?floorY:baked.minY,neckAnchor,feetAnchor,
         minY:baked.minY,maxY:baked.maxY,fullHeight:height,band,span:height*.83,elapsed:0,
         split:false,tossed:false,finished:false,toss:null,beforeCamera,cameraRecord:null,
-        target,position,staticLook:new THREE.Vector3(),axis:new THREE.Vector3(0,1,0),up:new THREE.Vector3(0,1,0),
+        target,position,staticLook:new THREE.Vector3(),axis:new THREE.Vector3(0,1,0),nodeAxis:new THREE.Vector3(),up:new THREE.Vector3(0,1,0),
         originalPosition:{x:player.x,y:player.y},tris:baked.triangles};
       realRoot.visible=false;
       current=s;
@@ -207,10 +207,10 @@
     if(!s.split){
       const pose=window.RootSnareRunner?.pullPose?.(s.elapsed,s.span);
       if(!pose){stop('author-timing-missing');return false;}
-      const axis=s.axis.copy(s.neckAnchor.point).sub(s.feetAnchor.point);
-      if(axis.lengthSq()<1e-6)axis.set(0,1,0);
-      axis.normalize();
-      axis.copy(s.up).lerp(axis,smooth(s.elapsed/.75)).normalize();
+      const targetAxis=s.nodeAxis.copy(s.neckAnchor.point).sub(s.feetAnchor.point);
+      if(targetAxis.lengthSq()<1e-6)targetAxis.set(0,1,0);
+      targetAxis.normalize();
+      const axis=s.axis.copy(s.up).lerp(targetAxis,smooth(s.elapsed/.75)).normalize();
       s.anchor.quaternion.setFromUnitVectors(s.up,axis); // Same physical neck-to-feet midpoint rotation as the author, now applied to ALL baked player bones.
       const halfway=pose.stretch*.5;
       s.upper.position.set(0,halfway,0);
