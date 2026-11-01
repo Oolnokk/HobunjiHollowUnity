@@ -636,6 +636,7 @@
   SP.registerComposer({id:'hachutuTemple',buildRooms,update,controls,snapshot,clear});
   window.DevHachutuRuin=Object.freeze({reserve,makePlan,generateMaze,applyTitanStats,titanStats:TITAN,
     isDeadlyPit:(x,z)=>!!session&&session.entered&&inside({x,z},session.abyss),
-    debug:()=>snapshot(),debugSever:index=>strikeWeed(session?.weeds?.[index]),
+    debug:()=>snapshot(),brief:()=>session?{weeds:session.weedsKilled,wave:session.trial?.wave||0,boss:session.heart?.boss?.maskboundTroop||'-'}:null, // No animated-hand diagnostics allocation per rendered frame.
+    debugSever:index=>strikeWeed(session?.weeds?.[index]),
     debugClearRing:(weed,ring)=>takeRing(session?.weeds?.[weed],ring)});
 })();
