@@ -92,6 +92,15 @@
     deps.die?.('bleed-out');
   }
 
+  function dieImmediately(reason = 'scripted') {
+    if (!deps?.player || typeof deps.die !== 'function') return false;
+    reset(); // A fatal scripted finisher cannot leave Second Wind, crawl, or its HUD active.
+    lastEvent = { type: 'instant-death', reason, at: Date.now() }; // Visible in mobile diagnostics for lethal Headtaker grabs.
+    deps.player.health = 0; // The existing respawn callback sees a genuine fatal state, even through prior invulnerability.
+    deps.die(reason); // Same respawn/death path as bleed-out; never enter tryDown.
+    return true;
+  }
+
   // damagePlayer calls this instead of applying damage while down. Each enemy
   // hit costs bleed-out time but never Health, knockback or stagger.
   function noteHitWhileDowned() {
@@ -200,6 +209,7 @@
     update,
     isDowned,
     tryDown,
+    dieImmediately,
     interceptDeath,
     secondWind,
     noteHitWhileDowned,

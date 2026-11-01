@@ -34,6 +34,16 @@ assert.equal(actualPriority.aimAngle,1.2,'active combat controller continues tic
 assert(head.includes('immuneToHost: false'),'player attacks can still damage the Headtaker');
 assert(head.includes('staggerImmune: true'),'other incoming damage does not automatically break the grip');
 assert(game.includes('player.dodging = true;'),'game dodge input still functions normally');
+assert(game.includes('die: reason => respawnPlayer(reason)'),'PlayerDowned direct-death callback invokes the actual player respawn flow');
+assert(head.includes("dieImmediately?.('maskbound-headtaker')"),'completed Headtaker grip uses the bypass-Second-Wind death endpoint');
+assert(head.indexOf("endManual?.(state.attacker, state.shared, 'completed')") < head.indexOf("dieImmediately?.('maskbound-headtaker')"),'grapple cleanup occurs before player respawn, so Headtaker stays at the original site');
+const contextStart = game.indexOf('      function performContextAction() {'); // This is the player-facing dodge/context input used by mouse, keyboard, and controller.
+const contextEnd = game.indexOf('      // Combat-ability movement:', contextStart); // Bounds the actual context handler without matching unrelated transitions.
+assert(contextStart >= 0 && contextEnd > contextStart,'real context action handler is found');
+const contextAction = game.slice(contextStart, contextEnd); // Inspect priority in the shipped handler, not a preview-only shim.
+assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") >= 0,'active Headtaker grip is recognized as a dodge-only context');
+assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") < contextAction.indexOf('if (_pendingSpotTransition)'), 'Headtaker escape outranks a nearby door/context transition');
+assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") < contextAction.indexOf('const climb ='), 'Headtaker escape outranks a nearby climb surface');
 
 const posStart=game.indexOf('        const tx = c.x / TILE, tz = c.y / TILE, ty =');
 const posEnd=game.indexOf('        // Bob animation when moving',posStart);

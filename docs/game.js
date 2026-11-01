@@ -9958,6 +9958,12 @@
       }
 
       function performContextAction() {
+        // During a Headtaker grip, dodge must take priority over nearby doors,
+        // climbing, fishing panels and other context actions: it is the only escape.
+        if (window.Combat?.attach?.attachersOf?.(player)?.some(attacker => attacker._attachment?.id === 'maskbound-headtaker')) {
+          performDodge();
+          return;
+        }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
         if (player.climbing || player.dodging) return;
