@@ -1080,10 +1080,11 @@
     return null;
   }
 
-  function actorElevationForXrayMesh(mesh, scene) {
+  function actorElevationForXrayMesh(mesh, scene, cache = null) {
     const actor = actorRootForXrayMesh(mesh, scene);
     if (!actor?.root) return NaN; // Unknown ownership fails closed: ordinary ground remains in front of the object.
     const root = actor.root;
+    if (cache?.has(root)) return cache.get(root);
     let elevation = worldYOf(root);
     if (!Number.isFinite(elevation)) return NaN;
     if (actor.isPlayer) {
@@ -1099,13 +1100,15 @@
         elevation += Number(channel.translation?.y) || 0;
       }
     }
+    if (cache) cache.set(root, elevation);
     return elevation;
   }
 
   function groupXrayMeshesByElevation(meshes, elevationForMesh) {
     const groups = [];
     for (const mesh of meshes) {
-      const elevation = Number(elevationForMesh(mesh));
+      const rawElevation = elevationForMesh(mesh);
+      const elevation = Number.isFinite(rawElevation) ? rawElevation : NaN;
       let group = Number.isFinite(elevation)
         ? groups.find(entry => Number.isFinite(entry.elevation) && Math.abs(entry.elevation - elevation) <= XRAY_ELEVATION_GROUP_EPSILON)
         : groups.find(entry => !Number.isFinite(entry.elevation));
@@ -1200,7 +1203,8 @@
     const overlayMeshes = [...held, ...feet];
     const groundMeshes = [...ground, ...topFaceGround];
     window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
-    const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene));
+    const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
+    const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, overlayMeshes, scissorRect);
     let replayCulled = null;
@@ -1375,7 +1379,8 @@
     const previousInternalReplay = internalReplay;
     const glState = renderer.state;
     const groundMeshes = [...ground, ...topFaceGround];
-    const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene));
+    const actorElevationCache = new Map(); // Shells reuse the exact actor floor elevation resolved for their source meshes.
+    const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
     let swappedGeometry = [];
     let scissorActive = false;
     let depthWasCleared = false;
