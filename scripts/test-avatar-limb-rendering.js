@@ -9,6 +9,13 @@ class Matrix4 {
   constructor() { this.elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
   copy(other) { this.elements = other.elements.slice(); return this; }
   clone() { return new Matrix4().copy(this); }
+  multiplyMatrices(parent, local) { // Translation-only fixture checks that hand descendants inherit the baked parent without recomputing it.
+    this.elements = parent.elements.slice();
+    this.elements[12] += local.elements[12];
+    this.elements[13] += local.elements[13];
+    this.elements[14] += local.elements[14];
+    return this;
+  }
 }
 function mesh(name) {
   return { name, isMesh: true, userData: {}, matrixWorld: new Matrix4(), layers: { enable() {} }, traverse(fn) { fn(this); } };
@@ -46,6 +53,45 @@ function handThickness(depth) {
   assert.equal(shell.uniforms.uThickness.value, 0.006, 'shared outline thickness is restored');
   return result;
 }
+// The player pose composer can bake a body transform after scene traversal,
+// and the hand socket can move again before HeldObjectRenderOrder draws it.
+const bakedBody = { matrixWorld: new Matrix4(), updateMatrix() { throw Error('do not rebuild composed body'); } }; // Baked render-time body pose is the authoritative parent.
+bakedBody.matrixWorld.elements[13] = 0.2;
+const stagedHandRoot = group([]); // Normal hand group inherits the existing parent-world matrix.
+stagedHandRoot.parent = bakedBody;
+stagedHandRoot.matrix = new Matrix4();
+stagedHandRoot.matrixWorld = new Matrix4();
+stagedHandRoot.updateMatrix = () => {};
+stagedHandRoot.matrix.elements[13] = 0.01;
+const stagedSocket = group([]); // Late hand driver writes the socket, not the GLB mesh matrix directly.
+stagedSocket.name = 'left_hand_socket';
+stagedSocket.parent = stagedHandRoot;
+stagedSocket.matrix = new Matrix4();
+stagedSocket.matrixWorld = new Matrix4();
+stagedSocket.updateMatrix = () => {};
+stagedSocket.matrix.elements[13] = 0.05;
+stagedHandRoot.children.push(stagedSocket);
+const detachedHand = mesh('mesh_0_1'); // Simulates a visible GLB primitive retaining an old, floating render transform.
+detachedHand.parent = stagedSocket;
+detachedHand.matrix = new Matrix4();
+detachedHand.updateMatrix = () => {};
+detachedHand.matrix.elements[13] = 0.03;
+detachedHand.matrixWorld.elements[13] = 0.9;
+stagedSocket.children.push(detachedHand);
+stagedSocket.traverse = fn => { fn(stagedSocket); stagedSocket.children.forEach(child => child.traverse(fn)); };
+const handRig = { group: stagedHandRoot, getDebug: () => ({}), dispose() {} }; // Same public hand-attachment surface as the game.
+const staged = loadParity('hand', handRig);
+draw(detachedHand, {}, camera, { colorWrite: true })();
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'visible hand is reanchored to its live socket, not its stale mesh world matrix');
+assert.equal(bakedBody.matrixWorld.elements[13], 0.2, 'the temporary player-body world transform is never recomputed');
+assert.equal(handRig.getDebug().visualMatrixResyncs, 1, 'mobile hand diagnostics report an actual repaired matrix');
+detachedHand.matrixWorld.elements[13] = 0.85; // Outline passes may rewrite the world matrix after the visible frame.
+const restoreStaged = draw(detachedHand, { overrideMaterial: shell }, camera, shell);
+assert(Math.abs(detachedHand.matrixWorld.elements[13] - 0.29) < 1e-9, 'outline draws reuse the last corrected hand world matrix');
+restoreStaged();
+assert.equal(detachedHand.matrixWorld.elements[13], 0.85, 'the pre-outline matrix is restored without compounding transforms');
+assert.equal(staged.window.HobunjiHandOutlineParity.getDebug().visualMatrixResyncs, 1);
+
 assert.equal(handThickness(5), 0.012, 'reference distance preserves existing hand thickness');
 assert.equal(handThickness(10), 0.006, 'doubling distance halves hand outline width');
 assert.equal(handThickness(20), 0.003, 'farther hands continue shrinking');
