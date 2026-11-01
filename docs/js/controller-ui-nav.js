@@ -679,11 +679,12 @@
   function moveOrAdjust(dir) {
     // Focused range controls consume horizontal input, so gamepad D-pad and stick can adjust pattern/size sliders without moving focus away.
     if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && (dir === 'left' || dir === 'right')) {
-      const min = Number.isFinite(currentTarget.minAsNumber) ? currentTarget.minAsNumber : Number(currentTarget.min || 0);
-      const max = Number.isFinite(currentTarget.maxAsNumber) ? currentTarget.maxAsNumber : Number(currentTarget.max || 100);
+      const min = currentTarget.min === '' ? 0 : Number(currentTarget.min);
+      const max = currentTarget.max === '' ? 100 : Number(currentTarget.max);
       const step = Number(currentTarget.step) > 0 ? Number(currentTarget.step) : 1;
-      const next = Math.max(min, Math.min(max, currentTarget.valueAsNumber + (dir === 'right' ? step : -step)));
-      if (next !== currentTarget.valueAsNumber) {
+      const current = Number(currentTarget.value);
+      const next = Math.max(min, Math.min(max, current + (dir === 'right' ? step : -step)));
+      if (next !== current) {
         currentTarget.value = String(next);
         currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
         currentTarget.dispatchEvent(new Event('change', { bubbles: true }));
