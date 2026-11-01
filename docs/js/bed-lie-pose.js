@@ -182,11 +182,17 @@
     if (!THREE) return;
     const desiredQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 * fraction, (rot - root.rotation.y) * fraction, 0, 'YXZ'));
     rig.quaternion.copy(desiredQuaternion);
-    const pivot = new THREE.Vector3(0, hip, 0).applyQuaternion(rig.quaternion); // Anatomical posterior remains fixed against the sleeping surface while the whole rig tilts.
-    const targetSurfaceY = activeLie ? mattress.y : (state.lastSurfaceY ?? root.position.y);
-    if (activeLie) state.lastSurfaceY = targetSurfaceY; // Persist the surface during stand-up even when the station disappears.
-    const localTarget = new THREE.Vector3(0, lerp(hip, targetSurfaceY + 0.035 - root.position.y, fraction), 0);
-    rig.position.set(localTarget.x - pivot.x, localTarget.y - pivot.y, localTarget.z - pivot.z);
+    const posteriorPivot = new THREE.Vector3(0, hip, 0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Species-scale first, then pitch: the unscaled hip caused large/small NPCs to clip into mattresses.
+    if (activeLie) {
+      rig.parent.updateWorldMatrix?.(true, false);
+      const contact = new THREE.Vector3(mattress.x, mattress.y + 0.035, mattress.z); // The same physical mattress point used by the player, not a guessed Y-only offset.
+      const localContact = rig.parent.worldToLocal(contact); // Respect room elevation, NPC root yaw and scaled parent rigs.
+      state.lastLocalTranslation = localContact.sub(posteriorPivot); // Saved in the rig parent's frame for a clean wake-up when its station changes.
+      state.lastSurfaceY = mattress.y; // On-device surface diagnostic.
+    }
+    const correction = state.lastLocalTranslation; // Correctly settles the posterior on the bed, even for stretched/tiny species.
+    if (correction) rig.position.set(correction.x * fraction, correction.y * fraction, correction.z * fraction);
+    else rig.position.set(0, 0, 0);
     if (walker._npcRunLeanPivot && fraction > 0.001) walker._npcRunLeanPivot.quaternion.identity(); // Running and lying body rotations must not stack.
     npcFrontXray(walker, state, fraction > 0.25);
     walker._bedLieActive = fraction > 0.001;
