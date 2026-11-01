@@ -72,6 +72,7 @@ const ctx = { // Minimal Canvas2D draw recorder.
   },
 };
 let area = 'map_i_temple'; // Switches between interior, mine and outdoor policies.
+let activeScene = {}; // Test the live scene independently of the player-area value.
 let now = 1000; // Advances past the overlay's existing redraw throttle.
 let localLights = []; // Opt-in local light fixtures.
 let sources = []; // Active daylight windows only.
@@ -85,7 +86,7 @@ lightingWindow.WeatherFX.init({
   lctx: ctx, camera: { matrixWorld: {} },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
   getCurrentArea: () => area, _isBuildingArea: id => id.startsWith('map_i_'),
-  getActiveScene: () => ({}), getThreeRect: () => ({ width: 100, height: 100 }),
+  getActiveScene: () => activeScene, getThreeRect: () => ({ width: 100, height: 100 }),
   worldToOverlay: (x, y, z) => ({ x, y: z, visible: true }),
   getFurnitureLightSources: () => localLights, getLightningAlpha: () => 0, getSceneTransAlpha: () => 0,
 });
@@ -127,6 +128,19 @@ localLights = [];
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
 assert.equal(gradients[0].radius, 4.8, 'farmhouse carried light uses the same doubled, linear indoor radius');
+activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } }; // Real player farmhouse scene suppresses the old unconditional player-lit circle.
+draw();
+assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'ordinary farmhouse base darkness is painted even without any local light source');
+assert.equal(gradients.length, 0, 'unlit farmhouse no longer draws an always-on player lantern hole through the darkness');
+area = 'farm'; // Scene wins over a stale farm area id.
+draw();
+assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'active farmhouse scene always paints ordinary interior base darkness');
+assert.equal(lightingWindow.CloudForestFog.getDebugState().lastInteriorDarknessDraw?.alpha, 0.8,
+  'mobile diagnostics report a real farmhouse darkness fill');
+assert.equal(gradients.length, 0, 'scene fallback does not re-enable the phantom lantern');
+activeScene = {};
+draw();
+assert.notEqual(fills[0], 'rgba(0,0,0,0.8)', 'returning to the farm restores outdoor lighting');
 area = 'map_i_town_mine_f_1';
 draw();
 assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 0,

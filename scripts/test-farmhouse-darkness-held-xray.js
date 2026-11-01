@@ -99,15 +99,30 @@ const exterior = new StubScene();
 const grass = mesh(exterior, { userData: { hobunjiBaseGrassTerrainMaterial: true } }, { mapEditorTerrain: true });
 assert.equal(xray.classify(nextFloor).ground, true);
 assert.equal(xray.classify(furniture).ground, false, 'solid furniture must still hide tools');
-assert.equal(xray.classify(otherFloor).ground, false, 'mine/den/other interior floors are unaffected');
+assert.equal(xray.classify(otherFloor).ground, true, 'floor material receives x-ray in every interior even without farmhouse registration');
+const cavernShell = mesh(otherInterior, untaggedMaterial, { hobunjiGroundTopFacesOnly: true }); // Mixed cavern shell surfaces include walls that must stay solid.
+assert.equal(xray.classify(cavernShell).ground, false, 'mixed cavern shells are never wholly hidden as ground');
+assert.equal(xray.snapshot().topFaceGroundMeshes, 1, 'cavern shell clips floor faces only while preserving walls in the depth pass');
+const caveWalkableFloor = mesh(otherInterior, untaggedMaterial, { cavernWalkableFloor: true, hobunjiGroundSurface: true }); // Cave floor uses rock material shared with the shell, not an interior material tag.
+assert.equal(xray.classify(caveWalkableFloor).ground, true, 'cavern walkable floors x-ray independently of the walls');
+const v50Floor = mesh(otherInterior, untaggedMaterial, { wallBuilderRecipe: 'wallrecipe2.json', plateauModel: { levelByCell: { '2,3': 1 } } });
+assert.equal(xray.classify(v50Floor).ground, true, 'stepped V50 ruin floor joins the held-object ground replay');
+const stoneFloor = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'floor' }); // Procedural rooted/stone-age floors use an instanced rock mesh.
+stoneFloor.isInstancedMesh = true;
+assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin stone floors x-ray held weapons');
+const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
+assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
-assert(xray.snapshot().farmhouseFloorMeshes >= 2, 'preexisting and newly rebuilt floors join depth replay');
+assert(xray.snapshot().farmhouseFloorMeshes >= 2, 'preexisting and newly rebuilt farmhouse floors join depth replay');
+assert(xray.snapshot().interiorFloorMeshes >= 6, 'authored, cavern, V50 and stone-age interior floors all register for depth replay');
 
 const authored = new StubScene();
 buildingScenes.set('map_i_temple', { scene: authored, wallStyle: 'brick' });
 assert.equal(authored.userData.farmhouseFlatLighting, true, 'authored interiors retain flat lighting');
 assert.notEqual(authored.userData.hobunjiPlayerFarmhouseInterior, true,
-  'authored interiors do not receive the special farmhouse floor X-ray');
+  'authored interiors do not pretend to be the player farmhouse');
+const authoredFloor = mesh(authored, plankMaterial);
+assert.equal(xray.classify(authoredFloor).ground, true, 'authored interiors also x-ray floor material');
 
 assert.equal(dependencies.getInteriorScene(), farmhouse,
   'the stable farmhouse scene getter is left untouched by the lighting adapter');

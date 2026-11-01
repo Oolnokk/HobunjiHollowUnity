@@ -16685,6 +16685,27 @@
         getBottleSwigStatus: (...args) => window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(...args),
       });
 
+      // One trim/recolor per flask variant, shared across Pack cells, HUD and item wheel.
+      const _flaskIconFrames = new Map(); // Request-key -> pending or completed framed icon URL; avoids repeated large alpha scans on mobile.
+      function framedFlaskIconUrl(spritePath, targetColor, spriteMode, requestKey) {
+        const cached = _flaskIconFrames.get(requestKey);
+        if (cached) return cached;
+        const source = targetColor == null
+          ? new Promise((resolve, reject) => {
+              const image = new Image(); // Uncolored flasks still need the same opaque-pixel trim as weapons.
+              image.crossOrigin = 'anonymous';
+              image.onload = () => resolve(image);
+              image.onerror = () => reject(new Error('Failed to load flask sprite ' + spritePath));
+              image.src = spritePath;
+            })
+          : window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode);
+        const framed = source.then(image => window.EquipmentPanel.squareToolIcon(image)); // Exact weapon thumbnail crop: fill the square with the flask's body.
+        _flaskIconFrames.set(requestKey, framed);
+        if (_flaskIconFrames.size > 128) _flaskIconFrames.delete(_flaskIconFrames.keys().next().value);
+        framed.catch(() => { if (_flaskIconFrames.get(requestKey) === framed) _flaskIconFrames.delete(requestKey); }); // A failed load can be retried on next rebuild.
+        return framed;
+      }
+
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
@@ -16693,8 +16714,9 @@
         // The source PNG replaces the emoji immediately; the recolored canvas
         // upgrades it below without leaving alcohol as an emoji while loading.
         const spritePath = 'assets/objectsprites/' + def.spriteIcon;
-        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Used below to keep source-colored PNGs untouched while explicitly tinted items still use SpriteRecolor.
-        const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Used by the recolor request/log only when this definition actually authors a tint.
+        const frameFlask = def.spriteIcon === 'throwing_flask.png' && typeof window.EquipmentPanel?.squareToolIcon === 'function'; // Only flasks use the equipment thumbnail crop; others retain their authored icon proportions.
+        const hasSpriteColor = def.spriteColor != null && Number.isFinite(Number(def.spriteColor)); // Explicit source-color metadata selects the original keyed recolor.
+        const targetColor = hasSpriteColor ? Number(def.spriteColor) : null; // Null means direct-color source and no recolor.
         const spriteMode = def.spriteMode || 'direct';
         const requestKey = `${def.spriteIcon}|${hasSpriteColor ? targetColor : 'source'}|${spriteMode}`;
         // updateHud refreshes the item strip every frame. Keep an identical
@@ -16707,6 +16729,25 @@
         el.dataset.itemSpriteState = 'pending';
         el.style.backgroundImage = `url("${spritePath}")`;
         el.classList.add('sprited-icon');
+        if (frameFlask && (!hasSpriteColor || window.SpriteRecolor)) {
+          framedFlaskIconUrl(spritePath, targetColor, spriteMode, requestKey)
+            .then(iconUrl => {
+              if (el.dataset.itemSpriteRequest !== requestKey) return;
+              el.style.backgroundImage = `url(${iconUrl})`;
+              el.dataset.itemSpriteState = 'ready';
+              if (!_itemSpriteReadyLogged.has(requestKey)) {
+                _itemSpriteReadyLogged.add(requestKey);
+                window.__farmLog?.(`[item-icon] flask framed ${def.label || def.spriteIcon} (${spriteMode})`, 'items');
+              }
+            })
+            .catch(error => {
+              if (el.dataset.itemSpriteRequest !== requestKey) return;
+              el.dataset.itemSpriteState = 'fallback';
+              el.dataset.itemSpriteError = String(error?.message || error);
+              window.__farmLog?.(`[item-icon] flask framing failed: ${error?.message || error}`, 'warn');
+            });
+          return;
+        }
         if (!hasSpriteColor) { el.dataset.itemSpriteState = 'source'; return; }
         if (!window.SpriteRecolor) { el.dataset.itemSpriteState = 'fallback'; return; }
         window.SpriteRecolor.getRecoloredCanvas(spritePath, targetColor, spriteMode)
