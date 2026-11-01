@@ -159,7 +159,7 @@
         floorY:Number.isFinite(floorY)?floorY:baked.minY,neckAnchor,feetAnchor,
         minY:baked.minY,maxY:baked.maxY,fullHeight:height,band,span:height*.83,elapsed:0,
         split:false,tossed:false,finished:false,toss:null,beforeCamera,cameraRecord:null,
-        target,position,staticLook:new THREE.Vector3(),axis:new THREE.Vector3(0,1,0),
+        target,position,staticLook:new THREE.Vector3(),axis:new THREE.Vector3(0,1,0),up:new THREE.Vector3(0,1,0),
         originalPosition:{x:player.x,y:player.y},tris:baked.triangles};
       realRoot.visible=false;
       current=s;
@@ -209,10 +209,12 @@
       if(!pose){stop('author-timing-missing');return false;}
       const axis=s.axis.copy(s.neckAnchor.point).sub(s.feetAnchor.point);
       if(axis.lengthSq()<1e-6)axis.set(0,1,0);
-      axis.normalize().lerp(new THREE.Vector3(0,1,0),1-smooth(s.elapsed/.8)).normalize();
+      axis.normalize();
+      axis.copy(s.up).lerp(axis,smooth(s.elapsed/.75)).normalize();
+      s.anchor.quaternion.setFromUnitVectors(s.up,axis); // Same physical neck-to-feet midpoint rotation as the author, now applied to ALL baked player bones.
       const halfway=pose.stretch*.5;
-      s.upper.position.copy(axis).multiplyScalar(halfway);
-      s.lower.position.copy(axis).multiplyScalar(-halfway);
+      s.upper.position.set(0,halfway,0);
+      s.lower.position.set(0,-halfway,0);
       s.bridge.scale.set(1,1+pose.stretch/s.band,1);
       // Body full-height is preserved because every skinned vertex was baked
       // in world coordinates, not resized to the preview's portrait canvas.
@@ -251,11 +253,10 @@
   function gripTarget(which,out){
     const s=current;if(!s)return null;
     const base=which==='neck'?s.maxY-s.fullHeight*.1:s.minY+s.fullHeight*.065;
-    out.set(s.origin.x,base,s.origin.z);
-    if(s.split)return out;
-    const section=which==='neck'?s.upper:s.lower;
-    out.add(section.position);
-    return out;
+    const localY=base-s.origin.y+(s.split?0:(which==='neck'?s.upper.position.y:s.lower.position.y));
+    out.set(0,localY,0);
+    s.anchor.updateWorldMatrix(true,false);
+    return s.anchor.localToWorld(out); // Real tilted full-height endpoints drive the fingers, rather than the guessed canvas neck/foot row.
   }
   function stop(reason='canceled'){
     const s=current;if(!s)return false;
@@ -271,7 +272,7 @@
   function debug(){
     const s=current;
     return {active:!!s,stage:s?(s.split?'toss':'pull'):'idle',seconds:s?.elapsed||0,
-      fullHeight:s?.fullHeight||0,triangles:s?.tris||0,actualPlayerHidden:!!s&&!s.realRoot.visible,
+      fullHeight:s?.fullHeight||0,tiltDegrees:s?.anchor?.rotation?.z?+(s.anchor.rotation.z*180/Math.PI).toFixed(1):0,triangles:s?.tris||0,actualPlayerHidden:!!s&&!s.realRoot.visible,
       cameraOwned:!!s?.cameraRecord,tossed:!!s?.tossed,counters:{...counts},lastEvent,lastError};
   }
   window.RootSnarePlayerTear=Object.freeze({begin,update,stop,gripTarget,debug,
