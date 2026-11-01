@@ -253,7 +253,7 @@
           state.className = 'farm-note';
           state.textContent = feature.interiorShift < 0 ? 'Shifted left' : feature.interiorShift > 0 ? 'Shifted right' : 'Centered';
           row.appendChild(state);
-          for (const [direction, text] of [[-1, 'Shift Interior Left'], [1, 'Shift Interior Right']]) {
+          for (const [direction, text] of [[-1, '← Shift Interior'], [1, 'Shift Interior →']]) {
             const button = document.createElement('button');
             button.className = 'settings-small-btn';
             button.textContent = text;
@@ -373,7 +373,7 @@
         alignment.className = 'farm-note';
         alignment.textContent = 'Interior only';
         row.appendChild(alignment);
-        for (const [direction, label] of [[-1, 'Shift Interior Left'], [1, 'Shift Interior Right']]) {
+        for (const [direction, label] of [[-1, '← Shift Interior'], [1, 'Shift Interior →']]) {
           const shiftButton = document.createElement('button');
           shiftButton.className = 'settings-small-btn';
           shiftButton.textContent = label;
