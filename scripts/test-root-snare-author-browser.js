@@ -214,8 +214,10 @@ const server=http.createServer((request,response)=>{
       const authenticHalfCopies=avatarRunner.group.children.filter(node=>node.name.endsWith('flying visual clone'));
       assert(authenticHalfCopies.length===2&&!trueUpper.visible&&!trueLower.visible,
         'cloned half-portraits must render in place of the hidden but intact authentic NPC rig');
-      assert(avatarRunner.getGripTarget('neck').distanceTo(avatarRunner.getGripTarget('feet'))>1,
-        'two live grip points must remain distinct after the character is tilted and stretched');
+      const anatomicalSpan=Math.max(.2,tilted.anatomy.neckY-tilted.anatomy.footY);
+      const gripSeparation=avatarRunner.getGripTarget('neck').distanceTo(avatarRunner.getGripTarget('feet'));
+      assert(Math.abs(gripSeparation/anatomicalSpan-1.58)<.01,
+        'both real NPC grips must preserve their anatomically scaled 58% final stretch regardless of species size (actual '+gripSeparation/anatomicalSpan+')');
       avatarRunner.resetAfterSnare();
       assert(!avatarRunner.diagnostics().dual&&avatarRunner.hasRepositoryNpc,
         'restarting the animation must preserve the loaded real character rig');
