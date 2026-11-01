@@ -483,6 +483,9 @@
   // lantern activation curve to outdoor player/watch lantern masks.
   let lightingDeps = null;
   let lastUnifiedLightingDraw = 0;
+  let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
+  let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
+  let lastInteriorDarknessDraw = null; // Mobile diagnostics of the shared compositor's actual enclosed base fill.
   const lightCamRight = new window.THREE.Vector3();
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
   const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
@@ -536,7 +539,9 @@
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
     const ruinLanternScale = 1; // Kanthic uses the ordinary full-radius, soft-edged lantern rather than a separate circular vignette.
     const ctx = lightingDeps.lctx;
-    const carriers = [{
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
+    const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Unlike mines, the farmhouse has no permanently lit player torch.
+    const carriers = farmhouseSceneActive ? [] : [{ // Other areas preserve their legacy always-on carried lantern; farmhouse relies on real furniture/window light sources.
       x: lightingDeps.player.x / lightingDeps.TILE,
       y: lightingDeps.getPlayerWorldY() + 0.5,
       z: lightingDeps.player.y / lightingDeps.TILE,
@@ -700,7 +705,7 @@
   }
 
   function ordinaryBuildingInterior(area) {
-    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area)); // _isBuildingArea includes mine/den IDs; keep daylight glows out of their underground lighting.
+    return !isUndergroundLanternArea(area) && (area === 'interior' || !!lightingDeps?._isBuildingArea?.(area) || lightingDeps?.getActiveScene?.()?.userData?.hobunjiPlayerFarmhouseInterior === true); // A farmhouse can become active before its area id switches; keep the indoor light profile.
   }
 
   // Daylight windows reveal the stable enclosed darkness locally, exactly like
@@ -805,15 +810,21 @@
     const now = performance.now();
     const lightningAlpha = lightingDeps.getLightningAlpha();
     const sceneTransAlpha = lightingDeps.getSceneTransAlpha();
-    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+    const currentArea = lightingDeps.getCurrentArea(); // Selects room darkness and detects transitions that must bypass the normal redraw throttle.
+    const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
+    const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
+    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0
+        && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
+    lastUnifiedLightingArea = currentArea;
+    lastUnifiedLightingScene = activeScene;
 
     const ctx = lightingDeps.lctx;
+    ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    const currentArea = lightingDeps.getCurrentArea();
-    const enclosed = currentArea === 'interior'
+    const enclosed = farmhouseSceneActive || currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
 
@@ -821,12 +832,14 @@
     // with a fixed midnight state, but only while the mist is really showing
     // (the Cloud Forest Mist setting can turn it off), else they keep the
     // flat darkness.
-    const undergroundFog = isUndergroundFogArea(currentArea) && !!(group?.visible && attachedScene);
+    const undergroundFog = !farmhouseSceneActive && isUndergroundFogArea(currentArea) && !!(group?.visible && attachedScene);
     if (enclosed && !undergroundFog) {
-      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Enclosed spaces keep one stable darkness base; local masks reveal light without whole-room brightness churn.
+      const darknessAlpha = enclosedDarknessOverlayAlpha(currentArea); // Existing mine/den/room darkness policy, preserved for every area.
+      const effectiveDarknessAlpha = farmhouseSceneActive ? INTERIOR_DARKNESS_OVERLAY_ALPHA : darknessAlpha; // The farmhouse uses 80% base darkness regardless of a lagging outdoor area id.
+      lastInteriorDarknessDraw = { area: currentArea, farmhouseSceneActive, alpha: effectiveDarknessAlpha, at: now }; // Mobile diagnostics reflect the painted base, not a hypothetical calculation.
       ctx.globalCompositeOperation = 'source-over';
       const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
-      ctx.fillStyle = ruinTradition === 'tothal' ? 'rgba(6,18,44,'+darknessAlpha+')' : ruinTradition === 'hronal' ? 'rgba(20,7,2,'+darknessAlpha+')' : 'rgba(0,0,0,'+darknessAlpha+')';
+      ctx.fillStyle = ruinTradition === 'tothal' ? 'rgba(6,18,44,'+effectiveDarknessAlpha+')' : ruinTradition === 'hronal' ? 'rgba(20,7,2,'+effectiveDarknessAlpha+')' : 'rgba(0,0,0,'+effectiveDarknessAlpha+')';
       ctx.fillRect(0, 0, rect.width, rect.height);
       drawLanternMasksCompat(1);
       if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
@@ -840,6 +853,7 @@
       return;
     }
 
+    lastInteriorDarknessDraw = null; // Never report an interior base fill after returning outside.
     const { r, g, b, a } = undergroundFog ? UNDERGROUND_NIGHT_LIGHTING : getFullDayLighting();
     const darknessAlpha = undergroundFog && activeRuinTradition() === 'kanthic' ? Math.max(a, KANTHIC_STANDARD_DARKNESS_ALPHA) : a; // Stronger ordinary ambient darkness replaces the old hard circular cutout.
     ctx.globalCompositeOperation = darknessAlpha < 0.09 ? 'screen' : 'multiply';
@@ -915,6 +929,7 @@
         interiorLightFalloff: 'linear',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
+        lastInteriorDarknessDraw: lastInteriorDarknessDraw ? { ...lastInteriorDarknessDraw } : null, // Mobile QA shows whether a base mask was drawn for the active farmhouse.
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         outdoorLanternActivation: currentOutdoorLanternActivation(),
         outdoorWeatherTintRetention: currentOutdoorWeatherTintState()?.alpha ?? 0,

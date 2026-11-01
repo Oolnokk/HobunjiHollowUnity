@@ -107,7 +107,9 @@
 
   let heldCount = 0;
   let groundCount = 0;
-  let farmhouseFloorCount = 0; // Diagnostic count of farmhouse plank-floor meshes registered for the existing selective held-object depth replay.
+  let farmhouseFloorCount = 0; // Counts just player-farmhouse floor meshes in the shared interior floor replay.
+  const countedFarmhouseFloors = new WeakSet(); // Ensures floor meshes counted before farmhouse registration are counted when they are later tagged.
+  let interiorFloorCount = 0; // Counts all tagged walkable interior floors, including rebuilt and authored rooms.
   let grassCount = 0;
   let roadCount = 0;
   let terrainCount = 0;
@@ -245,10 +247,16 @@
   }
 
   function groundKind(object) {
-    if (isTopFacesGroundSurface(object)) return null; // Cavern shell walls and floors remain real occluders.
+    if (isTopFacesGroundSurface(object)) return null; // A single cavern shell also contains walls; its floor faces need selective clipping below, never whole-mesh removal.
     if (isProtectedCover(object)) return null; // Snow/slush, water, and billboard grass always occlude held gear, even above a path.
     if (isRoadSurface(object)) return 'road'; // Authored path-brick groups retain the same x-ray as the underlying grass.
-    if (hasAncestorFlag(object, 'hobunjiPlayerFarmhouseInterior') && materialMarksInteriorFloor(object?.material) && isWalkableGroundSurface(object)) return 'farmhouse-floor'; // Only the player's walkable farmhouse floor joins grass/path replay; walls, furniture and other interior floors remain true occluders.
+    if (object?.isMesh && !object.isSkinnedMesh) {
+      const data = object.userData || {}; // Semantic-only floor classification also covers cavern and rooted-ruin floor geometry that does not use InteriorSceneBuilder's material.
+      if (materialMarksInteriorFloor(object.material)
+          || data.cavernWalkableFloor === true
+          || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
+          || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor')) return 'interior-floor';
+    }
     if (materialMarksBaseGrass(object?.material) && isTerrainSurface(object)) return 'terrain';
     return null;
   }
@@ -378,12 +386,16 @@
     groundMeshes.add(mesh);
     groundRegistry.add(mesh);
     enforceGroundMesh(mesh);
+    if (kind === 'interior-floor' && hasAncestorFlag(mesh, 'hobunjiPlayerFarmhouseInterior') && !countedFarmhouseFloors.has(mesh)) {
+      countedFarmhouseFloors.add(mesh);
+      farmhouseFloorCount++; // Registration can happen after the generic interior floor was already scanned.
+    }
     if (!already) {
       groundCount++;
       if (kind === 'grass') grassCount++;
       else if (kind === 'road') roadCount++;
       else if (kind === 'terrain') terrainCount++;
-      else if (kind === 'farmhouse-floor') farmhouseFloorCount++;
+      else if (kind === 'interior-floor') interiorFloorCount++;
     }
     return !already;
   }
@@ -409,8 +421,7 @@
     }
     const kind = groundKind(object);
     if (kind) markGroundMesh(object, kind);
-    // The carved cavern floor is no longer exempt: only base grass gets x-ray.
-    // Keep the top-face helper for other scene consumers, but do not register it.
+    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object); // Clip only upward cave-shell floor triangles in the depth rebuild, preserving walls and ceiling as real occluders.
   }
 
   function markTopFaceGroundMesh(mesh) {
@@ -1266,6 +1277,7 @@
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
       farmhouseFloorMeshes: farmhouseFloorCount,
+      interiorFloorMeshes: interiorFloorCount,
       topFaceGroundMeshes: topFaceGroundCount,
       waterReplayMeshes: waterMeshCount,
       translucentCoverMeshes: tintCoverRegistry.all.size,
@@ -1292,7 +1304,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
