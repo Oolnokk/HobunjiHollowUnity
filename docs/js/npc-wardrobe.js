@@ -471,7 +471,7 @@
     const id = String(npcId || '');
     activeWardrobeContext = {
       npcId: id,
-      spouseWardrobe: context.area === 'interior' && context.source === 'family' && isCurrentSpouse(id),
+      spouseWardrobe: context.source === 'family' && isCurrentSpouse(id),
     }; // The exception is granted only by the assigned family furniture interaction, never by an ordinary NPC wardrobe.
     const spouseOverride = isActiveSpouseWardrobe(id);
     const rec = findRecord(npcId); // Canonical record so name and the Wear veto work even when the NPC has no live walker.
