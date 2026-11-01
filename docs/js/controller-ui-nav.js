@@ -85,6 +85,7 @@
     mpSettings: ['settingsSectionAudio', 'settingsSection7', 'settingsSection6', 'settingsSection0', 'settingsSection8', 'settingsSection1', 'settingsSection9', 'settingsSection10', 'settingsSection11', 'settingsSection2', 'settingsSection3', 'settingsSection4', 'settingsSection5'],
   });
   const subtabsByGroup = new Map(); // Active section ownership also keeps hidden siblings restorable after rebuilds and modal handoffs.
+  const lastSubtabByGroupKey = new Map(); // Keeps each menu pane's last controller section across close/reopen and DOM replacement.
   const NAV_SELECTOR = [
     'button', 'a[href]', 'input', 'select', 'textarea', 'summary',
     '[role="button"]', '[tabindex]', '[data-ctrl-item]',
@@ -298,7 +299,7 @@
       if (entry.node !== node) {
         const selectedState = subtabsByGroup.get(entry.node); // Retains section identity or sibling index when its whole owner is rebuilt.
         restoreSubtabs(entry.node);
-        if (selectedState) prepareSubtabs(node, panel, selectedState.selected.id || null, selectedState.selected.id ? 0 : selectedState.sections.indexOf(selectedState.selected));
+        if (selectedState) prepareSubtabsWithMemory(node, panel, selectedState.selected.id || null, selectedState.selected.id ? 0 : selectedState.sections.indexOf(selectedState.selected), false);
         entry.node.classList.remove('ctrl-nav-group-active');
         entry.node = node;
       }
@@ -356,6 +357,12 @@
     subtabsByGroup.delete(group);
   }
 
+  function subtabMemoryKey(group, panel) {
+    const pane = group.closest?.('.mp-pane'); // Pane identity separates the same child ids across pause-menu tabs.
+    if (pane?.id && pane === group) return pane.id;
+    return group.id ? `${pane?.id || panel?.id || 'panel'}:${group.id}` : null; // Anonymous nested groups retain only live DOM state.
+  }
+
   function prioritizeMenuSubtabs(group, sections) {
     const paneId = group.closest?.('.mp-pane')?.id; // Parent menu identifies which sections have an authored frequency order.
     const preferred = MENU_SUBTAB_PRIORITY_BY_PANE[paneId]; // Unknown panes and dynamically generated child groups keep their original DOM order.
@@ -365,15 +372,23 @@
   }
 
   function prepareSubtabs(group, panel, selectedId = null, offset = 0) {
+    return prepareSubtabsWithMemory(group, panel, selectedId, offset, true); // Retain the existing entry point and regression-test extraction boundary.
+  }
+  function prepareSubtabsWithMemory(group, panel, selectedId = null, offset = 0, restoreLast = true) {
     restoreSubtabs(group);
     const sections = prioritizeMenuSubtabs(group, directTargets(group, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR))); // UI keeps its authored layout, while controller LB/RB use the frequency-first sequence.
     if (sections.length < 2) return false;
-    let index = sections.findIndex(section => section.id && section.id === selectedId); // Stable ids preserve the active section through a rebuild.
+    const memoryKey = subtabMemoryKey(group, panel); // Shared by restoring/replacing this pane and remembering a user selection.
+    const remembered = restoreLast && memoryKey ? lastSubtabByGroupKey.get(memoryKey) : null; // Explicit section jumps and bumper cycles bypass memory.
+    const rememberedIndex = remembered?.id ? sections.findIndex(section => section.id === remembered.id) : remembered?.index;
+    let index = Number.isInteger(rememberedIndex) && rememberedIndex >= 0 && rememberedIndex < sections.length ? rememberedIndex
+      : sections.findIndex(section => section.id && section.id === selectedId); // Stable ids win when the previous section was removed.
     if (index < 0) index = 0;
     const selected = sections[(index + offset + sections.length) % sections.length]; // Bumpers wrap within the borrowed local section set.
     const nestedState = subtabsByGroup.get(selected); // An entered child still owns multiple sections even while its inactive siblings are hidden.
     const transparent = !nestedState && directTargets(selected, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)).length < 2; // Nested multi-section pages remain enterable and can borrow the tab actions in turn.
     subtabsByGroup.set(group, { sections, selected, transparent });
+    if (memoryKey) lastSubtabByGroupKey.set(memoryKey, { id: selected.id || null, index: sections.indexOf(selected) }); // Remember the actual selected section, not the opening default.
     group.classList.add('ctrl-nav-subtabs');
     selected.classList.add('ctrl-nav-subtab-selected');
     for (const section of sections) if (section !== selected) section.classList.add('ctrl-nav-subtab-hidden');
@@ -386,7 +401,7 @@
     return [...enteredGroups(panel)].reverse().find(entry => subtabsByGroup.has(entry.node));
   }
 
-  function enterGroup(group, panel, returnPath = null) {
+  function enterGroup(group, panel, returnPath = null, requestedSection = null) {
     releasedAutoGroup.delete(panel);
     const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
     rememberFocusPath(group);
@@ -395,7 +410,7 @@
     group.classList.add('ctrl-nav-group-active');
     const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
-    prepareSubtabs(group, panel, group.getAttribute('data-ctrl-initial-subtab'));
+    prepareSubtabsWithMemory(group, panel, requestedSection || group.getAttribute('data-ctrl-initial-subtab'), 0, !requestedSection); // Direct page jumps skip remembered-page opener side effects.
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
     const remembered = lastFocusedByGroup.get(group); // Re-entering a group returns to its last surviving control.
@@ -758,7 +773,7 @@
     if (!next || !entries.some(entry => entry.node === group)) return;
     for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
     saveSectionScroll(state.selected, panel);
-    prepareSubtabs(group, panel, next.id || null, next.id ? 0 : nextIndex);
+    prepareSubtabsWithMemory(group, panel, next.id || null, next.id ? 0 : nextIndex, false);
     restoreSectionScroll(next, panel);
     lastFocusedByGroup.set(state.selected, currentTarget);
     scrolledSelection = null;
@@ -992,6 +1007,12 @@
       return;
     }
     menuOpenEdge = false;
+    if (window.FarmPanel?.handleLayoutControllerFrame?.(frame, actionId => controllerActionDown(frame, actionId, currentBindings))) {
+      resetStickState();
+      for (const state of Object.values(dirState)) { state.down = false; state.next = 0; } // No menu-navigation repeats leak out after the tile cursor hands control back.
+      for (const actionId of edgeActions) actionEdgeState[actionId] = controllerActionDown(frame, actionId, currentBindings); // Held A/B must not activate menu controls when exiting cursor mode.
+      return;
+    }
 
     const navStick = window.ControllerInput?.normalizeStick?.(pad.axes[0], pad.axes[1], DEADZONE, 1) || { x: pad.axes[0] || 0, y: pad.axes[1] || 0 };
     const rawAx = Number(pad.axes[0]) || 0, rawAy = Number(pad.axes[1]) || 0; // Used to preserve the physical analog direction before cone scoring.
@@ -1046,6 +1067,11 @@
     // to move among its text field and buttons. Its own focus trap keeps focus inside.
     if (event.key === 'Tab' && activePanel()?.id === 'animalBabyArrivalOverlay') return;
     if (isTextEditable(document.activeElement)) return;
+    if (window.FarmPanel?.handleLayoutCursorKey?.(event)) { // Cursor arrows/Confirm/Escape take priority only while a 3D grid viewport is active.
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     switch (event.key) {
       case 'ArrowUp': move('up'); break;
       case 'ArrowDown': move('down'); break;
@@ -1107,7 +1133,7 @@
       if (panel) {
         for (const entry of enteredGroups(panel)) {
           const state = subtabsByGroup.get(entry.node); // Reapply presentation after dynamic section/list rebuilds.
-          if (state) prepareSubtabs(entry.node, panel, state.selected.id || null, state.selected.id ? 0 : state.sections.indexOf(state.selected));
+          if (state) prepareSubtabsWithMemory(entry.node, panel, state.selected.id || null, state.selected.id ? 0 : state.sections.indexOf(state.selected), false);
         }
         refreshFocusIfStale();
         updateHintBar(panel);
@@ -1221,8 +1247,7 @@
       if (!panel || !group || !panel.contains(group)) return false;
       clearGroups(panel);
       automaticEntryEnabled = true;
-      enterGroup(group, panel);
-      prepareSubtabs(group, panel, sectionId);
+      enterGroup(group, panel, null, sectionId); // Jump directly; do not activate the remembered page first.
       const selected = subtabsByGroup.get(group)?.selected; // Explicit placement-page jumps must also clear an unrelated page's scroll offset.
       if (selected) restoreSectionScroll(selected, panel);
       scrolledSelection = null;
@@ -1244,7 +1269,8 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Controller section choices are accessible and dock inside the main menu without covering content; unchanged focus updates preserve manual section scrolling.',
+        latestChange: 'Controller menu tabs restore the last chosen local section, including after closing or rebuilding a pane.',
+        rememberedSubtabs: Object.fromEntries(lastSubtabByGroupKey), // Mobile debug can verify each pane independently.
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         scrollHostId: cachedScrollHost?.host?.id || null,

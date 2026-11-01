@@ -69,6 +69,40 @@ assert.deepEqual(ordered('mpTasks', ['tasksSectionWanted', 'tasksSectionRumors',
 assert.deepEqual(ordered('mpSettings', ['settingsSection0', 'settingsSection7', 'settingsSectionAudio']), ['settingsSectionAudio', 'settingsSection7', 'settingsSection0']);
 assert.deepEqual(ordered('unknown', ['first', 'second']), ['first', 'second'], 'Unconfigured/dynamic pane orders remain untouched');
 
+const restoreSource = between(navSource, '  function restoreSubtabs(group) {', '  function subtabMemoryKey(group, panel) {'); // Exercise real section cleanup when a pane closes.
+const memorySource = between(navSource, '  function subtabMemoryKey(group, panel) {', '  function localSubtabs(panel) {'); // Real controller remembered-section selector and entry code.
+const navigation = vm.runInNewContext(`
+  const subtabsByGroup = new Map(); // Live group state is discarded on closing a menu.
+  const lastSubtabByGroupKey = new Map(); // Pane-specific last visited section must survive that close.
+  const SUBTAB_SELECTOR = '.menu-section';
+  const isGroup = () => true;
+  const isNavTarget = () => true;
+  const groupTarget = () => null;
+  const directTargets = group => group.children || []; // Child sections have no nested pages in the lightweight DOM fixture.
+` + mapSource + '\n' + restoreSource + '\n' + memorySource + `
+  ({ prepareSubtabs, prepareSubtabsWithMemory, restoreSubtabs, subtabsByGroup, lastSubtabByGroupKey })
+`); // Mocks only DOM target discovery, not the implementation of section persistence.
+function fakePane(id, sectionIds) {
+  const css = () => ({ add(){}, remove(){} });
+  const pane = { id, children:[], classList:css(), closest:() => pane };
+  pane.children = sectionIds.map(id => ({ id, classList:css(), matches:()=>true, querySelectorAll:()=>[] }));
+  return pane;
+}
+const firstFarm = fakePane('mpFarm', ['farmSectionLayout', 'farmSectionStorage', 'farmSectionLivestock']);
+const settingsPane = fakePane('mpSettings', ['settingsSectionAudio', 'settingsSection7', 'settingsSection6']);
+navigation.prepareSubtabs(firstFarm, firstFarm);
+navigation.prepareSubtabsWithMemory(firstFarm, firstFarm, 'farmSectionStorage', 0, false); // Simulates deliberate bumper navigation.
+navigation.prepareSubtabs(settingsPane, settingsPane);
+navigation.restoreSubtabs(firstFarm); // Menu close must discard presentation state, not the remembered section.
+const reopenedFarm = fakePane('mpFarm', ['farmSectionLayout', 'farmSectionStorage', 'farmSectionLivestock']);
+navigation.prepareSubtabs(reopenedFarm, reopenedFarm);
+assert.equal(navigation.subtabsByGroup.get(reopenedFarm)?.selected.id, 'farmSectionStorage', 'Farm returns to its own last section on reopen');
+assert.equal(navigation.subtabsByGroup.get(settingsPane)?.selected.id, 'settingsSectionAudio', 'Settings keeps an independent section');
+navigation.prepareSubtabsWithMemory(reopenedFarm, reopenedFarm, 'farmSectionLivestock', 0, false);
+assert.equal(navigation.subtabsByGroup.get(reopenedFarm)?.selected.id, 'farmSectionLivestock', 'Explicit section jumps override memory');
+assert.equal(navigation.lastSubtabByGroupKey.get('mpFarm')?.id, 'farmSectionLivestock', 'Explicit jumps become the next remembered section');
+
+
 const categories = [...htmlSource.matchAll(/class="inv-cat(?: active)?" data-cat="([^"]+)"/g)].map(match => match[1]); // Matches the real Pack filter bar, not the shipping filters.
 assert.equal(new Set(categories).size, 16, 'Sixteen distinct Pack filters are present');
 assert.equal(categories[0], 'all', 'All remains the default and first choice');

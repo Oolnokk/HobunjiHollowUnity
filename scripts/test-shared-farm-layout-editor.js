@@ -15,7 +15,7 @@ function node(id) {
   Object.defineProperty(result,'innerHTML',{set() { this.children=[]; }});
   nodes.set(id,result); return result;
 }
-['houseLayoutModal','houseLayoutClose','houseLayout3dCanvas','houseLayoutHint','houseLayoutPieceList','houseLayoutSelectedActions','houseLayoutArchitecture','houseLayoutDeeds','.house-layout-title'].forEach(node);
+['houseLayoutModal','houseLayoutClose','houseLayout3dCanvas','houseLayoutCursorToggle','houseLayoutHint','houseLayoutPieceList','houseLayoutSelectedActions','houseLayoutArchitecture','houseLayoutDeeds','.house-layout-title'].forEach(node);
 function vector() { return { set(){}, x:0,y:0,z:0 }; }
 class Group {
   constructor() { this.children=[]; this.userData={}; }
@@ -39,7 +39,9 @@ const context={console,THREE,document:{getElementById:id=>nodes.get(id),createEl
   requestAnimationFrame:fn=>{const id=++nextFrame;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
   addEventListener:(name,fn)=>{listeners[name]=fn;},
 }; // Shared modal owner reads browser globals through window.
-context.window=context; vm.createContext(context); vm.runInContext(fs.readFileSync('docs/js/farm-panel-core.js','utf8'),context);
+context.window=context;
+context.ControllerUI = { activePanel: () => nodes.get('houseLayoutModal') }; // Controller cursor input only owns the editor while it is the frontmost panel.
+vm.createContext(context); vm.runInContext(fs.readFileSync('docs/js/farm-panel-core.js','utf8'),context);
 context.FarmPanel.init({scene,COLS:60,ROWS:50,ITEM_DEFS:{},hasFarmPermission:()=>allowed,getHousePieces:()=>housePieces,
   getHousePieceCatalog:()=>({}),housePieceLabel:()=> 'Starter',getHouseFixtureInventory:()=>[],esc:value=>value,showToast(){},canMovePieceTo:()=>true});
 const barnPiece={id:'barn-room',col:-1,row:-1,w:2,h:2}; // Under the screen center in the deterministic unproject stub.
@@ -55,13 +57,29 @@ assert.equal(scene.fog,originalFog);assert.equal(scene.children.length,0,'tempor
 function event(x,y=100) { return {pointerId:1,clientX:x,clientY:y}; }
 canvas.events.pointerdown(event(100));canvas.events.pointermove(event(125));canvas.events.pointerup(event(125));
 assert.equal(moves,1,'barn drag commits through the supplied domain authority');
+const cursorToggle = nodes.get('houseLayoutCursorToggle'); // Shared button is the handoff from ordinary menu focus to the tile cursor.
+assert.equal(typeof cursorToggle.events.click,'function','cursor entry button is bound without a second input loop');
+cursorToggle.events.click();
+assert.equal(panel.layoutEditorDebug().cursor.active,true,'cursor entered in the shared 3D view');
+const cursorInput = (now, move = {}, down = {}) => panel.handleLayoutControllerFrame({
+  now, focused:true,pad:{},move:{x:move.x || 0,y:move.y || 0}
+},id=>!!down[id]); // Uses the production frame handler, while the existing editor authority performs moves.
+cursorInput(10);cursorInput(20,{}, {uiConfirm:true});cursorInput(30); // A picks up the initially selected barn, after the opening A has been released.
+assert.equal(panel.layoutEditorDebug().cursor.carryingId,barnPiece.id);
+const startCol = panel.layoutEditorDebug().cursor.col; // Used to check exactly one snapped tile, not continuous world-unit drift.
+cursorInput(40,{x:1});
+assert.equal(panel.layoutEditorDebug().cursor.col,startCol+1);
+cursorInput(50,{}, {uiConfirm:true});cursorInput(60);
+assert.equal(moves,2,'cursor drop commits through the same barn domain authority as pointer dragging');
+cursorInput(70,{}, {uiCancel:true});
+assert.equal(panel.layoutEditorDebug().cursor.active,false,'B exits cursor mode without closing the editor');
 sidebar.arm({type:'placeIncubator',tier:'small'});canvas.events.pointerdown(event(100));canvas.events.pointerup(event(100));
 assert.equal(placements,1,'plain tap uses the same shared house pointer handler for an armed barn plan');
 assert.equal(panel.layoutEditorDebug().placing,null,'successful placement disarms');
 canvas.events.pointerdown(event(100));canvas.events.pointermove(event(125));canvas.events.pointercancel(event(125));
-assert.equal(moves,1,'cancellation never commits a move');
+assert.equal(moves,2,'cancellation never commits a move');
 allowed=false;canvas.events.pointerdown(event(100));canvas.events.pointermove(event(125));canvas.events.pointerup(event(125));
-assert.equal(moves,1,'read-only users can select but never start a drag');
+assert.equal(moves,2,'read-only users can select but never start a drag');
 allowed=true;canvas.events.pointerdown(event(100));
 panel.closeLayoutEditor();assert.equal(frames.size,0);assert.equal(nodes.get('houseLayoutModal').attributes['aria-hidden'],'true');
 panel.openLayoutEditor();assert.equal(rendererCount,1,'house reopening reuses the barn renderer');
@@ -69,7 +87,7 @@ assert.equal(panel.layoutEditorDebug().editor,'house');assert.equal(panel.layout
 assert.equal(nodes.get('.house-layout-title').textContent,'House Layout');
 listeners.keydown({key:'Escape',preventDefault(){}});assert.equal(frames.size,0);
 panel.openLayoutEditor(adapter);canvas.events.pointerdown(event(100));canvas.events.pointermove(event(125));canvas.events.pointerup(event(125));
-assert.equal(moves,2,'close mid-gesture clears pointer capture state for the next opening');
+assert.equal(moves,3,'close mid-gesture clears pointer capture state for the next opening');
 assert(nodes.has('houseLayoutDebug'),'both editors expose copyable diagnostics on mobile');
 panel.closeLayoutEditor();
-console.log('Shared farm layout renderer, selection, drag/place, permissions, cancellation, switching, and diagnostics passed.');
+console.log('Shared farm layout renderer, selection, controller tile cursor pickup/drop, drag/place, permissions, cancellation, switching, and diagnostics passed.');
