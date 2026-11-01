@@ -5,6 +5,7 @@
   const VERSION = 13;
   const SHOULDER_MODE = 'shoulderSurf';
   const TIGHT_FOV_DEG = 34; // Optical zoom around the camera-center reticle ray; unlike changing shoulder distance this introduces no aim-point parallax.
+  const SPYGLASS_FOV_DEG = 14; // Stronger optical zoom while the utility spyglass lens is raised, routed through this same FOV owner.
   const FOCUS_EASE_PER_SEC = 9; // Used to ease ready optical zoom continuously without quantized Settings-control writes.
   const RESTORE_EPSILON = 0.002; // Used to snap settled focus interpolation and stop steady-state writes.
   const CAMERA_WRITE_EPSILON = 0.0005; // Used to avoid rewriting native camera FOV when the desired value has not materially changed.
@@ -760,10 +761,12 @@
     const rangedType = def?.rangedType || 'load-fire';
     const charging = rangedType === 'thrown' && !!thrownCharge(itemKey);
     const loaded = rangedType !== 'thrown' && !!itemKey && ranged?.isLoaded?.(itemKey) === true;
-    const active = held.rangedOut && !!itemKey && (charging || loaded);
+    const spyglass = window.Spyglass?.isAiming?.() === true; // Used to arbitrate the exclusive spyglass and weapon-focus camera targets.
+    const active = spyglass || (held.rangedOut && !!itemKey && (charging || loaded));
     return {
       active,
-      reason: !held.rangedOut ? 'ranged-not-out' : !itemKey ? 'no-ranged-item' : charging ? 'thrown-windup' : loaded ? 'loaded' : 'not-ready',
+      spyglass,
+      reason: spyglass ? 'spyglass-lens' : !held.rangedOut ? 'ranged-not-out' : !itemKey ? 'no-ranged-item' : charging ? 'thrown-windup' : loaded ? 'loaded' : 'not-ready',
       itemKey,
       rangedType,
       charging,
@@ -786,7 +789,7 @@
       if (Number.isFinite(authored) && authored > 1) baseFovDeg = authored;
     }
     if (baseFovDeg == null) return null;
-    const tight = Math.min(baseFovDeg, TIGHT_FOV_DEG);
+    const tight = Math.min(baseFovDeg, window.Spyglass?.isAiming?.() ? SPYGLASS_FOV_DEG : TIGHT_FOV_DEG);
     const next = baseFovDeg + (tight - baseFovDeg) * blend;
     const current = Number(mode.fovDeg);
     if (!Number.isFinite(current) || Math.abs(current - next) > CAMERA_WRITE_EPSILON) mode.fovDeg = next;
@@ -811,6 +814,7 @@
   }
 
   function updateCameraFocus(dt) {
+    window.Spyglass?.update?.(); // Camera transitions or newly equipped gear immediately cancel the lens before choosing an optical target.
     const state = focusState();
     blend = easeToward(blend, state.active ? 1 : 0, dt);
     if (state.active && 1 - blend < RESTORE_EPSILON) blend = 1;
@@ -914,6 +918,7 @@
       baseFovDeg,
       combatOffsets: lastFocusSnapshotInputs ? { ...lastFocusSnapshotInputs.combatOffsets } : combatOffsetSnapshot(),
       tightFovDeg: TIGHT_FOV_DEG,
+      spyglassFovDeg: SPYGLASS_FOV_DEG,
       rangedAimInstalled,
       combatInitBridgeInstalled,
       meleeAimInstalled,
@@ -929,6 +934,7 @@
     }),
     tuning: {
       tightFovDeg: TIGHT_FOV_DEG,
+      spyglassFovDeg: SPYGLASS_FOV_DEG,
       easePerSecond: FOCUS_EASE_PER_SEC,
       surfaceRayMaxWorld: SURFACE_RAY_MAX_WORLD,
       rayOriginQuantumWorld: RAY_ORIGIN_QUANTUM_WORLD,

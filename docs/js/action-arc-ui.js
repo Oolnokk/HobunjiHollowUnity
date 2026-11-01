@@ -96,6 +96,7 @@
   }
 
   function _openToolArc() {
+    window.Spyglass?.endAim?.('tool arch opened');
     _clearArc(); _arcOpen = 'tool';
     if (_itemBtn) _itemBtn.style.visibility = 'hidden';
     _arcBd = document.createElement('div');
@@ -131,6 +132,7 @@
   // placed wilderness campfire or the farm, quick-selecting a Campfire Kit
   // without scrolling the item wheel, or orbiting around the stationary player.
   function _openUtilitiesArc() {
+    window.Spyglass?.endAim?.('utility arch opened'); // Keep the optical mask out of the utility selector while browsing it.
     // A placed campfire now persists indefinitely, including outside its
     // own zone (see wilderness-campfire.js's header comment) — serialize()
     // is the "does one exist, and where" query for that; isHere() only
@@ -145,6 +147,11 @@
         active: deps.characterViewMode.enabled,
         initial: true,
         onSelect: () => deps.setCharacterViewMode(!deps.characterViewMode.enabled),
+      },
+      {
+        id: 'spyglass', icon: '🔭', label: window.Spyglass?.isEquipped?.() ? 'Put Away Spyglass' : 'Spyglass',
+        active: window.Spyglass?.isEquipped?.() === true,
+        onSelect: () => window.Spyglass?.equip?.(), // Toggle persistent equipment; Action 1 raises the lens while held.
       },
       {
         id: 'furniture-placement', icon: '🪑', label: furniturePlacementAvailable ? 'Furniture Placement' : 'Furniture Placement Unavailable',
@@ -232,6 +239,7 @@
   }
 
   function _selectHeldInventoryKey(itemKey) {
+    window.Spyglass?.stow?.('held item selected');
     const index = deps.getInventoryStackItems().findIndex(item => item.key === itemKey);
     if (index < 0) return;
     deps.setActiveItemIndex(index);
@@ -352,6 +360,7 @@
   }
 
   function _openItemArc() {
+    window.Spyglass?.endAim?.('item arch opened');
     _clearArc(); _arcOpen = 'item';
     deps.toolBtn.style.visibility = 'hidden';
     _arcBd = document.createElement('div');
@@ -400,6 +409,7 @@
     if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
     if (!_arcOpen) return;
     const slot = _arcSlots[_arcActive];
+    if (slot && slot.data?.id !== 'spyglass') window.Spyglass?.stow?.('other utility or equipment selected');
     if (_arcOpen === 'tool' && slot) {
       deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
       deps.setActiveTool(slot.data); // calls refreshActionBar internally
@@ -435,6 +445,7 @@
       openUtilities() { if (_arcOpen !== 'entries:utilities') _openUtilitiesArc(); },
       openEntries(mode, entries, options = {}) { _openEntries(mode, entries, options.radius || _outerR()); },
       recallLastTool() {
+        window.Spyglass?.stow?.('tool recalled');
         const fallback = deps.WHEEL_SLOTS.find(slot => deps.equipmentSlots[slot]) || deps.WHEEL_SLOTS[0]; // Deleted/invalid remembered references degrade safely.
         const lastHeldFarmTool = deps.getLastHeldFarmTool();
         const recalled = deps.WHEEL_SLOTS.includes(lastHeldFarmTool) && deps.equipmentSlots[lastHeldFarmTool] ? lastHeldFarmTool : fallback;
@@ -444,6 +455,7 @@
         return recalled;
       },
       scrollTool(dir) {
+        window.Spyglass?.stow?.('tool selected');
         if (_arcOpen !== 'tool') _openToolArc();
         const activeTool = deps.getActiveTool();
         const idx = deps.WHEEL_SLOTS.indexOf(activeTool);
@@ -458,6 +470,7 @@
         });
       },
       scrollItem(dir) {
+        window.Spyglass?.stow?.('item selected');
         if (_arcOpen !== 'item') _openItemArc();
         deps.setHeldMode('item');
         deps.cycleActiveInventoryItem(dir);
@@ -589,6 +602,7 @@
         if (_iTimer) { clearTimeout(_iTimer); _iTimer = null; }
         if (_arcOpen === 'item') _arcUp();
         else if (!_iHeld && !_iMoved) {
+          window.Spyglass?.stow?.('item selector tapped');
           if (deps.getHeldMode() === 'item') {
             // An item is already selected — the same tap now dequips
             // instead (replacing the removed dedicated put-away button;
