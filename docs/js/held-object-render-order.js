@@ -130,7 +130,11 @@
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
   let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects without classified ground depth.
-  let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
+  let shellXrayMeshDrawCount = 0;
+  let lastElevationReplayGroups = 0; // Mobile diagnostics: number of standing-height depth replays in the latest base/shell pass.
+  let lastUnknownElevationMeshes = 0; // Mobile diagnostics: unresolved actor meshes intentionally left fully occluded.
+  let lastElevationShaderMaterials = 0; // Materials with the standard elevation-aware shader hook active.
+  let lastElevationShaderFallbacks = 0; // Custom/unsupported ground shaders retained as ordinary depth occluders. // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let internalReplay = false;
   let lastDebugSignature = '';
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
@@ -1101,7 +1105,7 @@
       const parentY = root.parent ? worldYOf(root.parent) : 0;
       const localY = Number(root.position?.y);
       if (Number.isFinite(parentY) && Number.isFinite(localY)) elevation = parentY + localY;
-      const channels = window.PlayerBodyTransformComposer?.getDebug?.().channels || [];
+      const channels = window.PlayerBodyTransformComposer?.getDebug?.()?.channels || [];
       for (const channel of channels) {
         if (channel.enabled === false || channel.name !== 'townSubtleElevation') continue;
         elevation += Number(channel.translation?.y) || 0;
@@ -1128,12 +1132,17 @@
     return groups;
   }
 
+  function recordElevationGroups(groups) {
+    lastElevationReplayGroups = groups.length;
+    lastUnknownElevationMeshes = groups.reduce((count, group) => count + (Number.isFinite(group.elevation) ? 0 : group.meshes.length), 0);
+  }
+
   function installGroundElevationShader(material) {
     if (!material) return null;
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
     if (state) return state;
-    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 } }, supported: false };
+    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 } }, supported: false, compileAttempted: false };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
     const previousCacheKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey : null;
@@ -1143,6 +1152,7 @@
       const fragment = shader.fragmentShader || '';
       const requiredVertex = ['#include <common>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>'];
       const requiredFragment = ['#include <common>', '#include <clipping_planes_fragment>'];
+      state.compileAttempted = true;
       if (!requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
         state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
         return;
@@ -1168,6 +1178,7 @@
   function setGroundElevationFilter(groundMeshes, elevation) {
     const seen = new Set();
     let materialCount = 0;
+    let fallbackCount = 0;
     const enabled = Number.isFinite(elevation);
     for (const mesh of groundMeshes) {
       forEachMaterial(mesh?.material, material => {
@@ -1178,8 +1189,11 @@
         state.uniforms.elevation.value = enabled ? elevation : 0;
         state.uniforms.enabled.value = enabled ? 1 : 0;
         if (state.supported) materialCount++;
+        else if (state.compileAttempted) fallbackCount++;
       });
     }
+    lastElevationShaderMaterials = materialCount;
+    lastElevationShaderFallbacks = fallbackCount;
     return { materials: seen, count: materialCount };
   }
 
@@ -1212,6 +1226,7 @@
     window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
     const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    recordElevationGroups(groups);
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, overlayMeshes, scissorRect);
     let replayCulled = null;
@@ -1388,6 +1403,7 @@
     const groundMeshes = [...ground, ...topFaceGround];
     const actorElevationCache = new Map(); // Shells reuse the exact actor floor elevation resolved for their source meshes.
     const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    recordElevationGroups(groups);
     let swappedGeometry = [];
     let scissorActive = false;
     let depthWasCleared = false;
@@ -1607,6 +1623,10 @@
       invariantRepairs: invariantRepairCount,
       shellXrayPasses: shellXrayPassCount,
       shellXrayMeshes: shellXrayMeshDrawCount,
+      elevationReplayGroups: lastElevationReplayGroups,
+      unknownElevationMeshes: lastUnknownElevationMeshes,
+      elevationShaderMaterials: lastElevationShaderMaterials,
+      elevationShaderFallbacks: lastElevationShaderFallbacks,
     };
   }
 
@@ -1615,7 +1635,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
