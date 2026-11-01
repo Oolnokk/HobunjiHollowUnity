@@ -168,6 +168,24 @@ assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') &&
 assert.ok(standardGroundShader.vertexShader.includes('transpose(mat3(viewMatrix))'), 'world normals use the view rotation inverse');
 assert.ok(standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const basicMaterial = { userData: {}, needsUpdate: false };
+const basicState = installElevationShader(basicMaterial);
+basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
+const basicGroundShader = {
+  uniforms: {},
+  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
+  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
+};
+basicMaterial.onBeforeCompile(basicGroundShader, {});
+assert.equal(basicState.supported, true, 'unlit MeshBasic grass supports elevation filtering when its geometry has normals');
+assert.ok(basicGroundShader.vertexShader.includes('normalMatrix * normal'),
+  'unlit ground still rejects vertical walls using the geometry normal');
+const noNormalMaterial = { userData: {}, needsUpdate: false };
+const noNormalState = installElevationShader(noNormalMaterial);
+const noNormalShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+noNormalMaterial.onBeforeCompile(noNormalShader, {});
+assert.equal(noNormalState.supported, false, 'unlit ground without a normal attribute remains a full-depth occluder');
+
 const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
 const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
 const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader',
