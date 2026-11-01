@@ -215,7 +215,7 @@
     const defaults = ensureDefaults(rec?.id, rec);
     const styleMatch = defaults.size > 0
       ? traits.some(trait => defaults.has(trait))
-      : options.allowUnknownStyle === true; // Gift acceptance retains its legacy no-style fallback; manual wardrobe Wear remains fail-closed.
+      : (options.allowUnknownStyle === true || item?.acceptedByNpcId === rec?.id); // Only a gift the NPC already accepted can be re-worn when legacy style data is absent.
     const spouseOverride = options.spouseOverride === true && isActiveSpouseWardrobe(rec?.id);
     const blockedTrait = hatedTrait || dislikedTrait || null;
     const styleBlocked = !spouseOverride && !styleMatch;
@@ -240,10 +240,10 @@
     if (!accepted) return { accepted: false, worn: false };
 
     const list = stored[npcId] || (stored[npcId] = []);
-    const gifted = { ...instance, uid: 'wcloth_' + Math.random().toString(36).slice(2, 10) }; // Stored copy keeps the player's original inventory identity out of NPC persistence.
+    const gifted = { ...instance, uid: 'wcloth_' + Math.random().toString(36).slice(2, 10), acceptedByNpcId: npcId }; // Preserves the NPC's explicit gift acceptance for later manual Wear when legacy style traits are unavailable.
     list.push(gifted);
     const wearability = clothingWearability(rec, gifted, { allowUnknownStyle: true }); // Gift preference remains a hard veto; missing legacy style data keeps its original gift-time fail-open behavior.
-    const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid, { allowUnknownStyle: true }) : false; // Manual Wear does not inherit this gift-only fallback.
+    const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid, { allowUnknownStyle: true }) : false; // Accepted gift identity is retained so later manual Wear can restore this same article.
     if (worn) void refreshWalkerAppearance(walker);
     return { accepted: true, worn, wearBlockedBy: wearability.blockedTrait, wearBlockTier: wearability.tier };
   }
