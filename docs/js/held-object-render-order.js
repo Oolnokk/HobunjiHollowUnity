@@ -1087,15 +1087,16 @@
     let elevation = worldYOf(root);
     if (!Number.isFinite(elevation)) return NaN;
     if (actor.isPlayer) {
-      // The movement root owns map/tile elevation; these existing samplers
-      // supply the visual terrain and walkable-furniture lifts composed later.
-      const x = Number(root.matrixWorld?.elements?.[12] ?? root.position?.x);
-      const z = Number(root.matrixWorld?.elements?.[14] ?? root.position?.z);
-      const area = window.GridTileAccessors?.getCurrentArea?.() || null;
-      if (Number.isFinite(x) && Number.isFinite(z)) {
-        if (area === 'town') elevation += Number(window.HobunjiTownSubtleElevation?.sampleHeightAt?.(x, z)) || 0;
-        else if (area === 'farm') elevation += Number(window.HobunjiFarmSubtleElevation?.sampleHeightAt?.(x, z)) || 0;
-        elevation += Number(window.HobunjiWalkableElevation?.surfaceLiftAt?.(x, z, area)) || 0;
+      // Read the exact elevation channel already used by the player composer.
+      // The wrapper runs before the visible draw applies its temporary body
+      // transforms, so root.worldY plus this channel is the standing surface.
+      const parentY = root.parent ? worldYOf(root.parent) : 0;
+      const localY = Number(root.position?.y);
+      if (Number.isFinite(parentY) && Number.isFinite(localY)) elevation = parentY + localY;
+      const channels = window.PlayerBodyTransformComposer?.getDebug?.().channels || [];
+      for (const channel of channels) {
+        if (channel.enabled === false || channel.name !== 'townSubtleElevation') continue;
+        elevation += Number(channel.translation?.y) || 0;
       }
     }
     return elevation;
