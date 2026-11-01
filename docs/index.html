@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
+  <link rel="stylesheet" href="utility-spyglass.css?v=20261101spyglass1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Parser-time dependency gate used by modules that may be dynamically
        injected long before game.js. Keep this near the top: livestock
@@ -89,7 +90,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261028farmwork1"></script>
+  <script src="js/action-arc-ui.js?v=20261101spyglass1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -399,7 +400,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261101offhandcombat1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261101spyglassReview2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -2831,6 +2832,8 @@
   </script>
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
+  <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; HUD is created at DOM ready. -->
+  <script src="js/utility-spyglass.js?v=20261101spyglass1"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
   <script src="js/dev-random-ruin-bootstrap.js?v=20261101hruinrootload1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
