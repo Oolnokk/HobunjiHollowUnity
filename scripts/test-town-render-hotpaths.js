@@ -180,7 +180,7 @@ assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: {
   'only the inverted-hull shell layer is intercepted');
 assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 1 } }), false,
   'ordinary world renders are not mistaken for shell passes');
-assert.equal(isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 } }), false,
+assert.equal(!!isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 } }), false,
   'depth-only layer renders are not mistaken for shell passes');
 
 const shellFilterStart = shellPassEnd;
