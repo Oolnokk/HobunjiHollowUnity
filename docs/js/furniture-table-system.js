@@ -53,34 +53,36 @@
   }
   // Resolve a scheduled bed from the exact placed surface, including building-map post offsets/scale.
   // Station tiles may occupy either half of a double bed, so keep that tile's lateral position.
-  // Bedroom stations use pose:'lie', not pose:'sit'. Find the actual placed mattress under
-  // the station tile so scheduled NPCs share the player's authored sleep surface.
+  // Scheduled sleepers retain their authored station location for navigation while matching the mattress surface.
   function lieTransform(area, target) {
-    if (!target || (target.pose !== 'lie' && !/sleep/i.test(String(target.activity || ''))) || !window.THREE?.Vector3) return null;
-    const col = Number(target.c ?? target.col), row = Number(target.r ?? target.row); // NPC schedule station tile; used to choose a bed and a side of double beds.
+    if (!target || target.pose !== 'lie' || !window.THREE) return null;
+    const col = Number(target.c ?? target.col), row = Number(target.r ?? target.row); // NPC station tile used to distinguish two sleepers in one bed.
     if (!Number.isFinite(col) || !Number.isFinite(row)) return null;
-    const beds = [...entries(area).values()].filter(entry => {
-      if (!entry.root?.parent) return false;
-      const key = String(entry.record.key || entry.record.itemKey || '');
-      if (!/^(basicBed|doubleBed|bedroll)(Furniture)?$/.test(key)) return false;
-      const w = Number(entry.def.fw) || 1, d = Number(entry.def.fd) || 1;
-      return col >= entry.record.col && col < entry.record.col + w &&
-        row >= entry.record.row && row < entry.record.row + d;
-    }); // Only furniture at the schedule destination qualifies: no nearest-bed teleport.
-    const bed = beds.find(entry => entry.id === target.furnitureId) || beds[0];
-    if (!bed) return null;
-    const key = String(bed.record.key || bed.record.itemKey || '').replace(/Furniture$/, '');
-    const data = window.AuthoredFurniture?.peek?.(key); // Cached geometry from the same authoring tool used by the player bed animation.
-    const surface = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
-    if (!Number.isFinite(surface)) return null;
-    const width = Math.max(1, Number(bed.def.fw) || 1);
-    const slot = Math.max(-width / 2 + 0.25, Math.min(width / 2 - 0.25,
-      col + 0.5 - (Number(bed.record.col) + width / 2))); // Distinct left/right positions for partners sharing a double bed.
-    bed.root.updateWorldMatrix?.(true, false);
-    const world = bed.root.localToWorld(new window.THREE.Vector3(slot, surface, 0)); // World mattress, including placement scale and room elevation.
-    const quaternion = bed.root.getWorldQuaternion(new window.THREE.Quaternion()); // World yaw retains authored room rotation.
-    const yaw = new window.THREE.Euler().setFromQuaternion(quaternion, 'YXZ').y;
-    return { x: world.x, y: world.y, z: world.z, yaw, bedId: bed.id, key, slot };
+    const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Only actual sleeping furniture can supply a mattress, never a nearby wardrobe/table.
+    const id = target.furnitureId || target.bedId || null; // Map-editor furnished stations may have a specific bed reference.
+    let entry = id ? entries(area).get(String(id)) : null;
+    if (!entry || !bedKeys.has(entry.record.key)) {
+      entry = [...entries(area).values()].find(item => {
+        if (!item.root?.parent || !bedKeys.has(item.record.key)) return false;
+        const w = Number(item.def?.fw) || 1, d = Number(item.def?.fd) || 1;
+        return col >= item.record.col && row >= item.record.row && col < item.record.col + w && row < item.record.row + d;
+      });
+    }
+    if (!entry?.root?.parent) return null;
+    const data = window.AuthoredFurniture?.peek?.(entry.record.key);
+    const top = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
+    if (!Number.isFinite(top)) return null;
+    entry.root.updateWorldMatrix?.(true, false);
+    const location = new window.THREE.Vector3(0, top, 0);
+    entry.root.localToWorld(location);
+    const centerX = Number(entry.record.col) + (Number(entry.def?.fw) || 1) * 0.5;
+    const centerZ = Number(entry.record.row) + (Number(entry.def?.fd) || 1) * 0.5;
+    const stationOffsetX = col + 0.5 - centerX, stationOffsetZ = row + 0.5 - centerZ;
+    const rot = (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180;
+    const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
+    const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);
+    const floor = deps?.surfaceY?.(areaId(area), x, z) || 0;
+    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key };
   }
 
 
