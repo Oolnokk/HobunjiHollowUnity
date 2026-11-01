@@ -218,6 +218,8 @@ assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
   'shell replay excludes classified ground, draws only matching shells, then restores full scene depth');
 assert.ok(heldRender.includes('const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))'),
   'all existing held/foot ground-x-ray participants share shell visibility parity');
+assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
+  'mobile Pixel Probe reports shell x-ray replay activity');
 assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored)'),
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
 
