@@ -281,7 +281,7 @@
     }
     const binding = action1Binding('controller');
     const actionCodes = controllerActionCodes(binding);
-    const pressed = frame.pressed instanceof Set ? [...frame.pressed] : Array.isArray(frame.pressed) ? frame.pressed : [];
+    const pressed = frame.pressed && typeof frame.pressed[Symbol.iterator] === 'function' ? Array.from(frame.pressed) : Array.isArray(frame.pressed) ? frame.pressed : [];
     if (pressed.some(code => !actionCodes.has(code)) || Number(frame.move?.magnitude) > 0.12) {
       stow(Number(frame.move?.magnitude) > 0.12 ? 'controller movement' : 'other controller input');
       return;
