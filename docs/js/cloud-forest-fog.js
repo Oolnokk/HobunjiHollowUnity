@@ -784,14 +784,9 @@
     const dx = sourceX - fromX, dz = sourceZ - fromZ;
     const lengthSquared = dx * dx + dz * dz;
     if (lengthSquared < 0.000001) return 1;
-    const mapIds = farmhouseActive ? ['interior', currentArea] : [currentArea];
+    const doors = window.InteriorDoorTiles?.getLightBlockers?.(currentArea, activeScene) || [];
     let transmission = 1;
-    const seen = new Set();
-    for (const mapId of mapIds) {
-      if (!mapId || seen.has(mapId)) continue;
-      seen.add(mapId);
-      const doors = window.InteriorDoorTiles?.getLightBlockers?.(mapId) || [];
-      for (const door of doors) {
+    for (const door of doors) {
         const progress = clamp01(door.openProgress);
         if (progress >= 0.999) continue;
         const nx = finiteOr(door.normalX, 0), nz = finiteOr(door.normalZ, 0);
@@ -803,9 +798,8 @@
         const tangentX = -nz, tangentZ = nx;
         const lateral = Math.abs((hitX - door.x) * tangentX + (hitZ - door.z) * tangentZ);
         if (lateral > Math.max(0.5, finiteOr(door.halfWidth, 0.5)) + 0.12) continue;
-        transmission *= progress; // The same eased progress that swings the slab smoothly restores light as the door opens.
-        if (transmission <= 0.005) return 0;
-      }
+      transmission *= progress; // The same eased progress that swings the slab smoothly restores light as the door opens.
+      if (transmission <= 0.005) return 0;
     }
     return clamp01(transmission);
   }
