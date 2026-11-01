@@ -113,6 +113,36 @@
       normalDeg: { x: anchor.rotationDeg?.x || 0, z: anchor.rotationDeg?.z || 0 },
       footprintHalfDepth: (window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11) * (entry.root.scale?.z || 1), anchorZ: anchor.position.z || 0 }; // Calves bend at the actual seat edge, not the tile footprint.
   }
+  // Bedroom stations use pose:'lie', not pose:'sit'. Find the actual placed mattress under
+  // the station tile so scheduled NPCs share the player's authored sleep surface.
+  function bedTransform(area, target) {
+    if (!target || !window.THREE?.Vector3) return null;
+    const col = Number(target.c ?? target.col), row = Number(target.r ?? target.row); // NPC schedule station tile; used to choose a bed and a side of double beds.
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return null;
+    const beds = [...entries(area).values()].filter(entry => {
+      if (!entry.root?.parent) return false;
+      const key = String(entry.record.key || entry.record.itemKey || '');
+      if (!/^(basicBed|doubleBed|bedroll)(Furniture)?$/.test(key)) return false;
+      const w = Number(entry.def.fw) || 1, d = Number(entry.def.fd) || 1;
+      return col >= entry.record.col && col < entry.record.col + w &&
+        row >= entry.record.row && row < entry.record.row + d;
+    }); // Only furniture at the schedule destination qualifies: no nearest-bed teleport.
+    const bed = beds.find(entry => entry.id === target.furnitureId) || beds[0];
+    if (!bed) return null;
+    const key = String(bed.record.key || bed.record.itemKey || '').replace(/Furniture$/, '');
+    const data = window.AuthoredFurniture?.peek?.(key); // Cached geometry from the same authoring tool used by the player bed animation.
+    const surface = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
+    if (!Number.isFinite(surface)) return null;
+    const width = Math.max(1, Number(bed.def.fw) || 1);
+    const slot = Math.max(-width / 2 + 0.25, Math.min(width / 2 - 0.25,
+      col + 0.5 - (Number(bed.record.col) + width / 2))); // Distinct left/right positions for partners sharing a double bed.
+    bed.root.updateWorldMatrix?.(true, false);
+    const world = bed.root.localToWorld(new window.THREE.Vector3(slot, surface, 0)); // World mattress, including placement scale and room elevation.
+    const quaternion = bed.root.getWorldQuaternion(new window.THREE.Quaternion()); // World yaw retains authored room rotation.
+    const yaw = new window.THREE.Euler().setFromQuaternion(quaternion, 'YXZ').y;
+    return { x: world.x, y: world.y, z: world.z, yaw, bedId: bed.id, key, slot };
+  }
+
   function members(area, tableId) {
     area = areaId(area);
     if (!entries(area).has(tableId)) return [];
@@ -468,5 +498,5 @@
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, bedTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();
