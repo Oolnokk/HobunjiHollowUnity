@@ -6,7 +6,7 @@
   if(!SP?.registerComposer||!DS||!THREE)return;
   const MAP='map_i_dev_random_ruin', DEPTH=32, CELL=1;
   const TYPES=['sentinel','bulwark','reacher']; // Titan rolls only these three combat-capable Maskbound variants.
-  const COLORS=[0xf6b84e,0xcd5deb,0x66d9d1,0xe95178,0xa2c95c,0x6789fa]; // Temporary eye-palette approximation until authored mask palette API exposes the color collection.
+  const COLORS=[0x8A2BFF,0x5B5BFF,0x1FB7FF,0x19E6C3,0x3DFF6B,0xC8FF2B,0xFFC531,0xFF5FA8]; // Binding mask II: the exact eight-color defaultHexPool, not an approximate glow palette.
   const TITAN={scale:3,power:3,range:3,health:3,stamina:3,footing:3,speed:1/3}; // Shared stat contract for all three Titan variants.
   let reserved=null, session=null, deps=null; // Reserved geometry and current session are isolated from ordinary Harlyao ruins.
   const rndSeed=seed=>{let n=(Number(seed)||1)>>>0;return()=>((n=(Math.imul(n,1664525)+1013904223)>>>0)/4294967296);};
@@ -106,7 +106,7 @@
     for(const side of ['west','east']){
       const x=side==='west'?b.minX:b.maxX;
       const len=(b.maxZ-b.minZ-gap)/2;
-      for(const sign of [-1,1])box(group,'split megalith wall',t,4,len,x,y+2,mid+sign*(gap+len)/4,0x34352e);
+      for(const sign of [-1,1])box(group,'split megalith wall',t,4,len,x,y+2,mid+sign*(gap+len)/2,0x34352e);
     }
     for(const x of [b.minX+1,b.maxX-1])for(const z of [b.minZ+1,b.maxZ-1]){
       cylinder(group,'stone-age menhir',.45,.7,3.5,x,y+1.75,z,0x464941);
@@ -143,10 +143,10 @@
         const phase=2*Math.PI*index/count+rng()*1.4,period=5+ring*2.4+rng()*2.4;
         const entry={ring,index,radius,phase,period,rotation:0,position:{x:0,z:0},prev:{x:0,z:0},y:y+.55,
           plate: ring===0&&index===0 || ring===1&&index===0 || ring===2&&index===0,triggered:false};
-        const stone=cylinder(session.group,'moving root-grown stone pillar',1.15,1.45,1.65,0,y-.30,0,0x464841);
-        const cap=cylinder(session.group,'flat top of rooted pillar',1.13,1.15,.13,0,y+.61,0,0x5b5c53);
+        const stone=cylinder(session.group,'moving root-grown stone pillar',1.15,1.45,1.65,0,y-.30,0,0x464841);stone.userData.devRuinFootprintIgnore=true;
+        const cap=cylinder(session.group,'flat top of rooted pillar',1.13,1.15,.13,0,y+.61,0,0x5b5c53);cap.userData.devRuinFootprintIgnore=true;
         entry.stone=stone;entry.cap=cap;
-        if(entry.plate)entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);
+        if(entry.plate){entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);entry.plateMesh.userData.devRuinFootprintIgnore=true;}
         kit.registerSurface({id:'hachutu-moving-'+ring+'-'+index,
           bounds:()=>({minX:entry.position.x-1.12,maxX:entry.position.x+1.12,minZ:entry.position.z-1.12,maxZ:entry.position.z+1.12}),
           topY:()=>y+.70,priority:30});
@@ -160,7 +160,7 @@
     const ropes=[];
     for(let i=0;i<15;i++){
       const a=2*Math.PI*i/15,rad=3.5+(i%3)*2.7;
-      const x=centre.x+Math.cos(a)*rad,z=centre.z+Math.sin(a)*rad;
+      const x=i===0?b.minX+3.6:centre.x+Math.cos(a)*rad,z=i===0?centre.z:centre.z+Math.sin(a)*rad;
       const anchor={x,y:y+7.1+rng()*1.4,z},rope=kit.createRopeObject({
         room,idSuffix:'vine-'+i,anchor,yaw:a+Math.PI/2,length:5.6,maxLength:6.2,
         minBobY:y+.6,angle:.1,startPlatform:null,endPlatform:null,
@@ -315,8 +315,7 @@
     enemy.visualScaleY=(Number(enemy.visualScaleY)||1)*TITAN.scale;
     enemy.visualScaleZ=(Number(enemy.visualScaleZ)||1)*TITAN.scale;
     enemy.halfHeight=(Number(enemy.halfHeight)||.8)*TITAN.scale;
-    enemy.avatarRef?.group?.scale?.multiplyScalar?.(TITAN.scale);
-    enemy.groundShadow?.scale?.multiplyScalar?.(TITAN.scale);
+    enemy.groundShadow?.scale?.multiplyScalar?.(TITAN.scale); // Character mesh scale is regenerated from visualScaleX/Y/Z every frame.
     enemy.hachutuTitanTuning={...TITAN};
     // Attacks with fixed bespoke quick/charged timings are not eligible
     // for a Titan: its normal staged combo honors the 1/3 speed multiplier.
@@ -333,10 +332,10 @@
         spawnMaskbound(c,session,c.titan).finally(()=>{c.spawnPending=false;});
       }
       if(c.time>3.4)c.root.position.y=session.floor-Math.min(1.7,(c.time-3.4)*.9);
-      if(c.time>5.6&&!c.finished){c.finished=true;c.root.parent?.remove(c.root);}
+      if(c.time>5.6&&!c.finished){c.finished=true;c.root.parent?.remove(c.root);c.root.traverse(item=>{item.geometry?.dispose?.();item.material?.dispose?.();});}
     }
     session.coffins=session.coffins.filter(c=>!c.finished);
-    for(const minion of [...session.minions])if(!Number(minion.health)>0||minion.dead===true||!deps?.hostileObjects?.has?.(minion))session.minions.delete(minion);
+    for(const minion of [...session.minions])if(!(Number(minion.health)>0)||minion.dead===true||!deps?.hostileObjects?.has?.(minion))session.minions.delete(minion);
   }
   function buildTrial(weed,rng){
     const b=weed.part.bounds,y=session.floor;
@@ -362,19 +361,17 @@
     const t=session.trial,p=session.kit.playerWorld();if(!t)return;
     if(!t.started&&inside(p,session.layout.parts[2].bounds,1)){t.started=true;startWave();}
     if(!t.started||t.cleared)return;
-    const active=session.coffins.some(c=>c.wave===t.wave&&!c.opened||c.wave===t.wave&&c.spawnPending)||
-      [...session.minions].some(m=>m._hachutuWave===t.wave&&m.health>0);
-    // Count enemies born from THIS wave only (the async spawn callback sets it).
+    // The coffin retains the spawned enemy even after it has been removed from the active-minion Set.
     const alive=session.coffins.some(c=>c.wave===t.wave&&(c.spawnPending||!c.opened||c.spawned&&c.spawned.health>0));
     if(!alive&&now>t.nextAt){
       takeRing(session.weeds[2],t.wave-1);
-      if(t.wave<3){t.nextAt=now+2600;startWave();}else t.cleared=true;
+      if(t.wave<3){if(!t.nextAt)t.nextAt=now+2600;else if(now>=t.nextAt){t.nextAt=0;startWave();}}else t.cleared=true;
     }
   }
   function buildDoor(kit){
     const a=session.layout.parts[3],b=a.bounds,y=session.floor;
     const x=b.minX+.25,z=a.center.z,root=session.group;
-    box(root,'temple heart door frame',.95,7,5,x,y+3.5,z,0x262922);
+    const frame=box(root,'temple heart door frame',.95,7,5,x,y+3.5,z,0x262922);frame.userData.devRuinFootprintIgnore=true; // Roots gate progress; don't leave a permanent invisible collider after they retract.
     const layers=[];
     for(let i=0;i<3;i++){
       const g=new THREE.Group();g.position.set(x+.17+i*.15,y,z);root.add(g);
@@ -464,6 +461,21 @@
       rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
       entry:{x:context.spawn.x,z:context.spawn.z,y:Number(context.meta?.floorSurfaceY)||0}};
     kit.group().add(session.group);session.group.name='hachutu-root-temple';
+    // The V50 floor registry only creates surfaces for interiorShell.floorCells.
+    // The exclusive Hachutu wing is a projection-only extension, so it owns
+    // all its support rectangles and the dangerous central void explicitly.
+    const addFloor=(id,b)=>kit.registerSurface({id:'hachutu-floor-'+id,
+      bounds:{minX:b.minX,maxX:b.maxX,minZ:b.minZ,maxZ:b.maxZ},topY:session.floor,priority:2});
+    layout.parts.slice(1).forEach(p=>addFloor(p.name,p.bounds));
+    layout.passages.forEach((b,i)=>addFloor('passage-'+i,b));
+    const b=layout.parts[0].bounds,inset=3;
+    addFloor('swing-west',rect(b.minX,b.minZ,inset,b.maxZ-b.minZ));
+    addFloor('swing-east',rect(b.maxX-inset,b.minZ,inset,b.maxZ-b.minZ));
+    addFloor('swing-north',rect(b.minX+inset,b.minZ,b.maxX-b.minX-inset*2,inset));
+    addFloor('swing-south',rect(b.minX+inset,b.maxZ-inset,b.maxX-b.minX-inset*2,inset));
+    DS.registerPit({id:'hachutu-abyss',scope:kit.SCOPE,
+      bounds:{minX:b.minX+inset,maxX:b.maxX-inset,minZ:b.minZ+inset,maxZ:b.maxZ-inset}});
+    session.lastLabyrinthSpawnAt=0;session.lastCorridorSpawnAt=0;session.lastSwingSpawnAt=0;
     for(const part of layout.parts)sculptRoom(part,kit);
     buildPassages();
     for(const index of [0,1,2])session.weeds.push(createWeed(layout.parts[index],session.rng));
@@ -482,6 +494,26 @@
     updateCoffins(dt);
     if(session.entered){
       updateSwing(dt,now);updateHands(now);updateTrial(now);updateDoor(dt);updateHeart(now);
+      const p=kit.playerWorld();
+      if(p&&inside(p,session.layout.parts[1].bounds,1)&&now-session.lastLabyrinthSpawnAt>9500){
+        session.lastLabyrinthSpawnAt=now;
+        const b=session.layout.parts[1].bounds;
+        spawnCoffin(b.minX+2+session.rng()*(b.maxX-b.minX-4),b.maxZ-2,'sentinel');
+        // Headtakers enter from the farthest corner rather than announcing
+        // themselves with a grown coffin (the player must keep looking around).
+        const far=[{x:b.minX+2,z:b.minZ+2},{x:b.maxX-2,z:b.minZ+2},{x:b.minX+2,z:b.maxZ-2},{x:b.maxX-2,z:b.maxZ-2}]
+          .sort((a,c)=>Math.hypot(c.x-p.x,c.z-p.z)-Math.hypot(a.x-p.x,a.z-p.z))[0];
+        spawnMaskbound({x:far.x,z:far.z,troop:'headtaker'},session);
+      }
+      if(p&&inside(p,session.layout.parts[0].bounds,1)&&now-session.lastSwingSpawnAt>12500){
+        session.lastSwingSpawnAt=now;
+        const b=session.layout.parts[0].bounds;
+        spawnCoffin(b.minX+1.7,b.minZ+3+session.rng()*(b.maxZ-b.minZ-6),TYPES[Math.floor(session.rng()*3)]);
+      }
+      if(p&&session.layout.passages.some(b=>inside(p,b))&&now-session.lastCorridorSpawnAt>15000){
+        session.lastCorridorSpawnAt=now;
+        spawnCoffin(p.x+1.2,p.z+.4,TYPES[Math.floor(session.rng()*3)]);
+      }
     }
   }
   function clear(){
