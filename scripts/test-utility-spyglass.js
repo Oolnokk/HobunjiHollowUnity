@@ -166,6 +166,19 @@ assert.equal(mouseGame.api.isAiming(), false, 'open menus block camera zoom');
 mouseGame.api.update();
 assert.equal(mouseGame.api.isEquipped(), false, 'opening game menu puts the spyglass away');
 
+const touchGame = environment(); // Multi-touch must keep the original Hold to Look pointer in control of the lens.
+touchGame.api.equip();
+const lookButton = touchGame.body.children.find(child => child.id === 'spyglassHud')?.children.find(child => child.id === 'spyglassLook');
+assert.ok(lookButton, 'dedicated mobile Hold to Look button exists');
+const touchEvent = pointerId => ({ pointerId, stopPropagation() {}, preventDefault() {} });
+lookButton.listeners.pointerdown(touchEvent(41));
+assert.equal(touchGame.api.isAiming(), true, 'mobile pointer raises lens');
+lookButton.listeners.pointerdown(touchEvent(42));
+lookButton.listeners.pointerup(touchEvent(42));
+assert.equal(touchGame.api.isAiming(), true, 'secondary finger cannot release the primary pointer hold');
+lookButton.listeners.pointerup(touchEvent(41));
+assert.equal(touchGame.api.isAiming(), false, 'original pointer release lowers lens');
+
 const padGame = environment(); // Exercises the shared controller subscriber rather than manually calling onPress.
 padGame.api.equip();
 padGame.controllerFrame({ focused: true, pad: {}, down: new Set(['RightTrigger']), pressed: new Set(), isDown: name => name === 'RightTrigger' });
