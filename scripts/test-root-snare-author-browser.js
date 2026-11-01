@@ -161,6 +161,11 @@ const server=http.createServer((request,response)=>{
       const clonedParts=runner.group.children.filter(node=>node.name.endsWith('flying visual clone'));
       assert(clonedParts.length===2&&clonedParts.every(node=>node.children.length>0),
         'the finished animation must have two distinct temporary render groups');
+      // The splurt lives for 0.35-0.85 seconds, so assert it while the
+      // separation frame is still current, before advancing the 2.75s tumble.
+      const splurt=runner.group.getObjectByName('Stylized blood particle splurt');
+      assert(splurt?.children.some(p=>p.visible),
+        'splurt particles must be emitted at cartoon separation');
       const initialFlying=clonedParts.map(node=>node.position.clone());
       for(let i=0;i<55;i++){runner.update(.05);pair.update(.05,runner);}
       assert(clonedParts.every((node,index)=>node.position.distanceTo(initialFlying[index])>.5),
@@ -169,8 +174,8 @@ const server=http.createServer((request,response)=>{
         'both detached visuals should tumble about their own centers');
       assert(runner.diagnostics().toss?.pieces?.some(piece=>piece.bounces>0),
         'clones should collide with the visible room floor rather than fall forever');
-      assert(runner.group.children.some(x=>x.name==='Stylized blood particle splurt'&&
-        x.children.some(p=>p.visible)),'splurt particles must be emitted at cartoon separation');
+      assert(splurt.children.every(p=>!p.visible),
+        'short-lived separation particles must expire while the halves keep tumbling');
       assert(!pair.releaseCaptured(),'roots already released the victim as soon as the visual clones launched');
       runner.resetAfterSnare();
       assert(!runner.diagnostics().dual&&!runner.diagnostics().separated&&runner.running,
