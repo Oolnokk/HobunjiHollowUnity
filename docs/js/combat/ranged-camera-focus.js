@@ -59,6 +59,7 @@
   let lastAimError = null; // Mobile-readable record of the latest caught aim resolver error.
   let lastAimErrorSignature = ''; // Prevents the same bad scene node from spamming the in-game log.
   let blend = 0; // Drives current ranged-focus interpolation from 0 normal to 1 tight.
+  let spyglassBlend = 0; // Separately eases the additional spyglass magnification so releasing the lens never snaps to the ranged FOV.
   let baseFovDeg = null; // Restores the authored Shoulder Cam field-of-view after ranged focus ends.
   let activeMeleeRange = null; // Latest real melee attack reach captured at windup/release.
   let lastResolvedAimTarget = null; // Mobile-readable copy of the latest resolved ranged/melee interaction target.
@@ -789,8 +790,9 @@
       if (Number.isFinite(authored) && authored > 1) baseFovDeg = authored;
     }
     if (baseFovDeg == null) return null;
-    const tight = Math.min(baseFovDeg, window.Spyglass?.isAiming?.() ? SPYGLASS_FOV_DEG : TIGHT_FOV_DEG);
-    const next = baseFovDeg + (tight - baseFovDeg) * blend;
+    const rangedFov = Math.min(baseFovDeg, TIGHT_FOV_DEG); // Existing ranged focus keeps its original blend regardless of the utility lens.
+    const spyglassFov = Math.min(baseFovDeg, SPYGLASS_FOV_DEG); // Used as an additional optical contribution, not a sudden replacement for rangedFov.
+    const next = baseFovDeg + (rangedFov - baseFovDeg) * blend + (spyglassFov - rangedFov) * spyglassBlend;
     const current = Number(mode.fovDeg);
     if (!Number.isFinite(current) || Math.abs(current - next) > CAMERA_WRITE_EPSILON) mode.fovDeg = next;
 
@@ -817,8 +819,11 @@
     window.Spyglass?.update?.(); // Camera transitions or newly equipped gear immediately cancel the lens before choosing an optical target.
     const state = focusState();
     blend = easeToward(blend, state.active ? 1 : 0, dt);
+    spyglassBlend = easeToward(spyglassBlend, state.spyglass ? 1 : 0, dt); // Fades the extra 20° of magnification smoothly on raise/lower, including a switch to loaded ranged gear.
     if (state.active && 1 - blend < RESTORE_EPSILON) blend = 1;
     if (!state.active && blend < RESTORE_EPSILON) blend = 0;
+    if (state.spyglass && 1 - spyglassBlend < RESTORE_EPSILON) spyglassBlend = 1;
+    if (!state.spyglass && spyglassBlend < RESTORE_EPSILON) spyglassBlend = 0;
     const fovDeg = applyFov();
     const combatOffsets = combatOffsetSnapshot(); // Used only for mobile-readable diagnostics; ranged focus never writes either melee Combat offset.
 
@@ -881,6 +886,7 @@
 
   function restoreAuthoredCamera() {
     blend = 0;
+    spyglassBlend = 0;
     const mode = shoulderModeConfig();
     if (mode && baseFovDeg != null && Math.abs(Number(mode.fovDeg) - baseFovDeg) > CAMERA_WRITE_EPSILON) {
       mode.fovDeg = baseFovDeg;
@@ -914,6 +920,7 @@
     snapshot: () => ({
       ...(lastFocusSnapshotInputs ? lastFocusSnapshotInputs.state : focusState()),
       blend,
+      spyglassBlend,
       fovDeg: lastFocusSnapshotInputs ? lastFocusSnapshotInputs.fovDeg : undefined,
       baseFovDeg,
       combatOffsets: lastFocusSnapshotInputs ? { ...lastFocusSnapshotInputs.combatOffsets } : combatOffsetSnapshot(),
