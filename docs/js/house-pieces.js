@@ -76,7 +76,7 @@
     // Terrain Jigsaw still exists for other opaque terrain. This final wrapper remains as a safety net for old/untagged natural surfaces before spatial chunking and drawing.
     ['NaturalSurfaceStretchPostJigsaw', naturalSurfaceScript('natural-surface-stretch-post-jigsaw.js')],
     ['BuildingSubtleElevation', 'building-subtle-elevation.js?v=20260811a'],
-    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20261020h8829922'],
+    ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20261031farmworkGrass1'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
     ['HousePieces', 'house-pieces-core.js?v=20261029roomspace3'],
