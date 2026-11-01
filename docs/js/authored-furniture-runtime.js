@@ -590,13 +590,20 @@
     return Math.max(0.035, Math.min(0.13, seatDepth * 0.24));
   }
 
-  // Bed surfaces are exported as authored horizontal boxes even in older files without recognizedSurfaces.
-  // Prefer the broad mattress over narrow pillow/headboard elements, and preserve flat bedrolls.
+  // Bed surfaces are authored as horizontal boxes. Prefer the largest fabric surface:
+  // double-bed headboards can be wide enough to pass the old size filter but are not mattresses.
+  // The resulting local height is transformed by the placed bed root, including its live Y scale.
   function sleepSurfaceHeight(data) {
     const horizontal = (data?.parts || []).filter(part => part.kind === 'box' && Number.isFinite(Number(part.transform?.y))
       && Number(part.transform?.sx) >= 0.4 && Number(part.transform?.sz) >= 0.4);
     if (!horizontal.length) return 0.12;
-    return Math.max(...horizontal.map(part => Number(part.transform.y) + Math.max(0, Number(part.transform.sy) || 0) / 2));
+    const fabric = horizontal.filter(part => part.materialRole === 'fabric');
+    const candidates = fabric.length ? fabric : horizontal;
+    const mattress = candidates.reduce((best, part) => {
+      const area = Math.abs(Number(part.transform.sx) * Number(part.transform.sz));
+      return !best || area > best.area ? { part, area } : best;
+    }, null)?.part;
+    return Number(mattress.transform.y) + Math.max(0, Number(mattress.transform.sy) || 0) / 2;
   }
 
   function seatCount(data) {

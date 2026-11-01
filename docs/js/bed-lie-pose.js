@@ -165,8 +165,10 @@
     const rig = walker._npcCharacterRigRoot;
     const root = walker.root;
     if (!rig?.isObject3D || !root?.isObject3D) return;
-    const activeLie = target?.pose === 'lie' && target?.area === walker.area && mattress
-      && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < 0.20;
+    const sameArea = target?.area == null || target.area === walker.area; // Legacy spouse/activity sleep targets omit area; mattress lookup is already scoped to this walker's live area.
+    const arrivalTolerance = target?.bedCenter ? 0.9 : 0.35; // Spouse navigation may stop on the nearest walkable tile beside the bed; its rig is then translated onto the mattress center.
+    const activeLie = target?.pose === 'lie' && sameArea && mattress
+      && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < arrivalTolerance; // Bed-center targets are still constrained to a known, resolved mattress.
     let state = npcStates.get(walker);
     if (!activeLie && !state) return; // Idle walkers pay zero sleep-pose cost.
     if (!state) {

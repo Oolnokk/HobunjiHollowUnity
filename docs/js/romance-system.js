@@ -517,7 +517,10 @@
     const bed = beds.find(obj => obj.key === 'doubleBed') || beds[0];
     if (!bed) return null;
     const spot = nearestWalkable('interior', bed.col, bed.row, 2);
-    return spot ? { area: 'interior', c: spot.c, r: spot.r, rotY: bed.rotYDeg || 0, bed } : null;
+    return spot ? {
+      area: 'interior', c: spot.c, r: spot.r, rotY: bed.rotYDeg || 0, bed,
+      pose: 'lie', furnitureId: bed.id || '', bedCol: bed.col, bedRow: bed.row, bedCenter: true,
+    } : null; // Navigate to a walkable tile, then place the sleeping rig over the referenced bed's center.
   }
   function seatStations() {
     const find = window.NpcScheduling?.findStationsByRole;
@@ -555,7 +558,7 @@
     const sleep = scfg.sleepHours || { start: 22, end: 7 };
     if (inHourWindow(hour, num(sleep.start, 22), num(sleep.end, 7))) {
       const bed = bedSpot();
-      if (bed) return { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'sleeping', stationId: 'spouse_bed' };
+      if (bed) return { ...bed, activity: 'sleeping', stationId: 'spouse_bed' };
     }
     if (spouseTownVisitNow(rec.id)) return null; // Resume this NPC's authored town agenda.
     const chore = window.NpcFarmPlots?.targetFor?.(rec, { familyOnly: true }); // Existing authored town visits win; on farm days assigned plots take priority over idle time.

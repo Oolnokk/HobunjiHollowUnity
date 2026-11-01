@@ -65,8 +65,9 @@
   // Scheduled sleepers retain their authored station location for navigation while matching the mattress surface.
   function lieTransform(area, target) {
     if (!target || target.pose !== 'lie' || !window.THREE) return null;
-    const col = Number(target.c ?? target.col), row = Number(target.r ?? target.row); // NPC station tile used to distinguish two sleepers in one bed.
-    if (!Number.isFinite(col) || !Number.isFinite(row)) return null;
+    const stationCol = Number(target.c ?? target.col), stationRow = Number(target.r ?? target.row); // Walkable navigation tile; may sit just beside the bed collider.
+    const col = Number(target.bedCol ?? stationCol), row = Number(target.bedRow ?? stationRow); // Explicit bed origin lets spouse sleep targets resolve even when navigation uses an adjacent tile.
+    if (![stationCol, stationRow, col, row].every(Number.isFinite)) return null;
     const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Only actual sleeping furniture can supply a mattress, never a nearby wardrobe/table.
     const id = target.furnitureId || target.bedId || null; // Map-editor furnished stations may have a specific bed reference.
     let entry = id ? entries(area).get(String(id)) : null;
@@ -86,7 +87,8 @@
     entry.root.localToWorld(location);
     const centerX = Number(entry.record.col) + (Number(entry.def?.fw) || 1) * 0.5;
     const centerZ = Number(entry.record.row) + (Number(entry.def?.fd) || 1) * 0.5;
-    const stationOffsetX = col + 0.5 - centerX, stationOffsetZ = row + 0.5 - centerZ;
+    const stationOffsetX = target.bedCenter ? 0 : stationCol + 0.5 - centerX;
+    const stationOffsetZ = target.bedCenter ? 0 : stationRow + 0.5 - centerZ; // Spouses sleep on the mattress center; authored multi-station beds retain their individual side offsets.
     const rot = (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180;
     const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
     const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);

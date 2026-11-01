@@ -22,8 +22,12 @@ const ctx={window:W,THREE:W.THREE,console,performance:{now:()=>0}};
 vm.runInNewContext(read('docs/js/authored-furniture-runtime.js'),ctx);
 const bed=furniture('basicBed'),double=furniture('doubleBed'),chair=furniture('chairSimple');
 assert(W.AuthoredFurniture.seatedKneeReach(chair)<chair.footprint.d/2);
-assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.4); // The broad mattress top is below its raised pillow.
-assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.4);
+assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(bed)<.25); // Half-height bed: fabric mattress, not pillow, defines contact.
+assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(double)<.25); // Double-bed headboard must not be mistaken for its mattress.
+for (const data of [bed,double]) for (const part of data.parts) {
+  assert(part.transform.y < .3, 'bed part vertical position is halved');
+  assert(part.transform.sy < .12, 'bed part vertical thickness is halved');
+}
 const data={basicBed:bed,doubleBed:double,chairSimple:chair,rug:furniture('rug')};
 W.AuthoredFurniture.peek=k=>data[k]||null;
 W.AuthoredFurniture.load=async k=>data[k]||null;
@@ -43,7 +47,9 @@ assert(registry.seatTransform('interior',{furnitureId:'chair'}).footprintHalfDep
 registry.registerPlacement('bedroom',{id:'bed',key:'doubleBed',col:3,row:5},root(4,0,6),{fw:2,fd:2});
 const left=registry.lieTransform('bedroom',{pose:'lie',c:3,r:5});
 const right=registry.lieTransform('bedroom',{pose:'lie',c:4,r:5});
-assert(left&&right&&left.y>.4&&right.x>left.x);
+const spouse=registry.lieTransform('bedroom',{pose:'lie',c:2,r:5,bedCol:3,bedRow:5,furnitureId:'bed',bedCenter:true});
+assert(spouse&&Math.abs(spouse.x-4)<1e-6&&Math.abs(spouse.z-6)<1e-6,'spouse resolves the exact bed center even from an adjacent walkable tile');
+assert(left&&right&&left.y>.20&&left.y<.25&&right.x>left.x); // Both double-bed stations resolve to the newly lowered mattress.
 vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
 const material={clone(){return{depthTest:true,depthWrite:true,dispose(){}};}};
@@ -54,10 +60,10 @@ const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
  root:{isObject3D:true,position:new V(3.5,0,5.5),rotation:{y:0}},
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
-for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',area:'interior'},.1,{x:3.5,z:5.5,y:.58,facingRad:0});
+for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie'},.1,{x:3.5,z:5.5,y:.22,facingRad:0}); // Spouse activity targets may omit area even while correctly scheduled in this room.
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
-assert(Math.abs(rig.position.y+hip.y-.615)<.001,'scaled NPC hip rests on authored mattress top');
+assert(Math.abs(rig.position.y+hip.y-.255)<.001,'scaled NPC hip rests on the half-height authored mattress');
 assert.notEqual(skin.material[0],material);
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'stand',area:'interior'},.1,null);
 assert(!npc._bedLieActive&&skin.material[0]===material&&skin.renderOrder===2);
