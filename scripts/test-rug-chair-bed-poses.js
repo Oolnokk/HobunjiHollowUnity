@@ -6,7 +6,9 @@ const furniture=p=>JSON.parse(read('docs/config/furniture-authored/'+p+'.json'))
 class V {
  constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
- applyQuaternion(){return this;}
+ sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+ multiply(v){this.x*=v.x;this.y*=v.y;this.z*=v.z;return this;}
+ applyQuaternion(q){const a=q.euler?.x||0,b=q.euler?.y||0;const y=this.y*Math.cos(a)-this.z*Math.sin(a),z=this.y*Math.sin(a)+this.z*Math.cos(a);return this.set(this.x*Math.cos(b)+z*Math.sin(b),y,-this.x*Math.sin(b)+z*Math.cos(b));}
 }
 class Q {
  setFromEuler(e){this.euler={x:e.x,y:e.y,z:e.z};return this;}
@@ -46,13 +48,16 @@ vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
 const material={clone(){return{depthTest:true,depthWrite:true,dispose(){}};}};
 const skin={material:[material,{}],renderOrder:2};
-const rig={isObject3D:true,position:new V,quaternion:new Q};
+const rig={isObject3D:true,position:new V,quaternion:new Q,scale:{x:2,y:2,z:2},
+ parent:{updateWorldMatrix(){},worldToLocal(v){return v.sub(npc.root.position);}}}; // Scaled anatomical rig and actual bed-parent frame.
 const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
  root:{isObject3D:true,position:new V(3.5,0,5.5),rotation:{y:0}},
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',area:'interior'},.1,{x:3.5,z:5.5,y:.58,facingRad:0});
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
+const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
+assert(Math.abs(rig.position.y+hip.y-.615)<.001,'scaled NPC hip rests on authored mattress top');
 assert.notEqual(skin.material[0],material);
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'stand',area:'interior'},.1,null);
 assert(!npc._bedLieActive&&skin.material[0]===material&&skin.renderOrder===2);
