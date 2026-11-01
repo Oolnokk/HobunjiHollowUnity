@@ -1064,6 +1064,11 @@
     internalReplay = true;
     const glState = renderer.state;
     const overlayMeshes = [...held, ...feet];
+    // Hands may carry a stale world matrix after the player's temporary body
+    // composition / late socket sync. Repair BEFORE scissor projection and
+    // overlap culling, not only in each mesh's onBeforeRender callback: a stale
+    // floating-hand rectangle could otherwise clip the correctly placed hand.
+    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     // On targets without stencil, keep conservative full occlusion instead
     // of drawing untinted hands, tools or feet above submerged surfaces.
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
