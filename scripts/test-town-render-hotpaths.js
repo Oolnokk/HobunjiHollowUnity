@@ -173,7 +173,7 @@ const shellPassEnd = heldRender.indexOf('  function hideNonXrayShellMeshes(', sh
 assert.ok(shellPassStart >= 0 && shellPassEnd > shellPassStart,
   'the held renderer exposes a dedicated shell-outline pass discriminator');
 const isShellOutlinePass = new Function('THREE', 'SHELL_MASK',
-  heldRender.slice(shellPassStart, shellPassEnd) + '\\nreturn isShellOutlinePass;')(
+  heldRender.slice(shellPassStart, shellPassEnd) + '\nreturn isShellOutlinePass;')(
   { BackSide: 1 }, 2);
 const shellOverride = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } };
 assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 2 } }), true,
@@ -186,7 +186,7 @@ assert.equal(isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 
 const shellFilterStart = shellPassEnd;
 const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
 const hideNonXrayShellMeshes = new Function('hasLayer',
-  heldRender.slice(shellFilterStart, shellFilterEnd) + '\\nreturn hideNonXrayShellMeshes;')(
+  heldRender.slice(shellFilterStart, shellFilterEnd) + '\nreturn hideNonXrayShellMeshes;')(
   (object, layer) => !!(object.layers.mask & (1 << layer)));
 const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
 const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
