@@ -492,6 +492,7 @@
   const lightCameraPosition = new window.THREE.Vector3(); // Reused camera position for off-screen source depth checks.
   const lightViewDirection = new window.THREE.Vector3(); // Reused camera forward direction for off-screen source depth checks.
   const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
+  const lightPlayerPosition = new window.THREE.Vector3(); // Reused player-depth plane origin for farmhouse light projection.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
   const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
@@ -507,36 +508,32 @@
   }
 
   function projectInteriorLightMask(x, y, z, tiles, context) {
-    let projectedX = x, projectedY = y, projectedZ = z;
+    let projectedX = x, projectedY = y, projectedZ = z, projectedRadius = tiles;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
     if (activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true) {
       const camera = lightingDeps.camera;
-      camera.getWorldPosition(lightCameraPosition);
       camera.getWorldDirection(lightViewDirection);
-      lightToSource.set(x, y, z).sub(lightCameraPosition);
-      const sourceDepth = lightToSource.dot(lightViewDirection);
-      const near = Number.isFinite(camera.near) ? camera.near : 0;
-      if (sourceDepth <= near) {
-        const player = lightingDeps.player;
-        const playerX = finiteOr(player?.x, 0) / lightingDeps.TILE;
-        const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0);
-        const playerZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
-        const playerDepth = (playerX - lightCameraPosition.x) * lightViewDirection.x
-          + (playerY - lightCameraPosition.y) * lightViewDirection.y
-          + (playerZ - lightCameraPosition.z) * lightViewDirection.z;
-        const targetDepth = Math.max(playerDepth, near * 2, 0.5);
-        lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
-        lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
-        const lateralX = lightToSource.dot(lightCamRight);
-        const lateralY = lightToSource.dot(lightCamUp);
-        projectedX = lightCameraPosition.x + lightViewDirection.x * targetDepth + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
-        projectedY = lightCameraPosition.y + lightViewDirection.y * targetDepth + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
-        projectedZ = lightCameraPosition.z + lightViewDirection.z * targetDepth + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
-      }
+      const player = lightingDeps.player;
+      const playerX = finiteOr(player?.x, 0) / lightingDeps.TILE;
+      const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0);
+      const playerZ = finiteOr(player?.y, 0) / lightingDeps.TILE;
+      lightPlayerPosition.set(playerX, playerY, playerZ);
+      lightToSource.set(x, y, z).sub(lightPlayerPosition);
+      lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
+      lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
+      const depthOffset = lightToSource.dot(lightViewDirection);
+      const radiusSquared = tiles * tiles - depthOffset * depthOffset;
+      if (!(radiusSquared > 0)) return null;
+      projectedRadius = Math.sqrt(radiusSquared);
+      const lateralX = lightToSource.dot(lightCamRight);
+      const lateralY = lightToSource.dot(lightCamUp);
+      projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
+      projectedY = playerY + lightCamRight.y * lateralX + lightCamUp.y * lateralY;
+      projectedZ = playerZ + lightCamRight.z * lateralX + lightCamUp.z * lateralY;
     }
     const center = lightingDeps.worldToOverlay(projectedX, projectedY, projectedZ);
-    const radius = lightScreenRadius(projectedX, projectedZ, projectedY, tiles);
-    if (!lightMaskIntersectsViewport(center, radius, context, projectedX, projectedY, projectedZ, tiles)) return null;
+    const radius = lightScreenRadius(projectedX, projectedZ, projectedY, projectedRadius);
+    if (!lightMaskIntersectsViewport(center, radius, context, projectedX, projectedY, projectedZ, projectedRadius)) return null;
     return { center, radius, x: projectedX, y: projectedY, z: projectedZ };
   }
 
