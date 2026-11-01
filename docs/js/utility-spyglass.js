@@ -16,6 +16,7 @@
   let lookButton = null; // Touchscreen hold target, kept separate from the scene pointer input.
   let lastReason = 'not equipped'; // Displayed in the mobile-readable diagnostic snapshot.
   let pointerAimId = null; // Tracks the scene mouse pointer that raised the lens even when the action arch is hidden.
+  let lookPointerId = null; // Tracks the one touchscreen pointer allowed to release the dedicated Hold to Look button.
   let keyAimCode = null; // Tracks a keyboard-mapped Action 1 held outside the rendered action buttons.
   let controllerAimDown = false; // Remembers the controller Action 1 edge so release works even with a hidden action arch.
 
@@ -58,20 +59,23 @@
     lookButton.textContent = 'Hold to Look';
     lookButton.setAttribute('aria-label', 'Hold to look through spyglass');
     lookButton.addEventListener('pointerdown', event => {
-      if (!equipped) return;
+      if (!equipped || lookPointerId != null) return;
+      lookPointerId = event.pointerId;
       try { lookButton.setPointerCapture(event.pointerId); } catch (_) {}
       beginAim('touch look');
       event.stopPropagation();
       event.preventDefault();
     });
     const releaseLook = event => {
+      if (event.pointerId !== lookPointerId) return; // Another finger cannot lower the active lens.
+      lookPointerId = null;
       endAim('look released');
       event.stopPropagation();
       event.preventDefault();
     };
     lookButton.addEventListener('pointerup', releaseLook);
     lookButton.addEventListener('pointercancel', releaseLook);
-    lookButton.addEventListener('lostpointercapture', () => endAim('look lost capture'));
+    lookButton.addEventListener('lostpointercapture', releaseLook);
     hud.appendChild(lookButton);
 
     const close = document.createElement('button'); // Explicit touch/keyboard stow action, even when the rest of the HUD is obscured.
@@ -165,6 +169,7 @@
     if (!equipped) return false;
     endAim(reason);
     pointerAimId = null;
+    lookPointerId = null;
     keyAimCode = null;
     controllerAimDown = false;
     releaseInputClaim();
@@ -309,7 +314,7 @@
       currentCameraMode: cameraDeps?.getCameraMode?.() ?? null,
       savedCameraMode: savedCamera?.mode ?? null,
       ownsAction1: window.WorldActionInputClaims?.claimFor?.('action1')?.ownerId === CLAIM_OWNER,
-      pointerAimId, keyAimCode, controllerAimDown,
+      pointerAimId, lookPointerId, keyAimCode, controllerAimDown,
       desktopAction1: action1Binding('desktop'),
       controllerAction1: action1Binding('controller'),
       zoom: window.HobunjiRangedCameraFocus?.snapshot?.().fovDeg ?? null,
