@@ -12,6 +12,9 @@
   let savedCamera = null; // Original camera mode/target/view restored when the spyglass is put away.
   let savedActionAria = null; // Existing Action 1 accessibility label restored after spyglass use.
   let savedActionPressed = null; // Existing pressed-state attribute restored when the temporary arch prompt is removed.
+  let savedActionDataAction = null; // Existing contextual action is restored when the spyglass leaves Action 1.
+  let savedActionCombatSlot = null; // Existing combat-slot marker is restored after the spyglass overrides attack presentation.
+  let actionButtonStateCaptured = false; // Ensures a rebuilt Action 1 button is snapshotted before its spyglass override.
   let equipped = false; // True while selected from the Utility Arch.
   let aiming = false; // True while the spyglass lens is raised.
   let lookingCloser = false; // True after the second Action 1 press activates perception and extra magnification.
@@ -53,17 +56,32 @@
     if (!equipped) {
       icon?.remove?.();
       label?.remove?.();
-      if (savedActionAria != null) button.setAttribute?.('aria-label', savedActionAria);
-      if (savedActionPressed == null) button.removeAttribute?.('aria-pressed');
-      else button.setAttribute?.('aria-pressed', savedActionPressed);
+      if (actionButtonStateCaptured) {
+        if (savedActionAria == null) button.removeAttribute?.('aria-label');
+        else button.setAttribute?.('aria-label', savedActionAria);
+        if (savedActionPressed == null) button.removeAttribute?.('aria-pressed');
+        else button.setAttribute?.('aria-pressed', savedActionPressed);
+        if (savedActionDataAction == null) delete button.dataset.action;
+        else button.dataset.action = savedActionDataAction;
+        if (savedActionCombatSlot == null) delete button.dataset.combatSlot;
+        else button.dataset.combatSlot = savedActionCombatSlot;
+      }
       savedActionAria = null;
       savedActionPressed = null;
+      savedActionDataAction = null;
+      savedActionCombatSlot = null;
+      actionButtonStateCaptured = false;
       return;
     }
-    if (savedActionAria == null) {
-      savedActionAria = button.getAttribute?.('aria-label') || 'Primary action';
+    if (!actionButtonStateCaptured) {
+      savedActionAria = button.getAttribute?.('aria-label');
       savedActionPressed = button.getAttribute?.('aria-pressed');
+      savedActionDataAction = button.dataset?.action ?? null;
+      savedActionCombatSlot = button.dataset?.combatSlot ?? null;
+      actionButtonStateCaptured = true;
     }
+    if (button.dataset?.action !== 'spyglass') button.dataset.action = 'spyglass';
+    if (button.dataset?.combatSlot) delete button.dataset.combatSlot;
     if (!icon) {
       icon = document.createElement('span');
       icon.className = 'abt-icon spyglass-action-icon';
@@ -79,7 +97,8 @@
     const nextLabel = actionLabel();
     if (label.textContent !== nextLabel) label.textContent = nextLabel;
     if (button.getAttribute?.('aria-label') !== nextLabel) button.setAttribute?.('aria-label', nextLabel);
-    button.setAttribute?.('aria-pressed', aiming ? 'true' : 'false');
+    const pressed = aiming ? 'true' : 'false';
+    if (button.getAttribute?.('aria-pressed') !== pressed) button.setAttribute?.('aria-pressed', pressed);
   }
 
   function buildLens() {
@@ -216,9 +235,6 @@
       target: cameraDeps.getCameraTarget?.() ?? null,
       characterView: !!viewDeps?.characterViewMode?.enabled,
     }; // Restores precisely the camera and Character View state the player had before selection.
-    const actionButton = document.getElementById?.('btnAction1');
-    savedActionAria = actionButton?.getAttribute?.('aria-label') || 'Primary action';
-    savedActionPressed = actionButton?.getAttribute?.('aria-pressed');
     window.ActionArcUI?.stowForCarry?.(); // Clear held combat/tool state so the scope cannot fire or mine.
     viewDeps?.setCharacterViewMode?.(false, 'spyglass');
     cameraDeps.setCameraTarget?.(null);
@@ -231,6 +247,9 @@
       cameraDeps.setCameraTarget?.(previous.target);
       savedActionAria = null;
       savedActionPressed = null;
+      savedActionDataAction = null;
+      savedActionCombatSlot = null;
+      actionButtonStateCaptured = false;
       lastReason = 'shoulder camera unavailable';
       return false;
     }
@@ -336,7 +355,7 @@
     const stack = document.getElementById?.('actionStack');
     if (stack && typeof MutationObserver === 'function') {
       actionObserver = new MutationObserver(() => { if (equipped) syncActionButton(); });
-      actionObserver.observe(stack, { subtree: true, childList: true });
+      actionObserver.observe(stack, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-action', 'data-combat-slot', 'class'] });
     }
   }
 
