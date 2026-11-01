@@ -47,6 +47,8 @@ assert(registry.seatTransform('interior',{furnitureId:'chair'}).footprintHalfDep
 registry.registerPlacement('bedroom',{id:'bed',key:'doubleBed',col:3,row:5},root(4,0,6),{fw:2,fd:2});
 const left=registry.lieTransform('bedroom',{pose:'lie',c:3,r:5});
 const right=registry.lieTransform('bedroom',{pose:'lie',c:4,r:5});
+const spouse=registry.lieTransform('bedroom',{pose:'lie',c:2,r:5,bedCol:3,bedRow:5,furnitureId:'bed',bedCenter:true});
+assert(spouse&&Math.abs(spouse.x-4)<1e-6&&Math.abs(spouse.z-6)<1e-6,'spouse resolves the exact bed center even from an adjacent walkable tile');
 assert(left&&right&&left.y>.20&&left.y<.25&&right.x>left.x); // Both double-bed stations resolve to the newly lowered mattress.
 vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
