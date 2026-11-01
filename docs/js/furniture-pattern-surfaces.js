@@ -82,7 +82,7 @@
         <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label></fieldset>`).join('');
     host.appendChild(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
-    for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
+    for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
     const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
     const populate = (select, entries, first, selected) => {
       select.replaceChildren(); select.add(new Option(first,''));
