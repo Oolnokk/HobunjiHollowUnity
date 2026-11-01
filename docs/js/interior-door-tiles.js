@@ -344,15 +344,13 @@
     if (!state) return [];
     return state.doors.map(entry => {
       const THREE = threeRef || deps?.THREE || window.THREE;
-      if (!THREE?.Vector3) return null;
-      const position = new THREE.Vector3();
-      const normal = new THREE.Vector3(0, 0, 1);
-      entry.group.getWorldPosition?.(position);
-      entry.group.getWorldDirection?.(normal);
+      const position = THREE?.Vector3 ? new THREE.Vector3() : (entry.group.position || { x: 0, z: 0 });
+      if (THREE?.Vector3) entry.group.getWorldPosition?.(position);
+      const angle = -(ROTATION_DEG[entry.facing] ?? ROTATION_DEG.north) * Math.PI / 180;
       const progress = Number(entry.group.userData?.puzzleProgress);
       return {
         x: position.x, z: position.z,
-        normalX: normal.x, normalZ: normal.z,
+        normalX: Math.sin(angle), normalZ: Math.cos(angle),
         halfWidth: Math.max(0.5, entry.tiles.length * 0.5),
         openProgress: Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : (entry.active ? 1 : 0),
       };
