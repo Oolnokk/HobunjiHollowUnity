@@ -21,6 +21,8 @@
   const outfitOverrides = {}; // npcId -> { equippedCosmetics, appliedDyes, wornClothingBySlot } persisted after gifted/manual outfit changes.
   const wornClothingByNpc = {}; // npcId -> { slot: full clothing instance }; preserves weaving/colorC/player-origin metadata while an item is actually worn.
   const defaultTraitSets = {}; // npcId -> Set(trait ids) snapshotted once so later gifted clothes never redefine taste.
+  let activeWardrobeContext = null; // Only a physically assigned spouse wardrobe can grant the spouse-only clothing override.
+  let activeWardrobeRender = null; // Lets pack-to-wardrobe transfers refresh the currently open panel.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 
   function init(injectedDeps) {
@@ -196,15 +198,31 @@
     return defaultTraitSets[npcId] || new Set();
   }
 
-  function clothingWearability(rec, item) {
-    const traits = window.ItemTraits?.computeItemTraits(item?.cosmeticId, item) || []; // Used to veto wearing any garment carrying an explicitly disliked/hated NPC trait.
+  function isCurrentSpouse(npcId) {
+    return !!npcId && String(window.RomanceSystem?.getSpouse?.()?.npcId || '') === String(npcId);
+  }
+
+  function isActiveSpouseWardrobe(npcId) {
+    return !!activeWardrobeContext?.spouseWardrobe
+      && activeWardrobeContext.npcId === String(npcId || '')
+      && isCurrentSpouse(npcId);
+  }
+
+  function clothingWearability(rec, item, options = {}) {
+    const traits = window.ItemTraits?.computeItemTraits(item?.cosmeticId, item) || []; // Used to enforce authored style and explicit dislikes for ordinary NPCs.
     const hatedTrait = (rec?.gifts?.hated || []).find(trait => traits.includes(trait)); // Hated traits take precedence in refusal feedback when both bad tiers match.
-    const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto wearing regardless of positive traits on the same garment.
-    const blockedTrait = hatedTrait || dislikedTrait || null; // Single refusal reason used by gifting, wardrobe buttons, and manual Wear attempts.
+    const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto ordinary NPC wear.
+    const defaults = ensureDefaults(rec?.id, rec);
+    const styleMatch = defaults.size > 0 && traits.some(trait => defaults.has(trait)); // Missing style data is not a blanket permission: only a known authored-style match allows ordinary NPC wear.
+    const spouseOverride = options.spouseOverride === true && isActiveSpouseWardrobe(rec?.id);
+    const blockedTrait = hatedTrait || dislikedTrait || null;
+    const styleBlocked = !spouseOverride && !styleMatch;
     return {
-      allowed: !blockedTrait,
-      blockedTrait,
-      tier: hatedTrait ? 'hated' : (dislikedTrait ? 'disliked' : null),
+      allowed: spouseOverride || (!blockedTrait && !styleBlocked),
+      blockedTrait: spouseOverride ? null : blockedTrait,
+      tier: spouseOverride ? null : (hatedTrait ? 'hated' : (dislikedTrait ? 'disliked' : (styleBlocked ? 'style' : null))),
+      styleBlocked,
+      spouseOverride,
     };
   }
 
@@ -292,7 +310,7 @@
     };
   }
 
-  function equipStoredItemData(npcId, uid) {
+  function equipStoredItemData(npcId, uid, options = {}) {
     const walker = findWalker(npcId);
     const rec = findRecord(npcId); // Manual Wear mutates canonical NPC data first; the live walker is only needed for redraw.
     const list = stored[npcId] || [];
@@ -300,7 +318,7 @@
     if (!rec || storedIdx === -1) return false;
 
     const winner = list[storedIdx];
-    if (!clothingWearability(rec, winner).allowed) return false; // Manual Wear obeys the same disliked/hated-trait veto as immediate gift try-on.
+    if (!clothingWearability(rec, winner, options).allowed) return false; // Ordinary NPCs retain style/dislike restrictions; the assigned spouse wardrobe can explicitly override them.
     const slot = winner.slot || guessSlot(winner.cosmeticId); // Gift/player slot wins; guessed slot is only a fallback for older persisted wardrobe items.
     const equipped = rec.equippedCosmetics || (rec.equippedCosmetics = []);
     const currentIdx = equipped.findIndex(id => guessSlot(id) === slot);
@@ -318,17 +336,17 @@
     return true;
   }
 
-  async function wearStoredItem(npcId, uid) {
+  async function wearStoredItem(npcId, uid, options = {}) {
     const walker = findWalker(npcId);
     const rec = findRecord(npcId); // Used for both the wear veto and player-facing naming if the NPC is temporarily offscreen.
     const item = (stored[npcId] || []).find(entry => entry.uid === uid); // Used to provide refusal feedback before the equip mutation path runs.
-    const wearability = item ? clothingWearability(rec, item) : { allowed: false, blockedTrait: null, tier: null }; // Same hard veto used during gifting.
+    const wearability = item ? clothingWearability(rec, item, options) : { allowed: false, blockedTrait: null, tier: null }; // Same style/dislike rules used by the panel and equip mutation.
     if (!wearability.allowed) {
-      const traitLabel = wearability.blockedTrait ? (window.ItemTraits?.getTraitLabel?.(wearability.blockedTrait) || wearability.blockedTrait) : 'that style'; // Player-facing reason avoids a silent dead Wear button.
-      deps?.showToast?.(`${rec?.name || 'They'} won't wear it — they ${wearability.tier === 'hated' ? 'hate' : 'dislike'} ${traitLabel}.`, false);
+      const traitLabel = wearability.blockedTrait ? (window.ItemTraits?.getTraitLabel?.(wearability.blockedTrait) || wearability.blockedTrait) : 'that style'; // Player-facing reason distinguishes preference from a style mismatch.
+      deps?.showToast?.(wearability.tier === 'style' ? `${rec?.name || 'They'} won't wear it — it isn't their style.` : `${rec?.name || 'They'} won't wear it — they ${wearability.tier === 'hated' ? 'hate' : 'dislike'} ${traitLabel}.`, false);
       return false;
     }
-    const changed = equipStoredItemData(npcId, uid);
+    const changed = equipStoredItemData(npcId, uid, options);
     if (!changed) return false;
     scheduleWalkerRefresh(npcId);
     deps?.saveMemberWorldData?.();
@@ -442,10 +460,18 @@
   // markup in index.html) so this stays a self-contained addition.
   function closeWardrobePanel() {
     document.getElementById('npcWardrobeOverlay')?.remove();
+    activeWardrobeContext = null;
+    activeWardrobeRender = null;
   }
 
-  function openWardrobePanel(npcId) {
+  function openWardrobePanel(npcId, context = {}) {
     closeWardrobePanel();
+    const id = String(npcId || '');
+    activeWardrobeContext = {
+      npcId: id,
+      spouseWardrobe: context.area === 'interior' && context.source === 'family' && isCurrentSpouse(id),
+    }; // The exception is granted only by the assigned family furniture interaction, never by an ordinary NPC wardrobe.
+    const spouseOverride = isActiveSpouseWardrobe(id);
     const rec = findRecord(npcId); // Canonical record so name and the Wear veto work even when the NPC has no live walker.
     const name = rec?.name || rec?.displayName || 'Their';
     const overlay = document.createElement('div');
@@ -459,6 +485,13 @@
 
     function render() {
       const { worn, stored: storedItems } = getWardrobeContents(npcId);
+      const packItems = spouseOverride ? (window.EquipmentPanel?.getPackClothingForWardrobe?.() || []) : []; // The assigned spouse wardrobe reads the live Pack through the inventory owner.
+      const packRows = packItems.length ? packItems.map(item => {
+        const label = String(item.label || 'Clothing').replace(/[&<>\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[character]));
+        const uid = String(item.uid || '').replace(/[&<>\"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[character]));
+        return `<div style=\"display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px\"><span style=\"flex:1;font-size:12px\">${label}</span>${item.cursed ? '<span style=\"font-size:10px;color:#d99696\">cursed</span>' : `<button class=\"npc-wardrobe-pack\" data-uid=\"${uid}\" style=\"border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer\">Move here</button>`}</div>`;
+      }).join('') : '<p style=\"color:#9fb2cc;font-size:12px\">No clothing in your Pack.</p>';
+      const spousePackSection = spouseOverride ? `<p style=\"font-size:11px;color:#9fb2cc;margin:10px 0 0\">Your spouse can wear any non-cursed clothing, regardless of their usual style or preferences.</p><div style=\"font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px\">Clothing in Pack</div><div>${packRows}</div>` : '';
       panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h2 style="margin:0;font-size:15px;color:#6aa7ff">${name}'s Wardrobe</h2>
@@ -468,6 +501,7 @@
         <div>${worn.length ? worn.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing on hand.</p>'}</div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#9fb2cc;margin:14px 0 6px">Stored</div>
         <div>${storedItems.length ? storedItems.map(rowHtml).join('') : '<p style="color:#9fb2cc;font-size:12px">Nothing stored yet — gift them clothing they\'ll wear.</p>'}</div>
+        ${spousePackSection}
       `;
       panel.querySelector('#npcWardrobeClose').addEventListener('click', closeWardrobePanel);
       panel.querySelectorAll('.npc-wardrobe-store').forEach(btn => btn.addEventListener('click', async () => {
@@ -482,7 +516,7 @@
         render(); // The garment has left the worn list even if the bag transfer then failed, so redraw either way.
       }));
       panel.querySelectorAll('.npc-wardrobe-wear').forEach(btn => btn.addEventListener('click', async () => {
-        if (await wearStoredItem(npcId, btn.dataset.uid)) {
+        if (await wearStoredItem(npcId, btn.dataset.uid, { spouseOverride: isActiveSpouseWardrobe(npcId) })) {
           deps?.showToast?.('Put on ' + (btn.dataset.label || 'the garment') + '. They will change at bedtime.', true);
           render();
         }
@@ -492,11 +526,14 @@
         deps?.showToast?.('Took ' + (btn.dataset.label || 'the garment') + ' from the wardrobe.', true);
         render();
       }));
+      panel.querySelectorAll('.npc-wardrobe-pack').forEach(btn => btn.addEventListener('click', () => {
+        if (window.EquipmentPanel?.transferPackClothingToNpcWardrobe?.(npcId, btn.dataset.uid)) render();
+      }));
     }
     function rowHtml(item) {
       const label = item.label || prettifyCosmeticId(item.cosmeticId);
       const swatch = item.colorA?.hex ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${item.colorA.hex};margin-right:6px"></span>` : '';
-      const wearability = item.worn ? { allowed: true } : clothingWearability(rec, item); // Stored rows show the same preference veto enforced by the Wear action.
+      const wearability = item.worn ? { allowed: true } : clothingWearability(rec, item, { spouseOverride }); // Stored rows preview the same spouse-only override enforced by Wear.
       const wearButton = wearability.allowed
         ? `<button class="npc-wardrobe-wear" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Wear</button>`
         : `<span style="font-size:10px;color:#d99696">won't wear</span>`;
@@ -506,8 +543,28 @@
         : `${wearButton}<button class="npc-wardrobe-take" data-uid="${item.uid}" data-label="${label}" style="border:1px solid rgba(106,167,255,.4);background:rgba(106,167,255,.16);color:#edf4ff;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer">Take</button>`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #26384f;border-radius:9px;margin-bottom:6px"><span style="flex:1;font-size:12.5px">${swatch}${label}</span>${buttons}</div>`;
     }
+    activeWardrobeRender = render;
     render();
     document.body.appendChild(overlay);
+  }
+
+  function getActiveSpouseWardrobeTarget() {
+    return isActiveSpouseWardrobe(activeWardrobeContext?.npcId)
+      ? { npcId: activeWardrobeContext.npcId, name: findRecord(activeWardrobeContext.npcId)?.name || 'Spouse' }
+      : null;
+  }
+
+  function storePackItem(npcId, item) {
+    if (!isActiveSpouseWardrobe(npcId) || !item?.cosmeticId || item.cursed) return false;
+    const list = stored[npcId] || (stored[npcId] = []);
+    list.push({ ...clone(item), uid: 'wcloth_' + Math.random().toString(36).slice(2, 10), sourcePackUid: item.uid || null });
+    return true; // The caller removes the pack copy and persists both sides as one transaction.
+  }
+
+  function refreshOpenPanel() {
+    if (!activeWardrobeRender || !activeWardrobeContext || !isActiveSpouseWardrobe(activeWardrobeContext.npcId)) return false;
+    activeWardrobeRender();
+    return true;
   }
 
   // ── Save/load ────────────────────────────────────────────────────
@@ -564,6 +621,9 @@
     flushPendingVisuals,
     openWardrobePanel,
     closeWardrobePanel,
+    getActiveSpouseWardrobeTarget,
+    storePackItem,
+    refreshOpenPanel,
     captureDefaultOutfitTraits,
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
