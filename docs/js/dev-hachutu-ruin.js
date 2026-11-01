@@ -362,7 +362,11 @@
           })===true;
           this.captureFailed=!started;
           this.grips=started?2:0;
-          if(!started)session.errors.push('Player root-tear snapshot unavailable: '+JSON.stringify(window.RootSnarePlayerTear?.debug?.()||{}));
+          if(started)deps.showToast?.('The roots grip your neck and feet — dodge before the final pull!',false);
+          if(!started){
+            session.errors.push('Player root-tear snapshot unavailable: '+JSON.stringify(window.RootSnarePlayerTear?.debug?.()||{}));
+            deps.showToast?.('Root capture failed; the grab is released.',false);
+          }
         },
         clearNeckGrip(){if(this.grips!==2)this.grips=0;},
         resetAfterSnare(){
@@ -705,7 +709,7 @@
   SP.registerComposer({id:'hachutuTemple',buildRooms,update,controls,snapshot,clear});
   window.DevHachutuRuin=Object.freeze({reserve,makePlan,generateMaze,applyTitanStats,titanStats:TITAN,
     isDeadlyPit:(x,z)=>!!session&&session.entered&&inside({x,z},session.abyss),
-    debug:()=>snapshot(),brief:()=>session?{weeds:session.weedsKilled,wave:session.trial?.wave||0,boss:session.heart?.boss?.maskboundTroop||'-'}:null, // No animated-hand diagnostics allocation per rendered frame.
+    debug:()=>snapshot(),brief:()=>session?{weeds:session.weedsKilled,wave:session.trial?.wave||0,boss:session.heart?.boss?.maskboundTroop||'-',tear:window.RootSnarePlayerTear?.active?.()?(window.RootSnarePlayerTear.split?.()?'split':'pull'):'-'}:null, // No animated-hand diagnostics allocation per rendered frame.
     debugSever:index=>strikeWeed(session?.weeds?.[index]),
     debugClearRing:(weed,ring)=>takeRing(session?.weeds?.[weed],ring)});
 })();
