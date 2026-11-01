@@ -65,6 +65,17 @@ const observer = actor(64, 64);
 const target = actor(192, 64);
 assert.equal(window.RangedWeapons.hasLineOfSight(observer, target), true, 'clear open ground has sight');
 
+// Ranged NPC engagement follows the projectile's full travel envelope, while
+// per-enemy tuning may make that stand-ground radius shorter.
+assert.equal(window.RangedWeapons.engagementRangePx('crossbow'), 9 * 64 * 1.6, 'crossbow engagement radius includes its projectile falloff tail');
+const rangedActor = { def: { rangedWeaponKey: 'crossbow' } };
+assert.equal(window.RangedWeapons.rangedAttackRadiusPx(rangedActor), 9 * 64 * 1.6, 'ranged NPC defaults to the weapon travel envelope');
+rangedActor.def.rangedAttackRadiusPx = 400;
+assert.equal(window.RangedWeapons.rangedAttackRadiusPx(rangedActor), 400, 'an NPC may author a shorter stand-ground firing radius');
+rangedActor.def.rangedAttackRadiusPx = 2000;
+assert.equal(window.RangedWeapons.rangedAttackRadiusPx(rangedActor), 9 * 64 * 1.6, 'an authored radius cannot exceed the weapon projectile travel distance');
+
+
 sightObjects = [{ name: 'stone-wall', blocksSight: true, visible: true }];
 const wallObserver = actor(64, 128);
 const wallTarget = actor(192, 128);
