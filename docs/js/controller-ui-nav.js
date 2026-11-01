@@ -677,11 +677,27 @@
 
 
   function moveOrAdjust(dir) {
-    // Directional input only navigates; value changes belong to confirmed stepper arrows.
+    // Focused range controls consume horizontal input, so gamepad D-pad and stick can adjust pattern/size sliders without moving focus away.
+    if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && (dir === 'left' || dir === 'right')) {
+      const min = Number.isFinite(currentTarget.minAsNumber) ? currentTarget.minAsNumber : Number(currentTarget.min || 0);
+      const max = Number.isFinite(currentTarget.maxAsNumber) ? currentTarget.maxAsNumber : Number(currentTarget.max || 100);
+      const step = Number(currentTarget.step) > 0 ? Number(currentTarget.step) : 1;
+      const next = Math.max(min, Math.min(max, currentTarget.valueAsNumber + (dir === 'right' ? step : -step)));
+      if (next !== currentTarget.valueAsNumber) {
+        currentTarget.value = String(next);
+        currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
+        currentTarget.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return true;
+    }
     return move(dir);
   }
 
   function moveVectorOrAdjust(x, y) {
+    // Horizontal stick movement adjusts a focused slider; vertical movement continues spatial navigation.
+    if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && Math.abs(x) > Math.abs(y) * 1.2) {
+      return moveOrAdjust(x < 0 ? 'left' : 'right');
+    }
     return moveVector(x, y);
   }
 

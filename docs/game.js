@@ -3711,7 +3711,8 @@
         const group = buildFurnitureVisual(furnitureKey, def.color || 0x8b6540);
         if (furnitureKey === 'rug' && dimensions) {
           const rugSize = decorativeFurnitureSize('rug', 0, dimensions); // Sanitize saved sizes before any visual scale.
-          group.scale.set(rugSize.fw / def.fw, 1, rugSize.fd / def.fd);
+          const farmhouseInset = area === 'interior' ? 1 : 0; // Half-tile inset on each side; logical footprint remains unchanged.
+          group.scale.set(Math.max(0.05, rugSize.fw - farmhouseInset) / def.fw, 1, Math.max(0.05, rugSize.fd - farmhouseInset) / def.fd);
         } // Stretch the authored woven-rug visual to its two selected tile dimensions.
         const rugLayer = furnitureKey === 'rug' ? Math.max(0, Math.min(32, Number(dimensions?.rugLayer) || 0)) : 0; // Render-only rug stack index; each full layer clears the prior rug's thickness.
         group.position.set(centerX, surfaceY + rugLayer * 0.032, centerZ);
@@ -3874,7 +3875,8 @@
         const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, dimensions);
         if (obj.key === 'rug' && options.dimensions) {
           obj.widthTiles = dimensions.widthTiles; obj.heightTiles = dimensions.heightTiles; // Persist the moved rug's freshly selected rectangle.
-          obj.mesh.scale.set(dimensions.widthTiles / def.fw, 1, dimensions.heightTiles / def.fd);
+          const farmhouseInset = obj.area === 'interior' ? 1 : 0; // Match initial placement when an interior rug is moved or resized.
+          obj.mesh.scale.set(Math.max(0.05, dimensions.widthTiles - farmhouseInset) / def.fw, 1, Math.max(0.05, dimensions.heightTiles - farmhouseInset) / def.fd);
         }
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
