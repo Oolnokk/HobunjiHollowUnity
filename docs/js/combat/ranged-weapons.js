@@ -1558,7 +1558,8 @@
     const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
     const geometryHit = sceneGeometrySightBlock(segment);
     if (geometryHit) return geometryHit;
-    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null;
+    const coverHit = window.NearbyVolumeCollision?.segmentSightHit?.(segment.start, segment.end, radiusWorld)
+      || window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null; // Sight has its own always-on semantic-cover query; projectile settings must not make props invisible to AI.
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
 
     let ally = null;

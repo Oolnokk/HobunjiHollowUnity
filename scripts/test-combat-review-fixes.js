@@ -68,6 +68,8 @@ assert.match(game, /lineOfSightBlocker: c\._enemyVisibilityLosDebug[\s\S]{0,180}
 assert.match(ranged, /losTerrainStepTiles: 0\.25/, 'NPC sight samples terrain finely enough to catch narrow wall crossings');
 assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(\)/, 'closed interior doors block NPC line of sight even though they are separate from terrain tiles');
 assert.match(ranged, /function hasLineOfSight\(observer, target\)[\s\S]{0,700}computeBanditLos\(observer, target, \{ projectileRadiusPx: 0 \}\)/, 'NPC perception reuses the real terrain and cover segment test');
+assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses the setting-independent semantic-cover query');
+assert.match(nv, /function ensureCandidates\(forSight = false\)[\s\S]{0,260}if \(!deps \|\| \(!forSight && \(!options\.enabled \|\| !options\.projectiles\)\)\)/, 'sight candidate indexing bypasses projectile-only settings while ordinary projectile checks still respect them');
 assert.match(ranged, /sceneGeometrySightBlock\(segment\)/, 'NPC perception raycasts the active area's real opaque scene geometry');
 assert.match(game, /getSightOccluders: enemySightOccluders/, 'game supplies cached active-area wall and building meshes to NPC sight');
 assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,240}_enemySearchLastKnownX = Number\.isFinite\(c\._enemyLastSeenX\)/, 'search begins from a previously confirmed visible position');

@@ -85,10 +85,39 @@ const terrainObserver = actor(64, 320);
 const terrainTarget = actor(192, 320);
 assert.equal(window.RangedWeapons.hasLineOfSight(terrainObserver, terrainTarget), false, 'solid terrain samples block sight');
 
-area = 'town';
-terrainBlock = false;
+area = 'interior';
+sightObjects = [{ name: 'area-wall', blocksSight: true, visible: true }];
 const areaObserver = actor(64, 384);
 const areaTarget = actor(192, 384);
-assert.equal(window.RangedWeapons.hasLineOfSight(areaObserver, areaTarget), true, 'area changes do not reuse a previous area's cached visibility result');
+assert.equal(window.RangedWeapons.hasLineOfSight(areaObserver, areaTarget), false, 'current-area wall blocks sight');
+area = 'town';
+sightObjects = [];
+assert.equal(window.RangedWeapons.hasLineOfSight(areaObserver, areaTarget), true, 'area changes do not reuse a previous area\'s cached visibility result');
+
+// The semantic cover index must remain available to AI while projectile collision is disabled and no combat is active.
+const coverScene = { children: [] };
+const semanticCover = {
+  name: 'procedural_furniture_table',
+  userData: { projectileCoverHeightTiles: 1, projectileCoverRadiusTiles: 0.45 },
+  position: { x: 1, y: 0, z: 1 },
+  scale: { x: 1, y: 1, z: 1 },
+  visible: true,
+  parent: coverScene,
+};
+coverScene.children.push(semanticCover);
+const coverWindow = {};
+vm.runInNewContext(fs.readFileSync('docs/js/nearby-volume-collision.js', 'utf8'), { window: coverWindow, performance: { now: () => now }, console });
+coverWindow.NearbyVolumeCollision.init({
+  getActiveScene: () => coverScene,
+  getCurrentArea: () => 'interior',
+  isCombatActive: () => false,
+  player: { x: 0, y: 0 },
+  worldSurfaceY: () => 0,
+  options: { enabled: false, projectiles: false },
+});
+const coverStart = { x: 0, y: 0.5, z: 1 };
+const coverEnd = { x: 2, y: 0.5, z: 1 };
+assert.equal(coverWindow.NearbyVolumeCollision.segmentHit(coverStart, coverEnd), null, 'ordinary projectile collision remains disabled outside combat');
+assert.ok(coverWindow.NearbyVolumeCollision.segmentSightHit(coverStart, coverEnd), 'AI sight still detects semantic furniture cover outside combat and with projectile collision disabled');
 
 console.log('enemy line of sight: all checks passed');
