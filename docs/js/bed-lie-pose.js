@@ -165,8 +165,9 @@
     const rig = walker._npcCharacterRigRoot;
     const root = walker.root;
     if (!rig?.isObject3D || !root?.isObject3D) return;
-    const activeLie = target?.pose === 'lie' && target?.area === walker.area && mattress
-      && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < 0.20;
+    const sameArea = target?.area == null || target.area === walker.area; // Legacy spouse/activity sleep targets omit area; mattress lookup is already scoped to this walker's live area.
+    const activeLie = target?.pose === 'lie' && sameArea && mattress
+      && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < 0.35; // Allow normal NPC station arrival tolerance without accepting a bed across the room.
     let state = npcStates.get(walker);
     if (!activeLie && !state) return; // Idle walkers pay zero sleep-pose cost.
     if (!state) {
