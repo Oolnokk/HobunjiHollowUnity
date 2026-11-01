@@ -582,6 +582,23 @@
     return { position: Object.assign({}, anchor.position), rotationDeg: Object.assign({}, anchor.rotationDeg) };
   }
 
+  // Seat collision is measured against the upholstered/wooden SEAT, not the whole furniture tile.
+  // A half-tile reach made calves extend through a chair instead of bending at its front edge.
+  function seatedKneeReach(data) {
+    const seat = (data?.parts || []).find(part => /seat|cushion/i.test(part.name || '') && Number(part.transform?.sz) > 0);
+    const seatDepth = Number(seat?.transform?.sz) || 0.45; // Forward span used only by the seated procedural-leg solver.
+    return Math.max(0.035, Math.min(0.13, seatDepth * 0.24));
+  }
+
+  // Bed surfaces are exported as authored horizontal boxes even in older files without recognizedSurfaces.
+  // Prefer the broad mattress over narrow pillow/headboard elements, and preserve flat bedrolls.
+  function sleepSurfaceHeight(data) {
+    const horizontal = (data?.parts || []).filter(part => part.kind === 'box' && Number.isFinite(Number(part.transform?.y))
+      && Number(part.transform?.sx) >= 0.4 && Number(part.transform?.sz) >= 0.4);
+    if (!horizontal.length) return 0.12;
+    return Math.max(...horizontal.map(part => Number(part.transform.y) + Math.max(0, Number(part.transform.sy) || 0) / 2));
+  }
+
   function seatCount(data) {
     return data && Array.isArray(data.seatAnchors) ? data.seatAnchors.length : 0;
   }
@@ -594,6 +611,8 @@
     addFurniturePlacement,
     seatAnchorFor,
     seatCount,
+    seatedKneeReach,
+    sleepSurfaceHeight,
     applyWarp,
     resetWarp,
     stompWarpMotion,

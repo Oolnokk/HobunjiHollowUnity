@@ -20,6 +20,14 @@
 
   function updateWalker(walker, oldX, oldZ, options = {}) {
     if (!walker?.neckJoint || walker.animalDef || !walker.root?.position) return false;
+    if (walker._bedLieActive) { // Sleeping wins over walking gaze and any leftover look-at state.
+      walker.neckJoint.rotation.set(0, 0, 0);
+      walker._npcMotionLookActive = false;
+      walker._ambientLookActive = false;
+      walker._lookAtDebug = null;
+      window.PerpRotation?.clearHeadtrackHint?.(walker.perpState);
+      return true;
+    }
     // Higher-priority actors own neck pose completely; never reset their transforms.
     if (options.hasScriptedGaze) { walker._npcMotionLookActive = false; return false; }
     if (walker.area !== options.currentArea || walker._npcLodFar) {
