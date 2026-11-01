@@ -114,7 +114,7 @@ draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'windowless rooms are 80% dark outside local light pools');
 draw(17);
 assert.equal(fills.length, 1, 'camera-following lighting redraws at approximately 60 Hz');
-assert.equal(gradients[0].radius, 6, 'carried interior lantern radius doubles');
+assert.equal(gradients[0].radius, 6, 'carried interior lantern gets the broader fade radius');
 assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'interior lantern eases into the dark edge');
 localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
@@ -188,10 +188,19 @@ assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.le
 
 area = 'interior'; // Live player farmhouse, rather than a map_i_* authored building.
 sources = [];
+activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
+localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] };
+draw();
+assert.equal(gradients.length, 0, 'a closed farmhouse doorway blocks a lamp in the next room');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'opening a farmhouse door restores the light behind it');
+lightingWindow.InteriorDoorTiles = null;
 localLights = [];
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
-assert.equal(gradients[0].radius, 6, 'farmhouse carried light uses the same doubled, linear indoor radius');
+assert.equal(gradients[0].radius, 6, 'farmhouse and authored rooms share the same broad indoor fade radius');
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } }; // Real player farmhouse scene suppresses the old unconditional player-lit circle.
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'ordinary farmhouse base darkness is painted even without any local light source');
