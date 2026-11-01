@@ -149,9 +149,9 @@ assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, 
 const groupStart = heldRender.indexOf('  function groupXrayMeshesByElevation(');
 const groupEnd = heldRender.indexOf('  function installGroundElevationShader(', groupStart);
 const groupMeshes = new Function('XRAY_ELEVATION_GROUP_EPSILON', heldRender.slice(groupStart, groupEnd) + elevationNewline + 'return groupXrayMeshesByElevation;')(0.05);
-const grouped = groupMeshes([{ level: 1 }, { level: 1.02 }, { level: 3.5 }, { level: NaN }], mesh => mesh.level);
-assert.equal(grouped.length, 3, 'distinct surface elevations get separate replay groups');
-assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1], 'unknown actors share a fail-closed group');
+const grouped = groupMeshes([{ level: 1 }, { level: 1.02 }, { level: 1.5 }, { level: 3.5 }, { level: NaN }], mesh => mesh.level);
+assert.equal(grouped.length, 4, 'same-height actors share a replay while trench/raised offsets and map tiers remain separate');
+assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1, 1], 'unknown actors share a fail-closed group');
 const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
 const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', shaderStart);
 const installElevationShader = new Function(heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')();
@@ -160,10 +160,31 @@ const groundShaderState = installElevationShader(groundMaterial);
 const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
 groundMaterial.onBeforeCompile(standardGroundShader, {});
 assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
-assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = worldPosition.y'));
+assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y'));
+assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') && standardGroundShader.vertexShader.includes('#ifdef USE_BATCHING'),
+  'world height includes instancing and batching transforms before comparison');
 assert.ok(standardGroundShader.vertexShader.includes('transpose(mat3(viewMatrix))'), 'world normals use the view rotation inverse');
 assert.ok(standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
+const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
+const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
+const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader',
+  heldRender.slice(filterStart, filterEnd) + elevationNewline + 'return setGroundElevationFilter;')(
+    (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
+    installElevationShader);
+const filterMaterial = { userData: {} };
+setElevationFilter([{ material: filterMaterial }], null);
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 0,
+  'a missing actor elevation never gets coerced to world height zero');
+setElevationFilter([{ material: filterMaterial }], 2.5);
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 1,
+  'a resolved map elevation enables the depth filter');
+assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.elevation.value, 2.5);
+assert.ok(heldRender.includes('groupXrayMeshesByElevation(xrayMeshes'),
+  'shell outlines are grouped by the same actor elevations as visible overlays');
+assert.ok(heldRender.includes('setGroundElevationFilter(groundMeshes, group.elevation)'),
+  'shell depth uses the same elevation filter as the source object');
+
 const customMaterial = { userData: {}, needsUpdate: false };
 const customState = installElevationShader(customMaterial);
 customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
