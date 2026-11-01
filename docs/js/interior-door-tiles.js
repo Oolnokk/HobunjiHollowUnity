@@ -341,7 +341,9 @@
 
   function getLightBlockers(mapId, activeScene = null) {
     const requested = mapId == null ? null : maps.get(String(mapId));
-    const state = requested || (activeScene ? [...maps.values()].find(candidate => candidate.scene === activeScene) : null);
+    const state = requested && (!activeScene || requested.scene === activeScene)
+      ? requested
+      : (activeScene ? [...maps.values()].find(candidate => candidate.scene === activeScene) : null);
     if (!state) return [];
     return state.doors.map(entry => {
       const THREE = threeRef || deps?.THREE || window.THREE;
