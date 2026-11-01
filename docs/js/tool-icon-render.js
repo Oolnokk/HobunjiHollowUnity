@@ -124,7 +124,7 @@
 (() => {
   'use strict';
   if (window.ItemArchStickyCategoryHeading?.installed || document.querySelector('script[data-item-arch-sticky-category-heading]')) return;
-  const src = 'js/item-arch-sticky-category-heading.js?v=20260830e'; // Used to cache-bust the mobile continuity + geometry adapter independently.
+  const src = 'js/item-arch-sticky-category-heading.js?v=20261101flaskiconreview2'; // Used to cache-bust the mobile continuity + geometry adapter independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-sticky-category-heading="1" src="${src}"><\/script>`);
     return;
@@ -143,7 +143,7 @@
 (() => {
   'use strict';
   if (window.ItemArchOriginalPresentation?.installed || document.querySelector('script[data-item-arch-original-presentation]')) return;
-  const src = 'js/item-arch-original-presentation.js?v=20260830c'; // Cache-bust fixed heading + tiny item-radius inset independently.
+  const src = 'js/item-arch-original-presentation.js?v=20261101flaskiconreview2'; // Cache-bust fixed heading + tiny item-radius inset independently.
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-item-arch-original-presentation="1" src="${src}"><\/script>`);
     return;
