@@ -200,6 +200,7 @@
     if (!lightingDeps?.camera || !lightingDeps?.worldToOverlay || !cameraRight) return 0;
     cameraRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
     const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) return 0;
     const edge = lightingDeps.worldToOverlay(
       light.x + cameraRight.x * radiusTiles,
       light.y + cameraRight.y * radiusTiles,
