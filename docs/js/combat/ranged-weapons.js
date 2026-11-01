@@ -1548,7 +1548,8 @@
     const dyPx = (segment.end.z - segment.start.z) * deps.TILE;
     const dWorldY = segment.end.y - segment.start.y;
     const distancePx = Math.hypot(dxPx, dyPx);
-    const stepPx = deps.TILE * BANDIT_LOS_TERRAIN_STEP_TILES;
+    const terrainStepTiles = Math.max(0.15, Number(def.losTerrainStepTiles) || BANDIT_LOS_TERRAIN_STEP_TILES);
+    const stepPx = deps.TILE * terrainStepTiles; // Sight uses quarter-tile samples so a narrow wall crossing cannot fall between coarse projectile samples.
     if (distancePx > stepPx) {
       const ux = dxPx / distancePx, uy = dyPx / distancePx;
       for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
@@ -1583,7 +1584,7 @@
     const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
     if (cached && now - cached.at < BANDIT_LOS_CACHE_MS
       && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.clear;
-    const result = computeBanditLos(observer, target, { projectileRadiusPx: 0 });
+    const result = computeBanditLos(observer, target, { projectileRadiusPx: 0, losTerrainStepTiles: 0.25 });
     observer._enemyVisibilityLosCache = {
       at: now, x: observer.x, y: observer.y, tx: target.x, ty: target.y, clear: !!result.clear,
     }; // Shared tactical LOS cache avoids repeating tile/cover sweeps for every render frame.

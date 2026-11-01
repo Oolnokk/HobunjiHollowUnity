@@ -64,6 +64,8 @@ assert.match(reticle, /if \(outOfReach \|\| !profile\.attackId/, 'out-of-reach h
 
 // ── EnemySearchAI extraction ──────────────────────────────────────────
 assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted enemy search module');
+assert.match(game, /lineOfSightBlocker: c\._enemyVisibilityLosDebug[\s\S]{0,180}kind: c\._enemyVisibilityLosDebug\.kind/, 'mobile combat diagnostics identify the obstacle that blocked sight');
+assert.match(ranged, /losTerrainStepTiles: 0\.25/, 'NPC sight samples terrain finely enough to catch narrow wall crossings');
 assert.match(ranged, /function hasLineOfSight\(observer, target\)[\s\S]{0,700}computeBanditLos\(observer, target, \{ projectileRadiusPx: 0 \}\)/, 'NPC perception reuses the real terrain and cover segment test');
 assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
 assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');

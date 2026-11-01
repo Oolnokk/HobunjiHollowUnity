@@ -29357,6 +29357,8 @@
             state: c.state,
             facingDeg: Math.round((c.facing || 0) * 180 / Math.PI),
             seesPlayer: enemyCanSeeTarget(c, player, c.def.aggroRangePx),
+            lineOfSightBlocker: c._enemyVisibilityLosDebug
+              ? { clear: !!c._enemyVisibilityLosDebug.clear, kind: c._enemyVisibilityLosDebug.kind, id: c._enemyVisibilityLosDebug.id || null } : null,
             lastKnownPlayerTile: Number.isFinite(c._enemySearchLastKnownX) && Number.isFinite(c._enemySearchLastKnownY)
               ? { x: Math.round(c._enemySearchLastKnownX / TILE), y: Math.round(c._enemySearchLastKnownY / TILE) } : null,
             searchTimeRemainingS: Number.isFinite(c._enemySearchT) ? Math.max(0, c._enemySearchT) : null,
