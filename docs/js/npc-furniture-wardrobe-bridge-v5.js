@@ -172,7 +172,7 @@
 
   function openWardrobe(npcId, area = null, furnitureId = null) {
     if (!safeId(npcId) || !window.NpcWardrobe?.openWardrobePanel) return false;
-    window.NpcWardrobe.openWardrobePanel(npcId); // Existing per-NPC inventory, clothing rules and save data are reused unchanged.
+    window.NpcWardrobe.openWardrobePanel(npcId, { area, source: area === 'interior' ? 'family' : 'authored', furnitureId }); // Only an assigned farmhouse spouse wardrobe receives the special clothing override.
     lastOpened = { npcId, area, furnitureId };
     return true;
   }
