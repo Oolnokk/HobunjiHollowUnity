@@ -73,6 +73,8 @@ assert.match(gameplaySource, /assignWardrobeOwner: \(id, npcId\)/, 'furniture me
   const spouseChest2 = { id: 'family-chest-b', key: 'wardrobe', npcWardrobeFor: 'aliri_ginju', col: 8, row: 2 };
   const childChest = { id: 'family-child', key: 'chest', npcWardrobeFor: 'child_tester', col: 5, row: 2 };
   assert.equal(api.ownerForPlacement('interior', spouseChest1).npcId, api.ownerForPlacement('interior', spouseChest2).npcId, 'duplicate furniture points at exactly one inventory key');
+  api.openWardrobe('aliri_ginju', 'interior', 'family-spouse-chest');
+  assert.equal(openedContexts.at(-1)?.source, 'authored', 'calling the wardrobe bridge without validated furniture provenance cannot grant family override');
   assert.equal(api.ownerForPlacement('interior', childChest).npcId, 'child_tester');
   for (let iteration = 0; iteration < 100; iteration++) api.ownerForPlacement('interior', childChest); // Simulate repeated camera-frame focus polls.
   assert.equal(familySnapshotCalls, 0, 'repeated wardrobe targeting must not request heavy family snapshots');
