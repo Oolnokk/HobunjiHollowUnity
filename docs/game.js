@@ -3719,7 +3719,7 @@
         _markOutline(group);
         _markFurnitureEdgeId(group);
         targetScene.add(group);
-        window.FurnitureTableSystem?.registerPlacement(area, { key:furnitureKey, col, row, rotY:rotYDeg }, group, def); // Inventory furniture shares map-authored chair and table relationships.
+        // Registration happens only after the owning placed record receives its stable id. Rug overlaps cannot share fallback tile ids.
 
         let light = null;
         if (def.light) {
@@ -3830,7 +3830,9 @@
         const result = makeDecorativeFurnitureMesh(col, row, furnitureKey, interiorScene, 'interior');
         if (!result) return null;
         const id = 'decor_' + Math.random().toString(36).slice(2, 10);
-        interiorFurnitureObjects.push({ id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) });
+        const fixture = { id, key: furnitureKey, col, row, mesh: result.mesh, light: result.light, sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, ...furnitureOwnerFields(col, row) }; // Stable fixture id is registered once after spawning.
+        interiorFurnitureObjects.push(fixture);
+        window.FurnitureTableSystem?.registerPlacement('interior', fixture, result.mesh, DECORATIVE_FURNITURE_DEFS[furnitureKey]);
         window.FarmEditor.saveFarmLayout();
         return { id, col, row, stored };
       }
@@ -27553,10 +27555,14 @@
                  rugLayer: Math.max(0, Math.min(32, Number(rugLayer) || 0)) } : null; // Prototype reset restores both rug size and stack layer.
               const r = makeDecorativeFurnitureMesh(col, row, key, tgt, decorArea, rotYDeg || 0, dimensions);
               const owner = decorArea === 'interior' && !ownerPieceId ? furnitureOwnerFields(col, row) : {};
-              if (r) interiorFurnitureObjects.push({ id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
-                mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
-                ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
-                localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null });
+              if (r) {
+                const restored = { id: id || 'decor_' + Math.random().toString(36).slice(2, 10), key, col, row,
+                  mesh: r.mesh, light: r.light, sfxSource: r.sfxSource, area: decorArea, rotYDeg: rotYDeg || 0,
+                  ownerPieceId: ownerPieceId || owner.ownerPieceId, localCol: Number.isFinite(localCol) ? localCol : owner.localCol,
+                  localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}), patternOverrides: patternOverrides || null };
+                interiorFurnitureObjects.push(restored);
+                window.FurnitureTableSystem?.registerPlacement(decorArea, restored, r.mesh, def);
+              } // Prototype reset must register every stacked rug under its stable id.
               if (r && patternOverrides) window.FurniturePatternSurfaces?.applyOverrides?.(r.mesh, patternOverrides); // Do not discard the player's color choices on prototype reset.
               if (r && decorArea === 'farm') {
                 const size = decorativeFurnitureSize(key, rotYDeg || 0, dimensions);
@@ -32238,9 +32244,11 @@
             const bedCol = HOUSE_STARTER_COL * 2 + 1, bedRow = HOUSE_STARTER_ROW * 2 + 1;
             const starterBed = makeDecorativeFurnitureMesh(bedCol, bedRow, 'basicBed', interiorScene, 'interior');
             if (starterBed) {
-              interiorFurnitureObjects.push({ id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
+              const starter = { id: 'decor_starter_bed', key: 'basicBed', col: bedCol, row: bedRow,
                 mesh: starterBed.mesh, light: starterBed.light, sfxSource: starterBed.sfxSource, area: 'interior', rotYDeg: 0,
-                ...furnitureOwnerFields(bedCol, bedRow) });
+                ...furnitureOwnerFields(bedCol, bedRow) }; // Preserve the original starter bed's fixed identity for NPC bed discovery.
+              interiorFurnitureObjects.push(starter);
+              window.FurnitureTableSystem?.registerPlacement('interior', starter, starterBed.mesh, DECORATIVE_FURNITURE_DEFS.basicBed);
               window.FarmEditor.saveFarmLayout();
             }
           } catch (e) { console.error('starter bed seed:', e); }
