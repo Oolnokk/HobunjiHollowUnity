@@ -30,7 +30,7 @@ const enhanced=runDodge(0,(p,cost)=>({spent:0,excess:0,enhancedPaid:cost}));
 assert(enhanced._grappleEscapeDodgePaid,'enhanced Stamina covering the whole cost counts as genuinely paid');
 assert(!runDodge(0,null)._grappleEscapeDodgePaid,'resource-system fallback also respects zero Stamina');
 assert(runDodge(18,null)._grappleEscapeDodgePaid,'resource-system fallback permits fully funded rolls');
-const context={console,Combat:{deps:{player:empty}}};context.window=context;
+const context={console,Combat:{deps:{player:empty},animalAttacks:{register(){}}}};context.window=context;
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-attach.js','utf8'),context);
 const escape=context.Combat.attach.hostDodgeEscapes;
 assert.equal(escape(empty),false,'shared attachment predicate rejects unpaid player rolls');
