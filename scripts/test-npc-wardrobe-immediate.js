@@ -45,6 +45,7 @@ const spouseRec = {
   id: 'assigned_spouse', name: 'Assigned Spouse', appearance: { speciesId: 'engh-sho', gender: 'female' },
   equippedCosmetics: ['spouse_default_tunic'], appliedDyes: {}, gifts: { loved: [], liked: [], disliked: ['style:itchy'], hated: ['style:garish'] },
 };
+const noStyleRec = { id: 'no_style_npc', name: 'No Style NPC', appearance: { speciesId: 'engh-sho', gender: 'female' }, equippedCosmetics: ['no_trait_default'], appliedDyes: {} };
 const fallbackRec = {
   id: 'legacy_identity_npc',
   name: 'Legacy Identity NPC',
@@ -86,7 +87,7 @@ const fallbackWalker = {
   avatarBackCanvas: null,
 };
 const gearInventory = { clothingItems: [], clothing: {} };
-const recordById = new Map([[rec.id, rec], [spouseRec.id, spouseRec], [fallbackRec.id, fallbackRec], [offscreenRec.id, offscreenRec]]); // Mimics scheduledNpcRecords so persistence is testable without a live walker.
+const recordById = new Map([[rec.id, rec], [spouseRec.id, spouseRec], [noStyleRec.id, noStyleRec], [fallbackRec.id, fallbackRec], [offscreenRec.id, offscreenRec]]); // Mimics scheduledNpcRecords so persistence is testable without a live walker.
 
 const context = {
   window: null,
@@ -98,6 +99,7 @@ const context = {
   ItemTraits: {
     computeItemTraits(cosmeticId, item) {
       if (cosmeticId === 'itchy_poncho') return ['style:test', 'style:itchy'];
+      if (cosmeticId === 'no_trait_default') return [];
       if (cosmeticId === 'spouse_default_tunic') return ['style:spouse-default'];
       if (cosmeticId === 'foreign_style_coat') return ['style:foreign'];
       if (cosmeticId === 'garish_hat') return ['style:test', 'style:itchy', 'style:garish'];
@@ -171,6 +173,11 @@ walker.area = 'map_i_test_bedroom';
 fallbackWalker.area = 'map_i_test_bedroom';
 
 (async () => {
+  wardrobe.captureDefaultOutfitTraits(noStyleRec);
+  assert.equal(wardrobe.clothingWearability(noStyleRec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'missing default-style data never grants unrestricted manual Wear to ordinary NPCs');
+  const unknownStyleGift = wardrobe.offerClothing(noStyleRec.id, { uid: 'legacy_style_gift', cosmeticId: 'foreign_style_coat', slot: 'torso' });
+  assert.equal(unknownStyleGift.accepted, true, 'legacy NPC gift acceptance still fails open when no authored style traits exist');
+  assert.equal(unknownStyleGift.worn, true, 'legacy gift-time fallback remains intact without granting manual wardrobe override');
   assert.equal(await wardrobe.syncWalkerOutfit(walker), true, 'authored default NPC pattern policy triggers an initial post-spawn rebake without requiring a wardrobe override');
   const defaultPatternedOverwear = wovenRenderBatches.at(-1).find(item => item.slot === 'overwear');
   assert.equal(defaultPatternedOverwear.weaving.patterns[0].motifDataUrl, defaultNpcPrimary.motifDataUrl, 'default NPC clothing can carry an ordinary authored first pattern');
