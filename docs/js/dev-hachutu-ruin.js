@@ -98,7 +98,7 @@
   }
   function floorSlab(name,b,height=.3){
     const w=b.maxX-b.minX,d=b.maxZ-b.minZ,c=centre(b);
-    const rock=window.StoneAgeRuinScenery?.makeRuinStoneMaterial?.('#363733')||material(0x363733);
+    const rock=session.floorRockMaterial||(session.floorRockMaterial=window.StoneAgeRuinScenery?.makeRuinStoneMaterial?.('#363733')||material(0x363733)); // Share one authored quarry material across the large wing.
     const slab=mesh(session.group,name,new THREE.BoxGeometry(w,height,d),rock,c.x,session.floor-height*.5,c.z);
     slab.userData.devRuinFootprintIgnore=true; // Visual-only: registered DynamicSurfaces owns floor and pit heights.
     return slab;
@@ -147,7 +147,7 @@
       // the changing offset/height of the rooted capstones, not another
       // mandatory mechanism that could strand the player.
       for(let i=0;i<3;i++){
-        const x=b.minX+.8+i*1.15,z=(b.minZ+b.maxZ)/2+(i%2?-.55:.55);
+        const x=b.minX+.8+i*1.15,z=(b.minZ+b.maxZ)/2+(i%2?-.5:.5)+(.5-session.rng())*.22; // Seeded variation without changing corridor clearance.
         const stone=cylinder(session.group,'Hachutu passage stepping stone',.55,.62,.28,x,y+.14,z,0x44473e);
         stone.userData.devRuinFootprintIgnore=true;
         roots(session.group,x,y,z,1.6,.07);
@@ -242,7 +242,13 @@
         const dx=entry.position.x-old.x,dz=entry.position.z-old.z;
         session.kit.setPlayerWorld({x:p.x+dx,z:p.z+dz,y:session.floor+.7},false);
       }
-      if(entry.plate&&!entry.triggered&&p&&Math.hypot(p.x-entry.position.x,p.z-entry.position.z)<.45){
+      if(p&&Math.hypot(p.x-entry.position.x,p.z-entry.position.z)<.8
+        &&Math.abs((p.y||0)-(session.floor+.7))<1.1&&now-(session.lastSwingSpawnAt||0)>6000){
+        session.lastSwingSpawnAt=now; // A standing rider awakens roots/coffins, never a timed ambush from the empty ledge.
+        const b=session.layout.parts[0].bounds;
+        spawnCoffin(b.minX+1.7,b.minZ+3+session.rng()*(b.maxZ-b.minZ-6),TYPES[Math.floor(session.rng()*3)]);
+      }
+      if(entry.plate&&!entry.triggered&&p&&Math.hypot(p.x-entry.position.x,entry.position.z-p.z)<.45){
         entry.triggered=true;entry.plateMesh.material.color.setHex(0x63946a);
         takeRing(session.weeds[0],entry.ring);
       }
@@ -463,8 +469,15 @@
         const rz=z-1.9+j*.47;
         const r=roots(g,0,0,rz,5.9,.18);r.rotation.z=.2*(j-4);
       }
-      const ember=emberRing(g,0,3,0,2.0-i*.3,COLORS[(i+2)%COLORS.length]);
-      layers.push({group:g,ember});
+      const color=COLORS[(i+2)%COLORS.length];
+      const ember=emberRing(g,0,3,0,2.0-i*.3,color);
+      const fx=window.AuthoredFurniture?.createEmitterVisual?.(g,{
+        id:'hachutu-root-embers-'+i,name:'Binding Root Embers',type:'fire',enabled:true,
+        position:{x:0,y:2,z:0},rotation:{x:0,y:0,z:0},
+        radius:.13,size:.12,rate:24,lifetime:.55,speed:.16,spread:.6,gravity:.01,
+        colorA:'#'+color.toString(16).padStart(6,'0'),colorB:'#'+color.toString(16).padStart(6,'0'),
+      },48)||null; // The same authored fire emitter as the torch/ruin fires, kept distinct for each root seal.
+      layers.push({group:g,ember,fx,color});
     }
     session.door={layers,open:false};
   }
@@ -474,6 +487,7 @@
       const item=session.door.layers[i],retracted=i<count;
       item.group.position.y+=Math.max(-dt*2.4,Math.min(dt*2.4,(session.floor+(retracted?-7:0))-item.group.position.y));
       item.ember.setActive(!retracted);
+      if(!retracted)item.fx?.update?.(dt,true,{colorA:'#'+item.color.toString(16).padStart(6,'0'),colorB:'#'+item.color.toString(16).padStart(6,'0')});
     }
     session.door.open=count>=3;
   }
@@ -590,11 +604,6 @@
           .sort((a,c)=>Math.hypot(c.x-p.x,c.z-p.z)-Math.hypot(a.x-p.x,a.z-p.z))[0];
         spawnMaskbound({x:far.x,z:far.z,troop:'headtaker'},session);
       }
-      if(p&&inside(p,session.layout.parts[0].bounds,1)&&now-session.lastSwingSpawnAt>12500){
-        session.lastSwingSpawnAt=now;
-        const b=session.layout.parts[0].bounds;
-        spawnCoffin(b.minX+1.7,b.minZ+3+session.rng()*(b.maxZ-b.minZ-6),TYPES[Math.floor(session.rng()*3)]);
-      }
       if(p&&session.layout.passages.some(b=>inside(p,b))&&now-session.lastCorridorSpawnAt>15000){
         session.lastCorridorSpawnAt=now;
         spawnCoffin(p.x+1.2,p.z+.4,TYPES[Math.floor(session.rng()*3)]);
@@ -605,6 +614,7 @@
     if(!session)return;
     session.ended=true;
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
+    for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.minions)retireEntity(enemy,session);
     session.minions.clear();

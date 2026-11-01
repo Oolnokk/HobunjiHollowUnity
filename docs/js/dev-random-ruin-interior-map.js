@@ -965,7 +965,7 @@
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
-        window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
+        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
         if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
         lastGenerationAudit.acceptedSeed=candidateSeed;
@@ -1385,7 +1385,8 @@
     const solvabilityLabel=ruin.solvability?.ok?('solvable ✓'+(ruin.generationAttempt>1?' after '+ruin.generationAttempt+' tries':'')):'solvability ?'; // Mobile-visible proof that this accepted seed passed the pre-entry audit.
     const darkness=getDarknessSettings(); // Shows whether the test-only darkness override is active without requiring desktop devtools.
     const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'% override'):'themed';
-    setDebugBadgePart('hachutu',ruin.hachutu?(' · HACHUTU '+JSON.stringify(window.DevHachutuRuin?.debug?.()||{})):'');
+    const hachutu=ruin.hachutu?window.DevHachutuRuin?.debug?.():null; // A compact mobile-facing meter; full detailed snapshot remains accessible on the Dev Ruin API.
+    setDebugBadgePart('hachutu',hachutu?.active?(' · Hachutu weeds '+hachutu.plants.filter(p=>p.dead).length+'/3, wave '+(hachutu.trial?.wave||0)+'/3, boss '+(hachutu.heart?.boss||'-')):'');
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
