@@ -6,6 +6,11 @@
   // Reuse is sequence-bound: a secondary pass may reuse only the same scene's
   // most recent base render on the same renderer, with no unrelated render in
   // between. This is intentionally stricter than the old one-second time window.
+  // Secondary passes are the PNG-depth, shell, target and material-ID outline
+  // passes, the cloud-forest mist redraw, and the final world-text overlay draw.
+  // The held-object depth replays are renders of their own that run right after
+  // the base render and would otherwise end the sequence before any of these;
+  // held-object-render-order.js re-arms it through markSceneMatricesCurrent().
   //
   // Runtime outline policy: shell outlines are the only general-purpose outline
   // style. The older screen-space material-ID seam pass is forcibly suppressed
@@ -32,6 +37,7 @@
   const MASK_TARGET = (1 << 2) >>> 0;
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
+  const MASK_MIST = (1 << 5) >>> 0; // cloud-forest-fog.js mist cylinders: game.js redraws just this layer over the outline passes.
   const TARGET_ALPHA_FILL_LAYER = 30; // Temporary per-draw layer used only to render flat alpha-cutout target cards as filled billboard silhouettes.
   const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
   const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
@@ -39,6 +45,11 @@
   const LOG_INTERVAL_MS = 5000;
 
   const reuseSequenceByRenderer = new WeakMap();
+  // Counts renders that will really recompute a scene's matrices (scene.autoUpdate on and not
+  // reusing). The final world-text overlay draw compares it with the value at its base render: equal
+  // means nothing re-walked the scene since, whatever unrelated scenes were rendered in between.
+  const sceneMatrixEpochs = new WeakMap();
+  const matrixEpochOf = scene => sceneMatrixEpochs.get(scene) || 0;
   const pendingWorldTextOverlayByRenderer = new WeakMap(); // Carries active-scene text from the offscreen base pass to the final composite draw.
   const lifetime = Object.create(null);
   let windowStats = Object.create(null);
@@ -119,6 +130,7 @@
     ) return 'materialId';
 
     if (mask === MASK_PNG_OCCLUDER && !override) return 'pngDepth';
+    if (mask === MASK_MIST && !override) return 'mist';
 
     // The final outline composite is a fullscreen post scene. Its camera normally
     // uses only the default layer, so camera.layers === MASK_ALL is not a valid
@@ -132,7 +144,7 @@
   }
 
   function isSecondaryOutlinePass(pass) {
-    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth';
+    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
   }
 
   function materialForGroup(mesh, group) {
@@ -379,12 +391,46 @@
     return Array.isArray(material) ? material.some(isWorldTextOverlayMaterial) : isWorldTextOverlayMaterial(material);
   }
 
+  // This used to traverse the whole scene on EVERY base pass (thousands of nodes in a
+  // wilderness zone) to find the handful of popup/dialogue planes. The set of candidate meshes
+  // only changes when the scene graph changes, so it is cached per scene and re-derived when an
+  // add()/remove()/clear() happened anywhere since the last scan, plus a periodic safety rescan
+  // for a mesh whose renderOrder/material changed after it was attached. Each frame still
+  // re-checks the predicate and re-reads layer mask/visibility of the cached candidates.
+  const WORLD_TEXT_RESCAN_MS = 1000;
+  const worldTextCandidates = new WeakMap(); // scene -> { epoch, at, meshes }
+  let structureEpoch = 0;
+
+  function installStructureEpoch() {
+    for (const proto of [THREE.Object3D?.prototype, THREE.Scene?.prototype]) {
+      if (!proto) continue;
+      for (const method of ['add', 'remove', 'clear']) {
+        const previous = proto[method];
+        if (typeof previous !== 'function' || previous.__hobunjiStructureEpochWrapped) continue;
+        const wrapped = function structureEpochWrapped(...args) { structureEpoch++; return previous.apply(this, args); };
+        Object.assign(wrapped, previous); // Other modules recognise their own wrapper on proto.add by marker properties; keep those visible.
+        wrapped.__hobunjiStructureEpochWrapped = true;
+        proto[method] = wrapped;
+      }
+    }
+  }
+  installStructureEpoch();
+
   function collectWorldTextOverlayEntries(scene) {
+    if (!scene?.traverse) return [];
+    const now = performance.now();
+    let cached = worldTextCandidates.get(scene);
+    if (!cached || cached.epoch !== structureEpoch || now - cached.at > WORLD_TEXT_RESCAN_MS) {
+      const meshes = [];
+      scene.traverse(object => { if (isWorldTextOverlayMesh(object)) meshes.push(object); });
+      cached = { epoch: structureEpoch, at: now, meshes };
+      worldTextCandidates.set(scene, cached);
+    }
     const entries = [];
-    scene?.traverse?.(object => {
-      if (!isWorldTextOverlayMesh(object)) return;
+    for (const object of cached.meshes) {
+      if (!isWorldTextOverlayMesh(object)) continue;
       entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: object.visible !== false });
-    });
+    }
     return entries;
   }
 
@@ -431,6 +477,15 @@
     const previousTarget = renderer.getRenderTarget?.() || null; // Restored so an unexpected caller target is never leaked.
     const shadowMap = renderer.shadowMap;
     const previousShadowAutoUpdate = !!shadowMap?.autoUpdate; // Restored so normal shadow scheduling is unaffected.
+    const previousSceneAutoUpdate = !!scene.autoUpdate;
+    const drawAt = performance.now();
+    const reuseSceneMatrices = previousSceneAutoUpdate && pending.matrixEpoch === matrixEpochOf(scene)
+      && drawAt >= pending.baseAt && drawAt - pending.baseAt <= BASE_REUSE_MAX_AGE_MS; // Nothing re-walked the scene since the base render that withheld this text, so its matrices are current.
+    if (reuseSceneMatrices) {
+      scene.autoUpdate = false;
+      reusedSceneMatrixPasses++;
+      windowReusedSceneMatrixPasses++;
+    }
 
     try {
       renderer.setRenderTarget(null);
@@ -443,6 +498,7 @@
       finalWorldTextOverlayPasses++;
       return true;
     } finally {
+      if (reuseSceneMatrices) scene.autoUpdate = true;
       if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAutoUpdate;
       renderer.autoClear = previousAutoClear;
       camera.layers.mask = previousMask;
@@ -512,7 +568,7 @@
     lastLogAt = now;
 
     if (windowStats.shell?.renders) {
-      const order = ['base', 'pngDepth', 'shell', 'target', 'materialId', 'postOrDirect'];
+      const order = ['base', 'pngDepth', 'shell', 'target', 'mist', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
@@ -533,8 +589,10 @@
     windowSkippedShadowAutoUpdates = 0;
   }
 
-  function canReuseSequence(renderer, scene, pass, now) {
-    if (!isSecondaryOutlinePass(pass)) return false;
+  // True while `scene`'s matrices were brought up to date by the most recent base
+  // render on this renderer (or re-armed after the held-object replays) and no
+  // unrelated render has happened since.
+  function sequenceIsFresh(renderer, scene, now) {
     const seq = reuseSequenceByRenderer.get(renderer);
     return !!(
       seq
@@ -542,6 +600,10 @@
       && now >= seq.baseAt
       && now - seq.baseAt <= BASE_REUSE_MAX_AGE_MS
     );
+  }
+
+  function canReuseSequence(renderer, scene, pass, now) {
+    return isSecondaryOutlinePass(pass) && sequenceIsFresh(renderer, scene, now);
   }
 
   function updateSequence(renderer, scene, pass, endedAt, reused) {
@@ -599,6 +661,8 @@
       scene.autoUpdate = false;
       reusedSceneMatrixPasses++;
       windowReusedSceneMatrixPasses++;
+    } else if (hadSceneAutoUpdate && scene) {
+      sceneMatrixEpochs.set(scene, matrixEpochOf(scene) + 1); // three.js is about to re-walk this scene's matrices.
     }
     if (canReuseBaseState && shadowMap?.enabled && hadShadowAutoUpdate) {
       shadowMap.autoUpdate = false;
@@ -626,7 +690,7 @@
           } finally {
             restoreWorldTextBaseVisibility(entries);
           }
-          pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries });
+          pendingWorldTextOverlayByRenderer.set(renderer, { scene, camera, entries, matrixEpoch: matrixEpochOf(scene), baseAt: performance.now() });
           withheldWorldTextBasePasses++;
         } else {
           result = originalRender.call(renderer, scene, camera);
@@ -701,9 +765,19 @@
         targetAlphaFillLayer: TARGET_ALPHA_FILL_LAYER,
         worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
+        worldTextRescanMs: WORLD_TEXT_RESCAN_MS,
       };
     },
     classifyPass,
+    // For renders that run between the base pass and the outline passes without
+    // moving anything (the held-object depth replays): declares that `scene`'s
+    // matrices are still the ones the base render just computed, so the secondary
+    // passes may keep skipping their own scene-wide updateMatrixWorld().
+    markSceneMatricesCurrent(renderer, scene) {
+      if (!renderer || !scene?.isScene) return false;
+      reuseSequenceByRenderer.set(renderer, { scene, baseAt: performance.now() });
+      return true;
+    },
   };
 
   wrappedRender.__hobunjiOutlineRenderPerfWrapped = true;
