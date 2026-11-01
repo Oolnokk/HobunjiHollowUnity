@@ -6,6 +6,32 @@
 
   let previewLoopPaused = false;
 
+  let activePieceSet=null,pieceSetPromise=null,activePillarsOnly=false; // Opt-in visual equivalents; normal Harlyao generation keeps its original asset paths and data.
+  const resolveOriginalRuinAsset=resolveRuinAsset; // The immutable V50 resolver remains the placement and footprint authority.
+  resolveRuinAsset=async function(path){
+    const asset=await resolveOriginalRuinAsset(path),key=String(path||'').split('/').pop().replace(/\.json$/i,'');
+    const replacement=activePieceSet?.mapping?.[key];
+    if(!asset||!replacement)return asset;
+    const data=await fetchRepoFurnitureData('docs/'+replacement); // Reuse the generator's existing repository cache/branch-aware URL loader.
+    return {...asset,data,pieceSet:activePieceSet.id,equivalentKey:key}; // Keep asset.name, path and footprint exactly as Harlyao's mapping expects.
+  };
+  async function selectPieceSet(name){
+    if(name!=='stoneAge'){activePieceSet=null;return;}
+    if(!pieceSetPromise)pieceSetPromise=fetch(new URL('../../config/ruin-piece-sets/stone-age.json',location.href)).then(response=>{
+      if(!response.ok)throw new Error('Stone Age piece set HTTP '+response.status);return response.json();
+    }).then(data=>{
+      if(data.schema!=='hobunji_ruin_piece_set.v1'||data.id!=='stoneAge'||!data.mapping)throw new Error('Invalid Stone Age ruin piece set.');
+      for(const path of Object.values(data.mapping))if(!/^config\/ruin-piece-sets\/stone-age\/[a-z_]+\.json$/.test(path))throw new Error('Invalid Stone Age piece path.');
+      return data;
+    }).catch(error=>{pieceSetPromise=null;throw error;});
+    activePieceSet=await pieceSetPromise;
+  }
+
+  const originalSupportPillarSlots=interiorSupportPillarSlots; // Reuse V50's support lattice when the preview removes the display props that would otherwise reserve those slots.
+  interiorSupportPillarSlots=function(room,network,plateau,bridgeCorridors,pillarDenseRoom){
+    return originalSupportPillarSlots(room,network,activePillarsOnly?{...plateau,focuses:[]}:plateau,bridgeCorridors,pillarDenseRoom);
+  };
+
   // The recovered V50 source is immutable (verified by its SHA in regression
   // tests). Its existing bridge owns these material overrides for all ruins.
   createSharedRuinStoneMaterial = async function () {
@@ -174,8 +200,12 @@
   }
 
   async function generateInteriorLocale(options = {}) {
+    activePillarsOnly=options.floorProps==='pillarsOnly';
+    await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
+    window.__devRuinSingleRoomLarge = options.singleRoom === true && options.roomPreset === 'veryLarge'; // Root preview opts into the generator's existing vast chamber preset.
+    window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
 
     const puzzleOptions = normalizeRuntimePuzzleOptions(options.puzzles); // Used by the embedded V50 patch while this one interior is generated.
     window.__devRuinPuzzleOptions = puzzleOptions;
@@ -206,6 +236,7 @@
 
     return {
       seed: $('localeSeed').value,
+      pieceSet:activePieceSet?.id||'harlyao',
       locale: cloneJson(lastGeneratedLocale),
       status: $('localeStatus')?.textContent || '',
       runtimeWallPlanes: runtimeWallPlaneState(),
@@ -222,6 +253,8 @@
   // Exposes V50's already-tested purposeful outdoor ruin path without
   // duplicating or modifying the SHA-protected generator source.
   async function generateOutdoorLocale(options = {}) {
+    activePillarsOnly=false;
+    await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
     $('localeSeed').value = String(options.seed ?? 'outdoor-ruin');
@@ -272,10 +305,92 @@
 
   function applyProgress(root, progress) {
     const normalizedProgress = clamp(Number(progress) || 0, 0, 1); // Used by both the general V50 mechanism animation and direct leaf-activator visual synchronization.
+    if(root?.rootGrowthBinding){applyMechanismProgress(root,normalizedProgress);root.rootGrowthBinding.setProgress(normalizedProgress);return;} // Hidden logical anchors still position glyphs/effects; only rooted keyframes render or provide support.
     applyMechanismProgress(root, normalizedProgress);
     if (root?.userData?.activatorType === 'glyphObelisk' && root.userData?.decalMaterials) {
       setDecalMaterialsProgress(root.userData.decalMaterials, normalizedProgress);
       if (root.userData.glowLight) root.userData.glowLight.intensity = 3.2 * normalizedProgress;
+    }
+  }
+
+  function captureRootMechanismKeyframes(object,options={}){
+    const saved=[],signals=[],meshes=[],anchor=object.getWorldPosition(new THREE.Vector3()),states=[],keyframes=[],geometries=new Map(),material=new THREE.MeshBasicMaterial({color:0x808080});
+    object.traverse(node=>{saved.push({node,position:node.position.clone(),quaternion:node.quaternion.clone(),scale:node.scale.clone(),visible:node.visible});if(node.isMesh&&node.geometry?.getAttribute('position'))meshes.push(node);});
+    for(const signal of [object.userData?.linkedCubePuzzleRoot,object.userData?.linkedPressurePlateRoot])if(signal&&!signals.some(entry=>entry.signal===signal))signals.push({signal,solve:signal.userData.solveProgress,weight:signal.userData.weightProgress});
+    let frames=object.userData?.previewMotion?.type==='bridgeSequence'?[0,.22,.76,1]:[0,1];const signatures=new Map();let complete=false;
+    const pose=progress=>{for(const {signal} of signals){signal.userData.solveProgress=progress;signal.userData.weightProgress=progress;}if(options.applyPose)options.applyPose(progress);else applyMechanismProgress(object,progress);object.updateWorldMatrix(true,true);};
+    try{
+      if(['movingDais','collapsingStairs'].includes(object.userData?.previewMotion?.type)){
+        pose(0);const initial=meshes.map(mesh=>new THREE.Box3().setFromObject(mesh));pose(1);let distance=0;
+        meshes.forEach((mesh,index)=>{const box=new THREE.Box3().setFromObject(mesh);distance=Math.max(distance,Math.abs(box.min.y-initial[index].min.y),Math.abs(box.max.y-initial[index].max.y));});
+        const steps=Math.max(1,Math.ceil(distance/.25));if(steps>15)throw new Error('Root mechanism elevation exceeds the safe keyframe budget.');
+        frames=Array.from({length:steps+1},(_,index)=>index/steps); // Stationary growth steps keep elevation changes below ordinary walking clearance without moving invisible riders.
+      }
+      for(const progress of frames){
+        pose(progress);
+        const signature=meshes.map(mesh=>mesh.matrixWorld.elements.map(value=>value.toFixed(7)).join(',')).join('|');let state=signatures.get(signature);
+        if(state==null){state=states.length;const target=new THREE.Group();
+          for(let index=0;index<meshes.length;index++){const mesh=meshes[index];if((Array.isArray(mesh.material)?mesh.material:[mesh.material]).every(m=>m?.transparent||m?.depthWrite===false))continue;
+            let geometry=geometries.get(mesh.geometry);if(!geometry){geometry=mesh.geometry.clone();geometries.set(mesh.geometry,geometry);}
+            const copy=new THREE.Mesh(geometry,material);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.position.sub(anchor);copy.name=mesh.name;copy.userData.authoredPartId='runtime-piece-'+index;
+            const type=object.userData?.previewMotion?.type;let eligible=true;
+            if(type==='movingDais'){eligible=false;for(let node=mesh;node&&node!==object;node=node.parent){if(node.userData?.groundedToMovingPlatform)break;if(node===object.userData.movingDaisPlatform){eligible=true;break;}}}
+            if(type==='collapsingStairs'){eligible=false;for(let node=mesh;node&&node!==object;node=node.parent)if(object.userData.stairTreads?.includes(node)){eligible=true;break;}}
+            copy.userData.rootSupportEligible=eligible;target.add(copy);
+          }if(!target.children.length)throw new Error('Root mechanism has no physical pieces.');states.push({target});signatures.set(signature,state);
+        }keyframes.push({progress,state});
+      }
+      let disposed=false;complete=true;return {anchor,states,keyframes,dispose(){if(disposed)return;disposed=true;for(const geometry of geometries.values())geometry.dispose();material.dispose();}};
+    }finally{
+      for(const entry of saved){entry.node.position.copy(entry.position);entry.node.quaternion.copy(entry.quaternion);entry.node.scale.copy(entry.scale);entry.node.visible=entry.visible;}object.updateWorldMatrix(true,true);
+      for(const entry of signals){if(entry.solve===undefined)delete entry.signal.userData.solveProgress;else entry.signal.userData.solveProgress=entry.solve;if(entry.weight===undefined)delete entry.signal.userData.weightProgress;else entry.signal.userData.weightProgress=entry.weight;}
+      if(!complete){for(const geometry of geometries.values())geometry.dispose();material.dispose();}
+    }
+  }
+
+  function createRootMechanismKeyframes(type,seed='root-mechanism'){
+    const material=new THREE.MeshBasicMaterial({color:0x808080}),rng=seededRng(seed),labels={bridge:'Retracting bridge',bridgeSequence:'Timed bridge',stoneDoor:'Stone door',movingDais:'Rising platform',collapsingStairs:'Collapsing stairs',rotatingObelisk:'Rotating obelisk',linkedCubePair:'Linked cube solution',pushPuzzleBlock:'Push-block route',elevatorPushBlock:'Lifted push block',pressurePlate:'Pressure plate'}; // Reuse the existing V50 constructors and motion evaluator, never a parallel mechanism shape implementation.
+    if(!labels[type]){material.dispose();throw new Error('Unknown ruin mechanism: '+type);}
+    let prototype,samples=[{progress:0,label:'Initial'},{progress:1,label:'Activated'}]; // Authored progress knots are sampled only during construction; rendered rooted poses never move.
+    if(type==='bridge'||type==='bridgeSequence'){prototype=createRetractingStoneBridge(material,3.6,1.1,.22);prototype.position.y=.14;if(type==='bridgeSequence'){prototype.userData.previewMotion.type=type;samples=[{progress:0,label:'Retracted'},{progress:.22,label:'Extended'},{progress:.76,label:'Hold'},{progress:1,label:'Retracted'}];}}
+    else if(type==='stoneDoor'){prototype=new THREE.Group();const frame=createStoneArchFrame(material,2,2.5,.38),door=createVerticalStoneDoor(material,1.35,2.2,.2);door.position.y=2.2;prototype.add(frame,door);}
+    else if(type==='movingDais')prototype=createRisingCollapsingDais(material,1.5,1.5,1.1,false);
+    else if(type==='collapsingStairs')prototype=createCollapsingStoneStairway(material,1.2,1.2,2,5,true);
+    else if(type==='rotatingObelisk')prototype=createStackedRotatingObeliskActivator(material,rng);
+    else if(type==='linkedCubePair'){
+      prototype=createLinkedDoorCubePair(material,rng);const moves=findLinkedCubeSolution(prototype.userData.states)||[],states=[prototype.userData.states.slice()]; // Keep the prototype's actual 2x2 linkage and solve path.
+      for(const move of moves)states.push(linkedCubeApplyMoveState(states.at(-1),move.control,move.direction));
+      samples=states.map((states,index)=>({progress:index/Math.max(1,moves.length),states,label:index?'Turn '+LINKED_CUBE_LABELS[moves[index-1].control]+(moves[index-1].direction>0?' clockwise':' counter-clockwise'):'Scrambled'}));
+      if(samples.length===1)samples.push({progress:1,states:states[0],label:'Solved'});
+    }else if(type==='pushPuzzleBlock'||type==='elevatorPushBlock'){
+      prototype=createPushPuzzleBlock(material);const path=[{x:-1,y:0,z:-.5},{x:0,y:0,z:-.5},{x:0,y:0,z:.5},{x:1,y:0,z:.5}]; // Illustrative route uses the generator's existing per-push and lift timing.
+      prototype.userData.pushPath=path;prototype.userData.pushStart=path[0];prototype.userData.pushTarget=path.at(-1);
+      if(type==='elevatorPushBlock'){prototype.userData.previewMotion.type=type;prototype.userData.elevatorHighY=.9;prototype.userData.pushPath=path.map(point=>({...point,y:.9}));samples=[{progress:0,label:'Low'},{progress:.45,label:'Lifted'},...path.slice(1).map((_,index)=>({progress:.45+.55*(index+1)/3,label:'Route '+(index+1)}))];}
+      else samples=path.map((_,index)=>({progress:index/3,label:'Push '+index}));
+    }else{
+      prototype=createPressurePlateActivator(material);prototype.userData.linkedWeightBlock={position:new THREE.Vector3(1.2,0,0),userData:{pushBlockSize:.62}};
+    }
+    const states=[],keyframes=[],signatures=new Map(),geometries=new Map(),guideMaterial=new THREE.MeshBasicMaterial({color:0x808080}); // Shared immutable guide buffers remain separate from the native prototype's lifetime.
+    let complete=false;
+    try{
+      for(const sample of samples){
+        if(sample.states)setLinkedCubePuzzleState(prototype,sample.states,false);
+        else{if(type==='pressurePlate')prototype.userData.linkedWeightBlock.position.x=1.2*(1-sample.progress);applyMechanismProgress(prototype,sample.progress);}
+        prototype.updateWorldMatrix(true,true);const meshes=[]; // Flatten poses into plain guides; native userData contains live references unsuitable for cloning/serialization.
+        prototype.traverse(mesh=>{if(!mesh.isMesh||!mesh.geometry?.getAttribute('position'))return;let node=mesh;while(node){if(node.visible===false)return;node=node.parent;}const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];if(materials.every(material=>material?.transparent||material?.depthWrite===false))return;meshes.push(mesh);});
+        const signature=meshes.map(mesh=>mesh.geometry.uuid+':'+mesh.matrixWorld.elements.map(value=>value.toFixed(7)).join(',')).join('|'); // Exact holds and return-to-start frames reuse the same rooted state.
+        let state=signatures.get(signature);
+        if(state==null){
+          state=states.length;const target=new THREE.Group();target.name=labels[type]+' / '+sample.label;
+          meshes.forEach((mesh,index)=>{let geometry=geometries.get(mesh.geometry);if(!geometry){geometry=mesh.geometry.clone();geometries.set(mesh.geometry,geometry);}const copy=new THREE.Mesh(geometry,guideMaterial);mesh.matrixWorld.decompose(copy.position,copy.quaternion,copy.scale);copy.name=mesh.name||labels[type]+' piece '+(index+1);copy.userData.authoredPartId='mechanism-piece-'+index;target.add(copy);});
+          if(!target.children.length)throw new Error('The mechanism has no physical guide meshes.');states.push({target,label:sample.label});signatures.set(signature,state);
+        }
+        keyframes.push({progress:sample.progress,state,label:sample.label});
+      }
+      let disposed=false;complete=true;return {type,name:labels[type],seed:String(seed),states,keyframes,dispose(){if(disposed)return;disposed=true;for(const geometry of geometries.values())geometry.dispose();guideMaterial.dispose();}};
+    }finally{
+      linkedCubePuzzleRoots.delete(prototype);prototype.traverse(mesh=>{if(linkedCubeHitTargets.get(mesh)?.root===prototype)linkedCubeHitTargets.delete(mesh);});
+      disposeObject(prototype);material.dispose();if(!complete){for(const geometry of geometries.values())geometry.dispose();guideMaterial.dispose();}
     }
   }
 
@@ -432,6 +547,7 @@
     setMechanismTarget,
     snapMechanismState,
     applyProgress,
+    createRootMechanismKeyframes,captureRootMechanismKeyframes,
     syncPressurePlates,
     rotateLinkedCube,
     tickRuntime,

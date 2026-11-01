@@ -1,0 +1,64 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_stone_pedestal",
+  "pieceId": "stone_age_stone_pedestal",
+  "name": "Dolmen Offering Slab",
+  "equivalentTo": "stone_pedestal",
+  "notes": "Stone Age equivalent of stone_pedestal. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "stone_pedestal_support_boulder",
+      "name": "Support Boulder",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0,
+        "y": 0.34500000000000003,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.507,
+        "sy": 0.6900000000000001,
+        "sz": 0.507
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    },
+    {
+      "id": "stone_pedestal_offering_slab",
+      "name": "Offering Slab",
+      "kind": "legSquare",
+      "transform": {
+        "x": 0.02,
+        "y": 0.7700000000000001,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.78,
+        "sy": 0.16,
+        "sz": 0.78
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "topScaleX": 0.84,
+      "topScaleZ": 0.9,
+      "topSkewX": 0.035
+    }
+  ]
+}

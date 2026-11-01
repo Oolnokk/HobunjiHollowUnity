@@ -360,7 +360,14 @@ assert(debrisBootstrap.includes('const hallReplacement = \'const width=randomInt
 assert(debrisBootstrap.includes("escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;'"), 'embedded runtime must widen fallback V50 hallways to 5–6 cells');
 assert(debrisBootstrap.includes('Math.max(3,Number(door.widthCells)||3)'), 'hallway door arches must consume the authored doorway width instead of a fixed 3-cell span');
 assert(debrisBootstrap.includes('Math.max(3,Number(chosen.door.widthCells)||3)'), 'focus doorway arches must consume the authored doorway width');
-assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href).href"), 'embedded runtime must map repo asset paths to the local docs origin');
+assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href)"), 'embedded runtime must map repo asset paths to the local docs origin');
+const rawAssetHelper=JSON.parse(debrisBootstrap.match(/const rawReplacement = ("(?:\\.|[^"\\])*");/)[1]); // Execute the shipped URL helper rather than pinning a particular retry token.
+const assetUrlFor=attempt=>vm.runInNewContext(rawAssetHelper+";rawTextureUrl('docs/assets/models/Roughbrick1.glb')",{
+  URL,URLSearchParams,location:new URL('https://raw.githack.com/Oolnokk/HobunjiHollowUnity/pinned/docs/tools/debris-ifier/index.html?devRuntime=1'+(attempt?'&assetAttempt='+attempt:''))});
+assert.equal(assetUrlFor(''),'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/pinned/docs/assets/models/Roughbrick1.glb',
+  'ordinary gameplay generation keeps its established cacheable asset URLs');
+assert.notEqual(assetUrlFor('first'),assetUrlFor('retry'),'a recovery attempt must not reuse a parent-THREE FileLoader request that is still pending');
+assert.equal(new URL(assetUrlFor('retry')).searchParams.get('assetAttempt'),'retry');
 assert(debrisBootstrap.includes('refusing an unverified embedded patch'), 'embedded runtime patching must fail closed if exact V50 bindings drift');
 assert(debrisBootstrap.includes("source.src = 'debrisifier-v50-source.js'"), 'direct Debris-ifier mode must keep loading the exact readable source file');
 assert(debrisBootstrap.includes('patchedBindings: patches.length'), 'embedded runtime must report the verified patch count');

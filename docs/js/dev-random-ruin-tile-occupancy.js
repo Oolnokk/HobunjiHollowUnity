@@ -177,6 +177,7 @@
   }
 
   function doorIsClosed(door) {
+    if(door?.rootGrowthBinding)return door.rootGrowthBinding.isDoorClosed();
     const transit = door?.userData?.__devRuinTransitDoorState;
     if (transit) return Number(transit.open) < .78;
     const motion = door?.userData?.previewMotion || {};

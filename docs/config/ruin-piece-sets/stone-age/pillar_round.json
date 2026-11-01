@@ -1,0 +1,41 @@
+{
+  "schema": "hobunji_furniture_surface_author.v58",
+  "id": "stone_age_pillar_round",
+  "pieceId": "stone_age_pillar_round",
+  "name": "Rounded Standing Stone",
+  "equivalentTo": "pillar_round",
+  "notes": "Stone Age equivalent of pillar_round. Same placement footprint; unworked megaliths without plinths, collars, moulding, capitals or carved decoration.",
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "pillar_round_standing_stone",
+      "name": "Rounded Standing Stone",
+      "kind": "cylinder",
+      "transform": {
+        "x": 0,
+        "y": 0.87,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.68,
+        "sy": 1.74,
+        "sz": 0.68
+      },
+      "color": "#777970",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "wonkiness": 0.025,
+      "segments": 7,
+      "topScaleX": 0.75,
+      "topScaleZ": 0.8
+    }
+  ]
+}

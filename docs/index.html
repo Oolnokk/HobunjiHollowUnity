@@ -241,9 +241,9 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261028temple-finish"></script>
+  <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261025hab1da68"></script>
+  <script src="js/procedural-furniture.js?v=20261030h4437e5e"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
   <script src="js/interior-door-tiles.js?v=20261029farmhouse1"></script>
@@ -251,7 +251,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261031h9df6744"></script>
-  <script src="js/authored-furniture-runtime.js?v=20261027h77c02a1"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261030hbbf6776"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261030lichWalls3"></script>
@@ -850,7 +850,7 @@
        window.ZoneTerrainFeatures.init(...) alongside its sibling systems
        and its build*(...) functions lazily, from buildZoneScene, never
        synchronously during initial boot. -->
-  <script src="js/zone-terrain-features.js?v=20261027campboulders1"></script>
+  <script src="js/zone-terrain-features.js?v=20261031boulder-opt3"></script>
   <script src="js/character-ground-shadow.js?v=20261012cgs1"></script>
   <!-- Wilderness-zone animal-den rock mounds and root totem meshes
        (window.ZoneDenTotemFeatures) — pure scene-graph generation, no
@@ -867,7 +867,7 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
   <script src="js/ruin-sites.js?v=20261031storyVault1"></script>
-  <script src="js/zone-den-totem-features.js?v=20261028localeopen2"></script>
+  <script src="js/zone-den-totem-features.js?v=20261030ha7ca4f5"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2831,7 +2831,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261031h103a088"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261101rootrebase1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

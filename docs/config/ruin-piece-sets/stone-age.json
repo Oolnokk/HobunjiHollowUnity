@@ -1,0 +1,17 @@
+{
+  "schema": "hobunji_ruin_piece_set.v1",
+  "id": "stoneAge",
+  "name": "Stone Age megaliths",
+  "notes": "One-to-one replacements for the regular Harlyao architectural furniture keys. Generator paths, placement roles and footprints remain authoritative.",
+  "mapping": {
+    "pillar_round": "config/ruin-piece-sets/stone-age/pillar_round.json",
+    "pillar_square": "config/ruin-piece-sets/stone-age/pillar_square.json",
+    "pillar_carved": "config/ruin-piece-sets/stone-age/pillar_carved.json",
+    "pillar_heavy": "config/ruin-piece-sets/stone-age/pillar_heavy.json",
+    "pillar_ruined": "config/ruin-piece-sets/stone-age/pillar_ruined.json",
+    "stone_arch": "config/ruin-piece-sets/stone-age/stone_arch.json",
+    "stone_buttress": "config/ruin-piece-sets/stone-age/stone_buttress.json",
+    "stone_pedestal": "config/ruin-piece-sets/stone-age/stone_pedestal.json",
+    "obelisk_stone": "config/ruin-piece-sets/stone-age/obelisk_stone.json"
+  }
+}

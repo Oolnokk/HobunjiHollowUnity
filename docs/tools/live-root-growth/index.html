@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<base href="../../">
+<title>Hobunji Hollow — Live Root Growth Author</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="config/scratchbones-config.js"></script>
+<script src="js/color-fill.js?v=20260923colorfill7"></script>
+<script src="js/portrait-utils.js?v=20261026templepatterns1"></script>
+<script src="config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
+<script src="js/surface-stretch-uv-furniture.js?v=20261031h5856d5a"></script>
+<script src="js/foliage-generator.js?v=20261031h87aa596"></script>
+<script src="js/GLTFLoader.js"></script>
+<script src="js/zone-terrain-features.js?v=20261031boulder-opt3"></script>
+<script src="js/terrain-preview.js?v=20261013he41c002"></script>
+<script src="js/procedural-furniture.js"></script>
+<script src="js/authored-furniture-runtime.js"></script>
+<script src="js/live-root-network.js?v=1"></script>
+<script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></script>
+<script src="js/live-root-growth.js?v=20261031snare-guide1"></script>
+<script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></script>
+<script src="js/npc-avatar-preview-utils.js?v=20261031realnpc1"></script>
+<script src="js/png-plane-avatar.js?v=20261031realnpc1"></script>
+<script src="config/pants-rigs.js?v=20261031pantsreal1"></script>
+<script src="js/pants-rig-core.js?v=20261031pantsreal1"></script>
+<script src="js/pants-garment-renderer.js?v=20261031pantsreal1"></script>
+<script src="js/leg-bones.js?v=20261013hb53d07e"></script>
+<script src="js/procedural-leg-animation.js?v=20261031h99e235f"></script>
+<script src="js/root-snare-hands.js?v=20261031visualtoss1"></script>
+<script src="js/root-snare-toss.js?v=20261031visualtoss1"></script>
+<script src="js/root-snare-runner.js?v=20261031visualtoss1"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#07101a;color:#edf5ff;font:13px/1.4 system-ui,Arial,sans-serif}
+button,input,select{font:inherit}button{border:1px solid #476578;background:#203a4d;color:#edf5ff;border-radius:8px;padding:9px;cursor:pointer}button:active{background:#315a70}button:disabled{opacity:.45}
+input[type=number],input[type=text],input[type=search],select{width:100%;background:#091925;color:#e7f5ff;border:1px solid #476578;border-radius:7px;padding:8px}
+input[type=range]{width:100%;accent-color:#8dcaff}
+#app{display:grid;grid-template-columns:minmax(280px,345px) 1fr;height:100%;overflow:hidden}
+aside{overflow-y:auto;padding:12px;background:#121f2c;border-right:1px solid #395267;-webkit-overflow-scrolling:touch}
+h1{font-size:18px;margin:0}h2{font-size:12px;margin:0 0 9px;color:#a6d2f1}
+p,.hint{font-size:11px;color:#abc0d2;margin:6px 0}
+section{border:1px solid #354d61;border-radius:10px;padding:10px;margin:10px 0;background:#152636}
+label{display:block;font-size:11px;color:#c9dfec;margin:9px 0 4px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.controls label{margin:0}.controls button{width:100%}
+.color-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.color-controls>div{min-width:0}.color-controls label{margin:5px 0 2px}.color-controls input[type=color]{width:100%;height:34px;background:#091925;border:1px solid #476578;border-radius:7px}
+#viewport{min-width:0;min-height:0;position:relative;background:radial-gradient(circle at center,#1b3843,#07101a 70%)}
+#render{position:absolute;inset:0;touch-action:none}
+#hud{position:absolute;top:10px;left:10px;right:10px;pointer-events:none;background:#071523cc;border:1px solid #476578;border-radius:7px;padding:8px;white-space:pre-wrap;font:11px/1.4 monospace}
+#errors{white-space:pre-wrap;color:#ffc4c4;display:none;border-color:#ff7580}
+#debug{white-space:pre-wrap;word-break:break-word;font:10px/1.4 monospace;max-height:210px;overflow:auto;background:#06121d;padding:8px}
+#scrub{margin-top:10px}.toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+@media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:minmax(250px,44vh) 1fr}#viewport{grid-row:1}aside{grid-row:2;border-right:none;border-top:1px solid #395267}#hud{font-size:9px}}
+</style></head>
+<body><div id="app">
+<aside>
+<h1>🌳 Live Root Growth Author</h1>
+<p>Prototype living root structures around an invisible imported furniture shape. Roots originate on existing vegetation; the same controller extends and retracts the new shape.</p>
+<section><h2>Preview environment</h2>
+<label for="previewEnvironment">Root substrate</label><select id="previewEnvironment"><option value="flat">Flat floor preview</option><option value="ruin">Single ruin room</option></select>
+<label for="ruinSize">Room size</label><select id="ruinSize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option><option value="vast" selected>Vast</option></select>
+<label for="ruinRoughness">Ruin rock roughness (0–1)</label><input id="ruinRoughness" type="number" min="0" max="1" step="0.05" value="0.3">
+<div class="controls color-controls">
+<div><label for="stoneColor">Stone colour</label><input id="stoneColor" type="color" value="#363733"><input type="text" id="stoneColorHex" aria-label="Stone hex colour" value="#363733" maxlength="7" spellcheck="false"><label for="stoneColorH">Hue <output id="stoneColorHValue"></output></label><input id="stoneColorH" type="range" min="0" max="360" step="1" aria-label="Stone hue"><label for="stoneColorS">Saturation <output id="stoneColorSValue"></output></label><input id="stoneColorS" type="range" min="0" max="100" step="1" aria-label="Stone saturation"><label for="stoneColorL">Lightness <output id="stoneColorLValue"></output></label><input id="stoneColorL" type="range" min="0" max="100" step="1" aria-label="Stone lightness"></div>
+<div><label for="rootColor">Root colour</label><input id="rootColor" type="color" value="#24211d"><input type="text" id="rootColorHex" aria-label="Root hex colour" value="#24211d" maxlength="7" spellcheck="false"><label for="rootColorH">Hue <output id="rootColorHValue"></output></label><input id="rootColorH" type="range" min="0" max="360" step="1" aria-label="Root hue"><label for="rootColorS">Saturation <output id="rootColorSValue"></output></label><input id="rootColorS" type="range" min="0" max="100" step="1" aria-label="Root saturation"><label for="rootColorL">Lightness <output id="rootColorLValue"></output></label><input id="rootColorL" type="range" min="0" max="100" step="1" aria-label="Root lightness"></div>
+</div><p id="colorStatus" class="muted" role="status">Stone #363733 · Roots #24211d</p><button id="copyColors" type="button">Copy colours to share</button>
+<button id="previewRuin" type="button" style="width:100%;margin-top:8px">Build ruin preview</button>
+<p id="buildStatus" role="status" aria-live="polite">Preparing preview…</p><button id="cancelBuild" type="button" disabled>Cancel build</button>
+<p id="ruinStatus" role="status">Uses the existing ruin generator. Its stone floor and initial root/vine covering repeat in 4 × 4 quarter-scale tiles, including quarter-height relief. The farm cliff texture is fitted to detected surfaces after rockification, then the room receives denser roots and vines based on the Life Temple’s authored root and vine layers before you grow the selected furniture from that vegetation.</p>
+<p>Stone Age equivalents use the regular Harlyao placement mapping. Only pillars remain as floor props; floor vegetation stays. The initial cover uses Life Temple layers with root widths at 60–150% and thinner green vines at 100–150%, plus an extra vine weave among the roots. Controls below affect new structures only. Grow, Retract and Reset affect only the new shape. Walls are solid stone prisms before roughening. Stone remains visible beneath the vegetation. Use the HSL sliders or colour swatches above; copy the hex and HSL values to share your choices. Show guide reveals only the imported target. Seed, room size, roughness and colours are saved in your recipe.</p>
+</section>
+<section><h2>Wall-root snare hands · moving walker preview</h2>
+<p>Fixed root nodes on walls and floors can notice targets up to 15 units away. Arms grow slowly (0.2 progress/second) and actively reroute as the procedural runner moves at 5 units/second. The first collider catch grips the neck without freezing movement: running toward the hand source is 2× speed; away is 0.5×; angles blend smoothly. A second hand catches the feet, immobilizes and lifts the runner, and pulls neck and feet apart with a three-second cartoon stretch. The pants and procedural feet then separate in a stylized red particle splurt. This is an author-only visual test, not combat gameplay.</p>
+<label><input type="checkbox" id="snareEnabled"> Enable wandering NPC + root hands</label>
+<label>Real repository NPC <select id="snareNpc"><option value="">Random NPC from repository</option></select></label>
+<p id="snareNpcStatus" role="status">Loads the same NPC database, front/back portrait, skinned neck and species-specific procedural feet used by the Animation Author.</p>
+<div class="controls">
+<label>Hidden hand nodes <input id="snareCount" type="number" min="1" max="14" step="1" value="7"></label>
+<label>Notice radius <input id="snareRadius" type="number" min=".5" max="15" step=".5" value="15"></label>
+<label>Arm extension <input id="snareReach" type="number" min=".3" max="15" step=".5" value="15"></label>
+<label>Extending speed <input id="snareExtend" type="number" min=".05" max="12" step=".05" value="0.2"></label>
+<label>Retracting speed <input id="snareRetract" type="number" min=".15" max="12" step=".1" value="1.1"></label>
+<label>Runner speed <input id="snareRunnerSpeed" type="number" min=".3" max="8" step=".1" value="5"></label>
+</div>
+<label><input type="checkbox" id="snareReveal"> Reveal the otherwise hidden root-node markers</label>
+<div class="controls"><button id="snareBuild" type="button">Rebuild hidden hands</button><button id="snareReroute" type="button">Change runner direction</button></div>
+<div class="controls"><button id="snareRunPast" type="button">Run past first hand</button><button id="snareRelease" type="button">Reset / release runner</button></div>
+<div class="controls"><button id="snareRunAway" type="button">Pull away from hand</button><button id="snareRunToward" type="button">Run toward hand</button></div>
+<button id="snareDoubleGrip" type="button" style="width:100%;margin-top:7px">Preview two-hand neck + feet stretch</button>
+<p id="snareStatus" role="status" aria-live="polite">Build a ruin to place the fixed roots, then enable the walker.</p>
+</section>
+<section><h2>1 · Shape to grow</h2>
+<label for="repoFurnitureSearch">Browse furniture in repository</label>
+<div class="controls"><input id="repoFurnitureSearch" type="search" placeholder="Search name or path" aria-label="Search repository furniture"><button id="refreshRepoFurniture" type="button">↻ Refresh</button></div>
+<label for="repoFurnitureList">Available furniture</label>
+<select id="repoFurnitureList" size="5" aria-label="Repository furniture pieces"><option>Loading repository catalog…</option></select>
+<button id="importRepoFurniture" type="button" style="width:100%;margin-top:7px" disabled>Use selected furniture as shape</button>
+<p id="repoFurnitureStatus" role="status">Loading authored index and procedural furniture…</p>
+<label for="modelFile">Or import authored furniture JSON / GLB from device</label><input id="modelFile" type="file" accept=".json,.glb">
+<p id="sourceName">Demo: raised rectangular platform. Replace with any furniture export or GLB.</p>
+<div class="controls"><label>Shape X <input id="targetX" type="number" step=".25" value="0"></label><label>Shape Y <input id="targetY" type="number" step=".25" value="1.5"></label><label>Shape Z <input id="targetZ" type="number" step=".25" value="0"></label><label>Show guide <input id="showGuide" type="checkbox"></label></div>
+</section>
+<section><h2>Ruin mechanisms · rooted keyframes</h2>
+<label for="mechanismType">Existing ruin mechanism</label><select id="mechanismType"><option value="stoneDoor">Stone door</option><option value="bridge">Retracting bridge</option><option value="bridgeSequence">Timed bridge</option><option value="movingDais">Rising platform</option><option value="collapsingStairs">Collapsing stairs</option><option value="rotatingObelisk">Rotating obelisk</option><option value="linkedCubePair">Linked cube solution</option><option value="pushPuzzleBlock">Push-block route</option><option value="elevatorPushBlock">Lifted push block</option><option value="pressurePlate">Pressure plate</option></select>
+<button id="loadMechanism" type="button" style="width:100%;margin-top:8px">Build rooted mechanism</button>
+<label for="mechanismDuration">Transition duration (seconds)</label><input id="mechanismDuration" type="number" min=".15" max="30" step=".05" value=".65">
+<label for="mechanismPose">Mechanism progress · <output id="mechanismPoseValue">0%</output></label><input id="mechanismPose" type="range" min="0" max="100" step="1" value="0" disabled>
+<div class="controls"><button id="mechanismActivate" type="button" disabled>Activate</button><button id="mechanismReset" type="button" disabled>Reset state</button></div>
+<p id="mechanismStatus" role="status">Keyframe shapes use the existing ruin geometry. Transitions retract one rooted shape and grow the next; the rooted poses do not translate, rotate, or stretch. Grow/Reset below controls the whole mechanism.</p>
+</section>
+<section><h2>2 · Root growth settings</h2>
+<label for="seed">Deterministic branch seed</label><input id="seed" type="text" value="ruin-root-growth-1" maxlength="128">
+<div class="controls">
+<label>Floor width <input id="floorWidth" type="number" min="1" max="32" step=".5" value="8"></label>
+<label>Floor depth <input id="floorDepth" type="number" min="1" max="32" step=".5" value="8"></label>
+<label>Branches <input id="branchCount" type="number" min="1" max="32" value="9"></label>
+<label>Wrap limit <input id="strandLimit" type="number" min="1" max="80" value="80"></label>
+<label>Root radius <input id="radius" type="number" min=".005" max=".3" step=".005" value=".045"></label>
+<label>Branch radius <input id="branchRadius" type="number" min=".008" max=".3" step=".005" value=".065"></label>
+<label>Floor density <input id="floorDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
+<label>Shape density <input id="targetDensity" type="number" min=".05" max="6" step=".05" value="6"></label>
+<label>Floor path length <input id="floorLength" type="number" min=".5" max="30" step=".5" value="12"></label>
+<label>Surface detail length <input id="targetLength" type="number" min=".5" max="30" step=".5" value="12"></label>
+<label>Bend <input id="bend" type="number" min="0" max="3" step=".1" value=".42"></label>
+<label>Arc concavity <input id="arcConcavity" type="number" min="0" max="1" step=".05" value=".72"></label>
+<label>Inner shape inset <input id="shapeInset" type="number" min="0" max=".5" step=".005" value=".035"></label>
+<label>Volume fill depth <input id="volumeFillDepth" type="number" min="0" max=".5" step=".01" value=".24"></label>
+<label>Detail preservation (0–1) <input id="detailPreservation" type="number" min="0" max="1" step=".05" value=".8"></label>
+<label>Knot density (0–3) <input id="knotDensity" type="number" min="0" max="3" step=".1" value="1"></label>
+<label>Minimum preferred root radius <input id="minRootRadius" type="number" min=".002" max=".08" step=".001" value=".008"></label>
+<label>Duration (seconds) <input id="duration" type="number" min=".15" max="60" step=".05" value=".5"></label>
+</div><p>Arc concavity: 0 = straight vertical rise; 1 = branches hug the root-covered floor longer before sweeping upward toward the furniture. Seeded variation keeps the curves organic.</p>
+<p>Growth starts at actual floor-adjacent furniture parts, then travels through their connections: table legs before tabletop, arch posts before the overhang. Higher pieces retract first. Furniture roots follow a connected path through each original piece. Thin details narrow the roots; broad pieces receive winding knots; every touching neighbour gets a route. Detail preservation controls sampling and finer surface strands. Knot density controls interior winding. The minimum radius is a preference: roots can thin further to fit very narrow details. Floor density still layers the original floor Wrap. For furniture, roots are ray-shrinkwrapped <strong>inside</strong> its hidden physical surfaces: inset controls the near-surface clearance; volume fill depth spreads successive layers farther into the object's interior (clamped at thin walls). Authored furniture particles begin emitting once growth reaches 100% and switch off when it retracts.</p>
+<div class="controls" style="margin-top:10px"><button id="rebuild">Rebuild</button><button id="randomSeed">New seed</button></div>
+</section>
+<section><h2>3 · Animate</h2>
+<div class="toolbar"><button id="extend">Grow</button><button id="pause">Pause</button><button id="retract">Retract</button></div>
+<label for="scrub">Manual growth progress · <output id="progressLabel">0%</output></label>
+<input id="scrub" type="range" min="0" max="100" step="1" value="0">
+<div class="controls"><button id="reset">Reset</button><button id="full">Full growth</button></div>
+</section>
+<section><h2>4 · Recipe</h2><div class="controls"><button id="download">Export JSON</button><button id="copy">Copy recipe</button></div>
+<label for="recipeFile">Import saved recipe</label><input id="recipeFile" type="file" accept=".json">
+<p>Repository furniture references retain their repo path and include a geometry snapshot for portability. GLBs remain separate files: the recipe records their name; re-import the corresponding GLB when reopening. No ruin/puzzle behavior is assigned yet.</p>
+</section>
+<section id="errors" role="alert"></section>
+<section><h2>Latest change</h2><p>After the Maskbound Headtaker-style six-second triple pull, the two halves tumble away in opposite directions as standalone visual-only copies. The original NPC portrait, skinning, pants, feet, inventory and gameplay state are never thrown or destroyed. Both root hands retract at the instant of separation; the on-screen status reports each half's landing, and Release restores the character and cleans up the temporary pieces. The three-pull cadence and nested species-config URL fix remain intact.</p></section>
+<section><h2>On-device diagnostics</h2><pre id="debug">Initializing…</pre></section>
+</aside>
+<main id="viewport"><div id="render"></div><div id="hud">Initializing root growth…</div></main>
+</div>
+<script src="tools/live-root-growth/tool.js?v=20261031visualtoss1"></script>
+</body></html>

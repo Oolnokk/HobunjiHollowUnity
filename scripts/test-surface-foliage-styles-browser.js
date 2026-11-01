@@ -18,7 +18,7 @@ const server=http.createServer((request,response)=>{
   const route=(request.url||'/').split('?')[0];
   if(route==='/test-page'){
     response.setHeader('Content-Type','text/html');
-    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/config/natural-surface-materials.js"></script><script src="/docs/js/natural-surface-materials.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
+    response.end('<!doctype html><html><head><script src="'+(fs.existsSync(localThree)?'/vendor-three.js':'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')+'"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/live-root-network.js"></script><script src="/docs/js/live-root-growth.js"></script><script src="/docs/js/HousePieceGen.js"></script><script src="/docs/config/natural-surface-materials.js"></script><script src="/docs/js/natural-surface-materials.js"></script><script src="/docs/js/surface-foliage-authoring.js"></script></head><body><div id="controls"></div></body></html>');
     return;
   }
   if(route==='/vendor-three.js'){
@@ -444,6 +444,96 @@ const server=http.createServer((request,response)=>{
         savedRecipe:recipes[0],restoredStyle:field('style').value,restoredDensity:field('density').value
       };
     });
+    const inward=await page.evaluate(()=>{
+      const T=window.THREE,foliage=window.FoliageGenerator;
+      const furniture=new T.Group(),box=new T.Mesh(new T.BoxGeometry(2,1,2),new T.MeshBasicMaterial({color:0x888888}));
+      box.visible=false; // Matches the root editor's hidden import, not a visible roof or wall.
+      furniture.add(box);
+      const recipe={kind:'roots',style:'wrap',target:'all',seed:'real-inside-root-browser',
+        density:.65,strandLimit:42,reference:'furniture-volume',length:6,radius:.035,
+        offset:.008,curl:.3,texture:'',shrinkwrapFinal:true,shrinkwrapHidden:true,
+        shrinkwrapInside:true,inset:.05};
+      const generated=foliage.buildSurfaceGrowth(furniture,recipe);
+      furniture.add(generated);
+      const measures={count:generated.userData.generatedStrands||0,
+        hits:generated.userData.surfaceGrowthStats?.shrinkwrapHits||0,
+        rays:generated.userData.surfaceGrowthStats?.shrinkwrapRays||0,
+        originalHidden:box.visible===false,
+        centerCount:0,insideCenters:0,outerCenters:0};
+      const mesh=generated.children.find(m=>m.isMesh);
+      const positions=mesh?.geometry?.getAttribute('position');
+      if(positions)for(let i=0;i+5<positions.count;i+=6){
+        const center=new T.Vector3();
+        for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(positions,i+j));
+        center.multiplyScalar(.2);measures.centerCount++;
+        if(Math.abs(center.x)<1&&Math.abs(center.y)<.5&&Math.abs(center.z)<1)measures.insideCenters++;
+        if(Math.abs(center.x)>1.04||Math.abs(center.y)>.54||Math.abs(center.z)>1.04)measures.outerCenters++;
+      }
+      return measures;
+    });
+    assert(inward.count>0,'A closed hidden furniture box must produce real Wrap strands');
+    assert(inward.rays>0&&inward.hits>0,'Inward shrinkwrap must raycast hidden furniture, rather than skipping it');
+    assert(inward.originalHidden,'Guide furniture must remain invisible even while casting its rays');
+    assert(inward.centerCount>0&&inward.insideCenters/inward.centerCount>.75,
+      'Most strand centerlines must be inside the furniture box, not floating around its exterior');
+    assert(inward.outerCenters/inward.centerCount<.1,
+      'Inside shrinkwrap must not protrude far outside the hidden furniture volume');
+    const rootedFurniture=await page.evaluate(()=>{
+      const T=window.THREE,foliage=window.FoliageGenerator,controller=window.LiveRootGrowth;
+      const material=new T.MeshBasicMaterial({color:0x555555});
+      function piece(name,width,height,depth,x,y,z){
+        const mesh=new T.Mesh(new T.BoxGeometry(width,height,depth),material);
+        mesh.position.set(x,y,z);mesh.name=name;return mesh;
+      }
+      function scenario(name,meshes){
+        const furniture=new T.Group();meshes.forEach(mesh=>furniture.add(mesh));
+        const grown=controller.create({THREE:T,foliage,target:furniture,recipe:{
+          seed:'staged-browser-'+name,floorWidth:5,floorDepth:5,
+          branchCount:3,strandLimit:9, floorDensity:.4,targetDensity:.4,
+          floorLength:6,targetLength:7,duration:.5,shapeInset:.03,volumeFillDepth:.1
+        }});
+        const plan=grown.partPlan.map(p=>({name:p.label,grounded:p.grounded,depth:p.depth,parent:p.parent}));
+        const shapeStrands=grown.getDiagnostics().shapeStrands,network=grown.getDiagnostics().rootNetwork; // Validate the connected planner with real Three.js geometry.
+        const visibleCount=group=>{let count=0;group.traverse(mesh=>{if(mesh.isMesh)count+=mesh.geometry.drawRange.count||0;});return count;};
+        grown.setProgress(.38);
+        const early=grown.partGrowths.map(visibleCount);
+        grown.setProgress(.8);
+        const late=grown.partGrowths.map(visibleCount);
+        grown.setProgress(1);
+        const done=grown.partGrowths.every(g=>g.children.every(child=>
+          child.geometry?.drawRange.count===child.geometry?.index?.count));
+        grown.dispose();return {plan,shapeStrands,network,early,late,done};
+      }
+      return {
+        table:scenario('table',[
+          piece('left leg',.22,1,.22,-.8,.5,-.4),
+          piece('right leg',.22,1,.22,.8,.5,-.4),
+          piece('tabletop',2,.2,1.3,0,1.1,0)
+        ]),
+        arch:scenario('arch',[
+          piece('left post',.26,2,.26,-1,1,0),
+          piece('right post',.26,2,.26,1,1,0),
+          piece('overhang',2.3,.3,.4,0,2.15,0)
+        ])
+      };
+    });
+    for(const [name,report] of Object.entries(rootedFurniture)){
+      const grounded=report.plan.filter(p=>p.grounded);
+      const raised=report.plan.filter(p=>!p.grounded);
+      assert.equal(grounded.length,2,name+': floor roots must target only the two feet/posts');
+      assert.equal(raised.length,1,name+': the elevated surface must not be a floor root');
+      assert.equal(raised[0].depth,1,name+': raised surfaces must grow from the rooted structural pieces');
+      assert(report.shapeStrands>0,name+': real scoped geometry must generate root strands');
+      assert(report.network.contactCount>=2&&report.network.pieces.every(piece=>piece.paths>0),name+': original touching pieces must have connected volume paths');
+      assert(report.network.radii.every(part=>part.outsideSamples===0),name+': planned centerlines must remain inside the real guides');
+      assert(report.early[raised[0].parent] > 0 || grounded.some(p=>report.early[report.plan.indexOf(p)]>0),
+        name+': supporting parts start filling before the elevated surface');
+      assert.equal(report.early[report.plan.indexOf(raised[0])],0,
+        name+': tabletop/overhang cannot sprout directly during ground growth');
+      assert(report.late[report.plan.indexOf(raised[0])]>0,
+        name+': the elevated surface must fill after its supporting posts');
+      assert(report.done,name+': every part must finish growth');
+    }
     assert(data.rawEdgeSpline.rings>=10,'Corner Fill should have intermediate spline rings along long straight architectural edges');
     assert(data.rawEdgeSpline.maxDeviation<.001,'With zero curl and zero clearance the spline must run on the actual corner, not float a radius off it');
     assert(data.curledEdgeSpline.maxDeviation>.008&&data.curledEdgeSpline.maxDeviation<.055,'Curl should be visible but bounded to roughly the strand radius');
@@ -525,6 +615,17 @@ const server=http.createServer((request,response)=>{
     assert(data.edgeCapacity>=data.edgePairs*2,'Boundary slots, not interior occupancy, determine endpoint capacity');
     assert(data.correctEdges,'Every Wrap strand must begin and end on two different real perimeter edges');
     assert(data.endpointSeparation>=.1,'All Wrap start and end anchors must reserve non-overlapping edge space');
+
+    const networkDetail=await page.evaluate(()=>{
+      const T=window.THREE,target=new T.Group(),material=new T.MeshBasicMaterial(); // A narrow bottleneck joins a grounded hub to a broad upper piece and side branches.
+      for(const [w,h,d,x,y,z] of [[.8,.6,.8,0,.3,0],[.014,.6,.014,0,.9,0],[.5,.3,.5,0,1.35,0],[.7,.06,.06,.75,.3,0],[.7,.06,.06,-.75,.3,0]]){const mesh=new T.Mesh(new T.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);target.add(mesh);}
+      const grown=window.LiveRootGrowth.create({THREE:T,foliage:window.FoliageGenerator,target,recipe:{strandLimit:9,floorDensity:.2,targetDensity:1,knotDensity:1}}),report=grown.getDiagnostics().rootNetwork;
+      grown.setProgress(1);grown.setProgress(.4);grown.setProgress(1);grown.dispose();return report;
+    });
+    assert(networkDetail.contactCount>=4&&networkDetail.junctions>=1,'root network must fork to every real neighbouring piece');
+    assert(networkDetail.pieces.every(piece=>piece.paths>0),'thin details must never lose their entire path budget');
+    assert(networkDetail.radii[1].maxRadius<.008&&networkDetail.radii[2].maxRadius>networkDetail.radii[1].maxRadius*3,'roots must narrow through a bottleneck and regain width afterward');
+    assert(networkDetail.knots>0&&networkDetail.radii.every(part=>part.outsideSamples===0),'large pieces must contain fitted knot paths: '+JSON.stringify(networkDetail));
 
     assert.equal(data.fullCover,0,'Wrap must never generate a flat surface-covering sheet, even at 100% edge density');
     assert.equal(data.fullTriangles,0,'Wrap must not paint the wall interior or cover its triangles');
