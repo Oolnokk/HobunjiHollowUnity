@@ -150,7 +150,13 @@
       upper=section(anchor,baked,'upper',low,high,origin);
       lower=section(anchor,baked,'lower',low,high,origin);
       bridge=section(anchor,baked,'bridge',low,high,origin);
-      if(!upper||!lower||!bridge)throw Error('Player capture omitted a body half or the actual waist region');
+      if(!upper||!lower)throw Error('Player capture omitted a real skinned body half');
+      if(!bridge){
+        // Some species use separate torso/leg GLBs with no triangles in
+        // the narrow anatomical seam. Never drop a whole-body snapshot merely
+        // because the preview's continuous-portrait assumption is false.
+        bridge=new THREE.Group();bridge.name='No continuous waist skin to stretch';anchor.add(bridge);
+      }
       const camera=window.CinematicCameraRuntime;
       const beforeCamera=camera?.activeRecord?.()||null;
       const target=new THREE.Vector3(),position=new THREE.Vector3();
@@ -272,9 +278,10 @@
   function debug(){
     const s=current;
     return {active:!!s,stage:s?(s.split?'toss':'pull'):'idle',seconds:s?.elapsed||0,
-      fullHeight:s?.fullHeight||0,tiltDegrees:s?.anchor?.rotation?.z?+(s.anchor.rotation.z*180/Math.PI).toFixed(1):0,triangles:s?.tris||0,actualPlayerHidden:!!s&&!s.realRoot.visible,
+      fullHeight:s?.fullHeight||0,actualWaistStrip:!!s?.bridge?.children?.length,tiltDegrees:s?.anchor?.rotation?.z?+(s.anchor.rotation.z*180/Math.PI).toFixed(1):0,triangles:s?.tris||0,actualPlayerHidden:!!s&&!s.realRoot.visible,
       cameraOwned:!!s?.cameraRecord,tossed:!!s?.tossed,counters:{...counts},lastEvent,lastError};
   }
   window.RootSnarePlayerTear=Object.freeze({begin,update,stop,gripTarget,debug,
-    active:()=>!!current,split:()=>!!current?.split,duration:DURATION});
+    active:()=>!!current,split:()=>!!current?.split,duration:DURATION,
+    ...(window.__HACHUTU_ROOT_TEAR_TEST__===true?{__test:{bakeMeshes,section,crop}}:{})});
 })();
