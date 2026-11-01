@@ -28692,7 +28692,10 @@
       let cameraJoystickOriginX = 0, cameraJoystickOriginY = 0;
       let cameraJoystickX = 0, cameraJoystickY = 0; // -1..1 per axis, consumed once per frame in gameLoop
       function cameraDragAllowed() {
-        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.() && !farmEditMode && !furniturePlacementArmedKey && !furnitureMoveArmedId
+        // Reticle placement/movement uses Action 1/2; camera-look remains a separate input owner.
+        return !menuOpen && !window.FarmworkUI?.isPanelOpen?.()
+          && !window.FurniturePlacer?.isOpen?.() && !window.__furniturePlacerPanelOpen && !window.__mapEditorPanelOpen
+          && (!farmEditMode || furniturePlacementModeArmed()) // Farm Editor's paint brush yields to active furniture reticle placement.
           && !dialogueZoomActive() && !window.Fishing?.state?.active && !cutscenePreviewActive && !window.PixelProbe?.armed
           && !window.__mapEditorGizmoActive;
       }
@@ -28794,7 +28797,7 @@
       if (isDesktop) {
         threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         threeContainer.addEventListener('pointerdown', (e) => {
-          if (window.PixelProbe?.armed || menuOpen || farmEditMode || e.shiftKey || window.__mapEditorGizmoActive) return;
+          if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
