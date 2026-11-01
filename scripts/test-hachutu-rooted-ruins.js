@@ -51,7 +51,7 @@ assert.equal(boss.def.attackDamage,60);
 assert.equal(boss.def.attackRangePx,240);
 assert.equal(boss.def.moveSpeed,45);
 assert.equal(boss.def.chaseSpeed,50);
-assert.equal(boss.def.weaponShapeStats.speed,.4);
+assert(Math.abs(boss.def.weaponShapeStats.speed-.4)<1e-10);
 assert.equal(boss.def.attackCooldownS,4.5);
 assert.equal(boss.visualScaleY,3);
 assert.equal(boss.def.banditAbilityLoadout.tap2,null);
@@ -82,7 +82,7 @@ assert(bootstrap.includes('dev-hachutu-ruin.js'), 'Hachutu script loaded before 
 assert(bootstrap.includes('root-snare-hands.js'), 'authored root hand engine loaded for gameplay');
 assert(source('docs/js/dev-random-ruin-lich-themes.js').includes('context.hachutu===true'),'no lich hazards in Hachutu temple');
 assert(source('docs/js/dev-random-ruin-dungeon-chests.js').includes('window.HachutuRelics?.grantBossWeapon?.()'),'boss chest guarantees an actual torch weapon');
-assert(source('docs/js/weapon-layer-effects.js').includes('Window')===false||true); // File parsed next; do not rewrite the global enchantment VFX owner.
+assert(source('docs/js/weapon-layer-effects.js').includes('window.WeaponEnchantmentVFX?.stateFor?.(state.itemKey)'), 'torch flame tint uses the authoritative enchantment color');
 for(const file of ['docs/js/dev-hachutu-ruin.js','docs/js/hachutu-relics.js','docs/js/root-snare-hands.js','docs/js/dev-random-ruin-interior-map.js','docs/js/weapon-layer-effects.js','docs/js/dev-random-ruin-dungeon-chests.js','docs/js/dev-random-ruin-lich-themes.js']){
   new Function(source(file)); // Catch accidental syntax regressions in the loaded browser scripts.
 }
