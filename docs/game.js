@@ -13096,8 +13096,10 @@
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
-                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Converts the seat height into the whole-avatar sink used below.
-                const seatSink = Number.isFinite(standingPosteriorY) ? seatTransform.y - standingPosteriorY
+                const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Per-species hip in the floor-relative leg rig.
+                const visualRigScaleY = Number(this._npcCharacterRigRoot?.scale?.y); // NPC species/age scaling lives on this shared parent of legs, torso and hands.
+                const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
+                const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
@@ -24738,8 +24740,10 @@
         if (sitInteraction && sitInteraction.phase !== 'out') {
           const rigPosteriorY = Number(playerLegs?.standingPosteriorY); // The procedural-leg hip and the whole-body sink must refer to the same posterior height.
           const standingPosteriorY = Number.isFinite(rigPosteriorY) ? rigPosteriorY : playerAttachmentAnchorY('posterior');
+          const playerRigScaleY = Number(playerMesh.scale?.y); // Player whole-rig species/age scale is applied above the leg-IK chain.
+          const scaledPosteriorY = standingPosteriorY * (Number.isFinite(playerRigScaleY) && playerRigScaleY > 0 ? playerRigScaleY : 1);
           chairSeatSink = standingPosteriorY != null
-            ? (Number(sitInteraction.seatWorldY) || 0) - standingPosteriorY
+            ? (Number(sitInteraction.seatWorldY) || 0) - scaledPosteriorY
             : -0.32; // fallback if the player's own posterior anchor isn't resolvable yet
         }
 
