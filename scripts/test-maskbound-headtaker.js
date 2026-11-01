@@ -20,6 +20,7 @@ const playerMesh = {
 };
 const attackIds = []; // Confirms the special really registers through the shared animal-attack catalog.
 const neckLockEvents=[]; // Head-only action lock validation.
+const directDeaths=[]; // Completed grapples must use the ordinary death callback directly, without Second Wind.
 const context = {
   console, Math, performance: { now: () => 100 }, THREE: { Vector3: Vec3, Quaternion },
   Combat: {
@@ -44,9 +45,13 @@ const context = {
 };
 context.window = context; // Both game modules expect the ordinary browser global.
 vm.createContext(context);
-for (const path of ['docs/js/combat/combat-attach.js', 'docs/js/combat/combat-maskbound-headtaker.js']) {
+for (const path of ['docs/js/player-downed.js', 'docs/js/combat/combat-attach.js', 'docs/js/combat/combat-maskbound-headtaker.js']) {
   vm.runInContext(read(path), context, { filename: path });
 }
+context.PlayerDowned.init({
+  player,
+  die(reason) { directDeaths.push(reason); player.health = 200; }, // Same respawn callback as the real downed module.
+});
 const api = context.MaskboundHeadtaker; // Mobile getDebug is the same API exposed in game.
 const def = context.Combat.attach.config(api.id);
 assert(attackIds.includes(api.id), 'headtaker registers as a shared attach attack');
@@ -103,7 +108,39 @@ for(let i=0;i<14;i++) context.BanditCombat.updateCombatAI(evasive,.1,player);
 assert(!evasive._attachment,'dodge on the landing frame prevents any transient grapple');
 assert.equal(neckLockEvents.length,2,'dodge before contact acquires no second neck lock');
 assert.equal(evasive.avatarRef.group.visible,true,'failed contact restores attacker');
+// Dodge during the last pull is still an escape; lethal resolution only happens after the full clock.
+function headtakerAt(x, y) {
+  return { ...enemy, x, y, health: 300, attackCooldownT: 0, _attachment: null,
+    avatarRef: { group: { visible: true, position: { y: 0 } } } };
+}
+const lastSecondEscape = headtakerAt(96, 101);
+player.dodging = false; player.dodgeT = 0;
+context.BanditCombat.updateCombatAI(lastSecondEscape, 0.016, player);
+for (let i = 0; i < 14; i++) context.BanditCombat.updateCombatAI(lastSecondEscape, 0.1, player);
+assert.equal(lastSecondEscape._attachment?.stage, 'attached');
+for (let i = 0; i < 70; i++) context.BanditCombat.updateCombatAI(lastSecondEscape, 0.1, player);
+assert.equal(directDeaths.length, 0, 'no lethal hit before the completed pull and throw');
+player.dodging = true;
+context.BanditCombat.updateCombatAI(lastSecondEscape, 0.05, player);
+assert.equal(lastSecondEscape._attachment, null, 'rolling late dislodges the Headtaker');
+assert.equal(directDeaths.length, 0, 'late dodge prevents execution');
+assert(player.health > 0, 'late dodge leaves player alive');
+
+// The workshop can lack generated head-only canvases; combat must still resolve rather than hanging forever.
+const finisher = headtakerAt(95, 99);
+player.dodging = false; player.dodgeT = 0;
+context.BanditCombat.updateCombatAI(finisher, 0.016, player);
+for (let i = 0; i < 14; i++) context.BanditCombat.updateCombatAI(finisher, 0.1, player);
+assert.equal(finisher._attachment?.stage, 'attached');
+for (let i = 0; i < 90; i++) context.BanditCombat.updateCombatAI(finisher, 0.1, player);
+assert.deepEqual(directDeaths, ['maskbound-headtaker'], 'completed pull executes exactly once through the death callback');
+assert.equal(context.PlayerDowned.isDowned(), false, 'execution never enters Second Wind');
+assert.equal(context.PlayerDowned.debugSnapshot().lastEvent.type, 'instant-death', 'mobile diagnostic identifies the fatal transition');
+assert.equal(api.getDebug().instantDeaths, 1, 'Headtaker-specific instant death count is reported');
+assert.equal(finisher._attachment, null, 'fatal attack cleans up the attachment');
+assert.equal(player._attachedBy?.size ?? 0, 0, 'lethal cleanup clears host bookkeeping');
+
 assert.match(read('docs/js/procedural-leg-animation.js'), /setExternalFootTargets/, 'external world-space IK coordinates wired');
 assert.match(read('docs/js/creature-death.js'), /MaskboundHeadtaker\?\.cancel\?\./, 'death tears down grapples');
 assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /skyfallHeadGrip/, 'workshop can preview the unique attack');
-console.log('PASS Headtaker: one-tile leap, shared attach, dodge-only escape, weaponless troop, death cleanup, workshop');
+console.log('PASS Headtaker: one-tile leap, early/late dodge-only escape, instant lethal completion without Second Wind, cleanup, workshop');
