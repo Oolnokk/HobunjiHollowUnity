@@ -767,21 +767,13 @@
     const mount = c?.avatarRef?.riderMount;
     const group = c?.avatarRef?.group;
     if (!mount || !holder || !group) return false;
-    const { root, upper, riderFrame } = mount;
+    const { upper, riderFrame } = mount;
     const scale = Number(upper.scale?.x) || 1;
-    const localX = upper.position.x * (root.scale?.x || 1);
-    const localZ = upper.position.z * (root.scale?.z || 1);
-    const localY = upper.position.y + (Number(riderFrame?.position?.y) || 0) * scale;
-    const yaw = (group.rotation.y || 0) + (c.avatarRef.frontPlane?.rotation?.y || 0); // Compound root yaw in world space.
-    const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const floorY = group.position.y - (c.halfHeight || 0);
     const p = holder.position;
     const dx = p.x - group.position.x, dy = p.y - floorY, dz = p.z - group.position.z;
-    p.set(
-      group.position.x + localX * cos + localZ * sin + dx * scale,
-      floorY + localY + dy * scale,
-      group.position.z - localX * sin + localZ * cos + dz * scale,
-    );
+    riderFrame.getWorldPosition(p); // Includes the compound root's floor offset and any intervening pivots/scales.
+    p.set(p.x + dx * scale, p.y + dy * scale, p.z + dz * scale);
     holder.scale.multiplyScalar(scale);
     return true;
   }
