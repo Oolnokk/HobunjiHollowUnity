@@ -19,6 +19,9 @@
   const textureUsers = new WeakMap(); // Counts cloned materials that currently share each generated spectral texture.
   const textureCacheEntries = new WeakMap(); // Lets retiring actors evict unused generated textures without touching shared source art.
   const cameraRight = THREE ? new THREE.Vector3() : null;
+  const cameraPosition = THREE ? new THREE.Vector3() : null; // Reused camera position for ghost-glow depth checks.
+  const cameraForward = THREE ? new THREE.Vector3() : null; // Reused camera direction for ghost-glow depth checks.
+  const lightToSource = THREE ? new THREE.Vector3() : null; // Reused camera-to-light vector; avoids allocations per glow.
 
   let lightingDeps = null;
   let lastGlowDrawAt = 0;
@@ -197,12 +200,33 @@
     if (!lightingDeps?.camera || !lightingDeps?.worldToOverlay || !cameraRight) return 0;
     cameraRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
     const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y)) return 0;
     const edge = lightingDeps.worldToOverlay(
       light.x + cameraRight.x * radiusTiles,
       light.y + cameraRight.y * radiusTiles,
       light.z + cameraRight.z * radiusTiles,
     );
-    return center?.visible ? Math.hypot(edge.x - center.x, edge.y - center.y) : 0;
+    return Math.hypot(edge.x - center.x, edge.y - center.y);
+  }
+
+  function lightMaskIntersectsViewport(center, screenRadius, light) {
+    const worldRadius = Number(light.radiusTiles);
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(screenRadius > 0) || !Number.isFinite(screenRadius)) return false;
+    if (!(worldRadius > 0) || !Number.isFinite(worldRadius)) return false;
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(cameraPosition);
+    camera.getWorldDirection(cameraForward);
+    lightToSource.set(light.x, light.y, light.z).sub(cameraPosition);
+    const depth = lightToSource.dot(cameraForward);
+    const near = Number.isFinite(camera.near) ? camera.near : 0;
+    const far = Number.isFinite(camera.far) ? camera.far : Infinity;
+    if (depth <= 0 || depth + worldRadius < near || depth - worldRadius > far) return false;
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || lightingDeps.lctx?.canvas?.clientWidth || lightingDeps.lctx?.canvas?.width);
+    const height = Number(rect?.height || lightingDeps.lctx?.canvas?.clientHeight || lightingDeps.lctx?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + screenRadius >= 0 && center.x - screenRadius <= width
+      && center.y + screenRadius >= 0 && center.y - screenRadius <= height;
   }
 
   function drawGlowOverlay() {
@@ -219,9 +243,8 @@
     const projected = [];
     for (const light of lights) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center?.visible) continue;
       const radius = lightScreenRadius(light, Number(light.radiusTiles));
-      if (!(radius > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, radius, light)) continue;
       projected.push({ light, center, radius });
     }
 
