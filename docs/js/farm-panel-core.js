@@ -387,7 +387,7 @@
   // locked (no orbit/rotate) top-down orthographic camera over the live
   // farm scene, and you MOVE a piece by dragging it directly in that
   // viewport instead of arming a mode and clicking a separate flat 2D map.
-  // Actions with no natural drag gesture (select/build/demolish/rotate a
+  // Actions with no natural drag gesture (select/build/rotate a
   // piece, place a new owned deed) live in the side panel instead.
   let _houseLayoutSelectedId = null;         // piece id whose actions show in the side panel
   let _houseLayoutPlacementMode = null;      // { type: 'placeHouseDeed', pieceKey } — armed by a Deeds Place button, consumed by the next plain (non-drag) tap
@@ -837,7 +837,6 @@
     };
     if (entry.stage === 'foundation') {
       mk('Build', () => afterAction(deps.buildHousePiece(entry.id)));
-      mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
       return;
     }
     // Roof rotation is separate from footprint rotation (Rotate 90° below):
@@ -859,16 +858,8 @@
       note.textContent = 'This room anchors the house — drag it (or any attached room) to move the whole house together.';
       wrap.appendChild(note);
     } else {
-      // Every other piece — including the starter annex — can be moved and
-      // rotated independently, as long as it stays touching some other
-      // piece afterward (movePiece/rotatePiece both enforce that). Only
-      // non-starter (bought) pieces can be demolished; the starter annex is
-      // part of the free starting house and can't be removed, just
-      // repositioned.
+      // The remaining rooms can be moved/rotated while staying connected to the house.
       mk('Rotate 90°', () => afterAction(deps.rotateHousePiece(entry.id)));
-      if (entry.pieceKey !== 'starter') {
-        mk('Demolish', () => { _houseLayoutSelectedId = null; afterAction(deps.demolishHousePiece(entry.id)); });
-      }
     }
   }
 
