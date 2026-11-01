@@ -128,7 +128,7 @@ activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
 cameraDistance = 3;
 cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
-sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = -3; point.y = 1; point.z = -4; } } }];
+sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 0; point.y = 1; point.z = -4; } } }];
 draw();
 assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow remains visible when the player is within the window light range but farther than the pane radius');
