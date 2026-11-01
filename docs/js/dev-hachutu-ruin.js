@@ -71,7 +71,8 @@
       finger.rotation.z=Math.cos(a)*.55;finger.rotation.x=Math.sin(a)*.55;
     }
     const crown=mesh(group,'binding weed heart',new THREE.IcosahedronGeometry(.44,1),material(COLORS[Math.floor(rng()*COLORS.length)]),0,2.75,0);
-    const rings=Array.from({length:3},(_,i)=>emberRing(session.group,x,session.floor+.15+i*.18,z,1.15+i*.43,COLORS[Math.floor(rng()*COLORS.length)]));
+    const palette=COLORS.slice().sort(()=>rng()-.5); // Three distinct authored Maskbound-eye hues for each new weed.
+    const rings=Array.from({length:3},(_,i)=>emberRing(session.group,x,session.floor+.15+i*.18,z,1.15+i*.43,palette[i]));
     const weed={name:part.name,part,group,crown,rings,done:false,damage:0,controls:[],plates:[]};
     // Melee and projectile collision can both damage the crown; the
     // interaction fallback is controller-accessible and visible on phones.
@@ -268,7 +269,7 @@
   }
   function buildLabyrinth(weed,rng){
     const b=weed.part.bounds,y=session.floor,wall=0x3b3c36,maze=generateMaze(rng,9);
-    const scale=2.05,x0=b.minX+2.3,z0=b.minZ+2.3,connected=new Set();
+    const scale=2.05,x0=weed.part.center.x-4*scale,z0=weed.part.center.z-4*scale,connected=new Set(); // DFS cell 4,4 shares the exact geometric center of the room and binding weed.
     maze.edges.forEach(([a,c])=>connected.add([a.join(','),c.join(',')].sort().join('|')));
     for(let z=0;z<9;z++)for(let x=0;x<9;x++){
       const cx=x0+x*scale,cz=z0+z*scale;
