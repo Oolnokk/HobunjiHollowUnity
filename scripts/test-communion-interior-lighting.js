@@ -198,6 +198,7 @@ draw();
 assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'opening a farmhouse door restores the light behind it');
 lightingWindow.InteriorDoorTiles = null;
 localLights = [];
+activeScene = {}; // Restore the ordinary interior fixture before checking its carried-light radius.
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
 assert.equal(gradients[0].radius, 6, 'farmhouse and authored rooms share the same broad indoor fade radius');
