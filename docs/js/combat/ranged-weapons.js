@@ -1558,13 +1558,13 @@
     const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
     const geometryHit = sceneGeometrySightBlock(segment);
     if (geometryHit) return geometryHit;
-    const coverHit = window.NearbyVolumeCollision?.segmentSightHit?.(segment.start, segment.end, radiusWorld)
-      || window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null; // Sight has its own always-on semantic-cover query; projectile settings must not make props invisible to AI.
+    const coverQuery = window.NearbyVolumeCollision?.segmentSightHit || window.NearbyVolumeCollision?.segmentHit;
+    const coverHit = coverQuery?.call(window.NearbyVolumeCollision, segment.start, segment.end, radiusWorld) || null; // Prefer the setting-independent sight query; older isolated previews can still use the projectile query.
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
 
     let ally = null;
     for (const other of (deps.hostileObjects || [])) {
-      if (other === c || other.id === c.id || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
+      if (other === c || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
       ally = { actor: other, interval };

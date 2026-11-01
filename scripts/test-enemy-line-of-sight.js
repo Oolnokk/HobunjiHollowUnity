@@ -38,8 +38,9 @@ let area = 'interior';
 let closedDoor = false;
 let terrainBlock = false;
 let sightObjects = [];
+const hostileObjects = [];
 const window = {
-  NearbyVolumeCollision: { segmentHit: () => null },
+  NearbyVolumeCollision: { segmentHit: () => null, segmentSightHit: () => null },
   InteriorDoorTiles: {
     blocksBox(_area, x) { return closedDoor && x > 1.02 && x < 1.08; },
   },
@@ -52,7 +53,7 @@ window.RangedWeapons.init({
   TILE: 64,
   playerRadius: 20,
   player: { x: 64, y: 64 },
-  hostileObjects: [],
+  hostileObjects,
   getCurrentArea: () => area,
   getSightOccluders: () => sightObjects,
   worldSurfaceY: () => 0,
@@ -84,6 +85,16 @@ terrainBlock = true;
 const terrainObserver = actor(64, 320);
 const terrainTarget = actor(192, 320);
 assert.equal(window.RangedWeapons.hasLineOfSight(terrainObserver, terrainTarget), false, 'solid terrain samples block sight');
+
+// A living hostile between two actors also blocks sight; undefined ids must not cause every id-less ally to be skipped.
+sightObjects = [];
+const allyObserver = actor(64, 448);
+const allyTarget = actor(192, 448);
+const ally = actor(128, 448);
+ally.id = 'ally';
+hostileObjects.push(ally);
+assert.equal(window.RangedWeapons.hasLineOfSight(allyObserver, allyTarget), false, 'a living hostile body blocks sight to actors behind it');
+hostileObjects.length = 0;
 
 area = 'interior';
 sightObjects = [{ name: 'area-wall', blocksSight: true, visible: true }];
