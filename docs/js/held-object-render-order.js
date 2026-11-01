@@ -1150,17 +1150,27 @@
       previousCompile?.call(this, shader, renderer);
       const vertex = shader.vertexShader || '';
       const fragment = shader.fragmentShader || '';
-      const requiredVertex = ['#include <common>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>'];
+      const hasDefaultNormal = vertex.includes('#include <defaultnormal_vertex>');
+      const requiredVertex = ['#include <common>', '#include <worldpos_vertex>'];
       const requiredFragment = ['#include <common>', '#include <clipping_planes_fragment>'];
       state.compileAttempted = true;
       if (!requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
         state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
         return;
       }
-      shader.vertexShader = vertex
-        .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\n#endif\n#ifdef USE_BATCHING\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\n#endif\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;')
-        .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
+      const worldPositionCode = '#include <worldpos_vertex>\\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\\n#ifdef USE_INSTANCING\\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\\n#endif\\n#ifdef USE_BATCHING\\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\\n#endif\\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;';
+      let elevationVertex = vertex
+        .replace('#include <common>', '#include <common>\\nvarying float vHobunjiXrayWorldY;\\nvarying vec3 vHobunjiXrayWorldNormal;')
+        .replace('#include <worldpos_vertex>', worldPositionCode);
+      if (hasDefaultNormal) {
+        elevationVertex = elevationVertex.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
+      } else {
+        // MeshBasicMaterial is the intentionally unlit base-grass material.
+        // Its common chunk still supplies normal and normalMatrix, so walls
+        // and cliff faces remain occluders without requiring lighting chunks.
+        elevationVertex = elevationVertex.replace('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;', 'vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;\\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * normalMatrix * normal);');
+      }
+      shader.vertexShader = elevationVertex;
       shader.fragmentShader = fragment
         .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && vHobunjiXrayWorldNormal.y >= 0.55 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= 0.18) discard;');
