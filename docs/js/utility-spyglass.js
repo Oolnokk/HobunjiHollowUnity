@@ -282,7 +282,8 @@
     const binding = action1Binding('controller');
     const actionCodes = controllerActionCodes(binding);
     const pressed = frame.pressed && typeof frame.pressed[Symbol.iterator] === 'function' ? Array.from(frame.pressed) : Array.isArray(frame.pressed) ? frame.pressed : [];
-    if (pressed.some(code => !actionCodes.has(code)) || Number(frame.move?.magnitude) > 0.12) {
+    const otherButtonPressed = pressed.some(code => !actionCodes.has(code) && !/^RightStick(?:Left|Right|Up|Down)$/.test(String(code))); // Right-stick look remains available while the lens is raised.
+    if (otherButtonPressed || Number(frame.move?.magnitude) > 0.12) {
       stow(Number(frame.move?.magnitude) > 0.12 ? 'controller movement' : 'other controller input');
       return;
     }
