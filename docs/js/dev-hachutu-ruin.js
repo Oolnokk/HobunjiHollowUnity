@@ -96,8 +96,26 @@
     session.deps?.showToast?.('A ring of binding fire gutters out.',true);
     return true;
   }
+  function floorSlab(name,b,height=.3){
+    const w=b.maxX-b.minX,d=b.maxZ-b.minZ,c=centre(b);
+    const rock=window.StoneAgeRuinScenery?.makeRuinStoneMaterial?.('#363733')||material(0x363733);
+    const slab=mesh(session.group,name,new THREE.BoxGeometry(w,height,d),rock,c.x,session.floor-height*.5,c.z);
+    slab.userData.devRuinFootprintIgnore=true; // Visual-only: registered DynamicSurfaces owns floor and pit heights.
+    return slab;
+  }
   function sculptRoom(part,kit){
     const y=session.floor,b=part.bounds,group=session.group;
+    if(part.name==='swing'){
+      const inset=3;
+      floorSlab('stone chasm west ledge',rect(b.minX,b.minZ,inset,b.maxZ-b.minZ));
+      floorSlab('stone chasm east ledge',rect(b.maxX-inset,b.minZ,inset,b.maxZ-b.minZ));
+      floorSlab('stone chasm north ledge',rect(b.minX+inset,b.minZ,b.maxX-b.minX-inset*2,inset));
+      floorSlab('stone chasm south ledge',rect(b.minX+inset,b.maxZ-inset,b.maxX-b.minX-inset*2,inset));
+    }else floorSlab('rough quarry floor '+part.name,b);
+    const ceiling=mesh(group,'root rib ceiling '+part.name,
+      new THREE.BoxGeometry(b.maxX-b.minX,.3,b.maxZ-b.minZ),
+      material(0x262923),part.center.x,y+(part.name==='swing'?9:5),part.center.z);
+    ceiling.userData.devRuinFootprintIgnore=true; // Does not add a second roof collision authority.
     const gap=3.1,mid=part.center.z,t=.8;
     // Low walls, rough posts and giant root ribs; no Harlyao ornamental furniture.
     for(const side of ['north','south']){
@@ -120,9 +138,19 @@
   function buildPassages(){
     const y=session.floor,kit=session.kit;
     for(const b of session.layout.passages){
+      floorSlab('root passage flagstones',b);
       for(const z of [b.minZ-.45,b.maxZ+.45]){
         box(session.group,'Hachutu passage wall',b.maxX-b.minX,3.8,.9,(b.minX+b.maxX)/2,y+1.9,z,0x393b34);
         for(let x=b.minX+.55;x<b.maxX;x+=.9)roots(session.group,x,y,z,3.1,.06);
+      }
+      // Easy stepping course over a fully supported corridor; variety lies in
+      // the changing offset/height of the rooted capstones, not another
+      // mandatory mechanism that could strand the player.
+      for(let i=0;i<3;i++){
+        const x=b.minX+.8+i*1.15,z=(b.minZ+b.maxZ)/2+(i%2?-.55:.55);
+        const stone=cylinder(session.group,'Hachutu passage stepping stone',.55,.62,.28,x,y+.14,z,0x44473e);
+        stone.userData.devRuinFootprintIgnore=true;
+        roots(session.group,x,y,z,1.6,.07);
       }
       // Walkable floor remains reserved in the V50 interior; root ribs arch overhead.
       for(let x=b.minX+.5;x<b.maxX;x+=1.6){
