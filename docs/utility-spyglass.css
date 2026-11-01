@@ -47,4 +47,4 @@
   pointer-events: none;
 }
 #btnAction1 .spyglass-action-icon { display: block; }
-#btnAction1 .spyglass-action-label { display: block; }
+#btnAction1 .spyglass-action-label { display: none !important; }
