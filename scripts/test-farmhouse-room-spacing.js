@@ -69,6 +69,11 @@ assert.equal(interiorPoint[0], annex.col + 2);
 assert.equal(interiorPoint[2], annex.row);
 const back = windows.__test.fromIndoorPoint(directRun, interiorPoint);
 assert.equal(back[0], 7); assert.equal(back[1], 2);
+for (const [side, expected] of [['north', 11], ['south', 9], ['west', 21], ['east', 19]]) {
+  const shifted = windows.__test.shiftInteriorPoint([10, 0, 20], side, 1);
+  assert.equal(side === 'north' || side === 'south' ? shifted[0] : shifted[2], expected,
+    side + ' interior right shift follows the wall-local tangent');
+}
 
 // Offset every exterior piece. The indoor relative layout and the full
 // footprint must remain stable, including the attached entrance and hearth.
