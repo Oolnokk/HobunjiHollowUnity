@@ -749,13 +749,13 @@
 
   // Head-gate modes: 'tight' (head scale ends just below the skull, so a wide hood, shoulders and vest follow body width/height), 'legacy'
   // (the original wide box with a long fade) and 'mask' (opt-in: the head plus its equipped head cosmetics, from a head-only render).
-  // Mashtzarr, Mammakhbuur and the Maskbound default to the legacy box; every other species defaults to the tight one. Certain clothing pieces
-  // (the oversized Hachutu binding masks) force the legacy box on any wearer, whatever the species.
-  const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur', 'maskbound-guardian']);
+  // Player, civilian and hostile portraits share the original wide/long-fade legacy gate.
+  // Harlyao skeletons retain their tight default; oversized binding masks can still override it.
   const LEGACY_HEAD_GATE_COSMETICS = [/binding_mask/i]; // Clothing whose bulk needs the wide gate: extend this list to override the species rule per piece.
   function defaultHeadGateFor(speciesId, cosmeticIds = []) {
     if ((cosmeticIds || []).some(id => LEGACY_HEAD_GATE_COSMETICS.some(pattern => pattern.test(String(id || ''))))) return 'legacy';
-    return LEGACY_HEAD_GATE_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-')) ? 'legacy' : 'tight';
+    const species = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Used to preserve the Harlyao skeleton exception for every avatar path.
+    return species === 'harlyao-skeleton' ? 'tight' : 'legacy';
   }
   function npcHeadGateFor(speciesId, authoredGate = null) {
     if (authoredGate) return authoredGate; // Explicit workshop modes remain available, notably for Harlyao skeletons.
@@ -1281,7 +1281,7 @@
     const gender = options.gender ?? options.profile?.fighter?.gender ?? null;
     const headGate = (options.npcRecord || options.profile?.npcRecord)
       ? npcHeadGateFor(speciesId, options.headGate)
-      : options.headGate; // NPCs use the workshop's legacy gate unless they are Harlyao skeletons; player mode stays unchanged.
+      : options.headGate; // NPC-specific overrides remain intact; players now receive the same legacy default via defaultHeadGateFor.
     const orbitScaler = window.HobunjiSpeciesPoseScale;
     const configuredOrbit = options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale; // A number, or per-axis { x, y, z }.
     const fallbackOrbit = legacyArmLength ? legacyArmLength / 0.558 : 1;
