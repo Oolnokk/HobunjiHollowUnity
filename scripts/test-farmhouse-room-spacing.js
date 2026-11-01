@@ -69,6 +69,7 @@ for (const [side, axis, delta] of [
   chimney.side = side; chimney.interiorShift = 0;
   const before = house.computeInteriorLayout().hearths[0][axis];
   assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', 1).ok, true, side + ' fireplace shifts right');
+  assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', 1).ok, false, side + ' fireplace cannot shift more than one interior tile');
   const after = house.computeInteriorLayout().hearths[0][axis];
   assert.equal(after - before, delta, side + ' fireplace right follows the wall tangent');
   assert.equal(house.shiftInteriorFeature(pieces[0].id, 'chimney', -1).ok, true, side + ' fireplace shift reverses');
