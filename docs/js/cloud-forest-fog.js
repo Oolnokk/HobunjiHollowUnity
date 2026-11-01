@@ -486,7 +486,10 @@
   let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
   let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
   let lastInteriorDarknessDraw = null; // Mobile diagnostics of the shared compositor's actual enclosed base fill.
-  const lightCamRight = new window.THREE.Vector3();
+  const lightCamRight = new window.THREE.Vector3(); // Reused camera-right axis for stable screen-space light radii.
+  const lightCameraPosition = new window.THREE.Vector3(); // Reused camera position for off-screen source depth checks.
+  const lightViewDirection = new window.THREE.Vector3(); // Reused camera forward direction for off-screen source depth checks.
+  const lightToSource = new window.THREE.Vector3(); // Reused camera-to-source vector; no per-light allocations.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
   const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
 
@@ -499,6 +502,22 @@
       z + lightCamRight.z * tiles,
     );
     return Math.hypot(e.x - c.x, e.y - c.y);
+  }
+
+  function lightMaskIntersectsViewport(center, radius, context, x, y, z) {
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.y) || !(radius > 0) || !Number.isFinite(radius)) return false;
+    if (center.visible) return true;
+    const camera = lightingDeps.camera;
+    camera.getWorldPosition(lightCameraPosition);
+    camera.getWorldDirection(lightViewDirection);
+    lightToSource.set(x, y, z).sub(lightCameraPosition);
+    if (lightToSource.dot(lightViewDirection) <= 0) return false; // Prevent behind-camera sources from wrapping around into the viewport.
+    const rect = lightingDeps.getThreeRect?.();
+    const width = Number(rect?.width || context?.canvas?.clientWidth || context?.canvas?.width);
+    const height = Number(rect?.height || context?.canvas?.clientHeight || context?.canvas?.height);
+    return width > 0 && height > 0
+      && center.x + radius >= 0 && center.x - radius <= width
+      && center.y + radius >= 0 && center.y - radius <= height;
   }
 
   function currentOutdoorLanternActivation() {
@@ -556,9 +575,8 @@
     const linearInterior = ordinaryBuildingInterior(currentArea) && !isUndergroundLanternArea(currentArea); // Cavern and outdoor lantern tuning remains independent.
     for (const carrier of carriers) {
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
-      if (!(shineR > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z)) continue;
       const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * lanternStrength})`);
@@ -581,9 +599,8 @@
       ctx.globalCompositeOperation = 'multiply';
       for (const carrier of carriers) {
         const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
-        if (!center.visible) continue;
         const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale);
-        if (!(shineR > 0)) continue;
+        if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z)) continue;
         const clarityFrac = clamp01(lanternTuning.clarityRadiusTiles / Math.max(0.000001, lanternTuning.radiusTiles));
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
@@ -610,9 +627,8 @@
     const linearInterior = ordinaryBuildingInterior(lightingDeps.getCurrentArea()) && !isUndergroundLanternArea(lightingDeps.getCurrentArea()); // Only ordinary buildings use the broad linear profile.
     for (const light of lightingDeps.getFurnitureLightSources()) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
       const shineR = lightScreenRadius(light.x, light.z, light.y, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
-      if (!(shineR > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, shineR, ctx, light.x, light.y, light.z)) continue;
       visible.push({ light, center, shineR });
     }
 
@@ -679,9 +695,8 @@
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
     for (const light of lights) {
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
-      if (!center.visible) continue;
       const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
-      if (!(radius > 0)) continue;
+      if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z)) continue;
       visible.push({light,center,radius});
     }
     ctx.globalCompositeOperation = 'destination-out';
