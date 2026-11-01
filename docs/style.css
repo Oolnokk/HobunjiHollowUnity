@@ -2650,6 +2650,14 @@
     .house-layout-body { flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; }
     .house-layout-viewport { flex: 1 1 60%; min-width: 260px; min-height: 240px; position: relative; background: #0b0f16; }
     .house-layout-viewport canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+    .house-layout-cursor-toggle {
+      position: absolute; left: 8px; top: 8px; z-index: 1;
+      border: 1px solid #64e7ff; border-radius: 7px; padding: 7px 10px;
+      background: rgba(7, 25, 31, 0.88); color: #d5f7ff;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .house-layout-cursor-toggle[aria-pressed="true"] { background: #155064; color: white; }
+    .house-layout-cursor-toggle.ctrl-nav-focus { outline: 2px solid #b8f6ff; outline-offset: 2px; }
     .house-layout-hint {
       position: absolute; left: 8px; bottom: 8px; right: 8px; pointer-events: none;
       padding: 6px 9px; border: 1px solid var(--border); border-radius: 9px;

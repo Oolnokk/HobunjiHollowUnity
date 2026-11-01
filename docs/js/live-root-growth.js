@@ -5,7 +5,7 @@
   'use strict';
 
   const TEMPLE_ROOT_FINISH = Object.freeze({
-    color: '#0e0d06', texture: 'assets/textures/wibbly_surface.png'
+    color: '#24211d', texture: 'assets/textures/wibbly_surface.png'
   }); // Fallback matches the Temple's authored roots in config/pieces/temple.json.
 
   const DEFAULTS = Object.freeze({

@@ -18,6 +18,7 @@
   const stats = { installed: false, installs: 0, authoredBuildingInstalls: 0, overlayOnlyLights: 0, lastMapId: null, lastError: null }; // Exposed below for mobile-friendly lighting diagnostics.
   let buildingSceneMap = null; // Captured from GridTileAccessors.init so authored building scene creation can be routed through the same flat-lighting path as the farmhouse.
   let isBuildingArea = () => false; // Captured from GridTileAccessors.init and used below to exclude dens/mines/caverns from ordinary-building routing.
+  let playerFarmhouseSceneCount = 0; // Counts farmhouse scene generations connected to overlay lighting and held-object floor replay, reported by debugSnapshot.
 
   function protectBaselineIntensity(light) {
     try {
@@ -57,8 +58,20 @@
     return baseline;
   }
 
-  function install(scene, _legacyLights = {}) {
-    if (!scene || scene.userData?.farmhouseFlatLighting) return false;
+  function registerPlayerFarmhouseScene(scene) {
+    if (!scene?.isScene) return false;
+    scene.userData = scene.userData || {};
+    if (scene.userData.hobunjiPlayerFarmhouseInterior === true) return false;
+    scene.userData.hobunjiPlayerFarmhouseInterior = true;
+    playerFarmhouseSceneCount++;
+    window.HeldObjectRenderOrder?.scanScene?.(scene, true); // An existing floor group can predate registration; new floor meshes inherit the scene flag through their parent.
+    return true;
+  }
+
+  function install(scene, legacyLights = {}) {
+    if (!scene) return false;
+    if (legacyLights?.ambient && legacyLights?.key && legacyLights?.fill) registerPlayerFarmhouseScene(scene); // game.js passes this triple only for the player's farmhouse; authored building installs pass no legacy lights.
+    if (scene.userData?.farmhouseFlatLighting) return false;
     scene.userData = scene.userData || {};
     scene.userData.farmhouseFlatLighting = true;
     makeOverlayOnly(scene);
@@ -128,7 +141,7 @@
     const originalInit = namespace.init;
     namespace.init = function initWithFlatBuildingLighting(injectedDeps) {
       hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
-      return originalInit.call(this, injectedDeps);
+      return originalInit.call(this, injectedDeps); // The farmhouse is registered once by game.js's FarmhouseFlatLighting.install scene-construction call.
     };
     namespace.__hobunjiFlatBuildingLightingInitHook = true;
     return true;
@@ -149,6 +162,7 @@
     debugSnapshot: () => ({
       ...stats,
       buildingSceneMapHooked: !!buildingSceneMap?.__hobunjiFlatBuildingLightingSetHook,
+      playerFarmhouseSceneCount,
       windowLightingAuthority: window.DaylightWindowRuntime?.version || null,
       overlayLightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'shared-2d' : 'legacy',
     }),

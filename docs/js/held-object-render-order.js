@@ -107,6 +107,7 @@
 
   let heldCount = 0;
   let groundCount = 0;
+  let farmhouseFloorCount = 0; // Diagnostic count of farmhouse plank-floor meshes registered for the existing selective held-object depth replay.
   let grassCount = 0;
   let roadCount = 0;
   let terrainCount = 0;
@@ -247,6 +248,7 @@
     if (isTopFacesGroundSurface(object)) return null; // Cavern shell walls and floors remain real occluders.
     if (isProtectedCover(object)) return null; // Snow/slush, water, and billboard grass always occlude held gear, even above a path.
     if (isRoadSurface(object)) return 'road'; // Authored path-brick groups retain the same x-ray as the underlying grass.
+    if (hasAncestorFlag(object, 'hobunjiPlayerFarmhouseInterior') && materialMarksInteriorFloor(object?.material) && isWalkableGroundSurface(object)) return 'farmhouse-floor'; // Only the player's walkable farmhouse floor joins grass/path replay; walls, furniture and other interior floors remain true occluders.
     if (materialMarksBaseGrass(object?.material) && isTerrainSurface(object)) return 'terrain';
     return null;
   }
@@ -381,6 +383,7 @@
       if (kind === 'grass') grassCount++;
       else if (kind === 'road') roadCount++;
       else if (kind === 'terrain') terrainCount++;
+      else if (kind === 'farmhouse-floor') farmhouseFloorCount++;
     }
     return !already;
   }
@@ -1267,6 +1270,7 @@
       grassMeshes: grassCount,
       roadMeshes: roadCount,
       terrainMeshes: terrainCount,
+      farmhouseFloorMeshes: farmhouseFloorCount,
       topFaceGroundMeshes: topFaceGroundCount,
       waterReplayMeshes: waterMeshCount,
       translucentCoverMeshes: tintCoverRegistry.all.size,
@@ -1293,7 +1297,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }

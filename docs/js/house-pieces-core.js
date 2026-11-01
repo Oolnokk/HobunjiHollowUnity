@@ -673,18 +673,13 @@
       get col() { return entry.col; }, get row() { return entry.row; },
       get label() { return '🏠 ' + label(entry); },
       getButtons() {
-        if (entry.stage === 'foundation') {
-          return [
-            { icon: '🔨', label: 'Build ' + label(entry), action: 'obj_house_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') },
-            { icon: '💥', label: 'Demolish', action: 'obj_house_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') },
-          ];
-        }
-        if (entry.pieceKey === 'starter') return [];
-        return [{ icon: '💥', label: 'Demolish', action: 'obj_house_demolish_' + entry.id, style: 'secondary', allowed: deps.hasFarmPermission('alterFarm') }];
+        // An interaction prompt must never destroy a house section with a stray Action 2 press.
+        return entry.stage === 'foundation'
+          ? [{ icon: '🔨', label: 'Build ' + label(entry), action: 'obj_house_build_' + entry.id, style: 'primary', allowed: deps.hasFarmPermission('alterFarm') }]
+          : [];
       },
       onAction(action) {
         if (action === 'obj_house_build_' + entry.id) return build(entry.id);
-        if (action === 'obj_house_demolish_' + entry.id) return demolish(entry.id);
         return { ok: false, message: 'Unknown house action.' };
       },
       reset() { _disposeMesh(entry._mesh); entry._mesh = null; },

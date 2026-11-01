@@ -29,7 +29,7 @@
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261031hb8f20da"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20260926lighting1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-network.js?v=1"></scr' + 'ipt>');
-  document.write('<script src="js/live-root-growth.js?v=20261031snare-guide1"></scr' + 'ipt>');
+  document.write('<script src="js/live-root-growth.js?v=20261101htempleroot1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></scr' + 'ipt>');
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261031snare-cover2"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261101rootrebase1"></scr' + 'ipt>');

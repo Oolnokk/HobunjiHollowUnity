@@ -129,7 +129,7 @@
   <script src="js/furniture-light-registry.js?v=20261015haa711bb"></script>
   <script src="js/cutscene-lantern-carriers.js?v=20261010lant1"></script>
   <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
-  <script src="js/farmhouse-flat-lighting.js?v=20261015h654fd57"></script>
+  <script src="js/farmhouse-flat-lighting.js?v=20261031farmxray2"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -164,7 +164,7 @@
   <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261029maskSlots2">
+  <link rel="stylesheet" href="style.css?v=20261031layoutCursor1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -399,7 +399,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261031necklock5"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261101offhandcombat1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -464,7 +464,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmBuildings.init(...) during its own setup. -->
-  <script src="js/farm-buildings.js?v=20261026h3253af3"></script>
+  <script src="js/farm-buildings.js?v=20261031furniturecontrols1"></script>
   <!-- Barn trough system: barn-interior map synthesis, the live fill-level
        mesh registry, and the open-trough bag/slot panel (window.FarmTroughs)
        — self-contained aside from deps injected via init(), and reads
@@ -480,7 +480,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261031farmworkGrass1&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261031furniturecontrols4&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -747,7 +747,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261026he0290d3"></script>
+  <script src="js/farm-panel.js?v=20261031layoutCursor1"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -2495,6 +2495,7 @@
     <div class="house-layout-body">
       <div class="house-layout-viewport">
         <canvas id="houseLayout3dCanvas"></canvas>
+        <button type="button" id="houseLayoutCursorToggle" class="house-layout-cursor-toggle" data-ctrl-default aria-pressed="false">Use Tile Cursor (A)</button>
         <div id="houseLayoutHint" class="house-layout-hint"></div>
       </div>
       <div class="house-layout-side">
@@ -2687,7 +2688,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261030ha62f90b"></script>
+  <script src="js/pixel-probe.js?v=20261031farmxray2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2831,7 +2832,7 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261017ha2263f7"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261101rootrebase1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261101hruinrootload1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2873,13 +2874,13 @@
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
-  <script src="game.js?v=20261031headtakerfatal2"></script>
+  <script src="game.js?v=20261031furniturecontrols4"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261028packpreview2"></script>
+  <script src="js/controller-ui-nav.js?v=20261031layoutCursor1"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>
