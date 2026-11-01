@@ -409,6 +409,7 @@
     if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
     if (!_arcOpen) return;
     const slot = _arcSlots[_arcActive];
+    const selectedSpyglass = _arcOpen === 'entries:utilities' && slot?.data?.id === 'spyglass'; // Used to restore cursorless camera look only after the utility backdrop is gone.
     if (slot && slot.data?.id !== 'spyglass') window.Spyglass?.stow?.('other utility or equipment selected');
     if (_arcOpen === 'tool' && slot) {
       deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
@@ -426,6 +427,7 @@
       }
     }
     _clearArc();
+    if (selectedSpyglass && window.Spyglass?.isEquipped?.()) window.ShoulderCamPointerLock?.request?.(); // The arch has closed, so its UI-blocking backdrop no longer rejects pointer lock.
   }
 
   function _bindListeners() {
