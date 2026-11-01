@@ -656,7 +656,7 @@ function renderBodyProportions(species, gender) {
   const gate = el('label', 'chance', 'Head gate');
   const gateSelect = el('select');
   for (const [value, text] of [
-    ['', 'Game default (tight; legacy for Mashtzarr/Mammakhbuur)'],
+    ['', 'Game default (legacy NPCs; Harlyao skeletons use tight)'],
     ['tight', 'Tight box — ends just below the skull'],
     ['legacy', 'Legacy — wide box, long fade'],
     ['mask', 'Head + head cosmetics mask (experimental)'],
