@@ -64,6 +64,9 @@ assert.match(reticle, /if \(outOfReach \|\| !profile\.attackId/, 'out-of-reach h
 
 // ── EnemySearchAI extraction ──────────────────────────────────────────
 assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted enemy search module');
+assert.match(ranged, /function hasLineOfSight\(observer, target\)[\s\S]{0,700}computeBanditLos\(observer, target, \{ projectileRadiusPx: 0 \}\)/, 'NPC perception reuses the real terrain and cover segment test');
+assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
+assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');
 assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
 assert.match(game, /lastKnownDistance > TILE \* 0\.45[\s\S]{0,180}moveCreatureToward\(c, lastKnownX, lastKnownY, def\.chaseSpeed, entityDt\)/, 'searching hostiles navigate toward their last-known player position');
 assert.doesNotMatch(game, /function (enemyCanSeeTarget|beginEnemySearch|updateEnemySearch|enemyAttackAlignment|enemyAttackBusy)\(/, 'no duplicate enemy search implementation remains in game.js');
@@ -73,11 +76,13 @@ const gameTag = html.indexOf('game.js?v=');
 assert(coreTag > 0 && searchTag > coreTag && searchTag < gameTag, 'enemy-search-ai.js loads after combat-core.js and before game.js');
 
 let inCone = false;
+let lineOfSightClear = true;
 const searchRuntime = {
   THREE: { MathUtils },
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
+    RangedWeapons: { hasLineOfSight: () => lineOfSightClear },
   },
 };
 vm.runInNewContext(enemySearch, searchRuntime);
@@ -96,8 +101,12 @@ assert.equal(hostile._enemySearchLastKnownX, 0, 'unseen player movement does not
 AI.updateEnemySearch(hostile, 0.1, target);
 assert(hostile.facing > 0, 'search sweep rotates the hostile');
 inCone = true;
+lineOfSightClear = false;
 AI.updateEnemySearch(hostile, 0.1, target);
-assert.equal(hostile.state, 'chase', 'regaining sight resumes the chase');
+assert.equal(hostile.state, 'searching', 'a wall still blocks reacquisition inside the facing cone');
+lineOfSightClear = true;
+AI.updateEnemySearch(hostile, 0.1, target);
+assert.equal(hostile.state, 'chase', 'regaining geometric line of sight resumes the chase');
 inCone = false;
 AI.beginEnemySearch(hostile, target);
 AI.updateEnemySearch(hostile, AI.ENEMY_SEARCH_DURATION_S + 0.01, target);

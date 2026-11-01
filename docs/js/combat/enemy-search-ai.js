@@ -28,7 +28,9 @@
 
   function enemyCanSeeTarget(c, target, maxDistancePx = Infinity) {
     if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
-    return window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
+    const insideFacingCone = window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
+    if (!insideFacingCone) return false;
+    return window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile/cover LOS blocks acquisition and reacquisition, never an already-running chase by itself.
   }
 
   function beginEnemySearch(c, target) {

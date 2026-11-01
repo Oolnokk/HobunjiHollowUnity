@@ -1536,7 +1536,7 @@
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
 
     let ally = null;
-    for (const other of deps.hostileObjects) {
+    for (const other of (deps.hostileObjects || [])) {
       if (other === c || other.id === c.id || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
@@ -1573,6 +1573,22 @@
     c._rangedLosCache = { at: now, x: c.x, y: c.y, tx: targetPlayer.x, ty: targetPlayer.y, result };
     c._rangedLosDebug = { ...result, at: now };
     return result;
+  }
+
+  function hasLineOfSight(observer, target) {
+    if (!deps || !observer || !target) return true; // Missing optional runtime dependencies must not make every hostile blind.
+    const now = performance.now();
+    const cached = observer._enemyVisibilityLosCache;
+    const moved = cached ? Math.hypot(observer.x - cached.x, observer.y - cached.y) : Infinity;
+    const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
+    if (cached && now - cached.at < BANDIT_LOS_CACHE_MS
+      && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.clear;
+    const result = computeBanditLos(observer, target, { projectileRadiusPx: 0 });
+    observer._enemyVisibilityLosCache = {
+      at: now, x: observer.x, y: observer.y, tx: target.x, ty: target.y, clear: !!result.clear,
+    }; // Shared tactical LOS cache avoids repeating tile/cover sweeps for every render frame.
+    observer._enemyVisibilityLosDebug = { ...result, at: now }; // Available to mobile combat diagnostics without allocating a full scene report.
+    return !!result.clear;
   }
 
   function repositionBanditForLos(c, targetPlayer, def, dt, los) {
@@ -1812,7 +1828,7 @@
       x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.def.projectileRadiusPx / deps.TILE,
       previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
     })),
-    wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox,
+    wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox, hasLineOfSight,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
