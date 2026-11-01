@@ -10,6 +10,7 @@ class Vec {
   fromBufferAttribute(a,i){return this.set(a.getX(i),a.getY(i),a.getZ(i));}
   applyMatrix4(m){return this;} // Mesh fixtures have identity world matrices.
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
+  addScaledVector(v,k){this.x+=v.x*k;this.y+=v.y*k;this.z+=v.z*k;return this;}
   sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
   lerp(v,t){this.x+=(v.x-this.x)*t;this.y+=(v.y-this.y)*t;this.z+=(v.z-this.z)*t;return this;}
   multiplyScalar(t){this.x*=t;this.y*=t;this.z*=t;return this;}
@@ -30,7 +31,7 @@ class Geo {
   dispose(){this.disposed=true;}
 }
 class Group {
-  constructor(){this.isObject3D=true;this.children=[];this.position=new Vec();this.scale={set(){}};this.rotation={z:0};this.visible=true;this.userData={};
+  constructor(){this.isObject3D=true;this.children=[];this.position=new Vec();this.scale={set(){},setScalar(){}};this.rotation={z:0};this.visible=true;this.userData={};
     this.quaternion={setFromUnitVectors(a,b){this.rotation=b.clone();return this;}};}
   add(o){this.children.push(o);o.parent=this;}
   remove(o){this.children=this.children.filter(c=>c!==o);o.parent=null;}
@@ -41,7 +42,9 @@ class Group {
 class Mesh extends Group {
   constructor(geometry,material){super();this.isMesh=true;this.geometry=geometry;this.material=material;}
 }
-const T={Vector3:Vec,Group,Mesh,BufferGeometry:Geo,Float32BufferAttribute:Attr,DoubleSide:2};
+const T={Vector3:Vec,Group,Mesh,BufferGeometry:Geo,Float32BufferAttribute:Attr,DoubleSide:2,
+  SphereGeometry:class{dispose(){}},MeshBasicMaterial:class{constructor(options){Object.assign(this,options);}dispose(){}}
+};
 const ctx={window:{THREE:T,__HACHUTU_ROOT_TEAR_TEST__:true},console};
 function load(path){vm.runInNewContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});}
 load('docs/js/root-snare-runner.js');
