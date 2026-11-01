@@ -4049,7 +4049,7 @@
           const def = DECORATIVE_FURNITURE_DEFS[obj.key];
           unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
           obj.col = col; obj.row = row;
-          obj.mesh.position.set(col + size.fw * 0.5, 0, row + size.fd * 0.5);
+          obj.mesh.position.set(col + size.fw * 0.5, obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0, row + size.fd * 0.5); // Room moves preserve the rug's own visual stack level.
           if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', col + size.fw * 0.5, row + size.fd * 0.5, window.Music?.resolveFurnitureSfx(def));
