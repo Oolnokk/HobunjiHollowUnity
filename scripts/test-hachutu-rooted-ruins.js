@@ -68,6 +68,52 @@ for(let tier=1;tier<=4;tier++){
     assert(Object.keys(loot).every(key=>key.startsWith('hachutu')===expected),'culture pools never bleed');
   }
 }
+// A boss vault must grant real equipable/enchantable gear, not just an item
+// label or an unrelated Harlyao weapon.
+const relicGear={tools:{},toolMastery:{},hachutuRelics:{}},enchanted=new Map();
+const toolDefs={
+  hachutuTorchFlail:{label:'Hachutu Torch-Flail',sprite:'assets/toolsprites/hachutu_torch-flail_handle.png'},
+  hachutuTorchStaff:{label:'Hachutu Torch-Staff',sprite:'assets/toolsprites/hachutu_torch-staff.png'},
+};
+const rewardsWindow={
+  EnchantmentSystem:{
+    DEFINITIONS:{fire:{id:'fire',type:'Base'}},
+    stateFor:key=>({key}),
+    addBase:(key,id)=>{enchanted.set(key,id);return true;},
+  },
+  GameRandom:{random:()=>.25},
+};
+vm.runInNewContext(source('docs/js/hachutu-relics.js'),{window:rewardsWindow,console});
+rewardsWindow.HachutuRelics.init({
+  TOOL_ITEM_DEFS:toolDefs,getGearInventory:()=>relicGear,
+  ensureToolTexture(){},saveGearInventory(){},saveMemberWorldData(){},
+  buildInventoryGrid(){},buildEquipmentSlots(){},
+});
+const first=rewardsWindow.HachutuRelics.grantBossWeapon();
+assert.equal(first.length,1,'first Hachutu boss chest grants a weapon');
+const keys=Object.keys(relicGear.hachutuRelics);
+assert.equal(keys.length,1);
+assert.equal(enchanted.get(keys[0]),'fire','the drop has a real Base enchantment');
+assert(relicGear.tools[keys[0]]&&toolDefs[keys[0]]?.shapeKey,'weapon is equipable');
+delete toolDefs[keys[0]];
+assert.equal(rewardsWindow.HachutuRelics.restore(),1,'weapon definition restores from saved gear records');
+assert(toolDefs[keys[0]],'reloaded equipment has its authored torch rig');
+const chestWindow={
+  THREE:{},DynamicSurfaces:{addBeforeRenderClient(){}},
+  DevSpawner:{init(){}},ArtifactCollection:collection,
+  HachutuRelics:{grantBossWeapon:()=>['🔥 Hachutu Torch-Staff']},
+  HarlyaoRelics:{rollBossChestRelic:()=>{throw new Error('Harlyao relic leaked into Hachutu vault');}},
+  LootRolling:{rollLootPool:()=>{throw new Error('Harlyao loot pool leaked into Hachutu vault');}},
+  HobunjiActivityEvents:{emit(){}},
+};
+vm.runInNewContext(source('docs/js/dev-random-ruin-dungeon-chests.js'),{window:chestWindow,console});
+let chestLoot=null;
+chestWindow.DevSpawner.init({grantLoot:loot=>{chestLoot=loot;return Object.keys(loot);},showToast(){}});
+const dummyChest={tier:4,theme:'tothal',culture:'hachutu',boss:true,poolId:'dungeonChest_tier4',id:'hachutu-test'};
+assert.equal(chestWindow.DevRandomRuinDungeonChests.open(dummyChest),true,'Hachutu chest opens');
+assert(Object.keys(chestLoot).every(key=>key.startsWith('hachutu')),'Hachutu chest has no Harlyao currency');
+assert.equal(dummyChest.opened,true);
+
 const game=source('docs/js/dev-random-ruin-interior-map.js');
 const bootstrap=source('docs/js/dev-random-ruin-bootstrap.js');
 const simple=source('docs/js/dev-random-ruin-simple-puzzles.js');
