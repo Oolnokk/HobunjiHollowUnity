@@ -163,12 +163,12 @@ cameraAngle = 0;
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
 localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(gradients.some(entry => Math.abs(entry.radius - 10) < 0.001), 'off-screen light center remains active while its influence sphere overlaps the far clip plane');
+assert(gradients.some(entry => Math.abs(entry.radius - 12.5) < 0.001), 'expanded interior light sphere remains active while it overlaps the far clip plane');
 
 // Once the entire light volume is beyond the far plane, it must not leak into the scene.
-localLights = [{ x: 95, y: 1, z: 112, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+localLights = [{ x: 95, y: 1, z: 123, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(!gradients.some(entry => Math.abs(entry.radius - 10) < 0.001), 'light is clipped after its entire influence sphere passes the far plane');
+assert(!gradients.some(entry => Math.abs(entry.radius - 12.5) < 0.001), 'light is clipped after its expanded influence sphere passes the far plane');
 
 localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }];
