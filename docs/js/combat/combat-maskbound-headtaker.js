@@ -530,6 +530,10 @@
     if (player(host)) restoreHead(state, true); // The respawned player must retain their real head, not the temporary severed portrait.
     const amount = Math.max(1000, Number(host.health) + 1000); // Retained for NPCs and previews without the downed/respawn module.
     const opts = { attacker: state.attacker, tag: 'sharp', noStagger: true, maskboundHeadtaker: true };
+    // Detach BEFORE moving a killed player to their respawn point. Combat.attach.detach
+    // places the attacker beside its host, so doing this afterward would teleport
+    // the Headtaker directly to the Root Totem/arena entrance.
+    window.Combat.attach?.endManual?.(state.attacker, state.shared, 'completed');
     if (player(host)) {
       const fatal = window.PlayerDowned?.dieImmediately?.('maskbound-headtaker') === true; // Bypass Second Wind, defensive damage modifiers, and invulnerability on a completed grab only.
       if (fatal) telemetry.instantDeaths++;
@@ -695,8 +699,7 @@
     applyVictimNeckPose(state); // Restore owned neck pitch after any competing head-look writer, preserving body locomotion.
     poseFeet(state);
     if (t >= PULL_S * 2 + FINAL_PULL_S + THROW_S) {
-      killTarget(state); // Finisher is lethal even if the optional temporary head-art composite failed or loaded late.
-      state.endRequested = true; // Manual attachment ends after onTick unwinds, avoiding double callbacks.
+      state.endRequested = true; // Apply lethal completion after the shared attachment tick returns, not reentrantly inside it.
     }
   }
 
@@ -727,7 +730,7 @@
       }
       const live = window.Combat.attach?.updateManual?.(attacker, state.shared, dt);
       if (live && !state.disposed) alignBehindPortrait(state, state.host);
-      if (state.endRequested && live) window.Combat.attach?.endManual?.(attacker, state.shared, 'completed');
+      if (state.endRequested && live && !state.disposed) killTarget(state); // Detach and clean up before respawn can move the host.
       if (!live && !state.disposed) dispose(state, 'attachment-lost');
       return { handled: true, moving: false, aimAngle: attacker.facing || 0 };
     }
