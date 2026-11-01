@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261031h1fd2e84';
+import { EnemyPreview } from './preview.js?v=20261031headtakerpreview8';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -973,6 +973,11 @@ function renderPools() {
     return;
   }
   if (state.tab === 'weapons') {
+    if (state.kind === 'maskbound:headtaker') {
+      $('poolPanel').append(el('p', 'help', 'Unarmed. Its only attack is Skyfall Head Grip: a high, off-screen leap ending in a one-tile circular landing, followed by two 1.5-second head pulls and a final 5-second pull. Dodge-roll to detach; ordinary hits do not interrupt it.'));
+      updateRuleJson();
+      return;
+    }
     if (d.lich) {
       if(d.special?.weapon) renderBossAppearance(d.special,'weapons'); // Azgarlu's visible enchanted hammer has its own editable authored tool key.
       $('poolPanel').append(
@@ -1219,7 +1224,9 @@ function renderPools() {
         'Dye IDs or an exact #RRGGBB color. On named liches, the highest-weight Body C swatch is fixed per guardian and drives its eyes, robe pattern and ruin walls. MASK_C is independent mask dye color 3.',
       );
   } else if (state.tab === 'attacks') {
-    if (d.lich) {
+    if (state.kind === 'maskbound:headtaker') {
+      $('poolPanel').append(el('p', 'help', 'Skyfall Head Grip is a unique non-weapon attack. It targets humanoids only, falls within a 1-tile circular impact zone, and uses the shared attachment mechanic. Dodge-rolling is its exclusive interrupt.'));
+    } else if (d.lich) {
       const exclusive = d.special
         ? [state.kind.includes('hronal')?'melee':state.kind.includes('tothal')?'blizzard':'plasmCharge']
         : []; // Per-boss toggles appear in addition to the existing primary spell and resurrection.
@@ -1495,10 +1502,20 @@ $('motion').onchange = () => {
 $('playbackSpeed').onchange = () => {
   preview.speed = Number($('playbackSpeed').value);
 };
-$('attackBtn').onclick = () => {
-  preview.play($('attackChoice').value);
-  preview.paused = false;
-  $('pauseBtn').textContent = 'Pause';
+$('attackBtn').onclick = async () => {
+  if (state.busy || preview.headtakerBuildPending) return; // A double tap on mobile must not queue duplicate random victims.
+  const button = $('attackBtn'); // Disabled only for this short-lived async victim build, not for ordinary animation playback.
+  button.disabled = true;
+  try {
+    await preview.play($('attackChoice').value); // Headtaker generates a real random bandit before animation begins.
+    preview.paused = false;
+    $('pauseBtn').textContent = 'Pause';
+    $('pauseBtn').setAttribute('aria-pressed', 'false');
+  } catch (error) {
+    log('Play Attack failed: ' + (error?.stack || error?.message || error));
+  } finally {
+    button.disabled = false;
+  }
 };
 $('loopAttack').onchange = () => {
   preview.loop = $('loopAttack').checked;
@@ -1508,9 +1525,21 @@ $('pauseBtn').onclick = () => {
   $('pauseBtn').textContent = preview.paused ? 'Resume' : 'Pause';
   $('pauseBtn').setAttribute('aria-pressed', String(preview.paused));
 };
+async function seekAttackPreview() {
+  if (state.busy || preview.headtakerBuildPending || preview.headtakerSeeking) return; // Avoid rebuilding the portrait while a prior victim/seek is still in flight.
+  try {
+    await preview.play($('attackChoice').value, Number($('scrub').value), true);
+    preview.paused = false;
+  } catch (error) {
+    log('Attack scrub failed: ' + (error?.stack || error?.message || error));
+  }
+}
 $('scrub').oninput = () => {
-  preview.paused = false;
-  preview.play($('attackChoice').value, Number($('scrub').value), true);
+  if ($('attackChoice').value === 'skyfallHeadGrip') return; // A slider drag must not spawn dozens of bandit portraits.
+  void seekAttackPreview();
+};
+$('scrub').onchange = () => {
+  if ($('attackChoice').value === 'skyfallHeadGrip') void seekAttackPreview(); // Commit once on release; replays the real attachment to the selected time.
 };
 $('captureBtn').onclick = () => {
   if (preview.renderer)

@@ -1128,7 +1128,7 @@
         mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
           before.call(this, renderer, scene, camera, ...rest);
           pushed = false;
-          if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera) return;
+          if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera || (externalFootTargets && externalFootExtendedReach)) return; // Exact-contact grapple soles must NOT be pushed behind the victim's opaque portrait by the normal pants-depth overlay.
           const e = this.matrixWorld.elements;
           pushCamera.setFromMatrixPosition(camera.matrixWorld);
           const dx = e[12] - pushCamera.x, dy = e[13] - pushCamera.y, dz = e[14] - pushCamera.z;
@@ -1439,7 +1439,7 @@
         ankle:new THREE.Vector3(side==='left'?state.idleLeftX:state.idleRightX,state[`${side}ContactY`],0),
         length:Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])),bend:{...legBend[side]}})); // Captured once when a paired action starts, including the actual posterior and GLB sole offset.
     }
-    function applyWorldFootTargets(targets,footWorldQuaternion=null) {
+    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false) {
       if(state.disposed || !window.LegBones)return false;
       root.updateWorldMatrix(true,false);
       pairedBend ||= new THREE.Euler(); // Lazily initialized only for an explicitly owned paired pose.
@@ -1449,9 +1449,9 @@
         root.worldToLocal(pairedFootLocal.copy(target));
         const length=Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])); // Rest segment length also handles authored posteriors below the sprite root; never use a signed height as a length.
         const distance=pairedFootLocal.distanceTo(chain.hip.position); // Knee flex stays below 90 degrees; targets never lengthen the leg.
-        if(distance>1e-8)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*.72,Math.min(length*.999,distance))/distance).add(chain.hip.position);
+        if(distance>1e-8 && !allowExtendedReach)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*.72,Math.min(length*.999,distance))/distance).add(chain.hip.position); // Grapple-only override retains the real portrait contact instead of clamping it to a short walking leg.
         pairedForward.set(0,0,1).applyEuler(pairedBend.set(legBend[side].x*Math.PI/180,0,legBend[side].z*Math.PI/180));
-        const solved=window.LegBones.solveTwoBoneLeg(THREE,{hip:chain.hip.position,foot:pairedFootLocal,foldMaxLength:length,foldForward:pairedForward}); // Shared fixed-length two-bone solve; authored bend chooses the safe forward pole.
+        const solved=window.LegBones.solveTwoBoneLeg(THREE,{hip:chain.hip.position,foot:pairedFootLocal,foldMaxLength:length,foldForward:pairedForward}); // Beyond rest length the shared solver extends the two bones precisely to the world target. // Shared fixed-length two-bone solve; authored bend chooses the safe forward pole.
         chain.thigh.position.set(0,0,0);
         chain.thigh.quaternion.copy(solved.thighQuaternion);
         chain.calf.position.set(0,-solved.thighLength,0);
@@ -1470,10 +1470,24 @@
       return true;
     }
 
+    let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
+    let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
+    function setExternalFootTargets(targets, options = null) {
+      externalFootTargets = targets?.left && targets?.right ? targets : null;
+      externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach);
+      if (!externalFootTargets) state.motionMode = 'idle'; // Normal gait resumes on the next update.
+    }
+
     function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
       dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
+      if (externalFootTargets) {
+        if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach)) {
+          state.motionMode = 'external-portrait-contact';
+          return; // Contact on another actor's portrait outranks ordinary floor stepping.
+        }
+      }
       portraitGuides?.sync(showLegBoneGuides);
       state.runLean = 0; // Attack footwork, airborne, seated, and suppressed modes own their body pose.
       if (seatedPose) {
@@ -1597,6 +1611,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
+      externalFootTargets = null;
       portraitGuides?.dispose();
       parent.remove(root);
       disposeObjectResources(root);
@@ -1622,8 +1637,9 @@
       const rightBounds = footBoundsInRoot(state.right);
       const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
-        lastChange: 'Lunge feet slide with the root at their leg-length reach limit',
+        lastChange: 'Extended-reach portrait contacts bypass pants foot-depth push and retain exact anatomical targets',
         motionMode: state.motionMode,
+        externalContact: { active: !!externalFootTargets, extendedReach: externalFootExtendedReach, pantsDepthPushSuppressed: !!externalFootTargets && externalFootExtendedReach }, // Mobile-visible reason for a normally occluded foot to be rendered on the victim.
         lungeLead: state.lungeLead?.side || null,
         lungeReach: {
           leftMax: Math.max(0.001, posteriorY - state.leftContactY) * 0.65,
@@ -1683,7 +1699,7 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets,
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.

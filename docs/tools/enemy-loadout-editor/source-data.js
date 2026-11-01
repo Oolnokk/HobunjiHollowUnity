@@ -25,6 +25,7 @@
     ['maskbound:sentinel', 'Maskbound Sentinel', 'Maskbound'],
     ['maskbound:bulwark', 'Maskbound Bulwark', 'Maskbound'],
     ['maskbound:reacher', 'Maskbound Reacher', 'Maskbound'],
+    ['maskbound:headtaker', 'Maskbound Headtaker', 'Maskbound'],
   ].map(([id, label, group]) => ({ id, label, group }));
   const read = async (url) => {
     const r = await fetch(url);

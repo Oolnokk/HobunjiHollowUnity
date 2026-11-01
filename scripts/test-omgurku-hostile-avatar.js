@@ -9,6 +9,7 @@ const factory=source.slice(source.indexOf('  async function buildBanditAvatar(')
 class Vec{constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}setScalar(v){return this.set(v,v,v);}multiplyScalar(v){return this.set(this.x*v,this.y*v,this.z*v);}}
 class Group{constructor(){this.children=[];this.parent=null;this.position=new Vec();this.rotation=new Vec();this.scale=new Vec(1,1,1);this.userData={};}
   add(child){child.parent?.remove(child);child.parent=this;this.children.push(child);return this;}
+  getWorldPosition(target){target.set(this.position.x,this.position.y,this.position.z);for(let parent=this.parent;parent;parent=parent.parent){target.x*=parent.scale.x;target.y*=parent.scale.y;target.z*=parent.scale.z;const cos=Math.cos(parent.rotation.y),sin=Math.sin(parent.rotation.y),x=target.x,z=target.z;target.x=x*cos+z*sin;target.z=-x*sin+z*cos;target.x+=parent.position.x;target.y+=parent.position.y;target.z+=parent.position.z;}return target;}
   remove(child){this.children=this.children.filter(c=>c!==child);if(child.parent===this)child.parent=null;return this;}}
 const upper=new Group();upper.position.set(.1,.31,.4);upper.scale.setScalar(.885);
 upper.userData={portraitModelHeight:.9,portraitModelWidth:.9,handAttachX:-.3,handAttachY:.5,armLength:.4};
@@ -34,16 +35,18 @@ vm.createContext(context);vm.runInContext(factory+';this.build=buildBanditAvatar
   // Facing 0: no yaw, so rider X/Z offsets add directly; pose offsets scale by the rider scale about the floor.
   const c={avatarRef:ref,halfHeight:.45};ref.group.position.set(10,.45,20);
   const holder=new Group();holder.position.set(10+.2,.5,20+.1);
+  const riderWorld=new Vec();riderFrame.getWorldPosition(riderWorld);
   assert.equal(context.mount(c,holder),true);
   const near=(a,b)=>Math.abs(a-b)<1e-9;
-  assert(near(holder.position.x,10+.1+.2*.885),'lateral rider offset plus scaled pose');
-  assert(near(holder.position.y,.31-.45*.885+.5*.885),'pose height re-based on the saddle floor');
-  assert(near(holder.position.z,20+.4+.1*.885),'forward saddle offset plus scaled pose');
+  assert(near(holder.position.x,riderWorld.x+.2*.885),'lateral rider offset plus scaled pose');
+  assert(near(holder.position.y,riderWorld.y+.5*.885),'pose height re-based on the saddle floor');
+  assert(near(holder.position.z,riderWorld.z+.1*.885),'forward saddle offset plus scaled pose');
   assert(near(holder.scale.x,.885),'weapon shrinks with the rider');
   // A quarter turn swaps the compound's local X/Z into world axes.
   ref.group.rotation.y=Math.PI/2;holder.position.set(10,.45,20);holder.scale.setScalar(1);context.mount(c,holder);
-  assert(near(holder.position.x,10+.4),'forward offset follows the compound yaw');
-  assert(near(holder.position.z,20-.1),'lateral offset follows the compound yaw');
+  const turnedRiderWorld=new Vec();riderFrame.getWorldPosition(turnedRiderWorld);
+  assert(near(holder.position.x,turnedRiderWorld.x),'forward offset follows the compound yaw');
+  assert(near(holder.position.z,turnedRiderWorld.z),'lateral offset follows the compound yaw');
   assert.equal(context.mount({avatarRef:{group:ref.group}},holder),false,'ordinary humanoids are untouched');
   ref.dispose();
   assert.deepEqual(disposed,[portrait,ref.group],'compound root is released through its own disposer');

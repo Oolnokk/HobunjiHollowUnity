@@ -104,7 +104,7 @@
   }
 
   function applyCachedPlayerCombatFrown(avatar) {
-    if (!playerCombatFrown || !avatar || avatar.generation !== playerCombatFrownCacheGeneration || !playerCombatFrownCache) return false;
+    if (!playerCombatFrown || !avatar || avatar.group?.userData?.maskboundHeadHidden || avatar.generation !== playerCombatFrownCacheGeneration || !playerCombatFrownCache) return false;
     if (!copyPortraitCanvas(avatar.frontCanvas, playerCombatFrownCache)) return false;
     if (!window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel?.(avatar.group, avatar.frontCanvas)) return false;
     playerCombatExpressionApplied = true;
@@ -147,7 +147,7 @@
     const cfg = config();
     if (!deps) return;
     const avatar = deps.getPlayerAvatar();
-    if (!avatar.group?.userData?.frontTexture || !avatar.frontCanvas || !avatar.profile) return;
+    if (!avatar.group?.userData?.frontTexture || avatar.group?.userData?.maskboundHeadHidden || !avatar.frontCanvas || !avatar.profile) return;
     ensurePlayerCombatFrownCache(avatar); // Warm the current outfit/species frown before combat so the first dodge/lunge ghost can carry it synchronously.
     if (!cfg.enabled || playerLifePending) return;
     playerLifeT += dt;
@@ -163,7 +163,7 @@
       breathingComposer: composer, seatId: 'player',
     }).then(() => {
       const current = deps.getPlayerAvatar();
-      if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
+      if (generation !== current.generation || expressionVersion !== playerCombatExpressionVersion || current.group?.userData?.maskboundHeadHidden) return; // Stale neutral/frown canvas must never upload after combat state has flipped.
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
       if (playerCombatFrown) playerCombatExpressionApplied = true; // This completed render used the live composer, whose player seat is frowning during combat.
     }).catch(() => {}).finally(() => { playerLifePending = false; });
@@ -209,7 +209,7 @@
       ...(playerCombatFrown ? { breathingComposer: COMBAT_FROWN_COMPOSER, seatId: 'player-combat-frown-cache' } : {}),
     }).then(() => {
       const current = deps?.getPlayerAvatar?.();
-      if (!current || current.generation !== generation || expressionVersion !== playerCombatExpressionVersion) return;
+      if (!current || current.group?.userData?.maskboundHeadHidden || current.generation !== generation || expressionVersion !== playerCombatExpressionVersion) return;
       if (!copyPortraitCanvas(current.frontCanvas, scratch)) return;
       window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(current.group, current.frontCanvas);
       if (playerCombatFrown) playerCombatExpressionApplied = true;
@@ -222,6 +222,7 @@
     tickNpc,
     tickPlayer,
     setPlayerCombatExpression,
+    getPlayerAvatar: () => deps?.getPlayerAvatar?.() || null, // Canonical live player portrait/profile for composite grapples; no clone of game.js state.
     isPlayerCombatExpressionApplied: () => !playerCombatFrown || playerCombatExpressionApplied,
     snapshot: () => ({ ...stats, npcLifePending, playerCombatFrown, playerCombatExpressionVersion, playerCombatExpressionApplied, playerCombatFrownCacheGeneration, playerCombatFrownCacheReady: !!playerCombatFrownCache, config: config() }),
   };

@@ -193,7 +193,7 @@
   const DEV_SPAWN_OMGURKU_KEY = 'omgurku:hunter'; // Rival tribe hunter (compound rider + quadruped) through the same tribe spawn path.
   const DEV_SPAWN_AVENGER_KEY = 'porakaneki:avenger'; // Nazgraku-mounted Porakaneki Avenger through the same tribe spawn path.
   const DEV_SPAWN_HARLYAO_SKELETON_KEY = 'harlyao-skeleton:enemy'; // Used by the species grid and spawn dispatcher to route skeleton enemies through the dedicated Minion class instead of CREATURE_DB.
-  const DEV_SPAWN_MASKBOUND_PREFIX = 'maskbound:'; // Arena-only buttons route all three guardian troop forms through MaskboundGuardianCombat.
+  const DEV_SPAWN_MASKBOUND_PREFIX = 'maskbound:'; // Arena-only buttons route all Maskbound guardian troop forms through MaskboundGuardianCombat.
   const DEV_SPAWN_HARLYAO_LICH_KEYS = Object.freeze({ // Testing Arena-only spellcaster buttons routed through HarlyaoLichCombat rather than CREATURE_DB.
     tothal: 'harlyao-lich:tothal',
     hronal: 'harlyao-lich:hronal',
@@ -614,7 +614,7 @@
   let lastSpawnRequest = { phase: 'idle', selected: null, tier: null, error: null }; // Scalar status survives log scrolling and panel close/reopen.
 
   function spawnSnapshot() {
-    return { latestChange: 'Maskbound sentinel/bulwark/reacher spawn with copyable per-troop shape and wood-color diagnostics.', ...lastSpawnRequest,
+    return { latestChange: 'Maskbound sentinel/bulwark/reacher/headtaker spawn with copyable per-troop shape and wood-color diagnostics.', ...lastSpawnRequest,
       currentArea: deps?.getCurrentArea?.() ?? null, liveFromPanel: _arenaSpawnedCreatures.size,
       humanoidBuild: window.BanditCombat?.characterBuildSnapshot?.() ?? null };
   }

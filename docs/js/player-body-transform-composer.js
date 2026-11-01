@@ -141,6 +141,7 @@
     if(window.CharacterActionLocks?.isLocked?.('player','head'))return; // A scoped authored/procedural gaze keeps its own anatomical limits.
     const neckJoint = currentPlayerNeckJoint();
     if (!neckJoint) return;
+    if (neckJoint.userData?.maskboundHeadtakerNeckControlled) return; // Grappled player keeps moving, but independent gaze may not overwrite scripted head pitch.
     if (headAimEnabled && headAimSource === 'fishing-water') {
       renderDebug.neckYaw = { source: 'fishing-water', renderedDeg: THREE.MathUtils.radToDeg(neckJoint.rotation.y), waterTargetLocked: true };
       return; // Fishing's authored torso twist and side camera must not override the solved water gaze.
