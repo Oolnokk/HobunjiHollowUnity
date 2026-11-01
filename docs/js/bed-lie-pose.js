@@ -112,7 +112,9 @@
     const hips = Number(deps.playerLegs?.()?.standingPosteriorY); // Anatomical fallback for a rig that has not yet exposed its composer pivot.
     const pivot = Number(window.PlayerBodyTransformComposer?.getPosteriorY?.()); // This is the ACTUAL pivot around which PlayerBodyTransformComposer rotates the portrait.
     const posterior = Number.isFinite(pivot) ? pivot : (Number.isFinite(hips) ? hips : 0.3);
-    const surfaceLift = active.surfaceY + 0.035 - root.position.y - posterior; // Keeps the horizontal plane slightly above the mattress's actual top.
+    const rigScaleY = Number(root.scale?.y); // The player's full portrait/legs rig can be taller or shorter than its authored model units.
+    const scaledPosterior = posterior * (Number.isFinite(rigScaleY) && rigScaleY > 0 ? rigScaleY : 1); // World-space posterior used by the body transform composer's pivot.
+    const surfaceLift = active.surfaceY + 0.035 - root.position.y - scaledPosterior; // Keep the flattened portrait just above the actual mattress.
     window.PlayerBodyTransformComposer.setChannel(CHANNEL, {
       priority: 950, absoluteYaw: active.yaw, rotation: { pitch: -Math.PI / 2 * flatten },
       translation: { y: surfaceLift * flatten }, includeExternal: false,
