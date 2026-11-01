@@ -329,6 +329,16 @@
   }
 
   function defFor(itemKey) { return CONFIG[itemKey] || null; }
+  function engagementRangePx(itemKey) {
+    const def = defFor(itemKey);
+    return def && deps?.TILE ? def.rangeTiles * RANGE_FALLOFF_DISTANCE_MULTIPLIER * deps.TILE : 0;
+  }
+  function rangedAttackRadiusPx(entity) {
+    const weaponRangePx = engagementRangePx(entity?.def?.rangedWeaponKey);
+    const authoredRadiusPx = Number(entity?.def?.rangedAttackRadiusPx);
+    return weaponRangePx > 0 && Number.isFinite(authoredRadiusPx) && authoredRadiusPx > 0
+      ? Math.min(weaponRangePx, authoredRadiusPx) : weaponRangePx;
+  }
   function poseForAction(def, kind) { return kind === 'load' ? def.loadPose : def.firePose; }
   function fireReleaseFrac(def) {
     const durationS = Number(def?.fireDurationS); // Used to convert the absolute post-trigger spawn cap into this weapon's authored animation fraction.
@@ -1675,7 +1685,7 @@
     }
 
     const minRange = deps.TILE * 2.25;
-    const maxRange = deps.TILE * def.rangeTiles * 0.9;
+    const maxRange = rangedAttackRadiusPx(c); // Stand-ground firing uses the full projectile travel envelope, not the home leash or a chase-to-range threshold.
     // distToPlayer is horizontal-only, so a target hiding straight overhead
     // (up a tree) reads as "close" even though melee can't actually touch
     // them — only drop to melee once melee could really land the hit.
@@ -1683,8 +1693,7 @@
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
-      const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt);
-      return { aimAngle, moving, handled: true };
+      return { aimAngle, moving: false, handled: true, holdingRange: true }; // Keep ranged troops at their post instead of closing distance; their independent home leash still governs retreat/return behavior.
     }
 
     if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
@@ -1870,6 +1879,7 @@
     wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox, hasLineOfSight,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
+    engagementRangePx, rangedAttackRadiusPx,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     applySpecialAmmoDebuff,applySticky,movementSpeedMultiplier,movementDirectionMultiplier,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
