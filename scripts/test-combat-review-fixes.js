@@ -68,6 +68,9 @@ assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted e
 assert.match(game, /lineOfSightBlocker: c\._enemyVisibilityLosDebug[\s\S]{0,180}kind: c\._enemyVisibilityLosDebug\.kind/, 'mobile combat diagnostics identify the obstacle that blocked sight');
 assert.match(ranged, /losTerrainStepTiles: 0\.25/, 'NPC sight samples terrain finely enough to catch narrow wall crossings');
 assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(\)/, 'closed interior doors block NPC line of sight even though they are separate from terrain tiles');
+assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, 'ranged engagement radius follows the projectile's actual maximum travel distance');
+assert.match(ranged, /function rangedAttackRadiusPx\(entity\)[\s\S]{0,260}rangedAttackRadiusPx/, 'an enemy definition may reduce its ranged attack radius without exceeding projectile reach');
+assert.match(ranged, /if \(distToPlayer > maxRange\) \{\s*return \{ aimAngle, moving: false, handled: true, holdingRange: true \}/, 'ranged bandits hold position instead of approaching targets');
 assert.match(ranged, /function hasLineOfSight\(observer, target\)/, 'ranged collision exposes the NPC visibility entry point');
 assert.match(ranged, /const result = computeBanditLos\(observer, target, \{ projectileRadiusPx: 0, losTerrainStepTiles: 0\.25 \}\)/, 'NPC perception uses the real terrain and cover segment test');
 assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses the setting-independent semantic-cover query');
@@ -93,7 +96,7 @@ const searchRuntime = {
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
-    RangedWeapons: { hasLineOfSight: () => lineOfSightClear },
+    RangedWeapons: { hasLineOfSight: () => lineOfSightClear, rangedAttackRadiusPx: entity => entity.def.rangedWeaponKey ? 900 : 0 },
   },
 };
 vm.runInNewContext(enemySearch, searchRuntime);
@@ -102,6 +105,11 @@ const hostile = { x: 0, y: 0, facing: 0, state: 'chase', def: { aggroRangePx: 50
 const target = { x: 0, y: -100, health: 50 };
 inCone = true;
 assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), true, 'clear sight records the target position as last seen');
+const rangedGuard = { x: 0, y: 0, facing: 0, def: { aggroRangePx: 500, rangedWeaponKey: 'crossbow' } };
+const distantTarget = { x: 0, y: 700, health: 50 };
+assert.equal(AI.enemyCanSeeTarget(rangedGuard, distantTarget, 500), true, 'ranged enemies acquire targets within weapon reach even beyond ordinary aggro range');
+const meleeGuard = { x: 0, y: 0, facing: 0, def: { aggroRangePx: 500 } };
+assert.equal(AI.enemyCanSeeTarget(meleeGuard, distantTarget, 500), false, 'melee enemies retain their ordinary aggro radius');
 target.x = 25;
 target.y = 100; // The player moves around the NPC to the opposite side after disappearing.
 lineOfSightClear = false;
