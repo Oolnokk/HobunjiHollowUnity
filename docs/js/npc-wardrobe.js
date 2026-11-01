@@ -213,7 +213,9 @@
     const hatedTrait = (rec?.gifts?.hated || []).find(trait => traits.includes(trait)); // Hated traits take precedence in refusal feedback when both bad tiers match.
     const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto ordinary NPC wear.
     const defaults = ensureDefaults(rec?.id, rec);
-    const styleMatch = defaults.size > 0 && traits.some(trait => defaults.has(trait)); // Missing style data is not a blanket permission: only a known authored-style match allows ordinary NPC wear.
+    const styleMatch = defaults.size > 0
+      ? traits.some(trait => defaults.has(trait))
+      : options.allowUnknownStyle === true; // Gift acceptance retains its legacy no-style fallback; manual wardrobe Wear remains fail-closed.
     const spouseOverride = options.spouseOverride === true && isActiveSpouseWardrobe(rec?.id);
     const blockedTrait = hatedTrait || dislikedTrait || null;
     const styleBlocked = !spouseOverride && !styleMatch;
@@ -240,8 +242,8 @@
     const list = stored[npcId] || (stored[npcId] = []);
     const gifted = { ...instance, uid: 'wcloth_' + Math.random().toString(36).slice(2, 10) }; // Stored copy keeps the player's original inventory identity out of NPC persistence.
     list.push(gifted);
-    const wearability = clothingWearability(rec, gifted); // Gift preference is a hard wear veto even when the garment otherwise fits this NPC's wardrobe style.
-    const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid) : false; // Disliked/hated clothing stays stored instead of appearing on the NPC.
+    const wearability = clothingWearability(rec, gifted, { allowUnknownStyle: true }); // Gift preference remains a hard veto; missing legacy style data keeps its original gift-time fail-open behavior.
+    const worn = wearability.allowed ? equipStoredItemData(npcId, gifted.uid, { allowUnknownStyle: true }) : false; // Manual Wear does not inherit this gift-only fallback.
     if (worn) void refreshWalkerAppearance(walker);
     return { accepted: true, worn, wearBlockedBy: wearability.blockedTrait, wearBlockTier: wearability.tier };
   }
