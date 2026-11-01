@@ -60,6 +60,7 @@ function environment() {
   const body = element('body');
   const stack = element('div'); stack.id = 'actionStack';
   const actionButton = element('button'); actionButton.id = 'btnAction1';
+  actionButton.dataset.action = 'attack'; actionButton.dataset.combatSlot = 'action1';
   actionButton.setAttribute('aria-label', 'Primary action');
   stack.appendChild(actionButton);
   const canvas = element('canvas'); canvas.id = 'threeContainer';
@@ -169,6 +170,8 @@ assert.equal(game.characterView, false, 'Character View gives way to shoulder lo
 assert.equal(game.target, null, 'previous camera target is cleared while the spyglass is selected');
 assert.equal(game.api.getDebug().ownsAction1, true, 'Action 1 belongs exclusively to spyglass');
 assert.equal(game.actionButton.classList.contains('spyglass-action-visible'), true, 'normal Action 1 arch button is exposed');
+assert.equal(game.actionButton.dataset.action, 'spyglass', 'Action 1 leaves combat-attack presentation while the spyglass owns it');
+assert.equal(game.actionButton.dataset.combatSlot, undefined, 'the temporary spyglass action is not decorated as a combat slot');
 assert.equal(game.actionButton.querySelector('.spyglass-action-label').textContent, 'Raise Spyglass', 'initial arch prompt says Raise Spyglass');
 
 game.window.WorldActionInputClaims.dispatch('action1', 'press');
@@ -195,6 +198,8 @@ assert.equal(game.claim, null, 'Action 1 input claim is released on stow');
 assert.equal(game.actionButton.classList.contains('spyglass-action-visible'), false, 'normal Action 1 visibility is restored');
 assert.equal(game.actionButton.getAttribute('aria-label'), 'Primary action', 'normal Action 1 accessibility label is restored');
 assert.equal(game.actionButton.getAttribute('aria-pressed'), null, 'temporary pressed-state accessibility metadata is removed');
+assert.equal(game.actionButton.dataset.action, 'attack', 'the prior contextual Action 1 action is restored');
+assert.equal(game.actionButton.dataset.combatSlot, 'action1', 'the prior combat-slot marker is restored');
 
 const preservePerception = environment(); // Existing perception should not be disabled when spyglass look mode ends.
 preservePerception.setPerception(true);
