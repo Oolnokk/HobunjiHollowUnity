@@ -1176,7 +1176,7 @@
       shader.vertexShader = elevationVertex;
       shader.fragmentShader = fragment
         .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && vHobunjiXrayWorldNormal.y >= 0.55 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= 0.18) discard;');
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && gl_FrontFacing && vHobunjiXrayWorldNormal.y >= 0.55 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= 0.18) discard;');
       shader.uniforms.uHobunjiXrayActorElevation = state.uniforms.elevation;
       shader.uniforms.uHobunjiXrayElevationEnabled = state.uniforms.enabled;
       state.supported = true;
