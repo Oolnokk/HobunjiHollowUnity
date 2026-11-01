@@ -1142,7 +1142,7 @@
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
     if (state) return state;
-    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 } }, supported: false, compileAttempted: false };
+    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
     const previousCacheKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey : null;
@@ -1154,7 +1154,8 @@
       const requiredVertex = ['#include <common>', '#include <worldpos_vertex>'];
       const requiredFragment = ['#include <common>', '#include <clipping_planes_fragment>'];
       state.compileAttempted = true;
-      if (!requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
+      if ((!hasDefaultNormal && state.geometryHasNormals !== true)
+          || !requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
         state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
         return;
       }
@@ -1196,6 +1197,12 @@
         seen.add(material);
         const state = installGroundElevationShader(material);
         if (!state) return;
+        const geometryHasNormals = !!mesh.geometry?.attributes?.normal;
+        if (state.geometryHasNormals === null) state.geometryHasNormals = geometryHasNormals;
+        else if (!geometryHasNormals && state.geometryHasNormals !== false) {
+          state.geometryHasNormals = false;
+          material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
+        }
         state.uniforms.elevation.value = enabled ? elevation : 0;
         state.uniforms.enabled.value = enabled ? 1 : 0;
         if (state.supported) materialCount++;
