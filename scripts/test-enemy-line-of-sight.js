@@ -131,4 +131,15 @@ const coverEnd = { x: 2, y: 0.5, z: 1 };
 assert.equal(coverWindow.NearbyVolumeCollision.segmentHit(coverStart, coverEnd), null, 'ordinary projectile collision remains disabled outside combat');
 assert.ok(coverWindow.NearbyVolumeCollision.segmentSightHit(coverStart, coverEnd), 'AI sight still detects semantic furniture cover outside combat and with projectile collision disabled');
 
+// Vertical movement at unchanged X/Z invalidates the sight cache (e.g. climbing onto a branch).
+area = 'town';
+sightObjects = [];
+const heightObserver = actor(64, 512);
+const heightTarget = actor(192, 512);
+assert.equal(window.RangedWeapons.hasLineOfSight(heightObserver, heightTarget), true, 'initial elevated-target sight is clear');
+sightObjects = [{ name: 'height-wall', blocksSight: true, visible: true }];
+heightTarget.def.modelHeight = 2;
+now += 20; // Also expires the independent 16 ms actor-hitbox cache.
+assert.equal(window.RangedWeapons.hasLineOfSight(heightObserver, heightTarget), false, 'vertical actor movement forces a fresh wall intersection test');
+
 console.log('enemy line of sight: all checks passed');

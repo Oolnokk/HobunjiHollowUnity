@@ -1613,14 +1613,19 @@
     const now = performance.now();
     const area = deps.getCurrentArea?.() ?? null;
     const cached = observer._enemyVisibilityLosCache;
+    const observerWorldY = actorHitbox(observer)?.center?.y ?? null; // Climbing/jumping changes visibility even when the actor's ground-plane X/Z does not move.
+    const targetWorldY = actorHitbox(target)?.center?.y ?? null; // Height changes must invalidate cached wall/cover intersections too.
     const moved = cached ? Math.hypot(observer.x - cached.x, observer.y - cached.y) : Infinity;
     const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
+    const observerHeightMoved = cached && Number.isFinite(observerWorldY) && Math.abs(observerWorldY - cached.observerWorldY) > 0.04;
+    const targetHeightMoved = cached && Number.isFinite(targetWorldY) && Math.abs(targetWorldY - cached.targetWorldY) > 0.04;
     if (cached && cached.area === area && cached.target === target && now - cached.at < BANDIT_LOS_CACHE_MS
-      && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.clear;
+      && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08 && !observerHeightMoved && !targetHeightMoved) return cached.clear;
     const result = computeBanditLos(observer, target, { projectileRadiusPx: 0, losTerrainStepTiles: 0.25 });
     observer._enemyVisibilityLosCache = {
-      at: now, area, target, x: observer.x, y: observer.y, tx: target.x, ty: target.y, clear: !!result.clear,
-    }; // Area and target identity prevent stale LOS being reused across a doorway or target switch.
+      at: now, area, target, x: observer.x, y: observer.y, tx: target.x, ty: target.y,
+      observerWorldY, targetWorldY, clear: !!result.clear,
+    }; // Area, actor identity, and vertical pose prevent stale LOS across doors, target switches, or climbing.
     observer._enemyVisibilityLosDebug = { ...result, at: now }; // Available to mobile combat diagnostics without allocating a full scene report.
     return !!result.clear;
   }
