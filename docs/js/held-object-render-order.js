@@ -1376,7 +1376,7 @@
     if (isShellOutlinePass(scene, camera)) {
       const held = collectVisible(heldRegistry, scene);
       const feet = collectVisible(waterOccludedRegistry, scene);
-      const xrayMeshes = [...new Set([...held, ...feet])];
+      const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
