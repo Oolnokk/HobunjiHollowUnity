@@ -519,7 +519,7 @@
       headMaskCanvas.width = headMaskCanvas.height = PORTRAIT_SIZE;
       await window.NpcAvatarPreview.renderProfileToCanvas(headMaskCanvas, profile, { forceEyesOpen: true, headCosmeticsOnly: true });
     }
-    const headGate = roster.headGate; // An enemy rule's gate; unset uses the rig's species default (PNGPlaneAvatar.defaultHeadGateFor): tight, or legacy for Mashtzarr/Mammakhbuur.
+    const headGate = window.PNGPlaneAvatar.npcHeadGateFor?.(roster.appearance?.speciesId, roster.headGate) ?? roster.headGate; // All non-Harlyao humanoid enemies default to legacy; authored workshop overrides and skeleton defaults remain intact.
     const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
       || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
     const neckPivotNormalized = neckPivotPx
