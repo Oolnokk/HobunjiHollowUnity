@@ -7,9 +7,9 @@
 (() => {
   'use strict';
 
-  if (Number(window.HouseWindowLinkage?.version) >= 14) return;
+  if (Number(window.HouseWindowLinkage?.version) >= 15) return;
 
-  const VERSION = 14; // v14 uses room-local interior-only offsets for paired windows without changing exterior slot geometry.
+  const VERSION = 15; // v15 persists interior-only window alignment while keeping the exterior slot and cut fixed.
   const WINDOW_KEYS = new Set(['simpleWindow', 'crossbarWindow', 'wideWindow']); // Only authored daylight-window furniture participates.
   const PEER_SUFFIX = ':house-window-peer'; // Deterministic suffix lets a primary decor id regenerate the same opposite-side id after load.
   const INTERIOR_SCALE = 2; // HousePieces.computeInteriorLayout maps every exterior farm tile to a 2x2 interior footprint.
@@ -351,6 +351,7 @@
     return clampBindingForWindow(Object.assign({}, localized, {
       u01: (best.canonicalAlong - best.run.start) / runLength,
       v01,
+      interiorShift: Math.max(-4, Math.min(4, Math.trunc(Number(previousBinding?.interiorShift) || 0))),
     }), key);
   }
 
@@ -368,6 +369,10 @@
       point = run.side === 'north' || run.side === 'south'
         ? toIndoorPoint(run, canonicalAlong, fixed, normalized.v01 * INTERIOR_WALL_HEIGHT)
         : toIndoorPoint(run, fixed, canonicalAlong, normalized.v01 * INTERIOR_WALL_HEIGHT);
+      const shift = Math.max(-4, Math.min(4, Math.trunc(Number(normalized.interiorShift) || 0)))
+        * ((run.side === 'north' || run.side === 'west') ? 1 : -1); // Positive means right when viewed from inside facing this wall.
+      if (run.side === 'north' || run.side === 'south') point[0] += shift;
+      else point[2] += shift;
       normal = outward.map(value => -value); // A window seen from inside attaches to the inward-facing side of the same physical wall.
     } else point = exteriorSlotSurface(run, normalized)?.center;
     if (!point) return null;
@@ -577,7 +582,7 @@
     const previousBinding = existingLink?.binding || null;
     const rawBinding = options.useExistingBinding && previousBinding
       ? previousBinding
-      : bindingFromPlacement('farm', placement, object.key, null);
+      : bindingFromPlacement('farm', placement, object.key, previousBinding);
     const normalizedBinding = clampBindingForWindow(rawBinding, object.key);
     if (!normalizedBinding || exteriorSlotOccupied(normalizedBinding, primaryId)) return false;
 
@@ -611,6 +616,23 @@
     if (!options.skipSave) window.FarmEditor?.saveFarmLayout?.();
     window.FurniturePlacer?.render?.();
     return true;
+  }
+
+  async function shiftInteriorWindow(primaryId, direction) {
+    const object = findObject(primaryId);
+    const stored = wallApi()?.getPlayerPlacement?.(primaryId);
+    const link = stored?.houseWindowLink;
+    const step = Math.sign(Number(direction) || 0);
+    if (!object || object.derivedLinkedWindow || object.area !== 'farm' || !isWindowKey(object.key)
+      || link?.role !== 'primary' || !step) return { ok: false, message: 'That window cannot be shifted.' };
+    const binding = clone(link.binding || {});
+    const current = Math.max(-4, Math.min(4, Math.trunc(Number(binding.interiorShift) || 0)));
+    const next = Math.max(-4, Math.min(4, current + step));
+    if (next === current) return { ok: false, message: 'The interior window has reached its adjustment limit.' };
+    binding.interiorShift = next;
+    const updated = Object.assign({}, stored, { houseWindowLink: Object.assign({}, link, { binding }) });
+    const ok = await synchronizePair(primaryId, updated, object, { useExistingBinding: true });
+    return { ok, message: ok ? 'Interior window shifted.' : 'The interior window could not be shifted.' };
   }
 
   function scheduleGeometryRebuild() {
@@ -721,7 +743,11 @@
       const fixed = run.fixed; // Exterior side plane before the 2x interior mapping.
       const center = run.side === 'north' || run.side === 'south'
         ? toIndoorPoint(run, canonicalAlong, fixed, binding.v01 * INTERIOR_WALL_HEIGHT)
-        : toIndoorPoint(run, fixed, canonicalAlong, binding.v01 * INTERIOR_WALL_HEIGHT); // Position remains on the shifted full-size room boundary.
+        : toIndoorPoint(run, fixed, canonicalAlong, binding.v01 * INTERIOR_WALL_HEIGHT);
+      const shift = Math.max(-4, Math.min(4, Math.trunc(Number(binding.interiorShift) || 0)))
+        * ((run.side === 'north' || run.side === 'west') ? 1 : -1);
+      if (run.side === 'north' || run.side === 'south') center[0] += shift;
+      else center[2] += shift; // Interior aperture follows its display-only frame; exterior brick cuts remain unchanged.
       if (!center) return null;
       const silhouette = windowSilhouette(record.key); // Brick omission follows the full visible frame silhouette.
       return { id: record.primaryId, center, normal: outwardNormal(run.side).map(value => -value), width: silhouette.width, height: silhouette.height };
@@ -823,6 +849,7 @@
     onHouseGeometryRebuilt,
     debugSnapshot,
     isWindowKey,
+    shiftInteriorWindow,
     snapExteriorPlayerPlacement,
     __test: Object.freeze({ slotBlockedByWallFeature, buildBoundaryRuns, windowSilhouette, exteriorWindowSilhouette, exteriorTaperScale, exteriorSlotLayout, snapBindingToExteriorSlot, exteriorSlotId, bindingFromPlacement, resolveRun, fromIndoorPoint, toIndoorPoint, farmWallPoint, exteriorSlotSurface, exteriorCutCenterForRender, EXTERIOR_HEIGHT_SCALE, EXTERIOR_SLOT_TILES, EXTERIOR_SLOT_V01, ensureWindowSelectionRoot, isObjectMeshSceneAttached }),
   });
