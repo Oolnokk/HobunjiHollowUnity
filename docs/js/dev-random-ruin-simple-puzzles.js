@@ -1842,6 +1842,7 @@
     const kit=composerKit();
     state.kit=kit;
     for(const composer of composers){ // Room-claiming composers run first so standalone modules never take their rooms.
+      if(context.hachutu===true&&composer.id!=='hachutuTemple')continue; // Exclusive developer-only content, never mixed with Harlyao composers.
       try{composer.buildRooms?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildRooms failed',error);}
     }
     if(context.hachutu===true){
@@ -2231,7 +2232,7 @@
     updateSarcophagusModules(dt);
     updateOssuaryComposers();
     updateRopes(now,dt);
-    for(const composer of composers){try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
+    for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
     updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
     updateBadge();
@@ -2241,7 +2242,7 @@
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
-    for(const composer of composers)for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);
+    for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);}
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight||candidate.airOnly)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor.
       controls.push({
