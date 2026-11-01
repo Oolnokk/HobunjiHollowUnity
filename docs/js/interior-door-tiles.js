@@ -26,6 +26,7 @@
 
   const maps = new Map(); // mapId -> { mapId, puzzleMapId, doors: [door] }
   let deps = null;
+  let threeRef = null; // Captures the scene's Three.js constructors for lightweight light-blocker snapshots.
 
   function init(injected) { deps = injected || null; }
 
@@ -251,9 +252,10 @@
   // lets game.js file the door's interaction; decorate(group) applies its
   // outline/edge marks.
   async function build({ THREE, scene, mapId, mapData, floorSet, surfaceYAt, registerInteractable, decorate }) {
+    threeRef = THREE || threeRef;
     discard(mapId);
     const tiles = doorGroupsOf(mapData, floorSet); // Includes map-switch doors without changing their travel action.
-    const state = { mapId, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
+    const state = { mapId, scene, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
     maps.set(mapId, state);
     if (!tiles.length) return state;
     const data = await loadDoorData();
@@ -337,5 +339,26 @@
     }));
   }
 
-  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
+  function getLightBlockers(mapId, activeScene = null) {
+    const requested = mapId == null ? null : maps.get(String(mapId));
+    const state = requested && (!activeScene || requested.scene === activeScene)
+      ? requested
+      : (activeScene ? [...maps.values()].find(candidate => candidate.scene === activeScene) : null);
+    if (!state) return [];
+    return state.doors.map(entry => {
+      const THREE = threeRef || deps?.THREE || window.THREE;
+      const position = THREE?.Vector3 ? new THREE.Vector3() : (entry.group.position || { x: 0, z: 0 });
+      if (THREE?.Vector3) entry.group.getWorldPosition?.(position);
+      const angle = -(ROTATION_DEG[entry.facing] ?? ROTATION_DEG.north) * Math.PI / 180;
+      const progress = Number(entry.group.userData?.puzzleProgress);
+      return {
+        x: position.x, z: position.z,
+        normalX: Math.sin(angle), normalZ: Math.cos(angle),
+        halfWidth: Math.max(0.5, entry.tiles.length * 0.5),
+        openProgress: Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : (entry.active ? 1 : 0),
+      };
+    });
+  }
+
+  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, getLightBlockers, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
 })();
