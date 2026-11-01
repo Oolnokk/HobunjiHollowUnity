@@ -571,6 +571,50 @@
       if(t.wave<3){if(!t.nextAt)t.nextAt=now+2600;else if(now>=t.nextAt){t.nextAt=0;startWave();}}else t.cleared=true;
     }
   }
+  // ---- Root-grown gates between halls ---------------------------------------------------------------------
+  // Each hall seals its exit with a plug of roots grown by the Root Growth Author's own solver around an invisible
+  // door-panel guide (the author's showGuide:false look). Severing the hall's binding weed makes the author's own
+  // retract() animation pull the roots back; the collision seal releases once they have mostly withdrawn.
+  function buildGate(id,passage,isOpen){
+    const y=session.floor,x=(passage.minX+passage.maxX)/2,z=(passage.minZ+passage.maxZ)/2;
+    const gate={id,x,z,isOpen,open:false,blocking:true,growth:null,lastHintAt:0};
+    for(const side of [-1,1]){
+      const post=cylinder(session.group,'root gate stone post',.42,.55,4.2,x,y+2.1,z+side*1.85,0x2d2f29);
+      post.userData.devRuinFootprintIgnore=true; // The solid seal below is the one collision authority.
+    }
+    const LRG=window.LiveRootGrowth;
+    if(LRG?.create&&window.FoliageGenerator?.buildSurfaceGrowth){
+      try{
+        const guide=new THREE.Group();guide.add(new THREE.Mesh(new THREE.BoxGeometry(.5,3.6,3.3),material(0x383a34)));
+        const growth=LRG.create({THREE,foliage:window.FoliageGenerator,target:guide,
+          recipe:{seed:'hachutu-gate-'+id+'-'+session.context.seed,branchCount:8,strandLimit:30,
+            floorWidth:3.4,floorDepth:3.4,floorY:-1.8,floorDensity:.3,targetDensity:1.1,
+            radius:.07,branchRadius:.09,showGuide:false,duration:1.4},
+          progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+        growth.setProgress(1);
+        growth.group.position.set(x,y+1.8,z);growth.group.userData.devRuinFootprintIgnore=true;
+        session.group.add(growth.group);gate.growth=growth;
+      }catch(error){session.errors.push('Gate '+id+' roots: '+String(error?.message||error));}
+    }
+    window.DevRandomRuinTileOccupancy?.addSolidBox?.('hachutu-gate-'+id,{cx:x,cz:z,halfX:.6,halfZ:1.7},()=>!!session&&gate.blocking,'hachutu-door');
+    session.gates.push(gate);
+    return gate;
+  }
+  function updateGates(dt,now,p){
+    for(const gate of session.gates){
+      const open=gate.isOpen();
+      if(open&&!gate.open){
+        gate.open=true;gate.growth?.retract();
+        session.deps?.showToast?.('The roots withdraw from the passage.',true);
+      }
+      const growth=gate.growth;
+      if(growth&&growth.getProgress()>0)growth.update(dt); // Idle (fully retracted) gates cost nothing per frame.
+      gate.blocking=!gate.open||(growth?growth.getProgress()>.35:false);
+      if(!gate.open&&p&&now-gate.lastHintAt>7000&&Math.hypot(p.x-gate.x,p.z-gate.z)<3){
+        gate.lastHintAt=now;session.deps?.showToast?.('Roots bar the way. Sever this hall\'s binding weed.',false);
+      }
+    }
+  }
   function buildDoor(kit){
     const a=session.layout.parts[3],b=a.bounds,y=session.floor;
     const x=b.minX+.25,z=a.center.z,root=session.group;
@@ -725,7 +769,7 @@
     if(context.hachutu!==true)return;
     deps=kit.deps;const layout=reserved;
     if(!layout)throw new Error('Hachutu reserved rooms were not projected.');
-    session={kit,context,deps,layout,group:new THREE.Group(),floor:Number(context.meta?.floorSurfaceY)||0,
+    session={kit,context,deps,layout,gates:[],group:new THREE.Group(),floor:Number(context.meta?.floorSurfaceY)||0,
       rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),ownedEntities:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
       entry:{x:context.spawn.x,z:context.spawn.z,y:Number(context.meta?.floorSurfaceY)||0}};
     kit.group().add(session.group);session.group.name='hachutu-root-temple';
@@ -752,6 +796,8 @@
     for(let i=0;i<3;i++)takeRing(session.weeds[1],i); // Labyrinth weed is exposed from the start, unlike the fire-protected trials.
     buildLabyrinth(session.weeds[1],session.rng);
     buildTrial(session.weeds[2],session.rng);
+    buildGate('swing',layout.passages[0],()=>session.weeds[0].done);
+    buildGate('labyrinth',layout.passages[1],()=>session.weeds[1].done);
     buildDoor(kit);buildHeart();buildVault();
     flushRootBatch();
     session.entryMarker=box(session.group,'Hachutu entrance root gate',.6,2,.6,session.entry.x,session.floor+1,session.entry.z,0x43875d);
@@ -776,6 +822,7 @@
     if(session.entered){
       updateSwing(dt,now);updateHands(now,dt);updateTrial(now);updateDoor(dt);updateHeart(now);
       const p=kit.playerWorld();
+      updateGates(dt,now,p);
       if(p&&inside(p,session.layout.parts[1].bounds,1)&&now-session.lastLabyrinthSpawnAt>9500){
         session.lastLabyrinthSpawnAt=now;
         const b=session.layout.parts[1].bounds;
@@ -799,6 +846,7 @@
     window.DevRandomRuinTileOccupancy?.clearSolids?.('hachutu-door'); // Release the mutable Temple Heart gate before the next ruin build.
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
     for(const entry of session.cover||[])entry.cover.dispose?.();
+    for(const gate of session.gates||[])gate.growth?.dispose?.();
     for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.ownedEntities)retireEntity(enemy,session);
@@ -815,7 +863,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,floorRoots:(session.cover||[]).map(c=>({room:c.name,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null})),floorRoots:(session.cover||[]).map(c=>({room:c.name,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};

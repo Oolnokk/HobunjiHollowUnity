@@ -84,6 +84,12 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.deepEqual(floorRoots.errors,[],'floor root growth reported errors: '+JSON.stringify(floorRoots.errors));
     assert.equal(floorRoots.floorRoots.length,6,'author-style floor roots grown for five rooms plus passages');
     assert(floorRoots.floorRoots.every(room=>room.tris>0),'every floor root group carries geometry');
+    assert.deepEqual(built.gates.map(g=>[g.id,g.open,g.blocking]),[['swing',false,true],['labyrinth',false,true]],'both hall exits start sealed by root-grown gates');
+    assert(built.gates.every(g=>g.grown===1),'gate roots are fully grown at the start');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugClearRing(0,i);for(let i=0;i<3;i++)window.DevHachutuRuin.debugSever(0);});
+    await page.waitForFunction(()=>{const g=window.DevHachutuRuin.debug().gates;return g[0].open&&!g[0].blocking;},null,{timeout:30000});
+    const gates=await page.evaluate(()=>window.DevHachutuRuin.debug().gates);
+    assert.equal(gates[1].blocking,true,'severing the swing weed must not open the labyrinth gate');
     assert.equal(built.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
     assert(built.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
     assert.deepEqual(built.errors,[],'Hachutu had hidden composer build errors');
