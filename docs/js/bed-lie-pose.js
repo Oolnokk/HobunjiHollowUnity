@@ -18,7 +18,7 @@
 
   function clearFrontXray() {
     for (const entry of xray) {
-      if (entry.node?.material === entry.material || (Array.isArray(entry.node?.material) && entry.node.material[0] === entry.cloned)) {
+      if (entry.node?.material === entry.cloned || (Array.isArray(entry.node?.material) && entry.node.material[0] === entry.cloned)) {
         entry.node.material = entry.material;
         entry.node.renderOrder = entry.order;
       }
@@ -35,7 +35,7 @@
       return;
     }
     avatar.traverse(node => {
-      const isSkinnedFront = node.isSkinnedMesh && Array.isArray(node.material) && node.material.length >= 2;
+      const isSkinnedFront = node === avatar.userData?.neckRig?.skinnedPlane && Array.isArray(node.material) && node.material.length >= 2; // Never x-ray unrelated skinned garments.
       const isRigidFront = node.name === 'npc_avatar_front_plane' && !!node.material?.clone;
       if (!isSkinnedFront && !isRigidFront) return;
       const previous = node.material; // Restored once the morning/day rollover completes.
