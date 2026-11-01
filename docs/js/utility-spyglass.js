@@ -80,8 +80,14 @@
       savedActionCombatSlot = button.dataset?.combatSlot ?? null;
       actionButtonStateCaptured = true;
     }
-    if (button.dataset?.action !== 'spyglass') button.dataset.action = 'spyglass';
-    if (button.dataset?.combatSlot) delete button.dataset.combatSlot;
+    if (button.dataset?.action !== 'spyglass') {
+      savedActionDataAction = button.dataset?.action ?? null; // Tracks a newer contextual action-bar state while the lens owns Action 1.
+      button.dataset.action = 'spyglass';
+    }
+    if (button.dataset?.combatSlot) {
+      savedActionCombatSlot = button.dataset.combatSlot; // Keeps a newly assigned combat slot intact when the spyglass is put away.
+      delete button.dataset.combatSlot;
+    }
     if (!icon) {
       icon = document.createElement('span');
       icon.className = 'abt-icon spyglass-action-icon';
