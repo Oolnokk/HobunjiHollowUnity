@@ -24,6 +24,11 @@
     harlyaoOddFishApeStatue: artifact('Odd Fish-Ape Statue', '🐟', 3, 3),
     harlyaoSkeletalBeastStatue: artifact('Skeletal Beast Statue', '🦴', 4, 1),
     harlyaoGoblet: artifact('Harlyao Goblet', '🏆', 2, 8),
+    hachutuMoneyBones: artifact('Hachutu Money-Bones', '🦴', 1, 35),
+    hachutuAncestorStatue: artifact('Hachutu Ancestor Statue', '🗿', 2, 16),
+    hachutuUneasyTotem: artifact('Hachutu Uneasy Totem', '🪵', 2, 10),
+    hachutuCryingTotem: artifact('Hachutu Crying Totem', '🪵', 3, 6),
+    hachutuHollowTotem: artifact('Hachutu Hollow Totem', '🪵', 4, 3),
   });
   const UNLOCKS = Object.freeze([ // Collection milestones used by both dialogue and service guards.
     { id: 'unbind', count: 1, label: 'Weapon unbinding', text: 'Our first artifact! This gives me a reference for the old Harlyao binding rites. Bring me a bound weapon and I can release its dead owner’s claim for a fee. The weapon keeps its enchantments, and studying it teaches me how they work.' },
@@ -55,7 +60,16 @@
     worldId = null;
     state = { donated: [], pendingUnlocks: [] };
     for (const [key, def] of Object.entries(ARTIFACTS)) {
-      deps.ITEM_DEFS[key] = { ...def, cat: 'material', tags: ['Harlyao', 'Artifact'], artifact: true, desc: 'An artifact from a Harlyao ruin. Donate one to Garanki Gabu’s collection; valuable duplicates can be sold.' };
+      const hachutu=key.startsWith('hachutu'); // Keeps Harlyao and Hachutu finds culturally distinct without changing the common museum interface.
+      const descriptions={
+        hachutuMoneyBones:'Carved, polished bone currency once exchanged by the Hachutu. Each one is marked with an unsettling ancestral sigil.',
+        hachutuAncestorStatue:'A Hachutu ancestor with a tall crest and rubies embedded where the eyes should be.',
+        hachutuUneasyTotem:'An abstract wooden totem. The shapes refuse to resolve into a recognizable creature.',
+        hachutuCryingTotem:'A disquieting Hachutu totem of knotted outlines that resemble nothing alive.',
+        hachutuHollowTotem:'A towering abstract ancestral horror carved around a hollow void.',
+      }; // Distinct artifact descriptions appear in inventory and Museum records.
+      deps.ITEM_DEFS[key] = { ...def, cat:'material',tags:[hachutu?'Hachutu':'Harlyao','Artifact'],artifact:true,
+        desc:descriptions[key]||(hachutu?'An artifact from a Hachutu ruin. Donate or sell it.':'An artifact from a Harlyao ruin. Donate one to Garanki Gabu’s collection; valuable duplicates can be sold.') };
       if (!deps.inventoryItems.some(item => item.key === key)) deps.inventoryItems.push({ key, icon: def.icon, label: def.label.toUpperCase(), max: 999 });
     }
     syncWorld();
@@ -108,9 +122,10 @@
     const next = { ...state, pendingUnlocks: [] }; // Mark heard only when the explanation actually enters the dialogue box.
     if (window.WorldMetaStore?.saveArtifactCollection?.(worldId, next)) state = next;
   }
-  function rollArtifacts(tier = 1) {
+  function rollArtifacts(tier = 1, culture = 'harlyao') {
     const safeTier = Math.max(1, Math.min(4, Math.round(Number(tier) || 1))); // Malformed tier inputs cannot produce an empty pool or an unbounded chest.
-    const eligible = Object.entries(ARTIFACTS).filter(([, def]) => def.tier <= safeTier); // Better chests broaden the artifact pool.
+    const hachutu=culture==='hachutu'; // Explicit loot culture prevents all Harlyao chests from accidentally gaining Hachutu relics.
+    const eligible = Object.entries(ARTIFACTS).filter(([key,def]) => def.tier <= safeTier && key.startsWith('hachutu')===hachutu); // Better chests broaden the artifact pool.
     const totalWeight = eligible.reduce((sum, [, def]) => sum + def.weight, 0); // Renormalizes weights across the artifacts available at this tier.
     const range = LOOT_TUNING.countsByTier[safeTier - 1]; // Higher-tier chests may award larger batches.
     const random = () => {

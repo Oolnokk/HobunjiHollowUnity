@@ -363,7 +363,13 @@
         const px = (x + 0.5 - fx.image.width / 2 + off.x) * fx.unit;
         const py = (fx.image.height / 2 - y - 0.5 - off.y) * fx.unit;
         const colors = fx.config.colors?.length ? fx.config.colors : ['#FFA940'];
-        const color = colors[Math.floor(Math.random() * colors.length)];
+        const enchantments=window.EnchantmentSystem?.stateFor?.(state.itemKey);
+        const enchanted=!!(enchantments?.base?.length||Object.keys(enchantments?.flourishes||{}).length);
+        const visual=enchanted?window.WeaponEnchantmentVFX?.stateFor?.(state.itemKey):null;
+        const dye=visual?.dyeId&&(window.DyeSystem?.getById?.(visual.dyeId)
+          || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog?.find?.(entry=>entry.id===visual.dyeId));
+        const color=(dye?.hex&&/^#[0-9a-f]{6}$/i.test(dye.hex))?dye.hex:colors[Math.floor(Math.random()*colors.length)];
+        // Existing torch flames persist without enchantments; enchantment changes their COLOR, not their shape, density or world-up motion.
         let sprite = fx.pool.pop();
         if (!sprite) sprite = new THREE.Sprite(new THREE.SpriteMaterial({
           map: fx.texture, transparent: true, opacity: 0,

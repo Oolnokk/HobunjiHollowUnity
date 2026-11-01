@@ -163,12 +163,12 @@
       get aim(){return lastAim.clone();}};
   }
   function create({THREE,room,rootLayers,wallRootLayers,seed='root-snare',count=6,
-    triggerRadius=15,reach=15,extendSpeed=.2,retractSpeed=1.1,showNodes=false,foliage}={}){
+    triggerRadius=15,reach=15,extendSpeed=.2,retractSpeed=1.1,showNodes=false,foliage,explicitAnchors=null}={}){
     const T=THREE;
     if(!T||!room?.model)throw new TypeError('A prepared ruin is required.');
     const sources=rootLayers||wallRootLayers||[],builder=foliage||root.FoliageGenerator;
     if(!builder?.buildLogMesh)throw new Error('Root snare needs FoliageGenerator.buildLogMesh.');
-    const anchors=findWallRootNodes(T,room,sources,seed,count);
+    const anchors=Array.isArray(explicitAnchors)?explicitAnchors.slice(0,14):findWallRootNodes(T,room,sources,seed,count); // Playable Hachutu encounters supply pre-sampled wall roots; the author continues to discover nodes from wrapped meshes.
     const group=new T.Group();group.name='Wall and floor root snares';
     let sourceMaterial=null;
     for(const item of sources){

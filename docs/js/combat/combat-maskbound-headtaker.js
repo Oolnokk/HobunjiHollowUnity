@@ -711,6 +711,13 @@
     attacker.attackCooldownT = Math.max(attacker.attackCooldownT || 0, COOLDOWN_S);
   }
 
+  function validEscapeDodge(target) {
+    const shared = window.Combat?.attach?.hostDodgeEscapes;
+    if (typeof shared === 'function') return shared(target); // Headtaker landing and attached riders honor the same funded-roll rule.
+    return !!(target?.dodging || Number(target?.dodgeT) > 0 || target?._enemyDodge)
+      && (!player(target) || target?._grappleEscapeDodgePaid === true); // Headless workshops may not load the attach integration.
+  }
+
   function update(attacker, dt, target) {
     if (!attacker?.isMaskboundGuardian || attacker.maskboundTroop !== 'headtaker') return null;
     const state = active.get(attacker);
@@ -773,14 +780,14 @@
         const dx = state.target.x - state.landX, dy = state.target.y - state.landY;
         telemetry.landings++;
         if (Math.hypot(dx, dy) <= tile && humanoid(state.target)
-          && !state.target.dodging && !(Number(state.target.dodgeT) > 0) && !state.target._enemyDodge) { // Dodge at the landing frame evades the grip immediately, rather than briefly attaching before the next tick.
+          && !validEscapeDodge(state.target)) { // Dodge at the landing frame evades the grip immediately, rather than briefly attaching before the next tick.
           // Landing is still dodgeable by leaving the original 1-tile circle; the visible descent ends exactly at the shared grip anchor.
           state.shared = window.Combat.attach?.beginManual?.(attacker, ID, state.target, { immediate: true });
           if (!state.shared) dispose(state, 'grip-blocked');
           else alignBehindPortrait(state, state.target);
         } else {
           attacker.x = state.landX; attacker.y = state.landY;
-          const evaded = state.target.dodging || Number(state.target.dodgeT) > 0 || !!state.target._enemyDodge;
+          const evaded = validEscapeDodge(state.target);
           if (evaded) telemetry.dodges++;
           dispose(state, evaded ? 'host-dodged' : 'miss');
         }

@@ -26,7 +26,8 @@ const inventory = { gold: 1000 }, ITEM_DEFS = {}, inventoryItems = []; // Invent
 let saves = 0;
 AC.init({ inventory, ITEM_DEFS, inventoryItems, tothalWorldId: () => worldId, saveMemberWorldData: () => saves++ });
 assert.equal(AC.value(), 0);
-assert.equal(inventoryItems.length, 8);
+assert.equal(inventoryItems.filter(item => item.key.startsWith('harlyao')).length, 8, 'legacy Harlyao museum catalog stays intact');
+assert.equal(inventoryItems.filter(item => item.key.startsWith('hachutu')).length, 5, 'new Hachutu artifacts register independently');
 for (const def of Object.values(ITEM_DEFS)) assert(def.sellPrice >= 90);
 assert.equal(AC.donate('unknown').reason, 'artifact');
 assert.equal(AC.donate('harlyaoCopperCoin').reason, 'not-owned');
@@ -73,7 +74,8 @@ for (let percentile = 0; percentile < 100; percentile++) {
   for (const [key, qty] of Object.entries(AC.rollArtifacts(4))) frequencies[key] = (frequencies[key] || 0) + qty;
 }
 for (const [key, def] of Object.entries(AC.ARTIFACTS)) {
-  assert.equal(frequencies[key], def.weight * 2, 'tier-4 distribution follows authored rarity exactly');
+  if (!key.startsWith('hachutu')) assert.equal(frequencies[key], def.weight * 2, 'Harlyao tier-4 distribution preserves its original authored rarity');
+  else assert.equal(frequencies[key], undefined, 'Hachutu items must not enter Harlyao chest rolls');
   assert.equal(def.sellPrice, Math.round(AC.LOOT_TUNING.commonSellPrice * Math.sqrt(AC.LOOT_TUNING.commonWeight / def.weight) / AC.LOOT_TUNING.priceStep) * AC.LOOT_TUNING.priceStep);
   for (const other of Object.values(AC.ARTIFACTS)) if (def.weight < other.weight) assert(def.sellPrice > other.sellPrice, 'rarer artifacts always sell for more');
 }

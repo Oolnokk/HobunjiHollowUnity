@@ -334,6 +334,11 @@
     return cfg && c && host ? resolveAttachedPose(c, host, cfg) : null;
   }
 
+  function hostDodgeEscapes(host) {
+    const rolling = !!(host?.dodging || Number(host?.dodgeT) > 0 || host?._enemyDodge); // Shared active-roll predicate for attach and Headtaker landing.
+    return rolling && (host !== deps().player || host?._grappleEscapeDodgePaid === true); // Player needs the actual successful dodge payment, NPCs retain their ordinary dodge.
+  }
+
   function updateAttach(c, state, dt) {
     const d = deps();
     const cfg = state.cfg;
@@ -342,7 +347,7 @@
     if (!hostAlive(host) || c.health <= 0 || !sameArea(c, host)) { detach(c, state, 'host-lost'); return false; }
     // A ReDead-style rider is interrupted only by its host's actual dodge roll.
     // This is opt-in: honeyfuzzle swarms retain all their previous detachment rules.
-    if (cfg.detachOnHostDodge && (host.dodging || Number(host.dodgeT) > 0 || host._enemyDodge)) {
+    if (cfg.detachOnHostDodge && hostDodgeEscapes(host)) {
       detach(c, state, 'host-dodged');
       return false;
     }
@@ -434,7 +439,7 @@
     return true;
   }
 
-  window.Combat.attach = { register, beginManual, updateManual, endManual, poseFor, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, isRescueAlly, get rescueCount() { return rescueCount; } };
+  window.Combat.attach = { register, beginManual, updateManual, endManual, poseFor, hostDodgeEscapes, attachmentOf, hostOf, isAttached, attachersOf, blocksDamage, suppressesStagger, config: id => configs.get(id) || null, hitIsFromHost, isRescueAlly, get rescueCount() { return rescueCount; } };
 
   // ── Swarm (honeyfuzzle) ──────────────────────────────────────────────
   // Picks a single target and sits on top of it. Almost no direct damage but a

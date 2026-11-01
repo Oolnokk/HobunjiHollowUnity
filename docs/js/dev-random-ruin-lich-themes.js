@@ -910,7 +910,7 @@
   }
   function buildRooms(kit,context) {
     clear();
-    if (!['hronal','tothal','kanthic'].includes(context.theme) || !context.floorSet?.size) return;
+    if (context.hachutu===true || !['hronal','tothal','kanthic'].includes(context.theme) || !context.floorSet?.size) return; // The Hachutu dev wing never inherits unrelated Harlyao lich hazards or wall lighting.
     const rooms = (context.meta?.rooms || []).map((entry,index)=>({id:entry.id,index,bounds:kit.roomBounds(context.meta,entry)}));
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),

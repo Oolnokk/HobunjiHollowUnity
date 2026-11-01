@@ -106,6 +106,7 @@
       tierName:look.name,
       poolId:'dungeonChest_tier' + tier,
       boss:options.boss === true, // Boss-vault chests also roll a bound Harlyao relic weapon (js/harlyao-relics.js).
+      culture:options.culture==='hachutu'?'hachutu':'harlyao', // Only the dev Hachutu temple requests this culture.
       theme:options.theme || window.DevRandomRuin?.getState?.()?.theme || null, // Capture the owning ruin's theme so another generated ruin cannot change this chest's loot family.
       group, hinge, glow,
       opened:false,
@@ -125,13 +126,13 @@
     if (!chest || chest.opened) return false;
     chest.opened = true;
     window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
-    const gained = window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme }) || {};
+    const gained = chest.culture==='hachutu' ? (window.ArtifactCollection?.rollArtifacts?.(chest.tier,'hachutu') || {hachutuMoneyBones:1}) : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme }) || {});
     // Old/local pool overrides and config load failures still award a guaranteed artifact batch.
     if (!Object.keys(gained).some(key => window.ArtifactCollection?.ARTIFACTS?.[key] && gained[key] > 0)) {
-      Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier) || { harlyaoCopperCoin: 1 });
+      Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier,chest.culture) || (chest.culture==='hachutu'?{hachutuMoneyBones:1}:{harlyaoCopperCoin:1}));
     }
-    const trinketParts = window.TrinketSystem?.claimLoot?.(gained, 'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
-    const relicParts = chest.boss ? (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []) : [];
+    const trinketParts = window.TrinketSystem?.claimLoot?.(gained, chest.culture==='hachutu'?'hachutuRuin':'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
+    const relicParts = !chest.boss ? [] : chest.culture==='hachutu' ? (window.HachutuRelics?.grantBossWeapon?.() || []) : (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []);
     const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;

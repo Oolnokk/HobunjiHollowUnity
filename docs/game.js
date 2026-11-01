@@ -9936,8 +9936,14 @@
           dirX = Math.cos(aimAngle);
           dirY = Math.sin(aimAngle);
         }
-        if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
-        else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+        const normalDodgeStaminaBefore = Number(player.stamina) || 0; // Used only to determine whether this roll is a paid escape from neck/root grapples.
+        const dodgeSpendResult = window.ResourceSystem
+          ? window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge')
+          : null; // The authoritative spend result includes enhancements, discounts and black-Stamina overdraw.
+        if (!window.ResourceSystem) player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+        player._grappleEscapeDodgePaid = !!(dodgeSpendResult
+          ? Number(dodgeSpendResult.excess) <= 0
+          : normalDodgeStaminaBefore >= DODGE_STAMINA_COST); // Ordinary exhausted rolls still animate; only fully funded rolls break a lethal grab.
         window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;

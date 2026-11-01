@@ -2128,7 +2128,7 @@
     if (c.retreatT > 0) {
       c.retreatT = Math.max(0, c.retreatT - dt);
       const awayAng = towardAngle + Math.PI;
-      const moving = deps.moveCreatureToward(c, c.x + Math.cos(awayAng) * deps.TILE, c.y + Math.sin(awayAng) * deps.TILE, deps.JUMP_BACK_SPEED, dt);
+      const moving = deps.moveCreatureToward(c, c.x + Math.cos(awayAng) * deps.TILE, c.y + Math.sin(awayAng) * deps.TILE, deps.JUMP_BACK_SPEED * (c.hachutuTitanTuning?.speed || 1), dt);
       return { aimAngle: towardAngle, moving };
     }
     if (c._banditAction) {
@@ -2229,7 +2229,7 @@
       // everything else in this state machine, and only downshifts to
       // the gentle sway speed once actually close to the target point.
       const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
-      const travelSpeed = distToTarget > deps.TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S;
+      const travelSpeed = distToTarget > deps.TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1); // Titan guard/strafe also honors 1/3 locomotion; ordinary bandits are unchanged.
       const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
       return { aimAngle: towardAngle, moving };
     }
