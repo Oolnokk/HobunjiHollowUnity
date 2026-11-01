@@ -507,7 +507,7 @@
     return Math.hypot(e.x - c.x, e.y - c.y);
   }
 
-  function projectInteriorLightMask(x, y, z, tiles, context) {
+  function projectInteriorLightMask(x, y, z, tiles, context, rangeTiles = tiles) {
     let projectedX = x, projectedY = y, projectedZ = z, projectedRadius = tiles;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
     if (activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true) {
@@ -522,7 +522,7 @@
       lightCamRight.setFromMatrixColumn(camera.matrixWorld, 0);
       lightCamUp.setFromMatrixColumn(camera.matrixWorld, 1);
       const distanceSquared = lightToSource.x * lightToSource.x + lightToSource.y * lightToSource.y + lightToSource.z * lightToSource.z;
-      if (distanceSquared > tiles * tiles) return null; // The player must be inside the fixture's world-space range; camera rotation cannot change that distance.
+      if (distanceSquared > rangeTiles * rangeTiles) return null; // The visual mask radius and the fixture's actual influence range are separate.
       const lateralX = lightToSource.dot(lightCamRight);
       const lateralY = lightToSource.dot(lightCamUp);
       projectedX = playerX + lightCamRight.x * lateralX + lightCamUp.x * lateralY;
@@ -826,7 +826,8 @@
     ctx.globalCompositeOperation = 'destination-out';
     for (const source of sources) {
       source.mesh?.getWorldPosition?.(ambientWindowScratch);
-      const pane = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS, ctx);
+      const paneRange = Math.max(WINDOW_PANE_GLOW_RADIUS, finiteOr(source.radiusTiles, 2.8) * INTERIOR_LIGHT_RADIUS_MULTIPLIER); // Keep the small pane glow visible throughout the window's actual room-light range, including at night.
+      const pane = projectInteriorLightMask(ambientWindowScratch.x, ambientWindowScratch.y, ambientWindowScratch.z, WINDOW_PANE_GLOW_RADIUS, ctx, paneRange);
       if (pane) {
         drawWindowRevealCircle(ctx, pane.center, pane.radius, WINDOW_PANE_GLOW_STRENGTH, 0.55); // Pane glow: day and night, no spread.
         windowMaskStats.glows += 1;
