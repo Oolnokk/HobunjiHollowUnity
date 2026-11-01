@@ -60,11 +60,24 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(generated.ok,true,'Hachutu generator failed: '+JSON.stringify(generated)+"; "+logs.slice(-9).join(' | '));
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='map_i_dev_random_ruin',
       null,{timeout:30000});
-    assert.equal(generated.ruin.active,true,'Hachutu composer failed to build: '+JSON.stringify(generated.ruin));
-    assert.equal(generated.ruin.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
-    assert.equal(generated.ruin.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
-    assert(generated.ruin.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
-    assert.deepEqual(generated.ruin.errors,[],'Hachutu had hidden composer build errors');
+    // Composer modules are initialized by DynamicSurfaces' *next before-render*
+    // callback, not synchronously inside DevRandomRuin.generate(). Reading the
+    // snapshot returned by generate() races the first actual gameplay frame.
+    await page.waitForFunction(()=>window.DevHachutuRuin?.debug?.()?.active===true,
+      null,{timeout:30000}).catch(async error=>{
+      const state=await page.evaluate(()=>({
+        composer:window.DevHachutuRuin?.debug?.(),
+        simple:window.DevRandomRuinSimplePuzzles?.snapshot?.(),
+        generation:window.DevRandomRuin?.getGenerationProgress?.(),
+      }));
+      throw new Error('Hachutu composer did not initialize after entering: '+JSON.stringify(state)+' '+logs.slice(-15).join(' | '),{cause:error});
+    });
+    const built=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.equal(built.active,true,'Hachutu composer failed to build: '+JSON.stringify(built));
+    assert.equal(built.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
+    assert.equal(built.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
+    assert(built.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
+    assert.deepEqual(built.errors,[],'Hachutu had hidden composer build errors');
     const grab=await page.evaluate(()=>{
       const triggered=window.DevHachutuRuin.debugPreviewSnare();
       return {triggered,tear:window.RootSnarePlayerTear.debug(),ruin:window.DevHachutuRuin.debug()};
