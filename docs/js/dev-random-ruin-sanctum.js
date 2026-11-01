@@ -1060,7 +1060,7 @@
     buildRooms(kit, context, rng, usedRooms, options) {
       s = null;
       deps = kit.deps || deps;
-      if (options?.sanctum === false) return;
+      if (options?.sanctum === false || context.hachutu===true) return; // The dev Hachutu temple owns its entire wing and boss; never create a Harlyao lich sanctuary.
       s = {
         context, rng, built:false, rejects:[], braziers:[], litOrder:[], occluders:[], door:null, bgs:null,
         layout:reservedLayout(context), // floorProjection reserved these tiles; recover the plan from the live grid size.

@@ -1844,6 +1844,13 @@
     for(const composer of composers){ // Room-claiming composers run first so standalone modules never take their rooms.
       try{composer.buildRooms?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildRooms failed',error);}
     }
+    if(context.hachutu===true){
+      // The Hachutu composer owns every encounter in its reserved wing. Do not
+      // layer Harlyao safe paths, random braziers, or extra rope puzzles on top.
+      window.DevRandomRuinTileOccupancy?.scanSolids?.(group,SCOPE);
+      updateBadge(true);
+      return;
+    }
     if(options.safePath!==false){
       const grid=buildSafePathGrid(context,rng,usedHallways);
       if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
