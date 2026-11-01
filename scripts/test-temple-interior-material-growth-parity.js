@@ -11,6 +11,7 @@ const foliage = read('docs/js/foliage-generator.js'); // Checks shingle-target n
 const shingleBuilder = read('docs/js/HousePieceGen.js'); // Checks roof mesh tagging in both build paths.
 const townBuildingRuntime = read('docs/js/town-zone-buildings.js'); // Provides the actual town-roof tint and shared shingle variant.
 const houseEditor = read('docs/tools/house-piece-author/index.html'); // Checks author preview support.
+const liveRootAuthor=read('docs/tools/live-root-growth/tool.js'); // Identifies the root palette used by the live growth author.
 
 assert.deepEqual(templeInterior.floorStyle, {
   texture: 'carved_smooth.png', tint: '#8c8c8c', tilesPerTile: 0.75,
@@ -51,9 +52,12 @@ assert.match(townBuildingRuntime, /shingleVariant: 'town'/,
   'Town-building geometry must select the shared town shingle variant');
 assert.equal(Object.hasOwn(templeExterior.roof,'shingleMaterial'),false,
   'Temple must inherit the standard town-house roof finish instead of overriding it');
+const authorRootColor=liveRootAuthor.match(/rootColor:'(#[0-9a-f]{6})'/i)?.[1]; // Root swatch is the tint authority for both Temple wall recipes.
+assert.equal(authorRootColor,'#24211d','Live-root author must retain the selected Temple bark tint');
+assert.notEqual(authorRootColor,townShingleFill,'Temple wall roots no longer inherit the town roof tint');
 assert.equal(interiorWalls.filter(recipe=>recipe.kind==='roots').length,2);
 for (const recipe of [...templeExterior.surfaceGrowth,...templeInterior.surfaceGrowth].filter(recipe=>recipe.kind==='roots')) {
-  assert.equal(recipe.color,townShingleFill,'Every authored Temple root must match the town roof tint');
+  assert.equal(recipe.color,authorRootColor,'Interior and exterior Temple wall roots must use the live-root author tint');
   assert.equal(recipe.texture,'assets/textures/wibbly_surface.png',
     'Temple roots must keep the wibbly root texture instead of using the town shingle PNG');
 }
