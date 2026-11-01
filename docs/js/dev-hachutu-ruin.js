@@ -241,9 +241,44 @@
       hand.name='snaring root hand';hands.push({x,z,mesh:hand,last:0,grasp:0});
     }
     session.hands=hands;
+    if(window.RootSnareHands?.create&&window.FoliageGenerator?.buildLogMesh){
+      const anchors=hands.map((hand,i)=>{
+        const direction=new THREE.Vector3(weed.part.center.x-hand.x,.25,weed.part.center.z-hand.z).normalize();
+        return {id:'hachutu-grasp-'+i,sourceKey:'hachutu-root-'+i,role:'wall',
+          point:new THREE.Vector3(hand.x,y+1.15,hand.z),direction};
+      });
+      session.snare=window.RootSnareHands.create({
+        THREE,room:{model:session.group,floorY:y},foliage:window.FoliageGenerator,
+        explicitAnchors:anchors,seed:'hachutu-'+session.context.seed,count:anchors.length,
+        triggerRadius:3.7,reach:5,extendSpeed:2.4,retractSpeed:2.1,
+      });
+      session.group.add(session.snare.group);
+      const actorGroup=new THREE.Group(); // Used only for grip point calculation; the player's canonical rendering remains owned by game.js.
+      const target={group:actorGroup,dualSince:0,grips:0,
+        getGripPoint(role,out){out.copy(actorGroup.position);out.y+=role==='neck'?1.35:.18;return out;},
+        setNeckGrip(){this.grips=1;},
+        startDualCapture(){this.grips=2;this.dualSince=performance.now();},
+        clearNeckGrip(){this.grips=0;this.dualSince=0;},
+        resetAfterSnare(){this.grips=0;this.dualSince=0;},
+      }; // Uses the Root Author's exact neck/foot role assignment and actual hand fork/arm animation.
+      session.snareTarget=target;
+    }
   }
-  function updateHands(now){
-    const p=session.kit.playerWorld();if(!p||!inside(p,session.layout.parts[1].bounds,1))return;
+  function updateHands(now,dt){
+    const p=session.kit.playerWorld();if(!p||!inside(p,session.layout.parts[1].bounds,1)){
+      session.snare?.releaseCaptured?.();return;
+    }
+    if(session.snare&&session.snareTarget){
+      const target=session.snareTarget;
+      target.group.position.set(p.x,session.floor,p.z);
+      if(deps?.player?.dodging){session.snare.releaseCaptured();return;} // Native Dodge works on touch, controller and keyboard.
+      session.snare.update(dt,target);
+      if(target.grips===2&&now-target.dualSince>=6000){
+        session.snare.releaseCaptured();
+        window.PlayerDowned?.dieImmediately?.('hachutu-root-hands');
+      }
+      return;
+    }
     for(const h of session.hands){
       if(now-h.last<1800)continue;
       const dist=Math.hypot(p.x-h.x,p.z-h.z);
@@ -480,6 +515,7 @@
     buildPassages();
     for(const index of [0,1,2])session.weeds.push(createWeed(layout.parts[index],session.rng));
     buildSwing(session.weeds[0],session.rng);
+    for(let i=0;i<3;i++)takeRing(session.weeds[1],i); // Labyrinth weed is exposed from the start, unlike the fire-protected trials.
     buildLabyrinth(session.weeds[1],session.rng);
     buildTrial(session.weeds[2],session.rng);
     buildDoor(kit);buildHeart();buildVault();
@@ -493,7 +529,7 @@
     if(!session||session.ended)return;
     updateCoffins(dt);
     if(session.entered){
-      updateSwing(dt,now);updateHands(now);updateTrial(now);updateDoor(dt);updateHeart(now);
+      updateSwing(dt,now);updateHands(now,dt);updateTrial(now);updateDoor(dt);updateHeart(now);
       const p=kit.playerWorld();
       if(p&&inside(p,session.layout.parts[1].bounds,1)&&now-session.lastLabyrinthSpawnAt>9500){
         session.lastLabyrinthSpawnAt=now;
@@ -519,6 +555,7 @@
   function clear(){
     if(!session)return;
     session.ended=true;
+    session.snare?.releaseCaptured?.();session.snare?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.minions)retireEntity(enemy,session);
     session.minions.clear();
@@ -532,7 +569,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};

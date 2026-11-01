@@ -45,6 +45,7 @@
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
   document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261030lichSanctum3"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261101hachutu1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261030lichHazards3"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261016h0a192e6"></scr' + 'ipt>');
