@@ -50,7 +50,11 @@ for (const path of ['docs/js/player-downed.js', 'docs/js/combat/combat-attach.js
 }
 context.PlayerDowned.init({
   player,
-  die(reason) { directDeaths.push(reason); player.health = 200; }, // Same respawn callback as the real downed module.
+  die(reason) {
+    directDeaths.push(reason);
+    player.x = 5000; player.y = 5000; // Simulate Root Totem relocation: the attacker must remain at the kill site.
+    player.health = 200;
+  }, // Same respawn callback as the real downed module.
 });
 const api = context.MaskboundHeadtaker; // Mobile getDebug is the same API exposed in game.
 const def = context.Combat.attach.config(api.id);
@@ -139,6 +143,8 @@ assert.equal(context.PlayerDowned.debugSnapshot().lastEvent.type, 'instant-death
 assert.equal(api.getDebug().instantDeaths, 1, 'Headtaker-specific instant death count is reported');
 assert.equal(finisher._attachment, null, 'fatal attack cleans up the attachment');
 assert.equal(player._attachedBy?.size ?? 0, 0, 'lethal cleanup clears host bookkeeping');
+assert(Math.hypot(finisher.x - 120, finisher.y - 110) < 140, 'Headtaker stays at the original fight site, rather than teleporting beside the respawned player');
+assert.equal(player.x, 5000, 'actual respawn location is distant from the fight site');
 
 assert.match(read('docs/js/procedural-leg-animation.js'), /setExternalFootTargets/, 'external world-space IK coordinates wired');
 assert.match(read('docs/js/creature-death.js'), /MaskboundHeadtaker\?\.cancel\?\./, 'death tears down grapples');
