@@ -249,8 +249,10 @@ assert.equal(padGame.api.isEquipped(), false, 'controller dodge/other button sto
 assert.equal(padGame.claim, null, 'controller interruption releases the Action 1 claim');
 const movingPadGame = environment();
 movingPadGame.api.equip();
-movingPadGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(), move: { magnitude: 0.4 }, isDown: () => false });
-assert.equal(movingPadGame.api.isEquipped(), false, 'left-stick movement stows the spyglass while right-stick look remains available');
+movingPadGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(), move: { magnitude: 0 }, look: { magnitude: 0.4 }, isDown: () => false });
+assert.equal(movingPadGame.api.isEquipped(), true, 'right-stick camera look remains available while the spyglass is raised');
+movingPadGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(), move: { magnitude: 0.4 }, look: { magnitude: 0 }, isDown: () => false });
+assert.equal(movingPadGame.api.isEquipped(), false, 'left-stick movement stows the spyglass');
 const heldItemGame = environment();
 heldItemGame.api.equip();
 heldItemGame.setHeldMode('item');
