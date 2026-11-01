@@ -154,6 +154,27 @@
       }
     }
     session.platforms=platforms;
+    // Use the actual Root Growth Author geometry solver once on a representative
+    // column and instance its completed rooted skin across the moving rings.
+    // Navigation remains with the explicit moving platform surfaces.
+    if(window.LiveRootGrowth?.create&&window.FoliageGenerator?.buildSurfaceGrowth){
+      try{
+        const guide=new THREE.Group();guide.name='Hachutu stone-pillar growth guide';
+        const shape=new THREE.Mesh(new THREE.CylinderGeometry(1.14,1.38,1.65,9),material(0x383a34));
+        guide.add(shape);
+        const grown=window.LiveRootGrowth.create({THREE,foliage:window.FoliageGenerator,target:guide,
+          recipe:{seed:'hachutu-pillars-'+session.context.seed,branchCount:4,strandLimit:12,
+            floorWidth:2.8,floorDepth:2.8,floorY:-.6,floorDensity:.24,
+            targetDensity:.4,radius:.065,branchRadius:.085,showGuide:false,duration:.5},
+          progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+        grown.setProgress(1);session.pillarRootTemplate=grown;
+        for(const entry of platforms){
+          const clone=grown.group.clone(true);clone.name='root-grown moving pillar skin';
+          clone.userData.devRuinFootprintIgnore=true;
+          entry.stone.add(clone);
+        }
+      }catch(error){session.errors.push('Pillar root author: '+String(error?.message||error));}
+    }
     // Original pendulum interaction/collision and landing physics are reused;
     // ceiling mounts grow into staggered vines rather than wood ropes.
     const room={id:'hachutu-swing'};
@@ -555,7 +576,7 @@
   function clear(){
     if(!session)return;
     session.ended=true;
-    session.snare?.releaseCaptured?.();session.snare?.dispose?.();
+    session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.minions)retireEntity(enemy,session);
     session.minions.clear();
@@ -569,7 +590,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};
