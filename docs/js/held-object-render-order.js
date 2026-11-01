@@ -1290,15 +1290,25 @@
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
 
-      // First reconstruct solid depth with the exact same ground exclusions
-      // used by the visible x-ray object. Water, snow, props and walls remain.
+      // Reconstruct solid depth with the exact same ground exclusions used by
+      // the visible x-ray object. Keep the source meshes in depth so their own
+      // front faces still mask the inflated shell; water, snow, props and walls remain.
       renderer.clearDepth();
       depthWasCleared = true;
-      depthVisibility = hideObjects([...xrayMeshes, ...ground]);
+      depthVisibility = hideObjects(ground);
       swappedGeometry = swapToOccluderGeometry(topFaceGround);
       scene.overrideMaterial = null;
       camera.layers.mask = MASK_ALL;
       const depthStates = prepareNonGroundDepthMaterials(scene);
+      // Shell back-faces need the source surface in depth even when its normal
+      // material opts out of depth writes (as held/overlay materials sometimes do).
+      for (const mesh of xrayMeshes) {
+        forEachMaterial(mesh.material, material => {
+          saveMaterialState(depthStates, material);
+          material.depthTest = true;
+          material.depthWrite = true;
+        });
+      }
       try {
         rawRender.call(renderer, scene, camera);
         nonGroundDepthReplayCount++;
@@ -1310,9 +1320,9 @@
         depthVisibility = null;
       }
 
-      // Draw only the x-ray objects' shells. Their own geometry is absent from
-      // the depth reconstruction, so the shell cannot self-occlude; ordinary
-      // non-ground geometry still blocks it exactly as it blocks the object.
+      // Draw only the x-ray objects' shells. Their own front-face depth is
+      // present, so only the expanded silhouette escapes; ordinary non-ground
+      // geometry still blocks the shell exactly as it blocks the visible object.
       shellVisibility = hideNonXrayShellMeshes(scene, xraySet);
       scene.overrideMaterial = oldOverride;
       camera.layers.mask = SHELL_MASK;
