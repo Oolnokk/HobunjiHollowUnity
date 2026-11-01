@@ -14,6 +14,7 @@
   let savedActionPressed = null; // Existing pressed-state attribute restored when the temporary arch prompt is removed.
   let savedActionDataAction = null; // Existing contextual action is restored when the spyglass leaves Action 1.
   let savedActionCombatSlot = null; // Existing combat-slot marker is restored after the spyglass overrides attack presentation.
+  let savedActionCombatDualInput = false; // Restores the attack coin's dual-input styling after the spyglass takes over Action 1.
   let actionButtonStateCaptured = false; // Ensures a rebuilt Action 1 button is snapshotted before its spyglass override.
   let equipped = false; // True while selected from the Utility Arch.
   let aiming = false; // True while the spyglass lens is raised.
@@ -65,11 +66,13 @@
         else button.dataset.action = savedActionDataAction;
         if (savedActionCombatSlot == null) delete button.dataset.combatSlot;
         else button.dataset.combatSlot = savedActionCombatSlot;
+        button.classList?.toggle?.('combat-dual-input', savedActionCombatDualInput);
       }
       savedActionAria = null;
       savedActionPressed = null;
       savedActionDataAction = null;
       savedActionCombatSlot = null;
+      savedActionCombatDualInput = false;
       actionButtonStateCaptured = false;
       return;
     }
@@ -78,6 +81,7 @@
       savedActionPressed = button.getAttribute?.('aria-pressed');
       savedActionDataAction = button.dataset?.action ?? null;
       savedActionCombatSlot = button.dataset?.combatSlot ?? null;
+      savedActionCombatDualInput = button.classList?.contains?.('combat-dual-input') === true;
       actionButtonStateCaptured = true;
     }
     if (button.dataset?.action !== 'spyglass') {
@@ -87,6 +91,10 @@
     if (button.dataset?.combatSlot) {
       savedActionCombatSlot = button.dataset.combatSlot; // Keeps a newly assigned combat slot intact when the spyglass is put away.
       delete button.dataset.combatSlot;
+    }
+    if (button.classList?.contains?.('combat-dual-input')) {
+      savedActionCombatDualInput = true;
+      button.classList.remove('combat-dual-input'); // Lets the shared arch-label system show the spyglass prompt instead of the attack coin face.
     }
     if (!icon) {
       icon = document.createElement('span');
@@ -255,6 +263,7 @@
       savedActionPressed = null;
       savedActionDataAction = null;
       savedActionCombatSlot = null;
+      savedActionCombatDualInput = false;
       actionButtonStateCaptured = false;
       lastReason = 'shoulder camera unavailable';
       return false;
