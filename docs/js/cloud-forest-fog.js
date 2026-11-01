@@ -1035,9 +1035,9 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Spirit Communion preserves windows and gables; pew item keys resolve to seats; interiors use ' + Math.round(INTERIOR_DARKNESS_OVERLAY_ALPHA * 100) + '% darkness and doubled linear light radii.',
+        latestChange: 'Interior light pools use a wider eased fade and fade through animated closed-door blockers; farmhouse and authored rooms share the same compositor.',
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
-        interiorLightFalloff: 'linear',
+        interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
         undergroundDarknessOverlayAlpha: enclosedDarknessOverlayAlpha(debugArea),
         lastInteriorDarknessDraw: lastInteriorDarknessDraw ? { ...lastInteriorDarknessDraw } : null, // Mobile QA shows whether a base mask was drawn for the active farmhouse.
