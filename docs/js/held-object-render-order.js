@@ -1197,7 +1197,7 @@
         seen.add(material);
         const state = installGroundElevationShader(material);
         if (!state) return;
-        const geometryHasNormals = !!mesh.geometry?.attributes?.normal && !mesh.isInstancedMesh;
+        const geometryHasNormals = !!mesh.geometry?.attributes?.normal && !mesh.isInstancedMesh && !mesh.isBatchedMesh;
         if (state.geometryHasNormals === null) state.geometryHasNormals = geometryHasNormals;
         else if (!geometryHasNormals && state.geometryHasNormals !== false) {
           state.geometryHasNormals = false;
