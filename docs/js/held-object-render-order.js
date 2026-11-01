@@ -1157,14 +1157,14 @@
   function setGroundElevationFilter(groundMeshes, elevation) {
     const seen = new Set();
     let materialCount = 0;
-    const enabled = Number.isFinite(Number(elevation));
+    const enabled = Number.isFinite(elevation);
     for (const mesh of groundMeshes) {
       forEachMaterial(mesh?.material, material => {
         if (seen.has(material)) return;
         seen.add(material);
         const state = installGroundElevationShader(material);
         if (!state) return;
-        state.uniforms.elevation.value = enabled ? Number(elevation) : 0;
+        state.uniforms.elevation.value = enabled ? elevation : 0;
         state.uniforms.enabled.value = enabled ? 1 : 0;
         if (state.supported) materialCount++;
       });
