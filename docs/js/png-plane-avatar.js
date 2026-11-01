@@ -749,13 +749,18 @@
 
   // Head-gate modes: 'tight' (head scale ends just below the skull, so a wide hood, shoulders and vest follow body width/height), 'legacy'
   // (the original wide box with a long fade) and 'mask' (opt-in: the head plus its equipped head cosmetics, from a head-only render).
-  // Mashtzarr, Mammakhbuur and the Maskbound default to the legacy box; every other species defaults to the tight one. Certain clothing pieces
-  // (the oversized Hachutu binding masks) force the legacy box on any wearer, whatever the species.
-  const LEGACY_HEAD_GATE_SPECIES = new Set(['mashtzarr', 'mammakhbuur', 'maskbound-guardian']);
+  // Player, civilian and hostile portraits share the original wide/long-fade legacy gate.
+  // Harlyao skeletons retain their tight default; oversized binding masks can still override it.
   const LEGACY_HEAD_GATE_COSMETICS = [/binding_mask/i]; // Clothing whose bulk needs the wide gate: extend this list to override the species rule per piece.
   function defaultHeadGateFor(speciesId, cosmeticIds = []) {
     if ((cosmeticIds || []).some(id => LEGACY_HEAD_GATE_COSMETICS.some(pattern => pattern.test(String(id || ''))))) return 'legacy';
-    return LEGACY_HEAD_GATE_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-')) ? 'legacy' : 'tight';
+    const species = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Used to preserve the Harlyao skeleton exception for every avatar path.
+    return species === 'harlyao-skeleton' ? 'tight' : 'legacy';
+  }
+  function npcHeadGateFor(speciesId, authoredGate = null) {
+    if (authoredGate) return authoredGate; // Explicit workshop modes remain available, notably for Harlyao skeletons.
+    const species = String(speciesId || '').trim().toLowerCase().replace(/_/g, '-'); // Used to keep Harlyao skeletons on their original head-scale gate.
+    return species === 'harlyao-skeleton' ? undefined : 'legacy';
   }
   function headGateBounds(bounds, mode, speciesId, maskCanvas = null, mirror = false, cosmeticIds = []) {
     if (!bounds) return bounds;
@@ -1272,8 +1277,11 @@
     const modelHeight = baseModelHeight * scaleMultiplier;
     const legacyConfiguredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Retained only as a fallback for old profiles that predate attachment-rig anatomy.
     const legacyArmLength = Number.isFinite(legacyConfiguredArmLength) && legacyConfiguredArmLength > 0 ? legacyConfiguredArmLength : null;
-    const speciesId = options.speciesId ?? options.profile?.fighter?.speciesId ?? null;
+    const speciesId = options.speciesId ?? options.profile?.fighter?.speciesId ?? avatarSpeciesAndGender(options).species ?? null;
     const gender = options.gender ?? options.profile?.fighter?.gender ?? null;
+    const headGate = (options.npcRecord || options.profile?.npcRecord)
+      ? npcHeadGateFor(speciesId, options.headGate)
+      : options.headGate; // NPC-specific overrides remain intact; players now receive the same legacy default via defaultHeadGateFor.
     const orbitScaler = window.HobunjiSpeciesPoseScale;
     const configuredOrbit = options.poseOrbitScale ?? options.profile?.fighter?.poseOrbitScale; // A number, or per-axis { x, y, z }.
     const fallbackOrbit = legacyArmLength ? legacyArmLength / 0.558 : 1;
@@ -1312,7 +1320,7 @@
           planeWidth: modelWidth, planeHeight: modelHeight, anchorZ, textures, assemblyY, gender, placementRatio, handAttachY: handAttachYEarly,
           sourceCanvas, backCanvas: options.backCanvas || options.backImage || null,
           headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
-          speciesId, headGate: options.headGate,
+          speciesId, headGate,
           cosmeticIds: options.cosmeticIds || ['mask', 'hat', 'hood', 'upperFace', 'facialHair'].map(key => options.profile?.[key]?.id).filter(Boolean), // Worn pieces that can override the species head gate.
           name: `${root.name}_skinned_plane_assembly`,
         })
@@ -1340,6 +1348,7 @@
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
     root.userData.speciesId = speciesId;
+    root.userData.headGate = headGate || defaultHeadGateFor(speciesId); // Mobile debug inspection of the head-scale mode selected at build time.
     root.userData.gender = gender;
     root.userData.armLength = legacyArmLength; // Replaced below after handAttachY exists and rigger-derived anatomy can resolve.
     root.userData.scaledArmLength = legacyArmLength; // Same temporary fallback; concrete gameplay-space reach must not be height-scaled a second time.
@@ -1473,6 +1482,7 @@
     headScaleWeightAt,
     headGateBounds,
     defaultHeadGateFor,
+    npcHeadGateFor,
     resolveSkinnedPortraitRoot,
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,
