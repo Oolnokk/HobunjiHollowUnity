@@ -64,6 +64,18 @@ near(grips.animationGripAt(0.3, timing, oneHand, 'fire', 'hatchet').offhandIdleB
 const state = grips.offhandIdleStateForTool('hatchet', 'melee', { animationGripState: grips.animationGripAt(0, timing, oneHand, 'attack', 'hatchet') });
 assert.equal(state.blend, 1); assert.equal(state.pose, null);
 assert.equal(grips.offhandIdleStateForTool('hatchet', 'ranged'), null, 'ranged context');
+
+// Species-specific one-grip overrides return to the old moving/standing free-arm idle without changing the authored grip state.
+for (const speciesId of ['kenkari', 'tletingan', 'rakakoan', 'nuhongan', "Rakako'an", 'KENKARI']) {
+  assert.equal(grips.usesLegacyOffhandIdle(speciesId), true, `${speciesId} is a legacy-idle override`);
+  assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId, animationGripState: { offhandIdleBlend: 1 } }), null, `${speciesId} does not take the invisible offhand grip`);
+}
+for (const speciesId of ['maoao', 'slagothim', '', null]) {
+  assert.equal(grips.usesLegacyOffhandIdle(speciesId), false, `${speciesId} keeps the new offhand pose`);
+  assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId, animationGripState: { offhandIdleBlend: 1 } })?.blend, 1, `${speciesId} keeps the authored idle blend`);
+}
+assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId: 'kenkari', animationGripState: { offhandIdleBlend: 0 } }), null, 'a released one-grip pose stays released');
+assert.equal(grips.offhandIdleStateForTool('hatchet', 'melee', { speciesId: 'maoao', animationGripState: { offhandIdleBlend: 0 } }), null, 'other species keep their per-pose release');
 visuals.setCarriedSample({ x: 0.1, y: 0.2, z: 0.3, pitchRad: Math.PI / 2, yawRad: 0, rollRad: 0 });
 assert.equal(typeof visuals.setCarriedPose, 'function');
 // A real authored export (Forehand Swing): Neutral owns a custom offhand pose, 2H windup/strike release the hand to the grip.
