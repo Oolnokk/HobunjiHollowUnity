@@ -122,6 +122,14 @@ function headtakerAt(x, y) {
   return { ...enemy, x, y, health: 300, attackCooldownT: 0, _attachment: null,
     avatarRef: { group: { visible: true, position: { y: 0 } } } };
 }
+const exhaustedLanding = headtakerAt(96, 101);
+player.dodging=false;player.dodgeT=0;player._grappleEscapeDodgePaid=false;
+context.BanditCombat.updateCombatAI(exhaustedLanding, 0.016, player);
+player.dodging=true;player.dodgeT=.2;
+for(let i=0;i<14;i++)context.BanditCombat.updateCombatAI(exhaustedLanding,.1,player);
+assert.equal(exhaustedLanding._attachment?.stage,'attached','zero-Stamina dodge during landing must NOT make Headtaker miss');
+assert.equal(context.Combat.attach.endManual(exhaustedLanding,exhaustedLanding._attachment,'test-reset'),true,
+  'unfunded landing fixture releases all resources without bypassing real attachment cleanup');
 const lastSecondEscape = headtakerAt(96, 101);
 player.dodging = false; player.dodgeT = 0;
 context.BanditCombat.updateCombatAI(lastSecondEscape, 0.016, player);
