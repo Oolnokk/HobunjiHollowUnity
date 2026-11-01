@@ -15,6 +15,9 @@
   let lens = null; // Reused full-screen circular lens mask; contains no WebGL surfaces.
   let lookButton = null; // Touchscreen hold target, kept separate from the scene pointer input.
   let lastReason = 'not equipped'; // Displayed in the mobile-readable diagnostic snapshot.
+  let pointerAimId = null; // Tracks the scene mouse pointer that raised the lens even when the action arch is hidden.
+  let keyAimCode = null; // Tracks a keyboard-mapped Action 1 held outside the rendered action buttons.
+  let controllerAimDown = false; // Remembers the controller Action 1 edge so release works even with a hidden action arch.
 
   function log(message) {
     window.__farmLog?.('[spyglass] ' + message, 'input');
@@ -93,8 +96,37 @@
   }
 
   function blockedByOtherActivity() {
+    const focused = document.activeElement; // Avoids a full DOM focus selector every gameplay frame while the spyglass is equipped.
     return !!window.MusicMinigame?.state?.active || window.Fishing?.state?.phase === 'active'
-      || !!document.querySelector('input:focus, textarea:focus, [contenteditable="true"]:focus');
+      || document.getElementById?.('menuPanel')?.classList?.contains?.('open') === true
+      || !!focused?.matches?.('input, textarea, select, [contenteditable="true"]');
+  }
+
+  function action1Binding(device) {
+    const saved = window.InputBindings?.getCurrentBindings?.()?.[device]; // Honors remapping and explicit unbinding on keyboard/controller.
+    if (saved && Object.prototype.hasOwnProperty.call(saved, 'action1')) return saved.action1;
+    return window.SCRATCHBONES_CONFIG?.game?.input?.actions?.find?.(action => action.id === 'action1')?.[device]
+      || (device === 'controller' ? 'RightTrigger' : 'Mouse0');
+  }
+
+  function pointerBindingMatches(event) {
+    const binding = action1Binding('desktop');
+    return (binding === 'Mouse0' && event.button === 0)
+      || (binding === 'Mouse1' && event.button === 1)
+      || (binding === 'Mouse2' && event.button === 2);
+  }
+
+  function handleScenePointerDown(event) {
+    const canvas = document.getElementById?.('threeContainer'); // Shares the existing Shoulder Cam mouse-look surface rather than a second input plane.
+    if (!equipped || event.pointerType === 'touch' || !canvas?.contains?.(event.target) || !pointerBindingMatches(event)) return;
+    pointerAimId = event.pointerId;
+    beginAim('scene mouse action 1');
+  }
+
+  function releaseScenePointer(event) {
+    if (pointerAimId == null || pointerAimId !== event.pointerId) return;
+    pointerAimId = null;
+    endAim('scene mouse released');
   }
 
   function ownsCamera() {
@@ -132,6 +164,9 @@
   function stow(reason = 'put away', options = {}) {
     if (!equipped) return false;
     endAim(reason);
+    pointerAimId = null;
+    keyAimCode = null;
+    controllerAimDown = false;
     releaseInputClaim();
     equipped = false;
     lastReason = reason;
@@ -204,10 +239,24 @@
   }
 
   function onControllerFrame(frame) {
-    if (!equipped || !frame?.pad) return;
+    if (!equipped) return;
+    if (!frame?.pad || !frame.focused) {
+      if (controllerAimDown) endAim('controller disconnected or unfocused');
+      controllerAimDown = false;
+      return;
+    }
     const menuCode = window.InputBindings?.getCurrentBindings?.()?.controller?.uiOpenMenu || 'Button8';
-    if (frame.pressed?.has(menuCode) || frame.pressed?.has('Button1')) stow('controller menu/cancel');
-    // The gameplay input dispatcher owns the Action 1 claim; do not duplicate controller trigger polling here.
+    if (frame.pressed?.has(menuCode) || frame.pressed?.has('Button1')) {
+      stow('controller menu/cancel');
+      return;
+    }
+    const binding = action1Binding('controller'); // Uses the actual configured controller Action 1, including remaps.
+    const down = binding ? (typeof frame.isDown === 'function' ? frame.isDown(binding) : frame.down?.has(binding)) : false;
+    if (down && !controllerAimDown) beginAim('controller action 1');
+    else if (!down && controllerAimDown) endAim('controller action 1 released');
+    controllerAimDown = !!down;
+    // Shared WorldActionInputClaims still owns gameplay dispatch. This edge observer only guarantees the lens works
+    // when the regular action arch is hidden because no weapon/tool is equipped.
   }
 
   function install() {
@@ -223,8 +272,21 @@
     });
     document.addEventListener('keydown', event => {
       if (!equipped || event.repeat) return;
-      if (event.code === 'Escape') stow('escape');
+      if (event.code === 'Escape') { stow('escape'); return; }
+      const binding = action1Binding('desktop'); // Direct keyboard fallback for an unrendered equipment action slot.
+      if (binding === event.code && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        keyAimCode = event.code;
+        beginAim('keyboard action 1');
+      }
     }, true);
+    document.addEventListener('keyup', event => {
+      if (keyAimCode !== event.code) return;
+      keyAimCode = null;
+      endAim('keyboard action 1 released');
+    }, true);
+    document.addEventListener('pointerdown', handleScenePointerDown, true);
+    window.addEventListener('pointerup', releaseScenePointer, true);
+    window.addEventListener('pointercancel', releaseScenePointer, true);
     document.addEventListener('pointerdown', event => {
       if (!equipped || event.target.closest('#spyglassHud')) return;
       if (event.target.closest('button, input, select, textarea, [data-ctrl-panel]')) endAim('other UI');
@@ -247,6 +309,9 @@
       currentCameraMode: cameraDeps?.getCameraMode?.() ?? null,
       savedCameraMode: savedCamera?.mode ?? null,
       ownsAction1: window.WorldActionInputClaims?.claimFor?.('action1')?.ownerId === CLAIM_OWNER,
+      pointerAimId, keyAimCode, controllerAimDown,
+      desktopAction1: action1Binding('desktop'),
+      controllerAction1: action1Binding('controller'),
       zoom: window.HobunjiRangedCameraFocus?.snapshot?.().fovDeg ?? null,
     }),
   });
