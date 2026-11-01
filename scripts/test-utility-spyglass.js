@@ -193,6 +193,7 @@ assert.equal(game.target, 'animal', 'original tracked camera target is restored'
 assert.equal(game.claim, null, 'Action 1 input claim is released on stow');
 assert.equal(game.actionButton.classList.contains('spyglass-action-visible'), false, 'normal Action 1 visibility is restored');
 assert.equal(game.actionButton.getAttribute('aria-label'), 'Primary action', 'normal Action 1 accessibility label is restored');
+assert.equal(game.actionButton.getAttribute('aria-pressed'), null, 'temporary pressed-state accessibility metadata is removed');
 
 const preservePerception = environment(); // Existing perception should not be disabled when spyglass look mode ends.
 preservePerception.setPerception(true);
@@ -249,6 +250,11 @@ const movingPadGame = environment();
 movingPadGame.api.equip();
 movingPadGame.controllerFrame({ focused: true, pad: {}, down: new Set(), pressed: new Set(), move: { magnitude: 0.4 }, isDown: () => false });
 assert.equal(movingPadGame.api.isEquipped(), false, 'left-stick movement stows the spyglass while right-stick look remains available');
+const heldItemGame = environment();
+heldItemGame.api.equip();
+heldItemGame.setHeldMode('item');
+heldItemGame.api.update();
+assert.equal(heldItemGame.api.isEquipped(), false, 'taking an item out stows the spyglass');
 
 const menuGame = environment();
 menuGame.api.equip();
