@@ -75,6 +75,15 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     const built=await page.evaluate(()=>window.DevHachutuRuin.debug());
     assert.equal(built.active,true,'Hachutu composer failed to build: '+JSON.stringify(built));
     assert.equal(built.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
+    assert.equal(built.entered,true,'generating the Hachutu temple must arrive inside it, not in the stripped V50 vestibule');
+    assert.equal(built.platforms,15,'moving root-grown pillar platforms exist in the swing hall');
+    assert.equal(built.ropes,15,'vine ropes exist in the swing hall');
+    assert(built.mergedRootMeshes>0,'static roots must be baked into merged meshes, not ~1,000 individual draw calls');
+    await page.waitForFunction(()=>window.DevHachutuRuin.debug().floorRootsReady===true||window.DevHachutuRuin.debug().errors.length>0,null,{timeout:60000});
+    const floorRoots=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.deepEqual(floorRoots.errors,[],'floor root growth reported errors: '+JSON.stringify(floorRoots.errors));
+    assert.equal(floorRoots.floorRoots.length,6,'author-style floor roots grown for five rooms plus passages');
+    assert(floorRoots.floorRoots.every(room=>room.tris>0),'every floor root group carries geometry');
     assert.equal(built.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
     assert(built.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
     assert.deepEqual(built.errors,[],'Hachutu had hidden composer build errors');

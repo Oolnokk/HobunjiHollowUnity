@@ -38,7 +38,16 @@
     for(let x=abyss.minX+3;x<abyss.maxX-3;x++)for(let z=abyss.minZ+3;z<abyss.maxZ-3;z++)tiles.delete(x+','+z);
     return {...reserved,tiles};
   }
-  const material=(color,opts={})=>new THREE.MeshBasicMaterial({color,...opts});
+  // Opaque flat-colour materials are shared per colour: the temple used to allocate >1,400 identical
+  // MeshBasicMaterials (one per mesh), each its own draw state. Transparent/effect materials stay unique
+  // because callers mutate them (fade, recolour).
+  const sharedMaterials=new Map();
+  const material=(color,opts={})=>{
+    if(Object.keys(opts).length)return new THREE.MeshBasicMaterial({color,...opts});
+    let shared=sharedMaterials.get(color);
+    if(!shared){shared=new THREE.MeshBasicMaterial({color});sharedMaterials.set(color,shared);}
+    return shared;
+  };
   const mesh=(parent,name,geo,mat,x,y,z)=>{
     const item=new THREE.Mesh(geo,mat);item.name=name;item.position.set(x,y,z);parent.add(item);return item;
   };
@@ -48,12 +57,54 @@
   function cylinder(parent,name,top,bottom,height,x,y,z,color){
     return mesh(parent,name,new THREE.CylinderGeometry(top,bottom,height,9),material(color),x,y,z);
   }
-  function roots(parent,x,y,z,height=3,thick=.13){
+  function roots(parent,x,y,z,height=3,thick=.13,keep=false){
     // Staggered crooked branch silhouette, with tapered offshoots instead of Harlyao straight columns.
-    const trunk=cylinder(parent,'Hachutu grown root',thick*.55,thick,height,x,y+height*.5,z,0x302c24);
+    // Static roots placed directly in the temple group are collected into session.rootBatch and baked into
+    // two merged meshes by flushRootBatch(); only animated/owned roots (keep, or a non-temple parent such as a
+    // coffin, door layer or pillar) stay individual meshes.
+    const batched=!keep&&session&&parent===session.group&&session.rootBatch;
+    const target=batched?session.rootBatch:parent;
+    const trunk=cylinder(target,'Hachutu grown root',thick*.55,thick,height,x,y+height*.5,z,0x302c24);
     trunk.rotation.z=.17;trunk.userData.devRuinFootprintIgnore=true;
-    for(let k=0;k<3;k++){const twig=cylinder(parent,'branching root',.015,thick*.6,height*(.22+k*.12),x+Math.sin(k*2.4)*thick*3,y+height*(.38+k*.14),z+Math.cos(k*1.6)*thick*3,0x3b3428);twig.rotation.z=.6+k*.38;twig.userData.devRuinFootprintIgnore=true;}
-    return trunk;
+    for(let k=0;k<3;k++){const twig=cylinder(target,'branching root',.015,thick*.6,height*(.22+k*.12),x+Math.sin(k*2.4)*thick*3,y+height*(.38+k*.14),z+Math.cos(k*1.6)*thick*3,0x3b3428);twig.rotation.z=.6+k*.38;twig.userData.devRuinFootprintIgnore=true;}
+    return batched?null:trunk;
+  }
+  // Bakes every batched root into one indexed BufferGeometry per colour (a single draw call each).
+  function flushRootBatch(){
+    const batch=session?.rootBatch;if(!batch)return;
+    batch.updateMatrixWorld(true);
+    const byColor=new Map();
+    for(const child of batch.children){
+      if(!child.isMesh)continue;
+      const key=child.material.color.getHex();
+      if(!byColor.has(key))byColor.set(key,[]);
+      byColor.get(key).push(child);
+    }
+    let merged=0;
+    for(const [color,list] of byColor){
+      let vertexCount=0,indexCount=0;
+      for(const m of list){vertexCount+=m.geometry.attributes.position.count;indexCount+=m.geometry.index.count;}
+      const positions=new Float32Array(vertexCount*3),normals=new Float32Array(vertexCount*3),indices=new Uint32Array(indexCount);
+      let v=0,i=0;const vec=new THREE.Vector3(),normalMatrix=new THREE.Matrix3();
+      for(const m of list){
+        const g=m.geometry,pos=g.attributes.position,nor=g.attributes.normal;
+        normalMatrix.getNormalMatrix(m.matrixWorld);
+        for(let k=0;k<pos.count;k++){
+          vec.fromBufferAttribute(pos,k).applyMatrix4(m.matrixWorld);positions.set([vec.x,vec.y,vec.z],(v+k)*3);
+          vec.fromBufferAttribute(nor,k).applyMatrix3(normalMatrix).normalize();normals.set([vec.x,vec.y,vec.z],(v+k)*3);
+        }
+        for(let k=0;k<g.index.count;k++)indices[i+k]=g.index.array[k]+v;
+        v+=pos.count;i+=g.index.count;merged++;
+        g.dispose();
+      }
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.BufferAttribute(positions,3));geo.setAttribute('normal',new THREE.BufferAttribute(normals,3));
+      geo.setIndex(new THREE.BufferAttribute(indices,1));
+      const mesh=new THREE.Mesh(geo,material(color));mesh.name='Hachutu merged grown roots';mesh.userData.devRuinFootprintIgnore=true;
+      session.group.add(mesh);
+    }
+    session.mergedRootMeshes=merged;
+    session.rootBatch=null;
   }
   function emberRing(parent,x,y,z,r,color){
     const torus=mesh(parent,'colored fire ring',new THREE.TorusGeometry(r,.075,5,56),material(color,{transparent:true,opacity:.9,depthWrite:false}),x,y,z);
@@ -175,7 +226,7 @@
         const stone=cylinder(session.group,'moving root-grown stone pillar',1.15,1.45,1.65,0,y-.30,0,0x464841);stone.userData.devRuinFootprintIgnore=true;
         const cap=cylinder(session.group,'flat top of rooted pillar',1.13,1.15,.13,0,y+.61,0,0x5b5c53);cap.userData.devRuinFootprintIgnore=true;
         entry.stone=stone;entry.cap=cap;
-        if(entry.plate){entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);entry.plateMesh.userData.devRuinFootprintIgnore=true;}
+        if(entry.plate){entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);entry.plateMesh.material=new THREE.MeshBasicMaterial({color:0x9d625c});entry.plateMesh.userData.devRuinFootprintIgnore=true;} // Own material: the shared per-colour one must not recolour all three plates.
         kit.registerSurface({id:'hachutu-moving-'+ring+'-'+index,
           bounds:()=>({minX:entry.position.x-1.12,maxX:entry.position.x+1.12,minZ:entry.position.z-1.12,maxZ:entry.position.z+1.12}),
           topY:()=>y+.70,priority:30});
@@ -293,7 +344,7 @@
     for(let i=0;i<10;i++){
       const a=i*Math.PI*2/10,r=4+(i%3)*2;
       const x=center.x+Math.cos(a)*r,z=center.z+Math.sin(a)*r;
-      const hand=roots(session.group,x,y,z,2.3,.12);
+      const hand=roots(session.group,x,y,z,2.3,.12,true);
       hand.name='snaring root hand';hands.push({x,z,mesh:hand,last:0,grasp:0});
     }
     session.hands=hands;
@@ -606,7 +657,7 @@
         onPress:()=>{session.entered=true;session.kit.setPlayerWorld({x:session.layout.parts[0].bounds.minX+1.5,z:session.layout.parts[0].center.z,y:session.floor},true,true);}});
     }else{
       controls.push({kind:'hachutuReturn',object:session.returnMarker,promptRoot:session.returnMarker,range:2.1,priority:21,claimAction1:true,
-        label:'Return to the Ruin',touchIcon:'🚪',onPress:()=>session.kit.setPlayerWorld(session.entry,true,true)});
+        label:'Return to the Ruin',touchIcon:'🚪',onPress:()=>{session.entered=false;session.kit.setPlayerWorld(session.entry,true,true);}}); // entered=false re-arms the entrance gate and the abyss/encounter updates.
     }
     for(const weed of session.weeds)if(!weed.done&&weed.rings.every(r=>!r.torus.visible))controls.push({
       kind:'bindingWeed',object:weed.crown,promptRoot:weed.group,range:2.8,priority:28,claimAction1:true,
@@ -614,6 +665,61 @@
     });
     if(session.heart?.defeated)controls.push(...(window.DevRandomRuinDungeonChests?.controlsFor?.(session.chests)||[]));
     return controls;
+  }
+  // ---- Author-style floor roots -------------------------------------------------------------------------
+  // The Root Growth Author's own solver (LiveRootGrowth.createCoverAsync + the Life Temple root recipe, the same
+  // path Stone Age ruins use for their floors) grows roots across each temple floor. Tagged proxy slabs stand in
+  // for the real floor meshes so the generator has a clean 'floors' surface to sample; the proxies are discarded,
+  // only the generated strands are kept (and disposed with the session).
+  let templeRootRecipes=null;
+  function loadTempleRootRecipes(){
+    if(templeRootRecipes)return templeRootRecipes;
+    templeRootRecipes=fetch(new URL('config/pieces/temple.json',document.baseURI)).then(response=>{
+      if(!response.ok)throw new Error('temple.json HTTP '+response.status);return response.json();
+    }).then(data=>(data.surfaceGrowth||[]).filter(item=>item.kind==='roots')).catch(error=>{templeRootRecipes=null;throw error;});
+    return templeRootRecipes;
+  }
+  function floorProxy(target,rects){
+    for(const b of rects){
+      const proxy=new THREE.Mesh(new THREE.BoxGeometry(b.maxX-b.minX,.3,b.maxZ-b.minZ),new THREE.MeshBasicMaterial({color:0x363733}));
+      proxy.position.set((b.minX+b.maxX)/2,session.floor-.15,(b.minZ+b.maxZ)/2);
+      proxy.userData={surfaceFoliageRole:'floors'};target.add(proxy);
+    }
+  }
+  async function growWingCover(owner){
+    try{
+      const LRG=window.LiveRootGrowth,FG=window.FoliageGenerator;
+      if(!LRG?.createCoverAsync||!FG?.normalizeSurfaceGrowth)throw new Error('Root Growth Author cover is unavailable.');
+      const authored=await loadTempleRootRecipes(),base=authored.find(item=>item.style==='wrap')||authored[0];
+      if(!base)throw new Error('Life Temple root recipe is missing.');
+      owner.cover=[];
+      const swing=owner.layout.parts[0].bounds,inset=3;
+      const jobs=[ // One independent strand budget per room so no single hall hoards the roots.
+        ['swing',[rect(swing.minX,swing.minZ,inset,swing.maxZ-swing.minZ),rect(swing.maxX-inset,swing.minZ,inset,swing.maxZ-swing.minZ),
+          rect(swing.minX+inset,swing.minZ,swing.maxX-swing.minX-inset*2,inset),rect(swing.minX+inset,swing.maxZ-inset,swing.maxX-swing.minX-inset*2,inset)]],
+        ...owner.layout.parts.slice(1).map(part=>[part.name,[part.bounds]]),
+        ['passages',owner.layout.passages],
+      ];
+      for(const [name,rects] of jobs){
+        if(owner.ended||session!==owner)return;
+        const target=new THREE.Group();floorProxy(target,rects);
+        const area=rects.reduce((sum,b)=>sum+(b.maxX-b.minX)*(b.maxZ-b.minZ),0);
+        const strands=name==='passages'?20:Math.max(24,Math.min(40,Math.round(20+area/25))); // Scales with floor area; each strand is ~700 triangles and a room is seen one at a time.
+        const recipe={...base,seed:base.seed+':hachutu-floor:'+name,target:'floors',style:'natural',color:'#24211d',
+          count:strands,strandLimit:strands,density:1,length:name==='passages'?5:11,inset:0,shrinkwrapFinal:false};
+        const cover=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:[recipe],seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
+        if(owner.ended||session!==owner){cover.dispose();return;}
+        owner.group.add(cover.targetGrowth); // targetGrowth lives in world space; the cloned proxy slabs are left behind with cover.group.
+        cover.targetGrowth.traverse(node=>{node.userData.devRuinFootprintIgnore=true;});
+        cover.target.traverse(node=>{if(node.geometry&&!node.userData.surfaceFoliage&&node.parent!==cover.targetGrowth){node.visible=false;}});
+        let tris=0,meshes=0;
+        cover.targetGrowth.traverse(node=>{if(node.isMesh){meshes++;const g=node.geometry;tris+=(g.index?g.index.count:g.attributes.position.count)/3;}});
+        owner.cover.push({name,cover,tris:Math.round(tris),meshes});
+      }
+      owner.coverReady=true;
+    }catch(error){
+      if(owner)owner.errors.push('Temple floor roots: '+String(error?.message||error));
+    }
   }
   function buildRooms(kit,context,rng,usedRooms,options){
     if(context.hachutu!==true)return;
@@ -623,6 +729,7 @@
       rng:rndSeed(context.seed^0xfada),weeds:[],weedsKilled:0,coffins:[],minions:new Set(),ownedEntities:new Set(),platforms:[],hands:[],chests:[],errors:[],ended:false,entered:false,
       entry:{x:context.spawn.x,z:context.spawn.z,y:Number(context.meta?.floorSurfaceY)||0}};
     kit.group().add(session.group);session.group.name='hachutu-root-temple';
+    session.rootBatch=new THREE.Group(); // Detached collector for static roots; baked into merged meshes before the build ends.
     // The V50 floor registry only creates surfaces for interiorShell.floorCells.
     // The exclusive Hachutu wing is a projection-only extension, so it owns
     // all its support rectangles and the dangerous central void explicitly.
@@ -646,6 +753,7 @@
     buildLabyrinth(session.weeds[1],session.rng);
     buildTrial(session.weeds[2],session.rng);
     buildDoor(kit);buildHeart();buildVault();
+    flushRootBatch();
     session.entryMarker=box(session.group,'Hachutu entrance root gate',.6,2,.6,session.entry.x,session.floor+1,session.entry.z,0x43875d);
     session.returnMarker=box(session.group,'Hachutu exit root gate',.6,2,.6,layout.parts[0].bounds.minX+1.5,session.floor+1,layout.parts[0].center.z,0x43875d);
     session.entryMarker.userData.interactive3D=true;session.returnMarker.userData.interactive3D=true;
@@ -656,6 +764,11 @@
       if(node.isMesh&&/(wall|ceiling)/i.test(node.name)){occlusion.push(node);session.occluders.push(node);}
     });
     kit.recordModulePlacement('hachutuRootTemple','dev',String(context.seed),{parts:layout.parts.map(p=>p.name),rooted:true,devOnly:true});
+    growWingCover(session); // Async: author-style floor roots appear a moment after the rooms, without blocking the build.
+    // The temple is the point of the Hachutu generator: arrive inside it. (The stripped, puzzle-less V50 vestibule
+    // used to be the spawn, so a tester saw only empty rooms and Harlyao doors.) The exit gate still returns there.
+    session.entered=true;
+    kit.setPlayerWorld({x:layout.parts[0].bounds.minX+1.5,z:layout.parts[0].center.z,y:session.floor},true,true);
   }
   function update(kit,now,dt){
     if(!session||session.ended)return;
@@ -685,6 +798,7 @@
     window.RootSnarePlayerTear?.stop?.('ruin-cleanup'); // Restore original model, camera and owned fragments on reroll/exit.
     window.DevRandomRuinTileOccupancy?.clearSolids?.('hachutu-door'); // Release the mutable Temple Heart gate before the next ruin build.
     session.snare?.releaseCaptured?.();session.snare?.dispose?.();session.pillarRootTemplate?.dispose?.();
+    for(const entry of session.cover||[])entry.cover.dispose?.();
     for(const layer of session.door?.layers||[])layer.fx?.dispose?.();
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.ownedEntities)retireEntity(enemy,session);
@@ -694,14 +808,14 @@
     session.group.parent?.remove(session.group);
     session.group.traverse(obj=>{if(obj.geometry&&!obj.geometry.userData?.devRuinSharedPrimitive)obj.geometry.dispose?.();
       if(obj.material){for(const m of Array.isArray(obj.material)?obj.material:[obj.material])m.dispose?.();}});
-    session=null;reserved=null;
+    sharedMaterials.clear();session=null;reserved=null;
   }
   function snapshot(){
     if(!session)return {active:false};
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,floorRoots:(session.cover||[]).map(c=>({room:c.name,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared}:null,
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
       errors:session.errors.slice(-6)};
