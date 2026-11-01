@@ -3678,6 +3678,7 @@
             interactLabel: 'Sleep',
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
+              if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
               return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
             },
           };
@@ -4220,7 +4221,7 @@
         if (!spec) { clearFurniturePlacementGhost(); return; }
         const rect = spec.key === 'rug' ? rugRectangleAt(col, row) : null;
         const anchorCol = rect?.col ?? col, anchorRow = rect?.row ?? row; // The top-left rug tile becomes its permanent placement anchor.
-        const dimensions = rect || (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1, rugLayer: spec.dimensions?.rugLayer || 0 } : spec.dimensions); // Both new and moving rugs preview one tile until the first corner is confirmed.
+        const dimensions = rect ? { ...rect, rugLayer: spec.dimensions?.rugLayer || 0 } : (spec.key === 'rug' ? { widthTiles: 1, heightTiles: 1, rugLayer: spec.dimensions?.rugLayer || 0 } : spec.dimensions); // Moving/placing rugs share the same live rectangle while the preview retains the saved stack level.
         const dimensionsValid = !rect || (rect.widthTiles <= 16 && rect.heightTiles <= 16);
         const isProcessing = spec.kind === 'processing';
         const valid = dimensionsValid && (isProcessing
@@ -4574,7 +4575,7 @@
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
         if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
-          playerNeckJoint.rotation.x = 0; playerNeckJoint.rotation.y = 0;
+          playerNeckJoint.rotation.set(0, 0, 0);
           playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
           return;
         }
