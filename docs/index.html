@@ -481,7 +481,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261101hb6884f8&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261101h2a3cf34&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -712,7 +712,7 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261029enemyParity1"></script>
+  <script src="js/weather-fx.js?v=20261101hdc57cec"></script>
   <script src="js/emissive-light-orbs.js?v=20261029orbs1"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
@@ -738,7 +738,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261101farmdarkfix1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261101h3c4b533"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
