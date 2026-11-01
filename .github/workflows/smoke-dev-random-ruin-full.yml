@@ -6,12 +6,18 @@ on:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
       - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/dev-hachutu-ruin.js'
+      - 'docs/js/hachutu-relics.js'
+      - 'scripts/test-hachutu-rooted-ruins.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
   pull_request:
     paths:
       - '.github/workflows/smoke-dev-random-ruin-full.yml'
       - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/js/dev-hachutu-ruin.js'
+      - 'docs/js/hachutu-relics.js'
+      - 'scripts/test-hachutu-rooted-ruins.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
   workflow_dispatch:
@@ -31,6 +37,9 @@ jobs:
       - name: Static integration audit
         run: |
           node scripts/test-dev-random-ruin-integration.js
+          node scripts/test-hachutu-rooted-ruins.js
+          node --check docs/js/dev-hachutu-ruin.js
+          node --check docs/js/hachutu-relics.js
           node --check docs/js/dynamic-surfaces.js
           node --check docs/js/dev-random-ruin-tile-occupancy.js
           node --check docs/js/dev-random-ruin-wall-render-proxy.js
