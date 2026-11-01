@@ -140,9 +140,11 @@ const elevationHelperEnd = heldRender.indexOf('  function groupXrayMeshesByEleva
 assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'elevation resolver helper');
 const actorScene = { isScene: true, position: { y: 0 }, matrixWorld: { elements: Array(16).fill(0) } };
 const playerRoot = { name: 'player_mesh', position: { x: 2, y: 1, z: 3 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 2, 13: 1, 14: 3 }) }, parent: actorScene, userData: {} };
-const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) }, GridTileAccessors: { getCurrentArea: () => 'town' } };
+const playerHandRoot = { name: 'player_hand_external_root', position: { y: 0 }, parent: actorScene, userData: {} };
+const elevationWindow = { PlayerBodyTransformComposer: { getPlayerMesh: () => playerRoot, getVisualRoots: () => [playerHandRoot], getDebug: () => ({ channels: [{ name: 'townSubtleElevation', enabled: true, translation: { y: 0.3 } }] }) }, GridTileAccessors: { getCurrentArea: () => 'town' } };
 const resolveActorElevation = new Function('window', heldRender.slice(elevationHelperStart, elevationHelperEnd) + elevationNewline + 'return actorElevationForXrayMesh;')(elevationWindow);
 assert.equal(resolveActorElevation({ parent: playerRoot }, actorScene), 1.3, 'player body elevation');
+assert.equal(resolveActorElevation({ parent: playerHandRoot }, actorScene), 1.3, 'composer-owned external hand/foot roots inherit the player standing elevation');
 const npcRoot = { name: 'npc_walker_test', position: { x: 4, y: 2.5, z: 6 }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: 4, 13: 2.5, 14: 6 }) }, parent: actorScene, userData: {} };
 assert.equal(resolveActorElevation({ parent: npcRoot }, actorScene), 2.5, 'NPC root elevation');
 assert.equal(Number.isNaN(resolveActorElevation({ parent: { parent: actorScene, position: { y: 0 } } }, actorScene)), true, 'unknown actor fails closed');
