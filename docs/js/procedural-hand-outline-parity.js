@@ -381,7 +381,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Visible procedural hands now refresh stale world matrices from their live sockets without rebuilding temporary body-composer transforms; depth and outline passes reuse the corrected capture.'
+        latestChange: 'Visible procedural hands now refresh stale world matrices from their live sockets without rebuilding temporary body-composer transforms; depth and outline passes reuse the corrected capture.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
