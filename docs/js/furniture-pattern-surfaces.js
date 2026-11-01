@@ -104,7 +104,7 @@
         for(let index=0;index<2;index++) {
           const transform=record.layerTransforms?.[index] || {}, pattern=record.patterns?.[index] || (index===0 ? resolvePattern(record) : null);
           field(`repeat-${index}`).checked=transform.tiling ?? pattern?.tiling !== false;
-          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback); field(`${name}-${index}`).value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
+          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
         }
       },
       read(record) {
