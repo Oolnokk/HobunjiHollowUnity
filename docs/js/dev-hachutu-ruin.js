@@ -377,8 +377,11 @@
       }
       // Render-only split drives the cinematic camera/hand targets, then the
       // authored hands follow the resulting exact neck and foot endpoints.
+      const owner=session; // Root teardown/respawn can run synchronously when the fatal finishing pull completes.
       if(tear?.active?.())tear.update(dt);
-      session.snare.update(dt,target);
+      if(session!==owner||owner.ended)return;
+      owner.snare.update(dt,target);
+      if(!tear?.active?.()&&target.grips===2){owner.snare.releaseCaptured();target.resetAfterSnare();}
       if(target.captureFailed){
         session.snare.releaseCaptured(); // A failed snapshot cannot result in an invisible, uninterruptible kill.
       }

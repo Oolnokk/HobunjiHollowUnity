@@ -31,7 +31,7 @@
   // pixel row drops independent foot GLBs, pants bones and tall body variants.
   function bakeMeshes(root){
     root.updateWorldMatrix(true,true);
-    const records=[],scratch=new THREE.Vector3();let minY=Infinity,maxY=-Infinity,triangles=0;
+    const records=[],scratch=new THREE.Vector3();let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity,triangles=0; // One actual deformed body bound includes spine, shoulders, garments and separate procedural feet.
     for(const mesh of visibleMeshes(root)){
       mesh.updateWorldMatrix(true,false);
       const geometry=mesh.geometry,position=geometry.getAttribute('position'),uv=geometry.getAttribute('uv'),
@@ -46,7 +46,7 @@
         if(transform)transform.call(mesh,i,scratch);
         scratch.applyMatrix4(mesh.matrixWorld);
         if(![scratch.x,scratch.y,scratch.z].every(Number.isFinite))continue;
-        minY=Math.min(minY,scratch.y);maxY=Math.max(maxY,scratch.y);
+        minX=Math.min(minX,scratch.x);maxX=Math.max(maxX,scratch.x);minY=Math.min(minY,scratch.y);maxY=Math.max(maxY,scratch.y);minZ=Math.min(minZ,scratch.z);maxZ=Math.max(maxZ,scratch.z);
         vertices.push({p:scratch.clone(),u:uv?.getX(i)||0,v:uv?.getY(i)||0,
           color:color?[color.getX(i),color.getY(i),color.getZ(i)]:null});
       }
@@ -67,7 +67,7 @@
       }
     }
     if(!records.length||!Number.isFinite(minY)||maxY-minY<.25)throw Error('No full-height player skin and leg geometry could be captured');
-    return {records,minY,maxY,triangles};
+    return {records,minX,maxX,minY,maxY,minZ,maxZ,triangles};
   }
   function interpolate(a,b,t){
     return {p:a.p.clone().lerp(b.p,t),u:a.u+(b.u-a.u)*t,v:a.v+(b.v-a.v)*t,
@@ -144,10 +144,7 @@
         split,(Number(player.y)||0)/(Number(window.Combat?.deps?.TILE)||64));
       // Use the live geometry centroid for X/Z if the game's body is displaced by
       // body-lean, a mount, or the PNG profile's custom sprite offset.
-      const bounds=new THREE.Box3().setFromObject(realRoot);
-      if(Number.isFinite(bounds.min.x)&&Number.isFinite(bounds.max.x)){
-        origin.x=(bounds.min.x+bounds.max.x)*.5;origin.z=(bounds.min.z+bounds.max.z)*.5;
-      }
+      origin.x=(baked.minX+baked.maxX)*.5;origin.z=(baked.minZ+baked.maxZ)*.5; // Never let hidden editor drivers inflate the centered shot or apparent actor height.
       anchor=new THREE.Group();anchor.name='Hachutu visual-only split avatar';
       anchor.position.copy(origin);scene.add(anchor);
       upper=section(anchor,baked,'upper',low,high,origin);
@@ -199,6 +196,7 @@
   function update(dt){
     const s=current;if(!s)return false;
     if(!s.realRoot.parent||!s.anchor.parent){stop('scene-unloaded');return false;}
+    if(!(Number(s.player.health)>0)||s.player._deathTransitionStarted){stop('player-died-elsewhere');return false;}
     if(assets()!==s.realRoot){stop('avatar-rebuilt');return false;}
     const camera=window.CinematicCameraRuntime;
     if(s.cameraRecord&&camera?.activeRecord?.()!==s.cameraRecord){stop('camera-overridden');return false;}
@@ -267,7 +265,7 @@
     if(s.cameraRecord&&camera?.activeRecord?.()===s.cameraRecord)camera.deactivate();
     s.toss?.dispose?.();
     disposeGroup(s.anchor);
-    if(reason==='dodge')counts.interrupts++;
+    if(reason==='dodge'||reason==='dodge-or-release')counts.interrupts++;
     lastEvent=reason;return true;
   }
   function debug(){
