@@ -123,18 +123,18 @@ assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 1], 'lamp reveal h
 assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color glow fades linearly too');
 
 // Farmhouse lights remain present when their sources rotate behind the camera.
-// Their screen-space proxy is flattened onto the player-depth plane, retaining lateral position and radius.
+// Their screen-space proxy is flattened onto the player-depth plane, retaining the full authored radius.
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
 cameraDistance = 3;
 cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(gradients.some(entry => entry.radius > 4.4 && entry.radius < 4.5), 'a farmhouse candle still illuminates the view when behind the camera');
+assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse candle still illuminates the view when behind the camera');
 cameraAngle = Math.PI / 2;
 localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = -3; point.y = 1; point.z = -4; } } }];
 draw();
-assert(gradients.some(entry => entry.radius > 5.1 && entry.radius < 5.3), 'a farmhouse window still admits daylight when behind the camera after a quarter-turn');
+assert(gradients.some(entry => Math.abs(entry.radius - 6) < 0.001), 'a farmhouse window still admits daylight when behind the camera after a quarter-turn');
 activeScene = {};
 sources = [];
 cameraDistance = 10;
