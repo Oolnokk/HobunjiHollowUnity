@@ -12623,7 +12623,8 @@
           // portrait) — see faceNpcDialogueParticipants for the one place
           // this is driven today.
           neckJoint: avatarGroup.userData?.neckRig?.neckJoint || null,
-          legs, _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
+          legs, _npcCharacterRigRoot: namedAnimalDef ? null : npcCharacterRigRoot, // BedLiePose tilts this floor-relative body/feet root while NPC pathing remains attached to root.
+          _legsPrevX: root.position.x, _legsPrevZ: root.position.z,
           state: 'idle', routeNode: null, routeTarget: null, routePath: null, _exitSpot: null, _entrySpot: null, _exitToArea: null,
           pause: 0, catchup: 1, catchupDur: 0,
           _npcRunning: false, _npcRunMode: null, _npcRunLeanActive: false, _npcRunLeanPivot: npcRunLeanPivot, // Drives the same sprint body pitch as the player without pitching feet or held tools.
@@ -12940,8 +12941,10 @@
             const targetArea = target ? normalizeNpcArea(target.area) : null;
             const cfg = npcMovementConfig();
             const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
-            const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
-            const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            const bedTransform = targetArea === this.area && target?.pose === 'lie' ? window.FurnitureTableSystem?.lieTransform?.(this.area, target) : null; // NPC beds follow real authored mattress position/height, not an arbitrary tile Y.
+            const tx = seatTransform?.x ?? bedTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
+            const tz = seatTransform?.z ?? bedTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
+            this._bedLieSurface = target?.pose === 'lie' ? (bedTransform || { x: tx, z: tz, y: npcSurfaceY(this.area, target.c, target.r), facingRad: THREE.MathUtils.degToRad(Number(target.rotY) || 0) }) : null; // Non-bed tent sleepers lie on the existing floor surface instead.
             const arrival = cfg.arrivalRadiusTiles ?? 0.18;
             const seatedAtTarget = !!seatTransform && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival;
             const seatedPose = seatedAtTarget ? {
@@ -13096,10 +13099,11 @@
                 root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
-                root.position.y = groundY + Math.sin(performance.now() / 600) * 0.005;
+                if (bedTransform) { root.position.x = bedTransform.x; root.position.z = bedTransform.z; } // Real mattress's placed center offsets win over legacy station tile.
+                root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
               }
-              _applyNpcAmbientLook(this, target);
+              if (target.pose !== 'lie') _applyNpcAmbientLook(this, target); // A sleeper keeps their neck neutral instead of following an ambient gaze marker.
               if (target.toolKey && typeof makeToolPlaneMesh === 'function') {
                 const isKurraya = target.toolKey === 'kurraya';
                 const toolFlip = target.toolFlip === true;
@@ -13170,7 +13174,7 @@
             }
             if (this.stationToolMesh) { this.stationToolMesh.parent?.remove(this.stationToolMesh); this.stationToolMesh = null; this.stationToolKey = ''; this.stationToolFlip = false; this.stationKurrayaTwitch = null; }
             if (this.catchupDur > 0) { this.catchupDur -= dt; if (this.catchupDur <= 0) { this.catchupDur = 0; this.catchup = 1; } }
-            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform ? seatTransform.x - 0.5 : target.c, seatTransform ? seatTransform.z - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
+            if (!target.routeId && canNpcBeeline(this.area, root.position.x, root.position.z, seatTransform || bedTransform ? tx - 0.5 : target.c, seatTransform || bedTransform ? tz - 0.5 : target.r, target.pose === 'sit' || target.pose === 'lie')) {
               this.state = 'beeline'; this.routeNode = this.routeTarget = this.routePath = this._gridPath = null; this._routePathTargetKey = null;
               this.moveToward(tx, tz, dt);
             } else if (this.state === 'grid-path') {
@@ -13391,6 +13395,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(dt);
               if (npcWalkers[i] === w) {
+                window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -26296,7 +26301,7 @@
       window.BedLiePose?.init?.({
         THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
         playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
-        showToast, isPaused: () => paused,
+        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
       }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
@@ -29215,7 +29220,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
-        bedPose: () => window.BedLiePose?.debug?.() || null, // On-device sleeping posture, surface and x-ray status.
+        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
