@@ -61,7 +61,12 @@ class Vector3 { // Only the projection operations used by the real overlay compo
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
   dot(other) { return this.x * other.x + this.y * other.y + this.z * other.z; }
-  setFromMatrixColumn(_matrix, index = 0) { this.x = index === 0 ? 1 : 0; this.y = index === 1 ? 1 : 0; this.z = index === 2 ? 1 : 0; return this; }
+  setFromMatrixColumn(_matrix, index = 0) {
+    this.x = index === 0 ? Math.cos(cameraAngle) : 0;
+    this.y = index === 1 ? 1 : 0;
+    this.z = index === 0 ? -Math.sin(cameraAngle) : 0;
+    return this;
+  }
 }
 const gradients = []; // Captures actual radial stop positions and radii from compositor draws.
 const fills = []; // Captures the room's darkness independently of light pools.
@@ -77,7 +82,7 @@ const ctx = { // Minimal Canvas2D draw recorder.
 let area = 'map_i_temple'; // Switches between interior, mine and outdoor policies.
 let activeScene = {}; // Test the live scene independently of the player-area value.
 let now = 1000; // Advances past the overlay's existing redraw throttle.
-let cameraZ = -10; // Moves the test camera behind a nearby farmhouse light to verify orbit-independent projection.
+let cameraAngle = 0; // Orbits the test camera around the player to verify farmhouse light projection across a quarter turn.
 let localLights = []; // Opt-in local light fixtures.
 let sources = []; // Active daylight windows only.
 const lightingWindow = { // Loads the complete lighting module, without initializing unrelated mist geometry.
@@ -89,8 +94,8 @@ vm.runInNewContext(read('docs/js/cloud-forest-fog.js'), { window: lightingWindow
 lightingWindow.WeatherFX.init({
   lctx: ctx, camera: {
     matrixWorld: {}, near: 0.1, far: 110,
-    getWorldPosition(target) { return target.set(0, 0, cameraZ); },
-    getWorldDirection(target) { return target.set(0, 0, 1); },
+    getWorldPosition(target) { return target.set(-3 * Math.sin(cameraAngle), 0, -3 * Math.cos(cameraAngle)); },
+    getWorldDirection(target) { return target.set(Math.sin(cameraAngle), 0, Math.cos(cameraAngle)); },
   },
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
   getCurrentArea: () => area, _isBuildingArea: id => id.startsWith('map_i_'),
@@ -119,17 +124,18 @@ assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color gl
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Their screen-space proxy is flattened onto the player-depth plane, retaining lateral position and radius.
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
-cameraZ = -3;
+cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
 assert(gradients.some(entry => entry.radius > 4.4 && entry.radius < 4.5), 'a farmhouse candle still illuminates the view when behind the camera');
+cameraAngle = Math.PI / 2;
 localLights = [];
-sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = -4; } } }];
+sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = -3; point.y = 1; point.z = -4; } } }];
 draw();
-assert(gradients.some(entry => entry.radius > 4.4 && entry.radius < 4.5), 'a farmhouse window still admits daylight when behind the camera');
+assert(gradients.some(entry => entry.radius > 5.1 && entry.radius < 5.3), 'a farmhouse window still admits daylight when behind the camera after a quarter-turn');
 activeScene = {};
 sources = [];
-cameraZ = -10;
+cameraAngle = 0;
 
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
 localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
