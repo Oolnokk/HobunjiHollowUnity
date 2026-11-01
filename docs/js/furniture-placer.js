@@ -242,6 +242,11 @@
         heading.className = 'house-layout-section-title';
         heading.textContent = 'House Fixtures · Interior Alignment';
         list.appendChild(heading);
+        const note = document.createElement('div'); // Explains the one-sided adjustment before the player chooses a fixture.
+        note.className = 'farm-note';
+        note.textContent = 'These controls move only the inside doorway or fireplace. The outside fixture stays in place.';
+        note.style.cssText = 'padding:0 8px 6px;white-space:normal;line-height:1.35';
+        list.appendChild(note);
         fixtures.forEach(feature => {
           const row = document.createElement('div');
           row.className = 'farm-row';
