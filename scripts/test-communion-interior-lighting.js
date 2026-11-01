@@ -124,7 +124,9 @@ draw();
 assert(!gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'a closed interior door blocks the furniture light behind it');
 lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0.5 }] };
 draw();
-assert(gradients.some(entry => entry.stops.some(([, color]) => /rgba\(0,0,0,0\.4/.test(color))), 'half-open door restores light in proportion to its animation progress');
+const halfOpenLamp = gradients.find(entry => Math.abs(entry.radius - 7.5) < 0.001 && entry.stops[0]?.[1]?.startsWith('rgba(0,0,0,')); // Isolates the lamp's darkness-reveal gradient, not its colored glow.
+const halfOpenAlpha = Number(halfOpenLamp?.stops[0]?.[1]?.match(/rgba\(0,0,0,([0-9.]+)\)/)?.[1]);
+assert(Number.isFinite(halfOpenAlpha) && Math.abs(halfOpenAlpha - 0.4) < 0.01, \`half-open door restores half the lamp's light strength (actual \${halfOpenAlpha})\`);
 lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
 draw();
 assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'fully open door allows the furniture light through');
