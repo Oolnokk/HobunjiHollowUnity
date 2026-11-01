@@ -1194,8 +1194,6 @@
     const enabled = Number.isFinite(elevation);
     for (const mesh of groundMeshes) {
       forEachMaterial(mesh?.material, material => {
-        if (seen.has(material)) return;
-        seen.add(material);
         const state = installGroundElevationShader(material);
         if (!state) return;
         const geometryHasNormals = !!mesh.geometry?.attributes?.normal && !mesh.isInstancedMesh && !mesh.isBatchedMesh;
@@ -1204,6 +1202,8 @@
           state.geometryHasNormals = false;
           material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
         }
+        if (seen.has(material)) return;
+        seen.add(material);
         state.uniforms.elevation.value = enabled ? elevation : 0;
         state.uniforms.enabled.value = enabled ? 1 : 0;
         if (state.supported) materialCount++;
