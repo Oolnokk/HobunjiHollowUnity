@@ -131,9 +131,11 @@ localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, 
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = -3; point.y = 1; point.z = -4; } } }];
 draw();
 assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
+assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow remains visible when the player is within the window light range but farther than the pane radius');
 cameraAngle = Math.PI / 2;
 draw();
 assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
+assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow also survives the 90-degree camera turn');
 localLights = [{ x: 0, y: 1, z: -20, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [];
 draw();
