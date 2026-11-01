@@ -323,6 +323,18 @@
         if(Number.isFinite(size.min.y)&&Number.isFinite(size.max.y)&&size.max.y-size.min.y>.3){
           feetY=size.min.y;neckY=size.max.y-.1*(size.max.y-size.min.y);
         }
+        const rig=window.PlayerBodyTransformComposer;
+        const legGroup=rig?.getPlayerLegHandle?.()?.group;
+        if(legGroup?.parent){
+          const legBounds=new THREE.Box3().setFromObject(legGroup);
+          if(Number.isFinite(legBounds.min.y))feetY=legBounds.min.y; // The real procedural soles, not the portrait's painted ankle crop.
+        }
+        playerRoot.traverse?.(node=>{
+          if(node.userData?.neckRig?.available&&node.userData.neckRig.neckJoint?.isBone){
+            const neck=node.userData.neckRig.neckJoint.getWorldPosition(new THREE.Vector3());
+            if(Number.isFinite(neck.y))neckY=neck.y; // Same live neck joint used by the Headtaker.
+          }
+        });
       }
       const target={
         group:actorGroup,dualSince:0,grips:0,captureFailed:false,
