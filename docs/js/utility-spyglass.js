@@ -273,8 +273,8 @@
     const binding = action1Binding('controller');
     const actionCodes = controllerActionCodes(binding);
     const pressed = frame.pressed instanceof Set ? [...frame.pressed] : Array.isArray(frame.pressed) ? frame.pressed : [];
-    if (pressed.some(code => !actionCodes.has(code))) {
-      stow('other controller input');
+    if (pressed.some(code => !actionCodes.has(code)) || Number(frame.move?.magnitude) > 0.12) {
+      stow(Number(frame.move?.magnitude) > 0.12 ? 'controller movement' : 'other controller input');
       return;
     }
     const down = binding ? (typeof frame.isDown === 'function' ? frame.isDown(binding) : frame.down?.has(binding) || [...actionCodes].some(code => frame.down?.has?.(code))) : false;
