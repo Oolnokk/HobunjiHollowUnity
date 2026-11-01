@@ -358,9 +358,9 @@
         const tile = grid[row][col];
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
         const pavedRoad = window.FarmPathBricks?.suppressesGrassAt?.(col, row); // Keeps billboard grass off visual road tiles without rewriting their saved terrain type.
-        if (tile.type === deps.TileType.GRASS && !pavedRoad) {
+        if (tile.type === deps.TileType.GRASS && !tile.crop && !pavedRoad) {
           gi = _fillBillboardInstances(farmGrassBillMesh, dummy, gi, col, row, 1.0, tierY);
-        } else if (tile.type === deps.TileType.WEEDS && !deps.getWeed3D()) {
+        } else if (tile.type === deps.TileType.WEEDS && !tile.crop && !deps.getWeed3D()) {
           wi = _fillBillboardInstances(farmWeedBillMesh, dummy, wi, col, row, 2.0, tierY, 0.75, 0.75, WEED_PAIR_TILT);
         }
       }
@@ -369,6 +369,11 @@
     farmWeedBillMesh.count  = wi;
     farmGrassBillMesh.instanceMatrix.needsUpdate = true;
     farmWeedBillMesh.instanceMatrix.needsUpdate  = true;
+    // A rebuilt farm grass buffer must replace the footprint filter's old
+    // source matrices, or moving/refreshing a house can restore stale tufts
+    // over spouse-tilled soil, crops and dug trenches.
+    window.BuildingGrassSuppression?.refreshRebuiltBillboardMesh?.(farmGrassBillMesh);
+    window.BuildingGrassSuppression?.refreshRebuiltBillboardMesh?.(farmWeedBillMesh);
   }
 
   // Town's grass billboards — built once when entering town (town tiles

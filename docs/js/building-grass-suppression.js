@@ -108,6 +108,7 @@
 
   function filterBillboardMesh(mesh, blockedKeys, cacheKey) {
     if (!isGrassBillboardMesh(mesh)) return { source: 0, visible: 0, suppressed: 0 };
+    mesh.userData.hobunjiBillboardBlockedKeys = blockedKeys || null; // Last footprint mask reused after a mutable farm billboard mesh is rebuilt.
     const capacity = mesh.instanceMatrix.array.length;
     if (!mesh.userData.hobunjiBillboardSourceMatrices || mesh.userData.hobunjiBillboardSourceMatrices.length !== capacity) {
       mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(mesh.instanceMatrix.array);
@@ -137,6 +138,25 @@
     mesh.computeBoundingBox?.();
     mesh.computeBoundingSphere?.();
     return { source: sourceCount, visible: write, suppressed };
+  }
+
+  // Farm billboards refill their existing InstancedMesh after hoe, seed and shovel
+  // actions. Replace the immutable pre-filter source with those new matrices,
+  // then reapply the latest building footprint without resurrecting old grass.
+  function refreshRebuiltBillboardMesh(mesh) {
+    if (!isGrassBillboardMesh(mesh)) return null;
+    const matrices = mesh.instanceMatrix.array; // Live unfiltered buffer written by VegetationCropRendering.
+    let source = mesh.userData.hobunjiBillboardSourceMatrices; // Source copied before footprint compaction, reused across tile edits.
+    if (source) {
+      if (source.length !== matrices.length) {
+        source = mesh.userData.hobunjiBillboardSourceMatrices = new Float32Array(matrices);
+      } else {
+        source.set(matrices.subarray(0, mesh.count * 16));
+      }
+      mesh.userData.hobunjiBillboardSourceCount = mesh.count;
+    }
+    const blockedKeys = mesh.userData.hobunjiBillboardBlockedKeys; // Most recently applied farmhouse/barn footprint.
+    return blockedKeys ? filterBillboardMesh(mesh, blockedKeys, 'hobunjiFarmBuildingGrass') : null;
   }
 
   function filterObject(root, blockedKeys, cacheKey) {
@@ -309,6 +329,7 @@
     authoredBuildingFootprintKeys,
     ensureAuthoredPieceShapes,
     filterBillboardMesh,
+    refreshRebuiltBillboardMesh,
     filterObject,
     filterScene,
     refreshTown: _refreshTown,
