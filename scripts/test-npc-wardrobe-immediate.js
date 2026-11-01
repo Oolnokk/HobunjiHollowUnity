@@ -236,6 +236,16 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.clothingWearability(rec, foreignStyle).allowed, false, 'ordinary NPCs cannot manually wear clothing outside their authored default style');
   const spouseStyleOverride = wardrobe.clothingWearability(spouseRec, { ...foreignStyle }, { spouseOverride: true });
   assert.equal(spouseStyleOverride.allowed, false, 'spouse override is unavailable until the assigned spouse wardrobe is actively open');
+  const fakeElement = () => ({ style: {}, dataset: {}, addEventListener() {}, appendChild() {}, querySelector: () => ({ addEventListener() {} }), querySelectorAll: () => [], remove() {} });
+  context.document = { createElement: fakeElement, getElementById: () => null, body: { appendChild() {} } };
+  wardrobe.openWardrobePanel(spouseRec.id, { area: 'interior', source: 'family', furnitureId: 'assigned-spouse-wardrobe' });
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget()?.npcId, spouseRec.id, 'only the assigned spouse furniture panel activates the clothing override');
+  assert.equal(wardrobe.clothingWearability(spouseRec, { ...foreignStyle, cosmeticId: 'garish_hat' }, { spouseOverride: true }).allowed, true, 'assigned spouse wardrobe bypasses both style and disliked/hated clothing vetoes');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-coat', cosmeticId: 'foreign_style_coat', slot: 'torso' }), true, 'pack clothing can be moved directly into the active spouse wardrobe');
+  assert.equal(wardrobe.getWardrobeContents(spouseRec.id).stored.some(item => item.cosmeticId === 'foreign_style_coat'), true, 'direct transfer stores the complete clothing instance for later wearing');
+  wardrobe.closeWardrobePanel();
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'closing the spouse wardrobe removes the override context');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-after-close', cosmeticId: 'foreign_style_coat' }), false, 'pack transfer cannot target a closed or unassigned wardrobe');
 
   const dislikedGift = wardrobe.offerClothing('test_npc', {
     uid: 'player_owned_disliked',
