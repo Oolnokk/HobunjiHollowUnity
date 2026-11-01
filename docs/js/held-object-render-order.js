@@ -1278,7 +1278,9 @@
       // ownership and unsupported shaders deliberately retain full occlusion.
       overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? tintCovers : [])]);
       swappedGeometry = swapToOccluderGeometry(topFaceGround);
-      renderer.clearStencil?.();
+      if (scissored) glState.setScissorTest(false);
+      renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
+      if (scissored) glState.setScissorTest(true);
 
       for (const group of groups) {
         const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
