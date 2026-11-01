@@ -1137,12 +1137,12 @@
         return;
       }
       shader.vertexShader = vertex
-        .replace('#include <common>', '#include <common>\\nvarying float vHobunjiXrayWorldY;\\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\\nvHobunjiXrayWorldY = worldPosition.y;')
-        .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\\nvHobunjiXrayWorldNormal = normalize(mat3(cameraMatrixWorld) * transformedNormal);');
+        .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvHobunjiXrayWorldY = worldPosition.y;')
+        .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
       shader.fragmentShader = fragment
-        .replace('#include <common>', '#include <common>\\nuniform float uHobunjiXrayActorElevation;\\nuniform float uHobunjiXrayElevationEnabled;\\nvarying float vHobunjiXrayWorldY;\\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\\nif (uHobunjiXrayElevationEnabled > 0.5 && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y.toFixed(2)} && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE.toFixed(2)}) discard;');
+        .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && vHobunjiXrayWorldNormal.y >= 0.55 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= 0.18) discard;');
       shader.uniforms.uHobunjiXrayActorElevation = state.uniforms.elevation;
       shader.uniforms.uHobunjiXrayElevationEnabled = state.uniforms.enabled;
       state.supported = true;
