@@ -100,7 +100,7 @@ lightingWindow.WeatherFX.init({
   player: { x: 0, y: 0 }, TILE: 1, npcWalkers: [], getPlayerWorldY: () => 0,
   getCurrentArea: () => area, _isBuildingArea: id => id.startsWith('map_i_'),
   getActiveScene: () => activeScene, getThreeRect: () => ({ width: 100, height: 100 }),
-  worldToOverlay: (x, y, z) => ({ x, y: 50, visible: z + 10 > 0.1 && z + 10 < 110 }),
+  worldToOverlay: (x, y, z) => ({ x: x * Math.cos(cameraAngle) - z * Math.sin(cameraAngle), y: 50 + y, visible: z + 10 > 0.1 && z + 10 < 110 }),
   getFurnitureLightSources: () => localLights, getLightningAlpha: () => 0, getSceneTransAlpha: () => 0,
 });
 function draw(stepMs = 100) { // Allows a short-interval redraw assertion without weakening the existing scene-transition coverage.
