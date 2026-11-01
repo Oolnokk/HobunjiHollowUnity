@@ -555,13 +555,14 @@
     }
   }
 
+  const LIGHTING_OVERLAY_MIN_INTERVAL_MS = 1000 / 60; // Keep camera-following fake lights at display-frame cadence instead of visibly stepping at 10 Hz.
   let _lastLightingOverlayTime = 0;
   function drawLightingOverlay() {
     const lctx = deps.lctx;
     const now = performance.now();
     const lightningAlpha = deps.getLightningAlpha();
     const sceneTransAlpha = deps.getSceneTransAlpha();
-    if (now - _lastLightingOverlayTime < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
+    if (now - _lastLightingOverlayTime < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0) return;
     _lastLightingOverlayTime = now;
     const surface = ensurePresentationSurface({ reason: 'lighting-draw' });
     const rect = surface?.rect || deps.getThreeRect();
