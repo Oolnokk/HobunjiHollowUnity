@@ -96,17 +96,18 @@ const searchRuntime = {
 vm.runInNewContext(enemySearch, searchRuntime);
 const AI = searchRuntime.window.EnemySearchAI;
 const hostile = { x: 0, y: 0, facing: 0, state: 'chase', def: { aggroRangePx: 500 } };
-const target = { x: 0, y: 100, health: 50 };
+const target = { x: 0, y: -100, health: 50 };
 inCone = true;
 assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), true, 'clear sight records the target position as last seen');
 target.x = 25;
+target.y = 100; // The player moves around the NPC to the opposite side after disappearing.
 lineOfSightClear = false;
 assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), false, 'a wall blocks the next sight sample');
 AI.beginEnemySearch(hostile, target);
 assert.equal(hostile.state, 'searching');
-assert.equal(hostile._enemySearchDirection, 1, 'first sweep turns toward the side the target vanished on');
+assert.equal(hostile._enemySearchDirection, -1, 'first sweep follows the last visible side, not the hidden current side');
 assert.equal(hostile._enemySearchLastKnownX, 0, 'search uses the last visible X, not the hidden live player X');
-assert.equal(hostile._enemySearchLastKnownY, 100, 'search uses the last visible Y, not the hidden live player Y');
+assert.equal(hostile._enemySearchLastKnownY, -100, 'search uses the last visible Y, not the hidden live player Y');
 assert.equal(AI.ENEMY_SEARCH_DURATION_S, 8, 'search lasts long enough to pursue and investigate the last-known position');
 target.x = 40;
 AI.updateEnemySearch(hostile, 0.1, target);

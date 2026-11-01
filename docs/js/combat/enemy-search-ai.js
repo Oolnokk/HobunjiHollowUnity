@@ -47,8 +47,11 @@
     c._enemySearchLastKnownY = Number.isFinite(c._enemyLastSeenY) ? c._enemyLastSeenY : target.y; // Paired with X for the last-known world position.
     c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
     c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
-    const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);
-    c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // First scan turns toward the side where the player disappeared.
+    const lostSide = angleDiff(
+      Math.atan2(c._enemySearchLastKnownY - c.y, c._enemySearchLastKnownX - c.x),
+      c.facing || 0,
+    );
+    c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // Sweep toward the last visible side, never the player's unseen current side.
   }
 
   function updateEnemySearch(c, dt, target) {
