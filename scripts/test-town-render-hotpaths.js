@@ -214,7 +214,7 @@ assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
   && shellDepthAt < shellDrawAt && shellDrawAt < shellOnlyAt
   && shellOnlyAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
   'shell replay excludes classified ground, draws only matching shells, then restores full scene depth');
-assert.match(heldRender, /const xrayMeshes = \\[\.\.\.new Set\(\[\.\.\.held, \.\.\.feet\]\)\\]/,
+assert.ok(heldRender.includes('const xrayMeshes = [...new Set([...held, ...feet])]'),
   'all existing held/foot ground-x-ray participants share shell visibility parity');
 assert.match(heldRender, /replayShellOutlineXray\(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored\)/,
   'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
