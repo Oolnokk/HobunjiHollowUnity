@@ -26,6 +26,7 @@
 
   const maps = new Map(); // mapId -> { mapId, puzzleMapId, doors: [door] }
   let deps = null;
+  let threeRef = null; // Captures the scene's Three.js constructors for lightweight light-blocker snapshots.
 
   function init(injected) { deps = injected || null; }
 
@@ -251,6 +252,7 @@
   // lets game.js file the door's interaction; decorate(group) applies its
   // outline/edge marks.
   async function build({ THREE, scene, mapId, mapData, floorSet, surfaceYAt, registerInteractable, decorate }) {
+    threeRef = THREE || threeRef;
     discard(mapId);
     const tiles = doorGroupsOf(mapData, floorSet); // Includes map-switch doors without changing their travel action.
     const state = { mapId, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
@@ -341,7 +343,7 @@
     const state = maps.get(String(mapId));
     if (!state) return [];
     return state.doors.map(entry => {
-      const THREE = deps?.THREE || window.THREE;
+      const THREE = threeRef || deps?.THREE || window.THREE;
       if (!THREE?.Vector3) return null;
       const position = new THREE.Vector3();
       const normal = new THREE.Vector3(0, 0, 1);
