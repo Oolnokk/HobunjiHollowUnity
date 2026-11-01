@@ -115,12 +115,24 @@ assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'windowless rooms are 80% dark outside
 draw(17);
 assert.equal(fills.length, 1, 'camera-following lighting redraws at approximately 60 Hz');
 assert.equal(gradients[0].radius, 6, 'carried interior lantern radius doubles');
-assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'interior lantern fades linearly across its whole radius');
+assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'interior lantern eases into the dark edge');
 localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert.equal(gradients[1].radius, 7.5, 'furniture light reaches twice its former radius');
-assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp reveal has no bright plateau or abrupt knee');
-assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp color glow fades linearly too');
+assert.equal(gradients[1].radius, 7.5, 'furniture light reaches farther so its edge can fade over a wider area');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] }; // Closed slab lies between the player and this lamp.
+draw();
+assert.equal(gradients.length, 0, 'a closed interior door blocks the furniture light behind it');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0.5 }] };
+draw();
+assert(gradients.some(entry => entry.stops.some(([, color]) => /rgba\\(0,0,0,0\\.4/.test(color))), 'half-open door restores light in proportion to its animation progress');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
+draw();
+assert(gradients.length > 0, 'fully open door allows the furniture light through');
+lightingWindow.InteriorDoorTiles = null;
+draw();
+assert.equal(gradients[1].radius, 7.5, 'furniture light reaches farther so its edge can fade over a wider area');
+assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp reveal fades gradually into base darkness');
+assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp color glow eases into the dark edge too');
 
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Both the candle and window retain their full range while the camera turns a quarter-circle.
@@ -160,7 +172,7 @@ localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }];
 draw();
 assert.equal(gradients.at(-1).radius, 7.5, 'window daylight has a broad pool');
-assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'window daylight pool uses linear falloff');
+assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'window daylight pool eases into base darkness');
 
 sources = [{ radiusTiles: 3, strength: 1, projectionPalette: ['#ff2040', '#20a0ff', '#ffe060'], mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }]; // A patterned Life Temple pane supplies dye colors, not a screen-projected texture.
 draw();
