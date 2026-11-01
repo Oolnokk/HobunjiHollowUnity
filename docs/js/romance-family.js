@@ -493,7 +493,7 @@
   function spouseTargetOverride(rec, { bedSpot } = {}) {
     if (!spouseHoldingEgg() || fam.pregnancy.spouseId !== rec.id) return null;
     const bed = (bedSpot || H.bedSpot)();
-    return bed ? { area: bed.area, c: bed.c, r: bed.r, rotY: bed.rotY, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
+    return bed ? { ...bed, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
   }
 
   // ── UI: dream picker + naming ─────────────────────────────────────────
