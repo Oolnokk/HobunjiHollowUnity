@@ -67,13 +67,14 @@ standing elevation of their owning actor:
 - Ground materials with standard Three.js world-position shaders discard only
   upward-facing fragments within 0.18 world units of the actor's standing
   elevation. Lit materials use their transformed normal; unlit MeshBasic grass
-  uses its geometry normal and remains conservative if that attribute is absent. World-space Y naturally includes map
+  uses its geometry normal. Any ground geometry without a normal attribute keeps
+  full-depth occlusion rather than guessing its surface orientation. World-space Y naturally includes map
   tiers, trench bottoms, raised earth and continuous terrain surfaces.
 - Vertical cliff/wall faces remain depth occluders. Water, slush, snow,
   billboard grass, props and other solid geometry retain their existing
   material/depth behavior.
-- Unknown actor ownership and custom ground shaders without the required
-  standard chunks fail closed: their ground remains fully opaque to the
+- Unknown actor ownership, missing geometry normals, and custom ground shaders
+  without the required standard chunks fail closed: their ground remains fully opaque to the
   held/foot overlay rather than guessing an elevation.
 
 Actors at effectively the same elevation share a replay; different elevations
