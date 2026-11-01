@@ -172,7 +172,8 @@
 
   function openWardrobe(npcId, area = null, furnitureId = null) {
     if (!safeId(npcId) || !window.NpcWardrobe?.openWardrobePanel) return false;
-    window.NpcWardrobe.openWardrobePanel(npcId, { area, source: area === 'interior' ? 'family' : 'authored', furnitureId }); // Only an assigned farmhouse spouse wardrobe receives the special clothing override.
+    const binding = areaBindings.get(area)?.get(safeId(furnitureId)); // The live furniture binding distinguishes family-assigned storage from authored NPC wardrobes.
+    window.NpcWardrobe.openWardrobePanel(npcId, { area, source: binding?.source || 'authored', furnitureId }); // Only the actual family-assigned spouse furniture receives the special clothing override.
     lastOpened = { npcId, area, furnitureId };
     return true;
   }
