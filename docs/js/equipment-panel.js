@@ -20,7 +20,7 @@
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
   const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
 
-  function squareToolIcon(source, fitEntireSprite = false) {
+  function squareToolIcon(source) {
     const width = source.width; // Source dimensions bound the alpha scan.
     const height = source.height; // Source dimensions bound the alpha scan.
     const canvas = document.createElement('canvas'); // Reads the already loaded sprite without changing held/world art.
@@ -38,19 +38,14 @@
       }
     }
     if (right < left) throw new Error('Tool sprite contains no opaque pixels');
-    const opaqueWidth = right - left + 1; // Opaque horizontal bounds determine the original bottom-square tool crop.
-    const opaqueHeight = bottom - top + 1; // Full-height flask thumbnails need these vertical bounds as well.
-    const side = fitEntireSprite ? Math.max(opaqueWidth, opaqueHeight) : opaqueWidth; // Preserve weapon crops; contain tall flasks instead.
-    const visibleHeight = Math.min(side, opaqueHeight); // Original tools crop at the bottom; flasks retain their full silhouettes.
-    const cropTop = fitEntireSprite ? top : bottom - visibleHeight + 1; // Source Y for the selected thumbnail framing.
-    const outputX = fitEntireSprite ? (side - opaqueWidth) * 64 / side : 0; // Centers a narrow flask without stretching it.
-    const outputY = (side - visibleHeight) * (fitEntireSprite ? 64 : 128) / side; // Existing tool bottom alignment is unchanged.
+    const side = right - left + 1; // Opaque width determines the square; tall sprites crop above its bottom edge.
+    const visibleHeight = Math.min(side, bottom - top + 1); // Short sprites receive transparent padding above.
     const output = document.createElement('canvas'); // A small square limits retained thumbnail memory.
     output.width = output.height = 128;
-    const outputContext = output.getContext('2d'); // Reuses the tool thumbnail alpha trim for both framing modes.
-    outputContext.drawImage(canvas, left, cropTop, opaqueWidth, visibleHeight,
-      outputX, outputY, opaqueWidth * 128 / side, visibleHeight * 128 / side);
-    toolIconDebug.lastFrame = { left, top, right, bottom, side, fitEntireSprite };
+    const outputContext = output.getContext('2d'); // Draws an undistorted crop anchored to the opaque bottom edge.
+    outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
+      0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
+    toolIconDebug.lastFrame = { left, top, right, bottom, side };
     return output.toDataURL('image/png');
   }
 

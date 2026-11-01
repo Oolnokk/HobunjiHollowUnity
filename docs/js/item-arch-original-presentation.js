@@ -36,10 +36,20 @@
         min-height:auto !important;
         box-sizing:border-box !important;
         border-radius:0 !important;
-        background:none !important;
         box-shadow:none !important;
         filter:none !important;
         z-index:auto !important;
+      }
+
+      /* Leave actual item sprite backgrounds intact while keeping plain glyphs undecorated. */
+      html body .arc-slot.shared-selection-slot[data-item-category] .arc-icon:not(.sprited-icon) { background:none !important; }
+      html body .arc-slot.shared-selection-slot[data-item-category] .arc-icon.sprited-icon {
+        display:inline-block !important;
+        width:1.25em !important;
+        height:1.25em !important;
+        background-size:contain !important;
+        background-position:center !important;
+        background-repeat:no-repeat !important;
       }
 
       /* Earlier category modules still maintain their internal headings for
