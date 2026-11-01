@@ -10,6 +10,7 @@ on:
       - 'docs/js/hachutu-relics.js'
       - 'scripts/test-hachutu-rooted-ruins.js'
       - 'scripts/test-hachutu-root-tear.js'
+      - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
@@ -21,6 +22,7 @@ on:
       - 'docs/js/hachutu-relics.js'
       - 'scripts/test-hachutu-rooted-ruins.js'
       - 'scripts/test-hachutu-root-tear.js'
+      - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
       - 'scripts/test-dev-random-ruin-*.js'
@@ -43,6 +45,7 @@ jobs:
           node scripts/test-dev-random-ruin-integration.js
           node scripts/test-hachutu-rooted-ruins.js
           node scripts/test-hachutu-root-tear.js
+          node scripts/test-grapple-dodge-payment.js
           node --check docs/js/root-snare-player-tear.js
           node --check docs/js/dev-hachutu-ruin.js
           node --check docs/js/hachutu-relics.js
