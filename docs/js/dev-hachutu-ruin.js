@@ -588,6 +588,11 @@
     session.returnMarker=box(session.group,'Hachutu exit root gate',.6,2,.6,layout.parts[0].bounds.minX+1.5,session.floor+1,layout.parts[0].center.z,0x43875d);
     session.entryMarker.userData.interactive3D=true;session.returnMarker.userData.interactive3D=true;
     session.returnMarker.userData.devRuinFootprintIgnore=true;session.entryMarker.userData.devRuinFootprintIgnore=true;
+    const occlusion=window.DevRandomRuin?.getOcclusionMeshes?.(); // Reuse the Harlyao interior camera boom's authoritative wall/roof collision list.
+    session.occluders=[];
+    if(occlusion)session.group.traverse(node=>{
+      if(node.isMesh&&/(wall|ceiling)/i.test(node.name)){occlusion.push(node);session.occluders.push(node);}
+    });
     kit.recordModulePlacement('hachutuRootTemple','dev',String(context.seed),{parts:layout.parts.map(p=>p.name),rooted:true,devOnly:true});
   }
   function update(kit,now,dt){
@@ -621,6 +626,8 @@
     for(const c of session.coffins)c.root.parent?.remove(c.root);
     for(const enemy of session.ownedEntities)retireEntity(enemy,session);
     session.minions.clear();session.ownedEntities.clear();
+    const occlusion=window.DevRandomRuin?.getOcclusionMeshes?.();
+    if(occlusion)for(const mesh of session.occluders||[]){const index=occlusion.indexOf(mesh);if(index>=0)occlusion.splice(index,1);}
     session.group.parent?.remove(session.group);
     session.group.traverse(obj=>{if(obj.geometry&&!obj.geometry.userData?.devRuinSharedPrimitive)obj.geometry.dispose?.();
       if(obj.material){for(const m of Array.isArray(obj.material)?obj.material:[obj.material])m.dispose?.();}});
