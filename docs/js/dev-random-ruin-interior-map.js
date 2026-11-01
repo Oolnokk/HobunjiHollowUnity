@@ -979,7 +979,12 @@
         generationMark('preparing-stone-age');
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
         generationMark('preparing-live-roots');
-        if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
+        // Hachutu owns its live-grown rotating pillars, retracting roots and Temple Heart gate in its exclusive
+        // composer. Wrapping the unrelated V50 mechanism inventory again can spend minutes preparing
+        // non-Hachutu structures (and strand the user on the generator screen), so only classic
+        // Stone Age ruins bind the generic V50 mechanism keyframes.
+        if(rootMechanismsRequested&&!ruin.hachutu)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
+        else if(ruin.hachutu){ruin.rootGrowthBindings=[];ruin.rootedMechanisms=false;ruin.hachutuRootComposer=true;}
         lastGenerationAudit.acceptedSeed=candidateSeed;
         generationMark('entering-ruin');
         await enterRuin(); updateBadge();
