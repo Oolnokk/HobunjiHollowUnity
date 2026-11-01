@@ -64,9 +64,10 @@ standing elevation of their owning actor:
   by the NPC held-equipment runtime). NPC procedural body parts can resolve
   through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
   body groups use their existing `namedAnimalNpc` marker.
-- Ground materials with the standard Three.js world-position and normal
-  shader chunks discard only upward-facing fragments within 0.18 world units
-  of the actor's standing elevation. World-space Y naturally includes map
+- Ground materials with standard Three.js world-position shaders discard only
+  upward-facing fragments within 0.18 world units of the actor's standing
+  elevation. Lit materials use their transformed normal; unlit MeshBasic grass
+  uses its geometry normal and remains conservative if that attribute is absent. World-space Y naturally includes map
   tiers, trench bottoms, raised earth and continuous terrain surfaces.
 - Vertical cliff/wall faces remain depth occluders. Water, slush, snow,
   billboard grass, props and other solid geometry retain their existing
