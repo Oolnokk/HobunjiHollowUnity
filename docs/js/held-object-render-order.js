@@ -1079,16 +1079,17 @@
     if (playerMesh && playerVisualRoots.some(root => root && isDescendantOf(mesh, root))) return { root: playerMesh, isPlayer: true };
     const playerLegHandle = composer?.getPlayerLegHandle?.();
     if (playerMesh && playerLegHandle && isDescendantOf(mesh, playerLegHandle.group || playerLegHandle)) return { root: playerMesh, isPlayer: true };
+    let namedAnimalRoot = null;
     for (let node = mesh; node && node !== scene; node = node.parent) {
       const data = node.userData || {};
       if (data.hobunjiXrayActorRoot === true
           || data.hobunjiCharacterRigScaleRoot === true
-          || data.namedAnimalNpc === true
           || String(node.name || '').startsWith('npc_walker_')) {
         return { root: node, isPlayer: false };
       }
+      if (!namedAnimalRoot && data.namedAnimalNpc === true) namedAnimalRoot = node;
     }
-    return null;
+    return namedAnimalRoot ? { root: namedAnimalRoot, isPlayer: false } : null;
   }
 
   function actorElevationForXrayMesh(mesh, scene, cache = null) {
