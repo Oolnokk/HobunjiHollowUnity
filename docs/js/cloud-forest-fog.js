@@ -482,6 +482,7 @@
   // state as the skydome and now also applies the skydome's ambient-darkness
   // lantern activation curve to outdoor player/watch lantern masks.
   let lightingDeps = null;
+  const LIGHTING_OVERLAY_MIN_INTERVAL_MS = 1000 / 60; // Camera rotation and moving lights need frame-rate projection, not 10 Hz screen-space steps.
   let lastUnifiedLightingDraw = 0;
   let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
   let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
@@ -832,7 +833,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Selects room darkness and detects transitions that must bypass the normal redraw throttle.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
-    if (now - lastUnifiedLightingDraw < 100 && lightningAlpha <= 0 && sceneTransAlpha <= 0
+    if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
         && currentArea === lastUnifiedLightingArea && activeScene === lastUnifiedLightingScene) return;
     lastUnifiedLightingDraw = now;
     lastUnifiedLightingArea = currentArea;
