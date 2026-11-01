@@ -127,10 +127,88 @@
     }
   }
 
+
+  // Scheduled humanoid NPCs reuse the same mattress lookup and front-plane
+  // x-ray rule as the player. The actor's movement root stays untouched; only
+  // its real body/feet rig rotates, preserving pathing, collisions and schedule state.
+  const npcStates = new WeakMap(); // Per-walker visual tween and cloned front material, retained only while its walker exists.
+  function npcFrontXray(walker, state, enable) {
+    if (enable && state.xray) { state.xray.node.renderOrder = XRAY_ORDER; return; }
+    if (!enable) {
+      if (!state.xray) return;
+      const rec = state.xray;
+      if (rec.node.material === rec.clone || (Array.isArray(rec.node.material) && rec.node.material[0] === rec.clone)) rec.node.material = rec.material;
+      rec.node.renderOrder = rec.order;
+      rec.clone.dispose?.();
+      state.xray = null;
+      return;
+    }
+    const avatar = walker.avatarGroup;
+    let front = avatar?.userData?.neckRig?.skinnedPlane || null; // The skinned portrait has independent front/back materials.
+    if (!front) avatar?.traverse?.(node => { if (!front && node.name === 'npc_avatar_front_plane') front = node; });
+    if (!front?.material) return;
+    const original = front.material;
+    const array = Array.isArray(original);
+    const material = array ? original[0] : original;
+    if (!material?.clone) return;
+    const clone = material.clone(); // Never mutate the standing NPC's shared portrait material.
+    clone.depthTest = false; clone.depthWrite = false; clone.transparent = true;
+    front.material = array ? [clone, ...original.slice(1)] : clone;
+    state.xray = { node: front, material: original, clone, order: front.renderOrder }; // Fully restored on schedule changes.
+    front.renderOrder = XRAY_ORDER;
+  }
+
+  function syncNpc(walker, target, dt, mattress) {
+    if (!walker || walker.animalDef) return;
+    const rig = walker._npcCharacterRigRoot;
+    const root = walker.root;
+    if (!rig?.isObject3D || !root?.isObject3D) return;
+    const activeLie = target?.pose === 'lie' && target?.area === walker.area && mattress
+      && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < 0.20;
+    let state = npcStates.get(walker);
+    if (!activeLie && !state) return; // Idle walkers pay zero sleep-pose cost.
+    if (!state) {
+      state = { blend: 0, xray: null };
+      npcStates.set(walker, state);
+    }
+    const step = Math.max(0, Math.min(0.10, Number(dt) || 0)); // Same bounded frame integration as player and procedural-leg animations.
+    state.blend = clamp01(state.blend + (activeLie ? 1 : -1) * step * 1.3); // Ease down on arrival, stand when the schedule changes.
+    const fraction = smooth(state.blend);
+    const rot = activeLie ? mattress.facingRad : (state.bedYaw ?? root.rotation.y);
+    if (activeLie) state.bedYaw = rot; // Preserve the sleep heading while rising.
+    const posterior = Number(walker.legs?.standingPosteriorY);
+    const hip = Number.isFinite(posterior) ? posterior : (Number(walker.avatarHeight) || 0.9) * .35;
+    const THREE = deps?.THREE;
+    if (!THREE) return;
+    const desiredQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 * fraction, (rot - root.rotation.y) * fraction, 0, 'YXZ'));
+    rig.quaternion.copy(desiredQuaternion);
+    const pivot = new THREE.Vector3(0, hip, 0).applyQuaternion(rig.quaternion); // Anatomical posterior remains fixed against the sleeping surface while the whole rig tilts.
+    const targetSurfaceY = activeLie ? mattress.y : (state.lastSurfaceY ?? root.position.y);
+    if (activeLie) state.lastSurfaceY = targetSurfaceY; // Persist the surface during stand-up even when the station disappears.
+    const localTarget = new THREE.Vector3(0, lerp(hip, targetSurfaceY + 0.035 - root.position.y, fraction), 0);
+    rig.position.set(localTarget.x - pivot.x, localTarget.y - pivot.y, localTarget.z - pivot.z);
+    if (walker._npcRunLeanPivot && fraction > 0.001) walker._npcRunLeanPivot.quaternion.identity(); // Running and lying body rotations must not stack.
+    npcFrontXray(walker, state, fraction > 0.25);
+    walker._bedLieActive = fraction > 0.001;
+    if (state.blend <= 0 && !activeLie) {
+      npcFrontXray(walker, state, false);
+      rig.position.set(0, 0, 0); rig.quaternion.identity(); // Restore exact neutral pose before normal NPC movement resumes.
+      walker._bedLieActive = false;
+      npcStates.delete(walker);
+    }
+  }
+
+  function npcDebug(walkers = []) {
+    return walkers.filter(w => npcStates.has(w)).map(w => {
+      const state = npcStates.get(w);
+      return { id: w.rec?.id || '?', area: w.area, blend: state.blend, surfaceY: state.lastSurfaceY, frontXray: !!state.xray };
+    }); // Existing mobile Pixel Probe can report all visually sleeping NPCs without a console.
+  }
+
   function init(adapters) { deps = adapters; }
   function cancel(reason = 'cancelled') { if (active) { diagnostics.cancelled++; clear(reason); } }
   function debug() {
     return { active: !!active, elapsed: active?.elapsed || 0, xrayMeshes: xray.length, ...diagnostics };
   }
-  window.BedLiePose = { init, begin, update, cancel, isActive: () => !!active, debug };
+  window.BedLiePose = { init, begin, update, syncNpc, npcDebug, cancel, isActive: () => !!active, debug };
 })();
