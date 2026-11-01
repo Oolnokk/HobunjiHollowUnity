@@ -222,7 +222,7 @@ assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGr
   'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
 assert.match(heldRender, /faceB\.y \/ length >= TOP_FACE_MIN_NORMAL_Y/,
   'the shell occluder geometry excludes upward-facing triangles only');
-assert.match(heldRender, /const swappedGeometry = swapToOccluderGeometry\(topFaceGround\)/,
+assert.match(heldRender, /swappedGeometry = swapToOccluderGeometry\(topFaceGround\)/,
   'cave shells swap to wall-and-ceiling-only geometry during the depth rebuild');
 assert.match(heldRender, /restoreSwappedGeometry\(swappedGeometry\)/,
   'shell geometry is restored after the selective depth reconstruction');
