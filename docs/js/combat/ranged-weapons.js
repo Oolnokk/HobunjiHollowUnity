@@ -1556,6 +1556,9 @@
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
         const rayWorldY = segment.start.y + dWorldY * (travel / distancePx); // AI visibility uses the same finite-height cover check as projectile flight.
+        if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld)) {
+          return { clear: false, kind: 'door', id: 'closed-interior-door' }; // Closed authored doors are separate from the terrain grid and need their own opaque test.
+        }
         if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
