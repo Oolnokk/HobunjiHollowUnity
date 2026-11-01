@@ -204,12 +204,14 @@ const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellRepl
 assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
-const shellGroundHideAt = shellReplay.indexOf('hideObjects([...xrayMeshes, ...ground])');
+const shellGroundHideAt = shellReplay.indexOf('hideObjects(ground)');
 const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)');
 const shellDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
 const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, xraySet)');
 const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellDrawAt);
 const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellRestoreAt);
+assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
+  'source-mesh depth remains available to mask the expanded back-face shell');
 assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
   && shellDepthAt < shellDrawAt && shellDrawAt < shellOnlyAt
   && shellOnlyAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
