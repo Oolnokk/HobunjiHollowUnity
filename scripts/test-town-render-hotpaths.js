@@ -165,6 +165,60 @@ assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOve
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
+// Shell outlines inherit the same selective ground-x-ray policy as their
+// source meshes. Test the shell-pass discriminator and selective mesh filtering,
+// then guard the depth-rebuild -> shell -> depth-restore sequence.
+const shellPassStart = heldRender.indexOf('  function isShellOutlinePass(');
+const shellPassEnd = heldRender.indexOf('  function hideNonXrayShellMeshes(', shellPassStart);
+assert.ok(shellPassStart >= 0 && shellPassEnd > shellPassStart,
+  'the held renderer exposes a dedicated shell-outline pass discriminator');
+const isShellOutlinePass = new Function('THREE', 'SHELL_MASK',
+  heldRender.slice(shellPassStart, shellPassEnd) + '\\nreturn isShellOutlinePass;')(
+  { BackSide: 1 }, 2);
+const shellOverride = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } };
+assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 2 } }), true,
+  'only the inverted-hull shell layer is intercepted');
+assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: { mask: 1 } }), false,
+  'ordinary world renders are not mistaken for shell passes');
+assert.equal(isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 } }), false,
+  'depth-only layer renders are not mistaken for shell passes');
+
+const shellFilterStart = shellPassEnd;
+const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
+const hideNonXrayShellMeshes = new Function('hasLayer',
+  heldRender.slice(shellFilterStart, shellFilterEnd) + '\\nreturn hideNonXrayShellMeshes;')(
+  (object, layer) => !!(object.layers.mask & (1 << layer)));
+const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
+const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
+const unrelatedMesh = { isMesh: true, visible: true, layers: { mask: 1 } };
+const shellScene = { traverseVisible(fn) { [xrayShell, ordinaryShell, unrelatedMesh].forEach(fn); } };
+const shellHidden = hideNonXrayShellMeshes(shellScene, new Set([xrayShell]));
+assert.equal(xrayShell.visible, true, 'the x-rayed object's own shell remains visible in its replay');
+assert.equal(ordinaryShell.visible, false, 'other shell objects are excluded from the selective replay');
+assert.equal(unrelatedMesh.visible, true, 'non-shell geometry is not hidden by shell filtering');
+for (const [object, visible] of shellHidden) object.visible = visible;
+assert.equal(ordinaryShell.visible, true, 'ordinary shell visibility is restored after the replay');
+
+const shellReplayStart = heldRender.indexOf('  function replayShellOutlineXray(');
+const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellReplayStart);
+assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
+  'the renderer has a dedicated shell x-ray replay');
+const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
+const shellGroundHideAt = shellReplay.indexOf('hideObjects([...xrayMeshes, ...ground])');
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)');
+const shellDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
+const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, xraySet)');
+const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellDrawAt);
+const shellDepthRestoreAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene)', shellRestoreAt);
+assert.ok(shellGroundHideAt >= 0 && shellGroundHideAt < shellDepthAt
+  && shellDepthAt < shellDrawAt && shellDrawAt < shellOnlyAt
+  && shellOnlyAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
+  'shell replay excludes classified ground, draws only matching shells, then restores full scene depth');
+assert.match(heldRender, /const xrayMeshes = \\[\.\.\.new Set\(\[\.\.\.held, \.\.\.feet\]\)\\]/,
+  'all existing held/foot ground-x-ray participants share shell visibility parity');
+assert.match(heldRender, /replayShellOutlineXray\(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored\)/,
+  'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
+
 // This hard-won ordering contract must stay discoverable to subsequent
 // rendering refactors, not live solely in one PR conversation.
 const renderingContractPath = 'docs/architecture/held-object-water-depth-compositing.md';
