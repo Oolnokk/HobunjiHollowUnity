@@ -187,7 +187,7 @@
         if (action !== 'obj_open_wardrobe') return { ok: false, message: 'Unknown wardrobe action.' };
         const current = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Validate the same furniture assignment again on button press.
         if (current?.npcId !== binding.npcId) return { ok: false, message: 'Wardrobe assignment changed.' };
-        return window.NpcFurnitureWardrobes?.openWardrobe?.(binding.npcId, area, entry.id)
+        return window.NpcFurnitureWardrobes?.openWardrobe?.(current.npcId, area, entry.id, current)
           ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Wardrobe unavailable.' };
       },
     };
