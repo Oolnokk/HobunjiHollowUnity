@@ -58,8 +58,20 @@
     return baseline;
   }
 
-  function install(scene, _legacyLights = {}) {
-    if (!scene || scene.userData?.farmhouseFlatLighting) return false;
+  function registerPlayerFarmhouseScene(scene) {
+    if (!scene?.isScene) return false;
+    scene.userData = scene.userData || {};
+    if (scene.userData.hobunjiPlayerFarmhouseInterior === true) return false;
+    scene.userData.hobunjiPlayerFarmhouseInterior = true;
+    playerFarmhouseSceneCount++;
+    window.HeldObjectRenderOrder?.scanScene?.(scene, true); // An existing floor group can predate registration; new floor meshes inherit the scene flag through their parent.
+    return true;
+  }
+
+  function install(scene, legacyLights = {}) {
+    if (!scene) return false;
+    if (legacyLights?.ambient && legacyLights?.key && legacyLights?.fill) registerPlayerFarmhouseScene(scene); // game.js passes this triple only for the player's farmhouse; authored building installs pass no legacy lights.
+    if (scene.userData?.farmhouseFlatLighting) return false;
     scene.userData = scene.userData || {};
     scene.userData.farmhouseFlatLighting = true;
     makeOverlayOnly(scene);
@@ -85,14 +97,8 @@
 
   function ensurePlayerFarmhouseLighting(scene) {
     if (!scene?.isScene) return scene;
-    scene.userData = scene.userData || {};
-    const firstRegistration = scene.userData.hobunjiPlayerFarmhouseInterior !== true; // Used to distinguish player farmhouse floors from authored buildings, dens and mine floors in the held-object compositor.
-    scene.userData.hobunjiPlayerFarmhouseInterior = true;
+    const firstRegistration = registerPlayerFarmhouseScene(scene); // Shared farmhouse scene tag excludes unrelated authored buildings from the floor x-ray rule.
     const newlyInstalled = install(scene); // Same neutral Three.js baseline and shared 2D darkness/light masks as authored building interiors.
-    if (firstRegistration) {
-      playerFarmhouseSceneCount++;
-      window.HeldObjectRenderOrder?.scanScene?.(scene, true); // Existing floor meshes may predate the scene tag; classify them now rather than waiting for the fallback scan.
-    }
     if (firstRegistration || newlyInstalled) window.CloudForestFog?.refreshLightingOverlay?.();
     return scene;
   }
@@ -156,13 +162,7 @@
     namespace.init = function initWithFlatBuildingLighting(injectedDeps) {
       hookBuildingSceneMap(injectedDeps?._buildingScenes, injectedDeps?._isBuildingArea);
       hookPlayerFarmhouseSceneGetter(injectedDeps);
-      const result = originalInit.call(this, injectedDeps);
-      try {
-        ensurePlayerFarmhouseLighting(injectedDeps?.getInteriorScene?.()); // Covers the already-built farmhouse scene even before its first active-area accessor call.
-      } catch (error) {
-        stats.lastError = 'farmhouse: ' + String(error?.message || error);
-      }
-      return result;
+      return originalInit.call(this, injectedDeps); // Do not dereference getInteriorScene yet: game.js declares that scene later in initialization.
     };
     namespace.__hobunjiFlatBuildingLightingInitHook = true;
     return true;
