@@ -183,7 +183,7 @@
     const roll = rng();
     const kinds = roll < chainChance ? ['chain', 'pump'] : roll < chainChance + pumpChance ? ['pump', 'chain'] : null;
     if (!kinds) return null;
-    for (const room of shuffled(kit.usableRoomCandidates(context).filter(room => !usedRooms.has(room.id)), rng)) {
+    for (const room of shuffled(kit.usableRoomCandidates(context).filter(room => !usedRooms.has(room.id) && kit.canClaimRoomSpot(room.id,'mechanisms','ropeVariant')), rng)) {
       const frame = roomFrame(kit, context, room);
       if (!frame) continue;
       for (const kind of kinds) {
