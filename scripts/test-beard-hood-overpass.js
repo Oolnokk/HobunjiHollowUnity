@@ -33,6 +33,9 @@ assert.match(editor, /undoBeardHoodMask/);
 assert.match(editor, /redoBeardHoodMask/);
 assert.match(editor, /pushBeardHoodMaskHistory/);
 assert.match(editor, /setSidebarWidth/);
+assert.match(editor, /function applyBeardHoodMaskKind\(kind\)/, 'hood/beard selection runs through an explicit mode switch');
+assert.match(editor, /pickBeard\.addEventListener\('click'/, 'beard button has a direct click listener');
+assert.match(editor, /E\.garment\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/, 'switching mask kind refreshes the garment preview pipeline');
 assert.match(editor, /pointercapture/i);
 
 assert.match(catalog, /cfg\?\.portraitSlot==='facialHair'/, 'facial hair cosmetics enter the head-space fitting catalog');
