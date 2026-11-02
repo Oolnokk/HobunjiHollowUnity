@@ -67,7 +67,11 @@ function encodeBeardHoodMask(canvas) {
 function beardHoodMaskData(kind = beardHoodMaskKind()) {
   const garment = beardHoodMaskCosmetic();
   if (!garment) return null;
-  return beardHoodMaskStore(kind)[beardHoodMaskKey()] || null;
+  const key = beardHoodMaskKey();
+  const store = beardHoodMaskStore(kind);
+  if (Object.prototype.hasOwnProperty.call(store, key)) return store[key];
+  const property = kind === 'hood' ? 'beardRevealMasks' : 'beardOverpassMasks';
+  return garment.cfg?.[property]?.[beardHoodMaskVariant()] || null;
 }
 function loadBeardHoodMask() {
   const garment = beardHoodMaskCosmetic();
@@ -176,10 +180,11 @@ function exportBeardHoodCosmeticConfig() {
   for (const [key, mask] of Object.entries(beardHoodMaskStore(kind))) {
     if (!key.startsWith(prefix)) continue;
     const variant = key.slice(prefix.length);
-    if (!variant || !mask?.runs?.length) continue;
-    config[property][variant] = mask;
-    exportedVariants++;
+    if (!variant) continue;
+    if (mask?.runs?.length) { config[property][variant] = mask; exportedVariants++; }
+    else delete config[property][variant];
   }
+  if (!Object.keys(config[property]).length) delete config[property];
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
