@@ -82,10 +82,25 @@ for (const preset of presets) {
       }));
     assert(samples.length >= 2, `${preset.id}: ${river.id} has at least two exported water samples`);
     for (let i = 1; i < samples.length; i++) {
-      assert(
-        samples[i].elevation <= samples[i - 1].elevation,
-        `${preset.id}: ${river.id} rises from ${samples[i - 1].key} tier ${samples[i - 1].elevation} to ${samples[i].key} tier ${samples[i].elevation}`
-      );
+      if (samples[i].elevation > samples[i - 1].elevation) {
+        const describe = sample => ({
+          ...sample,
+          tile: root.tiles?.[sample.key] || null,
+          plateauTier: root.tiles?.[sample.key]?.plateau
+            ? plateauElevations.get(root.tiles[sample.key].plateau)
+            : 0,
+        }); // Includes the exported tile's actual type/plateau owner so a failing path can be traced from CI logs.
+        console.error(`Hydrology export mismatch ${preset.id}/${river.id}: ${JSON.stringify({
+          report,
+          river,
+          before: samples.slice(Math.max(0, i - 3), i).map(describe),
+          after: samples.slice(i, Math.min(samples.length, i + 3)).map(describe),
+        }, null, 2)}`);
+        assert(
+          samples[i].elevation <= samples[i - 1].elevation,
+          `${preset.id}: ${river.id} rises from ${samples[i - 1].key} tier ${samples[i - 1].elevation} to ${samples[i].key} tier ${samples[i].elevation}`
+        );
+      }
     }
   }
 
