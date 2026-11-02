@@ -135,7 +135,7 @@ async function main() {
   const untouchedPlayerMeta = copy(playerSaveMeta); // NPC editing must never mutate source gear or Pack items.
   const editor = vm.createContext({
     window, console, Object, JSON, target: { kind: 'npc', id: npc.id }, work: copy(npc), db: { npcs: [copy(npc)] },
-    npcAppearancePass: 0, _npcFrontLayerOrder: ['hood', 'facialHair'], _npcBehindLayerOrder: [],
+    npcAppearancePass: 0, _npcFrontLayerOrder: ['hood', 'facialHair'], _npcBehindLayerOrder: [], NPC_PREVIEW_LAYER_LABELS: {},
     NPC_EDITOR_CLOTHING_SLOTS: new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']),
     localStorage: { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(playerSaveMeta) : null },
     readStoredPlayer: () => ({ characterId: 'hero', worldId: 'world-1' }),
@@ -150,7 +150,7 @@ async function main() {
   for (const name of [
     'workingNpcRecord', 'syncNpcPatternColors', 'renderNpcAppearanceControls', 'applyWorkToNpc', 'exportAppearance',
     'playerClothingBaseId', 'playerClothingSnapshotSignature', 'samePlayerClothingItem', 'playerAccessibleClothing',
-    'equipPlayerClothing', 'resetNpcPreviewLayerOrders', 'refreshNpcPreviewLayerControls', 'npcPreviewRenderOptions',
+    'equipPlayerClothing', 'resetNpcPreviewLayerOrders', 'renderNpcLayerOrderList', 'refreshNpcPreviewLayerControls', 'npcPreviewRenderOptions',
   ]) vm.runInContext(editorFunction(name), editor);
   const patternSelect = { dataset: { npcPatternSlot: 'overwear', patternIndex: '0', patternRole: 'poncho' }, value: 'new_pattern' }; // Exercises a real per-layer selection without replacing trim data.
   element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-pattern-slot]' ? [patternSelect] : [];
