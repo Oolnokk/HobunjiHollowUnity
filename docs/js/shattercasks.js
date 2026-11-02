@@ -855,7 +855,9 @@
     burden.group.updateWorldMatrix?.(true, true);
     const surfaceOrigin = anchor.getWorldPosition(new THREE.Vector3());
     const payloadBounds = new THREE.Box3().setFromObject(burden.group);
-    burden.group.position.y = Math.max(.015, surfaceOrigin.y - payloadBounds.min.y + .015); // Seat both base-origin Shattercasks and center-origin Soursap fruits on top of the surface.
+    const attachmentScale = anchor.getWorldScale(new THREE.Vector3());
+    const localSeatOffset = (surfaceOrigin.y + .015 - payloadBounds.min.y) / Math.max(.001, Math.abs(attachmentScale.y));
+    burden.group.position.y = Math.max(.015, .015 + localSeatOffset); // Convert the world-space bounds correction back through the scaled attachment surface for both base- and center-origin Burdens.
     burden.carried = false;
     burden.flying = false;
     burden.plinthAttached = true;
