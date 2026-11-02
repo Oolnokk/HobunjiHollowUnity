@@ -287,14 +287,14 @@ class PortraitPixelCache extends Map {
 }
 const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
 
-const DEFAULT_BEHIND_LAYER_ORDER = Object.freeze([
+const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
   'head', 'frontHair',
   'torsoClothing', 'overwear', 'hatUnder', 'hood', 'pauldron', 'hatOver',
   'snowgoggles',
   'hairBack',
-]);
+];
 const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([
   'preBack', 'baseBody', 'torsoClothing', 'overwear', 'hoodBack',
   'sideLeft', 'facialHairBelowHead', 'head', 'rightSideHair', 'facialHair',
@@ -1996,16 +1996,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       frontHair:     () => drawEmoteLayers(frontHairLayers),
     };
     const behindOrder = renderOptions?.behindLayerOrder || previewLayerPreset?.behind || DEFAULT_BEHIND_LAYER_ORDER;
-    const drawnBehindKeys = new Set(); // Ignore invalid/duplicate custom keys, then draw omitted defaults so previews never lose a required sprite.
-    for (const key of behindOrder) {
-      if (drawnBehindKeys.has(key) || typeof _behindDraw[key] !== 'function') continue;
-      drawnBehindKeys.add(key);
-      _behindDraw[key]();
-    }
-    for (const key of DEFAULT_BEHIND_LAYER_ORDER) {
-      if (drawnBehindKeys.has(key)) continue;
-      _behindDraw[key]?.();
-    }
+    for (const key of behindOrder) _behindDraw[key]?.(); // Preserve the legacy caller contract: explicit arrays may intentionally omit a rear sprite.
     if (_needsScale) ctx.restore();
     return;
   }
