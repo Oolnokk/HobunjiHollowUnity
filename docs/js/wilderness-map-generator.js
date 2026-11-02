@@ -1754,6 +1754,7 @@
       pondBodiesFlattened: 0,
       pondTilesFlattened: 0,
       pondUnevenBodies: 0,
+      pondUnevenBodiesBefore: 0,
       pondMaxElevationSpreadBefore: 0,
       pondMaxElevationSpreadAfter: 0
     }; // Returned with the generated workspace so terrain regressions can be checked without devtools.
@@ -1899,7 +1900,7 @@
       const basinCeiling = basinElevations.reduce((highest, height) => Math.max(highest, height), -Infinity);
       const basinSpreadBefore = basinCeiling - basinFloor; // Measured before lowering the submerged high spots.
       report.pondMaxElevationSpreadBefore = Math.max(report.pondMaxElevationSpreadBefore, basinSpreadBefore);
-      if (basinSpreadBefore > 0) report.pondUnevenBodies++;
+      if (basinSpreadBefore > 0) report.pondUnevenBodiesBefore++;
       let bodyChanged = false;
       for (const tile of component) {
         if (tile.elevation !== basinFloor) {
@@ -1911,7 +1912,9 @@
       }
       report.pondBodiesProcessed++;
       if (bodyChanged) report.pondBodiesFlattened++;
-      report.pondMaxElevationSpreadAfter = Math.max(report.pondMaxElevationSpreadAfter, ...component.map(tile => tile.elevation - basinFloor));
+      const basinSpreadAfter = component.reduce((spread, tile) => Math.max(spread, tile.elevation - basinFloor), 0);
+      report.pondMaxElevationSpreadAfter = Math.max(report.pondMaxElevationSpreadAfter, basinSpreadAfter);
+      if (basinSpreadAfter > 0) report.pondUnevenBodies++;
     }
 
     logDebug('gravity hydrology: graded ' + report.riverPathsProcessed + ' river paths (' + report.riverCenterlineTiles
@@ -8693,6 +8696,10 @@
       generateCliffSkirts(); // refresh after late-painted rivers
       applyManualPlateauPaintingRules(); // refresh after late-painted rivers
     }
+    if (!settings.archipelagoEnabled) {
+      stabilizeGeneratedHydrology();
+      applyManualPlateauPaintingRules(); // Terrain-dependent placement sees the final graded river and pond floors.
+    }
     stampLocales(); // hand-authored locales get first pick of open ground
     placeStructures();
     placeCaves();
@@ -8706,10 +8713,6 @@
     placeFloraAndResources();
     placeAnimalFoodSources();
     validateAndRepairReachability();
-    if (!settings.archipelagoEnabled) {
-      stabilizeGeneratedHydrology();
-      applyManualPlateauPaintingRules(); // Rebuild plateau ownership after river grades and pond floors settle.
-    }
     placeDifficultyRewards();
     markNorthwardScannerWaterfalls(); // marks late-painted river waterfalls
     scaleGeneratedTileDensity(settings.generationScale);
