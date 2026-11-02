@@ -34,6 +34,13 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.13);
   background:rgba(255,255,255,.045);border-radius:999px;padding:4px 8px;color:var(--muted);font-size:12px}
 .card{border:1px solid var(--line);border-radius:13px;background:rgba(255,255,255,.035);padding:10px;margin:10px}
+.npcLayerOrderControls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:8px 0}
+.npcLayerOrderGroup{min-width:0;padding:9px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.025)}
+.npcLayerOrderGroup>b{display:block;margin-bottom:7px;font-size:12px}
+.npcLayerOrderList{display:flex;flex-direction:column;gap:4px;max-height:340px;overflow:auto}
+.npcLayerOrderRow{display:grid;grid-template-columns:minmax(0,1fr) 30px 30px;align-items:center;gap:4px;padding:4px 5px;border-radius:6px;background:rgba(255,255,255,.045);font-size:11px}
+.npcLayerOrderRow button{min-height:26px;padding:2px 0;font-size:14px;line-height:1}
+.npcLayerOrderRow button:disabled{opacity:.28;cursor:default}
 .section{border-left:6px solid var(--sec,var(--acc));
   background:linear-gradient(180deg,var(--secBg,rgba(106,167,255,.1)),rgba(255,255,255,.02))}
 .sectionTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
@@ -224,15 +231,13 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
           <div class="sectionTitle"><b>NPC expressions &amp; clothing patterns</b><span class="sectionTag">default appearance</span></div>
           <label for="npcRestingExpression">Default expression</label><select id="npcRestingExpression"></select>
           <div class="help" style="margin:6px 0 12px">Used in the world, dialogue and cutscenes. Explicit dialogue expressions temporarily override it.</div>
-          <label for="npcPreviewLayerOrder">Experimental sprite layering</label>
-          <select id="npcPreviewLayerOrder">
-            <option value="default">Default game order</option>
-            <option value="clothes-behind-body">Clothing behind body</option>
-            <option value="swap-torso-overwear">Swap torso / overwear</option>
-            <option value="hood-behind-head">Hood behind head</option>
-            <option value="hat-under-hood">Hat under hood</option>
-          </select>
-          <div class="help" style="margin:5px 0 12px">Preview only. This experiment is never applied to or exported with NPC data.</div>
+          <div class="sectionTitle" style="margin-top:8px"><b>Experimental sprite layering</b><span class="sectionTag">preview only</span></div>
+          <div class="help" style="margin:5px 0 10px">Move layers up or down to change draw order. Higher rows are drawn later (in front). Rear-view layers are controlled separately. These changes never affect NPC data.</div>
+          <div id="npcLayerOrderControls" class="npcLayerOrderControls">
+            <div class="npcLayerOrderGroup"><b>Front view</b><div id="npcFrontLayerOrder" class="npcLayerOrderList"></div></div>
+            <div class="npcLayerOrderGroup"><b>Rear view</b><div id="npcBehindLayerOrder" class="npcLayerOrderList"></div></div>
+          </div>
+          <button type="button" id="npcResetLayerOrder" class="secondary" style="margin:8px 0 12px">Reset both orders</button>
           <div id="npcPatternControls"></div>
           <div class="help" style="margin-top:10px">Choose clothing above, then assign patterns here. Use Apply to NPC, then Save as Local Override or download the NPC database.</div>
         </div>
@@ -851,7 +856,44 @@ function asEquipArray(v) {
 let target = { kind: 'player' };
 let work = makeWork('mao-ao', 'male');
 let npcAppearancePass = 0; // Discards slow pattern-layer results after changing the selected NPC or garment.
-let _npcPreviewLayerOrder = 'default'; // Editor-only experiment state; deliberately excluded from work and all export/save paths.
+let _npcPreviewLayerOrder = 'default'; resetNpcPreviewLayerOrders(); // Legacy preset state retained for compatibility with older preview callers.
+let _npcFrontLayerOrder = []; // Editor-only front-view order; excluded from NPC records.
+let _npcBehindLayerOrder = []; // Editor-only rear-view order; excluded from NPC records.
+const NPC_PREVIEW_LAYER_LABELS = {
+  preBack:'Back hair',baseBody:'Body',torsoClothing:'Torso clothing',overwear:'Overwear',hoodBack:'Rear hood',
+  sideLeft:'Left-side hair',facialHairBelowHead:'Facial hair (below head)',head:'Head',rightSideHair:'Right-side hair',
+  facialHair:'Facial hair',frontHair:'Front hair',eyes:'Eyes',urHead:'Species head details',mouth:'Mouth',
+  upperFace:'Upper-face details',hatUnder:'Under-hat layer',elevatedEyes:'Raised eye accessories',hood:'Hood',
+  mask:'Mask',pauldron:'Pauldron',urAboveHood:'Species details (above hood)',hatOver:'Over-hat layer',
+  baseLeftArm:'Left arm',baseTorso:'Torso',baseRightArm:'Right arm',snowgoggles:'Snow goggles',hairBack:'Back hair'
+};
+function resetNpcPreviewLayerOrders() {
+  _npcFrontLayerOrder = [...(window.renderPortraitProfile?.defaultFrontLayerOrder || [])];
+  _npcBehindLayerOrder = [...(window.renderPortraitProfile?.defaultBehindLayerOrder || [])];
+}
+function renderNpcLayerOrderList(containerId, order, group) {
+  const container = $(containerId);
+  if (!container) return;
+  container.innerHTML = order.map((key, index) => {
+    const label = NPC_PREVIEW_LAYER_LABELS[key] || key;
+    const safeLabel = escapeHtml(label);
+    return '<div class="npcLayerOrderRow"><span>' + safeLabel + '</span>' +
+      '<button type="button" data-layer-group="' + group + '" data-layer-index="' + index + '" data-layer-direction="-1" aria-label="Move ' + safeLabel + ' up" title="Move up" ' + (index === 0 ? 'disabled' : '') + '>↑</button>' +
+      '<button type="button" data-layer-group="' + group + '" data-layer-index="' + index + '" data-layer-direction="1" aria-label="Move ' + safeLabel + ' down" title="Move down" ' + (index === order.length - 1 ? 'disabled' : '') + '>↓</button></div>';
+  }).join('');
+}
+function refreshNpcPreviewLayerControls() {
+  renderNpcLayerOrderList('npcFrontLayerOrder', _npcFrontLayerOrder, 'front');
+  renderNpcLayerOrderList('npcBehindLayerOrder', _npcBehindLayerOrder, 'behind');
+}
+function moveNpcPreviewLayer(group, index, direction) {
+  const order = group === 'behind' ? _npcBehindLayerOrder : _npcFrontLayerOrder;
+  const nextIndex = index + direction;
+  if (!Number.isInteger(index) || nextIndex < 0 || nextIndex >= order.length) return;
+  [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+  refreshNpcPreviewLayerControls();
+  invalidatePreview();
+}
 
 const NPC_EDITOR_CLOTHING_SLOTS = new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']); // Includes skinned trousers and skirts, rendered in the 3D leg preview.
 
@@ -946,7 +988,9 @@ function workRenderAppearance() {
   return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };
 }
 function npcPreviewRenderOptions(extra = {}) {
-  return target.kind === 'npc' ? { ...extra, previewLayerOrder: _npcPreviewLayerOrder } : extra;
+  return target.kind === 'npc'
+    ? { ...extra, frontLayerOrder: _npcFrontLayerOrder, behindLayerOrder: _npcBehindLayerOrder }
+    : extra;
 }
 
 // ── Account mock (from npc-portrait-editor, wired to the working record) ────
@@ -1882,8 +1926,8 @@ async function renderNpcAppearanceControls() {
   if (target.kind !== 'npc') return;
   fillRestingExpressionOptions(work.restingExpression);
   $('npcPatternControls').innerHTML = '<div class="help">Loading garment layers…</div>';
-  const layerOrderSelect = $('npcPreviewLayerOrder');
-  if (layerOrderSelect) layerOrderSelect.value = _npcPreviewLayerOrder;
+  if (!_npcFrontLayerOrder.length || !_npcBehindLayerOrder.length) resetNpcPreviewLayerOrders();
+  refreshNpcPreviewLayerControls();
   const patterns = window.RepoPatternLibrary?.listCached?.() || []; // Uses committed patterns rather than a player's unlocked pattern inventory.
   const dyes = StudioAccount.getDyeCatalog(); // Reuses the clothing dye catalog for the independent pattern color.
   const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(workingNpcRecord(), true) || []; // Includes existing guard-emblem policies in the editor.
@@ -2070,7 +2114,7 @@ function setAsPlayer() {
 function loadPlayerIntoEditor() {
   const saved = readStoredPlayer();
   target = { kind: 'player' };
-  _npcPreviewLayerOrder = 'default';
+  _npcPreviewLayerOrder = 'default'; resetNpcPreviewLayerOrders();
   if (saved && saved.appearance) {
     work = {
       name: saved.nickname || '',
@@ -2132,7 +2176,7 @@ function importAppearance(obj) {
     if (obj.clothingPatterns || p.clothingPatterns) work.clothingPatterns = clone(obj.clothingPatterns || p.clothingPatterns);
     work.cosmeticSlots = clone(obj.cosmeticSlots || p.cosmeticSlots || work.cosmeticSlots || {});
   }
-  _npcPreviewLayerOrder = 'default';
+  _npcPreviewLayerOrder = 'default'; resetNpcPreviewLayerOrders();
   if (obj.name && target.kind === 'player') $('nickname').value = obj.name;
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -2317,7 +2361,7 @@ function loadWorkFromNpc(n) {
     clothingPatterns: clone(n.clothingPatterns || {}),
     cosmeticSlots: clone(exportNpc.cosmeticSlots || {}),
   };
-  _npcPreviewLayerOrder = 'default';
+  _npcPreviewLayerOrder = 'default'; resetNpcPreviewLayerOrders();
   _activeDyeSlot = null;
   refreshAppearanceUI();
 }
@@ -2531,10 +2575,14 @@ $('npcRestingExpression').onchange = () => {
   work.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
   invalidatePreview(); setStatus('Default expression changed — use Apply to NPC');
 };
-$('npcPreviewLayerOrder').onchange = () => {
-  const presets = window.renderPortraitProfile?.previewLayerOrderPresets || {};
-  const selected = $('npcPreviewLayerOrder').value;
-  _npcPreviewLayerOrder = Object.hasOwn(presets, selected) ? selected : 'default';
+$('npcLayerOrderControls').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-layer-group]');
+  if (!button || button.disabled) return;
+  moveNpcPreviewLayer(button.dataset.layerGroup, Number(button.dataset.layerIndex), Number(button.dataset.layerDirection));
+});
+$('npcResetLayerOrder').onclick = () => {
+  resetNpcPreviewLayerOrders();
+  refreshNpcPreviewLayerControls();
   invalidatePreview();
 };
 
