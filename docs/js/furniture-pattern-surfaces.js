@@ -21,6 +21,10 @@
         ...(record.palette?.[2] ? [hex(record.palette[2], hex(record.palette?.[1], '#315b67'))] : [])], // Optional third palette channel exclusively colors the overpass.
       engravingCoreOpacity: Number(record.opacity) === 0 ? 0 : Math.max(0,Math.min(1,finite(record.engravingCoreOpacity,.85))), // Core opacity is independent of the softer restored stroke.
       opacity: Math.max(0, Math.min(1, finite(record.opacity, record.mode === 'glass' ? .8 : record.mode === 'engraving' ? .5 : 1))),
+      glowColor: hex(record.glowColor, '#ff7818'), // Used by the separate additive glyph pass; stone/base pixels are never tinted by the glow.
+      glowIntensity: Math.max(0, Math.min(2, finite(record.glowIntensity, 0))), // Zero keeps every existing pattern visually unchanged.
+      glowPulseSpeed: Math.max(0, Math.min(16, finite(record.glowPulseSpeed, 1.4))), // Cycles/second; runtime may accelerate it as a fuse approaches zero.
+      glowPulseDepth: Math.max(0, Math.min(1, finite(record.glowPulseDepth, .35))), // Fraction of the glow intensity modulated by the pulse.
     };
   }
 
@@ -303,6 +307,62 @@
     entry.texture.dispose();
   }
 
+  function installEngravingGlow(overlay, texture, sourceMesh, record) {
+    const intensity = Math.max(0, Number(record.glowIntensity) || 0);
+    if (record.mode !== 'engraving' || intensity <= 0 || overlay.userData.engravingGlowMesh) return null;
+    const THREE = window.THREE;
+    if (!THREE?.MeshBasicMaterial || !THREE?.Mesh) return null;
+    const material = new THREE.MeshBasicMaterial({
+      map:texture, color:record.glowColor, transparent:true, opacity:0,
+      depthWrite:false, depthTest:true, side:THREE.DoubleSide,
+      blending:THREE.AdditiveBlending, polygonOffset:true,
+      polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    }); // Uses the already-carved engraving alpha; the opaque stone never enters this pass.
+    const glow = new THREE.Mesh(overlay.geometry, material);
+    glow.name = 'engraving-glyph-glow';
+    glow.raycast = () => {};
+    glow.frustumCulled = false;
+    glow.renderOrder = (overlay.renderOrder || 0) + 1;
+    glow.onBeforeRender = () => {
+      const live = sourceMesh.userData?.furniturePatternGlowState || {};
+      const currentIntensity = Math.max(0, Math.min(2,
+        finite(live.intensity, intensity)));
+      const speed = Math.max(0, Math.min(16,
+        finite(live.pulseSpeed, record.glowPulseSpeed)));
+      const depth = Math.max(0, Math.min(1,
+        finite(live.pulseDepth, record.glowPulseDepth)));
+      const phase = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 * speed * Math.PI * 2;
+      material.opacity = currentIntensity * (1 - depth + depth * (.5 + .5 * Math.sin(phase)));
+      material.visible = currentIntensity > .001;
+      const color = live.color || record.glowColor;
+      if (material.color?.set && color !== material.userData?.lastGlowColor) {
+        material.color.set(color);
+        material.userData ||= {};
+        material.userData.lastGlowColor = color;
+      }
+    };
+    overlay.add(glow); // Child-local coordinates exactly match the underlying engraved mesh, including a sphere's unwrap.
+    overlay.userData.engravingGlowMesh = glow;
+    return glow;
+  }
+
+  function setGlowState(root, state = {}) {
+    if (!root?.traverse) return false;
+    const normalized = {
+      intensity:Math.max(0, Math.min(2, finite(state.intensity, 0))),
+      pulseSpeed:Math.max(0, Math.min(16, finite(state.pulseSpeed, 1.4))),
+      pulseDepth:Math.max(0, Math.min(1, finite(state.pulseDepth, .35))),
+      ...( /^#[0-9a-f]{6}$/i.test(state.color || '') ? { color:state.color } : {}),
+    };
+    root.traverse(node => {
+      if (node.userData?.furniturePattern) {
+        const source = node.parent;
+        if (source?.userData) source.userData.furniturePatternGlowState = normalized;
+      }
+    });
+    return true;
+  }
+
   function applyPart(mesh, part) {
     const records = Array.isArray(part?.patternSurfaces) ? part.patternSurfaces : []; // Unknown metadata survives the base editor's part normalization.
     if (!records.length || !mesh) return mesh;
@@ -337,6 +397,7 @@
           releaseTexture(ownedTexture); ownedTexture = retainTexture(canvas);
           material.map = ownedTexture.texture; material.needsUpdate = true;
           overlay.visible = true; overlay.userData.furniturePattern.status = 'ready';
+          installEngravingGlow(overlay, ownedTexture.texture, mesh, record); // A separate additive pass makes only the cut-out glyph pixels emit light.
           if (record.mode === 'glass') syncGlass(mesh);
         }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
       };
@@ -555,5 +616,5 @@
     return records;
   }
 
-  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, placedPatterns, placementControls, renderTile, surfaceGeometry, applyPart, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
+  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, placedPatterns, placementControls, renderTile, surfaceGeometry, applyPart, setGlowState, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
 })();
