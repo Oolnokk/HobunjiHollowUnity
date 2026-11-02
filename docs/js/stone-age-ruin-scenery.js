@@ -69,13 +69,13 @@
     }
     return result;
   }
-  function floorStrandRingIndices(position,uv){
+  function floorStrandRingIndices(position,uv,toleranceScale=1){
     const ringCount=Math.floor(position.count/6),starts=[0],kept=[]; // Foliage keeps six vertices per ring and restarts the length UV for each separate strand.
     for(let ring=1;ring<ringCount;ring++)if(uv.getY(ring*6)<uv.getY((ring-1)*6)-.5)starts.push(ring);starts.push(ringCount);
     for(let strand=0;strand<starts.length-1;strand++){
       const first=starts[strand],end=starts[strand+1]-1,centers=[]; // Preserve the finished shrinkwrap shape with bounded-error centerline simplification.
       for(let ring=first;ring<=end;ring++){let x=0,y=0,z=0;for(let spoke=0;spoke<5;spoke++){x+=position.getX(ring*6+spoke)/5;y+=position.getY(ring*6+spoke)/5;z+=position.getZ(ring*6+spoke)/5;}centers.push([x,y,z]);}
-      const center=centers[0],radius=Math.hypot(position.getX(first*6)-center[0],position.getY(first*6)-center[1],position.getZ(first*6)-center[2]),tolerance=Math.max(.03,radius*.35),selected=new Set([0,end-first]),pending=[[0,end-first]]; // At quarter scale the tolerance is millimetres to about two centimetres, depending on strand thickness.
+      const center=centers[0],radius=Math.hypot(position.getX(first*6)-center[0],position.getY(first*6)-center[1],position.getZ(first*6)-center[2]),tolerance=Math.max(.03,radius*.35)*toleranceScale,selected=new Set([0,end-first]),pending=[[0,end-first]]; // At quarter scale the tolerance is millimetres to about two centimetres, depending on strand thickness.
       while(pending.length){const [a,b]=pending.pop(),start=centers[a],finish=centers[b],dx=finish[0]-start[0],dy=finish[1]-start[1],dz=finish[2]-start[2],lengthSq=dx*dx+dy*dy+dz*dz;let farthest=-1,error=tolerance*tolerance;
         for(let i=a+1;i<b;i++){const point=centers[i],t=lengthSq?Math.max(0,Math.min(1,((point[0]-start[0])*dx+(point[1]-start[1])*dy+(point[2]-start[2])*dz)/lengthSq)):0,d=(point[0]-start[0]-dx*t)**2+(point[1]-start[1]-dy*t)**2+(point[2]-start[2]-dz*t)**2;if(d>error){error=d;farthest=i;}}
         if(farthest>=0){selected.add(farthest);pending.push([a,farthest],[farthest,b]);}
@@ -84,12 +84,12 @@
     }
     return kept;
   }
-  function compactFloorCover(group){
+  function compactFloorCover(group,toleranceScale=1){ // toleranceScale>1 trades centerline accuracy for fewer rings (same roots, fewer vertices).
     group.traverse(mesh=>{
       if(!mesh.isMesh)return;const source=mesh.geometry,position=source?.getAttribute('position'),uv=source?.getAttribute('uv'); // Only the generated floor cover is owned here; walls and live furniture retain their full detail.
       if(!position||!uv||position.count%6)return;
       const positions=[],uvs=[],indices=[]; // All repeated copies share this smaller finished geometry.
-      for(const rings of floorStrandRingIndices(position,uv)){const base=positions.length/3;for(const ring of rings)for(let spoke=0;spoke<6;spoke++){const index=ring*6+spoke;positions.push(position.getX(index),position.getY(index),position.getZ(index));uvs.push(uv.getX(index),uv.getY(index));}for(let ring=0;ring<rings.length-1;ring++)for(let spoke=0;spoke<5;spoke++){const a=base+ring*6+spoke,b=a+6;indices.push(a,a+1,b,b,a+1,b+1);}}
+      for(const rings of floorStrandRingIndices(position,uv,toleranceScale)){const base=positions.length/3;for(const ring of rings)for(let spoke=0;spoke<6;spoke++){const index=ring*6+spoke;positions.push(position.getX(index),position.getY(index),position.getZ(index));uvs.push(uv.getX(index),uv.getY(index));}for(let ring=0;ring<rings.length-1;ring++)for(let spoke=0;spoke<5;spoke++){const a=base+ring*6+spoke,b=a+6;indices.push(a,a+1,b,b,a+1,b+1);}}
       const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals();geometry.computeBoundingSphere();mesh.geometry=geometry;source.dispose();
     });
   }
@@ -212,7 +212,7 @@
   }
 
   // The playable generator owns collision and puzzle footprints; this layer owns only scenery.
-  function buildRoom({root,meta,seed,roughness=.3,color='#363733',floorHeights=null}){
+  function buildRoom({root,meta,seed,roughness=.3,color='#363733',floorHeights=null,extraRock=null}){ // extraRock: optional RegExp of ancestor names whose plain, non-semantic props (ladders, plateau risers) are rockified like walls.
     if(!root?.isObject3D||!meta)throw new TypeError('Stone Age scenery needs the generated V50 root and shell metadata.');
     if(!window.ProceduralFurniture?.createRockGeometry||!window.NaturalSurfaceMaterials?.naturalizeMesh||
         !window.HobunjiSurfaceStretchUV?.mapMesh||!window.ZoneTerrainFeatures?.buildUndiggableBoulderShellData)
@@ -221,7 +221,7 @@
     model.name='Rooted Stone Age scenery';
     const stoneMaterial=makeRuinStoneMaterial(color); // Shared textured material; released with the authored scenery.
     const nativeMeshes=[]; // Original native meshes remain intact as collision and puzzle authorities.
-    let walls=0,pillars=0,pieces=0,closed=false,active=false;
+    let walls=0,pillars=0,props=0,pieces=0,closed=false,active=false;
     try{
       root.updateWorldMatrix(true,true);
       const toLocal=root.matrixWorld.clone().invert(); // Existing scene transform is removed before adding clones as children of root.
@@ -229,10 +229,11 @@
       root.traverse(mesh=>{if(mesh.isMesh)candidates.push(mesh);});
       for(const mesh of candidates){
         const isFloor=mesh.userData?.wallBuilderRecipe==='wallrecipe2.json';
-        let owner=mesh,role='',isPillar=false,hidden=false,semantic=false;
+        let owner=mesh,role='',isPillar=false,hidden=false,semantic=false,names='';
         while(owner&&owner!==root){
           const info=owner.userData||{};
           role ||= info.interiorRuinRole||'';
+          names+=' '+(owner.name||'');
           isPillar ||= !!info.squarePillar&&!info.repoPillarBeam&&!info.squarePillarBeam;
           hidden ||= owner.visible===false||!!info.surfaceFoliage||!!info.surfaceFoliageGuide;
           semantic ||= !!(info.activatorType||info.previewMotion||info.mechanismId||info.linkedMechanismId||
@@ -243,7 +244,8 @@
         // Never reskin or hide a semantic activator/moving mechanism merely because a parent happens to be a pillar.
         if(hidden||semantic||!mesh.geometry?.getAttribute?.('position')||mesh.userData?.furnitureGlbPart)continue;
         if(isFloor){nativeMeshes.push({mesh,layerMask:mesh.layers.mask});continue;}
-        if(!mesh.userData?.ruinInteriorWall&&!isPillar)continue;
+        const prop=!!extraRock&&!mesh.userData?.ruinInteriorWall&&!isPillar&&extraRock.test(names);
+        if(!mesh.userData?.ruinInteriorWall&&!isPillar&&!prop)continue;
         const copy=mesh.clone(false);
         copy.geometry=ruinRockGeometry(mesh,{enabled:true,seed:String(seed)+':stone-'+pieces,roughness,contactArea:.35});
         copy.material=stoneMaterial;
@@ -254,7 +256,7 @@
         model.add(copy);
         nativeMeshes.push({mesh,layerMask:mesh.layers.mask}); // Keep exact V50 layer masks for collision-safe teardown.
         pieces+=mesh.isInstancedMesh?mesh.count:1;
-        if(isPillar)pillars++;else walls++;
+        if(isPillar)pillars++;else if(prop)props++;else walls++;
       }
       if(!walls)throw new Error('Stone Age ruin has no generated walls to replace.');
       const floorBuildStart=root.performance?.now?.()??Date.now(); // Used for mobile debug timing of the expensive geometry/UV mapping stage.
@@ -263,7 +265,7 @@
       model.add(floor.mesh);
       model.updateWorldMatrix(true,true);
       const room={model,seed,stoneMaterial,floorPattern:floor.pattern,floorLayout:floor.layout,
-        floorY:Number(meta.floorSurfaceY)||0,walls,pillars,pieces,floorStones:floor.mesh.userData.stoneCount,
+        floorY:Number(meta.floorSurfaceY)||0,walls,pillars,props,pieces,floorStones:floor.mesh.userData.stoneCount,
         floorStats:floor.stats||null,floorBuildMs}; // Multi-elevation and real device-side build timing diagnostics.
       const activate=()=>{
         if(active||closed)return;

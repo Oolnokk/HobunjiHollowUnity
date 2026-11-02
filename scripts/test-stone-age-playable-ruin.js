@@ -103,7 +103,7 @@ assert(previewHtml.includes('js/stone-age-ruin-scenery.js?v='),'preview must loa
 assert(preview.includes('=window.StoneAgeRuinScenery'),'preview uses the same geometry factory');
 assert(runtime.includes("pieceSet:'stoneAge',floorProps:'pillarsOnly'"),'Stone Age ruins must retain native V50 placement and pieces');
 assert(!runtime.includes("singleRoom:true,roomPreset:'veryLarge'"),'Stone Age mode must not force the author preview single-room layout');
-assert(runtime.includes('floorHeights});'),'Stone Age runtime must pass registered multi-level floor heights to scenery');
+assert(/buildRoom\(\{[^}]*floorHeights[,}]/.test(runtime),'Stone Age runtime must pass registered multi-level floor heights to scenery');
 assert(runtime.includes('await prepareStoneAgeScenery(ruin)'),'Stone Age environment must be built before entering gameplay');
 assert(runtime.includes('await ensureStoneAgeSceneryDependencies()'),'Rock authoring dependencies must load in playable mode');
 assert(runtime.includes('js/natural-surface-materials.js?v=') && runtime.includes('js/surface-stretch-uv-furniture.js?v='),'The playable page must lazy-load the preview stone material and UV mapper');

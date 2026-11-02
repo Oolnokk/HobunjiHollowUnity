@@ -51,11 +51,47 @@
   const mesh=(parent,name,geo,mat,x,y,z)=>{
     const item=new THREE.Mesh(geo,mat);item.name=name;item.position.set(x,y,z);parent.add(item);return item;
   };
+  // ---- Stone-age rock pieces ------------------------------------------------------------------------------
+  // Stone-type pieces (walls, menhirs, posts, standing stones, pillars) use the same authored rock pipeline as the
+  // Stone Age ruin scenery: ProceduralFurniture rock geometry + the natural-surface quarry material + stretch UVs,
+  // instead of flat-colour primitives. Rock geometry is cached per shape with three variants, so a hall of identical
+  // menhirs costs three geometry builds, not twenty. Falls back to the flat primitive if the pipeline isn't loaded.
+  const STONE_PIECE=/wall|menhir|standing stone|totem|post|door frame|megalith|stepping stone|stone pillar|rooted pillar/i;
+  function stonePipeline(){
+    const SA=window.StoneAgeRuinScenery;
+    return SA?.ruinRockGeometry&&SA.makeRuinStoneMaterial&&SA.mapRuinStoneSurfaces&&window.ProceduralFurniture?.createRockGeometry
+      &&window.NaturalSurfaceMaterials?.naturalizeMesh&&window.HobunjiSurfaceStretchUV?.mapMesh?SA:null;
+  }
+  function stoneMaterial(){
+    return session.floorRockMaterial||(session.floorRockMaterial=window.StoneAgeRuinScenery?.makeRuinStoneMaterial?.('#363733')||material(0x363733));
+  }
+  function stonePiece(parent,name,build,key,x,y,z,color){
+    const SA=session&&STONE_PIECE.test(name)?stonePipeline():null;
+    if(!SA)return mesh(parent,name,build(),material(color),x,y,z);
+    try{
+      const cache=session.rockCache||(session.rockCache=new Map()),counter=session.rockCounter=(session.rockCounter||0)+1,variant=counter%3,id=key+'|'+variant;
+      let geometry=cache.get(id);
+      if(!geometry){
+        const source=new THREE.Mesh(build());
+        geometry=SA.ruinRockGeometry(source,{enabled:true,seed:'hachutu:'+session.context.seed+':'+id,roughness:.3,contactArea:.35});
+        source.geometry.dispose();
+        const proxy=new THREE.Mesh(geometry,stoneMaterial());proxy.userData={ruinPreviewRole:'wall'};
+        SA.mapRuinStoneSurfaces(proxy);geometry=proxy.geometry;
+        geometry.userData.devRuinSharedPrimitive=true; // Shared between pieces; disposed once with the session cache.
+        cache.set(id,geometry);
+      }
+      return mesh(parent,name,geometry,stoneMaterial(),x,y,z);
+    }catch(error){
+      session.errors.push('Rock piece '+name+': '+String(error?.message||error));
+      return mesh(parent,name,build(),material(color),x,y,z);
+    }
+  }
+  const round=n=>Math.round(n*100)/100;
   function box(parent,name,w,h,d,x,y,z,color){
-    return mesh(parent,name,new THREE.BoxGeometry(w,h,d),material(color),x,y,z);
+    return stonePiece(parent,name,()=>new THREE.BoxGeometry(w,h,d),'b'+round(w)+'x'+round(h)+'x'+round(d),x,y,z,color);
   }
   function cylinder(parent,name,top,bottom,height,x,y,z,color){
-    return mesh(parent,name,new THREE.CylinderGeometry(top,bottom,height,9),material(color),x,y,z);
+    return stonePiece(parent,name,()=>new THREE.CylinderGeometry(top,bottom,height,9),'c'+round(top)+'/'+round(bottom)+'x'+round(height),x,y,z,color);
   }
   function roots(parent,x,y,z,height=3,thick=.13,keep=false){
     // Staggered crooked branch silhouette, with tapered offshoots instead of Harlyao straight columns.
@@ -170,6 +206,8 @@
       new THREE.BoxGeometry(b.maxX-b.minX,.3,b.maxZ-b.minZ),
       material(0x262923),part.center.x,y+(part.name==='swing'?9:5),part.center.z);
     ceiling.userData.devRuinFootprintIgnore=true; // Does not add a second roof collision authority.
+    const SA=stonePipeline();
+    if(SA){try{ceiling.material=stoneMaterial();ceiling.userData.ruinPreviewRole='wall';SA.mapRuinStoneSurfaces(ceiling);ceiling.geometry.userData.devRuinSharedPrimitive=false;}catch(error){session.errors.push('Ceiling stone: '+String(error?.message||error));}} // Quarried slab, same material as the walls.
     const gap=3.1,mid=part.center.z,t=.8;
     // Low walls, rough posts and giant root ribs; no Harlyao ornamental furniture.
     for(const side of ['north','south']){
@@ -250,6 +288,7 @@
             targetDensity:.4,radius:.065,branchRadius:.085,showGuide:false,duration:.5},
           progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
         grown.setProgress(1);session.pillarRootTemplate=grown;
+        try{window.StoneAgeRuinScenery?.compactFloorCover?.(grown.group,COVER_SIMPLIFY);}catch(_){} // Fifteen clones render this skin: simplify the strands once, before cloning.
         for(const entry of platforms){
           const clone=grown.group.clone(true);clone.name='root-grown moving pillar skin';
           clone.userData.devRuinFootprintIgnore=true;
@@ -843,6 +882,7 @@
       proxy.position.set(x,y+h/2,z);proxy.userData={surfaceFoliageRole:'walls'};target.add(proxy);
     }
   }
+  const COVER_SIMPLIFY=2.2; // Douglas-Peucker tolerance multiplier for generated root strands (1 = the preview's own setting).
   const scaleRecipe=(recipe,factor)=>({...recipe,count:Math.max(8,Math.round(recipe.count*factor)),strandLimit:Math.max(8,Math.round(recipe.strandLimit*factor))});
   function triStats(group){
     let tris=0,meshes=0;
@@ -882,12 +922,13 @@
         const target=new THREE.Group();floorProxy(target,rects);
         const floor=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:floorRecipes.map(item=>scaleRecipe(item,factor)),seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
         if(owner.ended||session!==owner){floor.dispose();return;}
-        try{SA?.compactFloorCover?.(floor.targetGrowth);}catch(_){} // Same triangle trim the preview applies to its floor cover.
+        try{SA?.compactFloorCover?.(floor.targetGrowth,COVER_SIMPLIFY);}catch(_){} // The preview's centerline simplification, a little stronger: same roots, fewer rings.
         attach(name,'floor',floor);
         if(hall&&wallRecipes.length){ // Halls also get the preview's wall root/vine weave.
           const wallTarget=new THREE.Group();wallProxy(wallTarget,hall);
           const walls=await LRG.createCoverAsync({THREE,foliage:FG,target:wallTarget,recipes:wallRecipes.map(item=>scaleRecipe(item,factor*.6)),seed:'hachutu:'+owner.context.seed+':walls:'+name,floorY:owner.floor});
           if(owner.ended||session!==owner){walls.dispose();return;}
+          try{SA?.compactFloorCover?.(walls.targetGrowth,COVER_SIMPLIFY);}catch(_){} // Walls get the same ring simplification.
           attach(name,'walls',walls);
         }
         const gate=owner.gates.find(item=>name==='passage-'+owner.layout.passages.indexOf(item.passage));
@@ -989,6 +1030,7 @@
     session.group.parent?.remove(session.group);
     session.group.traverse(obj=>{if(obj.geometry&&!obj.geometry.userData?.devRuinSharedPrimitive)obj.geometry.dispose?.();
       if(obj.material){for(const m of Array.isArray(obj.material)?obj.material:[obj.material])m.dispose?.();}});
+    for(const geometry of session.rockCache?.values?.()||[])geometry.dispose?.();
     sharedMaterials.clear();session=null;reserved=null;
   }
   function snapshot(){
@@ -996,7 +1038,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null,onSubstrate:!!g.onSubstrate})),floorRoots:(session.cover||[]).map(c=>({room:c.name,kind:c.kind,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null,onSubstrate:!!g.onSubstrate})),floorRoots:(session.cover||[]).map(c=>({room:c.name,kind:c.kind,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,rockGeometries:session.rockCache?.size||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared,resonance:session.trial.resonance}:null,
       seeds:(session.seeds||[]).map(seed=>({index:seed.index,taken:seed.taken})),bulbs:(session.bulbs||[]).map(bulb=>({index:bulb.index,lit:bulb.lit})),
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},

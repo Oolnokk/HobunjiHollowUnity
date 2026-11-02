@@ -94,6 +94,10 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(gates[1].blocking,true,'severing the swing weed must not open the labyrinth gate');
     const vestibule=await page.evaluate(()=>window.DevRandomRuin.getVestibuleRoots());
     assert.deepEqual([vestibule.bindings,vestibule.rooted,vestibule.error],[1,true,null],'vestibule doors are bound to the Root Growth Author: '+JSON.stringify(vestibule));
+    assert(vestibule.props>0,'vestibule plateau risers/ladders are rockified stone-age props: '+JSON.stringify(vestibule));
+    assert.deepEqual(vestibule.stone?.errors,[],'unbound vestibule doors re-skinned without errors: '+JSON.stringify(vestibule.stone));
+    assert(vestibule.stone.doors+vestibule.stone.skippedBound>0,'every vestibule door is either root-bound or stone-age re-skinned');
+    assert(built.rockGeometries>0,'wing walls, menhirs, posts and pillars use rockified stone-age geometry');
     // Labyrinth puzzle: three ember seeds at maze dead ends feed the three rings; the weed stays unhittable until all are taken.
     assert.equal(built.seeds.length,3,'three ember seeds hidden in the labyrinth');
     assert.equal(built.plants[1].rings,3,'labyrinth weed starts protected by three fire rings');
