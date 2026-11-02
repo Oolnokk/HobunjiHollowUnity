@@ -24,6 +24,12 @@ const server=http.createServer((req,res)=>{
     res.end(data);
   });
 });
+// A wedged Chromium (software WebGL under load) must not keep this process alive after the result is known: the test printed
+// "passed" and then hung until the CI step was killed. Bound the close, then exit explicitly with the real result code.
+async function closeBounded(browser){
+  try{await Promise.race([browser.close(),new Promise(resolve=>setTimeout(resolve,20000))]);}catch(_){/* already closed */}
+}
+function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,args:['--enable-webgl','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
@@ -423,5 +429,5 @@ const server=http.createServer((req,res)=>{
     assert.equal((await page.evaluate(()=>window.HobunjiOmgurkuConnector.live.size)),0);
     assert.deepEqual(errors,[],'uncaught browser exceptions');
     console.log('Omgurku editor browser smoke passed');
-  }finally{await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>server.close());
+  }finally{await closeBounded(browser);}
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{server.close();exitWithResult();});
