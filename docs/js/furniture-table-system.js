@@ -93,7 +93,7 @@
     const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
     const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);
     const floor = deps?.surfaceY?.(areaId(area), x, z) || 0;
-    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key };
+    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key, root: entry.root };
   }
 
 
