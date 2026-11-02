@@ -1193,7 +1193,7 @@
   });
 
   function animalVoiceSpeciesKey(c) {
-    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';
     if (raw.includes('gar-wolf')) return 'gar-wolf';
     if (raw.includes('grehlr')) return 'grehlr';
