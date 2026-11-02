@@ -55,6 +55,7 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
 </style>
 <script src="../../js/panel-ui.js?v=20261102furnsurface4"></script>
 <script src="../../js/map-live-preview.js?v=20260910a"></script>
+<script src="../../js/table-chair-placement.js?v=20261102tablechild1"></script>
 </head>
 <body>
 <div class="app" id="biaApp">
@@ -276,6 +277,9 @@ textarea{resize:vertical;min-height:96px;font-family:ui-monospace,SFMono-Regular
           Non-colliding
         </label>
         <div class="field"><label>Belongs to table</label><select id="pTableId"><option value="">No table</option></select></div>
+        <div class="field"><label>Spatial chair placement</label><select id="pTableMode"><option value="">Independent</option><option value="orbit">Orbit around round table</option><option value="edge">Along flat table edge</option></select></div>
+        <div class="grid2"><div class="field"><label>Orbit angle (degrees)</label><input id="pTableAngle" type="number" min="0" max="360" step="1" value="0"></div><div class="field"><label>Distance from table edge</label><input id="pTableDistance" type="number" min="0" max="4" step="0.05" value="0.65"></div></div>
+        <div class="grid2"><div class="field"><label>Flat table side</label><select id="pTableSide"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option></select></div><div class="field"><label>Edge position (%)</label><input id="pTableAlong" type="number" min="0" max="100" step="1" value="50"></div></div>
         <div id="gridFurnSummary" class="hint" style="margin-top:5px">Grid footprint —</div>
         <div class="hint" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">Fine 3D transform. These values are residual offsets/scale on top of the grid placement.</div>
         <div class="grid3" style="margin-top:6px">
@@ -546,6 +550,7 @@ function furnLegacyVisual(f){
   return helper&&helper.legacyRecordFor?helper.legacyRecordFor(f):f;
 }
 function furnitureFitsFloor(f,col,row){
+  if(f&&f.tableAttachment)return true; // A spatial child is carried by its table and has no independent floor footprint.
   var info=furnGridInfo(f); // Used to validate the complete current grid footprint before placement, dragging, rotation, or scaling.
   for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++){
     var tc=col+dc,tr=row+dd;
@@ -1226,6 +1231,12 @@ function selectFurn(id){
     tableSelect.replaceChildren(new Option('No table',''));
     activeFurniture().filter(function(candidate){return candidate.id!==f.id&&/table|desk|counter/i.test(candidate.itemKey);}).forEach(function(table){tableSelect.add(new Option((catOf(table.itemKey).label||table.itemKey)+' ('+table.id+')',table.id));});
     tableSelect.value=f.tableId||'';
+    var tablePlacement=window.TableChairPlacement?.normalize?.(f.tableAttachment)||null;
+    $('pTableMode').value=tablePlacement?.mode||'';
+    $('pTableAngle').value=tablePlacement?.angleDeg??0;
+    $('pTableDistance').value=tablePlacement?.distance??0.65;
+    $('pTableSide').value=tablePlacement?.side||'front';
+    $('pTableAlong').value=Math.round((tablePlacement?.along??0.5)*100);
     $('pRotY').value=f.rotY||0; $('pX').value=f.postX||0; $('pY').value=f.postY||0; $('pZ').value=f.postZ||0;
     $('pSX').value=f.postSX!=null?f.postSX:defS; $('pSY').value=f.postSY!=null?f.postSY:defS; $('pSZ').value=f.postSZ!=null?f.postSZ:defS;
     $('selStats').textContent='Selected: '+(cat.label||f.itemKey);
@@ -1271,6 +1282,16 @@ $('applyPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
   pushUndo();
   f.tableId=$('pTableId').value; // Saved alongside the chair's normal transform in either the base room or its active layout.
+  var tableMode=$('pTableMode').value;
+  if(!tableMode||!f.tableId) delete f.tableAttachment;
+  else {
+    var descriptor=tableMode==='orbit'
+      ? {mode:'orbit',angleDeg:Number($('pTableAngle').value),distance:Number($('pTableDistance').value)}
+      : {mode:'edge',side:$('pTableSide').value,along:Number($('pTableAlong').value)/100,distance:Number($('pTableDistance').value)};
+    var normalized=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!normalized){$('statusLine').textContent='Invalid table-relative chair placement settings.';return;}
+    f.tableAttachment=normalized;
+  }
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
   delete f.postScale;
@@ -1816,6 +1837,14 @@ function rebuild3D(){
     grp.userData.surfaceFoliageId=f.id;
     furnMeshes[f.id]=grp;
     previewGroup.add(grp);
+  });
+  // Resolve table-relative chairs only after every furniture root exists in this preview.
+  furniture.forEach(function(f){
+    if(!f.tableAttachment||!f.tableId)return;
+    var chair=furnMeshes[f.id],table=furnMeshes[f.tableId],parent=furniture.filter(function(candidate){return candidate.id===f.tableId;})[0];
+    if(!chair||!table||!parent)return;
+    var cat=catOf(parent.itemKey);
+    window.TableChairPlacement?.apply?.(chair,table,f.tableAttachment,{width:cat.fw||1,depth:cat.fd||1});
   });
 
   // Use the same unrendered rectangular wall planes used to author and clip openings.

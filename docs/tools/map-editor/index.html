@@ -89,6 +89,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 </style>
 <script src="../../js/panel-ui.js?v=20261102furnsurface4"></script>
 <script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
+<script src="../../js/table-chair-placement.js?v=20261102tablechild1"></script>
 <script src="../../js/map-live-preview.js?v=20261029maskSlots2"></script>
 </head>
 <body>
@@ -381,6 +382,9 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
               <p class="muted">Pick furniture to assign its table, edit locale links, or adjust optional activity and dressing settings. Changes belong to the selected base map or alternate layout; normal JSON export/import and undo preserve them.</p>
               <select id="festivalPropSelect"></select>
               <label>Belongs to table (optional furniture id)</label><input id="propTableId" placeholder="table instance id, or blank">
+              <label>Spatial chair placement</label><select id="propTableMode"><option value="">Independent placement</option><option value="orbit">Orbit around round table</option><option value="edge">Along a flat table edge</option></select>
+              <div class="g2"><div><label>Orbit angle (degrees)</label><input id="propTableAngle" type="number" min="0" max="360" step="1" value="0"></div><div><label>Distance from table edge</label><input id="propTableDistance" type="number" min="0" max="4" step="0.05" value="0.65"></div></div>
+              <div class="g2"><div><label>Flat table side</label><select id="propTableSide"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option></select></div><div><label>Edge position (%)</label><input id="propTableAlong" type="number" min="0" max="100" step="1" value="50"></div></div>
               <small>Chair/table links are map-local and work without a festival. Locale child parts use their local ids.</small>
               <label>Activity</label><select id="festivalPropType"></select>
               <label>Label</label><input id="festivalPropLabel">
@@ -1903,6 +1907,12 @@ function loadFestivalPropFields() {
   if (!record) return;
   $('festivalPropType').innerHTML = '<option value="">No activity</option>' + Object.entries(window.FestivalCalendar.activityLabels).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
   $('propTableId').value = record.tableId || '';
+  const tablePlacement=window.TableChairPlacement?.normalize?.(record.tableAttachment)||null;
+  $('propTableMode').value=tablePlacement?.mode||'';
+  $('propTableAngle').value=tablePlacement?.angleDeg??0;
+  $('propTableDistance').value=tablePlacement?.distance??0.65;
+  $('propTableSide').value=tablePlacement?.side||'front';
+  $('propTableAlong').value=Math.round((tablePlacement?.along??0.5)*100);
   $('festivalPropType').value = record.activity?.type || '';
   $('festivalPropLabel').value = record.activity?.label || '';
   $('festivalPropCol').value = record.col; $('festivalPropRow').value = record.row;
@@ -5294,6 +5304,14 @@ $('festivalPropApply').addEventListener('click', () => {
   if (type) record.activity = { ...(record.activity || {}), type, label: $('festivalPropLabel').value.trim() || window.FestivalCalendar.activityLabels[type], radius: Math.max(1, Math.min(8, Number($('festivalPropRadius').value) || 2.5)) };
   else delete record.activity;
   record.tableId = $('propTableId').value.trim(); // Exported chair/table relationship, independent of activity metadata.
+  const tableMode=$('propTableMode').value;
+  if(!tableMode||!record.tableId)delete record.tableAttachment;
+  else {
+    const descriptor=tableMode==='orbit'?{mode:'orbit',angleDeg:Number($('propTableAngle').value),distance:Number($('propTableDistance').value)}:{mode:'edge',side:$('propTableSide').value,along:Number($('propTableAlong').value)/100,distance:Number($('propTableDistance').value)};
+    const normalized=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!normalized){setStatus('The table-relative chair placement settings are invalid.');return;}
+    record.tableAttachment=normalized;
+  }
   record.festivalDecoration = $('festivalPropDressing').value;
   record.festivalColor = $('festivalPropColor').value;
   renderFestivalPropsPanel(true); draw(); refreshPreview(); saveWorkspace(); schedule3DRebuild();

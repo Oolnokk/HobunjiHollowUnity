@@ -21,6 +21,7 @@
     for (const [key, entry] of entries) if (entry.root === root || (record.id && key === id)) entries.delete(key); // Overlapping rugs own distinct ids; a coincident tile cannot evict another rug or table entry.
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
+    window.TableChairPlacement?.refreshArea?.(area, entries.values()); // Parent movement/rotation and out-of-order restoration both refresh child chairs.
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
     focusStamp = null; // Placement changes invalidate any cached interaction target.
     window.NpcFurnitureWardrobes?.primeArea?.(area); // Authored map storage receives its real furniture-to-NPC binding asynchronously.

@@ -3201,7 +3201,7 @@
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Existing rugs never block new furniture either.
+          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug' || o.tableAttachment) return false; // Existing rugs never block new furniture either.
           const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
@@ -3232,7 +3232,7 @@
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         if (!def || def.walkable) return false;
         const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
-        const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
+        const cx = obj.tableAttachment ? obj.mesh.position.x : obj.col + bounds.fw * 0.5, cz = obj.tableAttachment ? obj.mesh.position.z : obj.row + bounds.fd * 0.5;
         const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
         const dx = x - cx, dz = z - cz;
         const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
@@ -3797,7 +3797,7 @@
         interiorFurnitureObjects.push(placedFurniture);
         window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
         if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
-        registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
+        placedFurniture.npcStationId = registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea), null, null, placedFurniture.id);
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -3856,7 +3856,7 @@
         if (obj.light) targetScene.remove(obj.light);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         const idx = interiorFurnitureObjects.indexOf(obj);
         if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
         if (refundToInventory) {
@@ -3865,10 +3865,48 @@
         }
       }
 
+      window.HobunjiFurnitureTableAttachmentMoved = record => {
+        if (!record?.tableAttachment || !record.mesh) return;
+        record.npcStationId = record.npcStationId || furnitureNpcStationId(normalizeNpcArea(record.area), record.col, record.row);
+        unregisterChairNpcStation(record.key, record.col, record.row, normalizeNpcArea(record.area), record.npcStationId);
+        const size = decorativeFurnitureSize(record.key, record.mesh.rotation.y * 180 / Math.PI, record);
+        record.col = record.mesh.position.x - size.fw * 0.5; record.row = record.mesh.position.z - size.fd * 0.5;
+        record.rotYDeg = record.mesh.rotation.y * 180 / Math.PI;
+        record.npcStationId = registerChairNpcStation(record.key, record.col, record.row, record.rotYDeg, normalizeNpcArea(record.area), null, null, record.id, record.npcStationId);
+      };
+
+      function setFurnitureTableAttachment(id, requested) {
+        const chair=interiorFurnitureObjects.find(obj=>obj.id===id&&obj.area===currentArea),def=chair&&DECORATIVE_FURNITURE_DEFS[chair.key];
+        if(!chair||!def?.sit||chair.area!=='interior')return{ok:false,message:'Only indoor chairs and other sitting furniture can attach to a table.'};
+        if(!requested){
+          const size=decorativeFurnitureSize(chair.key,chair.rotYDeg||0,chair);
+          const col=Math.floor(chair.mesh.position.x-size.fw*.5),row=Math.floor(chair.mesh.position.z-size.fd*.5);
+          const previous={tableId:chair.tableId,tableAttachment:chair.tableAttachment};
+          chair.tableAttachment=null;chair.tableId='';
+          const moved=moveDecorativeFurniture(chair.id,col,row,{area:chair.area});
+          if(!moved.ok){chair.tableId=previous.tableId;chair.tableAttachment=previous.tableAttachment;window.FurnitureTableSystem?.registerPlacement(chair.area,chair,chair.mesh,def);return moved;}
+          return{ok:true,message:'Chair detached from its table.'};
+        }
+        const table=interiorFurnitureObjects.find(obj=>obj.id===requested.tableId&&obj.area===chair.area&&obj.id!==chair.id&&/table|desk|counter/i.test(obj.key));
+        if(!table)return{ok:false,message:'Choose a table in this room.'};
+        const descriptor=window.TableChairPlacement?.normalize?.(requested);
+        if(!descriptor)return{ok:false,message:'The table-relative placement settings are invalid.'};
+        chair.tableId=table.id;chair.tableAttachment=descriptor;
+        const tableDef=DECORATIVE_FURNITURE_DEFS[table.key];
+        if(!window.TableChairPlacement?.apply?.(chair.mesh,table.mesh,descriptor,{width:tableDef?.fw||1,depth:tableDef?.fd||1})){
+          chair.tableId='';chair.tableAttachment=null;return{ok:false,message:'Could not attach the chair to that table.'};
+        }
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        window.FurnitureTableSystem?.registerPlacement(chair.area,chair,chair.mesh,def);
+        window.FarmEditor.saveFarmLayout();
+        return{ok:true,message:'Chair attached. It follows the table and faces its center.'};
+      }
+
       function moveDecorativeFurniture(id, col, row, options = {}) {
         const area = options.area || currentArea; // Partition migration may move indoor furniture while the player is still outside.
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === area);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (obj.tableAttachment) return { ok:false, message:'Detach this chair before moving it independently.' };
         const dimensions = obj.key === 'rug' && options.dimensions ? { ...options.dimensions, rugLayer: obj.rugLayer || 0 } : obj; // Two-corner moves can resize while retaining the rug's stack layer.
         if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, dimensions)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
@@ -3879,7 +3917,7 @@
           obj.mesh.scale.set(Math.max(0.05, dimensions.widthTiles - farmhouseInset) / def.fw, 1, Math.max(0.05, dimensions.heightTiles - farmhouseInset) / def.fd);
         }
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         obj.col = col; obj.row = row;
         const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
         const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
@@ -3890,7 +3928,7 @@
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
         if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
-        registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+        obj.npcStationId = registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         if (!options.skipSave) window.FarmEditor.saveFarmLayout(); // The caller batches migration saves only after all furniture and rooms have loaded.
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
@@ -3973,13 +4011,14 @@
       function rotateDecorativeFurniture(id, degrees = 45) {
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (obj.tableAttachment) return { ok:false, message:'A table-attached chair always faces its table. Detach it before rotating.' };
         const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
         if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot, currentArea, obj)) {
           return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
         }
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot, obj);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
         obj.mesh.rotation.y = nextRot * Math.PI / 180;
@@ -3992,7 +4031,7 @@
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
         if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, obj.col, obj.row, fw, fd, nextRot);
-        registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        obj.npcStationId = registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
@@ -4050,7 +4089,7 @@
           if (obj.col === col && obj.row === row) continue;
           const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
           obj.col = col; obj.row = row;
           obj.mesh.position.set(col + size.fw * 0.5, obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0, row + size.fd * 0.5); // Room moves preserve the rug's own visual stack level.
           if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
@@ -4072,7 +4111,7 @@
           if (obj.light) s.remove(obj.light);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -4102,7 +4141,7 @@
           });
           if (obj.light) interiorScene.remove(obj.light);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
           if (itemKey) store[itemKey] = (store[itemKey] || 0) + 1;
           const idx = interiorFurnitureObjects.indexOf(obj);
@@ -12027,12 +12066,12 @@
       function furnitureNpcStationId(area, col, row) {
         return `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt, furnitureId = null, stationId = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return null;
-        const id = furnitureNpcStationId(area, col, row);
+        const id = stationId || furnitureNpcStationId(area, col, row);
         registerNpcStations([{
-          id, label: def.name,
+          id, label: def.name, furnitureId: furnitureId || null,
           area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
           // Every sittable piece of furniture is automatically a 'sit'
           // free-time opportunity (design doc §14/§16) — no per-chair
@@ -12051,9 +12090,9 @@
         }], area);
         return id;
       }
-      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+      function unregisterChairNpcStation(furnitureKey, col, row, area, stationId = null) {
         if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
-        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+        npcStationsById.delete(stationId || furnitureNpcStationId(area, col, row));
       }
 
       function sceneForNpcArea(area) {
@@ -31038,6 +31077,7 @@
         getArmedFurniturePlacementKey,
         armFurnitureMove,
         getArmedFurnitureMoveId,
+        setTableAttachment: setFurnitureTableAttachment,
         getPlacedFurniture: () => [
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),

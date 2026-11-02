@@ -327,6 +327,24 @@
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
       const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
       row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
+      if (obj.placementKind === 'decorative' && def.sit && obj.area === 'interior') {
+        const tables=deps.getPlacedFurniture().filter(c=>c.id!==obj.id&&c.placementKind==='decorative'&&/table|desk|counter/i.test(c.key));
+        const controls=document.createElement('div');controls.className='farm-row';
+        const parent=document.createElement('select');parent.className='settings-small-btn';parent.add(new Option('Free-standing chair',''));
+        tables.forEach(t=>parent.add(new Option((deps.getDecorativeFurnitureDefs()[t.key]?.name||t.key)+' ('+t.id+')',t.id)));parent.value=obj.tableId||'';
+        const mode=document.createElement('select');mode.className='settings-small-btn';mode.add(new Option('Orbit','orbit'));mode.add(new Option('Table edge','edge'));
+        mode.value=obj.tableAttachment?.mode||(/round/i.test(tables.find(t=>t.id===parent.value)?.key||'')?'orbit':'edge');
+        mode.disabled=true; // Parent shape determines whether the chair orbits or attaches to a flat edge.
+        const value=document.createElement('input');value.className='settings-small-btn';value.type='number';value.min='0';value.max=mode.value==='orbit'?'359':'100';value.step='1';
+        value.value=mode.value==='orbit'?(obj.tableAttachment?.angleDeg??0):Math.round((obj.tableAttachment?.along??.5)*100);
+        const side=document.createElement('select');side.className='settings-small-btn';['front','back','left','right'].forEach(s=>side.add(new Option(s,s)));side.value=obj.tableAttachment?.side||'front';
+        const distance=document.createElement('input');distance.className='settings-small-btn';distance.type='number';distance.min='0';distance.max='4';distance.step='.05';distance.value=obj.tableAttachment?.distance??.65;
+        const apply=document.createElement('button');apply.className='settings-small-btn';apply.textContent=obj.tableAttachment?'Update':'Attach';
+        apply.addEventListener('click',()=>{const result=parent.value?deps.setTableAttachment(obj.id,{tableId:parent.value,mode:mode.value,...(mode.value==='orbit'?{angleDeg:Number(value.value)}:{side:side.value,along:Number(value.value)/100}),distance:Number(distance.value)}):deps.setTableAttachment(obj.id,null);deps.showToast(result.message,result.ok);render();});
+        controls.append(parent,mode,value,side,distance,apply);list.appendChild(controls);
+        mode.addEventListener('change',()=>{value.max=mode.value==='orbit'?'359':'100';value.value=mode.value==='orbit'?'0':'50';render();});
+        parent.addEventListener('change',()=>{mode.value=/round/i.test(tables.find(t=>t.id===parent.value)?.key||'')?'orbit':'edge';value.max=mode.value==='orbit'?'359':'100';value.value=mode.value==='orbit'?'0':'50';});
+      }
       if (obj.area === 'interior' && (obj.key === 'wardrobe' || obj.key === 'chest')) {
         const owners = window.NpcFurnitureWardrobes?.familyOwners?.() || []; // Live spouse/child roster drives this instance's owner selector.
         const selectorLabel = document.createElement('label'); // Controller-friendly name ties the select to the specific furniture row.

@@ -123,7 +123,7 @@
   }
 
   function occupiedTiles(piece) {
-    if (!piece) return [];
+    if (!piece || piece.tableAttachment) return [];
     const info = placement(piece);
     const col = Math.round(finiteNumber(piece.col, 0));
     const row = Math.round(finiteNumber(piece.row, 0));
