@@ -6,6 +6,34 @@ const maskUi = {
   clear: $('beardHoodMaskClear'), export: $('beardHoodMaskExport'), panel: $('beardHoodMaskEditor'),
   status: $('beardHoodMaskStatus'), reference: $('beardHoodReference'), undo: $('beardHoodMaskUndo'), redo: $('beardHoodMaskRedo'), pickHood: $('pickHood'), pickBeard: $('pickBeard')
 };
+const sidebarResizeHandle = $('sidebarResizeHandle');
+const fitGrid = document.querySelector('.grid');
+const sidebarPanel = document.querySelector('.controls');
+function setSidebarWidth(width) {
+  const available = Math.max(300, fitGrid.clientWidth);
+  const min = Math.min(180, available * 0.38);
+  const max = Math.max(min, available - 150);
+  fitGrid.style.setProperty('--sidebar-width', `${Math.max(min, Math.min(max, width))}px`);
+}
+let sidebarDragStart = null; // Pointer origin and initial width for the current resize gesture.
+sidebarResizeHandle.addEventListener('pointerdown', event => {
+  event.preventDefault();
+  sidebarDragStart = { x: event.clientX, width: sidebarPanel.getBoundingClientRect().width };
+  sidebarResizeHandle.setPointerCapture(event.pointerId);
+});
+sidebarResizeHandle.addEventListener('pointermove', event => {
+  if (!sidebarDragStart) return;
+  setSidebarWidth(sidebarDragStart.width + event.clientX - sidebarDragStart.x);
+});
+function finishSidebarResize() { sidebarDragStart = null; }
+sidebarResizeHandle.addEventListener('pointerup', finishSidebarResize);
+sidebarResizeHandle.addEventListener('pointercancel', finishSidebarResize);
+sidebarResizeHandle.addEventListener('keydown', event => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  event.preventDefault();
+  const current = sidebarPanel.getBoundingClientRect().width;
+  setSidebarWidth(current + (event.key === 'ArrowRight' ? 20 : -20));
+});
 let activeBeardHoodMaskCanvas = null; // Editable pixel mask for the currently selected cosmetic and target variant.
 let activeBeardHoodMaskKey = ''; // Invalidates stale strokes when the cosmetic or target changes.
 let activeBeardHoodReferenceCanvas = null; // Opposite-layer ghost, warped with the current species fit to show actual beard/hood overlap.
