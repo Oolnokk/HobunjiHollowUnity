@@ -153,7 +153,7 @@
       ?? window.HobunjiDrunkGameplayBridge?.npcSpeedMultiplier?.(id), 1);
   }
 
-  function directActorSpeed(owner, speedKind) {
+  function directActorSpeed(owner, speedKind, includeAuthoredDefinition = true) {
     if (!owner) return 0;
     const current = [
       owner.currentMovementSpeedPxS,
@@ -166,7 +166,7 @@
     const explicit = Number(owner[speedKind]);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
 
-    const def = owner.def;
+    const def = includeAuthoredDefinition ? owner.def : null;
     if (!def) return 0;
     const state = String(owner.state || owner.activity || '').toLowerCase();
     const chasing = /chase|combat|pursuit|running/.test(state);
@@ -211,8 +211,8 @@
     if (!owner) return 0;
     if (owner === deps?.player) return playerMovementSpeed(owner);
 
-    const directSpeed = directActorSpeed(owner, speedKind);
-    if (directSpeed > 0) return directSpeed;
+    const explicitLiveSpeed = directActorSpeed(owner, speedKind, false);
+    if (explicitLiveSpeed > 0) return explicitLiveSpeed;
 
     const walker = findNpcWalker(owner);
     const liveWalkerSpeed = walkerMovementSpeed(walker, owner);
@@ -220,7 +220,8 @@
 
     const measuredSpeed = sampleOwnerMotion(owner);
     if (measuredSpeed > 0) return measuredSpeed;
-    return 0;
+
+    return directActorSpeed(owner, speedKind, true);
   }
 
   function ownerSpeedRatio(companion) {
@@ -232,7 +233,7 @@
   function applyCompanionProxy(companion) {
     if (!companion?.isCompanion || companion.stableRole === 'mount' || !companion.def || typeof companion.def !== 'object') return false;
     const existing = entityBindings.get(companion);
-    if (existing?.source === companion.def) return true;
+    if (existing?.proxy === companion.def) return true;
 
     const source = companion.def;
     const proxy = new Proxy(source, {
