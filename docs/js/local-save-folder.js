@@ -6,12 +6,12 @@ document.write('<script src="js/session-persistence-startup-guard.js?v=20260930h
 document.write('<script src="js/save-snapshot-core.js?v=20261022h35ebc8b"><\/script>');
 document.write('<script src="js/autosave-pause.js?v=20260930companion1"><\/script>'); // Dev Companion autosave pause; checked by the folder core + checkpoint manager below.
 document.write('<script src="js/quick-save.js?v=20260930companion1"><\/script>'); // Dev Companion quick save/load; its pending load is applied by FolderSavePrimary at boot.
-document.write('<script src="js/local-save-folder-core.js?v=20261022h24325b7"><\/script>');
+document.write('<script src="js/local-save-folder-core.js?v=20261102h9b0f24a"><\/script>');
 document.write('<script src="js/folder-save-primary.js?v=20261022h0e475f3"><\/script>');
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20261022h37afff8"><\/script>');
-document.write('<script src="js/save-checkpoint-manager.js?v=20261022h2dd5a46"><\/script>');
+document.write('<script src="js/save-checkpoint-manager.js?v=20261102hecf29f0"><\/script>');
 document.write('<script src="js/folder-save-quit-guard.js?v=20261022he68b2ba"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20261022hcde41bc"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20260920startup4"><\/script>');

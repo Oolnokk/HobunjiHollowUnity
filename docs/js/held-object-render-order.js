@@ -463,11 +463,26 @@
   let pendingClassification = new Set();
   let classificationScheduled = false;
 
+  // True when an ancestor of `object` is itself queued in `batch`: that
+  // ancestor's classifyTree already visits `object`, so walking it again is
+  // pure waste. A scene built bottom-up queues every nesting level, which
+  // otherwise re-walked each descendant once per ancestor.
+  function batchHasQueuedAncestor(batch, object) {
+    for (let node = object.parent; node; node = node.parent) {
+      if (batch.has(node)) return true;
+    }
+    return false;
+  }
+
   function flushClassification() {
     classificationScheduled = false;
+    if (!pendingClassification.size) return;
     const batch = pendingClassification;
     pendingClassification = new Set();
-    for (const object of batch) classifyTree(object);
+    for (const object of batch) {
+      if (batchHasQueuedAncestor(batch, object)) continue;
+      classifyTree(object);
+    }
   }
 
   function queueClassification(objects) {
@@ -486,8 +501,10 @@
     if (!proto || typeof previousAdd !== 'function' || previousAdd[marker]) return;
     function wrappedAdd(...objects) {
       const result = previousAdd.apply(this, objects);
-      for (const object of objects) classifyTree(object);
-      queueClassification(objects); // catches tags stamped just after add()
+      // Classification is deferred to one deduplicated flush (microtask, or
+      // the start of the next render, whichever comes first). It previously
+      // also ran synchronously here, walking every added subtree twice.
+      queueClassification(objects); // also catches tags stamped just after add()
       return result;
     }
     wrappedAdd[marker] = true;
@@ -500,6 +517,7 @@
 
   function scanScene(scene, force = false) {
     if (!scene?.isScene) return;
+    if (classificationScheduled) flushClassification(); // Registries must reflect every add() made before this scan/render.
     const now = performance.now();
     const previous = lastSceneScan.get(scene) || -Infinity;
     if (!force && now - previous < FALLBACK_SCAN_INTERVAL_MS) return;
@@ -1527,6 +1545,7 @@
   rendererProto.render = wrappedRender;
 
   function snapshot() {
+    if (classificationScheduled) flushClassification(); // Diagnostics/tests read counts right after add().
     return {
       installed: true,
       enabled,
@@ -1600,6 +1619,7 @@
     // Ground/grass x-ray is now an invariant of held weapon presentation.
     setEnabled() { enabled = true; },
     enforceHeldInvariant() {
+      if (classificationScheduled) flushClassification();
       for (const mesh of heldRegistry) enforceHeldMesh(mesh);
     },
     classify(object) {

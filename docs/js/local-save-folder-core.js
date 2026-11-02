@@ -406,16 +406,30 @@
     return layouts;
   }
 
+  // The change poll runs every CHANGE_POLL_MS. Parsing the whole save meta
+  // each tick just to learn the world ids was the dominant cost, so cache the
+  // id list keyed by the raw meta string (any change to the meta changes the
+  // string and invalidates it).
+  let _fingerprintWorldIds = { raw: null, ids: null };
+
+  function fingerprintWorldIds(metaRaw) {
+    if (_fingerprintWorldIds.raw === metaRaw) return _fingerprintWorldIds.ids;
+    let ids = null;
+    try {
+      const meta = metaRaw ? JSON.parse(metaRaw) : null;
+      ids = (meta?.worlds || []).filter(world => world?.id).map(world => world.id);
+    } catch { ids = null; }
+    _fingerprintWorldIds = { raw: metaRaw, ids };
+    return ids;
+  }
+
   function browserFingerprint(includeFarmLayouts) {
     const metaRaw = localStorage.getItem(SAVE_META_KEY) || '';
     if (!includeFarmLayouts) return metaRaw;
-    let meta;
-    try { meta = metaRaw ? JSON.parse(metaRaw) : null; } catch { return metaRaw; }
+    const ids = fingerprintWorldIds(metaRaw);
+    if (!ids) return metaRaw; // Unparseable meta: fingerprint on the raw string alone, as before.
     const parts = [metaRaw];
-    for (const world of (meta?.worlds || [])) {
-      if (!world?.id) continue;
-      parts.push(world.id, localStorage.getItem(farmLayoutKey(world.id)) || '');
-    }
+    for (const id of ids) parts.push(id, localStorage.getItem(farmLayoutKey(id)) || '');
     return parts.join('\u001f');
   }
 
