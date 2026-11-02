@@ -639,7 +639,7 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt });
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, getSnowMaterial: () => material('snow'), forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative Western Slope snow caps reuse this exact material and its asynchronously loaded canvas texture.
   ensureTexture();
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone
