@@ -347,7 +347,7 @@
     chordPressurePlates:'activators', lockableStoneDoor:'mechanisms', stoneCanopy:'decorations',
     ceilingProjectileGlyph:'activators', ropeTraverse:'mechanisms',
     cyclingElevator:'mechanisms', sunkenRoomShell:'decorations', sarcophagusSpawner:'mechanisms',
-    hallwayGlyphGate:'activators', ropeVariant:'mechanisms',
+    ropeVariant:'mechanisms',
     ropePayoff:'decorations', lavaBasin:'mechanisms', ceilingRailTargets:'activators',
     greatDoorSanctum:'mechanisms',
   }); // Room module type -> the independent authored allowlist it must satisfy.
@@ -1481,7 +1481,7 @@
   }
 
   function buildSunkenRoomShell(context,room,bounds,doorway,floorY) {
-    if(!bounds||!doorway)return null;
+    if(!canClaimRoomSpot(room?.id,'decorations','sunkenRoomShell')||!bounds||!doorway)return null;
     const root=new THREE.Group();
     root.name='dev_ruin_sunken_ossuary_shell_'+room.id;
     state.group.add(root);
