@@ -78,8 +78,9 @@ iceWall.position.y=1; // The visible wall mesh is centered vertically; bottom of
 scene.children.push(iceWall);
 browser.NearbyVolumeCollision.invalidate();
 const wallHit=browser.NearbyVolumeCollision.segmentHit({x:0,y:.5,z:1.7},{x:2,y:.5,z:1.7});
-assert(wallHit && wallHit.kind==='tothal-ice-wall' && wallHit.source==='explicit-aabb-metadata',
-  'the thin ice wall blocks projectiles across its actual long axis');
+assert(wallHit && wallHit.kind==='tothal-ice-wall' &&
+  browser.NearbyVolumeCollision.debugSnapshot().lastBlock?.source==='explicit-aabb-metadata',
+  'the thin ice wall blocks projectiles across its actual long axis using explicit AABB metadata');
 assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:-.1,z:1},{x:2,y:-.1,z:1}),null,
   'ice-wall cover does not extend below its actual bottom');
 assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:2.1,z:1},{x:2,y:2.1,z:1}),null,
