@@ -21,7 +21,7 @@
   });
   const defaultsProfile = () => ({
     id:'procedural-profile-'+(state.library.proceduralProfiles.length+1),name:'New procedural profile',enabled:true,weight:1,
-    match:{minWidth:8,maxWidth:48,minHeight:8,maxHeight:48,minDoors:0,maxDoors:8,sizeClasses:[],roomIds:[]},
+    match:{minWidth:3,maxWidth:48,minHeight:3,maxHeight:48,minDoors:0,maxDoors:8,sizeClasses:[],roomIds:[]},
     spots:[{...newSpot(1,'profile'),x:.5,z:.5,label:'Center'}],puzzleLinks:[]
   });
   const current = () => selected();
