@@ -150,9 +150,10 @@ The overlay's normal x-ray exemption is intentionally narrow:
 it also classifies explicitly tagged interior floors (farmhouse, authored, cavern walkable,
 V50 ruin plateau, and rooted Stone Age) while preserving ordinary raised
 geometry, cave walls, snow/slush caps, water, and grass billboards as
-occluders. Carved cave shells are never removed wholesale: only upward-facing
-floor triangles are omitted from their depth-reconstruction geometry;
-their vertical walls and ceiling still write depth.
+occluders. Carved cave shells retain their full original geometry during depth
+reconstruction. The elevation shader discards only same-height, front-facing
+upward floor fragments; different-height top faces, vertical walls and ceilings
+continue to write depth.
 The screen-space scissor, per-scene registries, and conservative cover/
 overlay overlap check limit the cost. Near-plane/uncertain geometry can
 fall back to the full tint path. Framebuffers with no usable stencil
@@ -176,7 +177,8 @@ HeldObjectRenderOrder applies the same rule to both representations:
    depth writes temporarily enabled) so their front faces still mask the
    expanded shell. Snow, water, slush, furniture, rocks, walls and other
    non-ground occluders remain in this depth reconstruction. Carved
-   cavern shells use their non-floor occluder geometry, so their walls and
+   cavern shells retain their complete geometry; only same-height top faces are
+   discarded by the elevation filter, while different-height floors, walls and
    ceilings continue to block outlines.
 3. Only the registered x-ray meshes' layer-1 shells are drawn against that
    reconstructed depth. Their shell therefore follows the same ground
