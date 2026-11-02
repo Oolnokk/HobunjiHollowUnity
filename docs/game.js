@@ -21682,7 +21682,7 @@
           const requestedPlanarDistance = Math.hypot(dx, dz); // Original horizontal boom reach, used by the shoulder-offset taper.
           const upwardPitchRad = dy < -1e-4 ? Math.atan2(-dy, Math.max(1e-6, requestedPlanarDistance)) : 0; // Positive only when the camera is below its look target.
           const targetHeadroom = Math.max(0, lookAtY - targetFloorY - clearance); // Available vertical room beneath the look pivot before the camera reaches terrain.
-          const pitchSafeSetback = upwardPitchRad > 1e-4 ? targetHeadroom / Math.tan(upwardPitchRad) : Infinity; // At steeper upward pitches, the boom must be allowed closer to the character.
+          const pitchSafeSetback = upwardPitchRad > 1e-4 ? Math.max(0, targetHeadroom / Math.tan(upwardPitchRad) - 0.002) : Infinity; // At steeper upward pitches, the boom must be allowed closer to the character.
           const groundLimitedUpward = dy < -1e-4 && fraction < 1 - 1e-6; // Raised terrain may shorten the ray beyond the flat target-floor estimate.
           const terrainSafeSetback = groundLimitedUpward ? Math.hypot(resultX - lookAtX, resultZ - lookAtZ) : Infinity; // Never undo a terrain-safe upward retraction.
           const minimumSetback = Math.max(0, Math.min(requestedPlanarDistance,
