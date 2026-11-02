@@ -728,8 +728,8 @@
   }
 
   function _threeSceneToJsonIterative(scene) {
-    // Three r128 Object3D.toJSON recursively calls child.toJSON; serialize one
-    // node at a time with children temporarily detached, then rebuild the tree.
+    // Three r128 Object3D.toJSON recursively visits children. Serialize one
+    // node at a time and store parent/child UUID links in a flat object table.
     const meta = {
       geometries:{}, materials:{}, textures:{}, images:{},
       shapes:{}, skeletons:{}, animations:{},
@@ -764,6 +764,7 @@
 
     const rootObject = serializeNode(scene);
     seen.add(scene);
+    const objects = [];
     const pending = [{ source:scene, target:rootObject }];
     let objectCount = 1;
 
@@ -773,20 +774,20 @@
       if (!children.length) continue;
       frame.target.children = [];
 
-      for (const child of children) {
+      for (let childIndex = 0; childIndex < children.length; childIndex++) {
+        const child = children[childIndex];
         if (!child || typeof child !== 'object') continue;
-        if (seen.has(child)) {
-          frame.target.children.push({ type:'SerializationReference', name:child.name || '' });
-          continue;
-        }
-        if (objectCount >= MAX_OBJECTS) {
-          frame.target.children.push({ type:'SerializationTruncated', name:'Object limit reached' });
-          continue;
-        }
+        const childId = child.uuid || `object-${objectCount}`;
+        frame.target.children.push(childId);
+        if (seen.has(child)) continue;
+        if (objectCount >= MAX_OBJECTS) continue;
+
         seen.add(child);
         objectCount++;
         const childObject = serializeNode(child);
-        frame.target.children.push(childObject);
+        childObject.parent = frame.target.uuid || null;
+        childObject.childIndex = childIndex;
+        objects.push(childObject);
         pending.push({ source:child, target:childObject });
       }
     }
@@ -802,8 +803,10 @@
     };
 
     const output = {
-      metadata:{ version:4.5, type:'Object', generator:'Object3D.toJSON (iterative)' },
+      metadata:{ version:4.5, type:'Object', generator:'Object3D.toJSON (flat iterative)' },
+      objectGraphFormat:'flat-parent-child-uuid-links-v1',
       object:rootObject,
+      objects,
     };
     for (const key of ['geometries','materials','textures','images','shapes','skeletons','animations']) {
       const values = extract(meta[key]);
