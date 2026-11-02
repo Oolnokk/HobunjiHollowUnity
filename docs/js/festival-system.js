@@ -51,7 +51,7 @@
   const FOOD_PORTION_HOURS = 24; // Each festival bite adds one standard in-game food-effect duration.
   const MAX_FOOD_PORTIONS = 10; // Bowl capacity, independent meal-duration cap, and fullness stack limit.
   const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
-  function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the eighteen-hour fullness window.
+  function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the 24-hour food-effect and fullness windows.
   function validGatheringHours(start, end) {
     return Number.isFinite(start) && start >= 0 && start < 24
       && Number.isFinite(end) && end >= 0 && end <= 24 && start !== end;
