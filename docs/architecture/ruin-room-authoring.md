@@ -70,7 +70,7 @@ A `puzzleLinks` entry references an activator spot and a mechanism spot by ID:
 }
 ```
 
-V50 claims the referenced pair atomically. The `relation` is retained in the runtime plan and diagnostics for the encounter composer; the current V50 adapter uses the pair to bind the activator to the mechanism already generated for that room. The authoring layer does not invent a new gameplay interaction type: the existing V50 movement/activation implementation remains authoritative.
+V50 claims the referenced pair atomically. The activator is physically anchored to its authored spot: pressure-plate layouts try that exact center, linked-cube pairs use it as their center, and glyph targets select the nearest usable wall/pillar positions around it. The V50 doorway mechanism itself remains fixed to its generated corridor connection; its mechanism spot is the allowed/linked room slot, not permission to detach a door from its wall. The `relation` is retained in the plan and diagnostics, while V50's existing movement/activation implementation remains authoritative.
 
 ## Safety boundaries
 
