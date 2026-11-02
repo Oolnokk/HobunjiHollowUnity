@@ -580,7 +580,8 @@
         axisOverride: axis,
         ..._faceMats(),
       });
-      roofMesh.userData.housePieceRoofExtension = true;
+      roofMesh.userData.housePieceRoofOnly = true;
+      roofMesh.userData.housePieceRoofExtension = roofRect.col !== wallRect.col || roofRect.row !== wallRect.row || roofRect.w !== wallRect.w || roofRect.h !== wallRect.h;
       entry._mesh.add(roofMesh);
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
