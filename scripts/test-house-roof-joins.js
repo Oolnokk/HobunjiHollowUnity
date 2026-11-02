@@ -20,12 +20,16 @@ const roofStart = core.indexOf('  function _rectAdjacency(');
 const roofEnd = core.indexOf('  function getExteriorRenderRect(', roofStart);
 const sharedStart = core.indexOf('  function _sharedWallCutsFor(', roofEnd);
 const sharedEnd = core.indexOf('  function _partialExtensionRect(', sharedStart);
+const crossStart = core.indexOf('  function _crossGableConnections(', sharedEnd);
+const crossEnd = core.indexOf('  function _crossGablePiece(', crossStart);
 assert(roofStart >= 0 && roofEnd > roofStart, 'roof helper range is present');
 assert(sharedStart >= 0 && sharedEnd > sharedStart, 'shared-wall helper range is present');
+assert(crossStart >= 0 && crossEnd > crossStart, 'cross-gable helper range is present');
 
 const helpers = vm.runInNewContext(`(() => {
   ${core.slice(roofStart, roofEnd)}
   ${core.slice(sharedStart, sharedEnd)}
+  ${core.slice(crossStart, crossEnd)}
   return {
     _roofAxisDecision,
     _sameDirectionExtensions,
