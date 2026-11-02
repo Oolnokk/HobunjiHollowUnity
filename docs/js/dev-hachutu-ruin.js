@@ -1059,7 +1059,7 @@
     if(!session)return {active:false};
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
-      pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
+      pit:session.abyss,platforms:session.platforms.length,platformState:{moving:session.platforms.filter(item=>item.moving).length,stationaryStone:session.platforms.filter(item=>!item.moving&&!!item.stone).length,movingBaseGeometry:session.platforms.filter(item=>item.moving&&!!item.stone).length},ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
       rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null,onSubstrate:!!g.onSubstrate})),floorRoots:(session.cover||[]).map(c=>({room:c.name,kind:c.kind,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,rockGeometries:session.rockCache?.size||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared,resonance:session.trial.resonance}:null,
       seeds:(session.seeds||[]).map(seed=>({index:seed.index,taken:seed.taken})),bulbs:(session.bulbs||[]).map(bulb=>({index:bulb.index,lit:bulb.lit})),
