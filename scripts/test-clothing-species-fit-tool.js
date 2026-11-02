@@ -25,7 +25,10 @@ assert(hub.includes('src="clothing-species-fit/index.html"'), 'dev tools hub mus
 // V24 (#971) removed the derived-overlay cutoff mode; the extended overlay is imported top-aligned and warped directly.
 assert(index.includes('id="downloadExtended"'), 'tool must expose the warped extended-overlay PNG export');
 assert(index.includes('id="importDiagnostics"'), 'tool must accept a pasted diagnostics fit');
-assert(loader.includes('i<=12'), 'loader must concatenate every app chunk');
+assert(loader.includes('i<=13'), 'loader must fetch the mask authoring chunk');
+assert(loader.includes('coreParts[11].slice(0,closeAt)+parts[12]'), 'loader inserts mask authoring inside the original private application scope');
+assert(app.includes('})();'), 'the original twelve core chunks remain independently compilable');
+assert(fs.readFileSync(path.join(toolDir, 'app.part13.txt'), 'utf8').includes('beardOverpassMasks'), 'mask authoring remains in its own final source chunk');
 assert(/behind\.part\$\{i\}\.txt/.test(loader) && loader.includes('i<=5'), 'loader must attach every behind-sprite patch author chunk after the core app');
 assert(app.includes('warpExtendedOverlay'), 'extended overlay must pass through the extended warp');
 assert(app.includes('downloadExtendedWarp'), 'tool must bake/export the final warped overlay');
