@@ -178,6 +178,11 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   });
 
   const firstMaterial = root.children[0].children[0].material;
+  const skySource = fs.readFileSync('docs/js/sky-dome.js', 'utf8'); // Compare the real sky depth policy with the replacement rock material.
+  const skyContext = { window: {}, console };
+  vm.runInNewContext(skySource.replace('  installClockHook(); installWeatherHook(); installRainHook();',
+    '  window.testSkyDepth = { setSkyLayerDepth, CLOUD_DEPTH_NDC, CELESTIAL_DEPTH_NDC };'), skyContext);
+  const skyDepth = skyContext.window.testSkyDepth;
   assert.equal(firstMaterial.fog, false, 'distant rock ridges must not inherit near-ground fog');
   assert.equal(firstMaterial.depthWrite, false, 'distant rocks must not write depth over foreground terrain');
   assert.equal(firstMaterial.depthTest, true, 'foreground terrain must continue to occlude distant rocks');
@@ -186,6 +191,32 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const backgroundMax = backgroundShader.uniforms.uBackgroundMaxDepth.value;
   assert.match(backgroundShader.vertexShader, /min\(gl_Position\.z, gl_Position\.w \* uBackgroundMaxDepth\)/);
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
+  assert(root.children.every(group => group.children.every(mesh => mesh.frustumCulled === false)), 'far-plane CPU culling must not discard depth-clamped rocks');
+  for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
+    const skyMaterial = { userData: {} }; // Isolates each real sky layer's shader state.
+    const skyShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
+    skyDepth.setSkyLayerDepth(skyMaterial, depth);
+    skyMaterial.onBeforeCompile(skyShader);
+    assert.match(skyShader.vertexShader, /gl_Position.z = gl_Position.w \* uSkyLayerDepth/);
+    assert.equal(skyShader.uniforms.uSkyLayerDepth.value, depth);
+    assert(backgroundMax < depth && depth < 1, 'sky masks must remain behind rocks but inside the far plane');
+    for (const originalDepth of [0.9, 0.99999, 1.2]) {
+      assert(Math.min(originalDepth, backgroundMax) < depth, 'near, distant, and beyond-far rocks must pass sky masks');
+      assert(0.8 < Math.min(originalDepth, backgroundMax), 'foreground terrain must still occlude every rock ridge');
+    }
+  }
+  assert(skyDepth.CLOUD_DEPTH_NDC.every((depth, index, depths) => index === 0 || depths[index - 1] < depth), 'cloud masks must retain their near-to-far order');
+  assert(skyDepth.CLOUD_DEPTH_NDC.every(depth => depth < skyDepth.CELESTIAL_DEPTH_NDC), 'cloud masks must continue to occlude the sun and moon');
+  for (const bits of [16, 24]) {
+    const maxDepth = 2 ** bits - 1;
+    const encodedDepths = [backgroundMax, ...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]
+      .map(depth => (Math.fround(depth) * 0.5 + 0.5) * maxDepth);
+    const depthSlots = encodedDepths.map(depth => Math.round(depth));
+    if (bits === 16) assert(encodedDepths.every(depth => Math.abs(depth - Math.round(depth)) < 0.25),
+      '16-bit depth values must stay away from rounding boundaries');
+    assert(depthSlots.every((slot, index) => index === 0 || depthSlots[index - 1] < slot),
+      'background, cloud masks, and celestial PNGs must occupy distinct ordered depth slots');
+  }
 
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
