@@ -284,14 +284,11 @@
     if (!heldBowl?.meal||heldBowl.uses<1||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit on a chair with a filled bowl.');
     if (currentFullness()>=MAX_FOOD_PORTIONS) return fail('You are full. The fullness effect fades 24 in-game hours after its first serving.');
     const meal=heldBowl.meal;
-    const now=worldHour(); // Each portion adds four in-game hours, with the existing ten-portion duration cap.
-    const existing=(state.feastBuffs||[]).find(entry=>entry.id===meal.id && entry.expiresHour>now);
-    if (existing) {
-      const hours=Math.min(MAX_FOOD_PORTIONS*FOOD_PORTION_HOURS,Math.max(0,existing.expiresHour-now)+FOOD_PORTION_HOURS);
-      existing.expiresHour=now+hours;
-      existing.portions=Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(hours/FOOD_PORTION_HOURS)));
-    } else state.feastBuffs.push({ id:meal.id,label:meal.label,icon:meal.icon,foodEffects:meal.foodEffects,portions:1,expiresHour:now+FOOD_PORTION_HOURS});
-    state.feastBuffs=state.feastBuffs.filter(entry=>entry.expiresHour>now);
+    const now=worldHour(); // Every serving transfers all active meal-buff time to the newly eaten food.
+    const activeBuffs=(state.feastBuffs||[]).filter(entry=>entry.expiresHour>now);
+    const remainingHours=activeBuffs.reduce((total,entry)=>total+Math.max(0,entry.expiresHour-now),0);
+    const hours=Math.min(MAX_FOOD_PORTIONS*FOOD_PORTION_HOURS,remainingHours+FOOD_PORTION_HOURS);
+    state.feastBuffs=[{ id:meal.id,label:meal.label,icon:meal.icon,foodEffects:meal.foodEffects,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(hours/FOOD_PORTION_HOURS))),expiresHour:now+hours }];
     if (!currentFullness()) state.fullness={stacks:0,expiresHour:worldHour()+FULLNESS_DURATION_HOURS,durationHours:FULLNESS_DURATION_HOURS};
     state.fullness.stacks++;
     heldBowl.uses--;
@@ -504,7 +501,7 @@
     const now=worldHour(); // Restore exact calendar-hour timers and migrate old 24-hour portions once.
     const savedPortionHours=Number(saved?.feastBuffDurationHours);
     const migrateLegacyPortions=savedPortionHours!==FOOD_PORTION_HOURS;
-    state.feastBuffs=(Array.isArray(saved?.feastBuffs)?saved.feastBuffs:[]).filter(entry=>entry && (Number(entry.remainingHours)>0 || Number(entry.remainingS)>0))
+    const restoredBuffs=(Array.isArray(saved?.feastBuffs)?saved.feastBuffs:[]).filter(entry=>entry && (Number(entry.remainingHours)>0 || Number(entry.remainingS)>0))
       .slice(0,24).map(entry=>{
         const portions=Math.max(1,Math.min(MAX_FOOD_PORTIONS,Number(entry.portions)||1));
         const storedHours=Number(entry.remainingHours);
@@ -513,6 +510,11 @@
           : portions*FOOD_PORTION_HOURS; // Legacy real-time saves have no calendar timer; grant four hours per recorded portion.
         return {...entry,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(remainingHours/FOOD_PORTION_HOURS))),expiresHour:now+remainingHours};
       });
+    if(restoredBuffs.length) {
+      const latestBuff=restoredBuffs[restoredBuffs.length-1]; // Older saves may contain separate meal timers; keep the newest meal's effects.
+      const combinedHours=Math.min(FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS,restoredBuffs.reduce((total,entry)=>total+Math.max(0,entry.expiresHour-now),0));
+      state.feastBuffs=[{...latestBuff,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(combinedHours/FOOD_PORTION_HOURS))),expiresHour:now+combinedHours}];
+    }
     state.feastBuffDurationHours=FOOD_PORTION_HOURS;
     if (saved?.claims && typeof saved.claims === 'object' && !Array.isArray(saved.claims)) {
       for (const [key, value] of Object.entries(saved.claims)) if (/^\d+:[a-z_]+$/.test(key) && value && typeof value === 'object' && !Array.isArray(value)) state.claims[key] = { ...value };
