@@ -43,6 +43,7 @@ const context = vm.createContext({
   s_shoulderSurfOffsetH_current: 0, s_shoulderSurfOffsetV_current: 0,
   applyAuthoredCinematicCamera: () => false,
   cameraModeConfig: () => mode, cameraContainerAspect: () => 1,
+  clampCameraPitchOffsetDeg: (value, baseAngleDeg = 9) => Math.max(-90 - baseAngleDeg, Math.min(90 - baseAngleDeg, Number(value) || 0)), // Mirrors the shared vertical clamp in this isolated startup harness.
   dialoguePortraitCameraAim: () => null, _lastCameraLookPoint: { set() {} },
   currentAreaOcclusionMeshes: () => [], performance: { now: () => 1000 },
   THREE: { MathUtils: { degToRad: n => n * Math.PI / 180 } },
