@@ -36,7 +36,11 @@ const windowStub = {
   AlchemySystem: { getMovementSpeedMultiplier() { return alchemyMul; } },
   ResourceSystem: { getEffectiveMax() { return 100; } },
   PerceptionMode: { speedMultiplier() { return perceptionMul; } },
-  Mounts: { rideState: 'none', rideEntity: null },
+  Mounts: {
+    init(deps) { this.deps = deps; },
+    rideState: 'none',
+    rideEntity: null,
+  },
   NpcCharacterState: { movementSpeedMultiplier() { return npcOwnerMul; } },
   _npcWalkers: new Map(),
 };
@@ -46,8 +50,6 @@ const deps = {
   MOVE_SPEED: 238,
   TILE: 32,
   getActiveGrid: () => grid,
-  getDevGlobalSpeedMul: () => devMul,
-  getAlchemySpeedMul: () => alchemyMul,
 };
 const context = {
   window: windowStub,
@@ -65,10 +67,16 @@ const context = {
 };
 vm.runInNewContext(source, context, { filename: 'companion-movement-speed.js' });
 
+windowStub.Mounts.init({
+  MOVE_SPEED: 238,
+  getDevGlobalSpeedMul: () => devMul,
+  getAlchemySpeedMul: () => alchemyMul,
+});
 windowStub.Combat.init(deps);
 const api = windowStub.CompanionMovementSpeed; // The same public diagnostic/test surface used by the live game.
 assert(api, 'companion movement speed API is installed');
 assert.equal(api.debugSnapshot().initialized, true, 'Combat.init supplies the live runtime dependencies');
+assert.equal(windowStub.Mounts.deps.MOVE_SPEED, 238, 'Mounts retains the authoritative movement dependency supplied to its init');
 assert.equal(schedulerRegistrations.get('companion-movement-speed')?.options.phase, 'pre-game',
   'owner-relative speeds update before gameplay simulation consumes companion movement definitions');
 
