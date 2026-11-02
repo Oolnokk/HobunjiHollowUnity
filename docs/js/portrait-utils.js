@@ -1570,9 +1570,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodHideFrontAndSideHair = Boolean(resolveOptionLayers(hood, resolvedFighter).length);
   const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
+  const beardMaskVariantKey = `${resolvedFighter?.speciesId || fighter?.speciesId || ''}_${resolvedFighter?.gender || fighter?.gender || ''}`;
+  const hasBeardOverpassMask = Boolean(
+    hood?.beardRevealMasks?.[beardMaskVariantKey] || hood?.beardRevealMasks?.default ||
+    facialHair?.beardOverpassMasks?.[beardMaskVariantKey] || facialHair?.beardOverpassMasks?.default
+  );
   const hiddenCosmeticGroups = new Set([
     ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
-    ...((!renderOptions?.forceShowFacialHair && (hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask))) ? [facialHair] : []),
+    ...((!renderOptions?.forceShowFacialHair && !hasBeardOverpassMask && (hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask))) ? [facialHair] : []),
   ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
