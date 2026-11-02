@@ -209,6 +209,17 @@
       if (!template.id || ids.has(template.id)) errors.push('Template ids must be non-empty and unique (' + template.id + ').');
       ids.add(template.id);
       validateFootprint(template.footprint, template.name || template.id || 'Template', errors);
+      if (!template.rotations.length) errors.push(template.name + ': choose at least one allowed rotation.');
+      const connectionIds = new Set();
+      for (const connection of template.connections) {
+        if (!connection.id || connectionIds.has(connection.id)) errors.push(template.name + ': connection ids must be non-empty and unique (' + connection.id + ').');
+        connectionIds.add(connection.id);
+      }
+      const puzzleLinkIds = new Set();
+      for (const link of template.puzzleLinks) {
+        if (!link.id || puzzleLinkIds.has(link.id)) errors.push(template.name + ': puzzle link ids must be non-empty and unique (' + link.id + ').');
+        puzzleLinkIds.add(link.id);
+      }
       const spots = validateSpots(template, template.name || template.id, errors);
       validateLinks(template, template.name || template.id, spots, errors);
       for (const connection of template.connections) {
@@ -288,7 +299,7 @@
       actual.push({side:entrance.side,offset:Number(entrance.center)-(entrance.axis==='x'?room.row:room.col),width:Number(entrance.widthCells)||1,kind:'entrance'});
     }
     for (const door of actual) {
-      const candidate = template.connections.find(connection=>connection.kind===door.kind&&connection.side===door.side&&Math.abs(connection.offset-door.offset)<=.51&&connection.width<=door.width+.01);
+      const candidate = template.connections.find(connection=>connection.kind===door.kind&&connection.side===door.side&&Math.abs(connection.offset-door.offset)<=.51&&connection.width+.01>=door.width);
       if (!candidate || !connectionCellsFit(template.footprint.rows, candidate)) return false;
     }
     for (const connection of template.connections.filter(entry=>entry.required)) {
