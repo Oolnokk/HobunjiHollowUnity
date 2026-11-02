@@ -77,7 +77,7 @@ assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses
 assert.match(nv, /function ensureCandidates\(forSight = false\)[\s\S]{0,260}if \(!deps \|\| \(!forSight && \(!options\.enabled \|\| !options\.projectiles\)\)\)/, 'sight candidate indexing bypasses projectile-only settings while ordinary projectile checks still respect them');
 assert.match(ranged, /sceneGeometrySightBlock\(segment\)/, "NPC perception raycasts the active area's real opaque scene geometry");
 assert.match(game, /getSightOccluders: enemySightOccluders/, 'game supplies cached active-area wall and building meshes to NPC sight');
-assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,700}_enemySearchLastKnownX = Number\.isFinite\(c\._enemyLastSeenX\)/, 'search begins from a previously confirmed visible position');
+assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,1400}_enemySearchLastKnownX = freshSighting \? c\._enemyLastSeenX/, 'search begins from a recently confirmed visible position (behavior covered by test-enemy-search-last-seen.js)');
 assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
 assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');
 assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
