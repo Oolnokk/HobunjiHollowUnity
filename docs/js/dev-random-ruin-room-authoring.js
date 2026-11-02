@@ -415,7 +415,9 @@
   }
 
   function applyToNetwork(network, options = {}) {
-    if (!network || !(network.floorSet instanceof Set) || !Array.isArray(network.rooms)) {
+    const floorSet = network?.floorSet;
+    const setLike = floorSet && typeof floorSet.has === 'function' && typeof floorSet.delete === 'function' && typeof floorSet.values === 'function'; // V50 creates this Set in a same-origin iframe realm, so parent-realm instanceof checks are invalid.
+    if (!network || !setLike || !Array.isArray(network.rooms)) {
       return {ok:false,applied:0,carvedCells:0,errors:['V50 supplied an unsupported room-network shape.']};
     }
     const plans = [], cutCells = [], errors = [];
