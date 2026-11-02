@@ -1954,6 +1954,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const beardPriorityMask = hoodHideFrontAndSideHair ? maskForVariant(facialHair, 'beardOverpassMasks') : null;
   let pendingBeardOverpass = null; // The selected beard pixels are composited after the hood.
   const renderSplitBeard = (targetCtx = ctx) => {
+    const hasAnyMask = [hoodBeardMask, beardPriorityMask].some(value => Array.isArray(value?.runs) && value.runs.length >= 2);
+    if (!hasAnyMask) { drawEmoteLayers(facialHairLayers, targetCtx); return; }
     const width = PORTRAIT_CW, height = PORTRAIT_CH;
     const beardCanvas = Object.assign(document.createElement('canvas'), { width, height });
     const beardCtx = beardCanvas.getContext('2d');
