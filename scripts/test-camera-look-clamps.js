@@ -13,6 +13,7 @@ const context = { window: {} };
 vm.runInNewContext(clampSource, context);
 const clampPitchOffsetDeg = context.window.CameraLookClamp.clampPitchOffsetDeg;
 
+assert.match(config, /"cameraRotateClampDeg": 45,[\s\S]{0,160}"cameraRotateUpClampDeg": 45/, 'global camera config authors equal 45-degree up/down limits');
 assert.equal(context.window.CameraLookClamp.defaults.downDeg, 45, 'default downward camera pitch limit remains 45 degrees');
 assert.equal(context.window.CameraLookClamp.defaults.upDeg, 45, 'default upward camera pitch limit matches downward limit');
 assert.equal(clampPitchOffsetDeg(-120, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), -45, 'upward pitch must match the downward limit even if an old asymmetric setting remains');
