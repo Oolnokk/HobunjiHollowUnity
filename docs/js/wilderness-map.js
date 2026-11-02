@@ -583,11 +583,31 @@
     return !!window.DevRandomRuin?.getRuntimeContext?.() || window.DevHachutuRuin?.debug?.()?.active === true;
   }
 
+  function _plainJson(value, seen = new WeakSet()) {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'bigint') return String(value);
+    if (typeof value === 'function' || typeof value === 'undefined') return undefined;
+    if (ArrayBuffer.isView(value)) return Array.from(value, item => _plainJson(item, seen));
+    if (value instanceof Set) return [...value].map(item => _plainJson(item, seen));
+    if (value instanceof Map) return [...value.entries()].map(([key, item]) => [_plainJson(key, seen), _plainJson(item, seen)]);
+    if (typeof value !== 'object') return String(value);
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    if (Array.isArray(value)) return value.map(item => _plainJson(item, seen));
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      const plain = _plainJson(item, seen);
+      if (plain !== undefined) out[key] = plain;
+    }
+    return out;
+  }
+
   async function _copyRuinMapJson(button, status) {
     const currentArea = deps.getCurrentArea();
     if (!_isInPlayableRuin(currentArea)) return;
-    const scene = window.GridTileAccessors?.getActiveScene?.()
-      || window.DevRandomRuin?.getRuntimeContext?.()?.scene;
+    const runtime = window.DevRandomRuin?.getRuntimeContext?.() || null;
+    const scene = window.GridTileAccessors?.getActiveScene?.() || runtime?.scene;
     if (!scene?.toJSON) {
       status.textContent = 'Could not access the active ruin scene.';
       return;
@@ -596,14 +616,29 @@
     status.textContent = 'Preparing map JSON…';
     try {
       scene.updateMatrixWorld?.(true);
+      const hachutu = window.DevHachutuRuin?.debug?.() || null;
       const payload = {
         format: 'hobunji-ruin-map',
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         area: currentArea,
-        ruin: window.DevRandomRuin?.getState?.() || null,
-        hachutu: window.DevHachutuRuin?.debug?.()?.active ? window.DevHachutuRuin.debug() : null,
-        occupancy: window.DevRandomRuin?.getOccupancySnapshot?.() || null,
+        map: runtime ? {
+          dimensions: { cols:runtime.cols, rows:runtime.rows },
+          seed: runtime.seed,
+          theme: runtime.theme,
+          ruinName: runtime.ruinName,
+          hachutu: runtime.hachutu === true,
+          stoneAge: runtime.stoneAge === true,
+          meta: _plainJson(runtime.meta),
+          grid: _plainJson(runtime.grid),
+          floorTiles: runtime.floorSet ? [...runtime.floorSet] : [],
+        } : null,
+        ruin: _plainJson(window.DevRandomRuin?.getState?.() || null),
+        hachutu: hachutu?.active ? _plainJson(hachutu) : null,
+        occupancy: _plainJson(window.DevRandomRuin?.getOccupancySnapshot?.() || null),
+        prototypeHooks: _plainJson(window.DevRandomRuinPrototypeHooks?.snapshot?.() || null),
+        wallPlanes: _plainJson(window.DevRandomRuinWallPlanes?.snapshot?.() || null),
+        wallRender: _plainJson(window.DevRandomRuinWallRenderProxy?.snapshot?.() || null),
         scene: scene.toJSON(),
       };
       const json = JSON.stringify(payload, null, 2);
