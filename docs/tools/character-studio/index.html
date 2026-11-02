@@ -1211,22 +1211,26 @@ function previewLoop() {
 // (docs/js/avatar-preview-scene.js), which pins the same Three.js build the
 // Attack Animation Editor and the live game use instead of this tool
 // guessing its own.
-const threeD = { enabled: false, loading: false, previewScene: null, model: null, legs: null, cameraTargetY: 0 }; // Owns the disposable preview leg rig and attached pants garment.
+const threeD = { enabled: false, loading: false, previewScene: null, model: null, legs: null, cameraTargetY: 0, previewPass: 0 }; // Owns the disposable preview leg rig and attached pants garment.
 
 function resize3d() {
   threeD.previewScene?.resize();
 }
 async function update3DModel() {
   if (!threeD.enabled || !threeD.previewScene || !_cosmetics) return;
+  const previewPass = ++threeD.previewPass; // A slow canvas/mask render cannot attach an old garment to a newer avatar.
   const profile = _previewProfile || buildPreviewProfile(workRenderAppearance());
   if (!profile) return;
   const size = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize || 200;
+  const renderOptions = npcPreviewRenderOptions();
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
-  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, npcPreviewRenderOptions());
+  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, renderOptions);
+  if (previewPass !== threeD.previewPass || !threeD.enabled) return;
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, npcPreviewRenderOptions({ portraitView: 'behind' }));
+  if (previewPass !== threeD.previewPass || !threeD.enabled) return;
 
   // The leg handle owns its pants garment, so dispose it before the old portrait model is replaced.
   threeD.legs?.dispose?.();
@@ -1257,14 +1261,15 @@ async function update3DModel() {
   const speciesId = work.appearance?.speciesId;
   const gender = work.appearance?.gender;
   const THREE = scene.THREE;
-  threeD.legs = window.ProceduralLegAnimation?.attach?.(THREE, scene.avatarHolder, {
+  const legs = window.ProceduralLegAnimation?.attach?.(THREE, scene.avatarHolder, {
     speciesId, gender, bodyColors: profile.bodyColors, modelWidth, modelHeight,
     handAttachY: threeD.model.userData?.handAttachY,
     name: 'character_studio_preview', profile, portraitSize: size,
   }) || null;
+  threeD.legs = legs;
   const Pants = window.PantsGarmentRenderer;
   const garmentId = Pants?.garmentForCosmetics?.(work.equippedCosmetics || []) || null;
-  if (threeD.legs && garmentId && Pants?.hasRigFor?.(speciesId, gender, garmentId)) {
+  if (legs && garmentId && Pants?.hasRigFor?.(speciesId, gender, garmentId)) {
     try {
       const itemSnapshot = work.clothingPatterns?.defaultClothing?.pants || null;
       const appearance = itemSnapshot
@@ -1283,8 +1288,9 @@ async function update3DModel() {
             url: new URL(String(layer.url || '').replace(/^\.\//, ''), docsRoot).href,
           })),
         };
-        const overlayMask = await Pants.buildOverlayMask(frontCanvas, profile);
-        Pants.attachToLegs(THREE, threeD.legs, {
+        const overlayMask = await Pants.buildOverlayMask(frontCanvas, profile, renderOptions);
+        if (previewPass !== threeD.previewPass || !threeD.enabled || legs !== threeD.legs || threeD.model !== scene.model) return;
+        Pants.attachToLegs(THREE, legs, {
           avatarGroup: threeD.model, speciesId, gender,
           name: 'character_studio_preview', garmentId, garmentRecord, appearance, overlayMask,
         });
@@ -1293,7 +1299,7 @@ async function update3DModel() {
       }
     } catch (error) { log('Pants preview failed: ' + error.message, 'error'); }
   }
-  threeD.legs?.update?.(0, 0, false, null, {});
+  if (previewPass === threeD.previewPass && legs === threeD.legs) legs?.update?.(0, 0, false, null, {});
 }
 async function toggle3d() {
   if (threeD.enabled) {
