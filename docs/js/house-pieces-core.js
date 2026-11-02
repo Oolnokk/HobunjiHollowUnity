@@ -407,21 +407,19 @@
       if (other === entry) continue;
       const ad = _rectAdjacency(entry, other);
       if (!ad) continue;
-      let side, origin, span;
+      let side;
       if (ad.orientation === 'vertical') {
         side = entry.col + entry.w === other.col ? 'east' : 'west';
-        origin = entry.row;
-        span = entry.h;
       } else {
         side = entry.row + entry.h === other.row ? 'south' : 'north';
-        origin = entry.col;
-        span = entry.w;
       }
-      if (span <= 0) continue;
+      // Store the actual shared interval in world tile coordinates. The
+      // gable edge is inset from the floor/body edge, so a normalized cut
+      // would leave a thin uncovered sliver on partial-length connections.
       cuts.push({
         side,
-        uCenter: ((ad.start + ad.end) * 0.5 - origin) / span,
-        uWidth: (ad.end - ad.start) / span,
+        worldStart: ad.start,
+        worldEnd: ad.end,
         vCenter: 0.5,
         vHeight: 1,
         kind: 'internal',
