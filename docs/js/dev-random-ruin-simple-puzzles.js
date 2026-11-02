@@ -1131,7 +1131,9 @@
       }
     }else{
       const bounds=slot.bounds||roomBounds(context.meta,owner); // Explicit bounds let the same plate-set module live inside generated micro-rooms as well as ordinary V50 rooms.
-      const centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
+      const authoredSpot=availableRoomSpot(owner.id,'activators','chordPressurePlates');
+      const centerX=Number.isFinite(Number(authoredSpot?.world?.x))?Number(authoredSpot.world.x):(bounds.minX+bounds.maxX)*.5;
+      const centerZ=Number.isFinite(Number(authoredSpot?.world?.z))?Number(authoredSpot.world.z):(bounds.minZ+bounds.maxZ)*.5;
       const w=bounds.maxX-bounds.minX,h=bounds.maxZ-bounds.minZ;
       const d=Math.min(1.15,Math.max(.62,Math.min(w,h)*.28));
       // The room centre is often V50's core dais or another moving surface;
@@ -1231,8 +1233,10 @@
   function buildStoneCanopyModule(context, room, anchor = null, options = {}) {
     if(!canClaimRoomSpot(room?.id,'decorations','stoneCanopy'))return null;
     const bounds=roomBounds(context.meta,room);
-    const support=anchor?sampleSupport(anchor.x,anchor.z):roomPatch(context,room,3.4,2.8);
-    const x=anchor?.x??support?.centerX,z=anchor?.z??support?.centerZ,baseY=Number(anchor?.topY??support?.y);
+    const authoredSpot=availableRoomSpot(room.id,'decorations','stoneCanopy');
+    const placement=anchor||authoredSpot?.world||null; // Explicit rope/puzzle anchors retain priority; otherwise use the authored decoration centre.
+    const support=placement?sampleSupport(placement.x,placement.z):roomPatch(context,room,3.4,2.8);
+    const x=placement?.x??support?.centerX,z=placement?.z??support?.centerZ,baseY=Number(placement?.topY??support?.y);
     if(!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(baseY))return null;
     const roofY=baseY+1.72;
     let width=Math.min(3.2,Math.max(2.2,(bounds.maxX-bounds.minX)*.35));
@@ -1282,7 +1286,9 @@
     if(!canClaimRoomSpot(room?.id,'activators','ceilingProjectileGlyph'))return null;
     const ceilingBase=Number(context.meta?.floorSurfaceY)||0,wallHeight=Number(context.meta?.wallHeight)||3;
     const ceilingY=ceilingBase+wallHeight; // Actual textured-ceiling/wall-top datum; no -0.34 floating target translation.
-    const x=Number(anchor?.x),z=Number(anchor?.z);
+    const authoredSpot=availableRoomSpot(room.id,'activators','ceilingProjectileGlyph');
+    const placement=authoredSpot?.world||anchor||null;
+    const x=Number(placement?.x),z=Number(placement?.z);
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
     const visual=window.DevRandomRuinCeilingTargetVisuals?.create?.(
       {sharedBoxGeometry,makeBasic,naturalizeStone},
@@ -1396,6 +1402,15 @@
       liftEnd=ends.find(end=>{const s=DS.sampleSupport(end.rimX,end.rimZ,{minY:topFloorY-.2,maxY:topFloorY+.2});return !!s&&Math.abs(Number(s.y)-topFloorY)<.15;})||null;
       if(!liftEnd)return liftReject('no open rim');
       x=liftEnd.x;z=liftEnd.z;width=depth=size;
+    }
+    if(options.reserveAnnex!==true&&options.ambientLift!==true){
+      const authoredSpot=availableRoomSpot(room.id,'mechanisms','cyclingElevator');
+      if(authoredSpot?.world){
+        const point=authoredSpot.world;
+        const width=Math.max(1.5,regionWidth-.16),depth=Math.max(1.5,regionDepth-.16);
+        if(point.x<regionBounds.minX+width*.5||point.x>regionBounds.maxX-width*.5||point.z<regionBounds.minZ+depth*.5||point.z>regionBounds.maxZ-depth*.5)return liftReject('authored mechanism spot is outside the usable lift region');
+        x=Number(point.x);z=Number(point.z);
+      }
     }
     if(options.reserveAnnex===true){
       const longAxis=regionWidth>=regionDepth?'x':'z';
@@ -1564,8 +1579,15 @@
   function buildSarcophagusSpawnerModule(context,rng,room,options={}) {
     if(!canClaimRoomSpot(room?.id,'mechanisms','sarcophagusSpawner'))return null;
     const root=new THREE.Group();root.name='dev_ruin_sarcophagus_set_'+room.id;state.group.add(root);
+    const bounds=options.bounds||roomBounds(context.meta,room);
+    const authoredSpot=availableRoomSpot(room.id,'mechanisms','sarcophagusSpawner');
+    const defaultCenter={x:(bounds.minX+bounds.maxX)*.5,z:(bounds.minZ+bounds.maxZ)*.5};
+    const targetCenter=authoredSpot?.world||defaultCenter;
+    const shift={x:Number(targetCenter.x)-defaultCenter.x,z:Number(targetCenter.z)-defaultCenter.z};
+    const authoredPlacements=sarcophagusPlacements(context,room,options.bounds||null).map(point=>({...point,x:point.x+shift.x,z:point.z+shift.z,spawnX:point.spawnX+shift.x,spawnZ:point.spawnZ+shift.z}));
+    if(authoredPlacements.some(point=>point.x<bounds.minX+.5||point.x>bounds.maxX-.5||point.z<bounds.minZ+.5||point.z>bounds.maxZ-.5))return null;
     const coffins=[];
-    for(const [index,p] of sarcophagusPlacements(context,room,options.bounds||null).entries()){
+    for(const [index,p] of authoredPlacements.entries()){
       const support=sampleSupport(p.x,p.z);if(!support)continue;
       const body=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
@@ -1574,8 +1596,7 @@
       coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false,creature:null,released:false});
     }
     if(coffins.length<2){disposeObject(root);return null;}
-    const bounds=options.bounds||roomBounds(context.meta,room);
-    const module={id:'sarcophagi-'+room.id,roomId:String(options.roomId||room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1),autoActivateRadius:Math.max(0,Number(options.autoActivateRadius)||0),center:{x:(bounds.minX+bounds.maxX)*.5,z:(bounds.minZ+bounds.maxZ)*.5}};
+    const module={id:'sarcophagi-'+room.id,roomId:String(options.roomId||room.id),root,coffins,activated:false,spawnStarted:false,spawnCount:0,tier:Math.max(0,Number(options.tier)||1),autoActivateRadius:Math.max(0,Number(options.autoActivateRadius)||0),center:{x:Number(targetCenter.x),z:Number(targetCenter.z)}};
     state.sarcophagusModules.push(module);
     recordModulePlacement('sarcophagusSpawner','room',module.id,{roomId:String(room.id),count:coffins.length});
     return module;
