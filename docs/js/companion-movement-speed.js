@@ -206,15 +206,15 @@
     if (!owner) return 0;
     if (owner === deps?.player) return playerMovementSpeed(owner);
 
+    const directSpeed = directActorSpeed(owner, speedKind);
+    if (directSpeed > 0) return directSpeed;
+
     const walker = findNpcWalker(owner);
     const liveWalkerSpeed = walkerMovementSpeed(walker, owner);
     if (liveWalkerSpeed > 0) return liveWalkerSpeed;
 
     const measuredSpeed = sampleOwnerMotion(owner);
     if (measuredSpeed > 0) return measuredSpeed;
-
-    const directSpeed = directActorSpeed(owner, speedKind);
-    if (directSpeed > 0) return directSpeed;
     return 0;
   }
 
