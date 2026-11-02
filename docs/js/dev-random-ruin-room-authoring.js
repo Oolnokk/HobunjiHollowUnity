@@ -553,18 +553,25 @@
   }
 
   function getDiagnostics(network) {
-    const report = {claims:[],rejections:[],links:[]};
+    const report = {claims:[],rejections:[],links:[],missingRequiredSpots:[],missingRequiredLinks:[]};
     const seen = new Set();
     const append = plan => {
       if (!plan) return;
       const key = planStoreKey(plan);
       if (seen.has(key)) return;
       seen.add(key);
-      const entry = diagnosticsByPlan.get(key);
-      if (!entry) return;
+      const entry = diagnosticsByPlan.get(key) || {claims:[],rejections:[],links:[]};
+      const claims = claimsByPlan.get(key) || new Map();
+      const usedLinks = puzzleLinksByPlan.get(key) || new Set();
       report.claims.push(...entry.claims);
       report.rejections.push(...entry.rejections);
       report.links.push(...(entry.links||[]));
+      for (const spot of plan.spots || []) {
+        if (spot.required && Number(claims.get(spot.id)||0) < 1) report.missingRequiredSpots.push({roomId:plan.roomId,spotId:spot.id,label:spot.label});
+      }
+      for (const link of plan.puzzleLinks || []) {
+        if (link.required && !usedLinks.has(link.id)) report.missingRequiredLinks.push({roomId:plan.roomId,linkId:link.id,activatorSpot:link.activatorSpot,mechanismSpot:link.mechanismSpot});
+      }
     };
     for (const plan of network?.roomAuthoringPlans || []) append(plan);
     for (const room of network?.rooms || []) append(room.roomAuthoringPlan);
