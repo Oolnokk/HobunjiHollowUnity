@@ -76,7 +76,10 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(built.active,true,'Hachutu composer failed to build: '+JSON.stringify(built));
     assert.equal(built.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
     assert.equal(built.entered,true,'generating the Hachutu temple must arrive inside it, not in the stripped V50 vestibule');
-    assert.equal(built.platforms,15,'moving root-grown pillar platforms exist in the swing hall');
+    assert.equal(built.platforms,15,'root-grown platforms exist in the swing hall');
+    assert.equal(built.platformState.moving,12);
+    assert.equal(built.platformState.stationaryStone,3);
+    assert.equal(built.platformState.movingBaseGeometry,0);
     assert.equal(built.ropes,15,'vine ropes exist in the swing hall');
     assert(built.mergedRootMeshes>0,'static roots must be baked into merged meshes, not ~1,000 individual draw calls');
     await page.waitForFunction(()=>window.DevHachutuRuin.debug().floorRootsReady===true||window.DevHachutuRuin.debug().errors.length>0,null,{timeout:240000});

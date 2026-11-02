@@ -259,6 +259,7 @@
     if (isRoadSurface(object)) return 'road'; // Authored path-brick groups retain the same x-ray as the underlying grass.
     if (object?.isMesh && !object.isSkinnedMesh) {
       const data = object.userData || {}; // Semantic-only floor classification also covers cavern and rooted-ruin floor geometry that does not use InteriorSceneBuilder's material.
+      if (data.hachutuGroundRoot === true) return 'terrain'; // Feet and tools x-ray through the substrate at matching elevation.
       if (materialMarksInteriorFloor(object.material)
           || data.cavernWalkableFloor === true
           || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
