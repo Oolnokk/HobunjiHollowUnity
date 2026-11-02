@@ -829,7 +829,7 @@
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
-        if (this._voiceActor) this._voiceActor.health = 0; // Releases this stable actor from the scheduler's tracked set on sale/despawn.
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
@@ -1677,7 +1677,7 @@
     const tilePx = Number(deps.TILE) || 1; // Converts farm tile coordinates into AudioSystem pixel-space coordinates.
     actor.creatureKey = animal.animalKey;
     actor.genotype = animal.genotype || null;
-    actor.areaId = deps.getCurrentArea?.() ?? window.GridTileAccessors?.getCurrentArea?.() ?? null;
+    actor.areaId = deps.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || null;
     actor.x = Number(animal.wx) * tilePx;
     actor.y = Number(animal.wz) * tilePx;
     actor.wy = Number(animal.wy) || 0;
@@ -1699,9 +1699,9 @@
     deps.setWorldLivestockFrameCache(deps.loadWorldLivestock());
     for (const animal of deps.animalObjects) {
       animal.tick && animal.tick(dt);
+      animal.update(dt);
       const frozen = !!(animal._vatWorkPose || animal._harvestFrozen || animal._dialogueFrozen);
       window.AnimalVocalizations?.tickCreature?.(farmAnimalVoiceActor(animal), dt, { allowPassive: !frozen });
-      animal.update(dt);
     }
     deps.setWorldLivestockFrameCache(null);
   }
