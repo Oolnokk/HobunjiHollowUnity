@@ -75,7 +75,7 @@ for (const preset of presets) {
     assert.equal(river.flowDirection, 'higher-to-lower', `${preset.id}: exported ${river.id} declares downhill flow`);
     const samples = (river.nodes || [])
       .map(([col, row]) => ({ col, row, tile: root.tiles?.[`${col},${row}`] }))
-      .filter(sample => sample.tile && (sample.tile.type === 'river' || sample.tile.type === 'waterfall'))
+      .filter(sample => sample.tile && ['river', 'stream', 'waterfall'].includes(sample.tile.type))
       .map(sample => ({
         key: `${sample.col},${sample.row}`,
         elevation: elevationForExportedTile(sample.tile, root, plateauElevations),
