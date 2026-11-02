@@ -39,7 +39,7 @@ const window = {
   SCRATCHBONES_CONFIG: {
     game: {
       input: { deadzone: 0.24, controllerLookResponse: 1.45, controllerLookDegPerSec: 190, controllerLookVerticalScale: 0.8 },
-      desktopControls: { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 45 },
+      desktopControls: {},
     },
   },
   Fishing: { init(deps) { fishingDeps = deps; } },
@@ -69,6 +69,7 @@ let target = { id: 'pre-performance-target' }; // Existing target is restored af
 let offsets = { azimuthDeg: 12, angleDeg: -5 }; // Right-stick look mutates these authoritative gameplay offsets.
 const cameraDeps = {
   getCameraMode: () => mode,
+  getCameraBaseAngleDeg: () => 9,
   setCameraMode: value => { mode = value; },
   getCameraTarget: () => target,
   setCameraTarget: value => { target = value; },
