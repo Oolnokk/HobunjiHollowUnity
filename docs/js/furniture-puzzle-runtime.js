@@ -155,6 +155,13 @@
         THREE.MathUtils.lerp(a.sx,b.sx,t)/Math.max(.001,Number(base.sx)||.001),
         THREE.MathUtils.lerp(a.sy,b.sy,t)/Math.max(.001,Number(base.sy)||.001),
         THREE.MathUtils.lerp(a.sz,b.sz,t)/Math.max(.001,Number(base.sz)||.001));
+      for (const anchor of object.userData.payloadAttachmentAnchors?.values?.() || []) {
+        if (anchor.parent !== mesh) continue;
+        anchor.scale.set(
+          1 / Math.max(.001, Math.abs(mesh.scale.x)),
+          1 / Math.max(.001, Math.abs(mesh.scale.y)),
+          1 / Math.max(.001, Math.abs(mesh.scale.z))); // Keep the payload rigid while the attachment point follows the animated part.
+      }
       mesh.updateMatrixWorld(true);
     }
     const emission = {
