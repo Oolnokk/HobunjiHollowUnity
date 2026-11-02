@@ -78,8 +78,9 @@
     group.visible=layer.visible!==false;
     group.position.set(...layer.position);
     group.rotation.set(T.MathUtils.degToRad(layer.rotationDeg[0]),T.MathUtils.degToRad(layer.rotationDeg[1]),T.MathUtils.degToRad(layer.rotationDeg[2]));
-    group.scale.set(layer.scale[0],layer.scale[1],layer.lengthScale*layer.scale[2]);
-    Object.assign(group.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,targetWorldLength:layer.targetLength,ridgeLengthScale:layer.lengthScale,worldWidth:layer.targetLength*layer.scale[2],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale],decorativeRockCount:ROCKS_PER_LAYER,snowCapped:true,visualOnly:true});
+    const ridgeLocalDepth=Math.max(1e-5,Number(group.userData?.ridgeLocalDepth)||layer.width),lengthScale=layer.targetLength/ridgeLocalDepth;
+    group.scale.set(layer.scale[0],layer.scale[1],lengthScale*layer.scale[2]);
+    Object.assign(group.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,targetWorldLength:layer.targetLength,ridgeLocalDepth,ridgeLengthScale:lengthScale,worldWidth:layer.targetLength*layer.scale[2],worldNorthSouthLength:layer.targetLength*layer.scale[2],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale],decorativeRockCount:ROCKS_PER_LAYER,snowCapped:true,visualOnly:true});
   }
   function applyAuthorConfigToGroup(group,cols,rows,config=null){
     if(!group)return[];
@@ -87,7 +88,7 @@
     const sizes=ASSET_URLS.map((_,i)=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:layerGroup?.userData?.sourceWidth||SOURCE_SIZES[i].width,height:layerGroup?.userData?.sourceHeight||SOURCE_SIZES[i].height};});
     const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER});
     for(const layer of layout)applyLayer(group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer),layer);
-    stats.lastLayout=layout.map(l=>({layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,lengthScale:l.lengthScale,unitsPerPixel:l.unitsPerPixel,rocks:ROCKS_PER_LAYER,snowCapped:true}));
+    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:l.targetLength*l.scale[2],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:ROCKS_PER_LAYER,snowCapped:true};});
     return layout;
   }
 
@@ -279,8 +280,18 @@
       const heightJitter=((i*5+layer.layer)%3-1)*layer.height*.008;
       const rockName=GROUP_NAME+'_Layer'+layer.layer+'_Rock'+(i+1);
       rock.name=rockName;rock.position.set(stagger,-layer.height*.5+heightJitter,-layer.width*.5+cellWidth*(i+.5));
-      rock.rotation.y=((i*11+layer.layer*7)%7-3)*.055;
+      const rotationY=((i*11+layer.layer*7)%7-3)*.055;
+      rock.rotation.y=rotationY;
       rock.scale.set(cellWidth*(.74+variation*.12),heightScale*(.84+variation*.24),cellWidth*(1.08+variation*.04));
+      const sourcePosition=sourceGeometry.getAttribute('position'),sourceIndex=sourceGeometry.index,vertexCount=sourceIndex?sourceIndex.count:sourcePosition.count;
+      for(let vertex=0;vertex<vertexCount;vertex++){
+        const vertexIndex=sourceIndex?(sourceIndex.getX?sourceIndex.getX(vertex):sourceIndex.array[vertex]):vertex;
+        const localX=sourcePosition.getX(vertexIndex)*rock.scale.x,localZ=sourcePosition.getZ(vertexIndex)*rock.scale.z;
+        const rotatedZ=rock.position.z-Math.sin(rotationY)*localX+Math.cos(rotationY)*localZ;
+        layerGroup.userData.ridgeMinZ=Math.min(Number(layerGroup.userData.ridgeMinZ??Infinity),rotatedZ);
+        layerGroup.userData.ridgeMaxZ=Math.max(Number(layerGroup.userData.ridgeMaxZ??-Infinity),rotatedZ);
+      }
+      layerGroup.userData.ridgeLocalDepth=layerGroup.userData.ridgeMaxZ-layerGroup.userData.ridgeMinZ;
       rock.userData={backgroundScenery:true,skipOcclusionFade:true,westernSlopeMineRockBackdrop:true,westernSlopeSnowCapped:true,visualOnly:true,layer:layer.layer,rockIndex:i+1,snowLineLocalY:split.cutY,snowCoverageHeightFraction:SNOW_CAP_HEIGHT_FRACTION};
       for(const [mesh,suffix] of [[stoneMesh,'_Stone'],[snowMesh,'_Snow']]){
         mesh.name=rockName+suffix;mesh.castShadow=false;mesh.receiveShadow=false;mesh.raycast=ignoreRaycast;
