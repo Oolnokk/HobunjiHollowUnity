@@ -102,6 +102,17 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.ok(diagnostics.claims.length>=2,'successful placement claims should be available for diagnostics');
   assert.ok(diagnostics.rejections.length>=2,'rejected placements should be recorded for diagnostics');
 
+  const linkedNetwork=makeNetwork('room_linked');
+  const linkedPlan=api.applyToNetwork(linkedNetwork,{seed:'linked-puzzle-regression'}).plans[0];
+  assert.equal(api.canClaimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate'),true,'authored relationship should preflight both named spots');
+  const linkedPair=api.claimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate',{claimId:'door-plate-pair'});
+  assert.equal(linkedPair.ok,true,'authored activator/mechanism relationship should claim atomically');
+  assert.equal(linkedPair.link.id,'plate-opens-door');
+  assert.equal(linkedPair.mechanism.spot.id,'door');
+  assert.equal(linkedPair.activator.spot.id,'plate');
+  assert.equal(api.canClaimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate'),false,'a completed authored link cannot be claimed twice');
+  assert.equal(api.getDiagnostics(linkedNetwork).links.length,1,'linked pair should appear in diagnostics');
+
   const profileLibrary={
     schema:'hobunji_ruin_room_library.v1',
     templates:[{...makeTemplate(),id:'wrong-size',enabled:true,footprint:{width:5,height:5,rows:Array(5).fill('#####')},connections:[{id:'west',side:'west',offset:2.5,width:1,kind:'corridor'}]}],
