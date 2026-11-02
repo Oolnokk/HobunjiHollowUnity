@@ -358,7 +358,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const simple = window.DevRandomRuinSimplePuzzles.snapshot();
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
       const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
+      window.WildernessMap.renderMapPanel(); // Exercise the ruin-specific panel override; it used to erase the export button after the normal map renderer created it.
+      const ruinJsonExportButton = document.querySelector('#wmapZoneTabs [data-ruin-json-export]');
       const wallRender = window.DevRandomRuinWallRenderProxy.snapshot();
+      const exitControl = window.DevRandomRuin.getInteractionControls().find(control => control.kind === 'exitDoor');
+      const exitTarget = exitControl?.object || null;
+      const exitBox = exitTarget ? new THREE.Box3().setFromObject(exitTarget) : null;
+      const exitSize = exitBox ? exitBox.getSize(new THREE.Vector3()) : null;
       const occupancy = window.DevRandomRuin.getOccupancySnapshot();
       const dynamic = window.DynamicSurfaces.debugSnapshot();
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
@@ -463,6 +469,23 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         coverage,
         wallPlaneControl,
         wallRender,
+        ruinJsonExportButtonVisible:!!ruinJsonExportButton,
+        ruinJsonExportButtonText:ruinJsonExportButton?.textContent||null,
+        exitDoorInteraction:{
+          present:!!exitTarget,
+          kind:exitControl?.kind || null,
+          promptRootMatches:exitControl?.promptRoot===exitTarget,
+          hasGeometry:!!exitTarget?.geometry,
+          tagged:exitTarget?.userData?.devRuinExitTarget===true,
+          interactive:exitTarget?.userData?.interactive3D===true,
+          invisible:exitTarget?.material?.colorWrite===false&&Number(exitTarget.material.opacity)===0,
+          bounds:exitBox&&!exitBox.isEmpty()?{
+            min:{x:+exitBox.min.x.toFixed(3),y:+exitBox.min.y.toFixed(3),z:+exitBox.min.z.toFixed(3)},
+            max:{x:+exitBox.max.x.toFixed(3),y:+exitBox.max.y.toFixed(3),z:+exitBox.max.z.toFixed(3)},
+            size:{x:+exitSize.x.toFixed(3),y:+exitSize.y.toFixed(3),z:+exitSize.z.toFixed(3)},
+          }:null,
+          point:exitControl?.point||null,
+        },
         materialStats:window.DevRandomRuin.getState()?.materialStats || null,
         occupancy,
         occupancyBlockers:dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy').length,
@@ -487,6 +510,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.building, true, JSON.stringify(active));
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
+    assert.equal(active.ruinJsonExportButtonVisible, true, 'the occupancy-map tab renderer must retain the ruin JSON export button: '+JSON.stringify(active));
+    assert.equal(active.ruinJsonExportButtonText, 'Copy Ruin JSON', JSON.stringify(active));
+    assert.equal(active.exitDoorInteraction.present, true, 'the ruin exit must be an explicit doorway target, not a proximity-only exit spot: '+JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.kind, 'exitDoor', JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.promptRootMatches, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.hasGeometry, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.tagged, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.interactive, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.invisible, true, JSON.stringify(active.exitDoorInteraction));
+    assert.ok(active.exitDoorInteraction.bounds?.size?.x > .3 && active.exitDoorInteraction.bounds?.size?.y > 2 && active.exitDoorInteraction.bounds?.size?.z > .3, JSON.stringify(active.exitDoorInteraction));
     assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
     if(active.nativeCrackedPillars?.theme==='hronal'){
       const cracked=active.nativeCrackedPillars;
@@ -570,6 +603,44 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     for (const tower of active.puzzleTowers) {
       assert.equal(tower.interactive3D, true, 'puzzle tower must be tagged as a world interactable: '+JSON.stringify(tower));
       assert.match(tower.blockerPurpose||'', /^puzzle_tower_(?:stackedObelisk|linkedCubePillars)$/, 'puzzle tower must feed the authoritative occupancy blocker set: '+JSON.stringify(tower));
+    }
+
+    // Exercise the same map-tab button players use; a successful copy must produce parseable scene JSON.
+    if (seed === FIXED_SEEDS[0]) {
+      const exportResult = await page.evaluate(async () => {
+        const button = document.querySelector('[data-ruin-json-export]');
+        if (!button) return { present:false, status:'missing export button', length:0, valid:false };
+        window.__ruinJsonClipboardText = '';
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable:true,
+          value:{ writeText:async text => { window.__ruinJsonClipboardText = text; } },
+        });
+        button.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const status = document.querySelector('[data-ruin-json-status]')?.textContent || '';
+        const copied = window.__ruinJsonClipboardText;
+        let parsed = null;
+        try { parsed = JSON.parse(copied); } catch (_) {}
+        return {
+          present:true,
+          status,
+          length:copied.length,
+          valid:!!parsed && parsed.format === 'hobunji-ruin-map' && parsed.version === 3 && !!parsed.scene?.object,
+          hasSceneChildren:Array.isArray(parsed?.scene?.object?.children),
+          flatSceneGraph:parsed?.scene?.objectGraphFormat === 'flat-parent-child-uuid-links-v1'
+            && Array.isArray(parsed?.scene?.objects)
+            && parsed.scene.objects.every(object => typeof object.uuid === 'string' && Object.prototype.hasOwnProperty.call(object, 'parent')),
+          childReferencesAreFlat:Array.isArray(parsed?.scene?.object?.children)
+            && parsed.scene.object.children.every(reference => typeof reference === 'string'),
+        };
+      });
+      assert.equal(exportResult.present, true, JSON.stringify(exportResult));
+      assert.match(exportResult.status, /^Copied /, JSON.stringify(exportResult));
+      assert.ok(exportResult.length > 1000, JSON.stringify(exportResult));
+      assert.equal(exportResult.valid, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.hasSceneChildren, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.flatSceneGraph, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.childReferencesAreFlat, true, JSON.stringify(exportResult));
     }
 
     // Wall planes are structural and their old visual toggle is now a no-op.

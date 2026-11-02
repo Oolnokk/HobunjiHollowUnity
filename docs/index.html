@@ -581,8 +581,8 @@
        at draw time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildernessMap.init(...) during its own setup. -->
-  <script src="js/wilderness-map.js?v=20261025fontpolicy1"></script>
-  <script src="js/navigation-compass.js?v=20261023h72d5c44"></script>
+  <script src="js/wilderness-map.js?v=20261102hjsonexport6"></script>
+  <script src="js/navigation-compass.js?v=20261102hjsoncompass2"></script>
   <!-- Dead-zone rotation math shared by player/NPC/creature PNG-plane
        avatars (window.PerpRotation) — self-contained aside from deps
        injected via init(), so load order relative to the other systems
@@ -2837,7 +2837,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261101spyglassToggle3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261102hachuturoots2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261102ruinexportboot"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

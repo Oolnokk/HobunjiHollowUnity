@@ -361,6 +361,7 @@
       ctx.fillStyle = '#ffe082'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
     }
     tabs.innerHTML = '<button type="button" class="wmap-zone-tab active">Test Ruin</button>';
+    WildernessMap.renderRuinJsonExport?.(tabs); // This panel replaces the normal zone tabs, so restore the ruin-only export control after rebuilding them.
     const legend = document.querySelector('#mpMap .wmap-legend');
     if (legend) {
       if (originalLegendHtml == null) originalLegendHtml = legend.innerHTML;

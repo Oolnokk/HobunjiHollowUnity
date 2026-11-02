@@ -578,6 +578,341 @@
     }
   }
 
+  function _isInPlayableRuin(currentArea) {
+    if (!String(currentArea || '').startsWith('map_i_')) return false;
+    return !!window.DevRandomRuin?.getRuntimeContext?.() || window.DevHachutuRuin?.debug?.()?.active === true;
+  }
+
+  function _plainJson(value, seen = new WeakSet()) {
+    // Use an explicit work stack: ruin snapshots can contain very deeply nested
+    // runtime state, which must not consume the browser's JavaScript call stack.
+    const MAX_DEPTH = 128; // Keeps the resulting JSON safe for native JSON.stringify.
+    const MAX_NODES = 200000; // Bounds accidental traversal of unexpectedly large runtime objects.
+    const root = { result: undefined };
+    const pending = [{ value, parent: root, key: 'result', depth: 0 }];
+    let visited = 0;
+
+    const assign = (frame, normalized) => {
+      frame.parent[frame.key] = normalized;
+    };
+
+    while (pending.length) {
+      const frame = pending.pop();
+      const current = frame.value;
+
+      if (current === null || typeof current === 'string' || typeof current === 'boolean') {
+        assign(frame, current);
+        continue;
+      }
+      if (typeof current === 'number') {
+        assign(frame, Number.isFinite(current) ? current : null);
+        continue;
+      }
+      if (typeof current === 'bigint') {
+        assign(frame, String(current));
+        continue;
+      }
+      if (typeof current === 'function' || typeof current === 'undefined') {
+        assign(frame, undefined);
+        continue;
+      }
+      if (typeof current !== 'object') {
+        assign(frame, String(current));
+        continue;
+      }
+      if (frame.depth >= MAX_DEPTH) {
+        assign(frame, '[Maximum serialization depth reached]');
+        continue;
+      }
+      if (seen.has(current)) {
+        assign(frame, '[Circular]');
+        continue;
+      }
+      seen.add(current);
+      visited++;
+      if (visited > MAX_NODES) {
+        assign(frame, '[Maximum serialization node count reached]');
+        continue;
+      }
+
+      if (ArrayBuffer.isView(current)) {
+        const length = Number.isSafeInteger(current.length) ? current.length : 0;
+        const count = Math.min(length, MAX_NODES - visited);
+        const out = new Array(count + (length > count ? 1 : 0));
+        if (length > count) out[count] = '[Truncated: serialization node limit]';
+        assign(frame, out);
+        for (let i = count - 1; i >= 0; i--) {
+          pending.push({ value: current[i], parent: out, key: i, depth: frame.depth + 1 });
+        }
+        continue;
+      }
+
+      if (current instanceof Set) {
+        const out = [];
+        assign(frame, out);
+        try {
+          const iterator = current.values();
+          let index = 0;
+          while (index < MAX_NODES - visited) {
+            const next = iterator.next();
+            if (next.done) break;
+            out.push(undefined);
+            pending.push({ value: next.value, parent: out, key: index, depth: frame.depth + 1 });
+            index++;
+          }
+          if (index >= MAX_NODES - visited && !iterator.next().done) out.push('[Truncated: serialization node limit]');
+        } catch (error) {
+          out.push(`[Set serialization failed: ${error?.message || error}]`);
+        }
+        continue;
+      }
+
+      if (current instanceof Map) {
+        const out = [];
+        assign(frame, out);
+        try {
+          const iterator = current.entries();
+          let index = 0;
+          while (index < Math.floor((MAX_NODES - visited) / 2)) {
+            const next = iterator.next();
+            if (next.done) break;
+            const pair = [undefined, undefined];
+            out.push(pair);
+            pending.push({ value: next.value[1], parent: pair, key: 1, depth: frame.depth + 1 });
+            pending.push({ value: next.value[0], parent: pair, key: 0, depth: frame.depth + 1 });
+            index++;
+          }
+          if (index >= Math.floor((MAX_NODES - visited) / 2) && !iterator.next().done) out.push('[Truncated: serialization node limit]');
+        } catch (error) {
+          out.push(`[Map serialization failed: ${error?.message || error}]`);
+        }
+        continue;
+      }
+
+      if (Array.isArray(current)) {
+        const count = Math.min(current.length, MAX_NODES - visited);
+        const out = new Array(count + (current.length > count ? 1 : 0));
+        if (current.length > count) out[count] = '[Truncated: serialization node limit]';
+        assign(frame, out);
+        for (let i = count - 1; i >= 0; i--) {
+          pending.push({ value: current[i], parent: out, key: i, depth: frame.depth + 1 });
+        }
+        continue;
+      }
+
+      let keys;
+      try {
+        keys = Object.keys(current);
+      } catch (error) {
+        assign(frame, `[Object serialization failed: ${error?.message || error}]`);
+        continue;
+      }
+      const count = Math.min(keys.length, MAX_NODES - visited);
+      const out = Object.create(null);
+      assign(frame, out);
+      if (keys.length > count) out.__serializationTruncated__ = '[Truncated: serialization node limit]';
+      for (let i = count - 1; i >= 0; i--) {
+        const key = keys[i];
+        let child;
+        try {
+          child = current[key];
+        } catch (error) {
+          out[key] = `[Getter failed: ${error?.message || error}]`;
+          continue;
+        }
+        pending.push({ value: child, parent: out, key, depth: frame.depth + 1 });
+      }
+    }
+
+    return root.result;
+  }
+
+  function _threeSceneToJsonIterative(scene) {
+    // Three r128 Object3D.toJSON recursively visits children. Serialize one
+    // node at a time and store parent/child UUID links in a flat object table.
+    const meta = {
+      geometries:{}, materials:{}, textures:{}, images:{},
+      shapes:{}, skeletons:{}, animations:{},
+    };
+    const seen = new WeakSet();
+    const MAX_OBJECTS = 250000; // Prevent runaway traversal in malformed scene graphs.
+
+    const serializeNode = node => {
+      const originalChildren = node.children;
+      const originalUserData = node.userData;
+      const restorers = [];
+      const sanitizeUserData = target => {
+        if (!target || !target.userData || typeof target.userData !== 'object') return;
+        const previous = target.userData;
+        target.userData = _plainJson(previous) || {};
+        restorers.push(() => { target.userData = previous; });
+      };
+
+      try {
+        node.children = [];
+        sanitizeUserData(node);
+        if (node.geometry) sanitizeUserData(node.geometry);
+        if (Array.isArray(node.material)) node.material.forEach(sanitizeUserData);
+        else if (node.material) sanitizeUserData(node.material);
+        return node.toJSON(meta).object;
+      } finally {
+        for (let i = restorers.length - 1; i >= 0; i--) restorers[i]();
+        node.userData = originalUserData;
+        node.children = originalChildren;
+      }
+    };
+
+    const rootObject = serializeNode(scene);
+    seen.add(scene);
+    const objects = [];
+    const pending = [{ source:scene, target:rootObject }];
+    let objectCount = 1;
+
+    while (pending.length) {
+      const frame = pending.pop();
+      const children = Array.isArray(frame.source.children) ? frame.source.children : [];
+      if (!children.length) continue;
+      frame.target.children = [];
+
+      for (let childIndex = 0; childIndex < children.length; childIndex++) {
+        const child = children[childIndex];
+        if (!child || typeof child !== 'object') continue;
+        const childId = child.uuid || `object-${objectCount}`;
+        frame.target.children.push(childId);
+        if (seen.has(child)) continue;
+        if (objectCount >= MAX_OBJECTS) continue;
+
+        seen.add(child);
+        objectCount++;
+        const childObject = serializeNode(child);
+        childObject.parent = frame.target.uuid || null;
+        childObject.childIndex = childIndex;
+        objects.push(childObject);
+        pending.push({ source:child, target:childObject });
+      }
+    }
+
+    const extract = cache => {
+      const values = [];
+      for (const key of Object.keys(cache)) {
+        const data = cache[key];
+        if (data && data.metadata) delete data.metadata;
+        values.push(data);
+      }
+      return values;
+    };
+
+    const output = {
+      metadata:{ version:4.5, type:'Object', generator:'Object3D.toJSON (flat iterative)' },
+      objectGraphFormat:'flat-parent-child-uuid-links-v1',
+      object:rootObject,
+      objects,
+    };
+    for (const key of ['geometries','materials','textures','images','shapes','skeletons','animations']) {
+      const values = extract(meta[key]);
+      if (values.length) output[key] = values;
+    }
+    return output;
+  }
+
+  async function _copyRuinMapJson(button, status) {
+    const currentArea = deps.getCurrentArea();
+    if (!_isInPlayableRuin(currentArea)) return;
+    const runtime = window.DevRandomRuin?.getRuntimeContext?.() || null;
+    const scene = window.GridTileAccessors?.getActiveScene?.() || runtime?.scene;
+    if (!scene?.toJSON) {
+      status.textContent = 'Could not access the active ruin scene.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Preparing map JSON…';
+    let stage = 'runtime snapshot serialization';
+    try {
+      scene.updateMatrixWorld?.(true);
+      const hachutu = window.DevHachutuRuin?.debug?.() || null;
+      const payload = {
+        format: 'hobunji-ruin-map',
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        area: currentArea,
+        map: runtime ? {
+          dimensions: { cols:runtime.cols, rows:runtime.rows },
+          seed: runtime.seed,
+          theme: runtime.theme,
+          ruinName: runtime.ruinName,
+          hachutu: runtime.hachutu === true,
+          stoneAge: runtime.stoneAge === true,
+          meta: _plainJson(runtime.meta),
+          grid: _plainJson(runtime.grid),
+          floorTiles: runtime.floorSet ? [...runtime.floorSet] : [],
+        } : null,
+        ruin: _plainJson(window.DevRandomRuin?.getState?.() || null),
+        hachutu: hachutu?.active ? _plainJson(hachutu) : null,
+        occupancy: _plainJson(window.DevRandomRuin?.getOccupancySnapshot?.() || null),
+        runtimeSystems: _plainJson({
+          prototypeHooks: window.DevRandomRuinPrototypeHooks?.snapshot?.() || null,
+          hitPuzzles: window.DevRandomRuinHitPuzzles?.snapshot?.() || null,
+          motion: window.DevRandomRuinMotionRuntime?.snapshot?.() || null,
+          simplePuzzles: window.DevRandomRuinSimplePuzzles?.snapshot?.() || null,
+          coverage: window.DevRandomRuinRuntimeCoverage?.snapshot?.() || null,
+          interactions: window.DevRandomRuinInteractions?.snapshot?.() || null,
+          dynamicSurfaces: window.DynamicSurfaces?.debugSnapshot?.() || null,
+          generator: document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50?.getState?.() || null,
+          wallPlanes: window.DevRandomRuinWallPlanes?.snapshot?.() || null,
+          wallRender: window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
+        }),
+      };
+      stage = 'Three.js scene serialization';
+      payload.scene = _threeSceneToJsonIterative(scene);
+      stage = 'JSON encoding';
+      const json = JSON.stringify(payload, null, 2);
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(json);
+          copied = true;
+        }
+      } catch (_) { /* Fall through to the selection-based path when clipboard permission is denied. */ }
+      if (!copied) {
+        const textarea = document.createElement('textarea'); // Mobile/older-browser fallback when the async Clipboard API is unavailable or denied.
+        textarea.value = json;
+        textarea.setAttribute('readonly', '');
+        textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        try { copied = document.execCommand('copy'); }
+        finally { textarea.remove(); }
+        if (!copied) throw new Error('Clipboard access was denied');
+      }
+      status.textContent = `Copied ${(json.length / 1024).toFixed(0)} KB of ruin map JSON.`;
+    } catch (error) {
+      status.textContent = `Copy failed during ${stage}: ${error?.message || error}`;
+      console.error('[WildernessMap] Ruin JSON export failed', error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function _renderRuinJsonExport(tabsEl, currentArea) {
+    tabsEl.querySelector('[data-ruin-json-export]')?.remove();
+    tabsEl.querySelector('[data-ruin-json-status]')?.remove();
+    if (!_isInPlayableRuin(currentArea)) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'wmap-zone-tab';
+    button.dataset.ruinJsonExport = '1';
+    button.textContent = 'Copy Ruin JSON';
+    button.title = 'Copy the active ruin map, scene objects, geometry and runtime state as JSON';
+    const status = document.createElement('span');
+    status.dataset.ruinJsonStatus = '1';
+    status.setAttribute('role', 'status');
+    status.style.cssText = 'align-self:center;font-size:11px;opacity:.8;max-width:100%;overflow-wrap:anywhere';
+    button.addEventListener('click', () => _copyRuinMapJson(button, status));
+    tabsEl.append(button, status);
+  }
+
   let _wmapActiveZone = null;
   function renderWildernessMapPanel() {
     const tabsEl = document.getElementById('wmapZoneTabs');
@@ -585,7 +920,7 @@
     if (!tabsEl || !canvas) return;
     const currentArea = deps.getCurrentArea();
     const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
-    if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
+    if (!zoneIds.length) { tabsEl.innerHTML = ''; _renderRuinJsonExport(tabsEl, currentArea); _drawWildernessMapOnCanvas(canvas, null); return; }
     if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
       _wmapActiveZone = deps._isZoneArea(currentArea) ? currentArea : zoneIds[0];
     }
@@ -598,6 +933,7 @@
       btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
       tabsEl.appendChild(btn);
     }
+    _renderRuinJsonExport(tabsEl, currentArea);
     _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
     _renderLandmarkList(_wmapActiveZone);
   }
@@ -630,6 +966,9 @@
     init,
     updateFogAroundPlayer: updateZoneFogAroundPlayer,
     renderMapPanel: renderWildernessMapPanel,
+    renderRuinJsonExport: (tabsEl = document.getElementById('wmapZoneTabs')) => {
+      if (tabsEl) _renderRuinJsonExport(tabsEl, deps.getCurrentArea());
+    },
     setWaypoint,
     clearWaypoint,
     clearWaypointForThreat,
