@@ -67,6 +67,7 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
 
   camera.layers.enableAll(); renderer.setRenderTarget({}); // Offscreen target, every layer: the base render.
   renderer.render(scene, camera);
+  const baseEndedAt = clock;
 
   // Held-object depth replays: they own scene.autoUpdate while they run, one is classified 'base'
   // (every layer, offscreen) and the rest 'other'.
@@ -74,7 +75,7 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
   renderer.render(scene, camera);
   for (let i = 0; i < 4; i++) { camera.layers.set(7); renderer.render(scene, camera); }
   camera.layers.enableAll(); scene.autoUpdate = replayUpdate;
-  if (rearmAfterReplays) assert.equal(api.markSceneMatricesCurrent(renderer, scene), true);
+  if (rearmAfterReplays) assert.equal(api.markSceneMatricesCurrent(renderer, scene, baseEndedAt), true);
 
   clock += elapsedBeforeSecondaryPasses;
   camera.layers.set(4); renderer.render(scene, camera); // PNG occluder depth
@@ -137,6 +138,19 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
   assert.equal(records[1].matricesUpdated, true, 'a different scene must still update its own matrices (and ends the sequence)');
   renderer.render(a, camera);
   assert.equal(records[2].matricesUpdated, true, 'an unrelated render in between ends the sequence');
+}
+
+// 5. The age limit runs from when the matrices were computed, not from when the replays re-armed the sequence.
+{
+  const renderer = new Renderer();
+  const world = makeWorld();
+  const computedAt = clock;
+  clock += api.snapshot().maxReuseAgeMs + 50; // The replays took longer than the reuse window.
+  assert.equal(api.markSceneMatricesCurrent(renderer, world, computedAt), true);
+  records.length = 0;
+  const camera = { layers: new Layers(1) }; camera.layers.set(4);
+  renderer.render(world, camera);
+  assert.equal(records[0].matricesUpdated, true, 're-arming with an old computedAt does not revive stale matrices');
 }
 
 console.log('Outline matrix reuse checks passed.');

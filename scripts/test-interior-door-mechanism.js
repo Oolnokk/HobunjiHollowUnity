@@ -44,6 +44,10 @@ vm.runInContext(fs.readFileSync('docs/js/interior-door-tiles.js', 'utf8'), conte
   assert.equal(blockers[0].z, 3.5);
   assert.equal(blockers[0].openProgress, 0.5, 'light transmission reads the same intermediate door animation progress');
   assert.equal(window.InteriorDoorTiles.getLightBlockers('map_i_test', {}).length, 0, 'stale map ids cannot return blockers from another active scene');
+  scene.door.userData.puzzleProgress = 0.25;
+  const refreshed = window.InteriorDoorTiles.getLightBlockers('map_i_test', scene);
+  assert.equal(refreshed[0], blockers[0], 'light blockers are refreshed in place so the per-frame lighting pass allocates nothing');
+  assert.equal(refreshed[0].openProgress, 0.25, 'the reused record carries the current door progress');
 
   assert.equal(door.onAction('obj_door_toggle').ok, true);
   assert.deepEqual(calls.pop(), { mapId: 'interiorDoors:map_i_test', id: 'door_3_3', active: true }, 'opening drives the registered mechanism');

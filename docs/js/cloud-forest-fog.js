@@ -787,6 +787,21 @@
       || (isNoSkyArea(area) && !isCloudForestMap(area));
   }
 
+  // One lighting draw asks for transmission once per light (lanterns, furniture, ruin lights, window
+  // panes), and the door blockers cannot change in the middle of a draw, so the list is read once per
+  // draw. Outside a draw (tests, diagnostics) every call reads it fresh.
+  let lightingDrawActive = false;
+  let drawBlockers = null, drawBlockersArea = null, drawBlockersScene = null;
+  function lightBlockersForDraw(area, scene) {
+    const read = () => window.InteriorDoorTiles?.getLightBlockers?.(area, scene) || NO_LIGHT_BLOCKERS;
+    if (!lightingDrawActive) return read();
+    if (drawBlockers === null || drawBlockersArea !== area || drawBlockersScene !== scene) {
+      drawBlockers = read(); drawBlockersArea = area; drawBlockersScene = scene;
+    }
+    return drawBlockers;
+  }
+  const NO_LIGHT_BLOCKERS = Object.freeze([]);
+
   function interiorLightTransmission(sourceX, sourceZ) {
     const currentArea = lightingDeps?.getCurrentArea?.();
     const activeScene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
@@ -797,7 +812,7 @@
     const dx = sourceX - fromX, dz = sourceZ - fromZ;
     const lengthSquared = dx * dx + dz * dz;
     if (lengthSquared < 0.000001) return 1;
-    const doors = window.InteriorDoorTiles?.getLightBlockers?.(currentArea, activeScene) || [];
+    const doors = lightBlockersForDraw(currentArea, activeScene);
     let transmission = 1;
     for (const door of doors) {
         const progress = clamp01(door.openProgress);
@@ -924,6 +939,11 @@
   }
 
   function drawUnifiedLightingOverlay() {
+    lightingDrawActive = true; drawBlockers = null; // Door blockers are read once per draw (see lightBlockersForDraw).
+    try { drawUnifiedLightingOverlayPass(); } finally { lightingDrawActive = false; drawBlockers = null; }
+  }
+
+  function drawUnifiedLightingOverlayPass() {
     if (!lightingDeps?.lctx) return;
     const now = performance.now();
     const lightningAlpha = lightingDeps.getLightningAlpha();
