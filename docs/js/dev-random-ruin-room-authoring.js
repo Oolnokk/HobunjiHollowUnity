@@ -540,6 +540,18 @@
     return true;
   }
 
+  function canClaimSpot(network, roomId, category, type) {
+    return canClaimSpotForPlan(roomPlan(network,roomId),roomId,category,type);
+  }
+
+  function claimSpot(network, roomId, category, type, options = {}) {
+    return claimSpotForPlan(roomPlan(network,roomId),roomId,category,type,options);
+  }
+
+  function releaseSpot(network, claim) {
+    return releaseSpotForPlan(roomPlan(network,claim?.roomId),claim);
+  }
+
   function getDiagnostics(network) {
     const report = {claims:[],rejections:[],links:[]};
     const seen = new Set();
