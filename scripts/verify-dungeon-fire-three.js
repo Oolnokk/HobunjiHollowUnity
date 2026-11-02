@@ -89,6 +89,11 @@ function closeVector(actual, expected, message) {
   }));
 }
 
+async function settleAsync() {
+  // Drain the metal/alpha-mask promise chain before reading the resolved anchor.
+  await new Promise(resolve => setImmediate(resolve));
+}
+
 async function main() {
   const fire = window.DungeonFire;
   assert.ok(fire, 'Dungeon Fire registers with actual Three.js');
@@ -98,8 +103,7 @@ async function main() {
 
   const thrown = createProjectile('thrown', 'assets/test-metal-weapon.png');
   assert.equal(fire.attachProjectile(thrown.projectile), true, 'thrown projectile creates its live flame');
-  await Promise.resolve();
-  await Promise.resolve();
+  await settleAsync();
   assert.equal(metalMaskCalls, 1, 'thrown weapons resolve the verdigris-compatible metal mask');
   assert.equal(opaqueCalls, 0, 'a usable metal mask takes precedence over the general alpha fallback');
   assert.equal(thrown.projectile._dungeonFire.anchorKind, 'metal');
@@ -161,8 +165,7 @@ async function main() {
   // Ordinary arrows use the source PNG alpha instead of a weapon-metal mask.
   const arrow = createProjectile('arrow', 'assets/test-arrow.png');
   assert.equal(fire.attachProjectile(arrow.projectile), true);
-  await Promise.resolve();
-  await Promise.resolve();
+  await settleAsync();
   assert.equal(opaqueCalls, 1, 'ordinary ranged projectiles resolve the top opaque source pixel');
   assert.equal(arrow.projectile._dungeonFire.anchorKind, 'opaque');
 
