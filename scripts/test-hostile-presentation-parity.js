@@ -57,9 +57,14 @@ assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/procedural
 // 6. Mask over hood in the front portrait.
 {
   const portrait = read('docs/js/portrait-utils.js');
-  const front = portrait.indexOf('  drawBreathingLayers(hoodLayers);\n  drawEmoteLayers(maskLayers);');
-  assert.ok(front > 0, 'front portrait draws the hood first and the mask on top');
-  assert.equal(portrait.indexOf('  drawEmoteLayers(maskLayers);\n  drawBreathingLayers(hoodLayers);'), -1, 'no mask-under-hood order remains');
+  const frontDrawMap = portrait.indexOf('const frontDraw = {');
+  const hood = portrait.indexOf('hood: () => drawBreathingLayers(hoodLayers),', frontDrawMap);
+  const mask = portrait.indexOf('mask: () => drawEmoteLayers(maskLayers),', frontDrawMap);
+  const defaultFrontOrder = portrait.indexOf('const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([');
+  const defaultHood = portrait.indexOf("'hood'", defaultFrontOrder);
+  const defaultMask = portrait.indexOf("'mask'", defaultFrontOrder);
+  assert.ok(frontDrawMap >= 0 && hood > frontDrawMap && mask > hood && defaultHood < defaultMask,
+    'front portrait draws the hood first and the mask on top');
 }
 
 // 7. A lowered (hunched) head must not fold the skin under the chin: the head-scale fade band below the skull has to be
