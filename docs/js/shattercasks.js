@@ -1533,6 +1533,7 @@
     if(!cask||cask.exploded)return false;
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
     cask.exploded=true;
+    window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
     if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);

@@ -11,11 +11,34 @@ const claimsCode = fs.readFileSync(path.join(root,'docs/js/world-action-input-cl
 const html = fs.readFileSync(path.join(root,'docs/index.html'),'utf8');
 const ranged = fs.readFileSync(path.join(root,'docs/js/combat/ranged-weapons.js'),'utf8');
 const devSpawner = fs.readFileSync(path.join(root,'docs/js/dev-spawner.js'),'utf8');
+const audioConfig = fs.readFileSync(path.join(root,'docs/config/scratchbones-config.js'),'utf8'); // Real uploaded impact clips are configured through the shared object-SFX catalog.
+const audioSystem = fs.readFileSync(path.join(root,'docs/js/audio-system.js'),'utf8'); // Semantic flask impacts resolve through the existing audio adapter.
+const flaskRuntime = fs.readFileSync(path.join(root,'docs/js/alchemy-flasks.js'),'utf8');
 const asset = JSON.parse(fs.readFileSync(path.join(root,'docs/config/furniture-authored/shattercaskBlasting.json'),'utf8'));
 assert.equal(asset.parts.length,3,'two-necked furniture retains all three authored pieces');
 assert(asset.recognizedSurfaces.length>0,'all original surface definitions survive import');
 assert(html.includes('src="js/shattercasks.js?v='),'shattercask runtime is loaded');
 assert(ranged.includes('Shattercasks?.projectileHit'),'ranged projectile segment detects shattercasks');
+assert(flaskRuntime.includes("emitSfx('impact'"),'flask flight emits its semantic impact cue at landing');
+assert(audioSystem.includes("document.addEventListener('hobunji-flask-sfx'") &&
+  audioSystem.includes('cueMap[detail.cue]') &&
+  audioConfig.includes('"impact": "flaskImpact"') &&
+  audioConfig.includes('"url": "assets/audio/sfx/sfx_flask_shatter.mp3"'),
+  'throwing-flask landing reaches the newly uploaded shatter recording through the existing semantic adapter');
+assert(audioConfig.includes('"url": "assets/audio/sfx/sfx_shattercask.m4a"') &&
+  audioConfig.includes('"shattercaskBlast"'),
+  'Shattercask detonation has its own preloaded uploaded recording');
+const detonateStart=code.indexOf('  function detonate(cask,');
+const detonateEnd=code.indexOf('\n  function sweepMelee',detonateStart);
+const detonateBody=code.slice(detonateStart,detonateEnd);
+assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
+  detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
+  code.includes("detonate(c,'throw-impact')") &&
+  code.includes("return detonate(candidate.vase,'projectile')") &&
+  code.includes("detonate(vase,'melee')"),
+  'one guarded detonation boundary plays the blast cue for thrown, projectile-hit, and melee-hit paths');
+assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
+  'the central detonation path contains one sound request');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
 
 assert.equal(asset.particleEmitters.filter(e=>e.enabled&&e.type==='bubbles').length,2,
@@ -287,7 +310,7 @@ async function scenario(reloading=false) {
   tiles[3][6]={type:'tree',treeKind:'pine'};
   const scene=new Node();
   const player={x:3.5*64,y:3.5*64,angle:0,health:100};
-  const inventory={},damage=[];
+  const inventory={},damage=[],playedSfx=[]; // Records actual audio requests from the production detonation path.
   const deps={
     TILE:64,player,inventory,TileType:{GRASS:'grass'},
     getCurrentArea:()=>area,getActiveScene:()=>scene,worldSurfaceY:()=>0,
@@ -303,7 +326,7 @@ async function scenario(reloading=false) {
     CaveSiteSystem:{__test:{plansByMapId:new Map([[area,{shattercasks:[{id:'wall-charge',col:4,row:3}]}]])}},
     AuthoredFurniture:{load:async()=>asset,buildGroup:authoredGroup},
     DevSpawner:{init(){}},ResourceSystem:{spendFooting(){}},
-    AudioSystem:{playWeaponHitSfx(){}},__farmLog(){},
+    AudioSystem:{playWeaponHitSfx(){},playObjectSfxKey(key){playedSfx.push(key);}},__farmLog(){},
   };
   game.window=game;
   vm.createContext(game);
@@ -341,6 +364,7 @@ async function scenario(reloading=false) {
   const hit=game.Shattercasks.projectileHit({x:3,y:.42,z:3.5},{x:5.6,y:.42,z:3.5},.08,1,area);
   assert(hit&&hit.t>0&&hit.t<1,'swept projectile crosses the vase');
   assert(game.Shattercasks.hitProjectile(hit),'projectile triggers a single detonation');
+  assert.deepEqual(playedSfx,['shattercaskBlast'],'weapon-triggered detonation plays the dedicated Shattercask cue once');
   assert.equal(damage.length,1,'player is hurt by own nearby charge');
   assert.equal(tiles[3][5].type,'grass','blast opens the mineable wall');
   assert.equal(tiles[3][6].type,'grass','blast cuts down the tree');
@@ -363,8 +387,13 @@ async function scenario(reloading=false) {
     'looting changes only instance count, not per-tile mesh ownership');
   // A second blast must reuse the first blast's geometry/textures.
   const phantom=new Node();phantom.position.set(4.5,0,3.5);
-  assert(game.Shattercasks.detonate({id:'performance-repeat',mapId:area,col:4,row:3,
-    group:phantom,exploded:false,carried:false},'regression'));
+  const phantomCask={id:'performance-repeat',mapId:area,col:4,row:3,
+    group:phantom,exploded:false,carried:false};
+  assert(game.Shattercasks.detonate(phantomCask,'regression'));
+  assert.equal(playedSfx.length,2,'each separate explosion requests one sound');
+  assert.equal(game.Shattercasks.detonate(phantomCask,'duplicate-regression'),false,
+    'a repeated detonation request is rejected');
+  assert.equal(playedSfx.length,2,'the one-shot guard prevents duplicate explosion audio');
   assert.equal(game.Shattercasks.debugSnapshot().performance.textureBatchesCreated,1,
     'repeated explosions reuse pooled GPU source assets');
 }

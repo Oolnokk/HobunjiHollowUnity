@@ -3652,30 +3652,30 @@ window.SCRATCHBONES_CONFIG = {
         "furnitureSfx": {
           "fireplace": { "url": "assets/audio/sfx/bgs/bgs_fire1.wav", "rangeTiles": 6, "volume": 0.65 }
         },
-        // Flask gameplay emits these semantic phases without importing or
-        // calling the audio system. Set any value here to an objectSfx key
-        // below when a real recording is added; null deliberately stays
-        // silent while still appearing in flask diagnostics/debug logs.
+        // Flask gameplay emits semantic phases without importing the audio
+        // system. Map a phase to an objectSfx key when a recording is available;
+        // null keeps that phase intentionally silent and diagnosable.
         "alchemyFlasks": {
           "aimStart": null,
           "release": null,
-          "impact": null
+          "impact": "flaskImpact"
         },
         // Generic object/machine/UI interaction sfx — see playObjectSfx in
-        // game.js and docs/assets/audio/sfx/README.md. Every entry names a
-        // real recording (`url`) that does NOT exist yet — a human needs to
-        // source/record/generate it, see the README — plus a placeholder
-        // that plays instead until the real file shows up in the repo:
-        // either a single generated `placeholderUrl` (committed, see
-        // scripts/generate-placeholder-sfx.js) or a `placeholderUrls` list
-        // reusing the real footstep recordings (also committed, see
-        // docs/assets/audio/sfx/footsteps/) at a different volume/pitch —
-        // a real recording standing in for a similar-enough sound beats a
-        // from-scratch synth attempt, so several material-impact cues
-        // (digging, mashing, grinding, a barrel knock) borrow gravel/water
-        // steps this way instead of having their own generated .wav.
+        // game.js and docs/assets/audio/sfx/README.md. Entries may use a real
+        // recording (`url`) and optionally provide a fallback placeholder
+        // for missing media. Set `preload: true` for frequently used cues.
         "objectSfx": {
           "enabled": true,
+          "flaskImpact": {
+            "url": "assets/audio/sfx/sfx_flask_shatter.mp3",
+            "volume": 0.9,
+            "preload": true
+          },
+          "shattercaskBlast": {
+            "url": "assets/audio/sfx/sfx_shattercask.m4a",
+            "volume": 0.95,
+            "preload": true
+          },
           "uiClick": {
             "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
