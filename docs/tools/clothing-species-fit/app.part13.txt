@@ -1,0 +1,395 @@
+
+// Beard/hood overpass mask authoring. This remains in the core editor closure so it can use the fitted target canvas and cosmetic records.
+const maskUi = {
+  mode: $('beardHoodMaskMode'), size: $('beardHoodBrushSize'), sizeLabel: $('beardHoodBrushValue'),
+  paint: $('beardHoodBrushPaint'), erase: $('beardHoodBrushErase'), visible: $('beardHoodMaskVisible'),
+  clear: $('beardHoodMaskClear'), export: $('beardHoodMaskExport'), panel: $('beardHoodMaskEditor'),
+  status: $('beardHoodMaskStatus'), reference: $('beardHoodReference'), undo: $('beardHoodMaskUndo'), redo: $('beardHoodMaskRedo'), pickHood: $('pickHood'), pickBeard: $('pickBeard')
+};
+const sidebarResizeHandle = $('sidebarResizeHandle');
+const fitGrid = document.querySelector('.grid');
+const sidebarPanel = document.querySelector('.controls');
+function setSidebarWidth(width) {
+  const available = Math.max(300, fitGrid.clientWidth);
+  const min = Math.min(180, available * 0.38);
+  const max = Math.max(min, available - 150);
+  fitGrid.style.setProperty('--sidebar-width', `${Math.max(min, Math.min(max, width))}px`);
+}
+let sidebarDragStart = null; // Pointer origin and initial width for the current resize gesture.
+sidebarResizeHandle.addEventListener('pointerdown', event => {
+  event.preventDefault();
+  sidebarDragStart = { x: event.clientX, width: sidebarPanel.getBoundingClientRect().width };
+  sidebarResizeHandle.setPointerCapture(event.pointerId);
+});
+sidebarResizeHandle.addEventListener('pointermove', event => {
+  if (!sidebarDragStart) return;
+  setSidebarWidth(sidebarDragStart.width + event.clientX - sidebarDragStart.x);
+});
+function finishSidebarResize() { sidebarDragStart = null; }
+sidebarResizeHandle.addEventListener('pointerup', finishSidebarResize);
+sidebarResizeHandle.addEventListener('pointercancel', finishSidebarResize);
+sidebarResizeHandle.addEventListener('keydown', event => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  event.preventDefault();
+  const current = sidebarPanel.getBoundingClientRect().width;
+  setSidebarWidth(current + (event.key === 'ArrowRight' ? 20 : -20));
+});
+let activeBeardHoodMaskCanvas = null; // Editable pixel mask for the currently selected cosmetic and target variant.
+let activeBeardHoodMaskKey = ''; // Invalidates stale strokes when the cosmetic or target changes.
+let activeBeardHoodReferenceCanvas = null; // Opposite-layer ghost, warped with the current species fit to show actual beard/hood overlap.
+let activeBeardHoodBrush = 'paint'; // 'paint' adds mask pixels; 'erase' removes them.
+let activeBeardHoodStroke = false; // Tracks one continuous pointer stroke on the fitted portrait.
+let lastBeardHoodPoint = null; // Interpolates fast pointer movement to avoid gaps.
+const beardHoodHistory = new Map(); // Per-cosmetic undo/redo snapshots retained when switching garments.
+let beardHoodStrokeBefore = null; // Snapshot captured once at the start of each paint gesture.
+
+function beardHoodMaskKind() { return maskUi.mode.value === 'beard' ? 'beard' : 'hood'; }
+function beardHoodMaskCosmetic() { return garmentRecord(); }
+function beardHoodMaskVariant() { return `${E.species.value}_${E.gender.value}`; }
+function beardHoodMaskStore(kind = beardHoodMaskKind()) {
+  A.beardHoodMasks ||= { hood: {}, beard: {} };
+  A.beardHoodMasks[kind] ||= {};
+  return A.beardHoodMasks[kind];
+}
+function beardHoodMaskKey() {
+  const garment = beardHoodMaskCosmetic();
+  return garment ? `${kindKey(garment)}::${beardHoodMaskVariant()}` : '';
+}
+function kindKey(garment) { return String(garment?.id || ''); }
+function decodeBeardHoodMask(mask, width, height) {
+  const canvas = Object.assign(document.createElement('canvas'), { width, height });
+  if (!mask || !Array.isArray(mask.runs)) return canvas;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(width, height);
+  const sourceWidth = Math.max(1, Number(mask.width) || width);
+  const sourceHeight = Math.max(1, Number(mask.height) || height);
+  const coverage = new Uint8Array(sourceWidth * sourceHeight);
+  for (let i = 0; i + 1 < mask.runs.length; i += 2) {
+    const start = Math.max(0, Number(mask.runs[i]) | 0);
+    const end = Math.min(coverage.length, start + Math.max(0, Number(mask.runs[i + 1]) | 0));
+    coverage.fill(1, start, end);
+  }
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const sx = Math.min(sourceWidth - 1, Math.floor(x * sourceWidth / width));
+    const sy = Math.min(sourceHeight - 1, Math.floor(y * sourceHeight / height));
+    if (coverage[sy * sourceWidth + sx]) image.data[(y * width + x) * 4 + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+function encodeBeardHoodMask(canvas) {
+  const { width, height } = canvas;
+  const alpha = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+  const runs = [];
+  let start = -1, length = 0;
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    const selected = alpha[pixel * 4 + 3] > 0;
+    if (selected) {
+      if (start < 0) start = pixel;
+      length++;
+    } else if (start >= 0) {
+      runs.push(start, length); start = -1; length = 0;
+    }
+  }
+  if (start >= 0) runs.push(start, length);
+  return { width, height, runs };
+}
+function beardHoodMaskData(kind = beardHoodMaskKind()) {
+  const garment = beardHoodMaskCosmetic();
+  if (!garment) return null;
+  const key = beardHoodMaskKey();
+  const store = beardHoodMaskStore(kind);
+  if (Object.prototype.hasOwnProperty.call(store, key)) return store[key];
+  const property = kind === 'hood' ? 'beardRevealMasks' : 'beardOverpassMasks';
+  return garment.cfg?.[property]?.[beardHoodMaskVariant()] || null;
+}
+function beardHoodHistoryForKey(key = activeBeardHoodMaskKey) {
+  if (!beardHoodHistory.has(key)) beardHoodHistory.set(key, { undo: [], redo: [] });
+  return beardHoodHistory.get(key);
+}
+function updateBeardHoodHistoryButtons() {
+  const history = activeBeardHoodMaskKey ? beardHoodHistoryForKey() : { undo: [], redo: [] };
+  maskUi.undo.disabled = !history.undo.length; maskUi.redo.disabled = !history.redo.length;
+}
+function pushBeardHoodMaskHistory(before) {
+  if (!activeBeardHoodMaskKey || !before) return;
+  const history = beardHoodHistoryForKey(); history.undo.push(before);
+  if (history.undo.length > 80) history.undo.shift();
+  history.redo.length = 0; updateBeardHoodHistoryButtons();
+}
+function restoreBeardHoodMaskSnapshot(snapshot) {
+  if (!activeBeardHoodMaskCanvas || !snapshot) return;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  ctx.putImageData(snapshot, 0, 0);
+  beardHoodMaskStore()[activeBeardHoodMaskKey] = encodeBeardHoodMask(activeBeardHoodMaskCanvas);
+  saveState(); render();
+}
+function undoBeardHoodMask() {
+  const history = beardHoodHistoryForKey(); if (!history.undo.length) return;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  history.redo.push(ctx.getImageData(0, 0, activeBeardHoodMaskCanvas.width, activeBeardHoodMaskCanvas.height));
+  restoreBeardHoodMaskSnapshot(history.undo.pop()); updateBeardHoodHistoryButtons();
+}
+function redoBeardHoodMask() {
+  const history = beardHoodHistoryForKey(); if (!history.redo.length) return;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  history.undo.push(ctx.getImageData(0, 0, activeBeardHoodMaskCanvas.width, activeBeardHoodMaskCanvas.height));
+  restoreBeardHoodMaskSnapshot(history.redo.pop()); updateBeardHoodHistoryButtons();
+}
+function loadBeardHoodMask() {
+  const garment = beardHoodMaskCosmetic();
+  const validKind = beardHoodMaskKind();
+  const isValid = validKind === 'hood'
+    ? garment?.slot === 'hood'
+    : garment?.cfg?.portraitSlot === 'facialHair';
+  activeBeardHoodMaskKey = isValid ? beardHoodMaskKey() : '';
+  const width = Math.max(1, R.body?.width || 200), height = Math.max(1, R.body?.height || 200);
+  activeBeardHoodMaskCanvas = isValid
+    ? decodeBeardHoodMask(beardHoodMaskData(validKind), width, height)
+    : null;
+  maskUi.status.textContent = !garment ? 'Choose a cosmetic first.'
+    : !isValid ? (validKind === 'hood' ? 'Select a hood for a hood reveal mask.' : 'Select a facial-hair cosmetic for a beard priority mask.')
+    : `${garment.label} · ${E.species.value} ${E.gender.value} · ${activeBeardHoodMaskCanvas.width}×${activeBeardHoodMaskCanvas.height} pixels`;
+  updateBeardHoodHistoryButtons();
+  render();
+}
+async function loadBeardHoodReference() {
+  activeBeardHoodReferenceCanvas = null;
+  const referenceId = maskUi.reference.value;
+  if (!referenceId || !R.body) { render(); return; }
+  const generation = R.assetGeneration;
+  try {
+    const reference = await buildVariantGarmentCanvas(referenceId, E.sourceSpecies.value, E.sourceGender.value, R.body.width, R.body.height);
+    if (generation !== R.assetGeneration || referenceId !== maskUi.reference.value || !reference) return;
+    const source = reference._front || reference._behindView || reference._back || reference;
+    activeBeardHoodReferenceCanvas = warpGarment(source, targetGrid(), R.body.width, R.body.height);
+    render();
+  } catch (error) {
+    maskUi.status.textContent = 'Reference layer failed to load: ' + error.message;
+  }
+}
+function rebuildBeardHoodReferenceOptions() {
+  const kind = beardHoodMaskKind();
+  const selected = maskUi.reference.value;
+  maskUi.reference.innerHTML = '<option value="">None</option>';
+  const matches = R.garments.filter(garment => kind === 'hood'
+    ? garment.cfg?.portraitSlot === 'facialHair'
+    : garment.slot === 'hood');
+  for (const garment of matches) {
+    if (!sourceHasGarmentArt(garment, E.sourceSpecies.value, E.sourceGender.value)) continue;
+    const option = document.createElement('option');
+    option.value = garment.id;
+    option.textContent = garment.label;
+    maskUi.reference.appendChild(option);
+  }
+  if ([...maskUi.reference.options].some(option => option.value === selected)) maskUi.reference.value = selected;
+  else if (maskUi.reference.options.length > 1) maskUi.reference.selectedIndex = 1;
+}
+function drawBeardHoodMaskOverlay() {
+  if (maskUi.panel.hidden) return;
+  if (activeBeardHoodReferenceCanvas) {
+    C.save();
+    C.globalAlpha = 0.42;
+    C.imageSmoothingEnabled = false;
+    C.drawImage(activeBeardHoodReferenceCanvas, 0, 0, E.stage.width, E.stage.height);
+    C.restore();
+  }
+  if (!activeBeardHoodMaskCanvas || !maskUi.visible.checked) return;
+  const tint = document.createElement('canvas');
+  tint.width = activeBeardHoodMaskCanvas.width; tint.height = activeBeardHoodMaskCanvas.height;
+  const tintCtx = tint.getContext('2d');
+  tintCtx.drawImage(activeBeardHoodMaskCanvas, 0, 0);
+  tintCtx.globalCompositeOperation = 'source-in';
+  tintCtx.fillStyle = beardHoodMaskKind() === 'hood' ? '#35d8ff' : '#ffbd45';
+  tintCtx.fillRect(0, 0, tint.width, tint.height);
+  C.save();
+  C.globalAlpha = 0.48;
+  C.imageSmoothingEnabled = false;
+  C.drawImage(tint, 0, 0, E.stage.width, E.stage.height);
+  C.restore();
+}
+const renderBeforeBeardHoodMask = render; // Keeps all existing fit, grid, and preview drawing intact.
+render = function renderWithBeardHoodMask() {
+  renderBeforeBeardHoodMask();
+  drawBeardHoodMaskOverlay();
+};
+function filterBeardHoodCosmetics() {
+  if (fitRegion() !== 'headwear') return;
+  const kind = beardHoodMaskKind();
+  const wanted = kind === 'hood' ? g => g.slot === 'hood' : g => g.cfg?.portraitSlot === 'facialHair';
+  const selected = E.garment.value;
+  E.garment.innerHTML = '';
+  for (const garment of R.garments) {
+    if (!wanted(garment) || !sourceHasGarmentArt(garment, E.sourceSpecies.value, E.sourceGender.value)) continue;
+    const option = document.createElement('option');
+    option.value = garment.id;
+    option.textContent = `${garment.label} [${kind === 'hood' ? 'hood' : 'facial hair'}]`;
+    E.garment.appendChild(option);
+  }
+  if ([...E.garment.options].some(option => option.value === selected)) E.garment.value = selected;
+  else if (E.garment.options.length) E.garment.selectedIndex = 0;
+  if (!E.garment.value) maskUi.status.textContent = kind === 'hood' ? 'No hood sprites are available for this starting species/gender.' : 'No facial-hair sprites are available for this starting species/gender.';
+  rebuildBeardHoodReferenceOptions();
+  loadBeardHoodReference();
+}
+function exportBeardHoodCosmeticConfig() {
+  const garment = beardHoodMaskCosmetic();
+  if (!garment || !activeBeardHoodMaskCanvas) { log('Select a matching hood or facial-hair cosmetic before exporting its mask.'); return; }
+  const kind = beardHoodMaskKind();
+  const property = kind === 'hood' ? 'beardRevealMasks' : 'beardOverpassMasks';
+  const config = clone(garment.cfg);
+  config[property] ||= {};
+  const prefix = `${kindKey(garment)}::`;
+  let exportedVariants = 0;
+  for (const [key, mask] of Object.entries(beardHoodMaskStore(kind))) {
+    if (!key.startsWith(prefix)) continue;
+    const variant = key.slice(prefix.length);
+    if (!variant) continue;
+    if (mask?.runs?.length) { config[property][variant] = mask; exportedVariants++; }
+    else delete config[property][variant];
+  }
+  if (!Object.keys(config[property]).length) delete config[property];
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = String(garment.configPath || `${safeName(garment.id)}.json`).split('/').pop(); link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  log(`Exported ${property} for ${garment.id} (${exportedVariants} saved variant masks). Replace docs/${garment.configPath} with the downloaded file.`);
+}
+function paintBeardHoodMaskSegment(from, to) {
+  if (!activeBeardHoodMaskCanvas) return;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  const rect = E.stage.getBoundingClientRect();
+  const scaleX = activeBeardHoodMaskCanvas.width / Math.max(1, E.stage.width);
+  const scaleY = activeBeardHoodMaskCanvas.height / Math.max(1, E.stage.height);
+  const x0 = from.x * scaleX, y0 = from.y * scaleY, x1 = to.x * scaleX, y1 = to.y * scaleY;
+  const radius = Math.max(1, Number(maskUi.size.value) || 4);
+  const distance = Math.hypot(x1 - x0, y1 - y0);
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.45)));
+  ctx.save();
+  ctx.globalCompositeOperation = activeBeardHoodBrush === 'erase' ? 'destination-out' : 'source-over';
+  ctx.fillStyle = '#fff';
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+    ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  render();
+}
+function stageMaskPoint(event) {
+  const rect = E.stage.getBoundingClientRect();
+  return { x: Math.max(0, Math.min(E.stage.width, (event.clientX - rect.left) * E.stage.width / rect.width)),
+    y: Math.max(0, Math.min(E.stage.height, (event.clientY - rect.top) * E.stage.height / rect.height)) };
+}
+function finishBeardHoodMaskStroke() {
+  if (!activeBeardHoodStroke) return;
+  activeBeardHoodStroke = false; lastBeardHoodPoint = null;
+  pushBeardHoodMaskHistory(beardHoodStrokeBefore); beardHoodStrokeBefore = null;
+  if (activeBeardHoodMaskCanvas && activeBeardHoodMaskKey) {
+    beardHoodMaskStore()[activeBeardHoodMaskKey] = encodeBeardHoodMask(activeBeardHoodMaskCanvas);
+    saveState();
+    maskUi.status.textContent = `Saved ${beardHoodMaskKind()} mask · ${beardHoodMaskVariant()}.`;
+  }
+}
+E.stage.addEventListener('pointerdown', event => {
+  if (maskUi.panel.hidden || !activeBeardHoodMaskCanvas || !activeBeardHoodMaskKey) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  activeBeardHoodStroke = true;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  beardHoodStrokeBefore = ctx.getImageData(0, 0, activeBeardHoodMaskCanvas.width, activeBeardHoodMaskCanvas.height);
+  lastBeardHoodPoint = stageMaskPoint(event);
+  E.stage.setPointerCapture?.(event.pointerId);
+  paintBeardHoodMaskSegment(lastBeardHoodPoint, lastBeardHoodPoint);
+}, true);
+E.stage.addEventListener('pointermove', event => {
+  if (!activeBeardHoodStroke) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  const point = stageMaskPoint(event);
+  paintBeardHoodMaskSegment(lastBeardHoodPoint || point, point);
+  lastBeardHoodPoint = point;
+}, true);
+for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) E.stage.addEventListener(name, finishBeardHoodMaskStroke, true);
+function applyBeardHoodMaskKind(kind) {
+  if (kind !== 'hood' && kind !== 'beard') return;
+  maskUi.mode.value = kind;
+  maskUi.pickHood.classList.toggle('active', kind === 'hood');
+  maskUi.pickBeard.classList.toggle('active', kind === 'beard');
+  filterBeardHoodCosmetics();
+  // Dispatch on the actual garment picker so its normal preview/update pipeline runs too.
+  E.garment.dispatchEvent(new Event('change', { bubbles: true }));
+  rebuildBeardHoodReferenceOptions();
+  loadBeardHoodMask();
+}
+maskUi.mode.addEventListener('change', () => applyBeardHoodMaskKind(beardHoodMaskKind()));
+maskUi.pickHood.addEventListener('click', event => {
+  event.preventDefault();
+  applyBeardHoodMaskKind('hood');
+});
+maskUi.pickBeard.addEventListener('click', event => {
+  event.preventDefault();
+  applyBeardHoodMaskKind('beard');
+});
+maskUi.reference.onchange = loadBeardHoodReference;
+maskUi.size.oninput = () => { maskUi.sizeLabel.textContent = `${maskUi.size.value} px`; };
+maskUi.paint.onclick = () => { activeBeardHoodBrush = 'paint'; maskUi.paint.classList.add('active'); maskUi.erase.classList.remove('active'); };
+maskUi.erase.onclick = () => { activeBeardHoodBrush = 'erase'; maskUi.erase.classList.add('active'); maskUi.paint.classList.remove('active'); };
+maskUi.visible.onchange = render;
+maskUi.clear.onclick = () => {
+  if (!activeBeardHoodMaskCanvas) return;
+  const ctx = activeBeardHoodMaskCanvas.getContext('2d');
+  pushBeardHoodMaskHistory(ctx.getImageData(0, 0, activeBeardHoodMaskCanvas.width, activeBeardHoodMaskCanvas.height));
+  ctx.clearRect(0, 0, activeBeardHoodMaskCanvas.width, activeBeardHoodMaskCanvas.height);
+  finishBeardHoodMaskStroke();
+  if (activeBeardHoodMaskKey) beardHoodMaskStore()[activeBeardHoodMaskKey] = encodeBeardHoodMask(activeBeardHoodMaskCanvas);
+  saveState(); render();
+};
+maskUi.export.onclick = exportBeardHoodCosmeticConfig;
+maskUi.undo.onclick = undoBeardHoodMask;
+maskUi.redo.onclick = redoBeardHoodMask;
+// Click listeners are installed beside applyBeardHoodMaskKind above.
+const originalFitRegionChange = E.fitRegion.onchange;
+E.fitRegion.onchange = (...args) => {
+  if (typeof originalFitRegionChange === 'function') originalFitRegionChange(...args);
+  window.addEventListener('clothing-fit-repository-loaded', () => {
+  if (fitRegion() === 'headwear') { filterBeardHoodCosmetics(); loadBeardHoodMask(); }
+});
+window.addEventListener('hobunji-clothing-fit-assets-refreshed', () => {
+  if (fitRegion() === 'headwear') {
+    filterBeardHoodCosmetics();
+    loadBeardHoodMask();
+  }
+});
+maskUi.panel.hidden = fitRegion() !== 'headwear';
+  filterBeardHoodCosmetics();
+  loadBeardHoodMask();
+};
+const originalGarmentChange = E.garment.onchange;
+E.garment.onchange = (...args) => {
+  if (typeof originalGarmentChange === 'function') originalGarmentChange(...args);
+  loadBeardHoodMask();
+};
+const originalSpeciesChange = E.species.onchange;
+E.species.onchange = (...args) => {
+  if (typeof originalSpeciesChange === 'function') originalSpeciesChange(...args);
+  loadBeardHoodMask();
+};
+const originalGenderChange = E.gender.onchange;
+E.gender.onchange = (...args) => {
+  if (typeof originalGenderChange === 'function') originalGenderChange(...args);
+  loadBeardHoodMask();
+};
+const originalStartingSpeciesChange = E.sourceSpecies.onchange;
+E.sourceSpecies.onchange = (...args) => {
+  if (typeof originalStartingSpeciesChange === 'function') originalStartingSpeciesChange(...args);
+  filterBeardHoodCosmetics(); loadBeardHoodMask();
+};
+const originalStartingGenderChange = E.sourceGender.onchange;
+E.sourceGender.onchange = (...args) => {
+  if (typeof originalStartingGenderChange === 'function') originalStartingGenderChange(...args);
+  filterBeardHoodCosmetics(); loadBeardHoodMask();
+};
+maskUi.panel.hidden = fitRegion() !== 'headwear';
+if (fitRegion() === 'headwear') {
+  filterBeardHoodCosmetics();
+  loadBeardHoodMask();
+}

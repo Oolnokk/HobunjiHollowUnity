@@ -9,6 +9,7 @@ const renders = []; // Captures the seat and expression used by actual adapter c
 const document = { documentElement: { dataset: {} }, readyState: 'loading', addEventListener() {}, querySelectorAll: () => [], getElementById: () => null, currentScript: { src: 'https://example.test/docs/js/clothing-weaving-system.js' } }; // Skips browser boot while retaining production module initialization.
 const cosmetics = { optionCache: new Map(), hatOptions: [], hoodOptions: [], torsoPortraitOptions: [], armPortraitOptions: [] }; // Supplies the minimal valid avatar asset catalog.
 const window = {
+  getPortraitLayerOrders: () => ({ front: ['hood', 'facialHair'], behind: [] }), // Supplies the canonical test order consumed by the editor reset action.
   SCRATCHBONES_CONFIG: { game: { portrait: { expressions: { available: ['neutral', 'smile', 'frown', 'laugh'], defaultResting: 'neutral' }, cosmetics: {} }, account: { shopCatalog: [{ id: 'rugged_poncho', category: 'overwear' }] } } },
   loadPortraitCosmetics: async () => cosmetics,
   getPortraitFighters: () => [{ id: 'mao_m', speciesId: 'mao-ao', gender: 'male' }, { id: 'mammakhbuur_male', speciesId: 'mammakhbuur', gender: 'male' }],
@@ -51,6 +52,13 @@ async function main() {
   const portrait = vm.createContext({ window: { SCRATCHBONES_CONFIG: {} }, console, URL }); // Loads the actual portrait variant authority for inheritance and nearest-variant regressions.
   vm.runInContext(read('docs/js/portrait-utils.js'), portrait);
   vm.runInContext("LAST_SPECIES_DATA_BY_ID={mammakhbuur:{parentSpecies:'mashtzarr'}}; LAST_COSMETIC_FALLBACK_GROUPS={bodyGroups:[{members:[{species:'tletingan',gender:'female',position:0},{species:'mao-ao',gender:'female',position:1}]}]};", portrait);
+  const previewPresets = portrait.window.renderProfile.previewLayerOrderPresets; // The experiment is sourced from the same production portrait renderer as the editor.
+  assert.deepEqual(Object.keys(previewPresets).sort(), ['clothes-behind-body', 'default', 'hat-under-hood', 'hood-behind-head', 'swap-torso-overwear'].sort());
+  for (const preset of Object.values(previewPresets)) {
+    assert.equal(new Set(preset.front).size, preset.front.length, preset.label + ': no duplicate front layers');
+    assert.equal(new Set(preset.behind).size, preset.behind.length, preset.label + ': no duplicate rear layers');
+    assert(preset.front.includes('head') && preset.behind.includes('head'), preset.label + ': keeps head layer');
+  }
   window.portraitVariantKeysForFighter = portrait.portraitVariantKeysForFighter;
   const finePoncho = JSON.parse(read('docs/config/cosmetics/clothes/overwear/fine_poncho.json')); // Exercises the shipped multi-sprite garment rather than a synthetic single layer.
   for (const [speciesId, gender] of [['mammakhbuur', 'male'], ['tletingan', 'female']]) {
@@ -106,8 +114,45 @@ async function main() {
   const elements = new Map(); // Minimal DOM records allow actual editor change handlers to run.
   const element = id => { if (!elements.has(id)) elements.set(id, { value: '', hidden: false, innerHTML: '', querySelectorAll: () => [] }); return elements.get(id); }; // Used by the editor's $ helper.
   const saved = []; // Captures full appearance exports for round-trip checks.
-  const editor = vm.createContext({ window, console, Object, JSON, target: { kind: 'npc', id: npc.id }, work: copy(npc), db: { npcs: [copy(npc)] }, npcAppearancePass: 0, $: element, clone: copy, esc: String, normalizeRestingExpression: value => value || null, fillRestingExpressionOptions: value => { element('npcRestingExpression').value = value || ''; }, fillFields() {}, renderDb() {}, setStatus() {}, invalidatePreview() {}, log() {}, StudioAccount: { getDyeCatalog: () => [], getShopCatalog: () => [{ id: 'rugged_poncho', label: 'Rugged Poncho' }] }, downloadJson: (_name, value) => saved.push(copy(value)) }); // Executes the shipped editor handlers against the same runtime APIs.
-  for (const name of ['workingNpcRecord', 'syncNpcPatternColors', 'renderNpcAppearanceControls', 'applyWorkToNpc', 'exportAppearance']) vm.runInContext(editorFunction(name), editor);
+  const playerSaveMeta = {
+    characters: [{
+      id: 'hero',
+      gearInventory: {
+        clothing: {
+          overwear: { uid: 'worn-overwear', cosmeticId: 'rugged_poncho', slot: 'overwear', colorA: { hex: '#aabbcc' }, weaving: { layers: { poncho: { patterns: [{ repoPatternId: 'player-poncho' }] } } } },
+          pants: { uid: 'worn-pants', cosmeticId: 'draped_pants', slot: 'pants', colorA: { hex: '#334455' }, colorB: { hex: '#223344' } },
+        },
+        clothingItems: [
+          { uid: 'stored-hat', cosmeticId: 'basic_headband', label: 'Basic Headband' },
+          { uid: 'worn-overwear', cosmeticId: 'rugged_poncho', slot: 'overwear' }, // Duplicate of equipped gear; the picker must show it once.
+        ],
+      },
+    }],
+    worlds: [{ id: 'world-1', members: { hero: { packClothing: [
+      { uid: 'pack-mask', cosmeticId: 'simple_face_mask', slot: 'mask', label: 'Pack Mask' },
+      { uid: 'pack-cursed', cosmeticId: 'cursed_robe', slot: 'torso', cursed: true },
+    ] } } }],
+  };
+  const untouchedPlayerMeta = copy(playerSaveMeta); // NPC editing must never mutate source gear or Pack items.
+  const editor = vm.createContext({
+    window, console, Object, JSON, target: { kind: 'npc', id: npc.id }, work: copy(npc), db: { npcs: [copy(npc)] },
+    npcAppearancePass: 0, _npcFrontLayerOrder: ['hood', 'facialHair'], _npcBehindLayerOrder: [], NPC_PREVIEW_LAYER_LABELS: {},
+    NPC_EDITOR_CLOTHING_SLOTS: new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']),
+    localStorage: { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(playerSaveMeta) : null },
+    readStoredPlayer: () => ({ characterId: 'hero', worldId: 'world-1' }),
+    _cosmetics: { optionCache: new Map() },
+    $: element, clone: copy, esc: String,
+    normalizeRestingExpression: value => value || null,
+    fillRestingExpressionOptions: value => { element('npcRestingExpression').value = value || ''; },
+    fillFields() {}, renderDb() {}, setStatus() {}, invalidatePreview() {}, log() {},
+    StudioAccount: { getDyeCatalog: () => [], getShopCatalog: () => [{ id: 'rugged_poncho', category: 'overwear', label: 'Rugged Poncho' }] },
+    downloadJson: (_name, value) => saved.push(copy(value)),
+  }); // Executes the shipped editor handlers against mocked player save data and real editor behavior.
+  for (const name of [
+    'workingNpcRecord', 'syncNpcPatternColors', 'renderNpcAppearanceControls', 'applyWorkToNpc', 'exportAppearance',
+    'playerClothingBaseId', 'playerClothingSnapshotSignature', 'samePlayerClothingItem', 'playerAccessibleClothing',
+    'equipPlayerClothing', 'resetNpcPreviewLayerOrders', 'renderNpcLayerOrderList', 'refreshNpcPreviewLayerControls', 'npcPreviewRenderOptions',
+  ]) vm.runInContext(editorFunction(name), editor);
   const patternSelect = { dataset: { npcPatternSlot: 'overwear', patternIndex: '0', patternRole: 'poncho' }, value: 'new_pattern' }; // Exercises a real per-layer selection without replacing trim data.
   element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-pattern-slot]' ? [patternSelect] : [];
   window.RepoPatternLibrary = { listCached: () => [{ id: 'new_pattern', name: 'New Pattern', motifPng: 'assets/patterns/new.png' }], getCachedById: () => ({ repoPatternId: 'new_pattern', motifUrl: 'https://old-host.test/motif.png' }) }; // Repository picker returns the same portable motif metadata as the production library.
@@ -233,6 +278,56 @@ async function main() {
   assert.equal(passedNode, node);
   scene.closeLine();
   assert.equal(window.portraitBreathingComposer.getExpression(npc.id), 'frown');
-  console.log('NPC appearance patterns, export, dyes, and cutscene expression lifecycle passed.');
+  // Player-owned clothing spans equipped gear, the stored gear collection and this world's Pack.
+  editor.readStoredPlayer = () => ({ characterId: 'hero', worldId: 'world-1' }); // Restore the player identity after the earlier Load player/import round-trip fixture.
+  editor.work = {
+    ...copy(npc),
+    equippedCosmetics: ['old_mask', 'old_pants', 'rugged_poncho'],
+    cosmeticSlots: { old_mask: 'mask', old_pants: 'pants', rugged_poncho: 'overwear' },
+    clothingPatterns: { defaultClothing: {
+      mask: { cosmeticId: 'old_mask' },
+      pants: { cosmeticId: 'old_pants' },
+      overwear: copy(npc.clothingPatterns.defaultClothing.overwear),
+    } },
+  };
+  const playerClothes = editor.playerAccessibleClothing();
+  assert.deepEqual(copy(playerClothes.map(item => item.slot).sort()), ['hat', 'mask', 'overwear', 'pants']);
+  assert.equal(playerClothes.filter(item => item.item.uid === 'worn-overwear').length, 1, 'equipped and stored copies dedupe by UID');
+  assert(!playerClothes.some(item => item.item.uid === 'pack-cursed'), 'cursed Pack clothing is not offered');
+  const pantsEntry = playerClothes.find(item => item.slot === 'pants');
+  const maskEntry = playerClothes.find(item => item.item.uid === 'pack-mask');
+  assert.equal(pantsEntry.baseId, 'draped_pants');
+  assert.equal(editor.equipPlayerClothing(pantsEntry), true, 'player pants can be equipped on an NPC');
+  assert.equal(editor.equipPlayerClothing(maskEntry), true, 'Pack clothing can be equipped on an NPC');
+  assert(!editor.work.equippedCosmetics.includes('old_pants'));
+  assert(!editor.work.equippedCosmetics.includes('old_mask'));
+  assert(editor.work.equippedCosmetics.includes('draped_pants'));
+  assert(editor.work.equippedCosmetics.includes('simple_face_mask'));
+  assert.equal(editor.work.cosmeticSlots.draped_pants, 'pants');
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pants.uid, 'worn-pants');
+  assert.equal(editor.work.clothingPatterns.defaultClothing.pants.colorB.hex, '#223344');
+  assert.deepEqual(playerSaveMeta, untouchedPlayerMeta, 'NPC selection copies player garment data without modifying the player save');
+
+  const previewOptions = editor.npcPreviewRenderOptions({ seatId: 'studio-preview' });
+  assert.deepEqual(copy(previewOptions.frontLayerOrder), ['hood', 'facialHair']);
+  assert.deepEqual(copy(previewOptions.behindLayerOrder), []);
+  assert.equal(previewOptions.forceShowFacialHair, true, 'moving facial hair above a concealing hood reveals it in the preview');
+  assert.equal(previewOptions.seatId, 'studio-preview');
+  editor._npcFrontLayerOrder = ['facialHair', 'hood'];
+  assert.equal(editor.npcPreviewRenderOptions().forceShowFacialHair, false, 'default facial-hair order preserves hood concealment');
+  assert(!Object.hasOwn(editor.work, 'previewLayerOrder'), 'preview experiment is not staged in NPC working data');
+  editor.work.restingExpression = 'neutral';
+  editor.applyWorkToNpc();
+  const clothingSavedNpc = copy(editor.db.npcs[0]);
+  assert.equal(clothingSavedNpc.equippedCosmetics.includes('draped_pants'), true);
+  assert.equal(clothingSavedNpc.avatarEditor.rawExport.cosmeticSlots.draped_pants, 'pants');
+  assert(!Object.hasOwn(clothingSavedNpc, 'previewLayerOrder'), 'preview experiment never reaches NPC data');
+  editor.exportAppearance();
+  assert(!Object.hasOwn(saved.at(-1), 'previewLayerOrder'), 'preview experiment never reaches exported NPC JSON');
+  editor.target = { kind: 'player' };
+  assert.deepEqual(copy(editor.npcPreviewRenderOptions()), {}, 'player preview does not inherit NPC-only layer experiments');
+  assert.deepEqual(playerSaveMeta, untouchedPlayerMeta, 'applying and exporting the NPC leaves player gear unchanged');
+
+  console.log('NPC appearance patterns, player clothing, pants preview wiring, export, dyes, and cutscene expression lifecycle passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -78,14 +78,14 @@ async function loadRepositoryData(){
     for(const x of cosmeticResults){
       if(!x||x.error)continue;
       const cfg=x.cfg,variants=cfg?.speciesVariants||{};
-      if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
-         (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
-        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
+      if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot)||cfg?.portraitSlot==='facialHair')&&
+         (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)||cfg?.portraitSlot==='facialHair')&&cfg?.parts?.head)){
+        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot||(cfg?.portraitSlot==='facialHair'?'facialHair':null),cfg,
           configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\.\//,'')}`}); // Ready-to-install ZIPs can include updated target config when needed.
       }
     }
     R.garments.sort((a,b)=>a.label.localeCompare(b.label));
-    rebuildSelectors();await refreshAssets();
+    rebuildSelectors();await refreshAssets();window.dispatchEvent(new Event('clothing-fit-repository-loaded'));
     status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} body/headwear items. Starting sprites: ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
     log('Repository load complete.');
   }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
@@ -110,7 +110,7 @@ function rebuildSelectors(){
   rebuildGarmentSelector();
 }
 function sourceHasGarmentArt(garment,species,gender){
-  if(HEAD_SLOTS.has(garment?.slot))return headwearLayerRecords(garment,species,gender).length>0;
+  if(HEAD_SLOTS.has(garment?.slot)||garment?.cfg?.portraitSlot==='facialHair')return headwearLayerRecords(garment,species,gender).length>0;
   return collectPatchImageNodes(garment?.cfg?.speciesVariants?.[`${species}_${gender}`]).some(layer=>!['exposed','exposedSkin'].includes(String(layer.role||'')));
 } // Limits the garment picker to exact authored sprites for the chosen starting character.
 function rebuildGarmentSelector(){
@@ -118,7 +118,7 @@ function rebuildGarmentSelector(){
   const wantedGarment=(A.settings?.region===region?E.garment.value:'')||savedGarment; // Remember the previously selected item separately for clothing and headwear.
   E.garment.innerHTML='';
   for(const garment of R.garments){
-    if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot)||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
+    if(!(region==='body'?BODY_SLOTS.has(garment.slot):(HEAD_SLOTS.has(garment.slot)||garment.cfg?.portraitSlot==='facialHair'))||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
     const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
   }
   if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
@@ -187,7 +187,7 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
   if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
   const p=(async()=>{
     const garment=R.garments.find(x=>x.id===id),variant=garment?.cfg?.speciesVariants?.[`${species}_${gender}`];
-    if(HEAD_SLOTS.has(garment?.slot)){
+    if(HEAD_SLOTS.has(garment?.slot)||garment?.cfg?.portraitSlot==='facialHair'){
       const records=headwearLayerRecords(garment,species,gender);
       if(!records.length)return null;
       const front=Object.assign(document.createElement('canvas'),{width,height});
