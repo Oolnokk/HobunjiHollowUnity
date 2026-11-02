@@ -360,6 +360,8 @@
 
   function chargeStaminaCostForPose(poseCharge) {
     const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); // The visible Neutral→Windup interpolation is the one progress axis shared with Charged Breaker.
+    const chargedBreakerCost = window.Combat?.chargedBreakerData?.chargeCostForPose;
+    if (typeof chargedBreakerCost === 'function') return chargedBreakerCost(pose); // Uses the live Charged Breaker config so both held actions stay in lockstep after tuning.
     const ready = Math.max(0.0001, HELD_CHARGE_MIN_READY_POSE);
     return pose <= ready
       ? HELD_CHARGE_COST_MIN * (pose / ready)
@@ -2002,7 +2004,7 @@
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
       latestChange: 'Ranged reloads spend 85% of effective maximum Stamina and hold regen blocked through the load; held throws use Charged Breaker’s cumulative pose-cost curve.',
-      staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: HELD_CHARGE_COST_MIN, thrownChargeFull: HELD_CHARGE_COST_MAX, thrownChargeReadyPose: HELD_CHARGE_MIN_READY_POSE },
+      staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
       lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
