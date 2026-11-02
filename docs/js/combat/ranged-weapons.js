@@ -39,6 +39,9 @@
   const _projectileLocalPlaneZ = new THREE.Vector3(0, 0, 1); // Local sprite-plane normal: held Tool End Flip and projectileBasisDeg are both visible in-plane rotations around this axis.
   const _projectileFallbackEndFlipQuaternion = new THREE.Quaternion().setFromAxisAngle(_projectileLocalPlaneZ, Math.PI); // Unsampled throws reproduce the same visible tip↔handle reversal as the held PNG plane.
   const _projectileBasisQuaternion = new THREE.Quaternion(); // Reused when applying projectileBasisDeg without allocating a quaternion per shot.
+  const _enemySightRaycaster = new THREE.Raycaster(); // Reuses real scene-geometry ray tests for NPC perception without allocating a raycaster per hostile.
+  const _enemySightDirection = new THREE.Vector3(); // Reused normalized observer-to-target ray direction.
+  const _enemySightHits = []; // Reused ray hit list; the nearest opaque scene mesh is enough to block perception.
   const PROJECTILE_TRAIL_MAX_POINTS = 14; // Caps each comet ribbon's geometry and per-frame update cost.
   const PROJECTILE_TRAIL_MAX_LANES = 4; // Mirrors the melee trail's readable multi-affliction lane limit.
   const SPECIAL_AMMO_MAX = 8; // Shared character resource cap displayed by the ranged loadout and ammo arch.
@@ -52,13 +55,10 @@
   const BANDIT_LOS_STRAFE_TILES = 1.25; // Side-step target used after loading when an ally or obstacle blocks the shot.
   const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75; // Coarse tile-only LOS sampling; precise render geometry is intentionally never consulted.
   const WOULD_HIT_CACHE_MS = 50; // HUD prediction at 20 Hz is visually immediate while removing redundant per-frame collision work.
-  // A shot doesn't just vanish once it passes a weapon's tuned rangeTiles —
-  // it keeps flying, shedding damage/knockback as it goes, until it
-  // actually runs out of momentum at rangeTiles * this multiplier. AI
-  // engagement range, the HUD "would hit" reticle, and bandit LOS all still
-  // key off the base rangeTiles (that's still "the range this weapon is
-  // built to fight at"); this only softens what happens to a shot that
-  // outran its intended reach instead of hard-despawning it.
+  // A shot doesn't vanish at its tuned rangeTiles: it keeps flying with
+  // reduced damage/knockback until rangeTiles * this multiplier. Ranged NPCs
+  // use that full travel envelope as their stand-ground attack radius, while
+  // the HUD and ordinary weapon-range checks retain the authored base range.
   const RANGE_FALLOFF_DISTANCE_MULTIPLIER = 1.6;
   const RANGE_FALLOFF_MIN_FRACTION = 0.15; // Damage/knockback floor at the true despawn distance — never fully free damage, but a spent arrow still stings.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
@@ -326,6 +326,16 @@
   }
 
   function defFor(itemKey) { return CONFIG[itemKey] || null; }
+  function engagementRangePx(itemKey) {
+    const def = defFor(itemKey);
+    return def && deps?.TILE ? def.rangeTiles * RANGE_FALLOFF_DISTANCE_MULTIPLIER * deps.TILE : 0;
+  }
+  function rangedAttackRadiusPx(entity) {
+    const weaponRangePx = engagementRangePx(entity?.def?.rangedWeaponKey);
+    const authoredRadiusPx = Number(entity?.def?.rangedAttackRadiusPx);
+    return weaponRangePx > 0 && Number.isFinite(authoredRadiusPx) && authoredRadiusPx > 0
+      ? Math.min(weaponRangePx, authoredRadiusPx) : weaponRangePx;
+  }
   function poseForAction(def, kind) { return kind === 'load' ? def.loadPose : def.firePose; }
   function fireReleaseFrac(def) {
     const durationS = Number(def?.fireDurationS); // Used to convert the absolute post-trigger spawn cap into this weapon's authored animation fraction.
@@ -1529,15 +1539,39 @@
     return { start, end };
   }
 
+  function sightObjectIsVisible(object) {
+    for (let node = object; node; node = node.parent) if (node.visible === false) return false;
+    return true;
+  }
+
+  function sceneGeometrySightBlock(segment) {
+    const obstacles = deps.getSightOccluders?.() || [];
+    if (!obstacles.length) return null;
+    _enemySightDirection.subVectors(segment.end, segment.start);
+    const distance = _enemySightDirection.length();
+    if (!(distance > 0.05)) return null;
+    _enemySightDirection.multiplyScalar(1 / distance);
+    _enemySightRaycaster.set(segment.start, _enemySightDirection);
+    _enemySightRaycaster.near = 0.02;
+    _enemySightRaycaster.far = Math.max(0.02, distance - 0.03); // Ignore the observer and target's own surface volumes.
+    _enemySightHits.length = 0;
+    _enemySightRaycaster.intersectObjects(obstacles, true, _enemySightHits);
+    const hit = _enemySightHits.find(entry => entry?.object && sightObjectIsVisible(entry.object));
+    return hit ? { clear: false, kind: 'geometry', id: hit.object.name || 'opaque-geometry' } : null;
+  }
+
   function computeBanditLos(c, targetPlayer, def) {
     const segment = banditLosSegment(c, targetPlayer);
     const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
-    const coverHit = window.NearbyVolumeCollision?.segmentHit?.(segment.start, segment.end, radiusWorld) || null;
+    const geometryHit = sceneGeometrySightBlock(segment);
+    if (geometryHit) return geometryHit;
+    const coverQuery = window.NearbyVolumeCollision?.segmentSightHit || window.NearbyVolumeCollision?.segmentHit;
+    const coverHit = coverQuery?.call(window.NearbyVolumeCollision, segment.start, segment.end, radiusWorld) || null; // Prefer the setting-independent sight query; older isolated previews can still use the projectile query.
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
 
     let ally = null;
-    for (const other of deps.hostileObjects) {
-      if (other === c || other.id === c.id || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
+    for (const other of (deps.hostileObjects || [])) {
+      if (other === c || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
       ally = { actor: other, interval };
@@ -1548,14 +1582,20 @@
     const dyPx = (segment.end.z - segment.start.z) * deps.TILE;
     const dWorldY = segment.end.y - segment.start.y;
     const distancePx = Math.hypot(dxPx, dyPx);
-    const stepPx = deps.TILE * BANDIT_LOS_TERRAIN_STEP_TILES;
-    if (distancePx > stepPx) {
+    const terrainStepTiles = Math.max(0.15, Number(def.losTerrainStepTiles) || BANDIT_LOS_TERRAIN_STEP_TILES);
+    const stepPx = deps.TILE * terrainStepTiles; // Sight uses quarter-tile samples so a narrow wall crossing cannot fall between coarse projectile samples.
+    if (distancePx > 0.001) {
       const ux = dxPx / distancePx, uy = dyPx / distancePx;
-      for (let travel = stepPx; travel < distancePx - stepPx * 0.35; travel += stepPx) {
+      const sampleCount = Math.max(2, Math.ceil(distancePx / stepPx)); // Always inspect at least the midpoint, including very close doorways.
+      for (let i = 1; i < sampleCount; i++) {
+        const travel = distancePx * i / sampleCount;
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
         const rayWorldY = segment.start.y + dWorldY * (travel / distancePx); // AI visibility uses the same finite-height cover check as projectile flight.
-        if (!deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
+        if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld)) {
+          return { clear: false, kind: 'door', id: 'closed-interior-door' }; // Closed authored doors are separate from the terrain grid and need their own opaque test.
+        }
+        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
       }
@@ -1573,6 +1613,28 @@
     c._rangedLosCache = { at: now, x: c.x, y: c.y, tx: targetPlayer.x, ty: targetPlayer.y, result };
     c._rangedLosDebug = { ...result, at: now };
     return result;
+  }
+
+  function hasLineOfSight(observer, target) {
+    if (!deps || !observer || !target) return true; // Missing optional runtime dependencies must not make every hostile blind.
+    const now = performance.now();
+    const area = deps.getCurrentArea?.() ?? null;
+    const cached = observer._enemyVisibilityLosCache;
+    const observerWorldY = actorHitbox(observer)?.center?.y ?? null; // Climbing/jumping changes visibility even when the actor's ground-plane X/Z does not move.
+    const targetWorldY = actorHitbox(target)?.center?.y ?? null; // Height changes must invalidate cached wall/cover intersections too.
+    const moved = cached ? Math.hypot(observer.x - cached.x, observer.y - cached.y) : Infinity;
+    const targetMoved = cached ? Math.hypot(target.x - cached.tx, target.y - cached.ty) : Infinity;
+    const observerHeightMoved = cached && Number.isFinite(observerWorldY) && Math.abs(observerWorldY - cached.observerWorldY) > 0.04;
+    const targetHeightMoved = cached && Number.isFinite(targetWorldY) && Math.abs(targetWorldY - cached.targetWorldY) > 0.04;
+    if (cached && cached.area === area && cached.target === target && now - cached.at < BANDIT_LOS_CACHE_MS
+      && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08 && !observerHeightMoved && !targetHeightMoved) return cached.clear;
+    const result = computeBanditLos(observer, target, { projectileRadiusPx: 0, losTerrainStepTiles: 0.25 });
+    observer._enemyVisibilityLosCache = {
+      at: now, area, target, x: observer.x, y: observer.y, tx: target.x, ty: target.y,
+      observerWorldY, targetWorldY, clear: !!result.clear,
+    }; // Area, actor identity, and vertical pose prevent stale LOS across doors, target switches, or climbing.
+    observer._enemyVisibilityLosDebug = { ...result, at: now }; // Available to mobile combat diagnostics without allocating a full scene report.
+    return !!result.clear;
   }
 
   function repositionBanditForLos(c, targetPlayer, def, dt, los) {
@@ -1620,7 +1682,7 @@
     }
 
     const minRange = deps.TILE * 2.25;
-    const maxRange = deps.TILE * def.rangeTiles * 0.9;
+    const maxRange = rangedAttackRadiusPx(c); // Stand-ground firing uses the full projectile travel envelope, not the home leash or a chase-to-range threshold.
     // distToPlayer is horizontal-only, so a target hiding straight overhead
     // (up a tree) reads as "close" even though melee can't actually touch
     // them — only drop to melee once melee could really land the hit.
@@ -1628,8 +1690,7 @@
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
-      const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt);
-      return { aimAngle, moving, handled: true };
+      return { aimAngle, moving: false, handled: true, holdingRange: true }; // Keep ranged troops at their post instead of closing distance; their independent home leash still governs retreat/return behavior.
     }
 
     if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
@@ -1812,9 +1873,10 @@
       x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.def.projectileRadiusPx / deps.TILE,
       previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
     })),
-    wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox,
+    wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox, hasLineOfSight,
     focusCandidates, focusedHostile, meleeReachCheck, canMeleeReach,
     ammoChoices, activeAmmoId, setActiveAmmo, cycleAmmo, ammoActionLabel,
+    engagementRangePx, rangedAttackRadiusPx,
     setBasicEffect, setSpecialSlot, specialAmmoCount, grantSpecialAmmo, rollSpecialAmmoLoot,
     applySpecialAmmoDebuff,applySticky,movementSpeedMultiplier,movementDirectionMultiplier,
     equippedRangedKey: () => deps?.getEquippedRangedKey?.() || null,
@@ -1855,7 +1917,7 @@
     },
     get npcRangedActions() {
       return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.def?.rangedWeaponKey).slice(0, 24).map(c => ({
-        id: c.id || c.name, weapon: c.def.rangedWeaponKey, type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
+        id: c.id || c.name, weapon: c.def.rangedWeaponKey, attackRadiusTiles: rangedAttackRadiusPx(c) / (deps?.TILE || 1), type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
         action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
         chargedForS: c._rangedAction?.chargeDurationS || 0, releaseAtS: c._rangedAction?.releaseAtS ?? null, loaded: c._rangedLoaded !== false,
       })); // Mobile debug: inspect up to 24 active humanoids without holding references to unloaded actors.
