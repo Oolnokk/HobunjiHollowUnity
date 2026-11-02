@@ -9,6 +9,7 @@
   const MIN_WIDTH_MULTIPLIER = 2.75; // Used to keep every layer wider than the wilderness.
   const MIN_HEIGHT_MULTIPLIER = 1.6; // Used to keep every layer taller than the wilderness.
   const WEST_EDGE_OFFSET_MULTIPLIER = 0.12; // Used for the near layer's offset beyond the west edge.
+  const WEST_STACK_SHIFT_MULTIPLIER = 0.25; // Used to move the complete default mountain stack west by a quarter map span.
   const WEST_LAYER_GAP_MULTIPLIER = 0.85; // Used for equal deep spacing between layers.
   const MIN_WEST_EDGE_OFFSET = 24; // Used so small/test maps still clear border terrain.
   const patchedBorderApis = new WeakSet(); // Used to wrap each BorderTerrain API once.
@@ -53,7 +54,7 @@
     const authored=normalizeAuthorConfig(config||readAuthorConfig());
     return sizes.map((s,i)=>{
       const width=s.width*pixelScale,height=s.height*pixelScale, layer=authored.layers[i];
-      const defaultPos=[-edge-gap*i,height*.5,zCenter], defaultRot=[0,90,0], defaultScale=[1,1,1];
+      const defaultPos=[-edge-span*WEST_STACK_SHIFT_MULTIPLIER-gap*i,height*.5,zCenter], defaultRot=[0,90,0], defaultScale=[1,1,1];
       const position=defaultPos.map((v,a)=>finiteOr(layer?.transform?.position?.[a],v));
       const rotationDeg=defaultRot.map((v,a)=>finiteOr(layer?.transform?.rotationDeg?.[a],v));
       const scale=defaultScale.map((v,a)=>{const n=finiteOr(layer?.transform?.scale?.[a],v);return n>0?n:v;});
@@ -142,7 +143,7 @@
     return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
   }
 
-  window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER})});
+  window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER,WEST_STACK_SHIFT_MULTIPLIER})});
   window.__westernSlopeMountainBackdropsDebug=debug;
   deferred('BorderTerrain',patchBorder);
   deferred('WildernessChunks',patchChunks);

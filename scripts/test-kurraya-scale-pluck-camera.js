@@ -39,7 +39,7 @@ const window = {
   SCRATCHBONES_CONFIG: {
     game: {
       input: { deadzone: 0.24, controllerLookResponse: 1.45, controllerLookDegPerSec: 190, controllerLookVerticalScale: 0.8 },
-      desktopControls: { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 },
+      desktopControls: { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 45 },
     },
   },
   Fishing: { init(deps) { fishingDeps = deps; } },

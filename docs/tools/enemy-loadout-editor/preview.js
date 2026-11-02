@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261102h3cb447b',
+  'config/scratchbones-config.js?v=20261102symPitch1',
   'config/attachment-rig-profiles.js?v=20261028a',
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261031hb701fa8',

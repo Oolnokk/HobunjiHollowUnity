@@ -19,7 +19,7 @@ function cameraContext(invert = false, free = true) {
     lastMobileArchCombatAimEvent: null, invalidateMobileArchAimPerspectiveCache() {},
     cameraDragAllowed: () => true, desktopControlsConfig: () => ({ cameraRotateClampDeg: 45 }),
     freeRotateCameraActive: () => free, wrapAzimuthDeg: v => ((v + 180) % 360 + 360) % 360 - 180,
-    clampCameraPitchOffsetDeg: v => Math.max(-85, Math.min(45, v)),
+    clampCameraPitchOffsetDeg: v => Math.max(-45, Math.min(45, v)),
     window: { FormatUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) }, Combat: { postAttackTurnMultiplier: () => 0.6 } },
   };
   ctx.cameraFacingAngleRad = () => -ctx.cameraAzimuthOffsetDeg * Math.PI / 180;
