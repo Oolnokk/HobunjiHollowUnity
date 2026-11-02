@@ -6,15 +6,48 @@
   const CHANNEL = 'bed-lie-pose'; // Composer channel reserved for the sleep animation, cleared before waking.
   const LIE_DURATION = 1.9; // Seconds to reach the bed before the existing sleep/day transition runs.
   const HOLD_DURATION = 0.55; // Brief fully-flat hold lets the pose read before the next morning.
-  const XRAY_ORDER = 900; // Only the sleeping avatar's FRONT material bypasses depth during this short animation.
+  const XRAY_ORDER = 900; // Draw the sleeper after the occupied bed while retaining normal depth tests against walls.
   let deps = null; // Live game adapters for the player, avatar, calendar and bed scene.
   let active = null; // Current sleep's immutable start/target points and mutable elapsed time.
-  let xray = []; // Temporary material overrides to restore in all exit paths.
+  let xray = []; // Temporary portrait material overrides to restore in all exit paths.
+  let bedDepth = []; // Only the exact occupied bed stops writing depth while its sleeper is drawn.
   const diagnostics = { begins: 0, completed: 0, cancelled: 0, last: null }; // Mobile/Pixel Probe-style sleep-pose telemetry.
 
   const clamp01 = number => Math.max(0, Math.min(1, Number(number) || 0));
   const smooth = number => { const t = clamp01(number); return t * t * (3 - 2 * t); };
   const lerp = (a, b, t) => a + (b - a) * t;
+
+  function restoreBedDepth(entries) {
+    for (const entry of entries) {
+      if (entry.node?.material === entry.cloned) entry.node.material = entry.material;
+      for (const material of entry.clonedMaterials) material.dispose?.();
+    }
+    entries.length = 0;
+  }
+
+  function allowSleeperThroughBed(root, entries) {
+    if (!root?.traverse) return;
+    root.traverse(node => {
+      if (!node?.isMesh || !node.material) return;
+      const original = node.material;
+      const source = Array.isArray(original) ? original : [original];
+      const clonedMaterials = [];
+      let changed = false;
+      const replacement = source.map(material => {
+        if (!material?.clone || material.depthWrite === false) return material;
+        const clone = material.clone(); // Keep depth testing enabled; only this bed stops contributing occlusion depth.
+        clone.depthWrite = false;
+        clone.needsUpdate = true;
+        clonedMaterials.push(clone);
+        changed = true;
+        return clone;
+      });
+      if (!changed) return;
+      const cloned = Array.isArray(original) ? replacement : replacement[0];
+      node.material = cloned;
+      entries.push({ node, material: original, cloned, clonedMaterials });
+    });
+  }
 
   function clearFrontXray() {
     for (const entry of xray) {
@@ -25,9 +58,11 @@
       entry.cloned.dispose?.();
     }
     xray = [];
+    restoreBedDepth(bedDepth);
   }
 
   function applyFrontXray() {
+    allowSleeperThroughBed(active?.mattressMesh, bedDepth);
     const avatar = deps?.playerRoot?.()?.children?.find(node => node.name === 'player_avatar'); // Avoid touching tools, garments or NPC portraits.
     if (!avatar) return;
     if (xray.length) { // Other game systems sometimes refresh the portrait render order; the sleeping overlay must win.
@@ -42,7 +77,7 @@
       const front = isSkinnedFront ? previous[0] : previous;
       if (!front?.clone) return;
       const overlay = front.clone(); // Per-mesh clone prevents changing shared portrait materials elsewhere.
-      overlay.depthTest = false; overlay.depthWrite = false; overlay.transparent = true;
+      overlay.depthTest = true; overlay.depthWrite = false; overlay.transparent = true; // The exact bed is depth-transparent; subdivision walls and every other occluder still hide the sleeper.
       node.material = isSkinnedFront ? [overlay, ...previous.slice(1)] : overlay;
       xray.push({ node, material: previous, order: node.renderOrder, cloned: overlay }); // Complete cleanup across both rigid and skinned paths.
       node.renderOrder = XRAY_ORDER;
@@ -74,7 +109,9 @@
     const THREE = deps.THREE; // Uses Three's actual furniture-local-to-world transform, including room placement and rotation.
     const authored = window.AuthoredFurniture?.peek?.(furniture.key);
     const height = window.AuthoredFurniture?.sleepSurfaceHeight?.(authored);
-    if (!THREE || !Number.isFinite(height)) return { ok: false, message: 'Cannot find the mattress surface.' };
+    const mattressPart = window.AuthoredFurniture?.sleepSurfacePart?.(authored);
+    const mattressMesh = mattressPart ? furniture.mesh.userData?.meshById?.get(mattressPart.id) : null;
+    if (!THREE || !Number.isFinite(height) || !mattressMesh?.isMesh) return { ok: false, message: 'Cannot find the mattress surface.' };
     furniture.mesh.updateWorldMatrix(true, false);
     const contact = furniture.mesh.localToWorld(new THREE.Vector3(0, height, 0)); // Mattress top; child guide geometry never controls placement.
     if (![contact.x, contact.y, contact.z].every(Number.isFinite)) return { ok: false, message: 'Invalid mattress position.' };
@@ -82,7 +119,7 @@
     const tileSize = Number(deps.tileSize()); // Game coordinates use pixels while the avatar/furniture scene uses world tiles.
     if (!Number.isFinite(tileSize) || tileSize <= 0) return { ok: false, message: 'Bed position scale is unavailable.' };
     active = {
-      furniture, area: deps.area(), elapsed: 0,
+      furniture, mattressMesh, area: deps.area(), elapsed: 0,
       startX: player.x, startY: player.y,
       targetX: contact.x * tileSize, targetY: contact.z * tileSize,
       surfaceY: contact.y, yaw: furniture.mesh.rotation.y,
@@ -134,17 +171,17 @@
   // x-ray rule as the player. The actor's movement root stays untouched; only
   // its real body/feet rig rotates, preserving pathing, collisions and schedule state.
   const npcStates = new WeakMap(); // Per-walker visual tween and cloned front material, retained only while its walker exists.
-  function npcFrontXray(walker, state, enable) {
-    if (enable && state.xray) { state.xray.node.renderOrder = XRAY_ORDER; return; }
-    if (!enable) {
-      if (!state.xray) return;
+  function npcFrontXray(walker, state, enable, bedRoot) {
+    if (enable && state.xray && state.xray.bedRoot === bedRoot) { state.xray.node.renderOrder = XRAY_ORDER; return; }
+    if (state.xray) {
       const rec = state.xray;
       if (rec.node.material === rec.clone || (Array.isArray(rec.node.material) && rec.node.material[0] === rec.clone)) rec.node.material = rec.material;
       rec.node.renderOrder = rec.order;
       rec.clone.dispose?.();
+      restoreBedDepth(rec.bedDepth);
       state.xray = null;
-      return;
     }
+    if (!enable || !bedRoot?.traverse) return; // No resolved bed means no sleep x-ray exception.
     const avatar = walker.avatarGroup;
     let front = avatar?.userData?.neckRig?.skinnedPlane || null; // The skinned portrait has independent front/back materials.
     if (!front) avatar?.traverse?.(node => { if (!front && node.name === 'npc_avatar_front_plane') front = node; });
@@ -154,9 +191,11 @@
     const material = array ? original[0] : original;
     if (!material?.clone) return;
     const clone = material.clone(); // Never mutate the standing NPC's shared portrait material.
-    clone.depthTest = false; clone.depthWrite = false; clone.transparent = true;
+    clone.depthTest = true; clone.depthWrite = false; clone.transparent = true; // Only the assigned bed is depth-transparent; walls remain real occluders.
     front.material = array ? [clone, ...original.slice(1)] : clone;
-    state.xray = { node: front, material: original, clone, order: front.renderOrder }; // Fully restored on schedule changes.
+    const bedDepth = []; // Scoped to this sleeper's resolved mattress, never the room or subdivision walls.
+    allowSleeperThroughBed(bedRoot, bedDepth);
+    state.xray = { node: front, material: original, clone, order: front.renderOrder, bedRoot, bedDepth }; // Fully restored on schedule changes.
     front.renderOrder = XRAY_ORDER;
   }
 
@@ -198,7 +237,7 @@
     if (correction) rig.position.set(correction.x * fraction, correction.y * fraction, correction.z * fraction);
     else rig.position.set(0, 0, 0);
     if (walker._npcRunLeanPivot && fraction > 0.001) walker._npcRunLeanPivot.quaternion.identity(); // Running and lying body rotations must not stack.
-    npcFrontXray(walker, state, fraction > 0.25);
+    npcFrontXray(walker, state, fraction > 0.25, mattress?.mattressMesh);
     walker._bedLieActive = fraction > 0.001;
     if (state.blend <= 0 && !activeLie) {
       npcFrontXray(walker, state, false);

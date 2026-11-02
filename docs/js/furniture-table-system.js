@@ -81,7 +81,9 @@
     if (!entry?.root?.parent) return null;
     const data = window.AuthoredFurniture?.peek?.(entry.record.key);
     const top = window.AuthoredFurniture?.sleepSurfaceHeight?.(data);
-    if (!Number.isFinite(top)) return null;
+    const mattressPart = window.AuthoredFurniture?.sleepSurfacePart?.(data);
+    const mattressMesh = mattressPart ? entry.root.userData?.meshById?.get(mattressPart.id) : null;
+    if (!Number.isFinite(top) || !mattressMesh?.isMesh) return null;
     entry.root.updateWorldMatrix?.(true, false);
     const location = new window.THREE.Vector3(0, top, 0);
     entry.root.localToWorld(location);
@@ -93,7 +95,7 @@
     const x = location.x + stationOffsetX * Math.cos(rot) + stationOffsetZ * Math.sin(rot);
     const z = location.z - stationOffsetX * Math.sin(rot) + stationOffsetZ * Math.cos(rot);
     const floor = deps?.surfaceY?.(areaId(area), x, z) || 0;
-    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key };
+    return { x, z, y: location.y, floorY: floor, facingRad: rot, furnitureId: entry.id, key: entry.record.key, mattressMesh };
   }
 
 
