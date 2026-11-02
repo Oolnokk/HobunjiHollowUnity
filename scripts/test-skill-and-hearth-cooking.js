@@ -53,6 +53,7 @@ for (const key of ['crownedPineNuts', 'shadewoodNuts', 'crownedPineNutOil', 'sha
 context.window = { HobunjiCookingData: cookingData };
 vm.runInNewContext(fs.readFileSync('docs/js/cooking-system.js', 'utf8'), context);
 const cookingSystem = context.window.CookingSystem; // Used to verify ingredient-facing buff labels reuse the same canonical cooking-effect math as meal totals.
+assert.equal(cookingSystem.FOOD_DURATION_HOURS, 24, 'all ordinary cooked-food buffs use a 24 in-game-hour duration');
 assert.equal(cookingSystem.ingredientBuffText({ cookingPrimaryEffect: 'fishing', cookingBaseBoost: 1, cookingProcessingTier: 'raw' }, 1), '🎣 Mild Fishing (+1)', 'one-star raw ingredients identify their exact cooking buff before selection');
 assert.equal(cookingSystem.ingredientBuffText({ cookingPrimaryEffect: 'fishing', cookingBaseBoost: 1, cookingProcessingTier: 'raw' }, 5), '🎣 Concentrated Fishing (+3)', 'ingredient buff labels reflect star quality instead of showing a generic effect name');
 assert.equal(cookingSystem.ingredientBuffText({ foodEffects: { fishing: 2, strength: 1 } }, 3), '🎣 Hearty Fishing (+2), 💪 Mild Strength (+1)', 'prepared ingredients list every fixed cooking buff they carry forward');
@@ -93,6 +94,7 @@ assert.deepEqual({ key: nutDrop.itemKey, amount: nutDrop.amount, stars: nutDrop.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 const cookingSource = fs.readFileSync('docs/js/cooking-system.js', 'utf8');
+const festivalSource = fs.readFileSync('docs/js/festival-system.js', 'utf8');
 const processingSource = fs.readFileSync('docs/js/food-processing.js', 'utf8');
 const authoredRuntimeSource = fs.readFileSync('docs/js/authored-furniture-runtime.js', 'utf8');
 const farmAnimalsSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
@@ -107,6 +109,24 @@ assert.match(gameSource, /derivedHearth[\s\S]{0,600}makeCookingInteractable/, 'd
 assert.doesNotMatch(indexSource, /<div class="skill-name">Alchemy<\/div>/, 'Alchemy has no inert static stub row (it is JS-rendered only)');
 for (const name of ['Foraging', 'Mining', 'Farming', 'Fishing', 'Combat', 'Cooking']) assert(indexSource.includes(`>${name}<`), `${name} appears in the static Skills tab placeholder, immediately replaced by SkillSystem.render()`);
 assert.match(cookingSource, /function openAtHearth\(/, 'cooking owns a hearth-only open entry point');
+assert.match(cookingSource, /function currentGameHour\([\s\S]{0,900}timeDebugSnapshot/, 'cooked-food timers use the monotonic in-game calendar clock');
+assert.match(cookingSource, /expiresAtGameHour/, 'ordinary food effects expire against in-game hours');
+assert.match(cookingSource, /remainingHours/, 'ordinary food timers persist as remaining in-game hours');
+assert.match(festivalSource, /FOOD_PORTION_HOURS = 4/, 'each festival food portion adds four in-game hours');
+assert.match(festivalSource, /remainingHours\+FOOD_PORTION_HOURS/, 'each serving adds four hours to the transferred remaining duration');
+assert.match(festivalSource, /state\.feastBuffs=\[\{ id:meal\.id/, 'eating any festival meal replaces the previous meal buff with the newly eaten food');
+assert.match(festivalSource, /activeBuffs\.reduce\(\(total,entry\)=>total\+Math\.max\(0,entry\.expiresHour-now\),0\)/, 'changing foods carries forward all active remaining duration');
+assert.match(festivalSource, /combinedHours= Math\.min|combinedHours=Math\.min/, 'restoring legacy saves consolidates old meal timers under the newest food buff');
+assert.match(festivalSource, /storedHours\*\(FOOD_PORTION_HOURS\/24\)/, 'existing 24-hour portions scale down proportionally during one-time migration');
+assert.match(festivalSource, /FULLNESS_DURATION_HOURS = 24/, 'festival fullness remains an independent 24-hour effect');
+assert.match(festivalSource, /expiresHour/, 'festival meal effects expire against the calendar clock');
+assert.match(festivalSource, /durationS:FOOD_PORTION_HOURS\*MAX_FOOD_PORTIONS\*3600/, 'festival meal HUD countdown uses the ten-portion 40-hour cap');
+assert.match(festivalSource, /durationS:FULLNESS_DURATION_HOURS\*3600/, 'festival fullness HUD countdown remains 24 hours');
+assert.match(festivalSource, /feastBuffDurationHours=FOOD_PORTION_HOURS/, 'new saves identify the festival meal timer schema');
+assert.match(festivalSource, /storedHours\*\(FOOD_PORTION_HOURS\/24\)/, 'existing 24-hour-per-portion meal timers migrate proportionally to four hours once');
+assert.match(festivalSource, /legacyDuration/, 'existing active festival fullness saves retain their one-time 24-hour migration');
+assert.match(festivalSource, /expiresHour:worldHour\(\)\+FULLNESS_DURATION_HOURS/, 'festival fullness expiry is independent from meal portion duration');
+assert.match(festivalSource, /\+\$\{FOOD_PORTION_HOURS\} in-game hours of meal effects/, 'the serving confirmation reports four hours per portion');
 assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
 assert.match(cookingSource, /ingredientEffectTotals\(definition, selected\?\.stars\)/, 'meal totals reuse the same per-ingredient buff calculation displayed by the picker');
 assert.match(cookingSource, /Cooking buff:/, 'ingredient candidates and selected ingredients visibly identify their cooking buff');

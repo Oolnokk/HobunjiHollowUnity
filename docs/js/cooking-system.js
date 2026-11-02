@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const FOOD_DURATION_S = 300; // Used as the shared five-minute duration for cooked-food effects.
+  const FOOD_DURATION_HOURS = 24; // Used as the shared in-game duration for every cooked-food effect.
   const ITEM_ALIASES = { uumkaoiiEggs: 'uumkaoiiEgg', drenkirraEggs: 'drenkirraEgg' }; // Used to reuse existing singular inventory items from the prototype's plural ids.
   const NON_INGREDIENT_CATEGORIES = new Set(['wool', 'mineral', 'material']); // Used to omit prototype reference materials that are not edible/cookable ingredients.
   const CATEGORY_ICONS = {
@@ -24,6 +24,37 @@
   const data = () => window.HobunjiCookingData || { items: {}, recipes: [] }; // Used to keep this module inert if content fails to load.
   const canonicalKey = key => ITEM_ALIASES[key] || key; // Used whenever prototype ids cross into the game's inventory.
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]); // Used for all generated cooking markup.
+
+  function currentGameHour() {
+    const calendar = window.CalendarSystem; // Shared monotonic calendar clock; food timers must pause with the game.
+    if (!calendar || calendar.isInitialized?.() === false) return NaN;
+    const snapshot = calendar.timeDebugSnapshot?.(); // rawDay/rawTime01 remain continuous across calendar month and year boundaries.
+    const rawDay = Number(snapshot?.rawDay);
+    const rawTime01 = Number(snapshot?.time01 ?? snapshot?.rawTime01);
+    if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) {
+      const hour = Number(calendar.getHour?.()); // Match festival timers to the displayed in-game clock, including the overnight calendar transition.
+      if (Number.isFinite(hour)) return rawDay * 24 + hour;
+      return rawDay * 24 + rawTime01 * 24;
+    }
+    const hour = Number(calendar.getHour?.());
+    const year = Number(calendar.aotYearNumber?.());
+    const month = Number(calendar.monthNumber?.());
+    const date = Number(calendar.dayOfMonth?.());
+    const ordinal = Number(window.FestivalCalendar?.ordinal?.(month, date));
+    if ([year, ordinal, hour].every(Number.isFinite)) return (year * 336 + ordinal - 1) * 24 + hour;
+    return NaN;
+  }
+
+  function hydratePendingFoodTimers(now = currentGameHour()) {
+    if (!Number.isFinite(now)) return false;
+    for (const effect of activeFoodEffects) {
+      if (!Number.isFinite(effect.expiresAtGameHour) && Number.isFinite(effect.remainingHours)) {
+        effect.expiresAtGameHour = now + Math.max(0, effect.remainingHours);
+        delete effect.remainingHours;
+      }
+    }
+    return true;
+  }
 
   function recipeCategorySet() {
     const categories = new Set(); // Used to register only ingredients reachable by the 17 cooking recipes.
@@ -446,12 +477,14 @@
     const definition = deps.ITEM_DEFS[key];
     if (!definition?.isCookedFood || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
     const quality = selectedStars ?? availableQualityEntries(key)[0]?.stars ?? definition.foodQuality ?? 3; // Used to consume the best remaining serving first.
+    const now = currentGameHour(); // One continuous in-game clock governs expiry, saving and pausing.
+    if (!Number.isFinite(now)) return { ok: false, message: 'The game clock is not ready. Try eating again in a moment.' };
     if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
-    const now = performance.now() / 1000; // Used to refresh each matching food-effect timer.
+    hydratePendingFoodTimers(now);
     Object.entries(definition.foodEffects || {}).forEach(([effect, stacks]) => {
-      const existing = activeFoodEffects.find(entry => entry.key === effect);
-      if (existing) { existing.stacks += Math.max(1, Number(stacks) || 1); existing.expiresAt = now + FOOD_DURATION_S; }
-      else activeFoodEffects.push({ key: effect, stacks: Math.max(1, Number(stacks) || 1), durationS: FOOD_DURATION_S, expiresAt: now + FOOD_DURATION_S });
+      const existing = activeFoodEffects.find(entry => entry.key === effect && entry.expiresAtGameHour > now);
+      if (existing) { existing.stacks += Math.max(1, Number(stacks) || 1); existing.expiresAtGameHour = now + FOOD_DURATION_HOURS; }
+      else activeFoodEffects.push({ key: effect, stacks: Math.max(1, Number(stacks) || 1), durationHours: FOOD_DURATION_HOURS, expiresAtGameHour: now + FOOD_DURATION_HOURS });
     });
     window.EffectBuffBar?.refresh(true);
     window.SkillSystem?.render?.();
@@ -459,20 +492,29 @@
     deps.buildInventoryGrid();
     deps.refreshActionBar();
     deps.saveMemberWorldData();
-    return { ok: true, message: `Ate ${definition.label}. Food effects last 5 minutes.` };
+    return { ok: true, message: `Ate ${definition.label}. Food effects last ${FOOD_DURATION_HOURS} in-game hours.` };
   }
 
   function foodBuffEntries() {
-    const now = performance.now() / 1000; // Used to convert absolute timers for the shared buff renderer.
-    return activeFoodEffects.map(effect => ({
+    if (!activeFoodEffects.length) return [];
+    const now = currentGameHour(); // HUD countdowns use the same in-game clock as effect expiry.
+    if (!Number.isFinite(now)) return [];
+    hydratePendingFoodTimers(now);
+    return activeFoodEffects.filter(effect => effect.expiresAtGameHour > now).map(effect => ({
       key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
-      sourceLabel: 'Food', stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now,
+      sourceLabel: 'Food', stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.expiresAtGameHour - now) * 3600,
     }));
   }
 
   function getFoodEffectStacks(effectKey) {
-    const now = performance.now() / 1000; // Used to ignore expired stacks even between update ticks.
-    let total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAt > now).reduce((sum, effect) => sum + effect.stacks, 0);
+    let total = 0; // Food timers are only consulted while ordinary food buffs are actually active.
+    if (activeFoodEffects.length) {
+      const now = currentGameHour(); // Expiry and stat reads pause whenever the calendar clock pauses.
+      if (Number.isFinite(now)) {
+        hydratePendingFoodTimers(now);
+        total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAtGameHour > now).reduce((sum, effect) => sum + effect.stacks, 0);
+      }
+    }
     for (const provider of externalFoodProviders.values()) {
       try { total += Math.max(0, Number(provider(effectKey)) || 0); }
       catch (error) { window.__farmLog?.('[cooking] external food effect failed: ' + error.message, 'warn'); }
@@ -495,11 +537,12 @@
   }
 
   function serialize() {
-    const now = performance.now() / 1000; // Used to save portable remaining durations instead of page-relative timestamps.
+    const now = currentGameHour(); // Persist remaining game-hours, never wall-clock seconds.
+    hydratePendingFoodTimers(now);
     return {
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
-      activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationS: effect.durationS, remainingS: effect.expiresAt - now })).filter(effect => effect.remainingS > 0),
+      activeFoodEffects: activeFoodEffects.map(effect => ({ key: effect.key, stacks: effect.stacks, durationHours: FOOD_DURATION_HOURS, remainingHours: Number.isFinite(now) && Number.isFinite(effect.expiresAtGameHour) ? effect.expiresAtGameHour - now : Math.max(0, Number(effect.remainingHours) || FOOD_DURATION_HOURS) })).filter(effect => effect.remainingHours > 0),
       unlockedRecipeIds: [...unlockedRecipeIds],
     };
   }
@@ -510,23 +553,30 @@
     unlockedRecipeIds = new Set(Array.isArray(saved.unlockedRecipeIds) ? saved.unlockedRecipeIds : []); // Used to restore opt-in recipe visibility before the next hearth render.
     cookedDefinitions = {};
     Object.entries(saved.cookedDefinitions || {}).forEach(([key, definition]) => registerCookedDefinition(key, definition));
-    const now = performance.now() / 1000; // Used to rebuild absolute effect expiry times for this page session.
-    activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => effect.remainingS > 0).map(effect => ({ key: effect.key, stacks: Math.max(1, Number(effect.stacks) || 1), durationS: Number(effect.durationS) || FOOD_DURATION_S, expiresAt: now + effect.remainingS }));
+    const now = currentGameHour(); // New saves restore exact game-hours; legacy five-minute timers are upgraded to the new 24-hour rule.
+    activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => Number(effect.remainingHours ?? effect.remainingS) > 0).map(effect => {
+      const remainingHours = Number.isFinite(Number(effect.remainingHours))
+        ? Math.min(FOOD_DURATION_HOURS, Number(effect.remainingHours))
+        : FOOD_DURATION_HOURS; // Old saves used short real-time seconds; migrate active food buffs to one full in-game duration.
+      return { key: effect.key, stacks: Math.max(1, Number(effect.stacks) || 1), durationHours: FOOD_DURATION_HOURS,
+        ...(Number.isFinite(now) ? { expiresAtGameHour: now + remainingHours } : { remainingHours }) };
+    });
     Object.keys(deps.inventory).forEach(reconcileQuality);
     window.EffectBuffBar?.refresh(true);
     window.SkillSystem?.render?.();
   }
 
   function update() {
-    const now = performance.now() / 1000; // Used to prune expired food effects during the ordinary game loop.
-    // Effects last minutes, so expiry is rare relative to the 60fps call rate
-    // here — check in place before paying for a filter() allocation every frame.
-    let anyExpired = false;
+    if (!activeFoodEffects.length) { window.EffectBuffBar?.refresh(false); return; }
+    const now = currentGameHour(); // The world clock naturally stops during pause and time-freeze passages.
+    if (!Number.isFinite(now)) return;
+    hydratePendingFoodTimers(now);
+    let anyExpired = false; // Used to avoid allocating a filtered array until an actual game-hour expiry occurs.
     for (let i = 0; i < activeFoodEffects.length; i++) {
-      if (activeFoodEffects[i].expiresAt <= now) { anyExpired = true; break; }
+      if (activeFoodEffects[i].expiresAtGameHour <= now) { anyExpired = true; break; }
     }
     if (!anyExpired) { window.EffectBuffBar?.refresh(false); return; }
-    activeFoodEffects = activeFoodEffects.filter(effect => effect.expiresAt > now);
+    activeFoodEffects = activeFoodEffects.filter(effect => effect.expiresAtGameHour > now);
     window.SkillSystem?.render?.();
     window.EffectBuffBar?.refresh(true);
   }
@@ -595,7 +645,9 @@
     const banubuDiagnostics = window.BanubuQuestline?.diagnosticsText?.(); // Used to expose fish-pie target feasibility/progress on mobile without browser developer tools.
     const cookingYieldRank = window.PerkSystem?.rank?.('cooking', 'increaseCookingYield') || 0; // Used to verify the perk without a desktop console.
     const cookingYieldChance = Math.min(0.25, Math.max(0, cookingYieldRank) * 0.25); // Mirrors the authoritative cook() roll above for mobile-readable diagnostics.
-    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nCooking Yield perk: ${cookingYieldRank} (extra serving ${(cookingYieldChance * 100).toFixed(0)}%)\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeFoodEffects.map(effect => `${effect.key}+${effect.stacks}`).join(', ') || 'none'}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
+    const now = currentGameHour(); // Makes the active timer values inspectable on mobile without developer tools.
+    const activeSummary = activeFoodEffects.map(effect => `${effect.key}+${effect.stacks} (${Number.isFinite(now) && Number.isFinite(effect.expiresAtGameHour) ? Math.max(0, effect.expiresAtGameHour - now).toFixed(1) : Number(effect.remainingHours || 0).toFixed(1)}h)`).join(', ') || 'none';
+    output.textContent = `Station: ${isOpen() ? 'hearth open' : 'closed'}\nFood duration: ${FOOD_DURATION_HOURS} in-game hours\nCooking Yield perk: ${cookingYieldRank} (extra serving ${(cookingYieldChance * 100).toFixed(0)}%)\nRecipes: ${data().recipes.length}\nUnlocked special recipes: ${[...unlockedRecipeIds].join(', ') || 'none'}\nRegistered ingredients: ${Object.keys(deps.ITEM_DEFS).filter(key => deps.ITEM_DEFS[key].cookingCategories).length}\nTracked quality units: ${tracked}\nCooked definitions: ${Object.keys(cookedDefinitions).length}\nActive food effects: ${activeSummary}\n\n${processingDiagnostics}${lastProcessing ? `\n\n${lastProcessing}` : ''}${banubuDiagnostics ? `\n\n${banubuDiagnostics}` : ''}`;
   }
 
   function render() {
@@ -647,6 +699,6 @@
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     registerExternalFoodProvider,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
-    FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
+    FOOD_DURATION_HOURS, FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
   };
 })();
