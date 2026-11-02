@@ -28,7 +28,12 @@ const deps = {
   moveCreatureToward: () => false,
 }; // Only NPC scheduler dependencies; projectile physics and 3D rig remain covered by their own tests.
 const sandbox = {
-  Math, performance: { now: () => 1000 }, deps, shots, loadedTransitions, actionSounds, MAX_FIRE_TRIGGER_TO_PROJECTILE_S,
+  Math, performance: { now: () => 1000 }, deps, shots, loadedTransitions, actionSounds, staminaSpends, MAX_FIRE_TRIGGER_TO_PROJECTILE_S,
+  window: { ResourceSystem: { spendStamina: (actor, amount, reason, transaction) => { staminaSpends.push({ actor, amount, reason, transaction }); return { spent: amount }; } } },
+  chargeStaminaCostForPose: pose => { const p = Math.max(0, Math.min(1, Number(pose) || 0)); return p <= 0.48 ? 12 * p / 0.48 : 12 + 6 * (p - 0.48) / 0.52; },
+  paymentTotal: payment => Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0)),
+  spendRangedLoadStamina: (actor, itemKey, def) => { staminaSpends.push({ actor, amount: 85, reason: def.label + ' load', transaction: { actionKind: 'rangedWeaponLoad', abilityId: itemKey } }); return { spent: 85 }; },
+  setRangedLoadRegenBlocked: (actor, blocked) => { staminaSpends.push({ actor, amount: 0, reason: 'regen-block', transaction: { blocked } }); return true; },
   defFor: key => definitions[key],
   isLoaded: (_key, actor) => actor._rangedLoaded !== false,
   setLoaded: (key, value, actor) => { actor._rangedLoaded = value; loadedTransitions.push([key, value]); },
