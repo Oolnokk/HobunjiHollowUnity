@@ -49,6 +49,7 @@ const chargeCost = vm.runInNewContext(`(() => {
   const HELD_CHARGE_MIN_READY_POSE = 0.48;
   const HELD_CHARGE_COST_MIN = 12;
   const HELD_CHARGE_COST_MAX = 18;
+  const window = {};
   ${extractFunction(rangedSource, 'chargeStaminaCostForPose')}
   return chargeStaminaCostForPose;
 })()`);
