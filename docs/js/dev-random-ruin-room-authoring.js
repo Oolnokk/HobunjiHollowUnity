@@ -355,7 +355,7 @@
 
   function makeSpots(definition, room, network) {
     const cs = Number(network.cellSize) || .5;
-    const pad = Number(network.worldPad ?? 2); // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
+    const pad = 2; // Mirrors the shared ruin runtime's PAD constant; generated V50 metadata does not carry a worldPad field. // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
     return definition.spots.map(spot=>{
       const x = spot.coordinateMode === 'cell' ? Number(spot.x)+.5 : Number(spot.x)*room.w;
       const z = spot.coordinateMode === 'cell' ? Number(spot.z)+.5 : Number(spot.z)*room.h;
