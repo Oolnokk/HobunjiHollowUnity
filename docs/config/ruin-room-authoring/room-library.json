@@ -134,7 +134,7 @@
           "label": "Center",
           "u": 0.5,
           "v": 0.5,
-          "clearance": 1.1,
+          "clearance": 0.35,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -152,7 +152,7 @@
           "label": "North-west",
           "u": 0.25,
           "v": 0.25,
-          "clearance": 0.75,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -170,7 +170,7 @@
           "label": "North-east",
           "u": 0.75,
           "v": 0.25,
-          "clearance": 0.75,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -188,7 +188,7 @@
           "label": "South-west",
           "u": 0.25,
           "v": 0.75,
-          "clearance": 0.75,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -206,7 +206,7 @@
           "label": "South-east",
           "u": 0.75,
           "v": 0.75,
-          "clearance": 0.75,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -224,7 +224,7 @@
           "label": "North side",
           "u": 0.5,
           "v": 0.18,
-          "clearance": 0.55,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -242,7 +242,7 @@
           "label": "East side",
           "u": 0.82,
           "v": 0.5,
-          "clearance": 0.55,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -260,7 +260,7 @@
           "label": "South side",
           "u": 0.5,
           "v": 0.82,
-          "clearance": 0.55,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
@@ -278,7 +278,7 @@
           "label": "West side",
           "u": 0.18,
           "v": 0.5,
-          "clearance": 0.55,
+          "clearance": 0.2,
           "allowlists": {
             "mechanisms": [
               "*"
