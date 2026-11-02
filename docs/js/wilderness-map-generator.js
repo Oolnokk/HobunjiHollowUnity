@@ -1772,7 +1772,7 @@
         const y = Math.floor(scaledY / pointScale);
         if (!inBounds(x, y)) continue;
         const tile = tileAt(x, y); // Sample the same source tile that the exported scaled node will occupy.
-        if (!tile || !tile.water || tile.terrain !== 'river') continue;
+        if (!tile || !tile.water) continue; // A river may pass through pond/stream water; that shared water tile is part of the same downhill profile.
         const key = tileKey(x, y); // Prevents sub-tile path wobble from duplicating a centerline sample.
         if (key === lastKey) continue;
         pathTiles.push(tile);
@@ -1856,7 +1856,7 @@
         const y = current.y + dy;
         if (!inBounds(x, y)) continue;
         const neighbor = tileAt(x, y); // Candidate bankward tile in the same connected river channel.
-        if (!neighbor || !neighbor.water || neighbor.terrain !== 'river') continue;
+        if (!neighbor || !neighbor.water) continue; // Connected river, stream, and pond water share the same local flow grade.
         const key = tileKey(x, y);
         if (riverGradeByTile.has(key)) continue;
         const neighborHeight = Math.max(0, Number(neighbor.elevation) || 0); // Existing low channel pockets must never be raised to match a higher centerline.
@@ -1868,7 +1868,7 @@
     for (const [key, targetHeight] of riverGradeByTile) {
       const [x, y] = key.split(',').map(Number);
       const tile = tileAt(x, y); // River tile receiving its nearest centerline's solved elevation.
-      if (!tile || !tile.water || tile.terrain !== 'river') continue;
+      if (!tile || !tile.water) continue; // Also grades centerline samples that meet an existing stream or pond.
       const originalHeight = Math.max(0, Number(tile.elevation) || 0); // Preserve any naturally lower channel pocket.
       if (originalHeight > targetHeight) report.riverTilesLowered++;
       if (originalHeight < targetHeight) report.riverTilesRaised++;
