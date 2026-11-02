@@ -40,7 +40,7 @@
 
   // Cross position for the rail that keeps its wall slots off every doorway
   // in the two end walls.
-  function railCross(kit, context, room, frame, rng) {
+  function railCross(kit, context, room, frame, rng, preferredCross = null) {
     const doors = kit.roomDoorways(context, room).map(entry => kit.doorwayWorld(context.meta, entry.door, entry.index));
     const endDoors = doors.filter(door => {
       const along = frame.axis === 'x' ? door.x : door.z;
