@@ -187,7 +187,7 @@
 
   function buildLate(kit, context, rng, usedRooms) {
     if (!(rng() < cfg('moduleChances.ceilingRailTargets', .55)) && window.__devRuinForceRailTargets !== true) return; // rng() is drawn first so seeds reproduce; the flag is a headless-test hook.
-    const free = (context.meta?.rooms || []).filter(room => !usedRooms.has(room.id)).sort((a, b) => Number(b.w) * Number(b.h) - Number(a.w) * Number(a.h));
+    const free = (context.meta?.rooms || []).filter(room => !usedRooms.has(room.id) && kit.canClaimRoomSpot(room.id,'activators','ceilingRailTargets')).sort((a, b) => Number(b.w) * Number(b.h) - Number(a.w) * Number(a.h));
     for (const room of free) {
       const record = buildRoom(kit, context, room, rng);
       if (!record) continue;
