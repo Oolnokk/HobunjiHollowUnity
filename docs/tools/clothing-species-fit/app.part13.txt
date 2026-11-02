@@ -206,7 +206,13 @@ maskUi.export.onclick = exportBeardHoodCosmeticConfig;
 const originalFitRegionChange = E.fitRegion.onchange;
 E.fitRegion.onchange = (...args) => {
   if (typeof originalFitRegionChange === 'function') originalFitRegionChange(...args);
-  maskUi.panel.hidden = fitRegion() !== 'headwear';
+  window.addEventListener('clothing-fit-repository-loaded', () => {
+  if (fitRegion() === 'headwear') { filterBeardHoodCosmetics(); loadBeardHoodMask(); }
+});
+window.addEventListener('hobunji-clothing-fit-assets-refreshed', () => {
+  if (fitRegion() === 'headwear') loadBeardHoodMask();
+});
+maskUi.panel.hidden = fitRegion() !== 'headwear';
   filterBeardHoodCosmetics();
   loadBeardHoodMask();
 };
