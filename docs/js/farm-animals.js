@@ -161,11 +161,9 @@
 
   // Composites a genotype's textures onto an animal's front/back planes —
   // shared by both factories' initial one-shot compose below and their
-  // per-frame blink-toggle recompose (item 3): a farm animal never runs,
-  // so there's no per-frame retry loop the way the wild/companion
-  // CREATURE_DB path needs via updateCreatureAnimFrame, but blinking still
-  // needs the composite reapplied each time window.CreatureBlink's
-  // eyes-open/shut state actually flips. Resolves true once a real
+  // per-frame frame/blink recompose (_tickFarmAnimalFrame): the composite
+  // is reapplied whenever the idle/run frame or window.CreatureBlink's
+  // eyes-open/shut state actually changes. Resolves true once a real
   // composited texture got applied, false otherwise (no genotype, no
   // renderer, or a failed compose) — callers use this to know whether to
   // retry.
@@ -202,19 +200,114 @@
     return pending.then(tex => tex ? applyCached(tex) : false);
   }
 
-  // Ticks a farm animal's eye-blink state and kicks off a recompose only
-  // when window.CreatureBlink's eyes-open/shut state actually flips —
-  // guarded by _blinkComposePending so an in-flight compose can't overlap
-  // with another one kicked off before it resolves.
-  function _tickFarmAnimalBlink(animal) {
-    if (!animal.genotype || !window.CreatureGeneticsRender || animal._blinkComposePending) return;
-    const blinkShut = window.CreatureBlink?.getVisualState?.(animal, animal.animalKey, performance.now()) ?? false;
-    if (animal._blinkAppliedShut === blinkShut) return;
-    animal._blinkComposePending = true;
-    _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, 'idle', animal.genotype, blinkShut).then(applied => {
-      animal._blinkComposePending = false;
-      if (applied) animal._blinkAppliedShut = blinkShut;
-    });
+  // ── Locomotion frames (idle ↔ run1/run2) ─────────────────────────────
+  // Wild creatures swap between their idle and run sprites as they move
+  // (game.js updateCreatureAnimFrame). Farm livestock use the same species
+  // art, so they cycle the same frames while a station-wander / barn-homing
+  // hop is actually moving them, advancing one frame per RUN_FRAME_STRIDE_PX
+  // (30px of a 55px tile) of ground covered, like the wild path.
+  const FARM_ANIMAL_RUN_STRIDE_TILES = 30 / 55;
+  const FARM_ANIMAL_IDLE_SETTLE_SEC = 0.12; // Holds the walk frame through a one-frame stall so hop-to-hop hand-offs don't flicker to idle.
+  const FARM_ANIMAL_TELEPORT_TILES = 2; // A bigger single-frame jump (barn wake-up, re-spawn) is a reposition, not a walk.
+
+  // Plain (no genotype) frames are static PNGs; a frame is only bound once it
+  // has loaded so a not-yet-decoded sprite never blanks the animal.
+  const _farmPlainFrameCache = new Map(); // url -> { front, back, ready }
+  window.HobunjiCacheAudit?.register('FarmAnimals.plainFrameCache', () => _farmPlainFrameCache.size);
+  function _farmPlainFrame(url) {
+    let entry = _farmPlainFrameCache.get(url);
+    if (entry) return entry;
+    entry = { ready: false };
+    const front = new THREE.TextureLoader().load(url, () => { entry.ready = true; });
+    front.colorSpace = THREE.SRGBColorSpace;
+    const back = front.clone(); // Shares the decoded image; only uploads if a non-mirroring back card binds it.
+    back.wrapS = THREE.RepeatWrapping; back.repeat.set(-1, 1); back.offset.set(1, 0);
+    entry.front = front; entry.back = back;
+    _farmPlainFrameCache.set(url, entry);
+    return entry;
+  }
+  function _applyPlainFrameTexture(avatarRef, url) {
+    const entry = _farmPlainFrame(url);
+    if (!entry.ready || window.CreatureTextureCache.isDisposed(avatarRef)) return false;
+    for (const child of avatarRef.group.children) {
+      if (!child.material) continue;
+      const hadMap = !!child.material.map;
+      if (child.name.endsWith('_front_plane')) child.material.map = entry.front;
+      else if (child.name.endsWith('_back_plane')) child.material.map = window.PNGPlaneAvatar?.backMapFor?.(child.material, entry) || entry.back;
+      else continue;
+      if (!hadMap) child.material.needsUpdate = true;
+    }
+    return true;
+  }
+
+  // Sprite set for a livestock kind: the shared CREATURE_DB def first, then the
+  // genetics renderer's base art. Returns null when a kind has no run frames.
+  function _farmAnimalSprites(kind) {
+    const def = deps.CREATURE_DB?.[kind]?.sprites;
+    if (def?.idle && def.run?.length) return def;
+    const base = window.CreatureGeneticsRender?.SPECIES?.[kind]?.base;
+    if (base?.idle && base.run1) return { idle: base.idle, run: [base.run1, base.run2].filter(Boolean) };
+    return null;
+  }
+
+  // Distance-driven walk cycle: advances the run frame by ground actually
+  // covered since the last call (never by elapsed time), so a standing animal
+  // idles and a walking one animates at a pace that matches its speed.
+  function _updateFarmAnimalLocomotion(animal, dt, forceIdle) {
+    const lastX = animal._locoLastX ?? animal.wx, lastZ = animal._locoLastZ ?? animal.wz;
+    const moved = Math.hypot(animal.wx - lastX, animal.wz - lastZ);
+    animal._locoLastX = animal.wx; animal._locoLastZ = animal.wz;
+    if (forceIdle || !(moved > 1e-4) || moved > FARM_ANIMAL_TELEPORT_TILES) {
+      animal._locoIdleT = (animal._locoIdleT || 0) + Math.max(0, dt || 0);
+      if (forceIdle || animal._locoIdleT >= FARM_ANIMAL_IDLE_SETTLE_SEC) { animal._locoWalking = false; animal._locoDist = 0; }
+      return;
+    }
+    animal._locoIdleT = 0;
+    if (!animal._locoWalking) { animal._locoWalking = true; animal._locoDist = 0; }
+    animal._locoDist = (animal._locoDist || 0) + moved;
+    const sprites = _farmAnimalSprites(animal.animalKey);
+    const frames = sprites?.run?.length || 0;
+    if (!frames) return;
+    while (animal._locoDist >= FARM_ANIMAL_RUN_STRIDE_TILES) {
+      animal._locoDist -= FARM_ANIMAL_RUN_STRIDE_TILES;
+      animal._locoRunFrame = ((animal._locoRunFrame || 0) + 1) % frames;
+    }
+  }
+
+  // Applies whichever sprite frame the animal should currently show (idle or
+  // the current run frame, plus eye-blink for genotype animals) and recomposes
+  // only when that frame/blink combination actually changed. One compose at a
+  // time per animal (_frameComposePending) so requests can't overlap or land
+  // out of order; the previous frame stays on screen until the next is ready.
+  function _tickFarmAnimalFrame(animal, dt, forceIdle) {
+    _updateFarmAnimalLocomotion(animal, dt, forceIdle);
+    if (animal._frameComposePending) return;
+    const sprites = _farmAnimalSprites(animal.animalKey);
+    const walking = !!animal._locoWalking && !!sprites?.run?.length;
+    const runIdx = walking ? (animal._locoRunFrame || 0) % sprites.run.length : 0;
+    const frameKey = walking ? 'run' + (runIdx + 1) : 'idle';
+    const genotypeAnimal = !!animal.genotype && !!window.CreatureGeneticsRender;
+    const blinkShut = genotypeAnimal ? (window.CreatureBlink?.getVisualState?.(animal, animal.animalKey, performance.now()) ?? false) : false;
+    if (animal._frameAppliedKey === frameKey && animal._blinkAppliedShut === blinkShut) return;
+    if (genotypeAnimal) {
+      animal._frameComposePending = true;
+      _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, frameKey, animal.genotype, blinkShut).then(applied => {
+        animal._frameComposePending = false;
+        if (applied) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; }
+      });
+      return;
+    }
+    // Plain-sprite animal: nothing to swap unless it has distinct art to show.
+    if (!sprites) return;
+    if (!walking && animal._frameAppliedKey === undefined) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; return; } // Spawned art is already the idle frame; don't rebind it until the animal first walks.
+    const url = walking ? sprites.run[runIdx] : sprites.idle;
+    if (_applyPlainFrameTexture(animal.avatarRef, url)) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; }
+  }
+
+  // Blink-only tick for animals that are held still (dialogue / harvest): the
+  // frame logic above handles blink too, so this is just "stand and idle".
+  function _tickFarmAnimalBlink(animal, dt) {
+    _tickFarmAnimalFrame(animal, dt, true);
   }
 
   function canSpawnAt(col, row) {
@@ -717,7 +810,7 @@
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
-        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this, dt); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -728,7 +821,7 @@
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
         window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
-        _tickFarmAnimalBlink(this);
+        _tickFarmAnimalFrame(this, dt); // Idle/run frame + blink; js header 'Locomotion frames'.
 
         // Once it's settled at its target tile (not mid-hop), an animal has no
         // specific direction to look — let it rest broadside to the camera.
@@ -827,7 +920,7 @@
       },
       update(dt) {
         if (_applyVatWorkPose(this)) return;
-        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this); return; }
+        if (this._dialogueFrozen) { _tickFarmAnimalBlink(this, dt); return; }
         const tx = this.targetCol + 0.5, tz = this.targetRow + 0.5;
         const grid = deps.getGrid();
         const tile = grid[this.targetRow]?.[this.targetCol];
@@ -838,7 +931,7 @@
         this.wy += Math.sin(performance.now() / 420 + this.targetCol * 1.3) * 0.006;
         this.avatarRef.group.position.set(this.wx, this.wy, this.wz);
         window.CreatureGenetics.applyCreatureBillboardScale(this.avatarRef.group, sizeScale, window.CreatureGenetics.creatureBreathScaleY(this.avatarRef, performance.now()));
-        _tickFarmAnimalBlink(this);
+        _tickFarmAnimalFrame(this, dt); // Idle/run frame + blink; js header 'Locomotion frames'.
 
         const idle = Math.abs(tx - this.wx) < 0.02 && Math.abs(tz - this.wz) < 0.02;
         _updateFarmAnimalFacing(this, dt, idle);
