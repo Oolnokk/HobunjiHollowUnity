@@ -61,9 +61,10 @@ assert.equal(eastWing.w, 3, 'roof extension never changes the actual room width'
 const mainCuts = helpers._sharedWallCutsFor(mainRoom, pair);
 assert.equal(mainCuts.length, 1);
 assert.equal(mainCuts[0].side, 'east');
-assert.equal(mainCuts[0].uCenter, 0.5);
-assert.ok(Math.abs(mainCuts[0].uWidth - 1 / 3) < 1e-9);
+assert.equal(mainCuts[0].worldStart, 1);
+assert.equal(mainCuts[0].worldEnd, 2);
 assert.equal(mainCuts[0].vCenter, 0.5);
+assert.match(generator, /\(Number\(opening\.worldStart\) - v0Coord\) \/ edgeSpan/, 'shared boundary is projected onto each wall/gable face in world coordinates');
 assert.equal(mainCuts[0].vHeight, 1);
 assert.equal(mainCuts[0].kind, 'internal');
 
