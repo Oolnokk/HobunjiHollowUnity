@@ -358,6 +358,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const simple = window.DevRandomRuinSimplePuzzles.snapshot();
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
       const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
+      window.WildernessMap.renderMapPanel(); // Exercise the ruin-specific panel override; it used to erase the export button after the normal map renderer created it.
+      const ruinJsonExportButton = document.querySelector('#wmapZoneTabs [data-ruin-json-export]');
       const wallRender = window.DevRandomRuinWallRenderProxy.snapshot();
       const exitControl = window.DevRandomRuin.getInteractionControls().find(control => control.kind === 'exitDoor');
       const exitTarget = exitControl?.object || null;
@@ -467,6 +469,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         coverage,
         wallPlaneControl,
         wallRender,
+        ruinJsonExportButtonVisible:!!ruinJsonExportButton,
+        ruinJsonExportButtonText:ruinJsonExportButton?.textContent||null,
         exitDoorInteraction:{
           present:!!exitTarget,
           kind:exitControl?.kind || null,
@@ -506,6 +510,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.building, true, JSON.stringify(active));
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
+    assert.equal(active.ruinJsonExportButtonVisible, true, 'the occupancy-map tab renderer must retain the ruin JSON export button: '+JSON.stringify(active));
+    assert.equal(active.ruinJsonExportButtonText, 'Copy Ruin JSON', JSON.stringify(active));
     assert.equal(active.exitDoorInteraction.present, true, 'the ruin exit must be an explicit doorway target, not a proximity-only exit spot: '+JSON.stringify(active.exitDoorInteraction));
     assert.equal(active.exitDoorInteraction.kind, 'exitDoor', JSON.stringify(active.exitDoorInteraction));
     assert.equal(active.exitDoorInteraction.promptRootMatches, true, JSON.stringify(active.exitDoorInteraction));
