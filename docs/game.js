@@ -3847,6 +3847,13 @@
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        // Removing a parent table turns its children into ordinary free-standing chairs at their current world positions.
+        interiorFurnitureObjects.filter(child => child.id !== obj.id && child.area === obj.area && child.tableId === obj.id).forEach(child => {
+          child.tableId = ''; child.tableAttachment = null;
+          const size = decorativeFurnitureSize(child.key, child.rotYDeg || 0, child);
+          child.col = child.mesh.position.x - size.fw * 0.5; child.row = child.mesh.position.z - size.fd * 0.5;
+          window.FurnitureTableSystem?.registerPlacement(child.area, child, child.mesh, DECORATIVE_FURNITURE_DEFS[child.key]);
+        });
         window.FurnitureTableSystem?.unregisterPlacement?.(obj.area, obj.id || obj.mesh); // Removes precisely this furniture instance, leaving stacked rugs registered.
         targetScene.remove(obj.mesh);
         obj.mesh?.traverse?.(child => {

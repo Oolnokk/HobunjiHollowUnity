@@ -29,6 +29,7 @@ assert.match(tableSystem,/seat\.furnitureId/);
 const game=fs.readFileSync('docs/game.js','utf8');
 assert.match(game,/stationId = null/);
 assert.match(game,/HobunjiFurnitureTableAttachmentMoved/);
+assert.match(game,/Removing a parent table turns its children into ordinary free-standing chairs/);
 const grid=fs.readFileSync('docs/js/interior-furniture-grid.js','utf8');
 assert.match(grid,/if \(!piece \|\| piece\.tableAttachment\) return \[\]/);
 const mapEditor=fs.readFileSync('docs/tools/map-editor/index.html','utf8');

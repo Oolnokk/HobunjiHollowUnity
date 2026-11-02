@@ -325,7 +325,7 @@
       const isMoveArmed = !wallMounted && moveArmedId === obj.id;
       const row = document.createElement('div');
       row.className = 'farm-row' + (isMoveArmed ? ' selected' : '');
-      const locationLabel = wallMounted ? 'Wall mounted' : `${obj.col}, ${obj.row}`; // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
+      const locationLabel = wallMounted ? 'Wall mounted' : (obj.tableAttachment ? 'Attached to table' : `${obj.col}, ${obj.row}`); // Keeps the list meaningful after a wall gizmo moves the visual away from the source tile center.
       row.innerHTML = `<span class="farm-row-icon">${def.icon}</span><span class="farm-row-name">${deps.esc(def.name)}</span><span class="farm-note">${locationLabel}</span>`;
       if (obj.placementKind === 'decorative' && def.sit && obj.area === 'interior') {
         const tables=deps.getPlacedFurniture().filter(c=>c.id!==obj.id&&c.placementKind==='decorative'&&/table|desk|counter/i.test(c.key));
