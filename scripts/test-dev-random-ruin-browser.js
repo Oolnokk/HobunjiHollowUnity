@@ -627,6 +627,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           length:copied.length,
           valid:!!parsed && parsed.format === 'hobunji-ruin-map' && !!parsed.scene?.object,
           hasSceneChildren:Array.isArray(parsed?.scene?.object?.children),
+          flatSceneGraph:parsed?.scene?.objectGraphFormat === 'flat-parent-child-uuid-links-v1'
+            && Array.isArray(parsed?.scene?.objects)
+            && parsed.scene.objects.every(object => typeof object.uuid === 'string' && Object.prototype.hasOwnProperty.call(object, 'parent')),
+          childReferencesAreFlat:Array.isArray(parsed?.scene?.object?.children)
+            && parsed.scene.object.children.every(reference => typeof reference === 'string'),
         };
       });
       assert.equal(exportResult.present, true, JSON.stringify(exportResult));
@@ -634,6 +639,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.ok(exportResult.length > 1000, JSON.stringify(exportResult));
       assert.equal(exportResult.valid, true, JSON.stringify(exportResult));
       assert.equal(exportResult.hasSceneChildren, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.flatSceneGraph, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.childReferencesAreFlat, true, JSON.stringify(exportResult));
     }
 
     // Wall planes are structural and their old visual toggle is now a no-op.
