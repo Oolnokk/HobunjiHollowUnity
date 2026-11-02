@@ -584,23 +584,147 @@
   }
 
   function _plainJson(value, seen = new WeakSet()) {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-    if (typeof value === 'bigint') return String(value);
-    if (typeof value === 'function' || typeof value === 'undefined') return undefined;
-    if (typeof value !== 'object') return String(value);
-    if (seen.has(value)) return '[Circular]';
-    seen.add(value);
-    if (ArrayBuffer.isView(value)) return Array.from(value, item => _plainJson(item, seen));
-    if (value instanceof Set) return [...value].map(item => _plainJson(item, seen));
-    if (value instanceof Map) return [...value.entries()].map(([key, item]) => [_plainJson(key, seen), _plainJson(item, seen)]);
-    if (Array.isArray(value)) return value.map(item => _plainJson(item, seen));
-    const out = {};
-    for (const [key, item] of Object.entries(value)) {
-      const plain = _plainJson(item, seen);
-      if (plain !== undefined) out[key] = plain;
+    // Use an explicit work stack: ruin snapshots can contain very deeply nested
+    // runtime state, which must not consume the browser's JavaScript call stack.
+    const MAX_DEPTH = 128; // Keeps the resulting JSON safe for native JSON.stringify.
+    const MAX_NODES = 200000; // Bounds accidental traversal of unexpectedly large runtime objects.
+    const root = { result: undefined };
+    const pending = [{ value, parent: root, key: 'result', depth: 0 }];
+    let visited = 0;
+
+    const assign = (frame, normalized) => {
+      frame.parent[frame.key] = normalized;
+    };
+
+    while (pending.length) {
+      const frame = pending.pop();
+      const current = frame.value;
+
+      if (current === null || typeof current === 'string' || typeof current === 'boolean') {
+        assign(frame, current);
+        continue;
+      }
+      if (typeof current === 'number') {
+        assign(frame, Number.isFinite(current) ? current : null);
+        continue;
+      }
+      if (typeof current === 'bigint') {
+        assign(frame, String(current));
+        continue;
+      }
+      if (typeof current === 'function' || typeof current === 'undefined') {
+        assign(frame, undefined);
+        continue;
+      }
+      if (typeof current !== 'object') {
+        assign(frame, String(current));
+        continue;
+      }
+      if (frame.depth >= MAX_DEPTH) {
+        assign(frame, '[Maximum serialization depth reached]');
+        continue;
+      }
+      if (seen.has(current)) {
+        assign(frame, '[Circular]');
+        continue;
+      }
+      seen.add(current);
+      visited++;
+      if (visited > MAX_NODES) {
+        assign(frame, '[Maximum serialization node count reached]');
+        continue;
+      }
+
+      if (ArrayBuffer.isView(current)) {
+        const length = Number.isSafeInteger(current.length) ? current.length : 0;
+        const count = Math.min(length, MAX_NODES - visited);
+        const out = new Array(count + (length > count ? 1 : 0));
+        if (length > count) out[count] = '[Truncated: serialization node limit]';
+        assign(frame, out);
+        for (let i = count - 1; i >= 0; i--) {
+          pending.push({ value: current[i], parent: out, key: i, depth: frame.depth + 1 });
+        }
+        continue;
+      }
+
+      if (current instanceof Set) {
+        const out = [];
+        assign(frame, out);
+        try {
+          const iterator = current.values();
+          let index = 0;
+          while (index < MAX_NODES - visited) {
+            const next = iterator.next();
+            if (next.done) break;
+            out.push(undefined);
+            pending.push({ value: next.value, parent: out, key: index, depth: frame.depth + 1 });
+            index++;
+          }
+          if (index >= MAX_NODES - visited && !iterator.next().done) out.push('[Truncated: serialization node limit]');
+        } catch (error) {
+          out.push(`[Set serialization failed: ${error?.message || error}]`);
+        }
+        continue;
+      }
+
+      if (current instanceof Map) {
+        const out = [];
+        assign(frame, out);
+        try {
+          const iterator = current.entries();
+          let index = 0;
+          while (index < Math.floor((MAX_NODES - visited) / 2)) {
+            const next = iterator.next();
+            if (next.done) break;
+            const pair = [undefined, undefined];
+            out.push(pair);
+            pending.push({ value: next.value[1], parent: pair, key: 1, depth: frame.depth + 1 });
+            pending.push({ value: next.value[0], parent: pair, key: 0, depth: frame.depth + 1 });
+            index++;
+          }
+          if (index >= Math.floor((MAX_NODES - visited) / 2) && !iterator.next().done) out.push('[Truncated: serialization node limit]');
+        } catch (error) {
+          out.push(`[Map serialization failed: ${error?.message || error}]`);
+        }
+        continue;
+      }
+
+      if (Array.isArray(current)) {
+        const count = Math.min(current.length, MAX_NODES - visited);
+        const out = new Array(count + (current.length > count ? 1 : 0));
+        if (current.length > count) out[count] = '[Truncated: serialization node limit]';
+        assign(frame, out);
+        for (let i = count - 1; i >= 0; i--) {
+          pending.push({ value: current[i], parent: out, key: i, depth: frame.depth + 1 });
+        }
+        continue;
+      }
+
+      let keys;
+      try {
+        keys = Object.keys(current);
+      } catch (error) {
+        assign(frame, `[Object serialization failed: ${error?.message || error}]`);
+        continue;
+      }
+      const count = Math.min(keys.length, MAX_NODES - visited);
+      const out = Object.create(null);
+      assign(frame, out);
+      if (keys.length > count) out.__serializationTruncated__ = '[Truncated: serialization node limit]';
+      for (let i = count - 1; i >= 0; i--) {
+        const key = keys[i];
+        let child;
+        try {
+          child = current[key];
+        } catch (error) {
+          out[key] = `[Getter failed: ${error?.message || error}]`;
+          continue;
+        }
+        pending.push({ value: child, parent: out, key, depth: frame.depth + 1 });
+      }
     }
-    return out;
+
+    return root.result;
   }
 
   async function _copyRuinMapJson(button, status) {
@@ -614,6 +738,7 @@
     }
     button.disabled = true;
     status.textContent = 'Preparing map JSON…';
+    let stage = 'runtime snapshot serialization';
     try {
       scene.updateMatrixWorld?.(true);
       const hachutu = window.DevHachutuRuin?.debug?.() || null;
@@ -648,8 +773,10 @@
           wallPlanes: window.DevRandomRuinWallPlanes?.snapshot?.() || null,
           wallRender: window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
         }),
-        scene: scene.toJSON(),
       };
+      stage = 'Three.js scene serialization';
+      payload.scene = scene.toJSON();
+      stage = 'JSON encoding';
       const json = JSON.stringify(payload, null, 2);
       let copied = false;
       try {
@@ -673,7 +800,7 @@
       }
       status.textContent = `Copied ${(json.length / 1024).toFixed(0)} KB of ruin map JSON.`;
     } catch (error) {
-      status.textContent = `Copy failed: ${error?.message || error}`;
+      status.textContent = `Copy failed during ${stage}: ${error?.message || error}`;
       console.error('[WildernessMap] Ruin JSON export failed', error);
     } finally {
       button.disabled = false;
