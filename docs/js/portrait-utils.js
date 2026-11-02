@@ -1571,9 +1571,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const beardMaskVariantKey = `${resolvedFighter?.speciesId || fighter?.speciesId || ''}_${resolvedFighter?.gender || fighter?.gender || ''}`;
-  const hasBeardOverpassMask = Boolean(
-    hood?.beardRevealMasks?.[beardMaskVariantKey] || hood?.beardRevealMasks?.default ||
-    facialHair?.beardOverpassMasks?.[beardMaskVariantKey] || facialHair?.beardOverpassMasks?.default
+  const hasMaskRuns = value => Array.isArray(value?.runs) && value.runs.length >= 2;
+  const hasBeardOverpassMask = hoodHideFrontAndSideHair && (
+    hasMaskRuns(hood?.beardRevealMasks?.[beardMaskVariantKey]) || hasMaskRuns(hood?.beardRevealMasks?.default) ||
+    hasMaskRuns(facialHair?.beardOverpassMasks?.[beardMaskVariantKey]) || hasMaskRuns(facialHair?.beardOverpassMasks?.default)
   );
   const hiddenCosmeticGroups = new Set([
     ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
@@ -1949,8 +1950,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const key = `${resolvedFighter?.speciesId || fighter?.speciesId || ''}_${resolvedFighter?.gender || fighter?.gender || ''}`;
     return maps[key] || maps.default || null;
   };
-  const hoodBeardMask = maskForVariant(hood, 'beardRevealMasks');
-  const beardPriorityMask = maskForVariant(facialHair, 'beardOverpassMasks');
+  const hoodBeardMask = hoodHideFrontAndSideHair ? maskForVariant(hood, 'beardRevealMasks') : null;
+  const beardPriorityMask = hoodHideFrontAndSideHair ? maskForVariant(facialHair, 'beardOverpassMasks') : null;
   let pendingBeardOverpass = null; // The selected beard pixels are composited after the hood.
   const renderSplitBeard = (targetCtx = ctx) => {
     const width = PORTRAIT_CW, height = PORTRAIT_CH;
@@ -1989,7 +1990,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     aboveCtx.drawImage(maskCanvas, 0, 0);
     beardCtx.globalCompositeOperation = 'destination-out';
     beardCtx.drawImage(maskCanvas, 0, 0);
-    targetCtx.drawImage(beardCanvas, 0, 0);
+    if (!hoodHidesFacialHair(hood) && !hoodHidesFacialHair(mask)) targetCtx.drawImage(beardCanvas, 0, 0);
     pendingBeardOverpass = above;
   };
 
