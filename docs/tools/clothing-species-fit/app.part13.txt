@@ -171,13 +171,21 @@ function exportBeardHoodCosmeticConfig() {
   const property = kind === 'hood' ? 'beardRevealMasks' : 'beardOverpassMasks';
   const config = clone(garment.cfg);
   config[property] ||= {};
-  config[property][beardHoodMaskVariant()] = encodeBeardHoodMask(activeBeardHoodMaskCanvas);
+  const prefix = `${kindKey(garment)}::`;
+  let exportedVariants = 0;
+  for (const [key, mask] of Object.entries(beardHoodMaskStore(kind))) {
+    if (!key.startsWith(prefix)) continue;
+    const variant = key.slice(prefix.length);
+    if (!variant || !mask?.runs?.length) continue;
+    config[property][variant] = mask;
+    exportedVariants++;
+  }
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url; link.download = String(garment.configPath || `${safeName(garment.id)}.json`).split('/').pop(); link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  log(`Exported ${property} for ${garment.id} · ${beardHoodMaskVariant()}. Replace that cosmetic's JSON with the downloaded file.`);
+  log(`Exported ${property} for ${garment.id} (${exportedVariants} saved variant masks). Replace docs/${garment.configPath} with the downloaded file.`);
 }
 function paintBeardHoodMaskSegment(from, to) {
   if (!activeBeardHoodMaskCanvas) return;
