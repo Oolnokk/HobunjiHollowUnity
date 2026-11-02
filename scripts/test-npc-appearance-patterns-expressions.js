@@ -150,7 +150,7 @@ async function main() {
   for (const name of [
     'workingNpcRecord', 'syncNpcPatternColors', 'renderNpcAppearanceControls', 'applyWorkToNpc', 'exportAppearance',
     'playerClothingBaseId', 'playerClothingSnapshotSignature', 'samePlayerClothingItem', 'playerAccessibleClothing',
-    'equipPlayerClothing', 'npcPreviewRenderOptions',
+    'equipPlayerClothing', 'resetNpcPreviewLayerOrders', 'refreshNpcPreviewLayerControls', 'npcPreviewRenderOptions',
   ]) vm.runInContext(editorFunction(name), editor);
   const patternSelect = { dataset: { npcPatternSlot: 'overwear', patternIndex: '0', patternRole: 'poncho' }, value: 'new_pattern' }; // Exercises a real per-layer selection without replacing trim data.
   element('npcPatternControls').querySelectorAll = selector => selector === '[data-npc-pattern-slot]' ? [patternSelect] : [];
