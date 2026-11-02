@@ -612,7 +612,7 @@
       if (!basin) continue;
       usedRooms.add(room.id);
       basins.push(basin);
-      kit.recordModulePlacement('lavaBasin', 'sunkenFloor', room.id, { depth:basin.depth, pillars:basin.pillars.length, ropes:basin.ropes.length, plates:basin.plates.length, chests:basin.chests.length + (basin.balcony?.chest ? 1 : 0), balcony:!!basin.balcony });
+      kit.recordModulePlacement('lavaBasin', 'sunkenFloor', room.id, { roomId:String(room.id), depth:basin.depth, pillars:basin.pillars.length, ropes:basin.ropes.length, plates:basin.plates.length, chests:basin.chests.length + (basin.balcony?.chest ? 1 : 0), balcony:!!basin.balcony });
       break; // One basin per ruin keeps it a set piece.
     }
   }
