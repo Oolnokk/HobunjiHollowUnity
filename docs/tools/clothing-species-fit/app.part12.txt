@@ -169,3 +169,4 @@ document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
 if(!['transform','body','fit','preview'].includes(mode))mode='transform';
 syncHistory();refreshHelp();updateExtendedStatus();ensureThreePreview();syncMaskTransformControls();loadRepositoryData();
+})();
