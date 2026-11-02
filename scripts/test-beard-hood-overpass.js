@@ -36,5 +36,7 @@ assert.match(portrait, /destination-in/);
 assert.match(portrait, /destination-out/);
 assert.match(portrait, /hood: \(\) => \{ drawBreathingLayers\(hoodLayers\); if \(pendingBeardOverpass\)/, 'selected beard pixels are composited immediately after the hood');
 assert.match(portrait, /!hasBeardOverpassMask/);
+assert.match(portrait, /hoodHideFrontAndSideHair && \(/, 'mask metadata only overrides concealment while a hood is equipped');
+assert.match(portrait, /if \(!hoodHidesFacialHair\(hood\) && !hoodHidesFacialHair\(mask\)\) targetCtx\.drawImage\(beardCanvas/, 'concealing hoods keep unselected beard pixels hidden');
 
 console.log('Beard/hood overpass mask authoring and rendering contracts passed.');
