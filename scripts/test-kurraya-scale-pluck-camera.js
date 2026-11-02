@@ -39,7 +39,7 @@ const window = {
   SCRATCHBONES_CONFIG: {
     game: {
       input: { deadzone: 0.24, controllerLookResponse: 1.45, controllerLookDegPerSec: 190, controllerLookVerticalScale: 0.8 },
-      desktopControls: { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 45 },
+      desktopControls: { cameraRotateClampDeg: 45 },
     },
   },
   Fishing: { init(deps) { fishingDeps = deps; } },
@@ -69,6 +69,7 @@ let target = { id: 'pre-performance-target' }; // Existing target is restored af
 let offsets = { azimuthDeg: 12, angleDeg: -5 }; // Right-stick look mutates these authoritative gameplay offsets.
 const cameraDeps = {
   getCameraMode: () => mode,
+  getCameraBaseAngleDeg: () => 9,
   setCameraMode: value => { mode = value; },
   getCameraTarget: () => target,
   setCameraTarget: value => { target = value; },
@@ -97,6 +98,14 @@ assert.equal(pointerLockRequests, 1, 'desktop mouse look is re-requested through
 controllerSubscriber({ pad: { axes: [0, 0, 0.6, -0.4] }, dt: 1 / 60 });
 assert.ok(offsets.azimuthDeg < 12, 'right stick yaw turns the live gameplay camera');
 assert.ok(offsets.angleDeg < -5, 'right stick pitch turns the live gameplay camera with the normal sign convention');
+const ordinaryOffsets = { ...offsets }; // Preserve the original performance camera state around the clamp-edge checks.
+offsets.angleDeg = 80;
+controllerSubscriber({ pad: { axes: [0, 0, 0, 1] }, dt: 0.05 });
+assert.equal(offsets.angleDeg, 81, 'Kurraya downward look stops at absolute vertical after its 9-degree base angle');
+offsets.angleDeg = -98;
+controllerSubscriber({ pad: { axes: [0, 0, 0, -1] }, dt: 0.05 });
+assert.equal(offsets.angleDeg, -99, 'Kurraya upward look stops at absolute vertical after its 9-degree base angle');
+offsets = ordinaryOffsets;
 const debug = window.KurrayaCameraRuntime.getDebug();
 assert.equal(debug.active, true);
 assert.equal(debug.characterView, true);

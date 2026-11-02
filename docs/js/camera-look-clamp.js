@@ -1,28 +1,26 @@
 (() => {
   'use strict';
 
-  const DEFAULT_DOWN_CLAMP_DEG = 45;
+  const MAX_ABSOLUTE_PITCH_DEG = 90; // The camera stops only at true vertical up/down.
 
-  function clampPitchOffsetDeg(value, controlsConfig = {}) {
+  function clampPitchOffsetDeg(value, controlsConfig = {}, baseAngleDeg) {
     const cfg = controlsConfig || {};
-    const downClampDeg = Number.isFinite(Number(cfg.cameraRotateClampDeg)) ? Math.abs(Number(cfg.cameraRotateClampDeg)) : DEFAULT_DOWN_CLAMP_DEG;
-    const upClampDeg = downClampDeg; // Keep the maximum upward and downward look angles exactly symmetric.
+    const explicitBase = Number(baseAngleDeg);
+    const configuredBase = Number(cfg.cameraBaseAngleDeg);
+    const base = Number.isFinite(explicitBase) ? explicitBase : Number.isFinite(configuredBase) ? configuredBase : 0;
     const numericValue = Number.isFinite(Number(value)) ? Number(value) : 0;
-    return Math.max(-upClampDeg, Math.min(downClampDeg, numericValue));
+    const minimumOffset = -MAX_ABSOLUTE_PITCH_DEG - base;
+    const maximumOffset = MAX_ABSOLUTE_PITCH_DEG - base;
+    return Math.max(minimumOffset, Math.min(maximumOffset, numericValue));
   }
 
   window.CameraLookClamp = {
     clampPitchOffsetDeg,
-    defaults: Object.freeze({ downDeg: DEFAULT_DOWN_CLAMP_DEG, upDeg: DEFAULT_DOWN_CLAMP_DEG }),
+    defaults: Object.freeze({ downDeg: MAX_ABSOLUTE_PITCH_DEG, upDeg: MAX_ABSOLUTE_PITCH_DEG }),
   };
 
   // Kurraya reuses the ordinary gameplay camera rather than owning a staged
-  // music camera.  This bridge is intentionally housed beside the shared
-  // camera clamp: it captures existing public module init seams instead of
-  // reaching back into game.js's private camera variables.  Fishing already
-  // receives the authoritative camera getters/setters, while ActionArcUI
-  // receives the Character View state/setter.  Capturing those two injected
-  // bags keeps this integration compatible with the current modular owners.
+  // music camera. This bridge captures existing public module init seams.
   let cameraDeps = null; // Captured from Fishing.init; used to read/write the live gameplay camera while Kurraya is active.
   let characterViewDeps = null; // Captured from ActionArcUI.init; used to enter/restore Character View for a performance.
   let previousMusicCamera = null; // Snapshot restored when the visible Kurraya performance closes.
@@ -107,8 +105,6 @@
     api.init = wrapped;
   }
 
-  // Settings writes these keys; re-read at most twice a second instead of
-  // touching localStorage on every controller frame of a performance.
   let lookPrefs = null;
   let lookPrefsAt = -Infinity;
   function controllerLookPrefs() {
@@ -152,6 +148,7 @@
     const angleDeg = clampPitchOffsetDeg(
       (Number(current.angleDeg) || 0) + (Number(look.y) || 0) * pitchDirection * turnRate * sensitivity * verticalScale * dt,
       cameraControlsConfig(),
+      cameraDeps.getCameraBaseAngleDeg?.(),
     );
     cameraDeps.setCameraOrientationOffsets?.({ azimuthDeg, angleDeg });
     lastMusicLook = { x: Number(look.x) || 0, y: Number(look.y) || 0, active: true };

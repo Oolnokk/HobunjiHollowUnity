@@ -4438,7 +4438,6 @@
         }
       }
       const SEATED_LOOK_ROTATE_DEG_PER_SEC = 110; // movement input's rotate-the-view speed while seated (see updateSitInteraction)
-      const SEATED_CAMERA_PITCH_CLAMP_DEG = 45; // up/down joystick pitch allowance while seated, matches the desktop drag default
 
       // Resolves a furniture instance's seat anchor (local, footprint-center-
       // relative — see docs/js/authored-furniture-runtime.js) into this
@@ -4540,7 +4539,7 @@
             cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - ix * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           if (Math.abs(iy) > 0.001) {
-            cameraAngleOffsetDeg = window.FormatUtils.clamp(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt, -SEATED_CAMERA_PITCH_CLAMP_DEG, SEATED_CAMERA_PITCH_CLAMP_DEG);
+            cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg + iy * SEATED_LOOK_ROTATE_DEG_PER_SEC * dt);
           }
           return;
         }
@@ -21681,8 +21680,15 @@
           resultZ = lookAtZ + (resultZ - lookAtZ) * fraction;
           const requestedSetback = Number(window.HobunjiShoulderCameraCharacterFraming?.minimumCollisionSetback?.()); // Uses the cached species scale rather than measuring the avatar each frame.
           const requestedPlanarDistance = Math.hypot(dx, dz); // Original horizontal boom reach, used by the shoulder-offset taper.
-          const minimumSetback = Math.min(requestedPlanarDistance, Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.8); // Never pushes an intentionally shorter requested boom outward.
-          const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops both wall and terrain retraction before the camera enters the player.
+          const upwardPitchRad = dy < -1e-4 ? Math.atan2(-dy, Math.max(1e-6, requestedPlanarDistance)) : 0; // Positive only when the camera is below its look target.
+          const targetHeadroom = Math.max(0, lookAtY - targetFloorY - clearance); // Available vertical room beneath the look pivot before the camera reaches terrain.
+          const pitchSafeSetback = upwardPitchRad > 1e-4 ? Math.max(0, targetHeadroom / Math.tan(upwardPitchRad) - 0.002) : Infinity; // At steeper upward pitches, the boom must be allowed closer to the character.
+          const groundLimitedUpward = dy < -1e-4 && fraction < 1 - 1e-6; // Raised terrain may shorten the ray beyond the flat target-floor estimate.
+          const terrainSafeSetback = groundLimitedUpward ? Math.hypot(resultX - lookAtX, resultZ - lookAtZ) : Infinity; // Never undo a terrain-safe upward retraction.
+          const minimumSetback = Math.max(0, Math.min(requestedPlanarDistance,
+            Number.isFinite(requestedSetback) && requestedSetback > 0 ? requestedSetback : 0.8,
+            pitchSafeSetback, terrainSafeSetback)); // Keeps ordinary framing while permitting a floor-safe upward camera to tuck close behind the head.
+          const bodyLimited = Math.hypot(resultX - lookAtX, resultZ - lookAtZ) < minimumSetback; // Stops wall and terrain retraction only when the body-safe pitch envelope allows it.
           if (bodyLimited && minimumSetback > 0) {
             const factor = minimumSetback / Math.hypot(dx, dz); // Retains requested yaw and pitch until ground clearance requires a height adjustment.
             resultX = lookAtX + dx * factor;
@@ -21733,8 +21739,11 @@
             resultY = Math.max(resultY, cameraSurfaceYAtWorld(resultX, resultZ) + clearance); // Shifted camera still clears rendered terrain/snow/slush.
           }
           _cameraBoomDebug = {
-            latestChange: 'Collision zoom cap unchanged; signed ±0.35 offsets ease across both the full boom compression range and successive frames.',
+            latestChange: 'Upward pitch progressively lowers the body-safe boom setback so the camera can retract toward the head without flattening its vertical aim.',
             minimumSetbackTiles: minimumSetback,
+            upwardPitchDeg: upwardPitchRad * 180 / Math.PI,
+            pitchSafeSetbackTiles: Number.isFinite(pitchSafeSetback) ? pitchSafeSetback : null,
+            groundLimitedUpward,
             offsetFadeStartTiles, // Clearance threshold where shoulder recentering begins.
             shoulderOffsetFactor, // Proportion of the input offset still visible after collision easing.
             shoulderOffsetBlend, // Collision-distance target over the whole zoom range (0..1).
@@ -21808,7 +21817,7 @@
         const zones = _zoneScenes.get(currentArea)?.canopyZones;
         if (!zones || !zones.length) return 0;
         const modeCfg = cameraModeConfig(activeCameraMode);
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
         const distanceTiles = modeCfg.distanceTiles ?? 14;
         const sinAngle = Math.sin(angle);
         const CANOPY_CLEARANCE = 0.3;
@@ -21879,7 +21888,7 @@
         }
         const baseDistance = (modeCfg.distanceTiles ?? 14) / effectiveZoomScale * cutsceneZoomMul;
         let distance = dialogueZoomActive() ? baseDistance / dialogueZoomFactor() : baseDistance;
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + cameraAngleOffsetDeg);
+        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
         const azimuth = THREE.MathUtils.degToRad((modeCfg.azimuthDeg ?? 0) + cameraAzimuthOffsetDeg);
         const portraitAim = dialoguePortraitCameraAim(modeCfg, tx, tz, distance, angle);
         let lookY = portraitAim?.lookY ?? (camTargetY + (modeCfg.targetYOffsetTiles ?? 0));
@@ -28831,15 +28840,14 @@
           && !window.__mapEditorGizmoActive;
       }
       // Every other camera mode nudges a look-around offset on top of a fixed
-      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
-      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
-      // players and the utility-wheel Character View still get genuine 360°
-      // horizontal orbit instead.
+      // base framing. cameraRotateClampDeg remains the limited-yaw setting for
+      // non-free modes; pitch independently reaches true vertical in either
+      // direction. Seated players and Character View retain 360° horizontal orbit.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
-      function clampCameraPitchOffsetDeg(value) {
-        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig());
+      function clampCameraPitchOffsetDeg(value, baseAngleDeg = Number(cameraModeConfig(activeCameraMode).angleFromGroundDeg ?? 32.73)) {
+        return window.CameraLookClamp.clampPitchOffsetDeg(value, desktopControlsConfig(), baseAngleDeg);
       }
       // Wraps into (-180, 180] instead of clamping, so repeated drag input
       // keeps spinning all the way around rather than pinning at an edge.
@@ -29907,6 +29915,7 @@
         setActiveTool: (v) => { activeTool = v; },
         setLastActionMessage: (v) => { lastActionMessage = v; },
         getCameraMode: () => activeCameraMode,
+        getCameraBaseAngleDeg: () => Number(cameraModeConfig(activeCameraMode).angleFromGroundDeg ?? 32.73), // Kurraya applies the same absolute vertical pitch limits as ordinary camera input.
         setCameraMode: (v) => { if (v == null || v === (cameraConfig().defaultMode || 'default')) enterDefaultCameraMode(); else activeCameraMode = v; }, // Top-down is retired; restores that fall back to it land in Shoulder Cam.
         getCameraTarget: () => activeCameraTarget,
         setCameraTarget: (v) => { activeCameraTarget = v; },

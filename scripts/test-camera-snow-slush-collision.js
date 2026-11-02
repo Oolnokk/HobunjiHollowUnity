@@ -83,6 +83,7 @@ const updateStart = game.indexOf('      function updateCameraPosition() {'); // 
 const camera = {position:{set(x,y,z){Object.assign(this,{x,y,z});}},lookAt(x,y,z){this.target={x,y,z};},updateProjectionMatrix(){}}; // Final camera pose capture.
 Object.assign(context,{
   camera, applyAuthoredCinematicCamera:()=>false, cameraModeConfig:()=>({distanceTiles:1.3,angleFromGroundDeg:9,targetYOffsetTiles:.15,ignoreGlobalZoom:true}),
+  clampCameraPitchOffsetDeg: (value, baseAngleDeg = 9) => Math.max(-90 - baseAngleDeg, Math.min(90 - baseAngleDeg, Number(value) || 0)), // Mirrors the shared vertical clamp for the extracted live update.
   cameraContainerAspect:()=>1, camTargetX:.5,camTargetZ:.5,cameraAngleOffsetDeg:-85,cameraAzimuthOffsetDeg:0,s_zoomScale:1.5,
   dialoguePortraitCameraAim:()=>null,s_shoulderSurfOffsetH_current:0,s_shoulderSurfOffsetV_current:0,_lastCameraLookPoint:{set(){}},
 });
@@ -98,7 +99,8 @@ for (const mode of ['snow','slush']) {
   assert.ok(Math.abs(camera.target.y-.26)<1e-7, 'short-character pivot clears the rendered cap');
   assert.ok(camera.position.y >= api.cameraSurfaceYAt(camera.position.x,camera.position.z)+context.debug().floorClearance-1e-9);
   const pitch = Math.atan2(camera.target.y-camera.position.y,Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z))*180/Math.PI; // Effective upward aim after cover collision.
-  assert.ok(pitch > 0 && pitch < 76, 'cover limits impossible steep upward aim at the body setback');
+  assert.ok(Math.abs(pitch - 76) < 1e-5, 'cover collision preserves the full requested upward pitch by retracting the boom');
+  assert.ok(context.debug().minimumSetbackTiles < 0.1, 'snow/slush clearance permits a close camera when the target has little headroom');
   assert.ok(Math.hypot(camera.position.x-camera.target.x,camera.position.z-camera.target.z) >= context.debug().minimumSetbackTiles-1e-9,
     'snow and slush cannot push the camera inside the player');
   assert.equal(context.activeSurfaceYAtWorld(.5,.5),0, 'player ground is unchanged');

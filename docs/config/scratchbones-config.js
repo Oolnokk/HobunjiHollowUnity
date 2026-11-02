@@ -294,8 +294,7 @@ window.SCRATCHBONES_CONFIG = {
     "desktopControls": {
       "tapWindowMs": 350,
       "cameraRotateDegPerPx": 0.15,
-      "cameraRotateClampDeg": 45,
-      "cameraRotateUpClampDeg": 45, // Matches the downward look limit; shared gameplay pitch is symmetric.
+      "cameraRotateClampDeg": 45, // Retained for limited yaw in non-free camera modes; vertical pitch is handled independently.
       "wheelZoomStep": 0.05,
       "wheelZoomMin": 0.75,
       "wheelZoomMax": 2.5
