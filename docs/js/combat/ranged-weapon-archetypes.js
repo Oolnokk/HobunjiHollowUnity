@@ -498,7 +498,7 @@
     const ranged = window.RangedWeapons;
     const shapeStats = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Matches Charged Breaker's weapon-efficiency adjustment for the same pose-cost curve.
     const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge)
-      ?? (12 + 6 * Math.max(0, Math.min(1, Number(poseCharge) || 0))); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
+      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
     return Math.max(0, baseCost / Math.max(0.05, Number(shapeStats.efficiency) || 1));
   }
 
