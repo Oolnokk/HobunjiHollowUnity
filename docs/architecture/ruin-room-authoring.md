@@ -40,7 +40,7 @@ Profiles match a generated room by minimum/maximum width, height and doorway cou
 
 ## Placement spots and allowlists
 
-Each spot has a stable `id`, label, location, optional `required` flag, `maxUses` and `clearance`. Template spots use integer cell coordinates (`x`/`z`); procedural spots use normalized coordinates (`u`/`v`).
+Each spot has a stable `id`, label, location, optional `required` flag, `maxUses` and `clearance`. Template spots use integer cell coordinates (`x`/`z`); procedural spots use normalized coordinates (`u`/`v`). Their world coordinates use the same two-unit padding and cell size as the playable ruin composers. `clearance` is a world-space separation radius: two distinct claimed spots must be at least the sum of their radii apart. A module that cannot honor that spacing is rejected before it is built.
 
 Every spot has three independent allowlists:
 
