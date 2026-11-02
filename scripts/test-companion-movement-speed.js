@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/companion-movement-speed.js', 'utf8'); // Executes the production module in a deterministic fake game runtime.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Verifies the runtime is loaded by the playable game.
-assert.match(index, /companion-movement-speed\.js\?v=20261102ownerpace1/, 'game index loads the owner-relative companion speed module');
+assert.match(index, /companion-movement-speed\.js\?v=[A-Za-z0-9_-]+/, 'game index loads the owner-relative companion speed module with any valid cache token');
 
 let now = 1000; // Advances the deterministic clock used for position-only NPC owner sampling.
 let terrainType = 'grass'; // Changes the active player tile between grass and river for movement-speed parity.
@@ -16,12 +16,17 @@ let cookingMul = 1.1; // Represents the live food movement modifier.
 let devMul = 1; // Represents the mutable global speed setting.
 let perceptionMul = 0.5; // Represents the mounted Perception Mode movement modifier.
 let npcOwnerMul = 0.75; // Lets the position-only NPC fixture change buffs while paused.
-const callbacks = []; // Captures scheduled animation callbacks without running an endless browser frame loop.
+const schedulerRegistrations = new Map(); // Captures the production pre-game subscription for ordering assertions.
 const player = { x: 64, y: 64, footing: 100, maxFooting: 100 }; // Uses the same pixel-space player position and footing values as the runtime.
 const companionObjects = new Set(); // Mirrors Combat.deps.companionObjects.
 const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ type: 'grass' }))); // Minimal active terrain for the player's tile lookup.
 const windowStub = {
-  requestAnimationFrame(callback) { callbacks.push(callback); return callbacks.length; },
+  RuntimeFrameScheduler: {
+    register(id, callback, options) {
+      schedulerRegistrations.set(id, { callback, options });
+      return () => schedulerRegistrations.delete(id);
+    },
+  },
   Combat: {
     init(deps) { this.deps = deps; },
     getMovementSpeedMul() { return combatMul; },
@@ -63,6 +68,8 @@ windowStub.Combat.init(deps);
 const api = windowStub.CompanionMovementSpeed; // The same public diagnostic/test surface used by the live game.
 assert(api, 'companion movement speed API is installed');
 assert.equal(api.debugSnapshot().initialized, true, 'Combat.init supplies the live runtime dependencies');
+assert.equal(schedulerRegistrations.get('companion-movement-speed')?.options.phase, 'pre-game',
+  'owner-relative speeds update before gameplay simulation consumes companion movement definitions');
 
 const sourceDef = { moveSpeed: 100, chaseSpeed: 160 }; // Represents shared species data that must not be mutated.
 const playerPet = { id: 'player-pet', isCompanion: true, master: player, def: sourceDef };
