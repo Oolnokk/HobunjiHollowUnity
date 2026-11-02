@@ -1748,6 +1748,7 @@
       riverPathsProcessed: 0,
       riverCenterlineTiles: 0,
       riverTilesLowered: 0,
+      riverTilesRaised: 0,
       riverUpHillSteps: 0,
       pondBodiesProcessed: 0,
       pondBodiesFlattened: 0,
@@ -1807,7 +1808,7 @@
 
     // A junction can lower a later river's shared tile. Propagate that lower
     // elevation downstream through every intersecting path until all paths agree.
-    const profilePassLimit = Math.max(2, Number(settings.maxTier) + 2); // More than the maximum possible tier drops, so the integer grades converge.
+    const profilePassLimit = Math.max(2, riverProfiles.length + Number(settings.maxTier) + 2); // Allows a grade change to propagate across every river junction, not only one tier's worth of passes.
     for (let pass = 0; pass < profilePassLimit; pass++) {
       let changed = false;
       for (const profile of riverProfiles) {
@@ -1854,17 +1855,22 @@
         if (!neighbor || !neighbor.water || neighbor.terrain !== 'river') continue;
         const key = tileKey(x, y);
         if (riverGradeByTile.has(key)) continue;
-        riverGradeByTile.set(key, current.height);
-        riverQueue.push({ x, y, height: current.height });
+        const neighborHeight = Math.max(0, Number(neighbor.elevation) || 0); // Existing low channel pockets must never be raised to match a higher centerline.
+        const propagatedHeight = Math.min(current.height, neighborHeight);
+        riverGradeByTile.set(key, propagatedHeight);
+        riverQueue.push({ x, y, height: propagatedHeight });
       }
     }
     for (const [key, targetHeight] of riverGradeByTile) {
       const [x, y] = key.split(',').map(Number);
       const tile = tileAt(x, y); // River tile receiving its nearest centerline's solved elevation.
       if (!tile || !tile.water || tile.terrain !== 'river') continue;
-      if (tile.elevation > targetHeight) report.riverTilesLowered++;
-      tile.elevation = targetHeight;
-      tile.height = targetHeight;
+      const originalHeight = Math.max(0, Number(tile.elevation) || 0); // Preserve any naturally lower channel pocket.
+      if (originalHeight > targetHeight) report.riverTilesLowered++;
+      if (originalHeight < targetHeight) report.riverTilesRaised++;
+      const solvedHeight = Math.min(originalHeight, targetHeight); // Hydrology may only carve downward, never create a raised underwater tile.
+      tile.elevation = solvedHeight;
+      tile.height = solvedHeight;
     }
 
     const isPondFloorTile = tile => !!tile && tile.water && !tile.canyonRiver
