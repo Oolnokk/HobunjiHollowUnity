@@ -90,6 +90,9 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(widerDoorResult.carvedCells,0,'a mismatched doorway must not carve the room');
 
   const plan=network.rooms[0].roomAuthoringPlan;
+  const initialRequirements=api.getDiagnostics({roomAuthoringPlans:[JSON.parse(JSON.stringify(plan))]});
+  assert.equal(initialRequirements.missingRequiredSpots.length,2,'required spots should be visible before anything claims them');
+  assert.equal(initialRequirements.missingRequiredLinks.length,1,'required puzzle links should be visible before being composed');
   assert.ok(api.canClaimSpotForPlan(plan,'room_1','activators','pressurePlate'));
   assert.ok(api.canClaimSpotForPlan(plan,'room_1','mechanisms','stoneDoor'));
   assert.equal(api.canClaimSpotForPlan(plan,'room_1','decorations','statue'),false,'empty decoration allowlist must reject decorations');
@@ -122,6 +125,8 @@ function makeNetwork(id='room_1',width=5,height=5) {
   const clonedMetadata={roomAuthoringPlans:[clonedLinkedPlan],rooms:[{id:'room_linked',roomAuthoringPlan:clonedLinkedPlan}]};
   assert.equal(api.getDiagnostics(clonedMetadata).links.length,1,'linked pair diagnostics survive the metadata clone without duplicates');
   assert.equal(api.getDiagnostics(clonedMetadata).claims.length,2,'both linked spot claims survive the metadata clone');
+  assert.equal(api.getDiagnostics(clonedMetadata).missingRequiredSpots.length,0,'required spots are satisfied by the linked puzzle');
+  assert.equal(api.getDiagnostics(clonedMetadata).missingRequiredLinks.length,0,'required puzzle link is satisfied by its linked pair');
 
   const profileLibrary={
     schema:'hobunji_ruin_room_library.v1',
