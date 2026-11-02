@@ -299,7 +299,7 @@
         for(const entry of platforms.filter(item=>item.moving)){
           const clone=grown.group.clone(true);clone.name='root-grown moving platform (no base)';
           clone.userData.devRuinFootprintIgnore=true;
-          session.group.add(clone);entry.rootSkin=clone;
+          session.group.add(clone);clone.position.y=y-.30;entry.rootSkin=clone;
         }
       }catch(error){session.errors.push('Pillar root author: '+String(error?.message||error));}
     }
