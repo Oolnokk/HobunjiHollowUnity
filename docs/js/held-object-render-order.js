@@ -128,12 +128,12 @@
   let nonGroundDepthReplayCount = 0;
   let groundDepthRestoreCount = 0;
   let invariantRepairCount = 0;
-  let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects without classified ground depth.
-  let shellXrayMeshDrawCount = 0;
+  let shellXrayPassCount = 0; // Shell passes replay registered x-ray objects against elevation-filtered ground depth.
+  let shellXrayMeshDrawCount = 0; // Registered x-ray meshes whose shell was redrawn with matching visibility.
   let lastElevationReplayGroups = 0; // Mobile diagnostics: number of standing-height depth replays in the latest base/shell pass.
   let lastUnknownElevationMeshes = 0; // Mobile diagnostics: unresolved actor meshes intentionally left fully occluded.
   let lastElevationShaderMaterials = 0; // Materials with the standard elevation-aware shader hook active.
-  let lastElevationShaderFallbacks = 0; // Custom/unsupported ground shaders retained as ordinary depth occluders. // Registered x-ray meshes whose shell was redrawn with matching visibility.
+  let lastElevationShaderFallbacks = 0; // Custom/unsupported ground shaders retained as ordinary depth occluders.
   let internalReplay = false;
   let lastDebugSignature = '';
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
