@@ -610,7 +610,15 @@
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(json);
       } else {
-        throw new Error('Clipboard API unavailable');
+        const textarea = document.createElement('textarea'); // Mobile/older-browser fallback when the async Clipboard API is unavailable.
+        textarea.value = json;
+        textarea.setAttribute('readonly', '');
+        textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) throw new Error('Clipboard access was denied');
       }
       status.textContent = `Copied ${(json.length / 1024).toFixed(0)} KB of ruin map JSON.`;
     } catch (error) {
