@@ -595,7 +595,7 @@
 
   function buildRooms(kit, context, rng, usedRooms, options) {
     if (options?.lavaBasin === false) return;
-    const rooms = (context.meta?.rooms || []).filter(room => !usedRooms.has(room.id));
+    const rooms = (context.meta?.rooms || []).filter(room => !usedRooms.has(room.id) && kit.canClaimRoomSpot(room.id,'mechanisms','lavaBasin'));
     const candidates = [];
     for (const room of rooms) {
       for (const region of kit.sunkenRegionsForRoom(context, room)) {
