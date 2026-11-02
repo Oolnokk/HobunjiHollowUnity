@@ -58,7 +58,7 @@ assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/procedural
 {
   const portrait = read('docs/js/portrait-utils.js');
   const frontDrawMap = portrait.indexOf('const frontDraw = {');
-  const hood = portrait.indexOf('hood: () => drawBreathingLayers(hoodLayers),', frontDrawMap);
+  const hood = portrait.indexOf('hood: () => { drawBreathingLayers(hoodLayers); if (pendingBeardOverpass)', frontDrawMap);
   const mask = portrait.indexOf('mask: () => drawEmoteLayers(maskLayers),', frontDrawMap);
   const defaultFrontOrder = portrait.indexOf('const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([');
   const defaultHood = portrait.indexOf("'hood'", defaultFrontOrder);
