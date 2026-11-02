@@ -55,7 +55,7 @@ for (const stableRole of [undefined, 'companion']) {
   assert.equal(played.length - start, 2, 'both Puktuk chatter beats reach real playback');
   assert.ok(played.slice(start).every(url => url.endsWith('/sfx_bark-yap.ogg')), 'uses the authored Puktuk call');
 }
-const farmAnimal = { id: 'farm-uumkaoii', livestockId: 'livestock-1', animalKey: 'uumkaoii', wx: 0.5, wz: 0.5, wy: 0.4, tick() {}, update() {} }; // Mirrors the actual FarmAnimals entity shape.
+const farmAnimal = { id: 'farm-uumkaoii', livestockId: 'livestock-1', animalKey: 'uumkaoii', wx: 0.5, wz: 0.5, wy: 0.4, avatarRef: { group: { position: { y: 0.4 } } }, tick() {}, update() {} }; // Mirrors the actual FarmAnimals entity shape.
 window.FarmAnimals.init({
   TILE: 64,
   animalObjects: [farmAnimal],
@@ -67,6 +67,7 @@ const farmVoiceStart = played.length;
 window.FarmAnimals.updateAnimalMeshes(11);
 window.FarmAnimals.updateAnimalMeshes(0.4);
 assert.equal(played.length - farmVoiceStart, 3, 'farm livestock produces the full three-beat passive chatter sequence through the shared scheduler and real playback');
+assert.equal(farmAnimal._voiceActor.avatarRef, farmAnimal.avatarRef, 'farm vocalization actor carries its live sprite height into spatial audio');
 assert.ok(played.slice(farmVoiceStart).every(url => url.includes("/sfx_uumkao'ii1.ogg") || url.includes("/sfx_uumkao'ii2.ogg")), 'farm Uumkao’ii uses its existing species-specific vocal assets');
 assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), true, 'despawn releases the farm actor from the vocalization scheduler');
 assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), false, 'releasing an already-despawned actor is harmless');
