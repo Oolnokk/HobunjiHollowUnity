@@ -252,12 +252,12 @@ assert.match(terrainTileMaterials, /loadTerrainTileTexture[\s\S]{0,200}matKey ==
   'authored texture overrides keep the exact same base grass tag');
 assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
   'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
-assert.match(heldRender, /faceB\.y \/ length >= TOP_FACE_MIN_NORMAL_Y/,
-  'the shell occluder geometry excludes upward-facing triangles only');
-assert.match(heldRender, /swappedGeometry = swapToOccluderGeometry\(topFaceGround\)/,
-  'cave shells swap to wall-and-ceiling-only geometry during the depth rebuild');
-assert.match(heldRender, /restoreSwappedGeometry\(swappedGeometry\)/,
-  'shell geometry is restored after the selective depth reconstruction');
+assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGround\]/,
+  'cave shell floors stay in the depth buffer so elevation decides which top faces may be x-rayed');
+assert.doesNotMatch(heldRender, /swapToOccluderGeometry|restoreSwappedGeometry/,
+  'the old blanket top-face removal cannot bypass the actor-elevation filter');
+assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevation\)/,
+  'cave floor top faces are filtered by the owning actor elevation');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
