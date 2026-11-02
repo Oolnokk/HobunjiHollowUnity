@@ -343,9 +343,38 @@
     return true;
   }
 
+  const ROOM_AUTHORING_CATEGORIES = Object.freeze({
+    chordPressurePlates:'activators', lockableStoneDoor:'mechanisms', stoneCanopy:'decorations',
+    ceilingProjectileGlyph:'activators', balconyRopeElevatorComposer:'mechanisms', ropeTraverse:'mechanisms',
+    cyclingElevator:'mechanisms', sunkenRoomShell:'decorations', sarcophagusSpawner:'mechanisms',
+    ossuaryComposer:'mechanisms', hallwayGlyphGate:'activators', ropeVariant:'mechanisms',
+    ropePayoff:'decorations', lavaBasin:'mechanisms', ceilingRailTargets:'activators',
+    greatDoorSanctum:'mechanisms',
+  }); // Room module type -> the independent authored allowlist it must satisfy.
+
+  function roomAuthoringPlan(roomId) {
+    return state?.context?.meta?.rooms?.find(room=>String(room.id)===String(roomId))?.roomAuthoringPlan
+      || (state?.context?.meta?.roomAuthoringPlans||[]).find(plan=>String(plan.roomId)===String(roomId))
+      || null;
+  }
+
+  function canClaimRoomSpot(roomId, category, type) {
+    const authoring = window.DevRandomRuinRoomAuthoring;
+    if (!authoring?.canClaimSpotForPlan) return true; // Legacy rooms continue unchanged if the authoring module is absent.
+    return authoring.canClaimSpotForPlan(roomAuthoringPlan(roomId),roomId,category,type);
+  }
+
+  function claimRoomSpot(roomId, category, type, options = {}) {
+    const authoring = window.DevRandomRuinRoomAuthoring;
+    if (!authoring?.claimSpotForPlan) return {ok:true,legacy:true};
+    return authoring.claimSpotForPlan(roomAuthoringPlan(roomId),roomId,category,type,options);
+  }
+
   function recordModulePlacement(type, slotKind, slotId, extra = {}) {
     if(!state)return null;
     const record={type,slotKind,slotId:String(slotId||''),...extra}; // Runtime diagnostics use these records to prove compound puzzles are assembled from reusable pieces rather than one bespoke scene.
+    const category=ROOM_AUTHORING_CATEGORIES[type],roomId=extra.roomId??(slotKind==='room'?slotId:null); // Used to bind every room-level module record back to its authored spot allowlist.
+    if(category&&roomId!=null){const claim=claimRoomSpot(roomId,category,type,{claimId:String(type)+':'+String(slotId||roomId)});record.roomAuthoring={category,allowed:!!claim.ok,spotId:claim.spot?.id||null,reason:claim.reason||null};}
     state.modulePlacements.push(record);
     return record;
   }
@@ -922,7 +951,7 @@
   }
 
   function buildRopeSwing(context,rng,usedRooms,options={}) {
-    const candidates=options.room?[options.room]:usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id));
+    const candidates=options.room?[options.room].filter(room=>canClaimRoomSpot(room.id,'mechanisms','ropeTraverse')):usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)&&canClaimRoomSpot(room.id,'mechanisms','ropeTraverse'));
     for(const room of candidates){
       const bounds=roomBounds(context.meta,room);
       let pa=null,pb=null;
@@ -1079,6 +1108,7 @@
     if(!slot)return null;
     const isHallway=slot.kind==='hallway';
     const owner=slot.owner;
+    if(!isHallway&&!canClaimRoomSpot(owner?.id,'activators','chordPressurePlates'))return null;
     const id=String(owner?.id||('slot-'+state.chordPlateSets.length));
     const points=[];
     if(isHallway){
@@ -1147,6 +1177,7 @@
   }
 
   function buildLockableDoorModule(context, room, options = {}) {
+    if(!canClaimRoomSpot(room?.id,'mechanisms','lockableStoneDoor'))return null;
     const doorway=options.doorway||roomDoorway(context,room);
     if(!doorway)return null;
     const support=sampleSupport(doorway.x,doorway.z);
@@ -1192,6 +1223,7 @@
   }
 
   function buildStoneCanopyModule(context, room, anchor = null, options = {}) {
+    if(!canClaimRoomSpot(room?.id,'decorations','stoneCanopy'))return null;
     const bounds=roomBounds(context.meta,room);
     const support=anchor?sampleSupport(anchor.x,anchor.z):roomPatch(context,room,3.4,2.8);
     const x=anchor?.x??support?.centerX,z=anchor?.z??support?.centerZ,baseY=Number(anchor?.topY??support?.y);
@@ -1241,6 +1273,7 @@
   }
 
   function buildCeilingGlyphModule(context,room,anchor,options={}) {
+    if(!canClaimRoomSpot(room?.id,'activators','ceilingProjectileGlyph'))return null;
     const ceilingBase=Number(context.meta?.floorSurfaceY)||0,wallHeight=Number(context.meta?.wallHeight)||3;
     const ceilingY=ceilingBase+wallHeight; // Actual textured-ceiling/wall-top datum; no -0.34 floating target translation.
     const x=Number(anchor?.x),z=Number(anchor?.z);
@@ -1324,6 +1357,7 @@
   }
 
   function buildCyclingElevatorModule(context,room,options={}) {
+    if(!canClaimRoomSpot(room?.id,'mechanisms','cyclingElevator'))return null;
     const region=options.region||deepestSunkenRegionForRoom(context,room);
     if(!region)return null;
     const cs=worldCellSize(context.meta),step=Math.abs(Number(context.meta?.plateauModel?.stepHeight)||.42);
@@ -1522,6 +1556,7 @@
   }
 
   function buildSarcophagusSpawnerModule(context,rng,room,options={}) {
+    if(!canClaimRoomSpot(room?.id,'mechanisms','sarcophagusSpawner'))return null;
     const root=new THREE.Group();root.name='dev_ruin_sarcophagus_set_'+room.id;state.group.add(root);
     const coffins=[];
     for(const [index,p] of sarcophagusPlacements(context,room,options.bounds||null).entries()){
@@ -1773,6 +1808,7 @@
       ropeConstants:{ROPE_GRAB_ABOVE_LAUNCH,ROPE_DESTINATION_RISE,ROPE_MIN_LENGTH,ROPE_COLLISION_RADIUS,ROPE_MAX_ANGLE},
       naturalizeStone, makeBasic, sharedBoxGeometry, sharedCylinderGeometry, disposeObject,
       recordModulePlacement,
+      roomAuthoringPlan, canClaimRoomSpot, claimRoomSpot,
       playerWorld, setPlayerWorld,
       playKurrayaPlateNote, playStoneUnlockKchunk, playLavaSizzle,
       lavaMaterial:()=>state.lavaMaterial||(state.lavaMaterial=createLavaMaterial()),
@@ -2331,6 +2367,7 @@
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
       modules:state.modulePlacements.map(module=>({...module})),
+      roomAuthoring:{report:state.context.meta?.roomAuthoringReport||null,diagnostics:window.DevRandomRuinRoomAuthoring?.getDiagnostics?.(state.context.meta)||{claims:[],rejections:[]},plans:(state.context.meta?.roomAuthoringPlans||[]).map(plan=>({roomId:plan.roomId,source:plan.source,templateId:plan.templateId||null,profileId:plan.profileId||null,spots:plan.spots?.length||0,puzzleLinks:plan.puzzleLinks?.length||0}))},
       composers:Object.fromEntries(composers.map(composer=>[composer.id||'composer',composer.snapshot?.(state.kit)||null])),
       spawnedMinions:state.spawnedMinions.size,
       liveProjectiles:state.projectiles.length,
