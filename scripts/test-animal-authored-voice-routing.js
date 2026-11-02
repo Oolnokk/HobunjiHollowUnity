@@ -74,7 +74,6 @@ assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor),
 
 window.AnimalVocalizations.setAuthoredProfiles({});
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('gar-wolf')), true, 'legacy voice eligibility survives missing authored data');
-assert.ok(true, 'legacy eligibility is checked separately from the already-covered shared playback path');
 window.AnimalVocalizations.setAuthoredProfiles(config.animalVocalizations); // Restore authored profiles for the suppression checks below.
 assert.equal((read('docs/js/farm-animals.js').match(/releaseCreature\?\./g) || []).length, 2, 'both farm livestock constructors release their scheduler actors on reset');
 
