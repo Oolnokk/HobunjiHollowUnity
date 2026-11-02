@@ -523,8 +523,13 @@
   function updateThrownChargeStamina() {
     const charge = thrownCharge;
     if (!charge) return;
+    const player = window.Combat?.deps?.player; // Same actor whose held-charge Stamina transaction is being funded.
     const poseCharge = Number(window.RangedWeapons?.playerWindupPoseProgress?.());
     if (Number.isFinite(poseCharge)) payThrownChargeStamina(charge, Math.max(0, Math.min(1, poseCharge)), 'Thrown weapon charge (holding)');
+    const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(player, 'stamina', {
+      actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+    }) || []).length > 0;
+    if (player?.stamina <= 0 && !hasEnhancedStamina) releaseThrownCharge('stamina-depleted'); // Mirrors Charged Breaker's automatic release when neither ordinary nor enhanced Stamina can fund another charge segment.
   }
 
   function releaseThrownCharge(source = 'release') {
