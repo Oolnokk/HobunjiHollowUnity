@@ -48,7 +48,10 @@
     const axis = width >= depth ? 'x' : 'z';
     const dir = axis === 'x' ? { x:1, z:0 } : { x:0, z:1 };
     const start = axis === 'x' ? bounds.minX : bounds.minZ, end = axis === 'x' ? bounds.maxX : bounds.maxZ;
-    const cross = axis === 'x' ? (bounds.minZ + bounds.maxZ) * .5 : (bounds.minX + bounds.maxX) * .5;
+    const authoredSpot=kit.availableRoomSpot?.(room.id,'mechanisms','ropeVariant');
+    const authoredCross=authoredSpot?.world?(axis==='x'?Number(authoredSpot.world.z):Number(authoredSpot.world.x)):null;
+    const cross = Number.isFinite(authoredCross) && authoredCross>(axis==='x'?bounds.minZ:bounds.minX)+PLATFORM_CROSS*.5 && authoredCross<(axis==='x'?bounds.maxZ:bounds.maxX)-PLATFORM_CROSS*.5
+      ? authoredCross : (axis === 'x' ? (bounds.minZ + bounds.maxZ) * .5 : (bounds.minX + bounds.maxX) * .5);
     const crossSpan = axis === 'x' ? depth : width;
     const at = along => axis === 'x' ? { x:along, z:cross } : { x:cross, z:along };
     let floorY = null;
