@@ -73,6 +73,9 @@ assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9, 'ordina
 assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9, 'chase speed also follows the player’s current effective pace');
 assert.equal(sourceDef.moveSpeed, 100, 'shared species moveSpeed remains unchanged');
 assert.equal(sourceDef.chaseSpeed, 160, 'shared species chaseSpeed remains unchanged');
+const playerPetDefinitionProxy = playerPet.def; // Retained to prove the per-frame discovery pass is idempotent.
+api.update();
+assert.strictEqual(playerPet.def, playerPetDefinitionProxy, 'repeated companion scans do not wrap an entity definition more than once');
 
 combatMul = 0.8;
 assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
@@ -121,6 +124,12 @@ companionObjects.add(npcPet);
 api.update();
 assert.equal(npcPet.def.moveSpeed, 90, 'NPC-owned companion uses the owner’s move speed and current NPC movement modifier');
 assert.equal(npcPet.def.chaseSpeed, 127.5, 'NPC-owned companion uses the owner’s chase speed and current NPC movement modifier');
+windowStub._npcWalkers.set('npc-owner', {
+  rec: { id: 'npc-owner' },
+  _moveSpeedTiles: 4,
+  root: { position: { x: 2, z: 2 } },
+});
+assert.equal(npcPet.def.moveSpeed, 128, 'a live NPC walker’s current catch-up pace takes precedence over its static authored species speed');
 
 npcPet.ownerMovementSpeedPercent = 50;
 assert.equal(npcPet.def.moveSpeed, 45, 'an explicit owner-speed percentage scales the live owner speed');
