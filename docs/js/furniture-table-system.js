@@ -40,7 +40,7 @@
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
       if (data.puzzle || root.userData?.furniturePuzzle)
-        window.FurniturePuzzleRuntime?.registerNode?.(area, { id, key:record.key, puzzle:record.puzzle }, root);
+        window.FurniturePuzzleRuntime?.registerNode?.(area, { id, key:record.key, puzzle:record.puzzle || data.puzzle }, root);
       const bounds = new window.THREE.Box3().setFromObject(root); // One asset-readiness measurement, never scene traversal during interaction queries.
       if (!bounds.isEmpty()) entry.height=(bounds.max.y-bounds.min.y)/Math.max(.001,Math.abs(root.scale?.y||1));
       if(record.walkableElevation)window.HobunjiWalkableElevation?.registerObject?.(root,{id:`placed-furniture:${area}:${id}`,kind:'placed-furniture',area,sourceId:id,sourceKey:record.key}); // Reuses the inn-stage/porch support registry for both player and NPC elevation.
