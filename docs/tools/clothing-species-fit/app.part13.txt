@@ -309,13 +309,26 @@ E.stage.addEventListener('pointermove', event => {
   lastBeardHoodPoint = point;
 }, true);
 for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) E.stage.addEventListener(name, finishBeardHoodMaskStroke, true);
-maskUi.mode.onchange = () => {
+function applyBeardHoodMaskKind(kind) {
+  if (kind !== 'hood' && kind !== 'beard') return;
+  maskUi.mode.value = kind;
+  maskUi.pickHood.classList.toggle('active', kind === 'hood');
+  maskUi.pickBeard.classList.toggle('active', kind === 'beard');
   filterBeardHoodCosmetics();
-  const original = E.garment.onchange;
-  if (typeof original === 'function') original();
+  // Dispatch on the actual garment picker so its normal preview/update pipeline runs too.
+  E.garment.dispatchEvent(new Event('change', { bubbles: true }));
   rebuildBeardHoodReferenceOptions();
   loadBeardHoodMask();
-};
+}
+maskUi.mode.addEventListener('change', () => applyBeardHoodMaskKind(beardHoodMaskKind()));
+maskUi.pickHood.addEventListener('click', event => {
+  event.preventDefault();
+  applyBeardHoodMaskKind('hood');
+});
+maskUi.pickBeard.addEventListener('click', event => {
+  event.preventDefault();
+  applyBeardHoodMaskKind('beard');
+});
 maskUi.reference.onchange = loadBeardHoodReference;
 maskUi.size.oninput = () => { maskUi.sizeLabel.textContent = `${maskUi.size.value} px`; };
 maskUi.paint.onclick = () => { activeBeardHoodBrush = 'paint'; maskUi.paint.classList.add('active'); maskUi.erase.classList.remove('active'); };
@@ -333,8 +346,7 @@ maskUi.clear.onclick = () => {
 maskUi.export.onclick = exportBeardHoodCosmeticConfig;
 maskUi.undo.onclick = undoBeardHoodMask;
 maskUi.redo.onclick = redoBeardHoodMask;
-maskUi.pickHood.onclick = () => { maskUi.mode.value = 'hood'; maskUi.mode.dispatchEvent(new Event('change')); };
-maskUi.pickBeard.onclick = () => { maskUi.mode.value = 'beard'; maskUi.mode.dispatchEvent(new Event('change')); };
+// Click listeners are installed beside applyBeardHoodMaskKind above.
 const originalFitRegionChange = E.fitRegion.onchange;
 E.fitRegion.onchange = (...args) => {
   if (typeof originalFitRegionChange === 'function') originalFitRegionChange(...args);
