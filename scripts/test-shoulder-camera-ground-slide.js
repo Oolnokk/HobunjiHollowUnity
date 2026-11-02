@@ -16,6 +16,7 @@ const context = vm.createContext({
   currentAreaOcclusionMeshes: () => [],
   performance: { now: () => 1000 },
   THREE: { MathUtils: { degToRad: degrees => degrees * Math.PI / 180 } },
+  clampCameraPitchOffsetDeg: (value, baseAngleDeg = 9) => Math.max(-90 - baseAngleDeg, Math.min(90 - baseAngleDeg, Number(value) || 0)), // Mirrors the production absolute-vertical clamp for the extracted camera update.
   window: { FormatUtils: { clamp: (n, lo, hi) => Math.max(lo, Math.min(hi, n)) } },
   _cameraOcclusionOriginVec: { set() { return this; } },
   _cameraOcclusionDirVec: { set() { return this; } },
@@ -43,6 +44,15 @@ for (const height of [0.04, 0.1, 0.15, 0.2, 0.465, 0.62, 0.95]) {
     assert.ok(boom.solvedDistance > 0, 'short characters never collapse onto the look target');
     assert.ok(boom.solvedDistance <= previousDistance + 1e-6, 'greater upward pitch brings camera closer');
     previousDistance = boom.solvedDistance;
+  }
+}
+
+for (const height of [0.15, 0.465, 0.95]) {
+  for (const pitch of [85, 89, 90]) {
+    const angle = pitch * Math.PI / 180; // Camera above the target looks down by the requested absolute angle.
+    const result = context.solve(0, height, 0, 0, height + Math.sin(angle) * 1.3, Math.cos(angle) * 1.3);
+    const solvedDownPitch = Math.atan2(result.y - height, Math.hypot(result.x, result.z)) * 180 / Math.PI;
+    assert.ok(Math.abs(solvedDownPitch - pitch) < 1e-7, `height ${height}: preserves ${pitch} degree downward aim`);
   }
 }
 
