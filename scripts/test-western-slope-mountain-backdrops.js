@@ -5,6 +5,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('docs/js/western-slope-mountain-backdrops.js', 'utf8'); // Production backdrop module exercised by the THREE shim below.
+const snowSurfaceSource = fs.readFileSync('docs/js/environment-surface-micro-plateau.js', 'utf8'); // Canonical snow material owner shared by each decorative cap.
 const environmentBootstrap = fs.readFileSync('docs/js/environment-surface-runtime.js', 'utf8'); // Loads the production backdrop module before game boot.
 const author = fs.readFileSync('docs/tools/background-scenery-author/index.html', 'utf8'); // The author preview must load the same runtime module.
 const mountainAuthor = fs.readFileSync('docs/tools/background-scenery-author/mountain-backdrop-author.js', 'utf8'); // Existing author controls retain their transform API.
@@ -16,7 +17,7 @@ assert.match(source, /const RIDGE_LENGTH_MAP_MULTIPLIER = 2/, 'each complete roc
 assert.match(source, /const SNOW_CAP_HEIGHT_FRACTION = 2 \/ 3/, 'snow must cover the upper two-thirds of each rock');
 assert.match(source, /farm-cliff-planar-stretch/, 'snow cap UVs must use the same planar stretch-to-fit method as farm cliffs');
 assert.match(source, /new T\.LineSegments/, 'the stone/snow boundary must retain a visible outline');
-assert.match(source, /getSnowMaterial: \(\) => material\('snow'\)/, 'rock caps must reuse the canonical Western Slope snow material');
+assert.match(snowSurfaceSource, /getSnowMaterial: \(\) => material\('snow'\)/, 'rock caps must reuse the canonical Western Slope snow material');
 assert.match(source, /decorativeRockRidges:true/, 'replacement scenery must identify itself as decorative ridges');
 assert.match(source, /visualOnly:true/, 'replacement scenery must be visual only');
 assert.doesNotMatch(source, /diggableRockOre|mineableRocksByTile|oreKey/, 'backdrop rocks must never register as mineable resources');
