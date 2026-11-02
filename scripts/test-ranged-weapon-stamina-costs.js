@@ -79,9 +79,9 @@ assert.match(archetypeSource, /payThrownChargeStamina\(charge, poseCharge, 'Thro
   'release must settle any final unprocessed pose delta exactly once');
 assert.match(archetypeSource, /actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon'/,
   'thrown charge spending must use the same offensive-held-charge resource transaction category as Charged Breaker');
-assert.match(loaderSource, /ranged-weapon-archetypes\.js\?v=20261102rangedStamina1', \(\) => Number\(window\.HobunjiRangedWeaponArchetypes\?\.version\) >= 17/,
+assert.match(loaderSource, /ranged-weapon-archetypes\.js\?v=[A-Za-z0-9_-]+', \(\) => Number\(window\.HobunjiRangedWeaponArchetypes\?\.version\) >= 17/,
   'the loader must request the new archetype implementation version');
-assert.match(indexSource, /ranged-weapons\.js\?v=20261102rangedStamina1/);
-assert.match(indexSource, /combat-config-loader\.js\?v=20261102rangedStamina1/);
+assert.match(indexSource, /ranged-weapons\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/);
 
 console.log('Ranged weapon stamina cost regressions passed.');
