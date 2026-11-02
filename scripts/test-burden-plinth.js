@@ -64,8 +64,9 @@ assert.match(mapEditor, /behavior:'burdenPlate',channel:'A',completionChannel:'B
 assert.match(mapEditor, /payloadSurfaceId:'burden_plinth_lower:surface:2'/);
 
 const localeEditor = read('docs/tools/locale-editor/index.html');
-assert.match(localeEditor, /puzzle:data\.puzzle \? JSON\.parse\(JSON\.stringify\(data\.puzzle\)\)/);
-assert.match(localeEditor, /if \(p\.puzzle\) obj\.puzzle = window\.FurniturePuzzleProperties/);
+assert.match(localeEditor, /puzzle:data\.puzzle \? \{/);
+assert.match(localeEditor, /if \(!hasMotionOverride && normalizedPuzzle\) delete normalizedPuzzle\.motion/);
+assert.match(localeEditor, /if \(p\.puzzle\) obj\.puzzle = JSON\.parse\(JSON\.stringify\(p\.puzzle\)\)/);
 
 assert.match(interactions, /puzzle:record\.puzzle \|\| data\.puzzle/,
   'async furniture registration must fall back to the loaded authored puzzle definition');
