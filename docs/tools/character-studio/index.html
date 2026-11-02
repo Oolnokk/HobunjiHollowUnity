@@ -856,7 +856,7 @@ function asEquipArray(v) {
 let target = { kind: 'player' };
 let work = makeWork('mao-ao', 'male');
 let npcAppearancePass = 0; // Discards slow pattern-layer results after changing the selected NPC or garment.
-let _npcPreviewLayerOrder = 'default'; resetNpcPreviewLayerOrders(); // Legacy preset state retained for compatibility with older preview callers.
+let _npcPreviewLayerOrder = 'default'; // Legacy preset state retained for compatibility with older preview callers.
 let _npcFrontLayerOrder = []; // Editor-only front-view order; excluded from NPC records.
 let _npcBehindLayerOrder = []; // Editor-only rear-view order; excluded from NPC records.
 const NPC_PREVIEW_LAYER_LABELS = {
