@@ -120,6 +120,13 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const elevatorSocketCallNeedle = "const elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07);";
     const elevatorSocketCallReplacement = "const socketExit=path?.[1]?{dx:Math.sign(path[1].x-source.x),dz:Math.sign(path[1].z-source.z)}:null,elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07,socketExit);";
 
+    // Apply authored room masks after V50 has solved topology and doorway coordinates,
+    // but before its wall/floor meshes and plateau surfaces are built from floorSet.
+    const roomAuthoringNeedle = 'const normalized=normalizeInteriorNetwork(rooms,hallways,doorways,cellSize,targetRooms);normalized.veryLargeRoomCount=veryLargeCount;assignDungeonProgression(normalized);return normalized;';
+    const roomAuthoringReplacement = "const normalized=normalizeInteriorNetwork(rooms,hallways,doorways,cellSize,targetRooms);normalized.veryLargeRoomCount=veryLargeCount;assignDungeonProgression(normalized);const roomAuthoring=window.parent?.DevRandomRuinRoomAuthoring;if(roomAuthoring){const result=roomAuthoring.applyToNetwork(normalized,{seed:String($('localeSeed')?.value||'ruin')});if(!result.ok)console.warn('[Ruin room authoring] rejected layout',result.errors);}return normalized;";
+    const roomAuthoringMetaNeedle = 'rooms:network.rooms.map(r=>({...r})),hallways:network.hallways.map(h=>({...h,puzzleFree:true,transitionZone:true})),doorways:network.doorways.map(d=>({...d,hallwayRole:hallwayDoorRole(d)})),floorCells,';
+    const roomAuthoringMetaReplacement = 'rooms:network.rooms.map(r=>({...r})),hallways:network.hallways.map(h=>({...h,puzzleFree:true,transitionZone:true})),doorways:network.doorways.map(d=>({...d,hallwayRole:hallwayDoorRole(d)})),roomAuthoringPlans:(network.roomAuthoringPlans||[]).map(plan=>({...plan,footprint:plan.footprint?{...plan.footprint,rows:plan.footprint.rows.slice()}:null,spots:plan.spots.map(spot=>({...spot,allowlists:{...spot.allowlists}})),puzzleLinks:(plan.puzzleLinks||[]).map(link=>({...link}))})),roomAuthoringCutCells:(network.roomAuthoringCutCells||[]).map(cell=>cell.slice()),roomAuthoringReport:network.roomAuthoringReport?{...network.roomAuthoringReport}:null,floorCells,';
+
     const patches = [
       // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
       ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomLarge===true)forcedLabel='veryLarge';"],
@@ -153,6 +160,8 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['push reserved segment footprint clearance', pushReservationClearanceNeedle, pushReservationClearanceReplacement],
       ['elevator socket authored exit', elevatorSocketExitNeedle, elevatorSocketExitReplacement],
       ['elevator socket first-push direction', elevatorSocketCallNeedle, elevatorSocketCallReplacement],
+      ['authored and procedural room masks', roomAuthoringNeedle, roomAuthoringReplacement],
+      ['room authoring metadata export', roomAuthoringMetaNeedle, roomAuthoringMetaReplacement],
     ];
 
     let patched = sourceText;
