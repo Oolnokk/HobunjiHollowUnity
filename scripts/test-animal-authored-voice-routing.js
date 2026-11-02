@@ -71,6 +71,7 @@ assert.equal(farmAnimal._voiceActor.avatarRef, farmAnimal.avatarRef, 'farm vocal
 assert.ok(played.slice(farmVoiceStart).every(url => url.includes("/sfx_uumkao'ii1.ogg") || url.includes("/sfx_uumkao'ii2.ogg")), 'farm Uumkao’ii uses its existing species-specific vocal assets');
 assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), true, 'despawn releases the farm actor from the vocalization scheduler');
 assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), false, 'releasing an already-despawned actor is harmless');
+assert.equal((read('docs/js/farm-animals.js').match(/releaseCreature\?\./g) || []).length, 2, 'both farm livestock constructors release their scheduler actors on reset');
 
 const start = played.length; // Silence/range/combat/mount guards must still suppress playback.
 assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('puktuk'), { allowedClips: [] }), false);
