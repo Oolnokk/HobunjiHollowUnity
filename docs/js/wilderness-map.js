@@ -751,6 +751,9 @@
     init,
     updateFogAroundPlayer: updateZoneFogAroundPlayer,
     renderMapPanel: renderWildernessMapPanel,
+    renderRuinJsonExport: (tabsEl = document.getElementById('wmapZoneTabs')) => {
+      if (tabsEl) _renderRuinJsonExport(tabsEl, deps.getCurrentArea());
+    },
     setWaypoint,
     clearWaypoint,
     clearWaypointForThreat,
