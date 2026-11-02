@@ -936,8 +936,7 @@
         if(owner.ended||session!==owner){floor.dispose();return;}
         // Halve substrate thickness without shrinking its XZ footprint. Sink the bottom
         // root layer so its vertical center sits just below ground, clipping its lower half.
-        const rootBox=new THREE.Box3().setFromObject(floor.targetGrowth);
-        const rootHeight=Math.max(.001,rootBox.max.y-rootBox.min.y);
+        const rootBox=new THREE.Box3().setFromObject(floor.targetGrowth); // Snapshot confirms the authored substrate has generated bounds before compression.
         floor.targetGrowth.scale.y*=.5;
         floor.targetGrowth.updateMatrixWorld(true);
         const compressedBox=new THREE.Box3().setFromObject(floor.targetGrowth);
