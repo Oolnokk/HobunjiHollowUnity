@@ -9,7 +9,10 @@ const loader = read('docs/js/held-action-animations.js'); // No masking helper s
 const architecture = read('docs/architecture/held-object-water-depth-compositing.md'); // Documents the currently enabled layering contract.
 
 assert.doesNotMatch(compositor, /HeadRelativeWeaponOcclusion|headGroups|headHidden|headRelativeHeld/, 'the game has no owner-backplane stencil pass or special head-relative render path');
-assert.match(compositor, /if \(overlayMeshes\.length\) \{\s*const overlayStates = tintOverlay \? prepareSubmergedOverlayStencilMaterials\(overlayMeshes\) : null;/, 'all held tools enter the same overlay and water-tint path');
+const selectiveStart = compositor.indexOf('function replaySelectiveHeldOverlay(');
+const selectiveEnd = compositor.indexOf('function isShellOutlinePass(', selectiveStart);
+const selectiveReplay = compositor.slice(selectiveStart, selectiveEnd);
+assert.match(selectiveReplay, /for \(const group of groups\)[\s\S]*?const overlayStates = tintOverlay \? prepareSubmergedOverlayStencilMaterials\(group\.meshes\) : null;/, 'held tools share the overlay and water-tint path within each actor-elevation group');
 assert.match(compositor, /if \(!ground\.length && !topFaceGround\.length && !\(tintCovers\.length && \(held\.length \|\| feet\.length\)\)\) return originalRender/, 'interiors without replay requirements take the ordinary render path');
 assert.doesNotMatch(editor, /HeadRelativeWeaponOcclusion|headOcclusion|weapon\.visible = false/, 'the attack editor cannot mask or temporarily hide head-anchored tools');
 const animationStart = editor.indexOf('function animate()'); // Inspect the actual editor preview loop rather than assuming no weapon animation call can appear between controls and render.
