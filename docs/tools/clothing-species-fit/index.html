@@ -40,6 +40,7 @@
         <section id="beardHoodMaskEditor" class="maskEditor" hidden>
           <h2>Beard / hood overpass masks</h2>
           <div class="field"><label for="beardHoodMaskMode">Mask target</label><select id="beardHoodMaskMode"><option value="hood">Hood reveal area — matching beard coordinates pass above this hood</option><option value="beard">Beard priority — these beard pixels pass above hoods anywhere</option></select></div>
+          <div class="field"><label for="beardHoodReference">Ghost reference layer</label><select id="beardHoodReference"><option value="">None</option></select></div>
           <div class="field"><label for="beardHoodBrushSize">Brush radius</label><input id="beardHoodBrushSize" type="range" min="1" max="18" value="4"><span id="beardHoodBrushValue" class="small">4 px</span></div>
           <div class="row"><button type="button" id="beardHoodBrushPaint" class="active">Paint</button><button type="button" id="beardHoodBrushErase">Erase</button><label class="small"><input id="beardHoodMaskVisible" type="checkbox" checked> Show mask</label></div>
           <div class="row"><button type="button" id="beardHoodMaskClear">Clear this mask</button><button type="button" id="beardHoodMaskExport">Export selected cosmetic JSON</button></div>
