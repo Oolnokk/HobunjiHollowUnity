@@ -632,7 +632,21 @@
     }
   }
 
+  // The timer autosave serializes the full checkpoint (JSON.stringify plus a
+  // synchronous localStorage.setItem, hundreds of ms on a big save). Capture
+  // stays immediate so the record reflects the moment the timer fired, but the
+  // write waits for an idle slice so it does not land in the middle of a frame.
+  let autoSaveGeneration = 0;
+
+  function waitForIdle(timeout = 2000) {
+    return new Promise((resolve) => {
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => resolve(), { timeout });
+      else setTimeout(resolve, 50);
+    });
+  }
+
   async function saveAuto({ reason = 'timer', mapChange = false } = {}) {
+    const generation = ++autoSaveGeneration;
     markHydrated();
     if (window.HobunjiAutosavePause?.isPaused?.()) { // Dev Companion autosave pause keeps rolling recovery history at its pre-pause checkpoints.
       autosavesSkipped++;
@@ -685,6 +699,15 @@
         }
         lastError = status?.lastError || '';
         return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
+      }
+
+      if (reason === 'timer' && !mapChange) {
+        await waitForIdle();
+        if (generation !== autoSaveGeneration) { // A newer save (e.g. visibility-hidden) already wrote fresher data; never overwrite it with this older capture.
+          autosavesSkipped++;
+          lastAction = 'autosave-skipped-superseded';
+          return { ok: true, skipped: true, reason: 'superseded' };
+        }
       }
 
       const record = mapChange ? createRecord('map-change', snapshot, reason)
