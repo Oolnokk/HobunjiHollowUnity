@@ -1,0 +1,35 @@
+{
+  "schema": "hobunji_ruin_room_library.v1",
+  "version": 1,
+  "templates": [],
+  "proceduralProfiles": [
+    {
+      "id": "generated-room-default",
+      "name": "Generated room — flexible encounter layout",
+      "enabled": true,
+      "weight": 1,
+      "match": {
+        "minWidth": 8,
+        "maxWidth": 48,
+        "minHeight": 8,
+        "maxHeight": 48,
+        "minDoors": 0,
+        "maxDoors": 8,
+        "sizeClasses": [],
+        "roomIds": []
+      },
+      "spots": [
+        { "id": "center", "label": "Center", "u": 0.5, "v": 0.5, "clearance": 1.1, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "north-west", "label": "North-west", "u": 0.25, "v": 0.25, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "north-east", "label": "North-east", "u": 0.75, "v": 0.25, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "south-west", "label": "South-west", "u": 0.25, "v": 0.75, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "south-east", "label": "South-east", "u": 0.75, "v": 0.75, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "north-mid", "label": "North side", "u": 0.5, "v": 0.18, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "east-mid", "label": "East side", "u": 0.82, "v": 0.5, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "south-mid", "label": "South side", "u": 0.5, "v": 0.82, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
+        { "id": "west-mid", "label": "West side", "u": 0.18, "v": 0.5, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } }
+      ],
+      "puzzleLinks": []
+    }
+  ]
+}
