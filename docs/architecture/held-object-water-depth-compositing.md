@@ -11,10 +11,13 @@
 
 ## Source of truth
 
+- **Shared surface policy:** `docs/js/surface-occlusion-composer.js` —
+  owns the canonical surface categories and reusable per-effect decisions.
+  Held-object and shell-outline replay are the first consumers; other character
+  x-ray effects should migrate to this same API rather than add local rules.
 - **Compositor:** `docs/js/held-object-render-order.js` — wraps
-  `THREE.WebGLRenderer.prototype.render`, classifies meshes, owns depth
-  reconstruction, stencil, translucent tint, temporary camera layers, culling
-  and scissor.
+  `THREE.WebGLRenderer.prototype.render`, owns depth reconstruction, stencil,
+  translucent tint, temporary camera layers, culling and scissor.
 - **Gameplay orchestration:** `docs/game.js` — renders the base world to
   the game render target, then optionally applies the fullscreen
   outline/painterly composite. The selective compositor runs on the genuine
@@ -82,6 +85,48 @@ get separate depth replays. The shell-outline pass uses the same grouping and
 fragment filter, so an object's visible pixels and expanded shell cannot
 disagree about which ground level blocks them. The final colorless ground
 restore remains before translucent water/slush tinting.
+
+## Shared surface occlusion composer
+
+`surface-occlusion-composer.js` is the policy layer shared by world/character
+occlusion consumers. It classifies base ground, paths, walkable interior floors,
+water, slush, snow, standing grass billboards and ordinary solid geometry, then
+returns the same decisions for each effect:
+
+- Base grass, authored paths and tagged walkable floors may use the
+  same-elevation/upward-face x-ray rule. An unknown actor elevation fails closed.
+- Water and slush are translucent covers: they may tint a visible held/hand/foot
+  pixel, and their colorless depth is restored after tint. Snow and standing
+  grass remain solid covers.
+- A shell outline inherits the source mesh's ground policy; it must not invent
+  a second set of visibility exceptions.
+
+The first registered consumers are `held-overlay` and `shell-outline`.
+Feet participate through the held overlay. Hats, portrait planes, chatheads and
+other character/world x-ray effects are **not all migrated yet**; they should
+call `classifySurface()` and `resolvePolicy()` as they are brought onto the
+shared contract. The composer deliberately does not own WebGL render order, so
+consumers can adopt it incrementally without moving their render passes.
+
+`classifySurface(object, hints)` owns the material/tag categories. The optional
+hints carry geometry facts that cannot be inferred safely from a material
+alone: `topFaceGround`, `baseGround`, and `walkableFloor`. The held renderer
+computes those facts with the existing terrain/floor tests and reuses one hint
+object during its synchronous scene scan. `pathSurface` is a boolean
+tri-state contract: when supplied, either `true` or `false` is authoritative;
+when omitted, the composer checks the `hobunjiPathSurface` ancestor tag itself.
+Future consumers should use this same hint contract (or a shared hint resolver)
+instead of recreating terrain and hierarchy rules inside each effect. For
+elevation-dependent ground decisions, pass `actorElevation` to
+`resolvePolicy()`; an unknown elevation is explicitly fail-closed.
+
+For merged water, the ordinary animated color shader is unchanged and retains
+`depthWrite: false`. The compositor temporarily toggles
+`uHobunjiSurfaceOcclusionDepthOnly` only for its colorless depth passes. In
+that mode, the shader discards fragments whose authored alpha is below the
+shared `WATER_DEPTH_ALPHA_THRESHOLD` (currently 0.12). The threshold affects
+depth coverage only; normal visible water alpha and tint are untouched. The
+uniform is restored with the material state after every replay.
 
 ## Head-relative tools
 
@@ -275,6 +320,9 @@ procedural hands/feet, depth textures or render-target setup:
 - Also verify the **opposite** scenario: actual water/slush *in
   front of* animated feet, procedural hands, and an equipped weapon
   tints only submerged portions; snow and solid props still occlude.
+- After the depth replay, confirm water's
+  `uHobunjiSurfaceOcclusionDepthOnly` uniform returns to 0. The alpha
+  threshold is used only in colorless depth passes, never normal water color.
 - Run `node scripts/test-town-render-hotpaths.js` and the repository's
   full Regression suite. These guard against ordering/source regressions
   but do **not** prove the actual GPU pixels; the above live flood/

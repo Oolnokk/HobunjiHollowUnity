@@ -22,23 +22,72 @@
 })();
 
 // This file already loads synchronously before game.js. Use that existing
-// bootstrap point to load the decoupled held-object/world-layer policy without
-// adding another render concern back into game.js or index.html.
+// bootstrap point to load the shared surface policy before the renderer that
+// consumes it; keep both modules outside game.js and index.html.
 (() => {
   'use strict';
-  if (window.HeldObjectRenderOrder?.installed) return;
-  const src = 'js/held-object-render-order.js?v=20261102h534bd9f';
+  if (window.HeldObjectRenderOrder?.installed
+      || document.querySelector('script[data-hobunji-held-render-order]')) return;
+
+  const composerSrc = 'js/surface-occlusion-composer.js?v=20261102composer2';
+  const heldSrc = 'js/held-object-render-order.js?v=20261102surfacecomposer4';
+
+  function loadHeldRenderer() {
+    if (window.HeldObjectRenderOrder?.installed
+        || document.querySelector('script[data-hobunji-held-render-order]')) return;
+    const script = document.createElement('script');
+    script.dataset.hobunjiHeldRenderOrder = '1';
+    script.src = heldSrc;
+    script.async = false;
+    script.onerror = () => window.__farmLog?.('[held-layer] render-order module failed to load', 'error');
+    document.head.appendChild(script);
+  }
+
   if (document.readyState === 'loading' && document.currentScript) {
-    document.write(`<script data-hobunji-held-render-order="1" src="${src}"><\/script>`);
+    if (window.SurfaceOcclusionComposer?.installed) {
+      document.write(`<script data-hobunji-held-render-order="1" src="${heldSrc}"><\/script>`);
+    } else {
+      document.write(
+        `<script data-hobunji-surface-occlusion-composer="1" src="${composerSrc}"><\/script>` +
+        `<script data-hobunji-held-render-order="1" src="${heldSrc}"><\/script>`
+      );
+    }
     return;
   }
-  if (document.querySelector('script[data-hobunji-held-render-order]')) return;
-  const script = document.createElement('script');
-  script.dataset.hobunjiHeldRenderOrder = '1';
-  script.src = src;
-  script.async = false;
-  script.onerror = () => window.__farmLog?.('[held-layer] render-order module failed to load', 'error');
-  document.head.appendChild(script);
+
+  if (window.SurfaceOcclusionComposer?.installed) {
+    loadHeldRenderer();
+    return;
+  }
+
+  const existingComposerScript = document.querySelector('script[data-hobunji-surface-occlusion-composer]');
+  if (existingComposerScript) {
+    // If this loader encounters a script whose load event has already fired,
+    // don't wait forever for an event that cannot fire again.
+    if (existingComposerScript.dataset.loadFailed === 'true'
+        || existingComposerScript.dataset.loadComplete === 'true') {
+      loadHeldRenderer();
+    } else {
+      existingComposerScript.addEventListener('load', loadHeldRenderer, { once: true });
+      existingComposerScript.addEventListener('error', loadHeldRenderer, { once: true });
+    }
+    return;
+  }
+
+  const composerScript = document.createElement('script');
+  composerScript.dataset.hobunjiSurfaceOcclusionComposer = '1';
+  composerScript.src = composerSrc;
+  composerScript.async = false;
+  composerScript.onload = () => {
+    composerScript.dataset.loadComplete = 'true';
+    loadHeldRenderer();
+  };
+  composerScript.onerror = () => {
+    composerScript.dataset.loadFailed = 'true';
+    window.__farmLog?.('[surface-occlusion] composer failed to load; using held renderer fallback policy', 'error');
+    loadHeldRenderer();
+  };
+  document.head.appendChild(composerScript);
 })();
 
 // Dedicated action-arch artwork/bootstrap. It owns only HUD presentation;

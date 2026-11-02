@@ -844,7 +844,7 @@
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
        wilderness waterways use the same builder through ZoneTerrainFeatures. -->
-  <script src="js/merged-water-renderer.js?v=20261019h27513c3"></script>
+  <script src="js/merged-water-renderer.js?v=20261102surfacewater1"></script>
   <!-- Wilderness-zone ramp/rock-formation/waterway terrain features
        (window.ZoneTerrainFeatures) — pure scene-graph generation, no other
        window.* system reads; must load before game.js, which calls
@@ -2661,7 +2661,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261102h4298c7c"></script>
+  <script src="js/tool-icon-render.js?v=20261102surfacecomposer5"></script>
   <script src="js/sprite-recolor.js?v=20261028hspriterecoloraudit2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2690,7 +2690,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261101elevationXray1"></script>
+  <script src="js/pixel-probe.js?v=20261102surfaceprobe1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls

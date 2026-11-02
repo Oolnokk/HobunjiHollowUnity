@@ -30,6 +30,16 @@
   const existing = window.HeldObjectRenderOrder;
   if (existing?.installed) return;
 
+  const surfaceComposer = window.SurfaceOcclusionComposer || null;
+  surfaceComposer?.registerConsumer?.('held-overlay');
+  surfaceComposer?.registerConsumer?.('shell-outline');
+  const surfaceClassificationHints = {
+    topFaceGround: false,
+    pathSurface: false,
+    baseGround: false,
+    walkableFloor: false,
+  }; // Reused only inside the synchronous classifier to avoid one hint-object allocation per mesh.
+
   const LEGACY_HELD_RENDER_ORDER = 1.5;
   const DEFAULT_LAYER = 0;
   const SHELL_LAYER = 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
@@ -253,37 +263,79 @@
     return false;
   }
 
-  function groundKind(object) {
-    if (isTopFacesGroundSurface(object)) return null; // A single cavern shell also contains walls; its floor faces need selective clipping below, never whole-mesh removal.
-    if (isProtectedCover(object)) return null; // Snow/slush, water, and billboard grass always occlude held gear, even above a path.
-    if (isRoadSurface(object)) return 'road'; // Authored path-brick groups retain the same x-ray as the underlying grass.
-    if (object?.isMesh && !object.isSkinnedMesh) {
-      const data = object.userData || {}; // Semantic-only floor classification also covers cavern and rooted-ruin floor geometry that does not use InteriorSceneBuilder's material.
-      if (data.hachutuGroundRoot === true) return 'terrain'; // Feet and tools x-ray through the substrate at matching elevation.
-      if (materialMarksInteriorFloor(object.material)
-          || data.cavernWalkableFloor === true
-          || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
-          || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor')) return 'interior-floor';
-    }
-    if (materialMarksBaseGrass(object?.material) && isTerrainSurface(object)) return 'terrain';
-    return null;
-  }
-
   function isSlushSurface(object) {
     if (!object?.isMesh || object.userData?.environmentSurfaceMicroPlateau !== true) return false;
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     return materials.some(entry => entry?.userData?.environmentSurfaceMicroPlateauMaterial === 'slush');
   }
 
+  function surfaceKindForObject(object) {
+    const data = object?.userData || {};
+    const walkableFloor = !!object?.isMesh && !object.isSkinnedMesh && (
+      materialMarksInteriorFloor(object.material)
+      || data.cavernWalkableFloor === true
+      || (data.wallBuilderRecipe === 'wallrecipe2.json' && !!data.plateauModel?.levelByCell)
+      || (data.liveRootFloor === true && data.ruinPreviewRole === 'floor')
+    );
+    surfaceClassificationHints.topFaceGround = isTopFacesGroundSurface(object);
+    surfaceClassificationHints.pathSurface = isRoadSurface(object);
+    surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
+      || (materialMarksBaseGrass(object?.material) && isTerrainSurface(object));
+    surfaceClassificationHints.walkableFloor = walkableFloor;
+
+    if (surfaceComposer?.classifySurface) return surfaceComposer.classifySurface(object, surfaceClassificationHints);
+
+    // Safe fallback if the bootstrap cannot load the shared composer.
+    if (surfaceClassificationHints.topFaceGround) return 'top-face-ground';
+    if (isWaterSurface(object)) return 'water';
+    if (isSlushSurface(object)) return 'slush';
+    if (data.environmentSurfaceMicroPlateau === true) return 'snow';
+    if (isGrassGroundCover(object)) return 'billboard-grass';
+    if (surfaceClassificationHints.pathSurface) return 'path';
+    if (data.hachutuGroundRoot === true || surfaceClassificationHints.baseGround) return 'base-ground';
+    if (walkableFloor) return 'walkable-floor';
+    return 'solid';
+  }
+
+  function surfacePolicyForObject(object, consumer = 'held-overlay', context = {}) {
+    const kind = surfaceKindForObject(object);
+    if (surfaceComposer?.resolvePolicy) return surfaceComposer.resolvePolicy(consumer, kind, context);
+
+    const groundKind = kind === 'path' ? 'road'
+      : kind === 'base-ground' ? 'terrain'
+        : kind === 'walkable-floor' ? 'interior-floor' : null;
+    const tintableCover = kind === 'water' || kind === 'slush';
+    return {
+      surface: kind,
+      groundXrayKind: groundKind,
+      protectedCover: tintableCover || kind === 'snow' || kind === 'billboard-grass',
+      tintableCover,
+      skipPreOverlayDepthWhenTinting: tintableCover && context.translucentTintActive === true,
+      restoreDepthAfterTint: tintableCover,
+    };
+  }
+
+  function groundKind(object) {
+    const kind = surfaceKindForObject(object);
+    return surfaceComposer?.getGroundXrayKind
+      ? surfaceComposer.getGroundXrayKind(kind)
+      : kind === 'path' ? 'road'
+        : kind === 'base-ground' ? 'terrain'
+          : kind === 'walkable-floor' ? 'interior-floor' : null;
+  }
+
   function isTintCover(object) {
-    // These two translucent covers must blend over foot pixels, not erase them.
-    // Snow and grass billboards remain depth occluders without a tint replay.
-    return isWaterSurface(object) || isSlushSurface(object);
+    const kind = surfaceKindForObject(object);
+    return surfaceComposer?.isTintableCover
+      ? surfaceComposer.isTintableCover(kind)
+      : kind === 'water' || kind === 'slush';
   }
 
   function isProtectedCover(object) {
-    return isGrassGroundCover(object) || isWaterSurface(object)
-      || object?.userData?.environmentSurfaceMicroPlateau === true;
+    const kind = surfaceKindForObject(object);
+    return surfaceComposer?.isProtectedCover
+      ? surfaceComposer.isProtectedCover(kind)
+      : kind === 'water' || kind === 'slush' || kind === 'snow' || kind === 'billboard-grass';
   }
 
   function isLegacyHeldPlane(object) {
@@ -622,6 +674,23 @@
     for (const [object, visible] of states) object.visible = visible;
   }
 
+  function getSurfaceOcclusionDepthOnly(material) {
+    const composerValue = surfaceComposer?.getDepthOnly?.(material);
+    if (composerValue !== undefined) return composerValue;
+    const uniform = material?.uniforms?.uHobunjiSurfaceOcclusionDepthOnly;
+    return uniform && 'value' in uniform ? uniform.value : undefined;
+  }
+
+  function setSurfaceOcclusionDepthOnly(material, enabled) {
+    const composerPrevious = surfaceComposer?.setDepthOnly?.(material, enabled);
+    if (composerPrevious !== undefined) return composerPrevious;
+    const uniform = material?.uniforms?.uHobunjiSurfaceOcclusionDepthOnly;
+    if (!uniform || !('value' in uniform)) return undefined;
+    const previous = uniform.value;
+    uniform.value = enabled ? 1 : 0;
+    return previous;
+  }
+
   function saveMaterialState(states, material) {
     if (!material || states.has(material)) return;
     states.set(material, {
@@ -637,6 +706,7 @@
       stencilFail: material.stencilFail,
       stencilZFail: material.stencilZFail,
       stencilZPass: material.stencilZPass,
+      surfaceOcclusionDepthOnly: getSurfaceOcclusionDepthOnly(material),
     });
   }
 
@@ -654,6 +724,9 @@
       material.stencilFail = state.stencilFail;
       material.stencilZFail = state.stencilZFail;
       material.stencilZPass = state.stencilZPass;
+      if (state.surfaceOcclusionDepthOnly !== undefined) {
+        setSurfaceOcclusionDepthOnly(material, Number(state.surfaceOcclusionDepthOnly) > 0.5);
+      }
     }
   }
 
@@ -676,6 +749,7 @@
       forEachMaterial(object.material, (material) => {
         saveMaterialState(states, material);
         material.colorWrite = false;
+        if (forceCoverDepth) setSurfaceOcclusionDepthOnly(material, true);
         // PNG avatar planes intentionally disable normal depth writing for
         // avatar-vs-avatar ordering. For this temporary occlusion buffer only,
         // use the game's existing layer-4 convention and preserve the real
@@ -695,6 +769,7 @@
       forEachMaterial(object.material, material => {
         saveMaterialState(states, material);
         material.depthWrite = true; // Depth-only replay: keep visible base-pass cover pixels untouched.
+        setSurfaceOcclusionDepthOnly(material, true);
       });
     }
     for (const object of cutouts) {
@@ -790,6 +865,7 @@
         material.depthTest = true;
         material.depthWrite = true; // Real foreground cover depth for held weapons/hands.
         material.stencilWrite = false;
+        setSurfaceOcclusionDepthOnly(material, true);
       });
     }
     return states;
@@ -1585,6 +1661,7 @@
       unknownElevationMeshes: lastUnknownElevationMeshes,
       elevationShaderMaterials: lastElevationShaderMaterials,
       elevationShaderFallbacks: lastElevationShaderFallbacks,
+      surfaceOcclusionComposer: surfaceComposer?.snapshot?.() || null,
     };
   }
 
@@ -1626,6 +1703,8 @@
     classify(object) {
       return {
         held: isLegacyHeldPlane(object),
+        surface: surfaceKindForObject(object),
+        surfacePolicy: surfacePolicyForObject(object),
         ground: !!groundKind(object),
         grass: isGrassGroundCover(object),
         road: isRoadSurface(object),

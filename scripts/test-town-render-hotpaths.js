@@ -10,6 +10,8 @@ const controller = read('docs/js/controller-ui-nav.js');
 const game = read('docs/game.js');
 const pixelProbe = read('docs/js/pixel-probe.js');
 const heldRender = read('docs/js/held-object-render-order.js');
+const surfaceComposerSource = read('docs/js/surface-occlusion-composer.js');
+const toolIconRender = read('docs/js/tool-icon-render.js'); // Existing synchronous bootstrap must load the shared policy before the renderer.
 const npcHeldEquipment = read('docs/js/npc-held-equipment-v4.js');
 const renderingContract = read('docs/architecture/held-object-water-depth-compositing.md');
 const readme = read('README.md');
@@ -24,7 +26,11 @@ const gridSource = read('docs/js/grid-tile-accessors.js');
 const idleYaw = read('docs/js/weapon-idle-body-yaw-runtime.js');
 const stances = read('docs/js/weapon-tool-stances.js');
 const portrait = read('docs/js/portrait-utils.js');
+const composerContext = { window: {}, module: { exports: {} } }; // Evaluate the real shared policy without loading a renderer or DOM.
+vm.runInNewContext(surfaceComposerSource, composerContext);
+const surfaceComposer = composerContext.window.SurfaceOcclusionComposer;
 
+assert.ok(surfaceComposer?.installed, 'shared surface occlusion composer installs its public API');
 assert.match(controller, /function isActive\(\) \{\s*return stack\.length > 0;\s*\}/,
   'the gameplay panel gate is a cached read with no layout work');
 assert.doesNotMatch(controller, /function visiblePanels\(\)[\s\S]{0,220}querySelectorAll/,
@@ -54,6 +60,100 @@ assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}mat
   'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
 assert.match(mergedWater, /transparent: true,\s*depthTest: true,[^\n]*\n\s*depthWrite: false/,
   'translucent floodwater retains normal opaque-grass depth testing in its material');
+assert.match(mergedWater, /if \(uHobunjiSurfaceOcclusionDepthOnly > 0\.5\s*&& alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
+  'the water depth-only shader discards fragments below its visible-alpha threshold without changing normal color rendering');
+assert.match(toolIconRender, /surface-occlusion-composer\.js[\s\S]{0,260}held-object-render-order\.js/,
+  'the shared policy script is loaded before the held renderer');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', { actorElevation: 0.42 }).groundXrayMode,
+  'same-elevation-upward-faces', 'known actor elevations retain selective ground x-ray');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'base-ground', {}).groundXrayMode,
+  'fail-closed-solid', 'unknown actor elevations retain conservative ground occlusion');
+assert.equal(surfaceComposer.resolvePolicy('portrait-plane', 'water').tintableCover, true,
+  'future portrait consumers receive the same translucent-water decision');
+assert.equal(surfaceComposer.resolvePolicy('hat-plane', 'billboard-grass').protectedCover, true,
+  'future headgear consumers retain the same solid-cover policy');
+const baseGrass = coverMesh({ isWildernessGrassChunk: false }, null,
+  { userData: { hobunjiBaseGrassTerrainMaterial: true } });
+assert.equal(surfaceComposer.classifySurface(baseGrass, { baseGround: true }), 'base-ground',
+  'tagged base grass is distinguished from standing billboard grass');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ waterSurfaceRole: 'flood' }, { userData: { hobunjiPathSurface: true } })), 'water',
+  'water tags override path ancestry before any ground x-ray policy is selected');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ environmentSurfaceMicroPlateau: true }, null,
+  { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } })), 'slush',
+  'slush is classified as a tintable translucent cover');
+assert.equal(surfaceComposer.classifySurface(coverMesh({ environmentSurfaceMicroPlateau: true }, null,
+  { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } })), 'snow',
+  'snow remains a solid cover, not a tintable surface');
+assert.equal(surfaceComposer.resolvePolicy('held-overlay', 'water', { translucentTintActive: true }).skipPreOverlayDepthWhenTinting,
+  true, 'water tint policy explicitly prevents an early cover-depth replay');
+assert.equal(surfaceComposer.resolvePolicy('portrait-plane', 'solid').groundXrayMode, 'solid',
+  'ordinary solid surfaces remain occluders for future consumers');
+const depthOnlyUniform = { value: 0 };
+const depthOnlyMaterial = { uniforms: { uHobunjiSurfaceOcclusionDepthOnly: depthOnlyUniform } };
+assert.equal(surfaceComposer.getDepthOnly(depthOnlyMaterial), 0, 'water starts in ordinary color mode');
+assert.equal(surfaceComposer.setDepthOnly(depthOnlyMaterial, true), 0, 'depth-only mode reports the previous uniform state');
+assert.equal(depthOnlyUniform.value, 1, 'depth-only replay enables the water coverage branch');
+surfaceComposer.setDepthOnly(depthOnlyMaterial, false);
+assert.equal(depthOnlyUniform.value, 0, 'depth-only replay can restore the normal water shader state');
+const depthUniformHelpersStart = heldRender.indexOf('  function getSurfaceOcclusionDepthOnly('); // Locates the production fallback helpers below.
+const depthUniformHelpersEnd = heldRender.indexOf('  function saveMaterialState(', depthUniformHelpersStart);
+assert.ok(depthUniformHelpersStart >= 0 && depthUniformHelpersEnd > depthUniformHelpersStart,
+  'extract optional-composer depth-uniform helpers');
+const fallbackDepthHelpers = new Function('surfaceComposer',
+  heldRender.slice(depthUniformHelpersStart, depthUniformHelpersEnd)
+    + '\nreturn { getSurfaceOcclusionDepthOnly, setSurfaceOcclusionDepthOnly };')(null); // Simulates composer script load failure.
+const fallbackWaterUniform = { value: 0 }; // The merged-water shader uniform must still toggle without the composer.
+const fallbackWaterMaterial = { uniforms: { uHobunjiSurfaceOcclusionDepthOnly: fallbackWaterUniform } };
+assert.equal(fallbackDepthHelpers.getSurfaceOcclusionDepthOnly(fallbackWaterMaterial), 0,
+  'water depth mode can be read without the composer');
+assert.equal(fallbackDepthHelpers.setSurfaceOcclusionDepthOnly(fallbackWaterMaterial, true), 0,
+  'fallback reports the prior water depth mode');
+assert.equal(fallbackWaterUniform.value, 1, 'fallback enables alpha-aware water depth');
+assert.equal(fallbackDepthHelpers.setSurfaceOcclusionDepthOnly(fallbackWaterMaterial, false), 1,
+  'fallback reports the temporary water depth mode');
+assert.equal(fallbackWaterUniform.value, 0, 'fallback restores the ordinary water shader mode');
+const fallbackDepthRuntimeEnd = heldRender.indexOf('  function prepareCutoutDepthMaterials(', depthUniformHelpersStart);
+const fallbackDepthRuntime = new Function(
+  'surfaceComposer', 'PNG_OCCLUDER_LAYER', 'window', 'hasLayer', 'isProtectedCover', 'forEachMaterial',
+  heldRender.slice(depthUniformHelpersStart, fallbackDepthRuntimeEnd)
+    + '\nreturn { prepareNonGroundDepthMaterials, restoreMaterialStates };'
+)(null, 4, {}, () => false, () => true,
+  (material, callback) => (Array.isArray(material) ? material : [material]).forEach(callback)); // Runs the production fallback replay with no composer.
+const replayWaterUniform = { value: 0 }; // This material models the merged-water shader during a held depth replay.
+const replayWaterMaterial = { colorWrite: true, depthWrite: false, depthTest: true,
+  uniforms: { uHobunjiSurfaceOcclusionDepthOnly: replayWaterUniform } };
+const replayWaterMesh = { isMesh: true, isSprite: false, userData: {}, material: replayWaterMaterial };
+const replayWaterScene = { traverseVisible(callback) { callback(replayWaterMesh); } };
+const replayWaterStates = fallbackDepthRuntime.prepareNonGroundDepthMaterials(replayWaterScene);
+assert.equal(replayWaterMaterial.colorWrite, false, 'fallback depth replay suppresses water color');
+assert.equal(replayWaterMaterial.depthWrite, true, 'fallback depth replay enables water depth');
+assert.equal(replayWaterUniform.value, 1, 'fallback depth replay activates the water alpha cutoff');
+fallbackDepthRuntime.restoreMaterialStates(replayWaterStates);
+assert.equal(replayWaterMaterial.colorWrite, true, 'fallback restores water color writes');
+assert.equal(replayWaterMaterial.depthWrite, false, 'fallback restores ordinary water depth writes');
+assert.equal(replayWaterUniform.value, 0, 'fallback restores ordinary water alpha behavior');
+
+class TestDataTexture { constructor() { this.needsUpdate = false; } dispose() {} } // Minimal Three.js texture stub for the production water material factory.
+class TestColor { constructor(value) { this.value = value; } } // Captures the water material's authored colors.
+class TestShaderMaterial { constructor(options) { Object.assign(this, options); } } // Retains shader and render-state options for assertions.
+const testThree = { DataTexture: TestDataTexture, RGBAFormat: 1, Color: TestColor,
+  ShaderMaterial: TestShaderMaterial, FrontSide: 0 };
+const waterMaterialStart = mergedWater.indexOf('  function createMaterial('); // Extracts the exact production water material factory.
+const waterMaterialEnd = mergedWater.indexOf('  function createMesh(', waterMaterialStart);
+assert.ok(waterMaterialStart >= 0 && waterMaterialEnd > waterMaterialStart,
+  'extract the merged-water material factory');
+const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'window',
+  mergedWater.slice(waterMaterialStart, waterMaterialEnd) + '\nreturn createMaterial;')(
+    testThree, 0.02, 0.02, { SurfaceOcclusionComposer: surfaceComposer });
+const testedWaterMaterial = makeWaterMaterial(testThree, {});
+assert.equal(testedWaterMaterial.depthWrite, false, 'normal water rendering never writes depth');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthOnly.value, 0,
+  'water material starts outside the temporary depth-only mode');
+assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthAlphaThreshold.value,
+  surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD, 'water material uses the shared composer threshold');
+assert.match(testedWaterMaterial.fragmentShader,
+  /uHobunjiSurfaceOcclusionDepthOnly > 0\.5[\s\S]*?alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
+  'the production water shader discards only faint fragments during depth-only replay');
 assert.match(pixelProbe, /Water depth at probed pixel:[\s\S]*?BEHIND OPAQUE SURFACE/,
   'Pixel Probe continues diagnosing opaque foreground grass before the flood');
 
@@ -79,16 +179,47 @@ assert.match(heldRender, /entry\.uniforms\?\.uGrassTex[\s\S]{0,180}entry\.unifor
   'grass fallback classification keys off the dedicated wind/grass shader uniforms rather than generic billboard tags');
 assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.material\)/,
   'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
-assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,200}isGrassGroundCover\(object\) \|\| isWaterSurface\(object\)/,
-  'water and standing grass both retain depth while the held x-ray is drawn');
-assert.match(heldRender, /data\.hachutuGroundRoot === true\) return 'terrain'/,
-  'Hachutu floor-root meshes participate in the same-elevation held/foot x-ray pass');
-assert.match(heldRender, /object\?\.userData\?\.environmentSurfaceMicroPlateau === true/,
-  'snow/slush caps are protected from ground x-ray');
-assert.match(heldRender, /if \(object\.userData\?\.environmentSurfaceMicroPlateau === true\) return false/,
-  'snow/slush cannot be misclassified as the exempt terrain layer');
-assert.match(heldRender, /if \(isProtectedCover\(object\)\) return null;[\s\S]{0,140}if \(isRoadSurface\(object\)\) return 'road';/,
-  'snow/slush, water and billboard grass must block held gear, while authored path bricks x-ray like grass');
+assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
+  'held depth classification delegates protected-cover decisions to the shared composer');
+assert.match(heldRender, /surfaceClassificationHints\.baseGround = data\.hachutuGroundRoot === true/,
+  'Hachutu floor-root meshes are passed into the shared ground-surface classifier');
+assert.match(heldRender, /surfaceComposer\?\.getGroundXrayKind/,
+  "held and shell depth replays use the composer's ground policy rather than independent exceptions");
+const snowSurfaceForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: { environmentSurfaceMicroPlateau: true },
+  material: { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } },
+};
+const slushSurfaceForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: { environmentSurfaceMicroPlateau: true },
+  material: { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } },
+};
+assert.equal(surfaceComposer.classifySurface(snowSurfaceForComposerTest), surfaceComposer.SURFACE.SNOW,
+  'snow is classified by the shared composer and remains a protected solid cover');
+assert.equal(surfaceComposer.isProtectedCover(surfaceComposer.SURFACE.SNOW), true,
+  'snow cannot inherit the ground x-ray exemption');
+assert.equal(surfaceComposer.classifySurface(slushSurfaceForComposerTest), surfaceComposer.SURFACE.SLUSH,
+  'slush is classified by the shared composer separately from opaque snow');
+assert.equal(surfaceComposer.isTintableCover(surfaceComposer.SURFACE.SLUSH), true,
+  'translucent slush participates in the shared tint policy');
+const waterSurfaceClassifierAt = surfaceComposerSource.indexOf('if (data.mergedWaterStatKey');
+const pathSurfaceClassifierAt = surfaceComposerSource.indexOf('const pathSurface = typeof hints.pathSurface');
+assert.ok(waterSurfaceClassifierAt >= 0 && pathSurfaceClassifierAt > waterSurfaceClassifierAt,
+  'water classification takes precedence over path x-ray exemptions');
+const authoredPathForComposerTest = {
+  isMesh: true,
+  isSkinnedMesh: false,
+  userData: {},
+  material: null,
+  parent: { userData: { hobunjiPathSurface: true }, parent: null },
+};
+assert.equal(surfaceComposer.classifySurface(authoredPathForComposerTest), surfaceComposer.SURFACE.PATH,
+  'the shared composer classifies authored paths without renderer-specific hints');
+assert.equal(surfaceComposer.classifySurface(authoredPathForComposerTest, { pathSurface: false }), surfaceComposer.SURFACE.SOLID,
+  'an explicit path hint prevents a second ancestor walk during renderer classification');
 assert.match(heldRender, /function isRoadSurface\(object\)[\s\S]{0,140}hasAncestorFlag\(object, 'hobunjiPathSurface'\)/,
   'path-brick descendants use their existing semantic path tag rather than a generic material guess');
 assert.match(zoneGrassBillboards, /group\.userData\.hobunjiPathSurface = true/,
@@ -112,8 +243,9 @@ assert.match(borderTerrain, /fall\.userData\.waterSurfaceRole='scenery'/,
 const classifierStart = heldRender.indexOf('  function hasLayer('); // First helper used by groundKind's classification chain.
 const classifierEnd = heldRender.indexOf('  function isLegacyHeldPlane('); // End marker immediately after the relevant classifiers.
 assert.ok(classifierStart >= 0 && classifierEnd > classifierStart, 'extract the same classifier helpers used by the shipped renderer');
-const classifyGround = new Function('MATERIAL_ID_LAYER',
-  heldRender.slice(classifierStart, classifierEnd) + '\nreturn groundKind;')(3); // Checks semantics without allocating a WebGL renderer.
+const classifyGround = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn groundKind;')(3, surfaceComposer,
+  { topFaceGround: false, pathSurface: false, baseGround: false, walkableFloor: false }); // Checks semantics without allocating a WebGL renderer.
 const pavingGroup = { userData: { hobunjiPathSurface: true }, parent: null }; // The exact ancestor tag applied to road-brick groups.
 function coverMesh(data = {}, parent = null, material = { userData: {} }) {
   return { isMesh: true, isSkinnedMesh: false, isInstancedMesh: false, userData: data, parent, material, receiveShadow: false, castShadow: false, layers: { mask: 0 } };
@@ -129,8 +261,9 @@ assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'f
 assert.equal(classifyGround(coverMesh({ liveRootFloor: true, ruinPreviewRole: 'wall' })), null, 'rooted walls remain solid even when they share a floor material family');
 assert.equal(classifyGround(coverMesh({ wallBuilderRecipe: 'wallrecipe2.json' })), null, 'a V50 non-floor WallBuilder mesh cannot be removed');
 assert.equal(classifyGround(coverMesh({ hobunjiGroundSurface: true })), null, 'an unqualified outdoor/raised mesh is never removed based only on generic ground tags');
-const classifyTintCover = new Function('MATERIAL_ID_LAYER',
-  heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3);
+const classifyTintCover = new Function('MATERIAL_ID_LAYER', 'surfaceComposer', 'surfaceClassificationHints',
+  heldRender.slice(classifierStart, classifierEnd) + '\nreturn isTintCover;')(3, surfaceComposer,
+  { topFaceGround: false, pathSurface: false, baseGround: false, walkableFloor: false });
 const slushMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'slush' } };
 const snowMaterial = { userData: { environmentSurfaceMicroPlateauMaterial: 'snow' } };
 assert.equal(classifyTintCover(coverMesh({ waterSurfaceRole: 'local' })), true, 'tagged water tints feet');
@@ -454,7 +587,10 @@ function makeCoverMaterial() {
     stencilFunc: -1, stencilRef: 0, stencilFuncMask: 0xff,
     stencilFail: -1, stencilZFail: -1, stencilZPass: -1 };
 }
-const makeHelpers = new Function('saveMaterialState', 'forEachMaterial', 'THREE',
+const setSurfaceDepthMode = new Function('surfaceComposer',
+  heldRender.slice(depthUniformHelpersStart, depthUniformHelpersEnd)
+    + '\nreturn setSurfaceOcclusionDepthOnly;')(surfaceComposer); // Reuses the production uniform setter in the isolated tint-pass harness.
+const makeHelpers = new Function('saveMaterialState', 'forEachMaterial', 'THREE', 'surfaceComposer', 'setSurfaceOcclusionDepthOnly',
   materialHelpers + '\nreturn { prepareSubmergedOverlayStencilMaterials, prepareOverlayCoverTintMaterials, prepareTintCoverDepthMaterials };');
 const saveState = (states, material) => {
   if (!states.has(material)) states.set(material, { ...material });
@@ -462,7 +598,7 @@ const saveState = (states, material) => {
 const forEachMat = (material, fn) => (Array.isArray(material) ? material : [material]).forEach(fn);
 const coverFns = makeHelpers(saveState, forEachMat, {
   AlwaysStencilFunc: 519, EqualStencilFunc: 514, KeepStencilOp: 7680, ReplaceStencilOp: 7681
-});
+}, surfaceComposer, setSurfaceDepthMode);
 const handMaterial = makeCoverMaterial();
 const handStates = coverFns.prepareSubmergedOverlayStencilMaterials([{material: handMaterial}]);
 assert.equal(handMaterial.colorWrite, true, 'held hands and tools draw their original color');
