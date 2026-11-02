@@ -58,7 +58,9 @@
   function buildRoom(kit, context, room, rng) {
     const frame = frameFor(kit, context, room);
     if (frame.span < 6) { rejects.push(`${room.id}: span ${frame.span.toFixed(1)} too short`); return null; }
-    const cross = railCross(kit, context, room, frame, rng);
+    const authoredSpot=kit.availableRoomSpot?.(room.id,'activators','ceilingRailTargets');
+    const authoredCross=authoredSpot?.world?(frame.axis==='x'?Number(authoredSpot.world.z):Number(authoredSpot.world.x)):null;
+    const cross = railCross(kit, context, room, frame, rng, authoredCross);
     if (cross == null) { rejects.push(`${room.id}: doorways in both end walls`); return null; }
     const ceilY = (Number(context.meta?.floorSurfaceY) || 0) + (Number(context.meta?.wallHeight) || 3);
     const railY = ceilY - RAIL_DROP;
