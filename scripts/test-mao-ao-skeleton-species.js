@@ -26,7 +26,7 @@ assert.equal(species.male.bodyColorRanges.fixedHex, '#BDBDB3');
 
 const context = {
   console,
-  SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, portrait: {}, assets: { pngPlaneAvatar: { proceduralFeet: { species: { 'mao-ao': { glb: 'assets/models/feet/foot_mao.glb' } } }, behindView: { headUrls: {} } } } },
+  SCRATCHBONES_CONFIG: { game: { appearanceEditor: { species: {} }, portrait: {}, assets: { pngPlaneAvatar: { proceduralFeet: { species: { 'mao-ao': { glb: 'assets/models/feet/foot_mao.glb' } } }, behindView: { headUrls: {} } } } } },
   HobunjiHandModelProfiles: { data: { speciesModels: { 'mao-ao': 'canine' } }, mutate(fn) { fn(this.data); } },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'mao-ao::male': { species: 'mao-ao', gender: 'male', anatomy: { rigScaleX: 0.9, headScale: 1 } } } },
   PortraitArmCloudMask: { authoredProfiles: { 'mao-ao:male': { maskYScaleMultiplier: 0.99, seed: 660632132 } } },
