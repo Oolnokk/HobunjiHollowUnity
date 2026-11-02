@@ -490,6 +490,39 @@
     }
   }
 
+  function createExitDoorTarget() {
+    if (!ruin?.scene) return null;
+    const meta = ruin.meta;
+    const entrance = meta?.entrance;
+    const opening = entranceLocalPoint(meta || {}); // Uses the same V50 entrance transform as player spawning.
+    const originX = PAD + scaledWorldWidth(meta || {}) / 2; // Matches localeRoot.position.x in makeMapRecord().
+    const originZ = PAD + scaledWorldDepth(meta || {}) / 2; // Matches localeRoot.position.z in makeMapRecord().
+    const worldX = entrance ? originX + opening.x : Number(ruin.spawn?.x) || 0;
+    const worldZ = entrance ? originZ + opening.z : Number(ruin.spawn?.z) || 0;
+    const axis = entrance?.axis === 'x' ? 'x' : 'z';
+    const cell = worldCellSize(meta || {});
+    const width = Math.max(1.25, cell * 1.8); // Gives the doorway a forgiving but still deliberately aimed target.
+    const depth = Math.max(.36, cell * .45); // Keeps the hidden target shallow so it cannot be selected from deep inside a room.
+    const height = 2.3; // Spans the visible doorway from floor to just above normal player height.
+    const geometry = new THREE.BoxGeometry(axis === 'x' ? depth : width, height, axis === 'x' ? width : depth);
+    geometry.computeBoundingBox();
+    const material = new THREE.MeshBasicMaterial({
+      color:0xffffff, transparent:true, opacity:0, colorWrite:false, depthWrite:false, side:THREE.DoubleSide,
+    }); // Invisible in the rendered scene; its bounds exist only for the ordinary interaction-aim ray.
+    const target = new THREE.Mesh(geometry, material);
+    target.name = 'dev_ruin_exit_door_interaction_target';
+    const support = DS.sampleSupport?.(Number(ruin.spawn?.x) || worldX, Number(ruin.spawn?.z) || worldZ, { minY:-8, maxY:12, pad:.02 });
+    const floorY = Number.isFinite(Number(support?.y)) ? Number(support.y) : Number(ruin.supportY) || 0;
+    target.position.set(worldX, floorY + height / 2, worldZ);
+    target.frustumCulled = false;
+    target.userData.interactive3D = true;
+    target.userData.devRuinInteractionType = 'exitDoor';
+    target.userData.devRuinExitTarget = true;
+    ruin.scene.add(target);
+    ruin.exitTarget = target;
+    return target;
+  }
+
   function discoverRuntimeObjects() {
     ruin.mechanisms = new Map(); ruin.controls = []; ruin.activators = []; ruin.pushBlocks = []; ruin.transitDoors = []; ruin.transitDoorStates = [];
     const walls = []; // V50 wall meshes become boundary tiles instead of broad object AABBs.
@@ -606,7 +639,11 @@
       if (block.userData?.previewMotion?.type !== 'pushPuzzleBlock') continue; // Elevator blocks retain their height-aware motion-runtime control.
       ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',onPress:()=>pushBlock(block)});
     }
-    ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
+    const exitTarget = createExitDoorTarget(); // Only the doorway itself may focus the leave control; walking through the spawn radius no longer exits the ruin.
+    if (exitTarget) ruin.controls.push({
+      kind:'exitDoor', object:exitTarget, promptRoot:exitTarget, label:generationLabel ? 'Leave the Ruin' : 'Leave Test Ruin',
+      point:ruin.spawn, range:CONTROL_RANGE, priority:30, touchIcon:'🚪', onPress:leaveRuin,
+    });
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
       grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
@@ -1238,7 +1275,13 @@
       }
     }
     DS.clearScope(SCOPE);
-    if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
+    if(ruin){
+      detach(ruin.exitTarget);
+      ruin.exitTarget?.geometry?.dispose?.();
+      ruin.exitTarget?.material?.dispose?.();
+      detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();
+    }
+    if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
     clearRuinPresentationHeight();
     // A reroll deliberately keeps the hidden V50 realm alive. Its API's
