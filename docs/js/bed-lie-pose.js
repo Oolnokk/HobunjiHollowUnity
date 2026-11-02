@@ -6,7 +6,7 @@
   const CHANNEL = 'bed-lie-pose'; // Composer channel reserved for the sleep animation, cleared before waking.
   const LIE_DURATION = 1.9; // Seconds to reach the bed before the existing sleep/day transition runs.
   const HOLD_DURATION = 0.55; // Brief fully-flat hold lets the pose read before the next morning.
-  const XRAY_ORDER = 900; // Only the sleeping avatar's FRONT material bypasses depth during this short animation.
+  const XRAY_ORDER = 900; // Draw the sleeper after the occupied bed while retaining normal depth tests against walls.
   let deps = null; // Live game adapters for the player, avatar, calendar and bed scene.
   let active = null; // Current sleep's immutable start/target points and mutable elapsed time.
   let xray = []; // Temporary portrait material overrides to restore in all exit paths.
