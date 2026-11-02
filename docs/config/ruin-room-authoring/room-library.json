@@ -9,9 +9,9 @@
       "enabled": true,
       "weight": 1,
       "match": {
-        "minWidth": 8,
+        "minWidth": 3,
         "maxWidth": 48,
-        "minHeight": 8,
+        "minHeight": 3,
         "maxHeight": 48,
         "minDoors": 0,
         "maxDoors": 8,
