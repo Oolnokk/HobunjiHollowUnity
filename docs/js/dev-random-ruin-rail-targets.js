@@ -47,7 +47,7 @@
       return Math.abs(along - frame.start) < .6 || Math.abs(along - frame.end) < .6;
     });
     const mid = (frame.crossMin + frame.crossMax) * .5, half = (frame.crossMax - frame.crossMin) * .5;
-    const offsets = [0, .2, -.2, .35, -.35].map(f => f * half * (rng() < .5 ? 1 : -1));
+    const offsets = [...(Number.isFinite(preferredCross)?[preferredCross-mid]:[]),...([0, .2, -.2, .35, -.35].map(f => f * half * (rng() < .5 ? 1 : -1)))];
     for (const offset of offsets) {
       const cross = mid + offset;
       if (endDoors.every(door => Math.abs(cross - (frame.axis === 'x' ? door.z : door.x)) > door.width * .5 + .55)) return cross;
