@@ -166,7 +166,7 @@
     const root = walker.root;
     if (!rig?.isObject3D || !root?.isObject3D) return;
     const sameArea = target?.area == null || target.area === walker.area; // Legacy spouse/activity sleep targets omit area; mattress lookup is already scoped to this walker's live area.
-    const arrivalTolerance = target?.bedCenter ? 0.9 : 0.35; // Spouse navigation may stop on the nearest walkable tile beside the bed; its rig is then translated onto the mattress center.
+    const arrivalTolerance = target?.bedCenter ? 1.8 : 0.35; // A 2x2 double bed can leave the nearest walkable tile 1.5+ world units from its center; accept that arrival, then place only the visual rig on the resolved mattress.
     const activeLie = target?.pose === 'lie' && sameArea && mattress
       && Math.hypot(root.position.x - mattress.x, root.position.z - mattress.z) < arrivalTolerance; // Bed-center targets are still constrained to a known, resolved mattress.
     let state = npcStates.get(walker);
