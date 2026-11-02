@@ -61,6 +61,7 @@ for (const preset of presets) {
   assert(report, `${preset.id}: final hydrology report is exported`);
   assert(report.riverPathsProcessed > 0, `${preset.id}: at least one generated river path is graded`);
   assert.equal(report.riverUpHillSteps, 0, `${preset.id}: river centerlines contain no uphill steps`);
+  assert.equal(report.riverTilesRaised, 0, `${preset.id}: river grading never raises an underwater tile`);
   assert(report.pondBodiesProcessed > 0, `${preset.id}: generated pond basins are discovered`);
   assert.equal(report.pondUnevenBodies, 0, `${preset.id}: no pond basin remains uneven`);
   assert.equal(report.pondMaxElevationSpreadAfter, 0, `${preset.id}: pond floor spread is zero after grading`);
