@@ -10,6 +10,7 @@
   const FOOTING_SPEED_MIN = 0.55; // Matches the player's low-Footing movement floor in alcohol-gameplay-bridge.js.
 
   let deps = null; // Combat.init supplies the live player, map, and companion collection.
+  let mountDeps = null; // Mounts.init supplies the authoritative MOVE_SPEED, Alchemy, and global speed getters used by player locomotion.
   let unregisterFrame = null; // Owns the shared pre-game scheduler subscription.
   let fallbackTimer = null; // Low-frequency fallback only for isolated contexts without RuntimeFrameScheduler.
   let lastError = null; // Exposed through debugSnapshot so mobile testing does not require devtools.
@@ -56,7 +57,7 @@
   }
 
   function alchemyMovementMultiplier() {
-    const direct = deps?.getAlchemySpeedMul;
+    const direct = mountDeps?.getAlchemySpeedMul || deps?.getAlchemySpeedMul;
     return multiplier(
       typeof direct === 'function'
         ? () => direct()
@@ -65,11 +66,16 @@
     );
   }
 
+  function devGlobalMovementMultiplier() {
+    const direct = mountDeps?.getDevGlobalSpeedMul || deps?.getDevGlobalSpeedMul;
+    return multiplier(direct, 1);
+  }
+
   function generalMovementMultiplier() {
     // These public multipliers cover food, potion, combat, equipment, and timed movement effects.
     return multiplier(() => window.CookingSystem?.getSpeedMultiplier?.(), 1)
       * multiplier(() => window.Combat?.getMovementSpeedMul?.(), 1)
-      * multiplier(() => window.AlchemySystem?.getMovementSpeedMultiplier?.() ?? window.AlchemySystem?.getSpeedMul?.(), 1);
+      * alchemyMovementMultiplier();
   }
 
   function playerMovementSpeed(player) {
@@ -78,21 +84,21 @@
     const rideState = String(mounts?.rideState || '');
     const mountActive = ['mounted', 'mountingUp', 'climbLeap'].includes(rideState) && !!mounts?.rideEntity;
     const alchemy = alchemyMovementMultiplier();
-    const devGlobal = multiplier(deps?.getDevGlobalSpeedMul, 1);
+    const devGlobal = devGlobalMovementMultiplier();
     const general = generalMovementMultiplier();
 
     if (mountActive) {
       const mount = mounts.rideEntity;
       const actualVelocity = Math.hypot(Number(mount?.vx) || 0, Number(mount?.vy) || 0);
       if (actualVelocity > 0.5) return actualVelocity; // Mounted velocity already contains acceleration, collision, and every modifier applied by Mounts.
-      const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
+      const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
       const perception = multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
       return base * alchemy * devGlobal * perception; // Match updateMountedMovement's actual top-speed composition while stationary.
     }
 
     const actualFootSpeed = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0);
     if (actualFootSpeed > 0.5) return actualFootSpeed; // Partial input, acceleration and collision already resolve into the player's live velocity.
-    const base = Math.max(0, Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
+    const base = Math.max(0, Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
     return base
       * playerTerrainMultiplier(player)
       * general
@@ -333,7 +339,25 @@
     };
   }
 
+  function installMountDependencyBridge() {
+    const mounts = window.Mounts;
+    if (!mounts || typeof mounts.init !== 'function') return false;
+    if (mounts.init.__companionMovementSpeedWrapped) return true;
+    const originalInit = mounts.init.bind(mounts);
+    const wrappedInit = function companionMovementSpeedMountInit(injectedDeps, ...rest) {
+      if (injectedDeps && typeof injectedDeps === 'object') mountDeps = injectedDeps;
+      const result = originalInit(injectedDeps, ...rest);
+      if (deps) update();
+      return result;
+    };
+    wrappedInit.__companionMovementSpeedWrapped = true;
+    wrappedInit.__companionMovementSpeedOriginal = originalInit;
+    mounts.init = wrappedInit;
+    return true;
+  }
+
   function install() {
+    installMountDependencyBridge();
     const combat = window.Combat;
     if (!combat || typeof combat.init !== 'function') return false;
     if (combat.init.__companionMovementSpeedWrapped) return true;
@@ -359,6 +383,7 @@
     __test: Object.freeze({
       playerMovementSpeed,
       ownerMovementSpeed,
+      devGlobalMovementMultiplier,
       sampleOwnerMotion,
       applyCompanionProxy,
       playerTerrainMultiplier,
