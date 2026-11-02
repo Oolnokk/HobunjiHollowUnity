@@ -115,7 +115,9 @@ assert.match(cookingSource, /remainingHours/, 'ordinary food timers persist as r
 assert.match(festivalSource, /FOOD_PORTION_HOURS = 24/, 'each festival food portion adds 24 in-game hours');
 assert.match(festivalSource, /expiresHour/, 'festival meal effects expire against the calendar clock');
 assert.doesNotMatch(festivalSource, /FOOD_PORTION_SECONDS|entry\.expiresAt>now/, 'festival meal buffs no longer use real-time seconds');
-assert.match(festivalSource, /expiresHour:worldHour\(\)\+18/, 'the separate festival fullness effect retains its previously authored 18-hour duration');
+assert.match(festivalSource, /expiresHour:worldHour\(\)\+FOOD_PORTION_HOURS/, 'festival fullness now uses the same 24 in-game-hour duration as food buffs');
+assert.match(festivalSource, /durationS:FOOD_PORTION_HOURS\*3600/, 'festival fullness HUD countdown also reports the full 24-hour duration');
+assert.match(festivalSource, /legacyDuration/, 'existing active festival fullness saves migrate to the new 24-hour duration once');
 assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
 assert.match(cookingSource, /ingredientEffectTotals\(definition, selected\?\.stars\)/, 'meal totals reuse the same per-ingredient buff calculation displayed by the picker');
 assert.match(cookingSource, /Cooking buff:/, 'ingredient candidates and selected ingredients visibly identify their cooking buff');
