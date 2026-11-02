@@ -62,7 +62,7 @@
   }
 
   function applyFrontXray() {
-    allowSleeperThroughBed(active?.furniture?.mesh, bedDepth);
+    allowSleeperThroughBed(active?.mattressMesh, bedDepth);
     const avatar = deps?.playerRoot?.()?.children?.find(node => node.name === 'player_avatar'); // Avoid touching tools, garments or NPC portraits.
     if (!avatar) return;
     if (xray.length) { // Other game systems sometimes refresh the portrait render order; the sleeping overlay must win.
@@ -109,7 +109,9 @@
     const THREE = deps.THREE; // Uses Three's actual furniture-local-to-world transform, including room placement and rotation.
     const authored = window.AuthoredFurniture?.peek?.(furniture.key);
     const height = window.AuthoredFurniture?.sleepSurfaceHeight?.(authored);
-    if (!THREE || !Number.isFinite(height)) return { ok: false, message: 'Cannot find the mattress surface.' };
+    const mattressPart = window.AuthoredFurniture?.sleepSurfacePart?.(authored);
+    const mattressMesh = mattressPart ? furniture.mesh.userData?.meshById?.get(mattressPart.id) : null;
+    if (!THREE || !Number.isFinite(height) || !mattressMesh?.isMesh) return { ok: false, message: 'Cannot find the mattress surface.' };
     furniture.mesh.updateWorldMatrix(true, false);
     const contact = furniture.mesh.localToWorld(new THREE.Vector3(0, height, 0)); // Mattress top; child guide geometry never controls placement.
     if (![contact.x, contact.y, contact.z].every(Number.isFinite)) return { ok: false, message: 'Invalid mattress position.' };
@@ -117,7 +119,7 @@
     const tileSize = Number(deps.tileSize()); // Game coordinates use pixels while the avatar/furniture scene uses world tiles.
     if (!Number.isFinite(tileSize) || tileSize <= 0) return { ok: false, message: 'Bed position scale is unavailable.' };
     active = {
-      furniture, area: deps.area(), elapsed: 0,
+      furniture, mattressMesh, area: deps.area(), elapsed: 0,
       startX: player.x, startY: player.y,
       targetX: contact.x * tileSize, targetY: contact.z * tileSize,
       surfaceY: contact.y, yaw: furniture.mesh.rotation.y,
@@ -235,7 +237,7 @@
     if (correction) rig.position.set(correction.x * fraction, correction.y * fraction, correction.z * fraction);
     else rig.position.set(0, 0, 0);
     if (walker._npcRunLeanPivot && fraction > 0.001) walker._npcRunLeanPivot.quaternion.identity(); // Running and lying body rotations must not stack.
-    npcFrontXray(walker, state, fraction > 0.25, mattress?.root);
+    npcFrontXray(walker, state, fraction > 0.25, mattress?.mattressMesh);
     walker._bedLieActive = fraction > 0.001;
     if (state.blend <= 0 && !activeLie) {
       npcFrontXray(walker, state, false);
