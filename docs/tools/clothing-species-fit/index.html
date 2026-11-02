@@ -39,11 +39,12 @@
         <div id="sourceLayerStatus" class="small" aria-live="polite">Loading clothing source layers…</div>
         <section id="beardHoodMaskEditor" class="maskEditor" hidden>
           <h2>Beard / hood overpass masks</h2>
+          <div class="row maskGarmentPickers"><button type="button" id="pickHood" class="active">Choose hood</button><button type="button" id="pickBeard">Choose beard / facial hair</button></div>
           <div class="field"><label for="beardHoodMaskMode">Mask target</label><select id="beardHoodMaskMode"><option value="hood">Hood reveal area — matching beard coordinates pass above this hood</option><option value="beard">Beard priority — these beard pixels pass above hoods anywhere</option></select></div>
           <div class="field"><label for="beardHoodReference">Ghost reference layer</label><select id="beardHoodReference"><option value="">None</option></select></div>
           <div class="field"><label for="beardHoodBrushSize">Brush radius</label><input id="beardHoodBrushSize" type="range" min="1" max="18" value="4"><span id="beardHoodBrushValue" class="small">4 px</span></div>
           <div class="row"><button type="button" id="beardHoodBrushPaint" class="active">Paint</button><button type="button" id="beardHoodBrushErase">Erase</button><label class="small"><input id="beardHoodMaskVisible" type="checkbox" checked> Show mask</label></div>
-          <div class="row"><button type="button" id="beardHoodMaskClear">Clear this mask</button><button type="button" id="beardHoodMaskExport">Export selected cosmetic JSON</button></div>
+          <div class="row"><button type="button" id="beardHoodMaskClear">Clear this mask</button><button type="button" id="beardHoodMaskUndo" disabled>Undo</button><button type="button" id="beardHoodMaskRedo" disabled>Redo</button><button type="button" id="beardHoodMaskExport">Export selected cosmetic JSON</button></div>
           <div id="beardHoodMaskStatus" class="small">Choose a hood or facial-hair cosmetic, then paint directly on the fitted portrait canvas. Use the ghost reference selector to overlay the opposite layer while painting (blue = hood reveal area; amber = beard priority pixels).</div>
           <div class="small">Masks use the fitted portrait's shared pixel coordinates and are saved per cosmetic + target species + gender. Hood masks select beard pixels by position; beard masks select exact beard pixels independent of position.</div>
         </section>
@@ -149,6 +150,7 @@
       </details>
     </aside>
 
+    <div class="sidebar-resize-handle" id="sidebarResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
     <main class="panel">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px">
         <div><h2 style="margin:0">Reference canvas</h2><div id="label" class="small"></div></div>
