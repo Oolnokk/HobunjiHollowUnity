@@ -12,13 +12,23 @@
   const point = { x: 0, y: 0, z: 0 }; // Non-Three fallback used by data-only editor/tests.
   function areaId(area) { return area === 'map_hobunji_town' || area === 'hobunji_main_town' ? 'town' : area; }
   function init(value) { deps = value; collisionAreas.clear(); surfaceProbe.valid=false; }
-  function clearArea(area) { surfaceProbe.valid=false; for(const entry of entries(area).values())window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`); areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null; }
+  function clearArea(area) {
+    surfaceProbe.valid=false;
+    for(const entry of entries(area).values()) {
+      window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`);
+      window.FurniturePuzzleRuntime?.unregisterNode?.(areaId(area), entry.id);
+    }
+    areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null;
+  }
   function registerPlacement(area, record, root, def = {}) {
     area = areaId(area);
     let entries = areas.get(area); // One registry per map, so identical table ids never cross interiors.
     if (!entries) areas.set(area, entries = new Map());
     const id = String(record.id || `${record.key || record.itemKey}:${record.col},${record.row}`); // Stable authored id; inventory placements retain a coordinate fallback.
-    for (const [key, entry] of entries) if (entry.root === root || (record.id && key === id)) entries.delete(key); // Overlapping rugs own distinct ids; a coincident tile cannot evict another rug or table entry.
+    for (const [key, entry] of entries) if (entry.root === root || (record.id && key === id)) {
+      window.FurniturePuzzleRuntime?.unregisterNode?.(area, key, entry.root);
+      entries.delete(key); // Overlapping rugs own distinct ids; a coincident tile cannot evict another rug or table entry.
+    }
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
@@ -29,6 +39,8 @@
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
+      if (data.puzzle || root.userData?.furniturePuzzle)
+        window.FurniturePuzzleRuntime?.registerNode?.(area, { id, key:record.key, puzzle:record.puzzle }, root);
       const bounds = new window.THREE.Box3().setFromObject(root); // One asset-readiness measurement, never scene traversal during interaction queries.
       if (!bounds.isEmpty()) entry.height=(bounds.max.y-bounds.min.y)/Math.max(.001,Math.abs(root.scale?.y||1));
       if(record.walkableElevation)window.HobunjiWalkableElevation?.registerObject?.(root,{id:`placed-furniture:${area}:${id}`,kind:'placed-furniture',area,sourceId:id,sourceKey:record.key}); // Reuses the inn-stage/porch support registry for both player and NPC elevation.
@@ -45,6 +57,7 @@
   function unregisterPlacement(area, idOrRoot) {
     const list = entries(area); // Removing one overlapping rug must not evict any unrelated instance on the same tile.
     for (const [id, entry] of list) if (id === idOrRoot || entry.root === idOrRoot) {
+      window.FurniturePuzzleRuntime?.unregisterNode?.(areaId(area), id, entry.root);
       list.delete(id);
       collisionAreas.delete(areaId(area)); focusStamp = null; surfaceProbe.valid = false;
       return true;
@@ -202,11 +215,24 @@
       : interactable.getButtons().map(button=>({...button,worldInteraction:true,promptRoot:entry.root})),
       onAction:action=>occupied()?{ok:false,message:'Someone has already taken this seat.'}:interactable.onAction(action)};
   }
+  function puzzleObject(area, entry) {
+    const puzzle = entry.root?.userData?.furniturePuzzle;
+    if (puzzle?.role !== 'activator' || puzzle.behavior !== 'burdenPlate') return null;
+    const id = entry.id;
+    return {
+      id:`burden-plate:${id}`, promptRoot:entry.root,
+      getButtons:() => (window.FurniturePuzzleRuntime?.burdenPlateButtons?.(area, id) || [])
+        .map(button => ({ ...button, worldInteraction:true, promptRoot:entry.root })),
+      onAction:action => window.FurniturePuzzleRuntime?.interactBurdenPlate?.(area, id, action)
+        || { ok:false, message:'The Burden Plinth is unresponsive.' },
+    };
+  }
   function objectAt(area, col, row) {
     window.NpcFurnitureWardrobes?.primeArea?.(area); // Idempotent warm-up for authored rooms whose furniture registered before the wardrobe module loaded.
     if(deps?.focusCandidates) {
       const target=focusedTarget(area); // Directional selection replaces the ground-tile fallback whenever the game's ray owner is available.
-      return target?.kind==='wardrobe' ? wardrobeObject(area,target.entry)
+      return target?.kind==='burdenPlate' ? puzzleObject(area,target.entry)
+        : target?.kind==='wardrobe' ? wardrobeObject(area,target.entry)
         : target?.kind==='chair' ? chairObject(area,target.entry)
         : target?.kind==='service' ? serviceObject(target) : null;
     }
@@ -217,14 +243,16 @@
     }
     for (const entry of entries(area).values()) {
       const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record);
-      if ((!entry.def.sit && !wardrobe) || !entry.root?.parent) continue;
+      const puzzle = entry.root?.userData?.furniturePuzzle;
+      const isBurdenPlate = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+      if ((!entry.def.sit && !wardrobe && !isBurdenPlate) || !entry.root?.parent) continue;
       const x = entry.record.col, z = entry.record.row; // Preserve actual rotation, scale and offsets for exterior benches and storage furniture.
       entry.root.updateWorldMatrix?.(true, false);
       const matrix = entry.root.matrixWorld?.elements;
       const yaw = matrix ? Math.atan2(matrix[8], matrix[10]) : (Number(entry.record.rotY ?? entry.record.rotYDeg) || 0) * Math.PI / 180, dx = col + .5 - entry.root.position.x, dz = row + .5 - entry.root.position.z;
       const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw), lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
       if (Math.abs(lx) > (entry.def.fw || 1) * (entry.root.scale?.x || 1) / 2 || Math.abs(lz) > (entry.def.fd || 1) * (entry.root.scale?.z || 1) / 2) continue;
-      return wardrobe ? wardrobeObject(area, entry) : chairObject(area, entry);
+      return isBurdenPlate ? puzzleObject(area, entry) : wardrobe ? wardrobeObject(area, entry) : chairObject(area, entry);
     }
     return null;
   }
@@ -385,11 +413,13 @@
       const f=placementFrame(entry);
       if(Math.hypot(f.x-player.x,f.z-player.z)>3+Math.max(f.w,f.d))continue;
       const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Camera-targeted storage, whether authored or player-assigned.
-      if(entry.def.sit || solid(entry) || wardrobe) {
+      const isBurdenPlate = entry.root.userData?.furniturePuzzle?.role === 'activator'
+        && entry.root.userData?.furniturePuzzle?.behavior === 'burdenPlate';
+      if(entry.def.sit || solid(entry) || wardrobe || isBurdenPlate) {
         const ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d;
         const box=entry.focusBox ||= {min:{},max:{}}; // Plain cached bounds avoid constructing Three.js objects during frame work.
         Object.assign(box.min,{x:f.x-ex,y:f.y,z:f.z-ez});Object.assign(box.max,{x:f.x+ex,y:f.y+(entry.height||1)*Math.abs(entry.root.scale?.y||1),z:f.z+ez});
-        focusCandidates.push({kind:wardrobe?'wardrobe':entry.def.sit?'chair':'blocker',entry,box});
+        focusCandidates.push({kind:wardrobe?'wardrobe':isBurdenPlate?'burdenPlate':entry.def.sit?'chair':'blocker',entry,box});
       }
       const provider=services.get(entry.record.serviceId);
       if(!provider || provider.enabled?.()===false)continue;
@@ -420,6 +450,7 @@
     const socialFocus = socialHit?.candidate || null;
     if (socialFocus) { focused = socialFocus; return focused; }
     const furnitureFocus = furnitureHit?.candidate || null; // Still respects unrelated furniture blockers.
+    if (furnitureFocus?.kind === 'burdenPlate') { focused = furnitureFocus; return focused; }
     if (furnitureFocus?.kind === 'blocker' && furnitureFocus.entry.record.serviceId) {
       unobstructedCandidates.length = 0;
       for (const candidate of focusCandidates) {
