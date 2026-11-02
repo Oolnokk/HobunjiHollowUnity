@@ -162,7 +162,7 @@ assert.equal(grouped.length, 4, 'same-height actors share a replay while trench/
 assert.deepEqual(grouped.map(group => group.meshes.length), [2, 1, 1, 1], 'unknown actors share a fail-closed group');
 const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
 const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', shaderStart);
-const installElevationShader = new Function(heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')();
+const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55);
 const groundMaterial = { userData: {}, needsUpdate: false };
 const groundShaderState = installElevationShader(groundMaterial);
 const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
