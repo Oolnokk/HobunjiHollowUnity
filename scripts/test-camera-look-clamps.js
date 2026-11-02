@@ -13,9 +13,10 @@ const context = { window: {} };
 vm.runInNewContext(clampSource, context);
 const clampPitchOffsetDeg = context.window.CameraLookClamp.clampPitchOffsetDeg;
 
-assert.match(config, /"cameraRotateClampDeg": 45,[\s\S]{0,160}"cameraRotateUpClampDeg": 85/, 'global camera config still authors 45 down/yaw and 85 up');
-assert.equal(clampPitchOffsetDeg(-120, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), -85, 'camera module independently clamps upward pitch');
-assert.equal(clampPitchOffsetDeg(80, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), 45, 'camera module independently clamps downward pitch');
+assert.equal(context.window.CameraLookClamp.defaults.downDeg, 45, 'default downward camera pitch limit remains 45 degrees');
+assert.equal(context.window.CameraLookClamp.defaults.upDeg, 45, 'default upward camera pitch limit matches downward limit');
+assert.equal(clampPitchOffsetDeg(-120, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), -45, 'upward pitch must match the downward limit even if an old asymmetric setting remains');
+assert.equal(clampPitchOffsetDeg(80, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), 45, 'downward pitch uses the shared 45-degree limit');
 assert.equal(clampPitchOffsetDeg(-30, { cameraRotateClampDeg: 45, cameraRotateUpClampDeg: 85 }), -30, 'camera module preserves in-range pitch');
 assert.match(game, /function clampCameraPitchOffsetDeg\(value\) \{[\s\S]{0,180}CameraLookClamp\.clampPitchOffsetDeg\(value, desktopControlsConfig\(\)\)/, 'game.js only bridges camera state into the isolated clamp module');
 assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 4, 'mouse, touch, controller, and mobile autotarget share the camera pitch bridge');
