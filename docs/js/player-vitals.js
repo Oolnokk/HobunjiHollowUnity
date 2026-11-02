@@ -41,6 +41,30 @@
     return true;
   }
 
+  // The screen HUD can expand past an entity's authored maximum for capacity buffs.
+  // Rebase end-anchored segments onto that expanded scale so recovered ordinary
+  // resources do not appear beyond an affliction that should still trail current.
+  // Ground rings intentionally keep their authored-max coordinate system.
+  function getHudAfflictionBox(entity, resourceKey, id, denominator, rs) {
+    const box = rs.getSegmentBox(entity, resourceKey, id); // Preserve ResourceSystem's precedence-aware/custom segment geometry.
+    if (!box) return null;
+    const def = rs.AFFLICTIONS[id]; // Supplies the anchoring rule for this affliction.
+    const maxField = resourceKey === 'health' ? 'maxHealth' : resourceKey === 'footing' ? 'maxFooting' : 'maxStamina'; // Matches ResourceSystem's source maximum.
+    const sourceMax = Math.max(0, Number(box.max) || Number(entity[maxField]) || 0); // Original scale used by getSegmentBox.
+    const expansion = Math.max(0, denominator - sourceMax); // Extra HUD track length introduced by max-resource buffs.
+    if (!def || expansion <= 0) return box;
+
+    let offset = 0; // Moves only segments whose anchor belongs to the expanded end of the track.
+    if (def.extend === 'currentBack') {
+      const current = Number(entity[resourceKey]) || 0; // Current live resource value, which may exceed the authored maximum.
+      offset = clamp(current - sourceMax, 0, expansion);
+    } else if (def.extend === 'maxBack') {
+      offset = expansion;
+    }
+    if (!(offset > 0)) return box;
+    return { ...box, leftPoints: clamp((Number(box.leftPoints) || 0) + offset, 0, denominator) };
+  }
+
   // Clip lower-priority afflictions against higher-priority occupied portions,
   // as ResourceRings does. Normal-colored fill is drawn beneath the segments.
   function visibleAfflictionSegments(entity, resourceKey, entries, denominator, rs) {
@@ -48,7 +72,7 @@
     const visible = []; // Supplies exact [start,end] intervals to the DOM renderer.
     const palette = window.HOBUNJI_CONFIG?.resourceRings?.afflictionColors || {};
     for (const [id, def] of entries.sort((a, b) => (b[1].priority || 0) - (a[1].priority || 0))) {
-      const box = rs.getSegmentBox(entity, resourceKey, id);
+      const box = getHudAfflictionBox(entity, resourceKey, id, denominator, rs);
       if (!box) continue;
       const start = clamp(Number(box.leftPoints) || 0, 0, denominator);
       const end = clamp(start + Math.max(0, Number(box.widthPoints) || 0), 0, denominator);
