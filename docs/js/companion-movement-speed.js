@@ -86,9 +86,11 @@
       if (actualVelocity > 0.5) return actualVelocity; // Mounted velocity already contains acceleration, collision, and every modifier applied by Mounts.
       const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
       const perception = multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
-      return base * alchemy * devGlobal * perception; // Match updateMountedMovement's actual top-speed composition while stationary. 
+      return base * alchemy * devGlobal * perception; // Match updateMountedMovement's actual top-speed composition while stationary.
     }
 
+    const actualFootSpeed = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0);
+    if (actualFootSpeed > 0.5) return actualFootSpeed; // Partial input, acceleration and collision already resolve into the player's live velocity.
     const base = Math.max(0, Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
     return base
       * playerTerrainMultiplier(player)
