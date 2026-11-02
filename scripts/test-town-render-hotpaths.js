@@ -342,13 +342,27 @@ const shaderEnd = heldRender.indexOf('  function setGroundElevationFilter(', sha
 const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55);
 const groundMaterial = { userData: {}, needsUpdate: false };
 const groundShaderState = installElevationShader(groundMaterial);
+groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
 const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
 groundMaterial.onBeforeCompile(standardGroundShader, {});
 assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
 assert.ok(standardGroundShader.vertexShader.includes('#include <common>' + elevationNewline + 'varying float vHobunjiXrayWorldY;'),
   'vertex varyings are injected as real GLSL lines, not literal backslash-n text');
-assert.ok(standardGroundShader.vertexShader.includes('#include <defaultnormal_vertex>' + elevationNewline + 'vHobunjiXrayWorldNormal ='),
-  'lit terrain normal assignment starts on a real GLSL line');
+assert.ok(standardGroundShader.vertexShader.includes(elevationNewline + 'vHobunjiXrayWorldNormal ='),
+  'terrain normal assignment starts on a real GLSL line');
+assert.ok(standardGroundShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =') > standardGroundShader.vertexShader.indexOf('#include <worldpos_vertex>'),
+  'the world normal is written with the always-compiled world position, not tied to <defaultnormal_vertex>');
+// three r128's real MeshBasicMaterial vertex shader only includes
+// <defaultnormal_vertex> inside #ifdef USE_ENVMAP; the normal must still be
+// written outside that block or unlit terrain is never x-rayed.
+const r128BasicMaterial = { userData: {}, needsUpdate: false };
+const r128BasicState = installElevationShader(r128BasicMaterial);
+r128BasicState.geometryHasNormals = true;
+const r128BasicShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#ifdef USE_ENVMAP', '#include <beginnormal_vertex>', '#include <defaultnormal_vertex>', '#endif', '#include <begin_vertex>', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
+r128BasicMaterial.onBeforeCompile(r128BasicShader, {});
+const r128NormalAt = r128BasicShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =');
+assert.equal(r128BasicState.supported, true, 'r128 MeshBasic terrain is supported');
+assert.ok(r128NormalAt > r128BasicShader.vertexShader.indexOf('#endif'), 'r128 MeshBasic terrain writes its x-ray normal outside the USE_ENVMAP block');
 assert.equal(standardGroundShader.vertexShader.includes('\\\\nvarying float'), false,
   'vertex shader contains no escaped newline token');
 
@@ -357,8 +371,11 @@ assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') &&
   'world height includes instancing and batching transforms before comparison');
 assert.ok(standardGroundShader.vertexShader.indexOf('#ifdef USE_BATCHING') < standardGroundShader.vertexShader.indexOf('#ifdef USE_INSTANCING'),
   'world position follows Three.js batching-then-instancing transform order');
-assert.ok(standardGroundShader.vertexShader.includes('transpose(mat3(viewMatrix))'), 'world normals use the view rotation inverse');
+assert.ok(standardGroundShader.vertexShader.includes('mat3(modelMatrix) * hobunjiXrayObjectNormal') && standardGroundShader.vertexShader.includes('mat3(instanceMatrix) * hobunjiXrayObjectNormal'),
+  'world normals follow the model and instance rotations (instanced path bricks)');
 assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
+assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'path surfaces may opt out of the top-face-only rule');
+assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
 const basicMaterial = { userData: {}, needsUpdate: false };
 const basicState = installElevationShader(basicMaterial);
@@ -370,7 +387,7 @@ const basicGroundShader = {
 };
 basicMaterial.onBeforeCompile(basicGroundShader, {});
 assert.equal(basicState.supported, true, 'unlit MeshBasic grass supports elevation filtering when its geometry has normals');
-assert.ok(basicGroundShader.vertexShader.includes('normalMatrix * normal'),
+assert.ok(basicGroundShader.vertexShader.includes('hobunjiXrayObjectNormal = normal;'),
   'unlit ground still rejects vertical walls using the geometry normal');
 const noNormalMaterial = { userData: {}, needsUpdate: false };
 const noNormalState = installElevationShader(noNormalMaterial);
@@ -391,25 +408,41 @@ assert.equal(missingLitState.supported, false, 'lit ground without a normal attr
 
 const filterStart = heldRender.indexOf('  function setGroundElevationFilter(');
 const filterEnd = heldRender.indexOf('  function clearGroundElevationFilter(', filterStart);
-const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader',
+const setElevationFilter = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
   heldRender.slice(filterStart, filterEnd) + elevationNewline + 'return setGroundElevationFilter;')(
     (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
-    installElevationShader);
+    installElevationShader,
+    mesh => mesh.road === true);
+const drawable = (extra = {}) => ({ attributes: Object.assign({ position: { count: 3 } }, extra) });
 const filterMaterial = { userData: {} };
-setElevationFilter([{ material: filterMaterial }], null);
+setElevationFilter([{ material: filterMaterial, geometry: drawable() }], null);
 assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 0,
   'a missing actor elevation never gets coerced to world height zero');
-setElevationFilter([{ material: filterMaterial }], 2.5);
+setElevationFilter([{ material: filterMaterial, geometry: drawable() }], 2.5);
 assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.enabled.value, 1,
   'a resolved map elevation enables the depth filter');
 assert.equal(filterMaterial.userData.hobunjiXrayElevationShader.uniforms.elevation.value, 2.5);
 const sharedGroundMaterial = { userData: {}, needsUpdate: false };
 setElevationFilter([
-  { material: sharedGroundMaterial, geometry: { attributes: { normal: {} } } },
-  { material: sharedGroundMaterial, geometry: { attributes: {} } },
+  { material: sharedGroundMaterial, geometry: drawable({ normal: {} }) },
+  { material: sharedGroundMaterial, geometry: drawable() },
 ], 1);
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
   'a shared unlit ground material fails closed if any registered mesh lacks normals');
+// TerrainRenderChunks leaves an empty-geometry source mesh beside its chunks;
+// it draws nothing and must not disable the x-ray for the shared material.
+const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([
+  { material: chunkedGroundMaterial, geometry: { attributes: {} } },
+  { material: chunkedGroundMaterial, geometry: drawable({ normal: {} }) },
+], 1);
+assert.equal(chunkedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
+  'an empty chunk-source husk does not poison its chunks\' shared material');
+const instancedBrickMaterial = { userData: {}, needsUpdate: false };
+setElevationFilter([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }], 1);
+assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'instanced path bricks keep their normals');
+assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face near the actor elevation');
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 0, 'terrain keeps its walls and cliff faces as occluders');
 
 assert.ok(heldRender.includes('groupXrayMeshesByElevation(xrayMeshes'),
   'shell outlines are grouped by the same actor elevations as visible overlays');

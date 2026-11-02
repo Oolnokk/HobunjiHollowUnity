@@ -34,15 +34,16 @@
         const idxRes = await fetch('config/locales/index.json');
         if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
         const idx = await idxRes.json();
-        const defs = [];
-        for (const entry of (idx.locales || []).filter(isStamped)) {
+        // Fetched in parallel (the boot-time Tothal Shift, and so the first
+        // wilderness entry, waits on this); results keep index order.
+        const loaded = await Promise.all((idx.locales || []).filter(isStamped).map(async entry => {
           try {
             const r = await fetch(entry.file);
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            defs.push(await r.json());
-          } catch (e) { log(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); }
-        }
-        return defs;
+            return await r.json();
+          } catch (e) { log(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); return null; }
+        }));
+        return loaded.filter(Boolean);
       } catch (e) {
         log('Tothal Shift: locale index load failed: ' + e.message, 'warn');
         return [];

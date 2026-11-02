@@ -26,7 +26,11 @@
   }
 
   const MATERIAL_ID_LAYER = 3;
-  const CHUNK_TILES = 12;
+  // 24, not 12: the wilderness follow camera sees most of a 200x200 zone, so
+  // 12-tile cells meant ~110 floor + ~85 path draws per render pass. A
+  // 24-tile floor cell is still only a few thousand triangles, so the lost
+  // culling precision costs far less than the draw calls it saves.
+  const CHUNK_TILES = 24;
   const CHUNK_WORLD = CHUNK_TILES;
   const MIN_SOURCE_TRIANGLES = 60000;
   const SCAN_INTERVAL_MS = 500;
