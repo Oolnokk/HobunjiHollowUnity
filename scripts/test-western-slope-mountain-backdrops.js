@@ -20,6 +20,11 @@ assert.match(source, /WEST_STACK_SHIFT_MULTIPLIER = 0\.25/, 'the complete defaul
 assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the existing local transform override key');
 assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the replacement module');
 assert.match(mountainAuthor, /Western Slope rock ridges/, 'author bridge must identify the replacement scenery');
+const terrainGeometryScript = author.indexOf('../../js/terrain-geometry.js?'); // The standalone author page needs the same mine-rock geometry builder as gameplay.
+const oreTexturesScript = author.indexOf('../../js/ore-rock-textures.js?'); // The preview uses the live mine-rock material and UV treatment.
+const backdropScript = author.indexOf('../../js/western-slope-mountain-backdrops.js?'); // Runtime must load only after both mine-rock dependencies.
+assert(terrainGeometryScript >= 0 && terrainGeometryScript < backdropScript, 'author page must load terrain geometry before the rock-ridge runtime');
+assert(oreTexturesScript >= 0 && oreTexturesScript < backdropScript, 'author page must load mine-rock textures before the rock-ridge runtime');
 assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no longer present the PNG as the live scenery');
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
