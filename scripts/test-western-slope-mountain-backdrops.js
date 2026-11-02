@@ -13,6 +13,7 @@ assert.match(environmentBootstrap, /western-slope-mountain-backdrops\.js\?v=[A-Z
 assert.match(source, /const WESTERN_SLOPE_ID = 'map_western_slope'/, 'module must remain scoped to Western Slope');
 assert.match(source, /MIN_WIDTH_MULTIPLIER = 2\.75/, 'every layer must stay wider than the wilderness footprint');
 assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep backdrop spacing must remain explicit and map-scaled');
+assert.match(source, /WEST_STACK_SHIFT_MULTIPLIER = 0\.25/, 'the complete default mountain stack must shift west by a map-scaled amount');
 assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the same local transform override key');
 assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the runtime transform contract before authoring');
 assert.match(author, /mountain-backdrop-author\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load its mountain UI/preview bridge');
@@ -153,7 +154,7 @@ vm.runInNewContext(source, {
   const root = scene.getObjectByName('WesternSlopeMountainBackdrops');
   assert(root, 'Western Slope backdrop root missing');
   assert.equal(root.children.length, 3, 'exactly three authored mountain layers must be present');
-  assert.deepEqual(root.children.map(mesh => mesh.position.x), [-24, -194, -364], 'layers must progress far west from the Western Slope edge');
+  assert.deepEqual(root.children.map(mesh => mesh.position.x), [-74, -244, -414], 'all layers must shift west by one quarter map span while preserving their authored spacing');
   assert(root.children.every(mesh => Math.abs(mesh.rotation.y - Math.PI / 2) < 1e-9), 'planes must face east toward the playable wilderness');
   assert(root.children.every(mesh => mesh.geometry.width >= 550 && mesh.geometry.height >= 320), 'all mountain layers must be gargantuan relative to a 200x200 wilderness');
 
