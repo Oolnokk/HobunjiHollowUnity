@@ -25,6 +25,131 @@
   const existingPartBuilder = furniture.buildPartMesh;
   const originalBuildPartMesh = existingPartBuilder.__hobunjiVesselRuntimeOriginal || existingPartBuilder.bind(furniture);
 
+  const BED_FOOTPRINT_INSET_TILES = 0.5; // Leaves 0.25 tile of clear floor at both ends of each bed axis.
+  const BED_FURNITURE_KEYS = new Set(['basicBed', 'doubleBed']); // Real beds only; bedroll keeps its existing footprint.
+  const FLOOR_ROOTED_SURFACE_KEYS = new Set([
+    'tableSmall', 'tableLong', 'tableRound', 'servingTable',
+    'counter', 'desk', 'nightstand', 'dresser',
+  ]); // Low, floor-supported horizontal work/display surfaces; seating and tall storage stay untouched.
+  const SPLIT_SURFACE_FIXTURES = Object.freeze({
+    candleTable: { tablePart: /^Candle Table (?:Box|Leg)/, topPart: 'Candle Table Box' },
+    standingLamp: { tablePart: /^Lantern Table /, topPart: 'Lantern Table Top' },
+  }); // Used to shorten only the table assembly while preserving the candle/lantern assembly's own scale.
+
+  function cloneFurnitureData(data) {
+    return JSON.parse(JSON.stringify(data)); // Authored definitions are JSON data; clone before applying visual-only proportions.
+  }
+
+  function finiteTransformNumber(transform, field) {
+    const value = Number(transform?.[field]); // Keeps missing optional transform fields out of proportion math.
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function scalePartAboutFloor(part, factor) {
+    const transform = part?.transform;
+    if (!transform) return;
+    const y = finiteTransformNumber(transform, 'y');
+    const sy = finiteTransformNumber(transform, 'sy');
+    if (y != null) transform.y = y * factor;
+    if (sy != null) transform.sy = sy * factor;
+  }
+
+  function partHalfExtent(part, axis) {
+    const transform = part?.transform || {};
+    const sizeField = axis === 'x' ? 'sx' : 'sz';
+    const topField = axis === 'x' ? 'topScaleX' : 'topScaleZ';
+    const bottomField = axis === 'x' ? 'bottomScaleX' : 'bottomScaleZ';
+    const size = finiteTransformNumber(transform, sizeField);
+    if (size == null) return 0;
+    const position = finiteTransformNumber(transform, axis) ?? 0;
+    const top = Number.isFinite(Number(part?.[topField])) ? Math.abs(Number(part[topField])) : 1;
+    const bottom = Number.isFinite(Number(part?.[bottomField])) ? Math.abs(Number(part[bottomField])) : 1;
+    return Math.abs(position) + Math.abs(size) * 0.5 * Math.max(top, bottom);
+  }
+
+  function insetBedFootprint(data) {
+    const parts = Array.isArray(data.parts) ? data.parts : [];
+    const width = Number(data.footprint?.w);
+    const depth = Number(data.footprint?.d);
+    if (!Number.isFinite(width) || !Number.isFinite(depth) || width <= BED_FOOTPRINT_INSET_TILES || depth <= BED_FOOTPRINT_INSET_TILES) return false;
+
+    const halfWidth = Math.max(0, ...parts.map(part => partHalfExtent(part, 'x')));
+    const halfDepth = Math.max(0, ...parts.map(part => partHalfExtent(part, 'z')));
+    if (halfWidth <= 0 || halfDepth <= 0) return false;
+
+    const scaleX = (width - BED_FOOTPRINT_INSET_TILES) / (halfWidth * 2);
+    const scaleZ = (depth - BED_FOOTPRINT_INSET_TILES) / (halfDepth * 2);
+    if (![scaleX, scaleZ].every(Number.isFinite) || scaleX <= 0 || scaleZ <= 0) return false;
+
+    for (const part of parts) {
+      const transform = part?.transform;
+      if (!transform) continue;
+      const x = finiteTransformNumber(transform, 'x');
+      const sx = finiteTransformNumber(transform, 'sx');
+      const z = finiteTransformNumber(transform, 'z');
+      const sz = finiteTransformNumber(transform, 'sz');
+      if (x != null) transform.x = x * scaleX;
+      if (sx != null) transform.sx = sx * scaleX;
+      if (z != null) transform.z = z * scaleZ;
+      if (sz != null) transform.sz = sz * scaleZ;
+    }
+    return true;
+  }
+
+  function shortenSplitSurfaceFixture(data, rule) {
+    const parts = Array.isArray(data.parts) ? data.parts : [];
+    const tableParts = parts.filter(part => rule.tablePart.test(String(part?.name || '')));
+    const topPart = parts.find(part => String(part?.name || '') === rule.topPart);
+    const transform = topPart?.transform;
+    const y = finiteTransformNumber(transform, 'y');
+    const sy = finiteTransformNumber(transform, 'sy');
+    if (!tableParts.length || y == null || sy == null) return false;
+
+    const originalTop = y + Math.abs(sy) * 0.5;
+    const newTop = originalTop * SURFACE_FURNITURE_Y_SCALE;
+    const accessoryDrop = originalTop - newTop;
+    const tablePartSet = new Set(tableParts);
+    for (const part of parts) {
+      const partTransform = part?.transform;
+      if (!partTransform) continue;
+      if (tablePartSet.has(part)) {
+        scalePartAboutFloor(part, SURFACE_FURNITURE_Y_SCALE);
+        continue;
+      }
+      const accessoryY = finiteTransformNumber(partTransform, 'y');
+      if (accessoryY != null) partTransform.y = accessoryY - accessoryDrop; // Accessories stay full-size and move with the lowered tabletop.
+    }
+    // Part-bound particle emitters intentionally retain their local offsets: their attached candle mesh moves with the accessory.
+    return true;
+  }
+
+  function applyFurnitureProportions(data) {
+    if (!data || typeof data !== 'object') return data;
+    const key = String(data.key || '');
+    const isBed = BED_FURNITURE_KEYS.has(key);
+    const splitRule = SPLIT_SURFACE_FIXTURES[key];
+    const isFloorRootedSurface = FLOOR_ROOTED_SURFACE_KEYS.has(key);
+    if (!isBed && !splitRule && !isFloorRootedSurface) return data;
+
+    const adjusted = cloneFurnitureData(data); // Cached authoring JSON is never mutated or persisted by this display-only adjustment.
+    if (isBed) insetBedFootprint(adjusted);
+    else if (splitRule) shortenSplitSurfaceFixture(adjusted, splitRule);
+    else for (const part of adjusted.parts || []) scalePartAboutFloor(part, SURFACE_FURNITURE_Y_SCALE);
+    return adjusted;
+  }
+
+  const SURFACE_FURNITURE_Y_SCALE = 0.5; // Shared vertical proportion for floor-rooted surface furniture.
+  const authoredRuntime = window.AuthoredFurniture;
+  const existingAuthoredBuildGroup = authoredRuntime?.buildGroup;
+  if (typeof existingAuthoredBuildGroup === 'function' && !existingAuthoredBuildGroup.__hobunjiFurnitureProportionsWrapped) {
+    function buildGroupWithFurnitureProportions(data, ...args) {
+      return existingAuthoredBuildGroup.call(this, applyFurnitureProportions(data), ...args);
+    }
+    buildGroupWithFurnitureProportions.__hobunjiFurnitureProportionsWrapped = true;
+    buildGroupWithFurnitureProportions.__hobunjiFurnitureProportionsOriginal = existingAuthoredBuildGroup;
+    authoredRuntime.buildGroup = buildGroupWithFurnitureProportions;
+  }
+
   function mapper(part) {
     const t = part?.transform || {};
     const sx = Math.max(0.001, Number(t.sx) || 0.001);
@@ -413,6 +538,8 @@
     createCupGeometry,
     createEmptyLiquidGeometry,
     adoptAuthoredVisual,
+    applyFurnitureProportions,
+    latestChange: 'Floor-rooted tables/counters are half-height; bed meshes inset to a quarter-tile clear margin; candle and lantern accessories stay full-size and follow their lowered tables.',
     liveAuthoredUpgrade: !!furniture.buildFurnitureGroup?.__hobunjiAuthoredLiveUpgradeWrapped,
   };
   loadInteriorFireFloorCompanions();
