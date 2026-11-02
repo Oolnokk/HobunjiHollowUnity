@@ -468,6 +468,19 @@
     return values.includes('*') || values.includes('any') || values.includes(String(type));
   }
 
+  function hasSpotClearance(plan, spot, claims) {
+    const point = spot?.world;
+    if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.z))) return true;
+    for (const occupied of plan.spots || []) {
+      if (occupied.id === spot.id || Number(claims.get(occupied.id)||0) <= 0) continue;
+      const other = occupied.world;
+      if (!other || !Number.isFinite(Number(other.x)) || !Number.isFinite(Number(other.z))) continue;
+      const required = Math.max(0,Number(spot.clearance)||0) + Math.max(0,Number(occupied.clearance)||0);
+      if (required > 0 && Math.hypot(Number(point.x)-Number(other.x),Number(point.z)-Number(other.z)) + 1e-6 < required) return false;
+    }
+    return true;
+  }
+
   function canClaimSpotForPlan(plan, roomId, category, type, spotId = null) {
     if (!CATEGORIES.includes(category)) return false;
     if (!plan) return true;
@@ -475,7 +488,7 @@
     const claims = claimsByPlan.get(key) || new Map();
     return (plan.spots || []).some(spot => {
       const used = Number(claims.get(spot.id) || 0);
-      return (!spotId || spot.id === String(spotId)) && used < spot.maxUses && isAllowed(spot,category,type);
+      return (!spotId || spot.id === String(spotId)) && used < spot.maxUses && isAllowed(spot,category,type) && hasSpotClearance(plan,spot,claims);
     });
   }
 
@@ -487,7 +500,7 @@
     if (!claims) { claims = new Map(); claimsByPlan.set(key,claims); }
     const requestedSpotId = idOf(options.spotId);
     const spot = (plan.spots || []).find(candidate =>
-      (!requestedSpotId || candidate.id === requestedSpotId) && Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type));
+      (!requestedSpotId || candidate.id === requestedSpotId) && Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type) && hasSpotClearance(plan,candidate,claims));
     let report = diagnosticsByPlan.get(key);
     if (!report) { report = {claims:[],rejections:[],links:[]}; diagnosticsByPlan.set(key,report); }
     if (!spot) {
