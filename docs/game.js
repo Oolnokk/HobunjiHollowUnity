@@ -5644,8 +5644,11 @@
         const blend = 1 - Math.exp(-Math.min(0.05, Math.max(0, Number(dt) || 0)) / mobileAutoCameraResponseS); // No instantaneous target snap or catch-up jump after a stalled frame.
         const orbitGain = Math.max(1, Math.hypot(horizontal, mobileAutoTargetView.y) / Math.max(0.5, distanceTiles)); // Compensates a long camera boom: orbiting the player moves a close target less than rotating a camera in place.
         const yawCorrection = Math.max(-Math.PI, Math.min(Math.PI, yawError * orbitGain)); // Keeps compensation bounded so a nearby crossing cannot cause an instantaneous flip.
+        const rearTargetYawCorrection = Math.abs(yawError) > Math.PI / 2
+          ? Math.sign(yawCorrection) * Math.min(Math.abs(yawCorrection), Math.PI / 20)
+          : yawCorrection; // A target behind the camera gets a 9-degree-per-frame turn cap to prevent a sudden whip-around.
         const pitchCorrection = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchError * orbitGain)); // Same bounded correction for a close target's vertical movement.
-        cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - yawCorrection * 180 / Math.PI * blend);
+        cameraAzimuthOffsetDeg = wrapAzimuthDeg(cameraAzimuthOffsetDeg - rearTargetYawCorrection * 180 / Math.PI * blend);
         cameraAngleOffsetDeg = clampCameraPitchOffsetDeg(cameraAngleOffsetDeg - pitchCorrection * 180 / Math.PI * blend);
         mobileAutoCameraActive = true;
         _cachedPerspectiveTargetAt = -1;
