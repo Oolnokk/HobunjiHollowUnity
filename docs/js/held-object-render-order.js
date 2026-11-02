@@ -1163,15 +1163,15 @@
       }
       const worldPositionCode = '#include <worldpos_vertex>\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_BATCHING\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\n#endif\n#ifdef USE_INSTANCING\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\n#endif\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;';
       let elevationVertex = vertex
-        .replace('#include <common>', '#include <common>\\nvarying float vHobunjiXrayWorldY;\\nvarying vec3 vHobunjiXrayWorldNormal;')
+        .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
         .replace('#include <worldpos_vertex>', worldPositionCode);
       if (hasDefaultNormal) {
-        elevationVertex = elevationVertex.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
+        elevationVertex = elevationVertex.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
       } else {
         // MeshBasicMaterial is the intentionally unlit base-grass material.
         // Its common chunk still supplies normal and normalMatrix, so walls
         // and cliff faces remain occluders without requiring lighting chunks.
-        elevationVertex = elevationVertex.replace('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;', 'vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;\\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * normalMatrix * normal);');
+        elevationVertex = elevationVertex.replace('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;', 'vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * normalMatrix * normal);');
       }
       shader.vertexShader = elevationVertex;
       shader.fragmentShader = fragment
