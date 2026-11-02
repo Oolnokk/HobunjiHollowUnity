@@ -53,4 +53,21 @@ assert.match(authoring, /puzzleRequiredBurden/);
 assert.match(authoring, /puzzleCompletionChannel/);
 assert.match(authoring, /puzzlePayloadSurface/);
 assert.match(authoring, /puzzleReverseDuration/);
-console.log('Burden Plinth schema, authoring, attachment, interaction, channel and reversal checks passed.');
+
+const furnitureIndex = JSON.parse(read('docs/config/furniture-authored/index.json'));
+assert.ok(furnitureIndex.furniture.some(entry => entry.key === 'burdenPlinth' && entry.file === 'config/furniture-authored/burdenPlinth.json'),
+  'canonical authored-furniture index must expose the new piece');
+
+const mapEditor = read('docs/tools/map-editor/index.html');
+assert.match(mapEditor, /burdenPlinth:\{icon:'⚖️',label:'Burden Plinth'/);
+assert.match(mapEditor, /behavior:'burdenPlate',channel:'A',completionChannel:'B'/);
+assert.match(mapEditor, /payloadSurfaceId:'burden_plinth_lower:surface:2'/);
+
+const localeEditor = read('docs/tools/locale-editor/index.html');
+assert.match(localeEditor, /puzzle:data\.puzzle \? JSON\.parse\(JSON\.stringify\(data\.puzzle\)\)/);
+assert.match(localeEditor, /if \(p\.puzzle\) obj\.puzzle = window\.FurniturePuzzleProperties/);
+
+assert.match(interactions, /puzzle:record\.puzzle \|\| data\.puzzle/,
+  'async furniture registration must fall back to the loaded authored puzzle definition');
+
+console.log('Burden Plinth asset, catalogs, authoring, attachment, interaction, channels and reversal checks passed.');
