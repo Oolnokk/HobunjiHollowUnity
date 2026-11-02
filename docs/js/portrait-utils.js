@@ -1571,7 +1571,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const { hoodShowsFrontHairTag } = getPortraitLayeringConfig();
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const beardMaskVariantKey = `${resolvedFighter?.speciesId || fighter?.speciesId || ''}_${resolvedFighter?.gender || fighter?.gender || ''}`;
-  const hasMaskRuns = value => Array.isArray(value?.runs) && value.runs.length >= 2;
+  const hasMaskRuns = value => {
+    if (!Array.isArray(value?.runs) || value.runs.length < 2) return false;
+    const limit = Math.max(1, Number(value.width) || PORTRAIT_CW) * Math.max(1, Number(value.height) || PORTRAIT_CH);
+    for (let i = 0; i + 1 < value.runs.length; i += 2) {
+      if (Number(value.runs[i + 1]) > 0 && Number(value.runs[i]) >= 0 && Number(value.runs[i]) < limit) return true;
+    }
+    return false;
+  };
   const hasBeardOverpassMask = hoodHideFrontAndSideHair && (
     hasMaskRuns(hood?.beardRevealMasks?.[beardMaskVariantKey]) || hasMaskRuns(hood?.beardRevealMasks?.default) ||
     hasMaskRuns(facialHair?.beardOverpassMasks?.[beardMaskVariantKey]) || hasMaskRuns(facialHair?.beardOverpassMasks?.default)
@@ -1984,7 +1991,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     applyRuns(beardPriorityMask);
     let hasMask = false;
     for (let i = 3; i < maskImage.data.length; i += 4) if (maskImage.data[i]) { hasMask = true; break; }
-    if (!hasMask) { drawEmoteLayers(facialHairLayers, targetCtx); return; }
+    if (!hasMask) { if (!hoodHidesFacialHair(hood) && !hoodHidesFacialHair(mask)) drawEmoteLayers(facialHairLayers, targetCtx); return; }
     maskCtx.putImageData(maskImage, 0, 0);
     const above = Object.assign(document.createElement('canvas'), { width, height });
     const aboveCtx = above.getContext('2d');
