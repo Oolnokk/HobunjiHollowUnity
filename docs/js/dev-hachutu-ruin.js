@@ -935,7 +935,7 @@
         const floor=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:floorRecipes.map(item=>scaleRecipe(item,factor*1.5)),seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
         if(owner.ended||session!==owner){floor.dispose();return;}
         // Halve substrate thickness without shrinking its XZ footprint. Sink the bottom
-        // root layer so its vertical center sits just below ground, clipping its lower half.
+        // root layer so its vertical center sits at ground level, clipping its lower half.
         floor.targetGrowth.scale.y*=.5;
         floor.targetGrowth.updateMatrixWorld(true);
         const compressedBox=new THREE.Box3().setFromObject(floor.targetGrowth);
