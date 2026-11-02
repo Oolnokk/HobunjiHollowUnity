@@ -44,7 +44,7 @@
           <div class="field"><label for="beardHoodBrushSize">Brush radius</label><input id="beardHoodBrushSize" type="range" min="1" max="18" value="4"><span id="beardHoodBrushValue" class="small">4 px</span></div>
           <div class="row"><button type="button" id="beardHoodBrushPaint" class="active">Paint</button><button type="button" id="beardHoodBrushErase">Erase</button><label class="small"><input id="beardHoodMaskVisible" type="checkbox" checked> Show mask</label></div>
           <div class="row"><button type="button" id="beardHoodMaskClear">Clear this mask</button><button type="button" id="beardHoodMaskExport">Export selected cosmetic JSON</button></div>
-          <div id="beardHoodMaskStatus" class="small">Choose a hood or facial-hair cosmetic, then paint directly on the fitted portrait canvas.</div>
+          <div id="beardHoodMaskStatus" class="small">Choose a hood or facial-hair cosmetic, then paint directly on the fitted portrait canvas. Use the ghost reference selector to overlay the opposite layer while painting (blue = hood reveal area; amber = beard priority pixels).</div>
           <div class="small">Masks use the fitted portrait's shared pixel coordinates and are saved per cosmetic + target species + gender. Hood masks select beard pixels by position; beard masks select exact beard pixels independent of position.</div>
         </section>
       </section>
