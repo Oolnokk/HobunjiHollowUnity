@@ -71,6 +71,8 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.normalize({mode:"engraving",opacity:0}).engravingCoreOpacity,0,"zero opacity must still hide the entire carving");
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
+  assert.equal(api.normalize({mode:'engraving',glowIntensity:1.4,glowColor:'#ff6a10'}).glowIntensity,1.4);
+  assert.equal(api.normalize({mode:'engraving',selector:'all'}).selector,'all');
   assert.equal(api.normalize({palette:['invalid']}).palette[0],'#b7a185');
   const curvedGeo=new Geometry(),ring=[]; // Eight connected cylinder panels expose projection discontinuities at changing face directions.
   for(let segment=0;segment<8;segment++) {
@@ -109,7 +111,21 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.debug(mesh)[0].scale,2);assert.equal(part.patternSurfaces[0].scale,1);
   const cold=box();cold.userData.authoredPart=part;api.applyOverrides(cold,JSON.parse(JSON.stringify(mesh.userData.patternOverrides)));
   assert.equal(api.debug(cold)[0].scale,2,'serialized overrides survive cold restoration');
-  const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
+  const glowSource=box();
+  const glowRecord={...pattern,mode:'engraving',selector:'all',glowColor:'#ff7818',glowIntensity:.8,glowPulseSpeed:2};
+  api.applyPart(glowSource,{kind:'sphere',patternSurfaces:[glowRecord]});
+  const glowOverlay=glowSource.children[0];
+  assert.equal(glowOverlay.userData.furniturePattern.slot,'carpet');
+  await Promise.resolve();await new Promise(resolve=>setImmediate(resolve));
+  assert(glowOverlay.userData.engravingGlowMesh,'an authored glowing engraving must create a distinct glyph-only additive layer');
+  assert.equal(glowOverlay.userData.engravingGlowMesh.material.blending,THREE.AdditiveBlending);
+  api.setGlowState(glowSource,{intensity:1.2,pulseSpeed:8,pulseDepth:.9,color:'#ff9a28'});
+  assert.equal(glowSource.userData.furniturePatternGlowState.intensity,1.2,'fuse runtime can raise glyph glow intensity');
+  assert.equal(glowSource.userData.furniturePatternGlowState.pulseSpeed,8,'fuse runtime can accelerate glyph pulses');
+  const oldGlow=glowOverlay.userData.engravingGlowMesh;
+  glowOverlay.material.dispose();
+  assert.equal(oldGlow.material.disposed,undefined,'base engraving material disposal does not prematurely dispose shared glow material state');
+    const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
   const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
   assert(shader.vertexShader.includes('hanging'));assert.equal(shader.uniforms.bannerTime.value,1);
   for(const mode of ['cloth','glass','engraving']) {
