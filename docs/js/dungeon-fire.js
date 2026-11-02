@@ -1,6 +1,5 @@
 // Dungeon Fire: a one-shot ranged ignition and shared fire-contact system.
-// Thrown weapons use the enchantment VFX module's metal-pixel mask; other
-// projectiles carry a world-upright flame zone anchored to their PNG alpha.
+// All ranged projectiles carry the same world-upright flame zone anchored to their PNG alpha.
 (() => {
   'use strict';
   if (window.DungeonFire) return;
@@ -18,10 +17,8 @@
   const HIT_END = new THREE.Vector3(); // Reused clipped endpoint for swept fire-contact tests.
   const HIT_BOX = new THREE.Box3(); // Reused target bounds for the short list of fire-reactive mechanisms.
   const HIT_SIZE = new THREE.Vector3(); // Reused target bounds size.
-  const PARTICLE_COLORS = Object.freeze([0xfff18a, 0xffc02b, 0xff7a13, 0xff3a0a]);
   let pendingIgnition = false; // Consumed by RangedWeapons exactly once when the next player projectile is released.
   let flameArt = null; // Shared pointed-flame geometry/materials; each projectile owns only lightweight mesh instances.
-  let particleTexture = null; // Shared alpha texture for thrown-weapon flame particles.
   let lastEvent = 'idle'; // Exposed in the mobile diagnostic snapshot.
 
   function createFlameShape(width, height, bend = 0) {
@@ -68,89 +65,6 @@
     return group;
   }
 
-  function getParticleTexture() {
-    if (particleTexture) return particleTexture;
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 64;
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-    const gradient = context.createLinearGradient(0, 4, 0, 62);
-    gradient.addColorStop(0, 'rgba(255,255,170,0)');
-    gradient.addColorStop(.2, 'rgba(255,245,135,.95)');
-    gradient.addColorStop(.52, 'rgba(255,145,18,.96)');
-    gradient.addColorStop(1, 'rgba(205,24,0,0)');
-    context.fillStyle = gradient;
-    context.beginPath();
-    context.moveTo(32, 2);
-    context.bezierCurveTo(21, 20, 5, 34, 13, 50);
-    context.bezierCurveTo(18, 63, 45, 64, 52, 49);
-    context.bezierCurveTo(60, 33, 42, 17, 32, 2);
-    context.fill();
-    particleTexture = new THREE.CanvasTexture(canvas);
-    particleTexture.magFilter = particleTexture.minFilter = THREE.LinearFilter;
-    return particleTexture;
-  }
-
-  function addThrownParticle(state) {
-    if (!state.mask?.indices?.length || state.particles.length >= 28) return;
-    const vfx = window.WeaponEnchantmentVFX;
-    const index = state.mask.indices[Math.floor(Math.random() * state.mask.indices.length)];
-    const local = vfx?.metalPixelToLocal?.(index, state.mask, state.plane);
-    if (!local) return;
-    const texture = getParticleTexture();
-    if (!texture) return;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map:texture, color:PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
-      transparent:true, opacity:.9, depthWrite:false, blending:THREE.AdditiveBlending,
-    }));
-    const size = .035 + Math.random() * .045;
-    sprite.position.set(local.x, local.y, .018 + Math.random() * .012);
-    sprite.scale.set(size, size * (1.5 + Math.random() * .8), 1);
-    state.group.add(sprite);
-    state.particles.push({
-      sprite, age:0, life:.22 + Math.random() * .34, size,
-      vx:(Math.random() - .5) * .18, vy:.2 + Math.random() * .42,
-      phase:Math.random() * Math.PI * 2,
-    });
-  }
-
-  function updateThrownVisual(state, dt) {
-    if (!state.mask && !state.maskLoading) {
-      state.maskLoading = true;
-      const promise = window.WeaponEnchantmentVFX?.metalMaskForSprite?.(state.spritePath);
-      Promise.resolve(promise).then(mask => {
-        if (!state.projectile?.dead) {
-          state.mask = mask || null;
-          lastEvent = state.mask?.indices?.length ? 'thrown metal mask loaded' : 'thrown metal mask empty';
-        }
-      }).catch(() => { lastEvent = 'thrown metal mask failed'; });
-    }
-    if (state.mask?.indices?.length) {
-      state.emitClock += dt;
-      let emitted = 0;
-      while (state.emitClock >= .055 && emitted < 3) {
-        state.emitClock -= .055;
-        addThrownParticle(state);
-        emitted++;
-      }
-    }
-    for (let i = state.particles.length - 1; i >= 0; i--) {
-      const particle = state.particles[i];
-      particle.age += dt;
-      const t = Math.min(1, particle.age / particle.life);
-      particle.sprite.position.x += particle.vx * dt + Math.sin(particle.phase + particle.age * 18) * dt * .035;
-      particle.sprite.position.y += particle.vy * dt;
-      particle.sprite.position.z += Math.sin(particle.phase + particle.age * 13) * dt * .018;
-      particle.sprite.material.opacity = Math.max(0, .92 * (1 - t));
-      particle.sprite.scale.set(particle.size * (1 - t * .55), particle.size * (1.7 + t * .9), 1);
-      if (t >= 1) {
-        particle.sprite.parent?.remove(particle.sprite);
-        particle.sprite.material.dispose();
-        state.particles.splice(i, 1);
-      }
-    }
-  }
-
   function updateWorldFlame(state, dt) {
     const plane = state.plane;
     state.previousAnchorWorld.copy(state.anchorWorld);
@@ -174,21 +88,12 @@
     const plane = projectile.mesh?.userData?.projectilePlane || projectile.mesh?.userData?.facePivot?.children?.find?.(child => child.isMesh) || null;
     const state = {
       projectile, plane, spritePath:projectile.def?.projectileSprite || '',
-      group:null, worldFlame:null, anchor:null, mask:null, maskLoading:false,
+      worldFlame:null, anchor:null,
       anchorWorld:projectile.mesh.position.clone(),previousAnchorWorld:projectile.mesh.position.clone(),
-      particles:[], emitClock:0, age:0, disposed:false,
+      age:0, disposed:false,
     };
     projectile._dungeonFire = state;
     ACTIVE_VISUALS.add(state);
-    if (projectile.def?.rangedType === 'thrown') {
-      if (plane) {
-        state.group = new THREE.Group();
-        state.group.name = 'dungeonFire_metalPixelEmbers';
-        plane.add(state.group);
-        lastEvent = 'thrown projectile ignition attached';
-      }
-      return true;
-    }
     const scene = projectile.mesh?.parent;
     if (!scene) return false;
     state.worldFlame = createWorldFlame();
@@ -212,8 +117,7 @@
     const state = projectile?._dungeonFire;
     if (!state || state.disposed) return;
     const step = Math.max(0, Math.min(.05, Number(dt) || 0));
-    if (projectile.def?.rangedType === 'thrown') updateThrownVisual(state, step);
-    else if (state.worldFlame) updateWorldFlame(state, step);
+    if (state.worldFlame) updateWorldFlame(state, step);
   }
 
   function disposeProjectile(projectile) {
@@ -221,12 +125,7 @@
     if (!state || state.disposed) return false;
     state.disposed = true;
     state.worldFlame?.parent?.remove(state.worldFlame);
-    state.group?.parent?.remove(state.group);
-    for (const particle of state.particles) {
-      particle.sprite.parent?.remove(particle.sprite);
-      particle.sprite.material?.dispose?.();
-    }
-    state.particles.length = 0;
+
     ACTIVE_VISUALS.delete(state);
     projectile._dungeonFire = null;
     return true;
@@ -251,12 +150,10 @@
   function contactProjectile(projectile, start, end, maxT = 1, projectileRadius = 0) {
     if (!projectile?.dungeonFire || projectile.team !== 'player' || !start || !end || !TARGETS.size) return false;
     const state = projectile._dungeonFire;
-    const isThrown = projectile.def?.rangedType === 'thrown';
-    const plumeHeight = isThrown ? .62 : FLAME_HEIGHT;
     const plumeRadius = Math.max(FLAME_RADIUS, Number(projectileRadius) || 0);
     const limit = Math.max(0, Math.min(1, Number(maxT) || 0));
-    const segmentStart = !isThrown && state.worldFlame ? state.previousAnchorWorld : start;
-    const segmentEnd = !isThrown && state.worldFlame ? state.anchorWorld : end;
+    const segmentStart = state?.worldFlame ? state.previousAnchorWorld : start;
+    const segmentEnd = state?.worldFlame ? state.anchorWorld : end;
     HIT_START.copy(segmentStart);
     HIT_END.copy(segmentEnd).lerp(segmentStart, 1 - limit);
     let nearest = null;
@@ -277,7 +174,7 @@
     try {
       const accepted = nearest.target.onBurn?.({
         target:nearest.target, projectile, point,
-        fireKind:isThrown ? 'thrown-metal-pixels' : 'world-flame',
+        fireKind:'world-flame',
       });
       if (accepted === false) return false;
       nearest.target.active = false;
@@ -338,7 +235,6 @@
       activeVisuals:ACTIVE_VISUALS.size,
       thrownVisuals:[...ACTIVE_VISUALS].filter(state => state.projectile?.def?.rangedType === 'thrown').length,
       worldFlames:[...ACTIVE_VISUALS].filter(state => !!state.worldFlame).length,
-      particleCount:[...ACTIVE_VISUALS].reduce((sum,state)=>sum+state.particles.length,0),
       lastEvent,
     }),
     _test:Object.freeze({ segmentBoxInterval, createFlameShape }),
