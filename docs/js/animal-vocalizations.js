@@ -416,6 +416,14 @@
     state.nextChatterS = randomRange(chatter.cooldownMinS, chatter.cooldownMaxS);
   }
 
+  function releaseCreature(c) {
+    if (!c) return false;
+    const hadState = states.has(c);
+    states.delete(c);
+    const wasTracked = tracked.delete(c);
+    return hadState || wasTracked;
+  }
+
   function dialogueLinesFor(c) {
     return (profileFor(c).dialogueLines || []).filter(line => String(line || '').trim());
   }
@@ -458,6 +466,7 @@
   window.AnimalVocalizations = {
     init,
     tickCreature,
+    releaseCreature,
     companionDiscovery,
     threatGrowl,
     warning,
