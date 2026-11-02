@@ -1165,7 +1165,7 @@
     material.userData = material.userData || {};
     let state = material.userData.hobunjiXrayElevationShader;
     if (state) return state;
-    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 } }, supported: false, compileAttempted: false, geometryHasNormals: null };
+    state = { uniforms: { elevation: { value: 0 }, enabled: { value: 0 }, anyFacing: { value: 0 } }, supported: false, compileAttempted: false, geometryHasNormals: null };
     material.userData.hobunjiXrayElevationShader = state;
     const previousCompile = typeof material.onBeforeCompile === 'function' ? material.onBeforeCompile : null;
     const previousCacheKey = typeof material.customProgramCacheKey === 'function' ? material.customProgramCacheKey : null;
@@ -1173,41 +1173,60 @@
       previousCompile?.call(this, shader, renderer);
       const vertex = shader.vertexShader || '';
       const fragment = shader.fragmentShader || '';
-      const hasDefaultNormal = vertex.includes('#include <defaultnormal_vertex>');
       const requiredVertex = ['#include <common>', '#include <worldpos_vertex>'];
       const requiredFragment = ['#include <common>', '#include <clipping_planes_fragment>'];
       state.compileAttempted = true;
-      if (state.geometryHasNormals === false
-          || (!hasDefaultNormal && state.geometryHasNormals !== true)
+      if (state.geometryHasNormals !== true // Unknown or missing normals fail closed; setGroundElevationFilter records them before the first compile.
           || !requiredVertex.every(chunk => vertex.includes(chunk)) || !requiredFragment.every(chunk => fragment.includes(chunk))) {
-        state.supported = false; // Unsupported custom shaders keep conservative full-depth occlusion.
+        state.supported = false; // Unsupported custom shaders / normal-less geometry keep conservative full-depth occlusion.
         return;
       }
-      const worldPositionCode = '#include <worldpos_vertex>\nvec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);\n#ifdef USE_BATCHING\nhobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;\n#endif\n#ifdef USE_INSTANCING\nhobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;\n#endif\nhobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;\nvHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;';
-      let elevationVertex = vertex
+      // The world normal is derived from the always-declared `normal`
+      // attribute right here, after <worldpos_vertex> (which always runs).
+      // It used to be injected after <defaultnormal_vertex>, but r128's
+      // MeshBasicMaterial (all unlit terrain) only includes that chunk
+      // inside #ifdef USE_ENVMAP, so the normal was never written and the
+      // same-elevation ground was never actually discarded.
+      const worldPositionCode = [
+        '#include <worldpos_vertex>',
+        'vec4 hobunjiXrayWorldPosition = vec4(transformed, 1.0);',
+        'vec3 hobunjiXrayObjectNormal = normal;',
+        '#ifdef USE_BATCHING',
+        'hobunjiXrayWorldPosition = batchingMatrix * hobunjiXrayWorldPosition;',
+        'hobunjiXrayObjectNormal = mat3(batchingMatrix) * hobunjiXrayObjectNormal;',
+        '#endif',
+        '#ifdef USE_INSTANCING',
+        'hobunjiXrayWorldPosition = instanceMatrix * hobunjiXrayWorldPosition;',
+        'hobunjiXrayObjectNormal = mat3(instanceMatrix) * hobunjiXrayObjectNormal;',
+        '#endif',
+        'hobunjiXrayWorldPosition = modelMatrix * hobunjiXrayWorldPosition;',
+        'vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;',
+        'vHobunjiXrayWorldNormal = normalize(mat3(modelMatrix) * hobunjiXrayObjectNormal);',
+      ].join('\n');
+      shader.vertexShader = vertex
         .replace('#include <common>', '#include <common>\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
         .replace('#include <worldpos_vertex>', worldPositionCode);
-      if (hasDefaultNormal) {
-        elevationVertex = elevationVertex.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * transformedNormal);');
-      } else {
-        // MeshBasicMaterial is the intentionally unlit base-grass material.
-        // Its common chunk still supplies normal and normalMatrix, so walls
-        // and cliff faces remain occluders without requiring lighting chunks.
-        elevationVertex = elevationVertex.replace('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;', 'vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y;\nvHobunjiXrayWorldNormal = normalize(transpose(mat3(viewMatrix)) * normalMatrix * normal);');
-      }
-      shader.vertexShader = elevationVertex;
+      // Path bricks (anyFacing) are see-through on every face within the
+      // actor's elevation band; terrain keeps cliff/wall faces as occluders.
       shader.fragmentShader = fragment
-        .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
-        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y} && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE}) discard;`);
+        .replace('#include <common>', '#include <common>\nuniform float uHobunjiXrayActorElevation;\nuniform float uHobunjiXrayElevationEnabled;\nuniform float uHobunjiXrayAnyFacing;\nvarying float vHobunjiXrayWorldY;\nvarying vec3 vHobunjiXrayWorldNormal;')
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\nif (uHobunjiXrayElevationEnabled > 0.5 && abs(vHobunjiXrayWorldY - uHobunjiXrayActorElevation) <= ${XRAY_ELEVATION_TOLERANCE} && (uHobunjiXrayAnyFacing > 0.5 || (gl_FrontFacing && vHobunjiXrayWorldNormal.y >= ${XRAY_GROUND_NORMAL_MIN_Y}))) discard;`);
       shader.uniforms.uHobunjiXrayActorElevation = state.uniforms.elevation;
       shader.uniforms.uHobunjiXrayElevationEnabled = state.uniforms.enabled;
+      shader.uniforms.uHobunjiXrayAnyFacing = state.uniforms.anyFacing;
       state.supported = true;
     };
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
-      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-elevation-xray-v1';
+      return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-elevation-xray-v2';
     };
     material.needsUpdate = true;
     return state;
+  }
+
+  function isRoadXrayMesh(mesh) {
+    const data = mesh.userData || (mesh.userData = {});
+    if (data.hobunjiXrayRoadSurface === undefined) data.hobunjiXrayRoadSurface = isRoadSurface(mesh); // Cached: ancestry is fixed once a path brick group is built.
+    return data.hobunjiXrayRoadSurface;
   }
 
   function setGroundElevationFilter(groundMeshes, elevation) {
@@ -1216,15 +1235,23 @@
     let fallbackCount = 0;
     const enabled = Number.isFinite(elevation);
     for (const mesh of groundMeshes) {
+      const position = mesh?.geometry?.attributes?.position;
+      // TerrainRenderChunks leaves each split source mesh in place as an
+      // empty-geometry parent of its chunks. It draws nothing, but it shares
+      // the chunks' material, and treating it as "geometry without normals"
+      // used to switch the x-ray off for the whole path/floor material.
+      if (!position || !position.count) continue;
+      const roadSurface = isRoadXrayMesh(mesh);
       forEachMaterial(mesh?.material, material => {
         const state = installGroundElevationShader(material);
         if (!state) return;
-        const geometryHasNormals = !!mesh.geometry?.attributes?.normal && !mesh.isInstancedMesh && !mesh.isBatchedMesh;
+        const geometryHasNormals = !!mesh.geometry.attributes.normal && !mesh.isBatchedMesh;
         if (state.geometryHasNormals === null) state.geometryHasNormals = geometryHasNormals;
         else if (!geometryHasNormals && state.geometryHasNormals !== false) {
           state.geometryHasNormals = false;
           material.needsUpdate = true; // A shared basic material must not assume normals if any registered ground geometry lacks them.
         }
+        if (roadSurface) state.uniforms.anyFacing.value = 1;
         if (seen.has(material)) return;
         seen.add(material);
         state.uniforms.elevation.value = enabled ? elevation : 0;
