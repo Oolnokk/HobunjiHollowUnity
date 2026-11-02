@@ -263,6 +263,11 @@
     mesh.name='tothal_dungeon_fire_ice_wall_'+index;
     mesh.position.set(doorway.x,Number(support.y)+ICE_WALL_HEIGHT*.5,doorway.z);
     mesh.userData.dungeonFireMechanism='tothalIceWall';
+    mesh.userData.projectileCoverHeightTiles=ICE_WALL_HEIGHT;
+    mesh.userData.projectileCoverHalfXTiles=(doorway.axis==='x'?thickness:width)*.5;
+    mesh.userData.projectileCoverHalfZTiles=(doorway.axis==='x'?width:thickness)*.5;
+    mesh.userData.projectileCoverBottomOffsetTiles=-ICE_WALL_HEIGHT*.5;
+    mesh.userData.projectileCoverKind='tothal-ice-wall';
     world.group.add(mesh);
     const wall={
       id:'dungeon-fire-ice-wall-'+index,kind:'iceWall',group:mesh,mesh,iceMat,
@@ -280,11 +285,18 @@
     const target={id:wall.id,object:mesh,active:true,contactPadding:.16,onBurn:()=>{
       if(wall.phase!=='frozen')return false;
       wall.phase='melting';wall.elapsed=0;wall.blocking=false;
+      delete mesh.userData.projectileCoverHeightTiles;
+      delete mesh.userData.projectileCoverHalfXTiles;
+      delete mesh.userData.projectileCoverHalfZTiles;
+      delete mesh.userData.projectileCoverBottomOffsetTiles;
+      delete mesh.userData.projectileCoverKind;
+      window.NearbyVolumeCollision?.invalidate?.(); // Melted walls stop blocking later projectiles as soon as fire reaches them.
       window.DevRandomRuinTileOccupancy?.refresh?.();
       lastEvent='Tothal ice wall melting';
       return true;
     }};
     wall.targetId=window.DungeonFire?.registerTarget?.(target)||null;
+    window.NearbyVolumeCollision?.invalidate?.(); // The new wall must join projectile cover even when the active scene is unchanged.
     return wall;
   }
 
@@ -431,6 +443,7 @@
       for(const entry of Array.isArray(object.material)?object.material:[object.material])if(entry)materials.add(entry);
     });
     world.group.parent?.remove(world.group);
+    window.NearbyVolumeCollision?.invalidate?.(); // Remove any cached cover candidates that still reference this detached ruin group.
     for(const geometry of geometries)geometry.dispose?.();
     for(const entry of materials)entry.dispose?.();
     window.DungeonFire?.clear?.(); // Reroll/exit cannot leave armed shots, flame zones, or orphaned target callbacks.

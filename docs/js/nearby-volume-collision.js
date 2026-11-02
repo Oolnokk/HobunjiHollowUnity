@@ -140,6 +140,16 @@
       if (heightTiles != null) break;
     }
     if (heightTiles == null) return null;
+    const halfTileX=positive(data.projectileCoverHalfXTiles); // Explicit thin walls need an oriented world-axis box, not an over-wide circular cover approximation.
+    const halfTileZ=positive(data.projectileCoverHalfZTiles);
+    if(halfTileX!=null&&halfTileZ!=null){
+      return {
+        heightTiles,halfTileX,halfTileZ,
+        kind:data.projectileCoverKind||data.kind||data.type||'object',
+        key:data.furnitureKey||data.objectType||node.name||'(semantic cover)',
+        source:'explicit-aabb-metadata',
+      };
+    }
     let radiusTiles = null;
     for (const field of EXPLICIT_RADIUS_FIELDS) {
       radiusTiles = positive(data[field]);
@@ -217,7 +227,7 @@
     // other candidate gets a real, finite top so a shot arcing above it
     // (e.g. toward a player up a tree) is free to clear it instead of
     // being blocked by an object nowhere near that height.
-    const bottomY = transform.y;
+    const bottomY = transform.y + finite(node.userData?.projectileCoverBottomOffsetTiles) * Math.abs(transform.sy);
     const topY = heightWorld === Infinity ? Infinity : bottomY + heightWorld;
     if (semantic.halfTileX != null || semantic.halfTileZ != null) {
       return {
