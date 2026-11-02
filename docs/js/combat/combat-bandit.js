@@ -1129,14 +1129,17 @@
     c._chunkCombatTarget = null;
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
-  function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
-    const actorTarget = target && (
+  function isBanditCombatActor(target) {
+    // Staged swings retain actor identity even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
+    return !!target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
       || target.banditCompanion === true
       || typeof target.creatureKey === 'string'
-    ); // Staged swings keep the actor classification even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
-    if (actorTarget && typeof deps.damageCreature === 'function') {
+    );
+  }
+  function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    if (isBanditCombatActor(target) && typeof deps.damageCreature === 'function') {
       return deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
         ...opts,
         friendlyFire: true,
@@ -2123,7 +2126,7 @@
     // Covers the retreat/busy states below too: a stationary swinging
     // bandit should still get pushed off if the player walks into it,
     // even though it isn't the one closing the distance.
-    enforceBanditPlayerCollision(c, targetPlayer);
+    if (!isBanditCombatActor(targetPlayer)) enforceBanditPlayerCollision(c, targetPlayer);
     if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
     if (c.retreatT > 0) {
       c.retreatT = Math.max(0, c.retreatT - dt);
