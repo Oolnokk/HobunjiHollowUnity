@@ -1129,17 +1129,14 @@
     c._chunkCombatTarget = null;
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
-  function isBanditCombatActor(target) {
-    // Staged swings retain actor identity even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
-    return !!target && (
+  function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
       || target.banditCompanion === true
       || typeof target.creatureKey === 'string'
-    );
-  }
-  function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
-    if (isBanditCombatActor(target) && typeof deps.damageCreature === 'function') {
+    ); // Staged swings retain actor identity even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
+    if (actorTarget && typeof deps.damageCreature === 'function') {
       return deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
         ...opts,
         friendlyFire: true,
@@ -2121,12 +2118,16 @@
     if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
-    // Unconditional now (was only called from the engaged branch below,
-    // skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
+    // For player targets, unconditional now (was only called from the engaged
+    // branch below, skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
     // Covers the retreat/busy states below too: a stationary swinging
     // bandit should still get pushed off if the player walks into it,
     // even though it isn't the one closing the distance.
-    if (!isBanditCombatActor(targetPlayer)) enforceBanditPlayerCollision(c, targetPlayer);
+    const actorTarget = targetPlayer.isBandit === true
+      || targetPlayer.isPorakanekiHunter === true
+      || targetPlayer.banditCompanion === true
+      || typeof targetPlayer.creatureKey === 'string';
+    if (!actorTarget) enforceBanditPlayerCollision(c, targetPlayer);
     if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
     if (c.retreatT > 0) {
       c.retreatT = Math.max(0, c.retreatT - dt);
