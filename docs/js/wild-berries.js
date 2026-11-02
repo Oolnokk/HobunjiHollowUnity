@@ -43,18 +43,50 @@
     const color = deps.BERRY_COLORS[berryKey];
     if (color == null || !window.FoliageGenerator) return null;
     const group = window.FoliageGenerator.buildWildernessBushMesh(col, row);
-    const berryGeo = new THREE.SphereGeometry(0.035, 6, 5);
-    const berryMat = new THREE.MeshLambertMaterial({ color });
     const berryCount = 6 + Math.floor(Math.random() * 5); // 6-10
+    const offsets = [];
     for (let i = 0; i < berryCount; i++) {
-      const berry = new THREE.Mesh(berryGeo, berryMat);
       const angle = Math.random() * Math.PI * 2;
       const radius = 0.14 + Math.random() * 0.16;
-      berry.position.set(Math.cos(angle) * radius, 0.28 + Math.random() * 0.22, Math.sin(angle) * radius);
-      group.add(berry);
+      offsets.push([Math.cos(angle) * radius, 0.28 + Math.random() * 0.22, Math.sin(angle) * radius]);
     }
+    // All of a bush's berries share one geometry/draw call instead of one
+    // mesh each (~330 extra draws per pass in a berry zone). Berries are
+    // never picked individually — the whole bush group is removed — so
+    // nothing needs them as separate objects.
+    const berries = new THREE.Mesh(_mergedBerryGeometry(offsets), new THREE.MeshLambertMaterial({ color }));
+    berries.name = 'wild_berry_cluster';
+    group.add(berries);
     group.userData.berryKey = berryKey;
     return group;
+  }
+
+  let _berrySphere = null; // Template sphere, shared across bushes; only its arrays are read.
+  function _mergedBerryGeometry(offsets) {
+    if (!_berrySphere) _berrySphere = new THREE.SphereGeometry(0.035, 6, 5);
+    const srcPos = _berrySphere.attributes.position.array;
+    const srcNor = _berrySphere.attributes.normal.array;
+    const srcIdx = _berrySphere.index.array;
+    const vCount = srcPos.length / 3;
+    const pos = new Float32Array(srcPos.length * offsets.length);
+    const nor = new Float32Array(srcNor.length * offsets.length);
+    const idx = new Uint16Array(srcIdx.length * offsets.length);
+    offsets.forEach(([ox, oy, oz], b) => {
+      const vBase = b * vCount;
+      for (let v = 0; v < vCount; v++) {
+        const s = v * 3, d = (vBase + v) * 3;
+        pos[d] = srcPos[s] + ox; pos[d + 1] = srcPos[s + 1] + oy; pos[d + 2] = srcPos[s + 2] + oz;
+        nor[d] = srcNor[s]; nor[d + 1] = srcNor[s + 1]; nor[d + 2] = srcNor[s + 2];
+      }
+      const iBase = b * srcIdx.length;
+      for (let i = 0; i < srcIdx.length; i++) idx[iBase + i] = srcIdx[i] + vBase;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeBoundingSphere();
+    return geo;
   }
 
   // Same deterministic per-(zone,day) scatter as game.js's

@@ -440,7 +440,7 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261008h5ac0677"></script>
+  <script src="js/wild-berries.js?v=20261102hcade202"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
@@ -839,7 +839,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20260930globalground2"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261102h670262c"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
