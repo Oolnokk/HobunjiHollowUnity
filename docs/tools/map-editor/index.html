@@ -591,6 +591,10 @@ const DECOR = {
   mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
   feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'},
   generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'},
+  burdenPlinth:{icon:'⚖️',label:'Burden Plinth',fw:1,fd:1,area:'interior',puzzle:{
+    role:'activator',behavior:'burdenPlate',channel:'A',completionChannel:'B',
+    requiredBurdenKind:'shattercask',payloadSurfaceId:'burden_plinth_lower:surface:2'
+  }},
   door:{icon:'🚪',label:'Interior Door',fw:1,fd:1,area:'interior',puzzle:{role:'mechanism',behavior:'toggle',directInteraction:true,blocksMovement:true}}
 };
 
