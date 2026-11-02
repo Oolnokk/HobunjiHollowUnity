@@ -159,9 +159,13 @@
 
   function build(root) {
     clear();
-    const snapshot = window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+    // Cheap bail-outs first: frame() retries build() every rendered frame until a root has circuits, and
+    // getSnapshot() sorts every floor cell (hundreds of ms in a big ruin). Rooms without glyph targets
+    // (the Hachutu temple, any ruin with Projectile glyph targets off) used to pay that sort per frame.
     const source = window.DevRandomRuinHitPuzzles?.getGlyphCircuits?.() || [];
-    if (!snapshot || !source.length || !root.parent) return false;
+    if (!source.length || !root.parent) return false;
+    const snapshot = window.DevRandomRuinTileOccupancy?.getSnapshot?.();
+    if (!snapshot) return false;
     const floor = new Set(snapshot.floor || []);
     const gridBlocked = new Set(snapshot.gridBlocked || []);
     const tex = ensureTextures();

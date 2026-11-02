@@ -52,10 +52,10 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     let generated;
     try{generated=await Promise.race([
       page.evaluate(async()=>{
-        const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true});
+        const ok=await window.DevRandomRuin.generate(0x6ac4b078,{hachutu:true,stoneAge:true,rootMechanisms:true,rootRecipe:{maxBindings:1}}); // One vestibule door keeps CI generation bounded; production binds up to six.
         return {ok,ruin:window.DevHachutuRuin?.debug?.(),area:window.GridTileAccessors.getCurrentArea()};
       }),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Hachutu generation did not finish within 100 seconds; possible stuck V50/root growth')),100000)),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Hachutu generation did not finish within 150 seconds; possible stuck V50/root growth')),150000)),
     ]);}finally{clearInterval(progressPoll);} // Bound a hung generator without losing its last phase diagnostics.
     assert.equal(generated.ok,true,'Hachutu generator failed: '+JSON.stringify(generated)+"; "+logs.slice(-9).join(' | '));
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='map_i_dev_random_ruin',
@@ -75,6 +75,49 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     const built=await page.evaluate(()=>window.DevHachutuRuin.debug());
     assert.equal(built.active,true,'Hachutu composer failed to build: '+JSON.stringify(built));
     assert.equal(built.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
+    assert.equal(built.entered,true,'generating the Hachutu temple must arrive inside it, not in the stripped V50 vestibule');
+    assert.equal(built.platforms,15,'moving root-grown pillar platforms exist in the swing hall');
+    assert.equal(built.ropes,15,'vine ropes exist in the swing hall');
+    assert(built.mergedRootMeshes>0,'static roots must be baked into merged meshes, not ~1,000 individual draw calls');
+    await page.waitForFunction(()=>window.DevHachutuRuin.debug().floorRootsReady===true||window.DevHachutuRuin.debug().errors.length>0,null,{timeout:240000});
+    const floorRoots=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.deepEqual(floorRoots.errors,[],'floor root growth reported errors: '+JSON.stringify(floorRoots.errors));
+    assert.equal(floorRoots.floorRoots.filter(entry=>entry.kind==='floor').length,9,'author preview floor root mat grown for five rooms and four passages');
+    assert.equal(floorRoots.floorRoots.filter(entry=>entry.kind==='walls').length,5,'author preview wall root weave grown in the five halls');
+    assert(floorRoots.floorRoots.every(room=>room.tris>0),'every floor root group carries geometry');
+    assert.deepEqual(floorRoots.gates.map(g=>[g.id,g.open,g.blocking]),[['swing',false,true],['labyrinth',false,true]],'both hall exits start sealed by root-grown gates');
+    assert(floorRoots.gates.every(g=>g.grown===1),'gate roots are fully grown at the start');
+    assert(floorRoots.gates.every(g=>g.onSubstrate),'gate roots grow out of the passage floor root mat, not a private patch');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugClearRing(0,i);for(let i=0;i<3;i++)window.DevHachutuRuin.debugSever(0);});
+    await page.waitForFunction(()=>{const g=window.DevHachutuRuin.debug().gates;return g[0].open&&!g[0].blocking;},null,{timeout:30000});
+    const gates=await page.evaluate(()=>window.DevHachutuRuin.debug().gates);
+    assert.equal(gates[1].blocking,true,'severing the swing weed must not open the labyrinth gate');
+    const vestibule=await page.evaluate(()=>window.DevRandomRuin.getVestibuleRoots());
+    assert.deepEqual([vestibule.bindings,vestibule.rooted,vestibule.error],[1,true,null],'vestibule doors are bound to the Root Growth Author: '+JSON.stringify(vestibule));
+    assert(vestibule.props>0,'vestibule plateau risers/ladders are rockified stone-age props: '+JSON.stringify(vestibule));
+    assert.deepEqual(vestibule.stone?.errors,[],'unbound vestibule doors re-skinned without errors: '+JSON.stringify(vestibule.stone));
+    assert(vestibule.stone.doors+vestibule.stone.skippedBound>0,'every vestibule door is either root-bound or stone-age re-skinned');
+    assert(built.rockGeometries>0,'wing walls, menhirs, posts and pillars use rockified stone-age geometry');
+    // Labyrinth puzzle: three ember seeds at maze dead ends feed the three rings; the weed stays unhittable until all are taken.
+    assert.equal(built.seeds.length,3,'three ember seeds hidden in the labyrinth');
+    assert.equal(built.plants[1].rings,3,'labyrinth weed starts protected by three fire rings');
+    assert.equal(await page.evaluate(()=>window.DevHachutuRuin.debugSever(1)),false,'a ringed labyrinth weed cannot be severed');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugTakeSeed(i);});
+    const afterSeeds=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.equal(afterSeeds.plants[1].rings,0,'taking all seeds extinguishes every labyrinth ring');
+    assert(afterSeeds.seeds.every(seed=>seed.taken),'every seed is spent');
+    // Trial puzzle: all three sap bulbs lit at once, in addition to clearing the waves, exposes the weed.
+    assert.equal(built.bulbs.length,3,'three sap bulbs in the trial hall');
+    await page.evaluate(()=>{for(let i=0;i<3;i++)window.DevHachutuRuin.debugClearRing(2,i);});
+    assert.equal(await page.evaluate(()=>window.DevHachutuRuin.debugSever(2)),false,'wave-cleared weed stays bare-proof until resonance');
+    await page.evaluate(()=>{window.DevHachutuRuin.debugStrikeBulb(0);window.DevHachutuRuin.debugStrikeBulb(1);});
+    assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,false,'two bulbs are not enough');
+    await page.evaluate(()=>window.DevHachutuRuin.debugStrikeBulb(2));
+    assert.equal((await page.evaluate(()=>window.DevHachutuRuin.debug())).trial.resonance,true,'three lit bulbs resonate');
+    await page.evaluate(()=>{for(let i=0;i<3;i++){window.DevHachutuRuin.debugSever(1);window.DevHachutuRuin.debugSever(2);}});
+    const solved=await page.evaluate(()=>window.DevHachutuRuin.debug());
+    assert.deepEqual(solved.plants.map(plant=>plant.dead),[true,true,true],'all three weeds severed once their puzzles are solved');
+    assert.equal(solved.heart.open,true,'the Temple Heart seal opens after the three puzzles');
     assert.equal(built.rootHands,10,'ten authored root-hands instantiated in the labyrinth');
     assert(built.snare?.states?.length===10,'real root-hand authoring engine owns ten grasp sources');
     assert.deepEqual(built.errors,[],'Hachutu had hidden composer build errors');
