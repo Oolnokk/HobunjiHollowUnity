@@ -1944,6 +1944,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     });
   };
 
+  // Neck-rig construction needs the base head's real opaque-pixel centroid,
   const maskForVariant = (option, property) => {
     const maps = option?.[property];
     if (!maps || typeof maps !== 'object') return null;
@@ -1996,7 +1997,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     pendingBeardOverpass = above;
   };
 
-  // Neck-rig construction needs the base head's real opaque-pixel centroid,
   // uncontaminated by torso, hair, hats, or other cosmetics. Keep this inside
   // the canonical renderer so it uses the exact same tint and portrait preset
   // as the composite world-avatar canvas.
