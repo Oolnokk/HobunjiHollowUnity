@@ -605,6 +605,37 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.match(tower.blockerPurpose||'', /^puzzle_tower_(?:stackedObelisk|linkedCubePillars)$/, 'puzzle tower must feed the authoritative occupancy blocker set: '+JSON.stringify(tower));
     }
 
+    // Exercise the same map-tab button players use; a successful copy must produce parseable scene JSON.
+    if (seed === FIXED_SEEDS[0]) {
+      const exportResult = await page.evaluate(async () => {
+        const button = document.querySelector('[data-ruin-json-export]');
+        if (!button) return { present:false, status:'missing export button', length:0, valid:false };
+        window.__ruinJsonClipboardText = '';
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable:true,
+          value:{ writeText:async text => { window.__ruinJsonClipboardText = text; } },
+        });
+        button.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const status = document.querySelector('[data-ruin-json-status]')?.textContent || '';
+        const copied = window.__ruinJsonClipboardText;
+        let parsed = null;
+        try { parsed = JSON.parse(copied); } catch (_) {}
+        return {
+          present:true,
+          status,
+          length:copied.length,
+          valid:!!parsed && parsed.format === 'hobunji-ruin-map' && !!parsed.scene?.object,
+          hasSceneChildren:Array.isArray(parsed?.scene?.object?.children),
+        };
+      });
+      assert.equal(exportResult.present, true, JSON.stringify(exportResult));
+      assert.match(exportResult.status, /^Copied /, JSON.stringify(exportResult));
+      assert.ok(exportResult.length > 1000, JSON.stringify(exportResult));
+      assert.equal(exportResult.valid, true, JSON.stringify(exportResult));
+      assert.equal(exportResult.hasSceneChildren, true, JSON.stringify(exportResult));
+    }
+
     // Wall planes are structural and their old visual toggle is now a no-op.
     // Applying it must not recreate any object-wide wall blockers.
     if (seed === FIXED_SEEDS[0]) {
