@@ -1764,11 +1764,14 @@
     for (const river of map.rivers || []) {
       const pathTiles = []; // In-bounds water tiles sampled from this river's authored path.
       let lastKey = '';
+      const pointScale = Math.max(1, Math.round(Number(settings.generationScale) || 1)); // Matches scaleGeneratedRivers/scaleMapPoint before the exported node resolves to a duplicated source tile.
       for (const point of river.points || []) {
-        const x = Math.round(Number(point.x));
-        const y = Math.round(Number(point.y));
+        const scaledX = Math.round(Number(point.x) * pointScale); // Exact final-grid column used by the exported river node.
+        const scaledY = Math.round(Number(point.y) * pointScale); // Exact final-grid row used by the exported river node.
+        const x = Math.floor(scaledX / pointScale); // Source tile whose scaled block contains that exported node.
+        const y = Math.floor(scaledY / pointScale);
         if (!inBounds(x, y)) continue;
-        const tile = tileAt(x, y); // Sampled channel tile for this path point.
+        const tile = tileAt(x, y); // Sample the same source tile that the exported scaled node will occupy.
         if (!tile || !tile.water || tile.terrain !== 'river') continue;
         const key = tileKey(x, y); // Prevents sub-tile path wobble from duplicating a centerline sample.
         if (key === lastKey) continue;
