@@ -83,6 +83,7 @@ const updateStart = game.indexOf('      function updateCameraPosition() {'); // 
 const camera = {position:{set(x,y,z){Object.assign(this,{x,y,z});}},lookAt(x,y,z){this.target={x,y,z};},updateProjectionMatrix(){}}; // Final camera pose capture.
 Object.assign(context,{
   camera, applyAuthoredCinematicCamera:()=>false, cameraModeConfig:()=>({distanceTiles:1.3,angleFromGroundDeg:9,targetYOffsetTiles:.15,ignoreGlobalZoom:true}),
+  clampCameraPitchOffsetDeg: (value, baseAngleDeg = 9) => Math.max(-90 - baseAngleDeg, Math.min(90 - baseAngleDeg, Number(value) || 0)), // Mirrors the shared vertical clamp for the extracted live update.
   cameraContainerAspect:()=>1, camTargetX:.5,camTargetZ:.5,cameraAngleOffsetDeg:-85,cameraAzimuthOffsetDeg:0,s_zoomScale:1.5,
   dialoguePortraitCameraAim:()=>null,s_shoulderSurfOffsetH_current:0,s_shoulderSurfOffsetV_current:0,_lastCameraLookPoint:{set(){}},
 });
