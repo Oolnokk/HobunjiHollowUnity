@@ -132,7 +132,7 @@ windowStub._npcWalkers.set('npc-owner', {
 assert.equal(npcPet.def.moveSpeed, 128, 'a live NPC walker’s current catch-up pace takes precedence over its static authored species speed');
 
 npcPet.ownerMovementSpeedPercent = 50;
-assert.equal(npcPet.def.moveSpeed, 45, 'an explicit owner-speed percentage scales the live owner speed');
+assert.equal(npcPet.def.moveSpeed, 64, 'an explicit owner-speed percentage scales the owner’s current catch-up speed');
 
 const jubmirMaster = { npcId: 'jubmir', x: 0, y: 0, areaId: 'town' }; // Mirrors JubmirDabinggiHounds' position-only master adapter.
 windowStub._npcWalkers.set('jubmir', { rec: { id: 'jubmir' }, root: { position: { x: 0, z: 0 } } });
