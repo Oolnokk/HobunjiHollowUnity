@@ -377,9 +377,9 @@
     }
     return out;
   }
-  // Render-only rectangle for a piece — expanded 1 tile into a same-axis
-  // full-shared-edge neighbor per _sameDirectionExtensions. Never mutates
-  // the piece's own col/row/w/h (footprint, door resolution, save data).
+  // Roof-only render rectangle for a piece — expanded 1 tile into a same-axis
+  // full-shared-edge neighbor per _sameDirectionExtensions. Never use this
+  // for body walls, doors or windows: only the roof is allowed to overlap.
   function _renderRectFor(entry, exts) {
     let col = entry.col, row = entry.row, w = entry.w, h = entry.h;
     for (const e of exts) {
@@ -392,13 +392,42 @@
     return { col, row, w, h };
   }
   function getExteriorRenderRect(pieceId) {
-    const built = deps.getHousePieces().filter(piece => piece.stage === 'built'); // Uses the same neighboring rooms as the structure rebuild.
-    const entry = built.find(piece => piece.id === pieceId); // Identifies the rendered Highland body under a linked window.
-    return entry ? (entry._exteriorRenderRect || _renderRectFor(entry, _sameDirectionExtensions(built))) : null; // Reuses the last build's rectangle during player aiming.
+    const entry = deps.getHousePieces().find(piece => piece.id === pieceId && piece.stage === 'built'); // Window linkage follows the real exterior wall, never the roof-only overhang.
+    return entry ? (entry._exteriorRenderRect || { col: entry.col, row: entry.row, w: entry.w, h: entry.h }) : null;
   }
   // A partial (not full-length) same-axis shared edge can't expand the whole
   // source rectangle without spilling past the neighbor — just the 1-tile-
   // deep shared run gets its own small bridging piece instead.
+  // Remove the wall segment where this room meets any adjacent room. The
+  // same normalized apertures cut the body wall AND its gable end, so
+  // shared interior boundaries cannot show through as exterior brickwork.
+  function _sharedWallCutsFor(entry, all) {
+    const cuts = [];
+    for (const other of all) {
+      if (other === entry) continue;
+      const ad = _rectAdjacency(entry, other);
+      if (!ad) continue;
+      let side;
+      if (ad.orientation === 'vertical') {
+        side = entry.col + entry.w === other.col ? 'east' : 'west';
+      } else {
+        side = entry.row + entry.h === other.row ? 'south' : 'north';
+      }
+      // Store the actual shared interval in world tile coordinates. The
+      // gable edge is inset from the floor/body edge, so a normalized cut
+      // would leave a thin uncovered sliver on partial-length connections.
+      cuts.push({
+        side,
+        worldStart: ad.start,
+        worldEnd: ad.end,
+        vCenter: 0.5,
+        vHeight: 1,
+        kind: 'internal',
+      });
+    }
+    return cuts;
+  }
+
   function _partialExtensionRect(e, all) {
     const host = all.find(p => p.id === e.hostId);
     if (!host) return null;
@@ -519,27 +548,39 @@
     _refreshArchitecturalFeatures(built);
     const exts = _sameDirectionExtensions(built);
     const crossGables = _crossGableConnections(built);
-    built.forEach(entry => { entry._exteriorRenderRect = _renderRectFor(entry, exts); }); // Every window sees the new geometry even if its owner builds later in this loop.
+    built.forEach(entry => { entry._exteriorRenderRect = { col: entry.col, row: entry.row, w: entry.w, h: entry.h }; }); // Window/door linkage always targets the actual walls.
     for (const entry of built) {
       _disposeMesh(entry._mesh);
       const axis = _roofAxisDecision(entry, built);
-      const render = entry._exteriorRenderRect; // Window placement and the cut share this exact generated Highland footprint.
+      const wallRect = entry._exteriorRenderRect;
+      const roofRect = _renderRectFor(entry, exts); // Only roof surfaces use same-axis overhangs.
       const entrances = (entry.features || []).filter(f => f.type === 'entrance' && !f.invalid);
       const buildOpts = {
+        bodyOnly: true,
         farmNaturalColors: window.FarmWorldSettings?.current(),
         axisOverride: axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults,
-        windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(render) || [], // Linked daylight windows subtract their full frame silhouettes before exterior WallBuilder bricks are generated.
+        windowCuts: window.HouseWindowLinkage?.getExteriorWindowCuts?.(wallRect) || [], // Linked windows cut the real wall, not the extended roof.
+        wallCuts: _sharedWallCutsFor(entry, built),
         doorCuts: entrances.map(f => {
           const { col, row } = _featureGlobalTile(entry, f);
           return {
             side: f.side,
-            idx: (f.side === 'south' || f.side === 'north') ? col - render.col : row - render.row,
-            len: (f.side === 'south' || f.side === 'north') ? render.w : render.h,
+            idx: (f.side === 'south' || f.side === 'north') ? col - wallRect.col : row - wallRect.row,
+            len: (f.side === 'south' || f.side === 'north') ? wallRect.w : wallRect.h,
           };
         }),
         ..._faceMats(),
       };
-      entry._mesh = HousePieceGen.buildGroup(THREE, render.col, render.col + render.w - 1, render.row, render.row + render.h - 1, buildOpts);
+      entry._mesh = HousePieceGen.buildGroup(THREE, wallRect.col, wallRect.col + wallRect.w - 1, wallRect.row, wallRect.row + wallRect.h - 1, buildOpts);
+      const roofMesh = HousePieceGen.buildGroup(THREE, roofRect.col, roofRect.col + roofRect.w - 1, roofRect.row, roofRect.row + roofRect.h - 1, {
+        roofOnly: true,
+        farmNaturalColors: window.FarmWorldSettings?.current(),
+        axisOverride: axis,
+        ..._faceMats(),
+      });
+      roofMesh.userData.housePieceRoofOnly = true;
+      roofMesh.userData.housePieceRoofExtension = roofRect.col !== wallRect.col || roofRect.row !== wallRect.row || roofRect.w !== wallRect.w || roofRect.h !== wallRect.h;
+      entry._mesh.add(roofMesh);
       (entry.features || []).forEach(f => {
         if (f.invalid) return;
         const { col, row } = _featureGlobalTile(entry, f);
@@ -566,8 +607,9 @@
       const rect = _partialExtensionRect(e, built);
       if (!rect || rect.w <= 0 || rect.h <= 0) return;
       const mesh = HousePieceGen.buildGroup(THREE, rect.col, rect.col + rect.w - 1, rect.row, rect.row + rect.h - 1, {
+        roofOnly: true,
         farmNaturalColors: window.FarmWorldSettings?.current(),
-        axisOverride: e.axis, wallBuilder: deps.houseWallBuilder, wbUsePlaceholder: true, wbOpts: _wbDefaults, ..._faceMats(),
+        axisOverride: e.axis, ..._faceMats(),
       });
       deps.scene.add(mesh);
       _extensionProxyMeshes.push(mesh);

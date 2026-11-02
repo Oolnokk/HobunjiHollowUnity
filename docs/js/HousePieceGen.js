@@ -322,13 +322,13 @@
 
   function _lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 
-  // Body wall faces are the 4 single_rectangle 'wall' faces (excluding the
-  // triangular gableEnd faces) produced by the Highland generator — one per
-  // side, corners ordered [bottom(u=0), top(u=0), top(u=1), bottom(u=1)].
-  // Classifies each by comparing its bottom-edge midpoint against the whole
-  // set's own bounding box (no piece-level bbox/footprint lookup needed).
+  // Procedural Highland body walls and explicitly side-tagged gable ends.
+  // Including generated gables lets shared-edge cuts remove the whole
+  // interior boundary, while authored gables without wallSide metadata keep
+  // their prior behavior. Body-face corners remain ordered
+  // [bottom(u=0), top(u=0), top(u=1), bottom(u=1)].
   function _classifyBodyWalls(faces) {
-    var walls = faces.filter(function (f) { return f.tag === 'wall' && !f.gableEnd && f.highlandFrustumWall; });
+    var walls = faces.filter(function (f) { return f.tag === 'wall' && (f.highlandFrustumWall || (f.gableEnd && f.wallSide)); });
     var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     walls.forEach(function (f) {
       [f.v[0], f.v[3]].forEach(function (p) {
@@ -341,7 +341,7 @@
       var cx = (f.v[0][0] + f.v[3][0]) / 2, cz = (f.v[0][2] + f.v[3][2]) / 2;
       var dN = Math.abs(cz - minZ), dS = Math.abs(cz - maxZ), dW = Math.abs(cx - minX), dE = Math.abs(cx - maxX);
       var m = Math.min(dN, dS, dW, dE);
-      sideOf.set(f, m === dN ? 'north' : m === dS ? 'south' : m === dW ? 'west' : 'east');
+      sideOf.set(f, f.wallSide || (m === dN ? 'north' : m === dS ? 'south' : m === dW ? 'west' : 'east'));
     });
     return { walls: walls, bbox: { minX: minX, maxX: maxX, minZ: minZ, maxZ: maxZ }, sideOf: sideOf };
   }
@@ -427,7 +427,9 @@
     for (var i = 0; i < faces.length; i++) {
       var f = faces[i], side = classified.sideOf.get(f);
       if (!side) { out.push(f); continue; }
-      var sideCuts = openings.filter(function (opening) { return opening && opening.side === side; });
+      var sideCuts = openings.filter(function (opening) {
+        return opening && opening.side === side && (!f.gableEnd || opening.kind === 'internal');
+      }); // Doors/windows cut only the body wall; only shared room boundaries also remove the gable above it.
       if (!sideCuts.length) { out.push(f); continue; }
 
       var varyingIsX = side === 'north' || side === 'south';
@@ -437,14 +439,28 @@
       var startIsMin = Math.abs(v0Coord - minRef) < Math.abs(v3Coord - minRef);
       var cuts = [];
       sideCuts.forEach(function (opening) {
-        var center = Number(opening.uCenter), width = Math.abs(Number(opening.uWidth));
+        var lo, hi;
+        if (Number.isFinite(Number(opening.worldStart)) && Number.isFinite(Number(opening.worldEnd))) {
+          // Project the shared world-space interval onto THIS face's actual
+          // lower edge. Body walls and inset gables therefore meet precisely
+          // at the same world coordinates even though their widths differ.
+          var edgeSpan = v3Coord - v0Coord;
+          if (Math.abs(edgeSpan) < 1e-6) return;
+          var uA = (Number(opening.worldStart) - v0Coord) / edgeSpan;
+          var uB = (Number(opening.worldEnd) - v0Coord) / edgeSpan;
+          lo = Math.max(0, Math.min(1, Math.min(uA, uB)));
+          hi = Math.max(0, Math.min(1, Math.max(uA, uB)));
+        } else {
+          var center = Number(opening.uCenter), width = Math.abs(Number(opening.uWidth));
+          if (!Number.isFinite(center) || !Number.isFinite(width) || width <= 0) return;
+          lo = Math.max(0, Math.min(1, center - width * 0.5));
+          hi = Math.max(0, Math.min(1, center + width * 0.5));
+          if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
+        }
         var vCenter = Number(opening.vCenter), vHeight = Math.abs(Number(opening.vHeight));
-        if (!Number.isFinite(center) || !Number.isFinite(width) || !Number.isFinite(vCenter) || !Number.isFinite(vHeight) || width <= 0 || vHeight <= 0) return;
-        var lo = Math.max(0, Math.min(1, center - width * 0.5));
-        var hi = Math.max(0, Math.min(1, center + width * 0.5));
+        if (!Number.isFinite(vCenter) || !Number.isFinite(vHeight) || vHeight <= 0) return;
         var vlo = Math.max(0, Math.min(1, vCenter - vHeight * 0.5));
         var vhi = Math.max(0, Math.min(1, vCenter + vHeight * 0.5));
-        if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
         if (hi - lo > 1e-5 && vhi - vlo > 1e-5) cuts.push({ u0: lo, u1: hi, v0: vlo, v1: vhi, kind: opening.kind || 'window' });
       });
       if (!cuts.length) { out.push(f); continue; }
@@ -462,12 +478,11 @@
       var bottom = function (u) { return _lerp3(b0, b1, u); };
       var top = function (u) { return _lerp3(t0, t1, u); };
       var point = function (u, v) { return _lerp3(bottom(u), top(u), v); };
-      // Window holes are also handed to WallBuilder as brick exclusion zones:
-      // bricks are only centre-clamped to their own (possibly very thin)
-      // surviving panel, so without this the strips around a hole still
-      // grow full-size bricks across it.
+      // Every aperture is also a WallBuilder exclusion zone. Bricks can be
+      // larger than their clipped panel and jitter beyond its edge; without
+      // this quad, doorway lintels/side runs or adjoining cutouts can still
+      // spill bricks back across an otherwise-open portal.
       cuts.forEach(function (cut) {
-        if (cut.kind === 'door') return;
         openingQuads.push([point(cut.u0, cut.v0), point(cut.u0, cut.v1), point(cut.u1, cut.v1), point(cut.u1, cut.v0)]);
       });
       rects.forEach(function (rect, rectIndex) {
@@ -683,6 +698,9 @@
    *   wbUsePlaceholder- passed to wallBuilder.build as usePlaceholder (default true)
    *   wbOpts          - extra opts forwarded to wallBuilder.build
    *   windowCuts       - normalized {side,uCenter,uWidth,vCenter,vHeight} wall apertures
+   *   wallCuts         - normalized shared-wall openings; cut body + gable walls
+   *   bodyOnly         - emit body/gable walls without roof slopes or ridge cap
+   *   roofOnly         - emit roof slopes/ridge cap + shingles without room walls
    *   matWall / matRoof / matFloor / matTube  - override materials
    */
   function buildGroup(THREE, minC, maxC, minR, maxR, opts) {
@@ -705,8 +723,13 @@
     var axis = opts.axisOverride || ((W >= D) ? 'x' : 'z');
 
     var faces = [];
-    _addFrustumBody(faces, bottomRect, eaveRect, y0, yEave);
+    if (!opts.roofOnly) _addFrustumBody(faces, bottomRect, eaveRect, y0, yEave);
     _addGableRoof(faces, eaveRect, bottomRect, yEave, baseH, roofH, axis, tile);
+    // Roof extensions must never extend the room's body, doorway or wall
+    // cladding. Emit the two halves independently: bodyOnly retains body and
+    // gable walls; roofOnly retains only the slopes and ridge cap + shingles.
+    if (opts.roofOnly) faces = faces.filter(function (f) { return f.tag === 'roof' || f.roofRidgeCap; });
+    else if (opts.bodyOnly) faces = faces.filter(function (f) { return f.tag !== 'roof' && !f.roofRidgeCap; });
 
     // Doors and linked windows are both rectangular omissions from the same
     // four generated body-wall faces. Resolve them together before any wall
@@ -717,6 +740,7 @@
       var len = Math.max(1, Number(dc.len) || 1), idx = Number(dc.idx) || 0;
       return { side: dc.side, uCenter: (idx + 0.5) / len, uWidth: 1 / len, vCenter: 0.46, vHeight: 0.92, kind: 'door' };
     });
+    if (Array.isArray(opts.wallCuts)) wallOpenings = wallOpenings.concat(opts.wallCuts); // Shared room boundaries are removed from this room's walls and gables.
     if (Array.isArray(opts.windowCuts)) wallOpenings = wallOpenings.concat(opts.windowCuts);
     var cutFaces = _cutFacesForOpenings(faces, wallOpenings);
     var wallCut = cutFaces !== faces;
@@ -765,7 +789,10 @@
 
         // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
         var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
-        var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+        var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({}, gableExtra, {
+          usePlaceholder: wbUse,
+          excludeQuads: (gableExtra.excludeQuads || []).concat(openingQuads),
+        }));
         gableGroup.userData.isWallBricks = true;
         _markOutlineLayer(gableGroup);
         group.add(gableGroup);
@@ -904,10 +931,10 @@
     var b = _corners(bRect, y0), t = _corners(tRect, y1);
     _face(faces, [b.a, b.b, b.c, b.d], 'floor',   { highlandFrustumBottom: true });
     _face(faces, [t.d, t.c, t.b, t.a], 'ceiling',  { highlandFrustumTop: true });
-    _face(faces, [b.a, t.a, t.b, b.b], 'wall',     { highlandFrustumWall: true }); // north
-    _face(faces, [b.b, t.b, t.c, b.c], 'wall',     { highlandFrustumWall: true }); // east
-    _face(faces, [b.c, t.c, t.d, b.d], 'wall',     { highlandFrustumWall: true }); // south
-    _face(faces, [b.d, t.d, t.a, b.a], 'wall',     { highlandFrustumWall: true }); // west
+    _face(faces, [b.a, t.a, t.b, b.b], 'wall',     { highlandFrustumWall: true, wallSide: 'north' }); // north
+    _face(faces, [b.b, t.b, t.c, b.c], 'wall',     { highlandFrustumWall: true, wallSide: 'east' }); // east
+    _face(faces, [b.c, t.c, t.d, b.d], 'wall',     { highlandFrustumWall: true, wallSide: 'south' }); // south
+    _face(faces, [b.d, t.d, t.a, b.a], 'wall',     { highlandFrustumWall: true, wallSide: 'west' }); // west
   }
 
   // ── Roof: ridge cap + 2 slopes + 2 gable walls ──────────────────────────────
@@ -945,13 +972,13 @@
 
     if (axis === 'x') {
       _face(faces, [base.a, top.a, top.b, base.b], 'roof', { roofAcrossOffset: edgewardOff, roofOffsetRole: 'cross_gable_edgeward' }); // north slope
-      _face(faces, [base.b, top.b, top.c, base.c], 'wall', { gableEnd: true });  // east gable
+      _face(faces, [base.b, top.b, top.c, base.c], 'wall', { gableEnd: true, wallSide: 'east' });  // east gable
       _face(faces, [base.c, top.c, top.d, base.d], 'roof', { roofAcrossOffset: 0, roofOffsetRole: 'cross_gable_reference' }); // south slope
-      _face(faces, [base.d, top.d, top.a, base.a], 'wall', { gableEnd: true });  // west gable
+      _face(faces, [base.d, top.d, top.a, base.a], 'wall', { gableEnd: true, wallSide: 'west' });  // west gable
     } else {
-      _face(faces, [base.a, top.a, top.b, base.b], 'wall', { gableEnd: true });  // north gable
+      _face(faces, [base.a, top.a, top.b, base.b], 'wall', { gableEnd: true, wallSide: 'north' });  // north gable
       _face(faces, [base.b, top.b, top.c, base.c], 'roof', { roofAcrossOffset: edgewardOff, roofOffsetRole: 'cross_gable_edgeward' }); // east slope
-      _face(faces, [base.c, top.c, top.d, base.d], 'wall', { gableEnd: true });  // south gable
+      _face(faces, [base.c, top.c, top.d, base.d], 'wall', { gableEnd: true, wallSide: 'south' });  // south gable
       _face(faces, [base.d, top.d, top.a, base.a], 'roof', { roofAcrossOffset: 0, roofOffsetRole: 'cross_gable_reference' }); // west slope
     }
   }
