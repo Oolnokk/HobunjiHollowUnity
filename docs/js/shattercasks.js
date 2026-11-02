@@ -852,6 +852,10 @@
     burden.group.position.set(0, .015, 0);
     burden.group.quaternion?.identity?.();
     burden.group.scale?.setScalar?.(1);
+    burden.group.updateWorldMatrix?.(true, true);
+    const surfaceOrigin = anchor.getWorldPosition(new THREE.Vector3());
+    const payloadBounds = new THREE.Box3().setFromObject(burden.group);
+    burden.group.position.y = Math.max(.015, surfaceOrigin.y - payloadBounds.min.y + .015); // Seat both base-origin Shattercasks and center-origin Soursap fruits on top of the surface.
     burden.carried = false;
     burden.flying = false;
     burden.plinthAttached = true;
