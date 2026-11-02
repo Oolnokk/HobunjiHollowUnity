@@ -84,6 +84,8 @@ assert.match(rangedSource, /action\.kind === 'fire' && action\.chargeDurationS >
   'NPC thrown windups must use the same cumulative pose-based held-charge payment');
 assert.match(archetypeSource, /function updateThrownChargeStamina\(\)[\s\S]*payThrownChargeStamina\(charge,[\s\S]*Thrown weapon charge \(holding\)/,
   'player thrown holds must spend stamina progressively while the input remains held');
+assert.match(archetypeSource, /getEnhancedResources\?\.\(player, 'stamina',[\s\S]*player\?\.stamina <= 0 && !hasEnhancedStamina[\s\S]*releaseThrownCharge\('stamina-depleted'\)/,
+  'thrown holds must auto-release at zero ordinary Stamina only after enhanced Stamina is exhausted, matching Charged Breaker');
 assert.match(archetypeSource, /const result = baseUpdate\(dt\);\s*updateThrownChargeStamina\(\);/,
   'the held charge payment must tick through the normal ranged update loop');
 assert.match(archetypeSource, /payThrownChargeStamina\(charge, poseCharge, 'Thrown weapon charge \(release\)'\)/,
