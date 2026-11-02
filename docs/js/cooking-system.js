@@ -473,9 +473,9 @@
     const definition = deps.ITEM_DEFS[key];
     if (!definition?.isCookedFood || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
     const quality = selectedStars ?? availableQualityEntries(key)[0]?.stars ?? definition.foodQuality ?? 3; // Used to consume the best remaining serving first.
-    if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
     const now = currentGameHour(); // One continuous in-game clock governs expiry, saving and pausing.
     if (!Number.isFinite(now)) return { ok: false, message: 'The game clock is not ready. Try eating again in a moment.' };
+    if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
     hydratePendingFoodTimers(now);
     Object.entries(definition.foodEffects || {}).forEach(([effect, stacks]) => {
       const existing = activeFoodEffects.find(entry => entry.key === effect && entry.expiresAtGameHour > now);
