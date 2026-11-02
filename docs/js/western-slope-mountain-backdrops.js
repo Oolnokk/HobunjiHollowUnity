@@ -184,15 +184,15 @@
   function splitRockGeometryAtSnowLine(sourceGeometry){
     const pos=sourceGeometry?.getAttribute?.('position');if(!pos)throw new Error('mine-rock position attribute missing');
     const uv=sourceGeometry.getAttribute?.('uv'),index=sourceGeometry.index,triangleCount=index?index.count:pos.count;
+    const getIndex=i=>index?(index.getX?index.getX(i):index.array[i]):i;
     let minY=Infinity,maxY=-Infinity;
-    for(let i=0;i<pos.count;i++){const y=pos.getY(i);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+    for(let i=0;i<triangleCount;i++){const y=pos.getY(getIndex(i));minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
     const height=maxY-minY;if(!(height>1e-5))throw new Error('mine-rock height is too small for a snow cap');
     const cutY=minY+height*(1-SNOW_CAP_HEIGHT_FRACTION);
     const stonePositions=[],stoneUvs=[],snowPositions=[],snowUvs=[],outlinePositions=[],seenSegments=new Set();
     const vertexAt=i=>({x:pos.getX(i),y:pos.getY(i),z:pos.getZ(i),u:uv?.getX?.(i)||0,v:uv?.getY?.(i)||0});
     const pointKey=p=>`${Math.round(p.x*100000)},${Math.round(p.y*100000)},${Math.round(p.z*100000)}`;
     for(let offset=0;offset+2<triangleCount;offset+=3){
-      const getIndex=i=>index?(index.getX?index.getX(i):index.array[i]):i;
       const triangle=[vertexAt(getIndex(offset)),vertexAt(getIndex(offset+1)),vertexAt(getIndex(offset+2))];
       appendPolygonTriangles(clipPolygonAtHeight(triangle,cutY,false),stonePositions,stoneUvs);
       appendPolygonTriangles(clipPolygonAtHeight(triangle,cutY,true),snowPositions,snowUvs);
