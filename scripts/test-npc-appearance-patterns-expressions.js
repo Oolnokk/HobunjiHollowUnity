@@ -45,6 +45,12 @@ async function main() {
     const supplied = JSON.parse(read(process.argv[2])); // Checks the supplied source exactly without committing a duplicate fixture.
     for (const field of fields) assert.deepEqual(authored[field], supplied[field]);
   }
+  window.SCRATCHBONES_CONFIG.game.dyes = { catalog: [{ id: 'dye:CLOTH:pure_yellow', hex: '#ffff00' }] }; // Reproduces the uploaded Surveyor's pattern dye without the gameplay DyeSystem.
+  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'dye:CLOTH:pure_yellow' }), '#ffff00');
+  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'missing' }), '#ffffff');
+  const portrait = vm.createContext({ window: { SCRATCHBONES_CONFIG: {} }, console, URL }); // Loads the actual portrait variant authority for inheritance and nearest-variant regressions.
+  vm.runInContext(read('docs/js/portrait-utils.js'), portrait);
+  vm.runInContext("LAST_SPECIES_DATA_BY_ID={mammakhbuur:{parentSpecies:'mashtzarr'}}; LAST_COSMETIC_FALLBACK_GROUPS={bodyGroups:[{members:[{species:'tletingan',gender:'female',position:0},{species:'mao-ao',gender:'female',position:1}]}]};", portrait);
   const previewPresets = portrait.window.renderProfile.previewLayerOrderPresets; // The experiment is sourced from the same production portrait renderer as the editor.
   assert.deepEqual(Object.keys(previewPresets).sort(), ['clothes-behind-body', 'default', 'hat-under-hood', 'hood-behind-head', 'swap-torso-overwear'].sort());
   for (const preset of Object.values(previewPresets)) {
@@ -52,12 +58,6 @@ async function main() {
     assert.equal(new Set(preset.behind).size, preset.behind.length, preset.label + ': no duplicate rear layers');
     assert(preset.front.includes('head') && preset.behind.includes('head'), preset.label + ': keeps head layer');
   }
-  window.SCRATCHBONES_CONFIG.game.dyes = { catalog: [{ id: 'dye:CLOTH:pure_yellow', hex: '#ffff00' }] }; // Reproduces the uploaded Surveyor's pattern dye without the gameplay DyeSystem.
-  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'dye:CLOTH:pure_yellow' }), '#ffff00');
-  assert.equal(window.ClothingWeavingSystem.__test.resolvePatternHex({ dyeId: 'missing' }), '#ffffff');
-  const portrait = vm.createContext({ window: { SCRATCHBONES_CONFIG: {} }, console, URL }); // Loads the actual portrait variant authority for inheritance and nearest-variant regressions.
-  vm.runInContext(read('docs/js/portrait-utils.js'), portrait);
-  vm.runInContext("LAST_SPECIES_DATA_BY_ID={mammakhbuur:{parentSpecies:'mashtzarr'}}; LAST_COSMETIC_FALLBACK_GROUPS={bodyGroups:[{members:[{species:'tletingan',gender:'female',position:0},{species:'mao-ao',gender:'female',position:1}]}]};", portrait);
   window.portraitVariantKeysForFighter = portrait.portraitVariantKeysForFighter;
   const finePoncho = JSON.parse(read('docs/config/cosmetics/clothes/overwear/fine_poncho.json')); // Exercises the shipped multi-sprite garment rather than a synthetic single layer.
   for (const [speciesId, gender] of [['mammakhbuur', 'male'], ['tletingan', 'female']]) {
