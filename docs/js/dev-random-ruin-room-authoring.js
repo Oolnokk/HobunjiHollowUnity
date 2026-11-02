@@ -531,12 +531,12 @@
     const report = {claims:[],rejections:[],links:[]};
     for (const plan of network?.roomAuthoringPlans || []) {
       const entry = diagnosticsByPlan.get(plan);
-      if (entry) { report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); report.links.push(...(entry.links||[])); report.links.push(...(entry.links||[])); }
+      if (entry) { report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); report.links.push(...(entry.links||[])); }
     }
     for (const room of network?.rooms || []) {
       const entry = diagnosticsByPlan.get(room.roomAuthoringPlan);
       if (entry && !(network?.roomAuthoringPlans || []).includes(room.roomAuthoringPlan)) {
-        report.claims.push(...entry.claims); report.rejections.push(...entry.rejections);
+        report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); report.links.push(...(entry.links||[]));
       }
     }
     return clone(report);
