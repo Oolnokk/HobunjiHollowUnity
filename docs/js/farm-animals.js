@@ -1677,6 +1677,7 @@
     const tilePx = Number(deps.TILE) || 1; // Converts farm tile coordinates into AudioSystem pixel-space coordinates.
     actor.creatureKey = animal.animalKey;
     actor.genotype = animal.genotype || null;
+    actor.avatarRef = animal.avatarRef || null; // Lets AudioSystem sample the live sprite group's world height for elevation-aware spatial audio.
     actor.areaId = deps.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || null;
     actor.x = Number(animal.wx) * tilePx;
     actor.y = Number(animal.wz) * tilePx;
