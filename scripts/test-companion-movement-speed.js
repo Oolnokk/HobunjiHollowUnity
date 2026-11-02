@@ -100,6 +100,11 @@ player.footing = 100;
 devMul = 1.1;
 assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * devMul)) < 1e-9,
   'the live global movement-speed setting is included');
+player.vx = 90;
+player.vy = 120;
+assert.equal(playerPet.def.moveSpeed, 150, 'on-foot companion speed follows the owner’s actual current velocity, including partial input and acceleration');
+player.vx = 0;
+player.vy = 0;
 
 windowStub.Mounts.rideState = 'mounted';
 windowStub.Mounts.rideEntity = { def: { mountSpeed: 340 } };
