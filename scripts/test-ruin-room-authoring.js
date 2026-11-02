@@ -83,6 +83,12 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(network.floorSet.has('10,12'),true,'the required doorway edge cell must remain walkable');
   assert.equal(network.floorSet.has('11,12'),true,'walkable footprint cells remain in the floor set');
 
+  const widerDoorNetwork=makeNetwork('room_wider_door');
+  widerDoorNetwork.doorways[0].widthCells=3;
+  const widerDoorResult=api.applyToNetwork(widerDoorNetwork,{seed:'wide-door-regression'});
+  assert.equal(widerDoorResult.plans[0].source,'procedural','a template with a narrower opening must be skipped');
+  assert.equal(widerDoorResult.carvedCells,0,'a mismatched doorway must not carve the room');
+
   const plan=network.rooms[0].roomAuthoringPlan;
   assert.ok(api.canClaimSpotForPlan(plan,'room_1','activators','pressurePlate'));
   assert.ok(api.canClaimSpotForPlan(plan,'room_1','mechanisms','stoneDoor'));
