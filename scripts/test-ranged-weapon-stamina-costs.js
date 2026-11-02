@@ -57,6 +57,16 @@ assert.strictEqual(chargeCost(0.48), 12, 'the first releasable thrown pose costs
 assert.ok(Math.abs(chargeCost(0.74) - 15) < 1e-9, 'intermediate thrown charge pays the same linear post-ready cost segment as Charged Breaker');
 assert.strictEqual(chargeCost(1), 18, 'full thrown charge costs the same 18 Stamina as Charged Breaker');
 
+const sharedChargeCost = vm.runInNewContext(`(() => {
+  const HELD_CHARGE_MIN_READY_POSE = 0.48;
+  const HELD_CHARGE_COST_MIN = 12;
+  const HELD_CHARGE_COST_MAX = 18;
+  const window = { Combat: { chargedBreakerData: { chargeCostForPose: pose => pose * 20 } } };
+  ${extractFunction(rangedSource, 'chargeStaminaCostForPose')}
+  return chargeStaminaCostForPose;
+})()`);
+assert.strictEqual(sharedChargeCost(0.5), 10, 'thrown charges must delegate to the live Charged Breaker cost function when it is available');
+
 assert.strictEqual(attackValues.rangedWeapons.crossbow.loadStaminaFraction, 0.85);
 assert.strictEqual(attackValues.rangedWeapons.scatterbow.loadStaminaFraction, 0.85);
 assert.match(rangedSource, /if \(kind === 'load'\) \{\s*spendRangedLoadStamina\(deps\.player, itemKey, def\);\s*setRangedLoadRegenBlocked\(deps\.player, true\);/,
