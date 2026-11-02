@@ -17,7 +17,7 @@ function cameraContext(invert = false, free = true) {
     CONTROLLER_LOOK_DEG_PER_SEC: 140, CONTROLLER_LOOK_VERTICAL_SCALE: 0.7,
     s_controllerLookSensitivity: 1.3, s_controllerInvertY: invert,
     lastMobileArchCombatAimEvent: null, invalidateMobileArchAimPerspectiveCache() {},
-    cameraDragAllowed: () => true, desktopControlsConfig: () => ({ cameraRotateClampDeg: 45 }),
+    cameraDragAllowed: () => true, desktopControlsConfig: () => ({}),
     freeRotateCameraActive: () => free, wrapAzimuthDeg: v => ((v + 180) % 360 + 360) % 360 - 180,
     clampCameraPitchOffsetDeg: v => Math.max(-90, Math.min(90, v)),
     window: { FormatUtils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) }, Combat: { postAttackTurnMultiplier: () => 0.6 } },
