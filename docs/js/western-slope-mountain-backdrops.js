@@ -98,7 +98,8 @@
     if(record.root?.parent)record.root.parent.remove(record.root);
     if(Array.isArray(record.scene?.items)){const i=record.scene.items.indexOf(record.root);if(i>=0)record.scene.items.splice(i,1);}
     for(const mesh of record.meshes||[])mesh.geometry?.dispose?.();
-    for(const material of record.materials||[])material?.dispose?.(); // Cloned ridge materials are owned here; their mine texture maps remain shared.
+    if(record.snowMaterialBinding)window.EnvironmentSurfaceMicroPlateau?.unbindSnowTexture?.(record.snowMaterialBinding);
+    for(const material of record.materials||[])material?.dispose?.(); // Ridge-owned material instances are local; their texture maps remain shared.
     for(const texture of record.textures||[])texture?.dispose?.();
     if(activeByMap.get(record.mapId)===record)activeByMap.delete(record.mapId);
     stats.disposedBuilds++;
@@ -221,13 +222,16 @@
     return{stoneGeo,snowGeo,outlinePositions,cutY,minY,maxY};
   }
   function createSnowCapMaterial(record){
-    const T=window.THREE,shared=window.EnvironmentSurfaceMicroPlateau?.getSnowMaterial?.();
-    if(shared){
-      shared.userData=Object.assign({},shared.userData,{westernSlopeSnowCapMaterial:true});
-      keepInFrontOfSky(shared);
-      shared.needsUpdate=true;
-      stats.snowTextureState=window.EnvironmentSurfaceMicroPlateau?.debugSnapshot?.().textureState||'shared-environment-snow';
-      return shared;
+    const T=window.THREE,surface=window.EnvironmentSurfaceMicroPlateau,shared=surface?.getSnowMaterial?.();
+    if(shared?.clone){
+      const material=shared.clone(); // Each distant cap gets its own depth-clamped material; the shared ground snow must retain its normal terrain shader.
+      material.userData=Object.assign({},material.userData,{westernSlopeSnowCapMaterial:true,visualOnly:true});
+      surface.bindSnowTexture?.(material); // The cap clone follows the canonical snow texture if the asynchronous canvas load has not finished yet.
+      keepInFrontOfSky(material);
+      record.materials.push(material);
+      stats.snowTextureState=surface.debugSnapshot?.().textureState||'shared-environment-snow';
+      record.snowMaterialBinding=material;
+      return material;
     }
     const material=new T.MeshBasicMaterial({color:0xffffff,map:null,side:T.DoubleSide,transparent:false,opacity:1,depthTest:true,depthWrite:true,fog:true});
     material.userData=Object.assign({},material.userData,{westernSlopeSnowCapMaterial:true,visualOnly:true});
