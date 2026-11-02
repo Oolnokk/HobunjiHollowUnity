@@ -290,7 +290,7 @@ async function main() {
     } },
   };
   const playerClothes = editor.playerAccessibleClothing();
-  assert.deepEqual(playerClothes.map(item => item.slot).sort(), ['hat', 'mask', 'overwear', 'pants']);
+  assert.deepEqual(copy(playerClothes.map(item => item.slot).sort()), ['hat', 'mask', 'overwear', 'pants']);
   assert.equal(playerClothes.filter(item => item.item.uid === 'worn-overwear').length, 1, 'equipped and stored copies dedupe by UID');
   assert(!playerClothes.some(item => item.item.uid === 'pack-cursed'), 'cursed Pack clothing is not offered');
   const pantsEntry = playerClothes.find(item => item.slot === 'pants');
