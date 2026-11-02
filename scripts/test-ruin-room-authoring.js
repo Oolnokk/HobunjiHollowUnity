@@ -90,6 +90,8 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(widerDoorResult.carvedCells,0,'a mismatched doorway must not carve the room');
 
   const plan=network.rooms[0].roomAuthoringPlan;
+  assert.equal(plan.spots.find(spot=>spot.id==='plate').world.x,13.5,'template spot X uses padded doubled world scale');
+  assert.equal(plan.spots.find(spot=>spot.id==='plate').world.z,14.5,'template spot Z uses padded doubled world scale');
   const initialRequirements=api.getDiagnostics({roomAuthoringPlans:[JSON.parse(JSON.stringify(plan))]});
   assert.equal(initialRequirements.missingRequiredSpots.length,2,'required spots should be visible before anything claims them');
   assert.equal(initialRequirements.missingRequiredLinks.length,1,'required puzzle links should be visible before being composed');
@@ -160,7 +162,7 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(profileResult.ok,true);
   assert.equal(profileResult.plans[0].source,'procedural','non-matching footprint should fall back to a procedural profile');
   assert.equal(profileResult.plans[0].profileId,'large-chamber');
-  assert.equal(profileResult.plans[0].spots[0].world.x,9,'normalized center spot should resolve from the same padded world origin as the runtime puzzle modules');
+  assert.equal(profileResult.plans[0].spots[0].world.x,16,'normalized center spot should resolve from the same padded and doubled world scale as the runtime puzzle modules');
 
   const weightedLibrary={
     schema:'hobunji_ruin_room_library.v1',
