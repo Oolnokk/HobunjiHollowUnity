@@ -58,7 +58,7 @@
       bar.innerHTML = entries.map(entry => {
         const sourceLabel = entry.sourceLabel || entry.sourceId; // Used in the accessible tooltip.
         const stackBadge = entry.stacks > 1 ? `<span class="buff-icon-stacks">${entry.stacks}</span>` : '';
-        const fractionBadge = entry.fractionLabel ? `<span class="buff-icon-fraction" data-fraction="${escapeHtml(entry.domId)}" style="position:absolute;bottom:-1.2em;left:50%;transform:translateX(-50%);font-size:9px;white-space:nowrap;text-shadow:0 1px 2px #000">${escapeHtml(entry.fractionLabel)}</span>` : ''; // Timed festival meals show seconds left out of their ten-portion duration.
+        const fractionBadge = entry.fractionLabel ? `<span class="buff-icon-fraction" data-fraction="${escapeHtml(entry.domId)}" style="position:absolute;bottom:-1.2em;left:50%;transform:translateX(-50%);font-size:9px;white-space:nowrap;text-shadow:0 1px 2px #000">${escapeHtml(entry.fractionLabel)}</span>` : ''; // Timed festival meals show in-game hours left out of their ten-portion duration.
         return `<div class="buff-icon ${entry.kind}" data-buff="${escapeHtml(entry.domId)}" title="${escapeHtml(`${entry.label} · ${sourceLabel} · ${entry.stacks} stack${entry.stacks === 1 ? '' : 's'}`)}">
           <span class="buff-icon-glyph">${escapeHtml(entry.icon || '✦')}</span>${stackBadge}${fractionBadge}
           <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${escapeHtml(entry.domId)}"></div></div>
