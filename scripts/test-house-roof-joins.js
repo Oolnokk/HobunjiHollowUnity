@@ -111,5 +111,6 @@ assert.match(core, /roofOnly: true,[\s\S]{0,200}axisOverride: e\.axis/);
 // Force fresh production scripts in the player's page and nested loader.
 assert.match(indexHtml, /HousePieceGen\.js\?v=20261102roofjoin1/);
 assert.match(loader, /house-pieces-core\.js\?v=20261102roofjoin1/);
+assert.match(indexHtml, /house-pieces\.js\?v=20261102roofjoin2/);
 
 console.log('House roof joins: PASS (same-ridge, cross-gable, shared walls, doors, and cache busts)');
