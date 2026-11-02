@@ -561,6 +561,11 @@
     if (count <= 0) return false;
     if (count === 1) claims.delete(String(claim.spotId));
     else claims.set(String(claim.spotId),count-1);
+    const report = diagnosticsByPlan.get(planStoreKey(plan));
+    if (report && claim.claimId) {
+      const index = report.claims.findIndex(entry=>entry.claimId===claim.claimId);
+      if (index >= 0) report.claims.splice(index,1); // A rolled-back atomic puzzle pair must not remain in the successful-claims log.
+    }
     return true;
   }
 
