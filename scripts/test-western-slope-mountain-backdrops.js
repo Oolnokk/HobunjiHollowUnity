@@ -234,7 +234,7 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
       assert(Math.max(...Array.from({ length: uv.count }, (_, v) => uv.getY(v))) > 0.999, 'farm-cliff stretch V must fill the cap height');
       const linePositions = boundary.geometry.getAttribute('position');
       assert(linePositions.count >= 4, 'the snow outline must include multiple boundary segments');
-      assert(Array.from({ length: linePositions.count }, (_, v) => linePositions.getY(v)).every(y => Math.abs(y - cutY - 0.002) < 1e-6), 'the outline must sit just above the geometric stone/snow seam');
+      assert(Array.from({ length: linePositions.count }, (_, v) => linePositions.getY(v)).every(y => Math.abs(y - cutY - 0.00015) < 1e-6), 'the outline must sit just above the geometric stone/snow seam');
       for (const part of rock.children) assert(typeof part.raycast === 'function' && part.raycast() === undefined, 'decorative rock parts must never receive pointer raycasts');
     }
   });
