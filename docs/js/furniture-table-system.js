@@ -411,10 +411,13 @@
     for(const entry of entries(area).values()) {
       if(!entry.root?.parent)continue;
       const f=placementFrame(entry);
-      if(Math.hypot(f.x-player.x,f.z-player.z)>3+Math.max(f.w,f.d))continue;
+      const puzzle = entry.root.userData?.furniturePuzzle;
+      const isBurdenPlate = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+      const reach = isBurdenPlate
+        ? Math.max(.25, Number(puzzle.interactionRange) || 1.65) + Math.hypot(f.w,f.d)/2
+        : 3 + Math.max(f.w,f.d);
+      if(Math.hypot(f.x-player.x,f.z-player.z)>reach)continue;
       const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Camera-targeted storage, whether authored or player-assigned.
-      const isBurdenPlate = entry.root.userData?.furniturePuzzle?.role === 'activator'
-        && entry.root.userData?.furniturePuzzle?.behavior === 'burdenPlate';
       if(entry.def.sit || solid(entry) || wardrobe || isBurdenPlate) {
         const ex=Math.abs(f.cos)*f.w+Math.abs(f.sin)*f.d, ez=Math.abs(f.sin)*f.w+Math.abs(f.cos)*f.d;
         const box=entry.focusBox ||= {min:{},max:{}}; // Plain cached bounds avoid constructing Three.js objects during frame work.
