@@ -92,6 +92,11 @@ function makeNetwork(id='room_1',width=5,height=5) {
   const plan=network.rooms[0].roomAuthoringPlan;
   assert.equal(plan.spots.find(spot=>spot.id==='plate').world.x,13.5,'template spot X uses padded doubled world scale');
   assert.equal(plan.spots.find(spot=>spot.id==='plate').world.z,14.5,'template spot Z uses padded doubled world scale');
+  const localSpot=api.toGeneratorLocal(network,plan.spots.find(spot=>spot.id==='plate').world);
+  assert.equal(localSpot.x,-14.25,'game-world spot converts back to V50 local X before the parent scene transform');
+  assert.equal(localSpot.z,-13.75,'game-world spot converts back to V50 local Z before the parent scene transform');
+  assert.equal(2+network.worldWidth+2*localSpot.x,plan.spots.find(spot=>spot.id==='plate').world.x,'parent 2x scale/translation round-trips the V50 local spot');
+  assert.equal(2+network.worldDepth+2*localSpot.z,plan.spots.find(spot=>spot.id==='plate').world.z,'parent 2x scale/translation round-trips the V50 local spot depth');
   const initialRequirements=api.getDiagnostics({roomAuthoringPlans:[JSON.parse(JSON.stringify(plan))]});
   assert.equal(initialRequirements.missingRequiredSpots.length,2,'required spots should be visible before anything claims them');
   assert.equal(initialRequirements.missingRequiredLinks.length,1,'required puzzle links should be visible before being composed');
