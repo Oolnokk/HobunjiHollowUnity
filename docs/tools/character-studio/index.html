@@ -868,8 +868,9 @@ const NPC_PREVIEW_LAYER_LABELS = {
   baseLeftArm:'Left arm',baseTorso:'Torso',baseRightArm:'Right arm',snowgoggles:'Snow goggles',hairBack:'Back hair'
 };
 function resetNpcPreviewLayerOrders() {
-  _npcFrontLayerOrder = [...(window.renderPortraitProfile?.defaultFrontLayerOrder || [])];
-  _npcBehindLayerOrder = [...(window.renderPortraitProfile?.defaultBehindLayerOrder || [])];
+  const defaults = window.getPortraitLayerOrders?.();
+  _npcFrontLayerOrder = [...(defaults?.front || [])];
+  _npcBehindLayerOrder = [...(defaults?.behind || [])];
 }
 function renderNpcLayerOrderList(containerId, order, group) {
   const container = $(containerId);
