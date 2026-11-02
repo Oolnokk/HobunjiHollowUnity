@@ -354,7 +354,7 @@
   }
 
   function makeSpots(definition, room, network) {
-    const cs = Number(network.cellSize) || .5;
+    const cs = (Number(network.cellSize) || .5) * 2; // V50 rooms scale 0.5-unit cells to one full game-world unit in makeMapRecord().
     const pad = 2; // Mirrors the shared ruin runtime's PAD constant; generated V50 metadata does not carry a worldPad field. // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
     return definition.spots.map(spot=>{
       const x = spot.coordinateMode === 'cell' ? Number(spot.x)+.5 : Number(spot.x)*room.w;
