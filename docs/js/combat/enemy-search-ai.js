@@ -10,6 +10,7 @@
 (() => {
   'use strict';
 
+  const LAST_SEEN_MAX_AGE_MS = 4000; // A sighting older than this predates the current pursuit (chase checks sight every frame, so a real sample is only frames old).
   const ENEMY_SEARCH_DURATION_S = 8; // Gives a hostile time to reach the last-known position and search nearby.
   const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
   const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
@@ -45,8 +46,14 @@
     c.state = 'searching';
     c.targetPlayer = target;
     c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
-    c._enemySearchLastKnownX = Number.isFinite(c._enemyLastSeenX) ? c._enemyLastSeenX : target.x; // Reuse the last position confirmed visible; fallback only for externally forced chases without a sight sample.
-    c._enemySearchLastKnownY = Number.isFinite(c._enemyLastSeenY) ? c._enemyLastSeenY : target.y; // Paired with X for the last-known world position.
+    // Reuse the last position confirmed visible, but only while that sighting belongs to this pursuit.
+    // _enemyLastSeen* is never cleared, so a chase forced by something other than sight (a hit from behind or
+    // out of the facing cone) would otherwise send the hostile to where it saw the player in an earlier fight.
+    const seenAgeMs = performance.now() - (Number(c._enemyLastSeenAt) || -Infinity);
+    const freshSighting = Number.isFinite(c._enemyLastSeenX) && Number.isFinite(c._enemyLastSeenY)
+      && seenAgeMs >= 0 && seenAgeMs <= LAST_SEEN_MAX_AGE_MS;
+    c._enemySearchLastKnownX = freshSighting ? c._enemyLastSeenX : target.x; // Forced chases without a recent sight sample head for the attacker's actual position.
+    c._enemySearchLastKnownY = freshSighting ? c._enemyLastSeenY : target.y; // Paired with X for the last-known world position.
     c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
     c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
     const lostSide = angleDiff(
@@ -92,6 +99,7 @@
     updateEnemySearch,
     enemyAttackAlignment,
     ENEMY_SEARCH_DURATION_S,
+    LAST_SEEN_MAX_AGE_MS,
     ENEMY_SEARCH_SWEEP_HALF_RAD,
     ENEMY_SEARCH_TURN_RATE_RAD_S,
   });
