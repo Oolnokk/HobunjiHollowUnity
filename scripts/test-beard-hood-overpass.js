@@ -24,6 +24,17 @@ assert.match(editor, /beardRevealMasks/);
 assert.match(html, /hood reveal area/i);
 assert.match(html, /beard priority/i);
 assert.match(html, /beardHoodMaskMode/);
+assert.match(html, /id="pickBeard"/, 'beard selection is an explicit action');
+assert.match(html, /id="pickHood"/, 'hood selection is an explicit action');
+assert.match(html, /beardHoodMaskUndo/);
+assert.match(html, /beardHoodMaskRedo/);
+assert.match(html, /sidebarResizeHandle/);
+assert.match(editor, /undoBeardHoodMask/);
+assert.match(editor, /redoBeardHoodMask/);
+assert.match(editor, /pushBeardHoodMaskHistory/);
+assert.match(editor, /setSidebarWidth/);
+assert.match(editor, /pointercapture/i);
+
 assert.match(catalog, /cfg\?\.portraitSlot==='facialHair'/, 'facial hair cosmetics enter the head-space fitting catalog');
 assert.match(editor, /pointerdown/);
 assert.match(editor, /pointermove/);
