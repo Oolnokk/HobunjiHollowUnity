@@ -355,14 +355,14 @@
 
   function makeSpots(definition, room, network) {
     const cs = Number(network.cellSize) || .5;
-    const worldWidth = Number(network.worldWidth) || 0, worldDepth = Number(network.worldDepth) || 0;
+    const pad = Number(network.worldPad ?? 2); // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
     return definition.spots.map(spot=>{
       const x = spot.coordinateMode === 'cell' ? Number(spot.x)+.5 : Number(spot.x)*room.w;
       const z = spot.coordinateMode === 'cell' ? Number(spot.z)+.5 : Number(spot.z)*room.h;
       return {
         ...clone(spot),
         localCell:{x:room.col+x,z:room.row+z},
-        world:{x:(room.col+x)*cs-worldWidth/2,z:(room.row+z)*cs-worldDepth/2},
+        world:{x:pad+(room.col+x)*cs,z:pad+(room.row+z)*cs},
       };
     });
   }
