@@ -520,6 +520,27 @@
     return plan.puzzleLinks.find(link=>!used.has(link.id)) || null;
   }
 
+  function getNextPuzzleLinkForPlan(plan) {
+    const link = nextPuzzleLink(plan);
+    return link ? clone(link) : null;
+  }
+
+  function getSpotForPlan(plan, spotId) {
+    const spot = (plan?.spots || []).find(entry=>entry.id===String(spotId||''));
+    return spot ? clone(spot) : null;
+  }
+
+  function getAvailableSpotForPlan(plan, category, type, spotId = null) {
+    const key = planStoreKey(plan);
+    const claims = plan ? claimsByPlan.get(key) || new Map() : new Map();
+    const spot = (plan?.spots || []).find(entry =>
+      (!spotId || entry.id===String(spotId)) &&
+      Number(claims.get(entry.id)||0) < entry.maxUses &&
+      isAllowed(entry,category,type) &&
+      hasSpotClearance(plan,entry,claims));
+    return spot ? clone(spot) : null;
+  }
+
   function canClaimPuzzleLinkForPlan(plan, roomId, mechanismType, activatorType) {
     if (!plan) return true;
     const link = nextPuzzleLink(plan);
@@ -667,6 +688,9 @@
     releaseSpotForPlan,
     canClaimPuzzleLinkForPlan,
     claimPuzzleLinkForPlan,
+    getNextPuzzleLinkForPlan,
+    getSpotForPlan,
+    getAvailableSpotForPlan,
     getDiagnostics,
     categories:CATEGORIES.slice(),
   });
