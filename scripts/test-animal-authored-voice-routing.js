@@ -68,6 +68,8 @@ window.FarmAnimals.updateAnimalMeshes(11);
 window.FarmAnimals.updateAnimalMeshes(0.4);
 assert.equal(played.length - farmVoiceStart, 2, 'farm livestock produces repeated passive vocalizations through the shared scheduler and real playback');
 assert.ok(played.slice(farmVoiceStart).every(url => url.includes('/sfx_grunt-rattle.ogg') || url.includes('/sfx_chirp-rattle.ogg')), 'farm Uumkao’ii uses its existing species-specific vocal assets');
+assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), true, 'despawn releases the farm actor from the vocalization scheduler');
+assert.equal(window.AnimalVocalizations.releaseCreature(farmAnimal._voiceActor), false, 'releasing an already-despawned actor is harmless');
 
 const start = played.length; // Silence/range/combat/mount guards must still suppress playback.
 assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('puktuk'), { allowedClips: [] }), false);
