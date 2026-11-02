@@ -206,6 +206,8 @@
       proceduralProfiles:Array.isArray(source.proceduralProfiles) ? source.proceduralProfiles.map(normalizeProfile) : [],
     };
     const errors = [], ids = new Set();
+    if (source.schema !== SCHEMA) errors.push('Room library schema must be '+SCHEMA+'.');
+    if (source.version != null && Number(source.version) !== 1) errors.push('Unsupported room library version: '+source.version+'.');
     for (const template of normalized.templates) {
       if (!template.id || ids.has(template.id)) errors.push('Template ids must be non-empty and unique (' + template.id + ').');
       ids.add(template.id);
@@ -367,24 +369,31 @@
 
   function planForRoom(network, room, seed) {
     const rng = rngFor(seed + ':' + room.id);
-    const templates = templateCandidates(network, room);
+    const templateVariants = templateCandidates(network, room);
+    const templateGroups = new Map(); // Rotation count must not multiply a template's selection weight against procedural profiles.
+    for (const variant of templateVariants) {
+      let group = templateGroups.get(variant.template.id);
+      if (!group) {group={template:variant.template,variants:[],weight:variant.template.weight,source:'template'};templateGroups.set(variant.template.id,group);}
+      group.variants.push(variant.oriented);
+    }
     const doorCount = (network.doorways || []).filter(door=>door.from===room.id||door.to===room.id).length + (network.entrance?.roomId===room.id ? 1 : 0);
     const profiles = library.proceduralProfiles.filter(profile=>profileMatches(profile,room,doorCount));
     const choices = [
-      ...templates.map(entry=>({...entry,source:'template'})),
+      ...[...templateGroups.values()],
       ...profiles.map(profile=>({profile,weight:profile.weight,source:'procedural'})),
     ];
     const choice = weightedPick(choices,rng);
     if (choice?.source === 'template') {
+      const oriented = choice.variants[Math.floor(rng()*choice.variants.length)];
       return {
         roomId:String(room.id),
         source:'template',
         templateId:choice.template.id,
         templateName:choice.template.name,
-        rotation:choice.oriented.rotation,
-        footprint:clone(choice.oriented.footprint),
-        spots:makeSpots(choice.oriented,room,network),
-        puzzleLinks:clone(choice.oriented.puzzleLinks),
+        rotation:oriented.rotation,
+        footprint:clone(oriented.footprint),
+        spots:makeSpots(oriented,room,network),
+        puzzleLinks:clone(oriented.puzzleLinks),
       };
     }
     const profile = choice?.profile || null;
