@@ -625,7 +625,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           present:true,
           status,
           length:copied.length,
-          valid:!!parsed && parsed.format === 'hobunji-ruin-map' && !!parsed.scene?.object,
+          valid:!!parsed && parsed.format === 'hobunji-ruin-map' && parsed.version === 3 && !!parsed.scene?.object,
           hasSceneChildren:Array.isArray(parsed?.scene?.object?.children),
           flatSceneGraph:parsed?.scene?.objectGraphFormat === 'flat-parent-child-uuid-links-v1'
             && Array.isArray(parsed?.scene?.objects)
