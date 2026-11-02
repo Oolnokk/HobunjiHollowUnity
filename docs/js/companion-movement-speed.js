@@ -10,7 +10,8 @@
   const FOOTING_SPEED_MIN = 0.55; // Matches the player's low-Footing movement floor in alcohol-gameplay-bridge.js.
 
   let deps = null; // Combat.init supplies the live player, map, and companion collection.
-  let frameHandle = null; // Owns the one requestAnimationFrame scan that discovers newly spawned companions.
+  let unregisterFrame = null; // Owns the shared pre-game scheduler subscription.
+  let fallbackTimer = null; // Low-frequency fallback only for isolated contexts without RuntimeFrameScheduler.
   let lastError = null; // Exposed through debugSnapshot so mobile testing does not require devtools.
   const entityBindings = new WeakMap(); // Tracks each companion's installed per-entity def proxy without mutating shared species definitions.
   const ownerMotion = new WeakMap(); // Remembers the latest measured NPC/remote-owner speed for position-only master adapters.
@@ -280,17 +281,36 @@
     return count;
   }
 
+  function runScheduledUpdate() {
+    try {
+      update();
+    } catch (error) {
+      lastError = String(error?.message || error);
+    }
+  }
+
   function scheduleFrame() {
-    if (frameHandle != null || typeof window.requestAnimationFrame !== 'function') return;
-    frameHandle = window.requestAnimationFrame(() => {
-      frameHandle = null;
-      try {
-        update();
-      } catch (error) {
-        lastError = String(error?.message || error);
+    const scheduler = window.RuntimeFrameScheduler;
+    if (scheduler?.register) {
+      if (!unregisterFrame) {
+        unregisterFrame = scheduler.register('companion-movement-speed', runScheduledUpdate, {
+          phase: 'pre-game',
+          owner: 'CompanionMovementSpeed',
+          description: 'Resolve owner-relative companion movement before creature AI consumes moveSpeed/chaseSpeed.',
+        });
       }
-      scheduleFrame();
-    });
+      return;
+    }
+    if (fallbackTimer == null && typeof window.setInterval === 'function') {
+      fallbackTimer = window.setInterval(runScheduledUpdate, 100); // Isolated tool contexts lack the gameplay frame scheduler.
+    }
+  }
+
+  function dispose() {
+    unregisterFrame?.();
+    unregisterFrame = null;
+    if (fallbackTimer != null) window.clearInterval?.(fallbackTimer);
+    fallbackTimer = null;
   }
 
   function init(injectedDeps) {
@@ -334,6 +354,7 @@
     init,
     install,
     update,
+    dispose,
     debugSnapshot,
     __test: Object.freeze({
       playerMovementSpeed,
