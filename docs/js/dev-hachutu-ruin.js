@@ -911,6 +911,7 @@
       if(box.isEmpty())return;
       bounds.push(box);lowest=Math.min(lowest,box.min.y);
     });
+    if(!bounds.length)return 0;
     const layer=bounds.filter(box=>box.min.y<=lowest+.1);
     return layer.length?layer.reduce((sum,box)=>sum+(box.min.y+box.max.y)*.5,0)/layer.length:lowest;
   }
