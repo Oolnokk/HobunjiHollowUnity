@@ -11,6 +11,7 @@
   const CATEGORIES = ['mechanisms', 'activators', 'decorations'];
   const claimsByPlan = new WeakMap();
   const diagnosticsByPlan = new WeakMap();
+  const puzzleLinksByPlan = new WeakMap();
   let library = { schema:SCHEMA, templates:[], proceduralProfiles:[] };
   let loadPromise = null;
   let loadReport = { source:'defaults', errors:[], warnings:[] };
@@ -429,13 +430,13 @@
     return values.includes('*') || values.includes('any') || values.includes(String(type));
   }
 
-  function canClaimSpotForPlan(plan, roomId, category, type) {
+  function canClaimSpotForPlan(plan, roomId, category, type, spotId = null) {
     if (!CATEGORIES.includes(category)) return false;
     if (!plan) return true;
     const claims = claimsByPlan.get(plan) || new Map();
     return (plan.spots || []).some(spot => {
       const used = Number(claims.get(spot.id) || 0);
-      return used < spot.maxUses && isAllowed(spot,category,type);
+      return (!spotId || spot.id === String(spotId)) && used < spot.maxUses && isAllowed(spot,category,type);
     });
   }
 
@@ -444,10 +445,11 @@
     if (!plan) return {ok:true,spot:null,legacy:true};
     let claims = claimsByPlan.get(plan);
     if (!claims) { claims = new Map(); claimsByPlan.set(plan,claims); }
+    const requestedSpotId = idOf(options.spotId);
     const spot = (plan.spots || []).find(candidate =>
-      Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type));
+      (!requestedSpotId || candidate.id === requestedSpotId) && Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type));
     let report = diagnosticsByPlan.get(plan);
-    if (!report) { report = {claims:[],rejections:[]}; diagnosticsByPlan.set(plan,report); }
+    if (!report) { report = {claims:[],rejections:[],links:[]}; diagnosticsByPlan.set(plan,report); }
     if (!spot) {
       const diagnostic = {roomId:String(roomId),category,type:String(type),reason:'No unclaimed spot allows this placement.'};
       report.rejections.push(diagnostic);
@@ -457,6 +459,43 @@
     const claim = {roomId:String(roomId),spotId:spot.id,category,type:String(type),claimId:idOf(options.claimId)||null};
     report.claims.push(claim);
     return {ok:true,spot,claim};
+  }
+
+  function nextPuzzleLink(plan) {
+    if (!plan?.puzzleLinks?.length) return null;
+    const used = puzzleLinksByPlan.get(plan) || new Set();
+    return plan.puzzleLinks.find(link=>!used.has(link.id)) || null;
+  }
+
+  function canClaimPuzzleLinkForPlan(plan, roomId, mechanismType, activatorType) {
+    if (!plan) return true;
+    const link = nextPuzzleLink(plan);
+    if (plan.puzzleLinks?.length && !link) return false;
+    return canClaimSpotForPlan(plan,roomId,'mechanisms',mechanismType,link?.mechanismSpot)
+      && canClaimSpotForPlan(plan,roomId,'activators',activatorType,link?.activatorSpot);
+  }
+
+  function claimPuzzleLinkForPlan(plan, roomId, mechanismType, activatorType, options = {}) {
+    if (!plan) return {ok:true,legacy:true};
+    const link = nextPuzzleLink(plan);
+    if (plan.puzzleLinks?.length && !link) return {ok:false,reason:'No unclaimed authored puzzle relationship remains for this room.'};
+    const mechanism = claimSpotForPlan(plan,roomId,'mechanisms',mechanismType,{claimId:idOf(options.claimId)+':mechanism',spotId:link?.mechanismSpot});
+    if (!mechanism.ok) return {ok:false,reason:mechanism.reason,mechanism};
+    const activator = claimSpotForPlan(plan,roomId,'activators',activatorType,{claimId:idOf(options.claimId)+':activator',spotId:link?.activatorSpot});
+    if (!activator.ok) {
+      releaseSpotForPlan(plan,mechanism.claim);
+      return {ok:false,reason:activator.reason,mechanism,activator};
+    }
+    if (link) {
+      let used = puzzleLinksByPlan.get(plan);
+      if (!used) {used=new Set();puzzleLinksByPlan.set(plan,used);}
+      used.add(link.id);
+    }
+    const report = diagnosticsByPlan.get(plan) || {claims:[],rejections:[],links:[]};
+    report.links ||= [];
+    report.links.push({roomId:String(roomId),linkId:link?.id||null,relation:link?.relation||'activates',mechanismSpotId:mechanism.spot?.id||null,activatorSpotId:activator.spot?.id||null,mechanismType:String(mechanismType),activatorType:String(activatorType)});
+    diagnosticsByPlan.set(plan,report);
+    return {ok:true,link:link?clone(link):null,mechanism,activator};
   }
 
   function releaseSpotForPlan(plan, claim) {
@@ -489,10 +528,10 @@
   }
 
   function getDiagnostics(network) {
-    const report = {claims:[],rejections:[]};
+    const report = {claims:[],rejections:[],links:[]};
     for (const plan of network?.roomAuthoringPlans || []) {
       const entry = diagnosticsByPlan.get(plan);
-      if (entry) { report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); }
+      if (entry) { report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); report.links.push(...(entry.links||[])); report.links.push(...(entry.links||[])); }
     }
     for (const room of network?.rooms || []) {
       const entry = diagnosticsByPlan.get(room.roomAuthoringPlan);
@@ -560,6 +599,8 @@
     canClaimSpotForPlan,
     claimSpotForPlan,
     releaseSpotForPlan,
+    canClaimPuzzleLinkForPlan,
+    claimPuzzleLinkForPlan,
     getDiagnostics,
     categories:CATEGORIES.slice(),
   });
