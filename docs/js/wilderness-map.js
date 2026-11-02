@@ -832,7 +832,7 @@
       const hachutu = window.DevHachutuRuin?.debug?.() || null;
       const payload = {
         format: 'hobunji-ruin-map',
-        version: 2,
+        version: 3,
         exportedAt: new Date().toISOString(),
         area: currentArea,
         map: runtime ? {
