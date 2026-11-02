@@ -345,9 +345,9 @@
 
   const ROOM_AUTHORING_CATEGORIES = Object.freeze({
     chordPressurePlates:'activators', lockableStoneDoor:'mechanisms', stoneCanopy:'decorations',
-    ceilingProjectileGlyph:'activators', balconyRopeElevatorComposer:'mechanisms', ropeTraverse:'mechanisms',
+    ceilingProjectileGlyph:'activators', ropeTraverse:'mechanisms',
     cyclingElevator:'mechanisms', sunkenRoomShell:'decorations', sarcophagusSpawner:'mechanisms',
-    ossuaryComposer:'mechanisms', hallwayGlyphGate:'activators', ropeVariant:'mechanisms',
+    hallwayGlyphGate:'activators', ropeVariant:'mechanisms',
     ropePayoff:'decorations', lavaBasin:'mechanisms', ceilingRailTargets:'activators',
     greatDoorSanctum:'mechanisms',
   }); // Room module type -> the independent authored allowlist it must satisfy.
@@ -370,11 +370,17 @@
     return authoring.claimSpotForPlan(roomAuthoringPlan(roomId),roomId,category,type,options);
   }
 
+  function availableRoomSpot(roomId, category, type, spotId = null) {
+    const authoring = window.DevRandomRuinRoomAuthoring;
+    if (!authoring?.getAvailableSpotForPlan) return null;
+    return authoring.getAvailableSpotForPlan(roomAuthoringPlan(roomId),category,type,spotId);
+  }
+
   function recordModulePlacement(type, slotKind, slotId, extra = {}) {
     if(!state)return null;
     const record={type,slotKind,slotId:String(slotId||''),...extra}; // Runtime diagnostics use these records to prove compound puzzles are assembled from reusable pieces rather than one bespoke scene.
     const category=ROOM_AUTHORING_CATEGORIES[type],roomId=extra.roomId??(slotKind==='room'?slotId:null); // Used to bind every room-level module record back to its authored spot allowlist.
-    if(category&&roomId!=null){const claim=claimRoomSpot(roomId,category,type,{claimId:String(type)+':'+String(slotId||roomId)});record.roomAuthoring={category,allowed:!!claim.ok,spotId:claim.spot?.id||null,reason:claim.reason||null};}
+    if(category&&roomId!=null){const claim=claimRoomSpot(roomId,category,type,{claimId:String(type)+':'+String(slotId||roomId)});record.roomAuthoring={category,allowed:!!claim.ok,spotId:claim.spot?.id||null,spotWorld:claim.spot?.world?{...claim.spot.world}:null,clearance:Number(claim.spot?.clearance)||0,reason:claim.reason||null};}
     state.modulePlacements.push(record);
     return record;
   }
@@ -1808,7 +1814,7 @@
       ropeConstants:{ROPE_GRAB_ABOVE_LAUNCH,ROPE_DESTINATION_RISE,ROPE_MIN_LENGTH,ROPE_COLLISION_RADIUS,ROPE_MAX_ANGLE},
       naturalizeStone, makeBasic, sharedBoxGeometry, sharedCylinderGeometry, disposeObject,
       recordModulePlacement,
-      roomAuthoringPlan, canClaimRoomSpot, claimRoomSpot,
+      roomAuthoringPlan, canClaimRoomSpot, claimRoomSpot, availableRoomSpot,
       playerWorld, setPlayerWorld,
       playKurrayaPlateNote, playStoneUnlockKchunk, playLavaSizzle,
       lavaMaterial:()=>state.lavaMaterial||(state.lavaMaterial=createLavaMaterial()),
