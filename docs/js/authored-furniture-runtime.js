@@ -118,6 +118,10 @@
     anchor.name = 'payload_attachment_' + String(surfaceId).replace(/[^a-z0-9_-]/gi,'_');
     anchor.position.copy(center).addScaledVector(normal, Math.max(0, Number(normalOffset) || 0));
     anchor.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, normal, z));
+    anchor.scale.set(
+      1 / Math.max(.001, Math.abs(partMesh.scale.x)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.y)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.z))); // Follow the surface position/orientation without inheriting the host part's animated compression.
     anchor.userData.payloadAttachmentSurfaceId = String(surfaceId);
     partMesh.add(anchor); // A child of the detected part, so animated mechanisms carry the inserted burden with the surface.
     anchors.set(String(surfaceId), anchor);
