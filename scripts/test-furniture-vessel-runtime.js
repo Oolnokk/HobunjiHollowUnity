@@ -18,6 +18,114 @@ const deadzone = read('docs/js/deadzone-billboard.js');
 const pieceAnimation = read('docs/js/furniture-piece-animation-runtime.js');
 const rootTotemConfigSource = read('docs/config/root-totem-config.js');
 
+const proportionBuildInputs = []; // Captures the data passed through the real AuthoredFurniture.buildGroup wrapper.
+const proportionWindow = {
+  THREE: {}, // The proportion adapter does not construct geometry; the stub keeps the runtime's normal install guard satisfied.
+  ProceduralFurniture: {
+    buildPartMesh() { return null; },
+    buildFurnitureGroup() { return { children: [], userData: {} }; },
+  },
+  AuthoredFurniture: {
+    buildGroup(data) { proportionBuildInputs.push(data); return { userData: {} }; },
+    peek() { return null; },
+    load() { return Promise.resolve(null); },
+  },
+};
+vm.runInNewContext(vessel, { window: proportionWindow, console });
+function proportionedFurniture(key) {
+  const source = json(`docs/config/furniture-authored/${key}.json`);
+  const sourceSnapshot = JSON.stringify(source);
+  proportionWindow.AuthoredFurniture.buildGroup(source);
+  const adjusted = proportionBuildInputs.pop();
+  assert(adjusted, `${key} must pass through the shared authored group builder`);
+  assert.equal(JSON.stringify(source), sourceSnapshot, `${key} cached authored data must not be mutated`);
+  return { source, adjusted };
+}
+function surfaceHalfExtent(data, axis) {
+  const sizeField = axis === 'x' ? 'sx' : 'sz';
+  const topField = axis === 'x' ? 'topScaleX' : 'topScaleZ';
+  const bottomField = axis === 'x' ? 'bottomScaleX' : 'bottomScaleZ';
+  return Math.max(0, ...(data.parts || []).map(part => {
+    const t = part.transform || {};
+    const position = Number(t[axis]) || 0;
+    const size = Math.abs(Number(t[sizeField]) || 0);
+    const top = Number.isFinite(Number(part[topField])) ? Math.abs(Number(part[topField])) : 1;
+    const bottom = Number.isFinite(Number(part[bottomField])) ? Math.abs(Number(part[bottomField])) : 1;
+    return Math.abs(position) + size * 0.5 * Math.max(top, bottom);
+  }));
+}
+
+// The single and double beds retain their already-halved Y proportions,
+// while their actual part bounds leave a quarter tile of floor on every edge.
+const basicBedSource = json('docs/config/furniture-authored/basicBed.json');
+const basicBedBefore = JSON.stringify(basicBedSource);
+proportionWindow.AuthoredFurniture.buildGroup(basicBedSource);
+const basicBedProportioned = proportionBuildInputs.pop();
+assert.equal(JSON.stringify(basicBedSource), basicBedBefore, 'single-bed source data remains immutable');
+assert.ok(Math.abs(surfaceHalfExtent(basicBedProportioned, 'x') - 0.25) < 1e-6, 'single bed leaves 0.25 tile clear on each X edge');
+assert.ok(Math.abs(surfaceHalfExtent(basicBedProportioned, 'z') - 0.75) < 1e-6, 'single bed leaves 0.25 tile clear at both Z ends');
+assert.equal(basicBedProportioned.parts[0].transform.sy, basicBedSource.parts[0].transform.sy, 'single-bed Y scale remains the already-halved authored value');
+assert.equal(basicBedProportioned.parts[0].transform.y, basicBedSource.parts[0].transform.y, 'single-bed vertical position is unchanged');
+const { source: doubleBedSource, adjusted: doubleBedProportioned } = proportionedFurniture('doubleBed');
+assert.ok(Math.abs(surfaceHalfExtent(doubleBedProportioned, 'x') - 0.75) < 1e-6, 'double bed leaves 0.25 tile clear on each X edge');
+assert.ok(Math.abs(surfaceHalfExtent(doubleBedProportioned, 'z') - 0.75) < 1e-6, 'double bed leaves 0.25 tile clear on each Z edge');
+assert.equal(doubleBedProportioned.parts[0].transform.sy, doubleBedSource.parts[0].transform.sy, 'double-bed Y scale remains unchanged by the footprint inset');
+const { source: bedrollSource, adjusted: bedrollProportioned } = proportionedFurniture('bedroll');
+assert.deepEqual(bedrollProportioned.parts.map(part => part.transform), bedrollSource.parts.map(part => part.transform),
+  'bedroll keeps its original dimensions');
+
+// Every ordinary floor-rooted surface piece is shortened around the floor,
+// so its legs stay planted and its top remains at the new half-height.
+const { adjusted: smallTable } = proportionedFurniture('tableSmall');
+const smallTableTop = smallTable.parts.find(part => /Table Small Box/.test(part.name));
+assert.equal(smallTableTop.transform.y, 0.235, 'small table top center follows the floor-rooted half-height');
+assert.equal(smallTableTop.transform.sy, 0.05, 'small table top thickness is halved');
+const { source: counterSource, adjusted: counter } = proportionedFurniture('counter');
+assert.equal(counter.parts[0].transform.y, counterSource.parts[0].transform.y * 0.5, 'counter body is vertically halved from the floor');
+assert.equal(counter.parts[0].transform.sy, counterSource.parts[0].transform.sy * 0.5, 'counter body height is halved');
+assert.equal(counter.parts[1].transform.y + counter.parts[1].transform.sy * 0.5,
+  (counterSource.parts[1].transform.y + counterSource.parts[1].transform.sy * 0.5) * 0.5,
+  'countertop upper surface is lowered by exactly half');
+for (const key of ['tableLong', 'tableRound', 'servingTable', 'desk', 'nightstand', 'dresser']) {
+  const { source, adjusted } = proportionedFurniture(key);
+  assert.equal(adjusted.parts[0].transform.y, source.parts[0].transform.y * 0.5, `${key} parts are floor-rooted at half height`);
+  assert.equal(adjusted.parts[0].transform.sy, source.parts[0].transform.sy * 0.5, `${key} part height is halved`);
+}
+const { source: candleTableSource, adjusted: candleTableProportioned } = proportionedFurniture('candleTable');
+const candleTableTopSource = candleTableSource.parts.find(part => part.name === 'Candle Table Box');
+const candleTableTop = candleTableProportioned.parts.find(part => part.name === 'Candle Table Box');
+const candleCylinderSource = candleTableSource.parts.find(part => part.name === 'Candle Table Cylinder');
+const candleCylinder = candleTableProportioned.parts.find(part => part.name === 'Candle Table Cylinder');
+const candleDiscSource = candleTableSource.parts.find(part => part.name === 'Candle Table Disc');
+const candleDisc = candleTableProportioned.parts.find(part => part.name === 'Candle Table Disc');
+const candleDrop = (candleTableTopSource.transform.y + candleTableTopSource.transform.sy * 0.5) * 0.5;
+assert.ok(Math.abs(candleTableTop.transform.y + candleTableTop.transform.sy * 0.5 - 0.23) < 1e-9, 'candle-table surface lowers to the exact half-height');
+assert.equal(candleCylinder.transform.y, candleCylinderSource.transform.y - candleDrop, 'candle assembly follows the lowered tabletop');
+assert.equal(candleCylinder.transform.sy, candleCylinderSource.transform.sy, 'candle retains its original height');
+assert.equal(candleDisc.transform.y, candleDiscSource.transform.y - candleDrop, 'candle foot follows the lowered tabletop');
+assert.equal(candleDisc.transform.sy, candleDiscSource.transform.sy, 'candle foot retains its original thickness');
+assert.deepEqual(candleTableProportioned.particleEmitters[0].position, candleTableSource.particleEmitters[0].position,
+  'candle flame local offset remains attached to the moved candle part');
+
+const { source: lanternSource, adjusted: lanternProportioned } = proportionedFurniture('standingLamp');
+const lanternTableTopSource = lanternSource.parts.find(part => part.name === 'Lantern Table Top');
+const lanternTableTop = lanternProportioned.parts.find(part => part.name === 'Lantern Table Top');
+const lanternBaseSource = lanternSource.parts.find(part => part.name === 'Bronze Lantern Base');
+const lanternBase = lanternProportioned.parts.find(part => part.name === 'Bronze Lantern Base');
+const lanternGlassSource = lanternSource.parts.find(part => part.name === 'Amber Lantern Glass');
+const lanternGlass = lanternProportioned.parts.find(part => part.name === 'Amber Lantern Glass');
+const lanternDrop = (lanternTableTopSource.transform.y + lanternTableTopSource.transform.sy * 0.5) * 0.5;
+assert.ok(Math.abs(lanternTableTop.transform.y + lanternTableTop.transform.sy * 0.5 - 0.3325) < 1e-9, 'lantern-table surface lowers to the exact half-height');
+assert.equal(lanternBase.transform.y, lanternBaseSource.transform.y - lanternDrop, 'lantern base follows the lowered tabletop');
+assert.equal(lanternBase.transform.sy, lanternBaseSource.transform.sy, 'lantern base retains its original size');
+assert.equal(lanternGlass.transform.y, lanternGlassSource.transform.y - lanternDrop, 'lantern body follows the lowered tabletop');
+assert.equal(lanternGlass.transform.sy, lanternGlassSource.transform.sy, 'lantern body retains its original height');
+for (const key of ['bookshelf', 'chairSimple', 'artifactPedestal']) {
+  const { source, adjusted } = proportionedFurniture(key);
+  assert.deepEqual(adjusted.parts.map(part => part.transform), source.parts.map(part => part.transform),
+    `${key} is not floor-rooted surface furniture and remains unchanged`);
+}
+
 assert(procedural.includes("part.kind === 'liquidSurface'"),
   'linked liquid-surface fallback remains available after barrel/cup geometry parity');
 assert(procedural.includes("part.kind === 'barrel' || part.kind === 'cup'") &&
