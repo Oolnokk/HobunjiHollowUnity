@@ -1,7 +1,117 @@
 {
   "schema": "hobunji_ruin_room_library.v1",
   "version": 1,
-  "templates": [],
+  "templates": [
+    {
+      "id": "example-perimeter-chamber",
+      "name": "Example perimeter chamber (disabled)",
+      "enabled": false,
+      "weight": 1,
+      "rotations": [
+        0,
+        180
+      ],
+      "match": {
+        "minDoors": 1,
+        "maxDoors": 1,
+        "roomIds": []
+      },
+      "footprint": {
+        "width": 12,
+        "height": 12,
+        "rows": [
+          "############",
+          "############",
+          "##........##",
+          "##........##",
+          "##........##",
+          "##........##",
+          "##........##",
+          "##........##",
+          "##........##",
+          "##........##",
+          "############",
+          "############"
+        ]
+      },
+      "connections": [
+        {
+          "id": "west-corridor",
+          "side": "west",
+          "offset": 6,
+          "width": 6,
+          "kind": "corridor",
+          "required": true
+        }
+      ],
+      "spots": [
+        {
+          "id": "threshold-mechanism",
+          "label": "Threshold mechanism",
+          "x": 0,
+          "z": 6,
+          "required": true,
+          "maxUses": 1,
+          "clearance": 0.5,
+          "allowlists": {
+            "mechanisms": [
+              "verticalStoneDoor"
+            ],
+            "activators": [],
+            "decorations": []
+          }
+        },
+        {
+          "id": "threshold-activator",
+          "label": "Threshold activator",
+          "x": 1,
+          "z": 6,
+          "required": true,
+          "maxUses": 1,
+          "clearance": 0.6,
+          "allowlists": {
+            "mechanisms": [],
+            "activators": [
+              "pressurePlate",
+              "brazier",
+              "glyphObelisk",
+              "stackedObelisk",
+              "linkedCubePillars"
+            ],
+            "decorations": []
+          }
+        },
+        {
+          "id": "north-west-decor",
+          "label": "North-west dressing",
+          "x": 1,
+          "z": 1,
+          "required": false,
+          "maxUses": 3,
+          "clearance": 0.35,
+          "allowlists": {
+            "mechanisms": [],
+            "activators": [],
+            "decorations": [
+              "pillar",
+              "statue",
+              "rubble",
+              "vegetation"
+            ]
+          }
+        }
+      ],
+      "puzzleLinks": [
+        {
+          "id": "threshold-activator-opens-door",
+          "activatorSpot": "threshold-activator",
+          "mechanismSpot": "threshold-mechanism",
+          "relation": "activates",
+          "required": true
+        }
+      ]
+    }
+  ],
   "proceduralProfiles": [
     {
       "id": "generated-room-default",
@@ -19,15 +129,168 @@
         "roomIds": []
       },
       "spots": [
-        { "id": "center", "label": "Center", "u": 0.5, "v": 0.5, "clearance": 1.1, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "north-west", "label": "North-west", "u": 0.25, "v": 0.25, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "north-east", "label": "North-east", "u": 0.75, "v": 0.25, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "south-west", "label": "South-west", "u": 0.25, "v": 0.75, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "south-east", "label": "South-east", "u": 0.75, "v": 0.75, "clearance": 0.75, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "north-mid", "label": "North side", "u": 0.5, "v": 0.18, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "east-mid", "label": "East side", "u": 0.82, "v": 0.5, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "south-mid", "label": "South side", "u": 0.5, "v": 0.82, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } },
-        { "id": "west-mid", "label": "West side", "u": 0.18, "v": 0.5, "clearance": 0.55, "allowlists": { "mechanisms": ["*"], "activators": ["*"], "decorations": ["*"] } }
+        {
+          "id": "center",
+          "label": "Center",
+          "u": 0.5,
+          "v": 0.5,
+          "clearance": 1.1,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "north-west",
+          "label": "North-west",
+          "u": 0.25,
+          "v": 0.25,
+          "clearance": 0.75,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "north-east",
+          "label": "North-east",
+          "u": 0.75,
+          "v": 0.25,
+          "clearance": 0.75,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "south-west",
+          "label": "South-west",
+          "u": 0.25,
+          "v": 0.75,
+          "clearance": 0.75,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "south-east",
+          "label": "South-east",
+          "u": 0.75,
+          "v": 0.75,
+          "clearance": 0.75,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "north-mid",
+          "label": "North side",
+          "u": 0.5,
+          "v": 0.18,
+          "clearance": 0.55,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "east-mid",
+          "label": "East side",
+          "u": 0.82,
+          "v": 0.5,
+          "clearance": 0.55,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "south-mid",
+          "label": "South side",
+          "u": 0.5,
+          "v": 0.82,
+          "clearance": 0.55,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        },
+        {
+          "id": "west-mid",
+          "label": "West side",
+          "u": 0.18,
+          "v": 0.5,
+          "clearance": 0.55,
+          "allowlists": {
+            "mechanisms": [
+              "*"
+            ],
+            "activators": [
+              "*"
+            ],
+            "decorations": [
+              "*"
+            ]
+          }
+        }
       ],
       "puzzleLinks": []
     }
