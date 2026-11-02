@@ -361,14 +361,16 @@
     return window.ResourceSystem?.setStaminaRegenBlocked?.(entity, RANGED_LOAD_REGEN_BLOCK_SOURCE, blocked) || false;
   }
 
-  function chargeStaminaCostForPose(poseCharge) {
+  function chargeStaminaCostForPose(poseCharge, staminaCostMul = 1) {
     const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); // The visible Neutral→Windup interpolation is the one progress axis shared with Charged Breaker.
     const chargedBreakerCost = window.Combat?.chargedBreakerData?.chargeCostForPose;
-    if (typeof chargedBreakerCost === 'function') return chargedBreakerCost(pose); // Uses the live Charged Breaker config so both held actions stay in lockstep after tuning.
+    const costMultiplier = Math.max(0, Number(staminaCostMul) || 1); // Carries the same charged-attack progression multiplier into thrown holds.
+    if (typeof chargedBreakerCost === 'function') return chargedBreakerCost(pose, costMultiplier); // Uses the live Charged Breaker config so both held actions stay in lockstep after tuning.
     const ready = Math.max(0.0001, HELD_CHARGE_MIN_READY_POSE);
-    return pose <= ready
+    const rawCost = pose <= ready
       ? HELD_CHARGE_COST_MIN * (pose / ready)
       : HELD_CHARGE_COST_MIN + (HELD_CHARGE_COST_MAX - HELD_CHARGE_COST_MIN) * ((pose - ready) / Math.max(0.0001, 1 - ready));
+    return rawCost * costMultiplier;
   }
 
   function paymentTotal(payment) {
