@@ -413,8 +413,10 @@
       carvedCells:cutCells.length,
       seed,
     };
-    claimsByNetwork.set(network,new Map());
-    diagnosticsByNetwork.set(network,{claims:[],rejections:[]});
+    for (const plan of plans) {
+      claimsByPlan.set(plan,new Map());
+      diagnosticsByPlan.set(plan,{claims:[],rejections:[]});
+    }
     return {ok:true,applied:plans.length,carvedCells:cutCells.length,plans,errors};
   }
 
