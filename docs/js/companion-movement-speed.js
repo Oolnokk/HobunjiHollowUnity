@@ -121,12 +121,14 @@
       }
     }
 
-    const record = previous || { x: position.x, y: position.y, scale: position.scale, at: now, speed: 0 };
+    const record = previous || { x: position.x, y: position.y, scale: position.scale, at: now, speed: 0, baseSpeed: 0 };
     record.x = position.x;
     record.y = position.y;
     record.scale = position.scale;
     record.at = now;
-    if (measuredSpeed > 0.5) record.speed = measuredSpeed;
+    const ownerMul = Math.max(0.001, npcMovementMultiplier(owner));
+    if (measuredSpeed > 0.5) record.baseSpeed = measuredSpeed / ownerMul;
+    record.speed = Math.max(0, record.baseSpeed * npcMovementMultiplier(owner)); // Reapply the live NPC movement modifier even while the owner is standing still.
     ownerMotion.set(owner, record);
     return record.speed;
   }
@@ -180,6 +182,7 @@
     const tileSize = Math.max(1, Number(deps?.TILE) || 32);
     const currentTilesPerSecond = Number(walker._moveSpeedTiles);
     if (Number.isFinite(currentTilesPerSecond) && currentTilesPerSecond > 0) {
+      sampleOwnerMotion(master || walker, walker); // Keep a normalized catch-up pace ready for frames when the NPC is stationary or action-locked.
       return currentTilesPerSecond * tileSize;
     }
 
