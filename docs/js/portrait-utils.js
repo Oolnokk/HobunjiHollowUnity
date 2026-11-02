@@ -1572,7 +1572,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const hoodShowsFrontHair = hasPortraitTag(hood, hoodShowsFrontHairTag);
   const hiddenCosmeticGroups = new Set([
     ...(hoodHideFrontAndSideHair ? [...(hoodShowsFrontHair ? [] : [hairFront]), hairSide, hairSideL] : []),
-    ...((hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask)) ? [facialHair] : []),
+    ...((!renderOptions?.forceShowFacialHair && (hoodHidesFacialHair(hood) || hoodHidesFacialHair(mask))) ? [facialHair] : []),
   ].filter(Boolean));
 
   const preBackLayers    = [];  // back hairstyle + hat-back, drawn before arms
