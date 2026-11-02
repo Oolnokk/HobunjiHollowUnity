@@ -36,6 +36,10 @@ async function flush() { for (let i=0; i<6; i++) await Promise.resolve(); }
   const stone = browser.OreRockTextures.materialFor(THREE, 'stone', ores);
   assert(stone instanceof THREE.MeshStandardMaterial, 'Restore the original lit rock material');
   assert.equal(stone.map.src, 'assets/textures/carved_smooth.png');
+  const authorBrowser = { OreRockTexturesAssetBase: '../../' }; // Nested scenery-author pages resolve the original shared texture from docs/.
+  vm.runInNewContext(fs.readFileSync('docs/js/ore-rock-textures.js','utf8'), {window:authorBrowser});
+  const authorStone = authorBrowser.OreRockTextures.materialFor(THREE, 'stone', ores);
+  assert.equal(authorStone.map.src, '../../assets/textures/carved_smooth.png', 'Standalone author preview resolves the same mine texture from its nested path');
   assert.equal(stone.map.wrapS, THREE.RepeatWrapping, 'Stone uses its original tiling');
   assert.deepStrictEqual([stone.map.repeat.x,stone.map.repeat.y],[0.7,0.7]);
   assert.strictEqual(browser.OreRockTextures.materialFor(THREE,'notAnOre',ores),stone);
