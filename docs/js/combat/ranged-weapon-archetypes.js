@@ -494,17 +494,19 @@
     return true;
   }
 
-  function thrownChargeCostForPose(poseCharge) {
+  function thrownChargeCostForPose(poseCharge, itemKey) {
     const ranged = window.RangedWeapons;
+    const effects = window.CombatProgression?.getEffects?.(itemKey, 'chargedBreaker') || { stats: {} }; // Reuses the charged-attack stamina modifier for the weapon currently being held.
     const shapeStats = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Matches Charged Breaker's weapon-efficiency adjustment for the same pose-cost curve.
-    const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge)
-      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
+    const staminaCostMul = 1 + (Number(effects.stats?.staminaCostMul) || 0);
+    const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge, staminaCostMul)
+      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return (pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52) * staminaCostMul; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
     return Math.max(0, baseCost / Math.max(0.05, Number(shapeStats.efficiency) || 1));
   }
 
   function payThrownChargeStamina(charge, poseCharge, reason = 'Thrown weapon charge') {
     if (!charge) return 0;
-    const targetPaid = thrownChargeCostForPose(poseCharge);
+    const targetPaid = thrownChargeCostForPose(poseCharge, charge.itemKey);
     const remainder = Math.max(0, targetPaid - (Number(charge.paidChargeCost) || 0));
     if (!(remainder > 0)) return 0;
     const payment = window.ResourceSystem?.spendStamina?.(
