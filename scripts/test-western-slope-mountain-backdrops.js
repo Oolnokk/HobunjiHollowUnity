@@ -154,6 +154,9 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(root.children.length, 3, 'the three original PNG layers must remain three separately authorable ridges');
   assert.deepEqual(root.children.map(group => group.position.x), [-74, -244, -414], 'all ridges must retain the original westward shift and spacing');
   assert.deepEqual(root.children.map(group => group.position.z), [100, 100, 100], 'all ridges must remain centered on the map');
+  assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
+  const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
+  assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
   assert(root.children.every(group => group.children.length === 8), 'each ridge must contain exactly eight mine-style rock meshes');
   assert.equal(geometryCalls, 24, 'exactly 24 mine-rock geometries must be built');
   assert.equal(fitCalls, 24, 'every decorative rock must use the normal mine-rock surface treatment');
