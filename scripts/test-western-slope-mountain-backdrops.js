@@ -180,6 +180,7 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     assert(rowSpan >= expectedWidths[index] * 0.98 && rowSpan <= expectedWidths[index] * 1.15, 'eight enlarged rocks must span approximately the former PNG width');
     assert(group.children.every(mesh => mesh.geometry instanceof FakeGeometry), 'each decorative rock must use the shared mine-rock geometry builder');
     assert(group.children.every(mesh => mesh.userData.visualOnly && mesh.userData.mineRockUvsApplied), 'rocks must retain mine visuals without mine interactions');
+    assert(group.children.every(mesh => typeof mesh.raycast === 'function' && mesh.raycast() === undefined), 'decorative rocks must not intercept tool or pointer raycasts');
     assert(group.children.every(mesh => mesh.castShadow === false && mesh.receiveShadow === false), 'distant decorative rocks must not add shadow work');
     assert(group.children.every(mesh => mesh.scale.y > mesh.scale.z), 'rock mounds must retain tall mountain-like vertical coverage');
     assert(new Set(group.children.map(mesh => mesh.material)).size === 1, 'each ridge must share one owned material instead of allocating per-rock materials');
