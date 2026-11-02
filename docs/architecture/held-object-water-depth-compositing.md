@@ -65,12 +65,12 @@ standing elevation of their owning actor:
   through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
   body groups use their existing `namedAnimalNpc` marker.
 - Ground materials with standard Three.js world-position shaders discard only
-  upward-facing fragments within 0.18 world units of the actor's standing
+  front-facing, upward-facing fragments within 0.18 world units of the actor's standing
   elevation. Lit materials use their transformed normal; unlit MeshBasic grass
   uses its geometry normal. Any ground geometry without a normal attribute keeps
   full-depth occlusion rather than guessing its surface orientation. World-space Y naturally includes map
   tiers, trench bottoms, raised earth and continuous terrain surfaces.
-- Vertical cliff/wall faces remain depth occluders. Water, slush, snow,
+- Vertical cliff/wall faces and back-facing floors/ceilings remain depth occluders. Water, slush, snow,
   billboard grass, props and other solid geometry retain their existing
   material/depth behavior.
 - Unknown actor ownership, missing geometry normals, and custom ground shaders
