@@ -86,6 +86,8 @@ assert.match(generator, /wallSide: 'north'/);
 assert.match(generator, /wallSide: 'east'/);
 assert.match(generator, /wallSide: 'south'/);
 assert.match(generator, /wallSide: 'west'/);
+assert.match(generator, /f\.highlandFrustumWall \|\| \(f\.gableEnd && f\.wallSide\)/, 'only generated side-tagged gables join shared-wall clipping');
+assert.match(core, /housePieceRoofOnly = true/, 'roof group is explicitly identified as roof-only');
 
 // Door/window cuts remain on body walls; shared-boundary cuts also remove
 // gable portions. Every opening becomes a brick exclusion quad to prevent
