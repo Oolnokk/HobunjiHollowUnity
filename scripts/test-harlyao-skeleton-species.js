@@ -75,7 +75,7 @@ assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0
 const frontDrawMapIndex = portraitSource.indexOf('const frontDraw = {'); // The renderer now routes the default and experimental orders through keyed draw callbacks.
 const hoodBackDrawIndex = portraitSource.indexOf('hoodBack: () => drawBreathingLayers(hoodBackLayers),', frontDrawMapIndex);
 const frontHeadDrawIndex = portraitSource.indexOf('head: () => {', frontDrawMapIndex);
-const hoodFrontDrawIndex = portraitSource.indexOf('hood: () => drawBreathingLayers(hoodLayers),', frontDrawMapIndex);
+const hoodFrontDrawIndex = portraitSource.indexOf('hood: () => { drawBreathingLayers(hoodLayers); if (pendingBeardOverpass)', frontDrawMapIndex);
 const defaultFrontOrderIndex = portraitSource.indexOf('const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([');
 const hoodBackOrderIndex = portraitSource.indexOf("'hoodBack'", defaultFrontOrderIndex);
 const headOrderIndex = portraitSource.indexOf("'head'", defaultFrontOrderIndex);
