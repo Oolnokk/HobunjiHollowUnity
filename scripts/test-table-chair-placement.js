@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-class Vector3{constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}}
+class Vector3{constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}clone(){return new Vector3(this.x,this.y,this.z);}}
 const window={THREE:{Vector3}};
 vm.runInNewContext(fs.readFileSync('docs/js/table-chair-placement.js','utf8'),{window,Map,Math,Number,Object,Array});
 const api=window.TableChairPlacement;
@@ -20,6 +20,12 @@ assert.ok(Math.abs(chair.position.x-11.5)<1e-9);
 assert.ok(Math.abs(chair.position.z-20)<1e-9);
 const forward={x:Math.sin(chair.rotation.y),z:Math.cos(chair.rotation.y)},toTable={x:10-chair.position.x,z:20-chair.position.z};
 assert.ok(forward.x*toTable.x+forward.z*toTable.z>0,'chair front faces table centroid');
+const parent={position:{x:5,y:0,z:5},rotation:{y:Math.PI/2},updateWorldMatrix(){},worldToLocal(v){const dx=v.x-this.position.x,dz=v.z-this.position.z,c=Math.cos(this.rotation.y),s=Math.sin(this.rotation.y);return new Vector3(c*dx-s*dz,v.y-this.position.y,s*dx+c*dz);}};
+const nestedChair={parent,position:{x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}},rotation:{y:0},getWorldPosition(){return new Vector3(parent.position.x,parent.position.y,parent.position.z);},updateWorldMatrix(){}};
+assert.equal(api.apply(nestedChair,table,{mode:'orbit',angleDeg:0,distance:.5},{width:2,depth:2}),true);
+const nestedForward={x:Math.sin(parent.rotation.y+nestedChair.rotation.y),z:Math.cos(parent.rotation.y+nestedChair.rotation.y)};
+const nestedWorld={x:parent.position.x+Math.cos(parent.rotation.y)*nestedChair.position.x+Math.sin(parent.rotation.y)*nestedChair.position.z,z:parent.position.z-Math.sin(parent.rotation.y)*nestedChair.position.x+Math.cos(parent.rotation.y)*nestedChair.position.z};
+assert.ok(nestedForward.x*(10-nestedWorld.x)+nestedForward.z*(20-nestedWorld.z)>0,'nested chair parent transform preserves world-facing direction');
 const farm=fs.readFileSync('docs/js/farm-editor.js','utf8');
 assert.match(farm,/tableAttachment: obj\.tableAttachment/);
 assert.match(farm,/normalize\?\.\(tableAttachment\)/);

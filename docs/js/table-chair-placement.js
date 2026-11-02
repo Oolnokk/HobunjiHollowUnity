@@ -20,7 +20,14 @@ function apply(chair,table,d,footprint={}){
  const p=localPosition(d,Math.max(.1,finite(footprint.width,1)),Math.max(.1,finite(footprint.depth,1)));if(!p)return false;
  table.updateWorldMatrix?.(true,false);
  const target=table.localToWorld(new window.THREE.Vector3(p.x,0,p.z)),center=table.getWorldPosition(new window.THREE.Vector3());
- chair.position.set(target.x,chair.position.y,target.z);chair.rotation.y=Math.atan2(center.x-target.x,center.z-target.z);chair.updateWorldMatrix?.(true,false);return true;
+ const currentWorld=chair.getWorldPosition?chair.getWorldPosition(new window.THREE.Vector3()):chair.position;
+ target.y=currentWorld.y;
+ const parent=chair.parent;
+ let localTarget=target,localCenter=center;
+ if(parent?.worldToLocal){parent.updateWorldMatrix?.(true,false);localTarget=parent.worldToLocal(target.clone());localCenter=parent.worldToLocal(center.clone());}
+ chair.position.set(localTarget.x,localTarget.y,localTarget.z);
+ chair.rotation.y=Math.atan2(localCenter.x-localTarget.x,localCenter.z-localTarget.z);
+ chair.updateWorldMatrix?.(true,false);return true;
 }
 function refreshArea(area,entries){
  const byId=new Map(Array.from(entries||[],e=>[String(e.id),e]));let count=0;
