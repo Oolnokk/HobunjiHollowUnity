@@ -42,7 +42,7 @@
   })), Promise.resolve());
   if (document.readyState === 'loading' && document.currentScript) {
     window.HobunjiLatestAuthoredRigReady = Promise.resolve();
-    for (const src of urls) document.write(`<script src="${src}"><\\/script>`);
+    for (const src of urls) document.write(`<script src="${src}"><\/script>`);
   } else {
     const ready = loadSequentially(urls);
     window.HobunjiLatestAuthoredRigReady = ready;
