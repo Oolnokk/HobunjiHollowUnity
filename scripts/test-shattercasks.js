@@ -19,6 +19,9 @@ assert.equal(asset.parts.length,3,'two-necked furniture retains all three author
 assert(asset.recognizedSurfaces.length>0,'all original surface definitions survive import');
 assert(html.includes('src="js/shattercasks.js?v='),'shattercask runtime is loaded');
 assert(ranged.includes('Shattercasks?.projectileHit'),'ranged projectile segment detects shattercasks');
+assert(code.includes('const burdenHitFirst=!!otherHit&&(!volumeHit||otherHit.t<=volumeHit.t);') &&
+  code.includes('if(burdenHitFirst)hitProjectile(otherHit);'),
+  'a falling Burden only invokes another Burden impact when that target is the earliest collision, never through a nearer solid blocker');
 assert(flaskRuntime.includes("emitSfx('impact'"),'flask flight emits its semantic impact cue at landing');
 assert(audioSystem.includes("document.addEventListener('hobunji-flask-sfx'") &&
   audioSystem.includes('cueMap[detail.cue]') &&

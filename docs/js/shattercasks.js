@@ -861,9 +861,10 @@
       const otherHit=projectileHit(from,end,radius,1,burden.mapId);
       const volumeHit=window.NearbyVolumeCollision?.segmentHit?.(from,end,radius)||null;
       if(otherHit||volumeHit){
-        const t=Math.max(0,Math.min(1,Math.min(Number(otherHit?.t??1),Number(volumeHit?.t??1))));
+        const burdenHitFirst=!!otherHit&&(!volumeHit||otherHit.t<=volumeHit.t); // Never impact a farther Burden through a nearer environmental blocker.
+        const t=Math.max(0,Math.min(1,burdenHitFirst?Number(otherHit.t):Number(volumeHit.t)));
         burden.group.position.lerpVectors(from,end,t);
-        if(otherHit)hitProjectile(otherHit);
+        if(burdenHitFirst)hitProjectile(otherHit);
         downwardFalls.delete(id);
         resolveDownwardImpact(burden,state.cause+'-collision',burden.group.position.y);
         continue;
