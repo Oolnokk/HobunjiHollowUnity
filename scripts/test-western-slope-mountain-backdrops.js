@@ -115,6 +115,7 @@ class LineSegments extends Node3D {
 
 const sharedMineMaterial = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, map: { shared: true } });
 const sharedSnowMaterial = new MeshBasicMaterial({ color: 0xffffff, map: { sharedSnow: true }, depthTest: true, depthWrite: true, fog: true });
+const snowMaterialBindings = new Set(); // Verifies the cap clone remains synchronized without changing the ground material.
 const sourceGeometries = [];
 const unusedGrassGeometries = [];
 let geometryCalls = 0;
@@ -137,6 +138,8 @@ const window = {
   localStorage,
   EnvironmentSurfaceMicroPlateau: {
     getSnowMaterial: () => sharedSnowMaterial,
+    bindSnowTexture: material => { material.map = sharedSnowMaterial.map; snowMaterialBindings.add(material); return true; },
+    unbindSnowTexture: material => snowMaterialBindings.delete(material),
     debugSnapshot: () => ({ textureState: 'shade-filled-white-canvas-png' }),
   },
   TerrainGeometry: {
@@ -221,7 +224,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
       assert(stone.geometry instanceof FakeGeometry && snow.geometry instanceof FakeGeometry, 'split stone/snow surfaces must use generated buffer geometry');
       assert(stone.userData.visualOnly && snow.userData.visualOnly, 'both surfaces must remain decorative-only');
       assert(stone.userData.mineRockUvsApplied, 'stone bases must retain the mine-rock texture treatment');
-      assert.equal(snow.material, sharedSnowMaterial, 'snow caps must use the shared Western Slope snow material');
+      assert.notEqual(snow.material, sharedSnowMaterial, 'distant snow caps must clone the canonical material instead of changing ground snow rendering');
+      assert.equal(snow.material.map, sharedSnowMaterial.map, 'snow cap clones must reuse the exact shared snow texture');
       assert(boundary.isLineSegments && boundary.userData.westernSlopeSnowBoundary, 'each cap must have its own stone/snow outline');
       assert(typeof boundary.raycast === 'function' && boundary.raycast() === undefined, 'snow boundary lines must not intercept targeting');
       const stonePositions = stone.geometry.getAttribute('position'), snowPositions = snow.geometry.getAttribute('position');
@@ -256,8 +260,9 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
   assert(allParts.every(part => part.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped rock parts');
   const snowShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
-  sharedSnowMaterial.onBeforeCompile(snowShader);
-  assert.match(snowShader.vertexShader, /uBackgroundMaxDepth/, 'snow caps must share the far-background depth ordering');
+  root.children[0].children[0].children[1].material.onBeforeCompile(snowShader);
+  assert.match(snowShader.vertexShader, /uBackgroundMaxDepth/, 'snow cap clones must share the far-background depth ordering');
+  assert.equal(sharedSnowMaterial.onBeforeCompile, undefined, 'ground snow must retain its original terrain depth shader');
   for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
     const skyMaterial = { userData: {} }; // Isolates each real sky layer's shader state.
     const skyShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
@@ -309,6 +314,7 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert(ridgeMaterials.every(material => material.disposed), 'destroyZone must dispose every ridge-owned stone and outline material');
   assert.equal(sharedMineMaterial.disposed, false, 'destroyZone must not dispose the shared mine material');
   assert.equal(sharedSnowMaterial.disposed, false, 'destroyZone must not dispose the shared environment snow material');
+  assert.equal(snowMaterialBindings.size, 0, 'destroyZone must unbind disposed cap clones from the asynchronous snow texture loader');
   assert.equal(geometries.length, 72, 'all three drawable geometries per rock must be accounted for during cleanup');
 
   const debug = window.__westernSlopeMountainBackdropsDebug();
