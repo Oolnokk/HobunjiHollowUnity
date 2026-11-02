@@ -201,6 +201,8 @@ async function main() {
     'the source brazier belongs to the composer-owned group and is removed on clear/reroll');
   assert(mechanismCode.includes('!doors.some(item=>item.id===doorway.id)'),
     'Tothal shared room doorways are deduplicated before ice walls are generated');
+  assert(/dev-random-ruin-dungeon-fire\.js\?v=20261102dungeonfire3/.test(fs.readFileSync(path.join(root,'docs/js/dev-random-ruin-bootstrap.js'),'utf8')),
+    'the dungeon-fire mechanism cache token matches the audited source');
   assert(mechanismCode.includes("registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear})"),
     'Dungeon Fire is registered with the generated Harlyao ruin composer');
   assert(mechanismCode.includes('registerFireTarget(record,brazier=>') &&
