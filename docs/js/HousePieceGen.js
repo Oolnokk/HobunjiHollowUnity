@@ -684,6 +684,9 @@
    *   wbUsePlaceholder- passed to wallBuilder.build as usePlaceholder (default true)
    *   wbOpts          - extra opts forwarded to wallBuilder.build
    *   windowCuts       - normalized {side,uCenter,uWidth,vCenter,vHeight} wall apertures
+   *   wallCuts         - normalized shared-wall openings; cut body + gable walls
+   *   bodyOnly         - emit body/gable walls without roof slopes or ridge cap
+   *   roofOnly         - emit roof slopes/ridge cap + shingles without room walls
    *   matWall / matRoof / matFloor / matTube  - override materials
    */
   function buildGroup(THREE, minC, maxC, minR, maxR, opts) {
