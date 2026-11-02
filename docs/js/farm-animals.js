@@ -938,7 +938,7 @@
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
-        if (this._voiceActor) this._voiceActor.health = 0; // Releases this stable actor from the scheduler's tracked set on sale/despawn.
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
