@@ -335,7 +335,10 @@
       cancelBurdenPlate(mapId, id);
       return { ok:true, message:'Retrieved ' + (existing.displayName || 'the Burden') + '.' };
     }
-    if (existing) cancelBurdenPlate(mapId, id);
+    if (existing) {
+      cancelBurdenPlate(mapId, id);
+      return { ok:false, message:'The previous payload was removed; the plinth is returning to OFF.' };
+    }
     const held = window.Shattercasks?.heldBurdenInfo?.();
     if (!held) return { ok:false, message:'You must be carrying a Burden to operate this plinth.' };
     if (held.kind !== puzzle.requiredBurdenKind) {
