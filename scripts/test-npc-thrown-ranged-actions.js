@@ -22,6 +22,7 @@ const definitions = {
 const shots = []; // Records NPC projectile releases for the phase/cooldown assertions.
 const loadedTransitions = []; // Makes unintended load or unload actions observable for all thrown items.
 const actionSounds = []; // Reload sound should never play for throwing spears/hatchets.
+const staminaSpends = []; // Captures NPC reload and held-throw costs without requiring the full resource runtime.
 const deps = {
   TILE: 64,
   moveCreatureToward: () => false,
@@ -71,12 +72,15 @@ for (const key of ['fishingspear', 'hatchet']) {
   assert.equal(npc._rangedAction.kind, 'fire', 'another throw may begin after cooldown with no loading state');
   assert.equal(loadedTransitions.filter(t => t[0] === key).length, 0, 'thrown ammunition never enters a reload state');
   assert.equal(actionSounds.filter(s => s[0] === key && s[1] === 'load').length, 0, 'throwing has no loading sound');
+  const chargeCostPaid = staminaSpends.filter(entry => entry.actor === npc && entry.transaction?.abilityId === 'thrownWeapon').reduce((sum, entry) => sum + entry.amount, 0);
+  assert.equal(chargeCostPaid, 18, 'NPC held throws must pay the full Charged Breaker-equivalent 18 Stamina at full charge');
 }
 
 for (const key of ['crossbow', 'blowgun']) {
   const npc = actor(key);
   update(npc, 0.016, target, 256);
   assert.equal(npc._rangedAction.kind, 'load', key + ' still requires a distinct reload');
+  assert.equal(staminaSpends.filter(entry => entry.actor === npc && entry.transaction?.actionKind === 'rangedWeaponLoad').length, 1, key + ' reload must spend its load stamina cost exactly once');
   update(npc, definitions[key].reloadDurationS + 0.01, target, 256);
   assert.equal(npc._rangedLoaded, true, 'reload must actually arm the weapon');
   update(npc, 0.19, target, 256);
