@@ -898,7 +898,7 @@ function playerAccessibleClothing() {
     if (!baseId) return;
     const catalogItem = staticCatalog.find(entry => entry?.id === baseId);
     const cachedOption = _cosmetics?.optionCache?.get?.(baseId);
-    const slot = String(item.slot || slotHint || window.MetalArmorSystem?.blueprintForItem?.(item)?.slot || catalogItem?.category || cachedOption?.slot || '').toLowerCase();
+    const slot = String(item.slot || slotHint || window.MetalArmorSystem?.blueprintForItem?.(item)?.slot || catalogItem?.category || cachedOption?.slot || window.NpcWardrobe?.guessSlot?.(baseId) || '').toLowerCase();
     if (!NPC_EDITOR_CLOTHING_SLOTS.has(slot)) return;
     const identity = item.uid ? 'uid:' + String(item.uid) : 'visual:' + slot + ':' + playerClothingSnapshotSignature({ ...item, slot });
     if (seen.has(identity)) return;
