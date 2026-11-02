@@ -216,7 +216,7 @@ assert(awarded.some(e=>e.id==='kaboku_kunji'&&e.amount===40&&e.reason==='festiva
 assert.equal(api.feastMenu().length,7,'the seven pots remain after donation');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','seventh serving pot permanently holds the contest entry');
 const state=api.serialize();
-assert(state.feastBuffs[0].remainingS>0,'meal remaining duration is portable');
+assert(state.feastBuffs[0].remainingHours>0,'meal remaining in-game hours are portable');
 api.restore(state);
 assert.equal(api.currentFullness(),2,'fullness survives save/load after real drink-strike servings');
 assert.equal(api.festivalFoodStacks('speed'),api.feastDishDetails(0).foodEffects.speed || 0,'festival food buff survives save/load');
