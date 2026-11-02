@@ -30,6 +30,13 @@
     <label class="chk"><input id="puzzleDirect" type="checkbox"> Furniture itself can be toggled (simple door/light)</label>
     <label class="chk"><input id="puzzleBlocks" type="checkbox"> Blocks its occupied tiles while OFF</label>
     <div class="g2" style="margin-top:6px"><div><label>Lerp duration seconds</label><input id="puzzleDuration" type="number" min=".05" step=".05"></div><div><label>Collision opens at progress</label><input id="puzzleCollision" type="number" min="0" max="1" step=".05"></div></div>
+    <div id="puzzleBurdenFields" style="display:none;margin-top:8px;padding:8px;border:1px solid rgba(148,163,184,.3);border-radius:8px">
+      <b>Burden Plate</b>
+      <div class="g2" style="margin-top:5px"><div><label>Required Burden</label><select id="puzzleRequiredBurden"><option value="shattercask">Shattercask</option><option value="soursap">Soursap Fruit</option></select></div><div><label>Completion channel</label><input id="puzzleCompletionChannel" value="B"></div></div>
+      <label style="margin-top:5px">Payload attachment surface ID</label><input id="puzzlePayloadSurface" placeholder="Recognized surface ID">
+      <label style="margin-top:5px">Reverse duration at 100% progress · seconds</label><input id="puzzleReverseDuration" type="number" min="0" step=".05">
+      <p class="muted">The primary channel fires on payload placement. The completion channel fires only after the OFF → ON motion finishes. Removing the payload reverses from the current progress over reverse duration × progress.</p>
+    </div>
     ${transformFields('puzzleOff', 'OFF')}${transformFields('puzzleOn', 'ON')}`;
   host.appendChild(section);
 
@@ -44,7 +51,8 @@
   function defaultPuzzle(role = 'mechanism') {
     return api.normalizePuzzle({
       role, behavior:(role === 'activator' ? api.ACTIVATORS : api.MECHANISMS)[0], channel:'A', interactionRange:1.65,
-      motion:{ off:identityTransitionState(0), on:identityTransitionState(1), parts:{}, durationSeconds:.8, collisionOpenProgress:.55 },
+      motion:{ off:identityTransitionState(0), on:identityTransitionState(1), parts:{}, durationSeconds:.8, reversalSeconds:.8, collisionOpenProgress:.55 },
+      requiredBurdenKind:'shattercask', completionChannel:'B', payloadSurfaceId:'',
     });
   }
   function behaviorOptions(role) {
@@ -126,6 +134,11 @@
     el('puzzlePrompt').value = displayed.prompt; el('puzzleOnPrompt').value = displayed.onPrompt; el('puzzleOffPrompt').value = displayed.offPrompt;
     el('puzzleStartsActive').checked = displayed.startsActive; el('puzzleDirect').checked = displayed.directInteraction; el('puzzleBlocks').checked = displayed.blocksMovement;
     el('puzzleDuration').value = displayed.motion.durationSeconds; el('puzzleCollision').value = displayed.motion.collisionOpenProgress;
+    el('puzzleReverseDuration').value = displayed.motion.reversalSeconds;
+    el('puzzleRequiredBurden').value = displayed.requiredBurdenKind;
+    el('puzzleCompletionChannel').value = displayed.completionChannel;
+    el('puzzlePayloadSurface').value = displayed.payloadSurfaceId;
+    el('puzzleBurdenFields').style.display = displayed.behavior === 'burdenPlate' ? '' : 'none';
     writeState('puzzleOff', displayed.motion.off); writeState('puzzleOn', displayed.motion.on);
     section.querySelectorAll('input,select').forEach(input => { if (input.id !== 'puzzleRole') input.disabled = !puzzle; });
     for(const id of ['puzzleEditOff','puzzleEditOn','puzzlePlay'])el(id).disabled=!puzzle;
@@ -135,9 +148,11 @@
     const role = el('puzzleRole').value;
     state.puzzle = api.normalizePuzzle(role === 'none' ? null : {
       role, behavior:el('puzzleBehavior').value, channel:el('puzzleChannel').value, interactionRange:el('puzzleRange').value,
+      completionChannel:el('puzzleCompletionChannel').value,
+      requiredBurdenKind:el('puzzleRequiredBurden').value, payloadSurfaceId:el('puzzlePayloadSurface').value,
       prompt:el('puzzlePrompt').value, onPrompt:el('puzzleOnPrompt').value, offPrompt:el('puzzleOffPrompt').value,
       startsActive:el('puzzleStartsActive').checked, directInteraction:el('puzzleDirect').checked, blocksMovement:el('puzzleBlocks').checked,
-      motion:{ off:readState('puzzleOff'), on:readState('puzzleOn'), parts:state.puzzle?.motion?.parts||{}, durationSeconds:el('puzzleDuration').value, collisionOpenProgress:el('puzzleCollision').value },
+      motion:{ off:readState('puzzleOff'), on:readState('puzzleOn'), parts:state.puzzle?.motion?.parts||{}, durationSeconds:el('puzzleDuration').value, reversalSeconds:el('puzzleReverseDuration').value, collisionOpenProgress:el('puzzleCollision').value },
     });
     if(!state.puzzle&&state.selectedType==='puzzleTransition')exitPreview({quiet:true});
     render();

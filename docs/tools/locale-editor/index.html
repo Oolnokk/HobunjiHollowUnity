@@ -60,7 +60,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 </style>
 <script src="../../js/wilderness-archipelago.js?v=20261020islandatlas1"></script><!-- Shared Eastern Mire landform module for standalone Locale Editor previews. -->
 <script src="../../js/panel-ui.js?v=20261102furnsurface4"></script>
-<script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
+<script src="../../js/furniture-puzzle-properties.js?v=20261102burdenplinth1"></script>
 </head>
 <body>
 <div id="shell">
@@ -291,7 +291,12 @@ async function loadFullFurniturePalette() {
           icon:'🪑',
           w:Math.max(1, Number(data.footprint?.w) || 1),
           h:Math.max(1, Number(data.footprint?.d) || 1),
-          collision:{ mode:'footprint' }
+          collision:{ mode:'footprint' },
+          puzzle:data.puzzle ? {
+            role:data.puzzle.role, behavior:data.puzzle.behavior, channel:data.puzzle.channel,
+            completionChannel:data.puzzle.completionChannel, requiredBurdenKind:data.puzzle.requiredBurdenKind,
+            payloadSurfaceId:data.puzzle.payloadSurfaceId
+          } : null
         };
       } catch (_) { return null; }
     }));
@@ -388,7 +393,12 @@ function sanitizeLoaded(raw) {
     if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
     if (o.collision && typeof o.collision === 'object') obj.collision = JSON.parse(JSON.stringify(o.collision)); // Explicit locale-object collider; absent preserves the object's legacy runtime behavior.
     if (o.pieceFile) obj.pieceFile = String(o.pieceFile); // Explicit structural source path, replacing future reliance on the generic "structure" key.
-    if (o.puzzle && typeof o.puzzle === 'object') obj.puzzle = window.FurniturePuzzleProperties?.normalizePuzzle?.(o.puzzle) || JSON.parse(JSON.stringify(o.puzzle)); // Furniture puzzle behavior is authored once and wired per locale instance.
+    if (o.puzzle && typeof o.puzzle === 'object') {
+      const hasMotionOverride = Object.prototype.hasOwnProperty.call(o.puzzle, 'motion'); // A missing instance motion inherits the full authored asset animation.
+      const normalizedPuzzle = window.FurniturePuzzleProperties?.normalizePuzzle?.(o.puzzle) || JSON.parse(JSON.stringify(o.puzzle));
+      if (!hasMotionOverride && normalizedPuzzle) delete normalizedPuzzle.motion;
+      obj.puzzle = normalizedPuzzle; // Keep instance behavior/channel overrides without replacing the asset's animated motion.
+    }
     // Tents (and any future lootable/burnable prop) carry a held-action
     // spec the wilderness runtime reads directly -- see docs/js/temporary-locales.js.
     if (o.interactable && typeof o.interactable === 'object') {
@@ -666,6 +676,7 @@ function placeOrSelectObject(c, r) {
   if (p.visual) obj.visual = JSON.parse(JSON.stringify(p.visual)); // Used by cave/asset-specific runtime renderers instead of an ambiguous generic structure.
   if (p.collision) obj.collision = JSON.parse(JSON.stringify(p.collision)); // New palette objects carry an explicit collider policy; old loaded objects remain legacy/auto.
   if (p.pieceFile) obj.pieceFile = p.pieceFile; // Used by explicit authored structural assets when present.
+  if (p.puzzle) obj.puzzle = JSON.parse(JSON.stringify(p.puzzle)); // Preserve partial instance metadata; the authored furniture asset remains the motion authority.
   if (p.kind === 'tent') obj.interactable = { lootable: true, burnable: true, holdSeconds: 4 };
   m.objects.push(obj);
   selected = { type:'object', id: obj.id };

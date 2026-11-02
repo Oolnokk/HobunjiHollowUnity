@@ -46,6 +46,10 @@
       "file": "config/furniture-authored/bulletinBoard.json"
     },
     {
+      "key": "burdenPlinth",
+      "file": "config/furniture-authored/burdenPlinth.json"
+    },
+    {
       "key": "butterChurn",
       "file": "config/furniture-authored/butterChurn.json"
     },
