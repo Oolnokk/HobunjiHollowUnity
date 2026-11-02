@@ -544,7 +544,8 @@ assert.match(houseCore, /onHouseGeometryRebuilt/, 'house-piece movement must not
 
 const houseEntry = read('docs/js/house-pieces.js'); // Dynamic core loader needs a cache-busted URL for the new opening integration.
 assert.match(houseEntry, /house-pieces-core\.js\?v=[A-Za-z0-9_-]+/, 'house-pieces entrypoint must load the shared rendered-wall footprint');
-assert.match(houseCore, /entry\._exteriorRenderRect = _renderRectFor\(entry, exts\)/, 'the exact generated Highland footprint must be available before any window cut builds');
+assert.match(houseCore, /entry\._exteriorRenderRect = \{ col: entry\.col, row: entry\.row, w: entry\.w, h: entry\.h \}/, 'linked windows must target the actual exterior wall footprint, not a roof-only overhang');
+assert.match(houseCore, /const roofRect = _renderRectFor\(entry, exts\)/, 'only roof surfaces may use the joined render footprint');
 
 assert.match(wallPlacement, /ControllerInput\.subscribe\('wall-ornament-placement'/, 'wall preview may reuse the shared controller frame cadence without private gamepad polling');
 assert.match(wallPlacement, /sharedControllerFrame\(\)[\s\S]{0,180}updatePlayerReticlePreview\(\)/, 'shared controller cadence must update only the reticle preview and leave movement/look channels untouched');
