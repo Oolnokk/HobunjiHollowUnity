@@ -160,7 +160,7 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(profileResult.ok,true);
   assert.equal(profileResult.plans[0].source,'procedural','non-matching footprint should fall back to a procedural profile');
   assert.equal(profileResult.plans[0].profileId,'large-chamber');
-  assert.equal(profileResult.plans[0].spots[0].world.x,-13,'normalized center spot should resolve from room-local coordinates and network origin');
+  assert.equal(profileResult.plans[0].spots[0].world.x,9,'normalized center spot should resolve from the same padded world origin as the runtime puzzle modules');
 
   const weightedLibrary={
     schema:'hobunji_ruin_room_library.v1',
