@@ -6,7 +6,11 @@
       if(!r.ok)throw new Error(`app.part${i}.txt: ${r.status}`);
       parts.push(await r.text());
     }
-    (0,eval)(parts.join(''));
+    const coreParts=parts.slice(0,12); // Legacy source checks still concatenate the original twelve self-contained chunks.
+    const closeAt=coreParts[11].lastIndexOf('})();');
+    if(closeAt<0)throw new Error('app.part12.txt is missing its application closure');
+    coreParts[11]=coreParts[11].slice(0,closeAt)+parts[12]+'\n})();'+coreParts[11].slice(closeAt+5);
+    (0,eval)(coreParts.join(''));
 
     const patchParts=[]; // Keeps the larger V24 behind-sprite author split into repository-friendly text chunks too.
     for(let i=1;i<=5;i++){
