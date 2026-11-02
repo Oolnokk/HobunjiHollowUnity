@@ -1752,7 +1752,9 @@
       pondBodiesProcessed: 0,
       pondBodiesFlattened: 0,
       pondTilesFlattened: 0,
-      pondUnevenBodies: 0
+      pondUnevenBodies: 0,
+      pondMaxElevationSpreadBefore: 0,
+      pondMaxElevationSpreadAfter: 0
     }; // Returned with the generated workspace so terrain regressions can be checked without devtools.
     const riverGradeSeeds = new Map(); // Centerline tile key -> solved river-bed elevation.
     const riverProfiles = []; // Ordered centerline profiles used to recheck downhill flow after river crossings are reconciled.
@@ -1886,7 +1888,12 @@
           queue.push(neighbor);
         }
       }
-      const basinFloor = Math.max(0, Math.min(...component.map(tile => Number(tile.elevation) || 0))); // Lowest existing basin tile determines the common waterbed tier.
+      const basinElevations = component.map(tile => Number(tile.elevation) || 0); // Snapshot before mutation so the report records the actual terrain defect.
+      const basinFloor = Math.max(0, basinElevations.reduce((lowest, height) => Math.min(lowest, height), Infinity)); // Lowest existing basin tile determines the common waterbed tier.
+      const basinCeiling = basinElevations.reduce((highest, height) => Math.max(highest, height), -Infinity);
+      const basinSpreadBefore = basinCeiling - basinFloor; // Measured before lowering the submerged high spots.
+      report.pondMaxElevationSpreadBefore = Math.max(report.pondMaxElevationSpreadBefore, basinSpreadBefore);
+      if (basinSpreadBefore > 0) report.pondUnevenBodies++;
       let bodyChanged = false;
       for (const tile of component) {
         if (tile.elevation !== basinFloor) {
@@ -1898,7 +1905,7 @@
       }
       report.pondBodiesProcessed++;
       if (bodyChanged) report.pondBodiesFlattened++;
-      if (component.some(tile => tile.elevation !== basinFloor)) report.pondUnevenBodies++;
+      report.pondMaxElevationSpreadAfter = Math.max(report.pondMaxElevationSpreadAfter, ...component.map(tile => tile.elevation - basinFloor));
     }
 
     logDebug('gravity hydrology: graded ' + report.riverPathsProcessed + ' river paths (' + report.riverCenterlineTiles
@@ -6459,7 +6466,8 @@
         width: Math.max(1, Math.round(river.widthTilesAverage || river.widthTiles || 3)),
         seed: hashSeed(`${map.seed}_${river.id || index}`),
         paintTiles: false,
-        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3
+        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3,
+        flowDirection: river.flowDirection || 'higher-to-lower'
       };
     }).filter(river => river.nodes.length >= 2);
   }
