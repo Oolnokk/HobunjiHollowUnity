@@ -941,7 +941,7 @@
         floor.targetGrowth.scale.y*=.5;
         floor.targetGrowth.updateMatrixWorld(true);
         const compressedBox=new THREE.Box3().setFromObject(floor.targetGrowth);
-        floor.targetGrowth.position.y+=owner.floor+.05-(compressedBox.min.y+Math.min(.1,rootHeight*.025));
+        floor.targetGrowth.position.y+=owner.floor-.05-compressedBox.min.y;
         floor.targetGrowth.updateMatrixWorld(true);
         floor.targetGrowth.traverse(node=>{if(node.isMesh)node.userData.hachutuGroundRoot=true;});
         try{SA?.compactFloorCover?.(floor.targetGrowth,COVER_SIMPLIFY);}catch(_){} // Keep finer strands after raising density.
