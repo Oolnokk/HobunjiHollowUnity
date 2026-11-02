@@ -113,6 +113,8 @@ assert.match(cookingSource, /function currentGameHour\([\s\S]{0,900}timeDebugSna
 assert.match(cookingSource, /expiresAtGameHour/, 'ordinary food effects expire against in-game hours');
 assert.match(cookingSource, /remainingHours/, 'ordinary food timers persist as remaining in-game hours');
 assert.match(festivalSource, /FOOD_PORTION_HOURS = 4/, 'each festival food portion adds four in-game hours');
+assert.match(festivalSource, /Math\.min\(MAX_FOOD_PORTIONS\*FOOD_PORTION_HOURS,Math\.max\(0,existing\.expiresHour-now\)\+FOOD_PORTION_HOURS\)/, 'each additional serving adds exactly four hours up to the 40-hour cap');
+assert.match(festivalSource, /storedHours\*\(FOOD_PORTION_HOURS\/24\)/, 'existing 24-hour portions scale down proportionally during one-time migration');
 assert.match(festivalSource, /FULLNESS_DURATION_HOURS = 24/, 'festival fullness remains an independent 24-hour effect');
 assert.match(festivalSource, /expiresHour/, 'festival meal effects expire against the calendar clock');
 assert.match(festivalSource, /durationS:FOOD_PORTION_HOURS\*MAX_FOOD_PORTIONS\*3600/, 'festival meal HUD countdown uses the ten-portion 40-hour cap');
