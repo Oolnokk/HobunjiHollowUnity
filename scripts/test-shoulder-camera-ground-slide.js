@@ -34,7 +34,7 @@ function pitchOf(position, height, x = 0, z = 0) {
 
 for (const height of [0.04, 0.1, 0.15, 0.2, 0.465, 0.62, 0.95]) {
   let previousDistance = Infinity; // Verifies the boom slides progressively closer as upward pitch increases.
-  for (const pitch of [0, 5, 15, 30, 45, 60, 76]) {
+  for (const pitch of [0, 5, 15, 30, 45, 60, 76, 85, 89, 90]) {
     const result = aim(height, pitch); // Executes the complete wall/ground solver for short and reference characters.
     const boom = context.debug(); // Reads the same values delivered to mobile Pixel Probe.
     if (!boom.bodyLimited) assert.ok(Math.abs(pitchOf(result, height) - pitch) < 1e-7, `height ${height}: preserves ${pitch} degree upward aim before reaching the player`);
@@ -103,12 +103,14 @@ Object.assign(context, {
 });
 vm.runInContext(game.slice(updateStart, updateEnd) + '\nthis.updateCamera = updateCameraPosition;', context);
 context.updateCamera();
-assert.ok(context.debug().bodyLimited && camera.position.z >= .3, 'maximum upward pitch retains the player setback when ground clearance runs out');
+assert.ok(!context.debug().bodyLimited && context.debug().groundLimited && camera.position.z < .1, 'maximum upward pitch retracts close to the head instead of enforcing the old 0.3-tile setback');
+assert.ok(Math.abs(pitchOf(camera.position, camera.target.y, camera.target.x, camera.target.z) - 76) < 1e-5, 'the final rendered camera retains the requested 76-degree upward aim');
 assert.ok(camera.near < 0.1 && camera.near < context.debug().solvedDistance, 'near plane shrinks when the camera approaches the character');
 context.s_shoulderSurfOffsetV_current = -0.4;
 context.updateCamera();
 assert.equal(camera.target.y, 0.04, 'a lowered Settings offset cannot bury the aim target');
-assert.ok(context.debug().bodyLimited && camera.position.z >= .3, 'lowered offsets cannot pull the camera inside the player');
+assert.ok(!context.debug().bodyLimited && context.debug().groundLimited && camera.position.z < .02, 'lowered offsets retain vertical aim by allowing the camera to tuck closer to the head');
+assert.ok(Math.abs(pitchOf(camera.position, camera.target.y, camera.target.x, camera.target.z) - 76) < 1e-5, 'lowered target offsets still preserve the requested upward angle');
 context.activeCameraMode = 'default';
 context.updateCamera();
 assert.equal(camera.near, 0.1, 'switching camera modes restores the normal near plane');
