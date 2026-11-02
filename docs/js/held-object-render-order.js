@@ -98,7 +98,6 @@
   const heldRegistry = new SceneRegistry();
   const groundRegistry = new SceneRegistry();
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
-  const occluderGeometries = new WeakMap(); // Source geometry -> geometry of only its non-upward faces, built once per geometry.
   const waterRegistry = new SceneRegistry(); // All tagged water surfaces; also exposed in diagnostics.
   const tintCoverRegistry = new SceneRegistry(); // Translucent water/slush to blend over submerged feet, hands and held gear (never opaque snow).
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
@@ -442,78 +441,6 @@
     if (!hasLayer(mesh, GROUND_REPLAY_LAYER)) mesh.layers.enable(GROUND_REPLAY_LAYER);
     topFaceGroundCount++;
     return true;
-  }
-
-  // Geometry sharing the source's vertex attributes, indexing only faces that
-  // point less than ~60 degrees from straight up in world space, so slopes
-  // and walls keep occluding. Material groups are preserved per face.
-  const TOP_FACE_MIN_NORMAL_Y = 0.5;
-  const faceA = new THREE.Vector3();
-  const faceB = new THREE.Vector3();
-  const faceC = new THREE.Vector3();
-  const faceNormalMatrix = new THREE.Matrix3();
-  function occluderGeometryFor(mesh) {
-    const source = mesh.geometry;
-    if (!source) return null;
-    if (occluderGeometries.has(source)) return occluderGeometries.get(source);
-    let occluder = null;
-    const position = source.attributes?.position;
-    if (position && !position.isInterleavedBufferAttribute && !source.morphAttributes?.position?.length) {
-      const index = source.index;
-      const count = index ? index.count : position.count;
-      const groups = source.groups?.length ? source.groups : [{ start: 0, count, materialIndex: 0 }];
-      mesh.updateWorldMatrix(true, false);
-      faceNormalMatrix.getNormalMatrix(mesh.matrixWorld);
-      const kept = [];
-      const keptGroups = [];
-      let topFaces = 0;
-      for (const group of groups) {
-        const groupStart = kept.length;
-        const end = Math.min(count, group.start + group.count);
-        for (let i = Math.max(0, group.start); i + 2 < end; i += 3) {
-          const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
-          faceA.fromBufferAttribute(position, a);
-          faceB.fromBufferAttribute(position, b).sub(faceA);
-          faceC.fromBufferAttribute(position, c).sub(faceA);
-          faceB.cross(faceC).applyMatrix3(faceNormalMatrix);
-          const length = faceB.length();
-          if (length > 1e-12 && faceB.y / length >= TOP_FACE_MIN_NORMAL_Y) { topFaces++; continue; }
-          kept.push(a, b, c);
-        }
-        if (kept.length > groupStart) keptGroups.push({ start: groupStart, count: kept.length - groupStart, materialIndex: group.materialIndex ?? 0 });
-      }
-      if (topFaces > 0) {
-        occluder = new THREE.BufferGeometry();
-        for (const [name, attribute] of Object.entries(source.attributes)) occluder.setAttribute(name, attribute);
-        occluder.setIndex(new THREE.BufferAttribute(position.count > 65535 ? new Uint32Array(kept) : new Uint16Array(kept), 1));
-        for (const group of keptGroups) occluder.addGroup(group.start, group.count, group.materialIndex);
-        if (!source.boundingSphere) source.computeBoundingSphere();
-        if (!source.boundingBox) source.computeBoundingBox();
-        occluder.boundingSphere = source.boundingSphere?.clone() || null;
-        occluder.boundingBox = source.boundingBox?.clone() || null;
-        occluder.name = `${source.name || 'geometry'}__held_xray_occluder`;
-        // Shared attributes stay owned by the source; release only our own
-        // index buffer when the source goes away.
-        source.addEventListener('dispose', () => { occluder.attributes = {}; occluder.dispose(); });
-      }
-    }
-    occluderGeometries.set(source, occluder);
-    return occluder;
-  }
-
-  function swapToOccluderGeometry(meshes) {
-    const swapped = [];
-    for (const mesh of meshes) {
-      const occluder = occluderGeometryFor(mesh);
-      if (!occluder) continue;
-      swapped.push(mesh, mesh.geometry);
-      mesh.geometry = occluder;
-    }
-    return swapped;
-  }
-
-  function restoreSwappedGeometry(swapped) {
-    for (let i = 0; i < swapped.length; i += 2) swapped[i].geometry = swapped[i + 1];
   }
 
   function materialHasAlphaCutout(material) {
@@ -1251,7 +1178,6 @@
     let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
     let replayCulled = null;
     let overlayHidden = null;
-    let swappedGeometry = [];
     const colorBuffer = renderer.state?.buffers?.color;
     const canLockColorMask = !!colorBuffer?.setMask && !!colorBuffer?.setLocked;
     try {
@@ -1280,7 +1206,6 @@
       // only fragments at this actor's actual standing elevation. Unknown actor
       // ownership and unsupported shaders deliberately retain full occlusion.
       overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? tintCovers : [])]);
-      swappedGeometry = swapToOccluderGeometry(topFaceGround);
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
@@ -1331,8 +1256,6 @@
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
-      restoreSwappedGeometry(swappedGeometry);
-      swappedGeometry = [];
       const groundMaterialStates = prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground);
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
@@ -1370,7 +1293,6 @@
       renderer.clearStencil?.();
     } finally {
       if (overlayHidden) restoreVisibility(overlayHidden);
-      if (swappedGeometry.length) restoreSwappedGeometry(swappedGeometry);
       if (replayCulled) restoreVisibility(replayCulled);
       if (scissored) restoreRendererScissor(renderer);
       camera.layers.mask = originalCameraMask;
@@ -1426,7 +1348,6 @@
     const actorElevationCache = new Map(); // Shells reuse the exact actor floor elevation resolved for their source meshes.
     const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
     recordElevationGroups(groups);
-    let swappedGeometry = [];
     let scissorActive = false;
     let depthWasCleared = false;
 
@@ -1449,7 +1370,6 @@
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
-      swappedGeometry = swapToOccluderGeometry(topFaceGround);
 
       // Use the same actor-elevation groups and ground-fragment filter as the
       // visible tool/hand/foot replay. The shell cannot become visible through
@@ -1493,10 +1413,6 @@
       // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
         if (depthWasCleared) {
-          if (swappedGeometry.length) {
-            restoreSwappedGeometry(swappedGeometry);
-            swappedGeometry = [];
-          }
           clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
@@ -1516,7 +1432,6 @@
           }
         }
       } finally {
-        if (swappedGeometry.length) restoreSwappedGeometry(swappedGeometry);
         clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
         if (scissorActive) restoreRendererScissor(renderer);
         camera.layers.mask = oldCameraMask;
