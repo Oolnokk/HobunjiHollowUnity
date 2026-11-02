@@ -1739,14 +1739,14 @@ function renderCollections() {
         `</optgroup>`,
       ] : []),
     ].join('');
-    const slotEmpty = !ownedItems.length && !equippedId;
+    const slotEmpty = !ownedItems.length && !equippedId && !playerItemsForSlot.length;
     const isDyeOpen = _activeDyeSlot === slot.key;
     slotsHtml += `
       <div class="slotRow">
         <span class="slotLabel">${esc(slot.label)}</span>
         <select class="cosmeticSelect" data-slot-cat="${slot.category}"${slotEmpty ? ' disabled' : ''}>${opts}</select>
         <button class="secondary dyeToggle${isDyeOpen ? ' active' : ''}" data-toggle-dye="${slot.key}"${slotEmpty ? ' disabled' : ''}>Dye ▾</button>
-      </div>`;
+      </div>${slot.category === 'pants' ? '<div class="help" style="margin:-2px 0 7px">Pants and skirts appear in the 3D preview because they use the skinned leg renderer.</div>' : ''}`;
     if (isDyeOpen) {
       const [keyA, keyB, keyC] = slot.tintKeys;
       const dyesForSlot = ownedDyes.filter(d => (d.group || 'cloth') === equippedDyeGroup);
