@@ -439,14 +439,28 @@
       var startIsMin = Math.abs(v0Coord - minRef) < Math.abs(v3Coord - minRef);
       var cuts = [];
       sideCuts.forEach(function (opening) {
-        var center = Number(opening.uCenter), width = Math.abs(Number(opening.uWidth));
+        var lo, hi;
+        if (Number.isFinite(Number(opening.worldStart)) && Number.isFinite(Number(opening.worldEnd))) {
+          // Project the shared world-space interval onto THIS face's actual
+          // lower edge. Body walls and inset gables therefore meet precisely
+          // at the same world coordinates even though their widths differ.
+          var edgeSpan = v3Coord - v0Coord;
+          if (Math.abs(edgeSpan) < 1e-6) return;
+          var uA = (Number(opening.worldStart) - v0Coord) / edgeSpan;
+          var uB = (Number(opening.worldEnd) - v0Coord) / edgeSpan;
+          lo = Math.max(0, Math.min(1, Math.min(uA, uB)));
+          hi = Math.max(0, Math.min(1, Math.max(uA, uB)));
+        } else {
+          var center = Number(opening.uCenter), width = Math.abs(Number(opening.uWidth));
+          if (!Number.isFinite(center) || !Number.isFinite(width) || width <= 0) return;
+          lo = Math.max(0, Math.min(1, center - width * 0.5));
+          hi = Math.max(0, Math.min(1, center + width * 0.5));
+          if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
+        }
         var vCenter = Number(opening.vCenter), vHeight = Math.abs(Number(opening.vHeight));
-        if (!Number.isFinite(center) || !Number.isFinite(width) || !Number.isFinite(vCenter) || !Number.isFinite(vHeight) || width <= 0 || vHeight <= 0) return;
-        var lo = Math.max(0, Math.min(1, center - width * 0.5));
-        var hi = Math.max(0, Math.min(1, center + width * 0.5));
+        if (!Number.isFinite(vCenter) || !Number.isFinite(vHeight) || vHeight <= 0) return;
         var vlo = Math.max(0, Math.min(1, vCenter - vHeight * 0.5));
         var vhi = Math.max(0, Math.min(1, vCenter + vHeight * 0.5));
-        if (!startIsMin) { var flippedLo = 1 - hi, flippedHi = 1 - lo; lo = flippedLo; hi = flippedHi; }
         if (hi - lo > 1e-5 && vhi - vlo > 1e-5) cuts.push({ u0: lo, u1: hi, v0: vlo, v1: vhi, kind: opening.kind || 'window' });
       });
       if (!cuts.length) { out.push(f); continue; }
