@@ -315,7 +315,7 @@
   }
 
   function onStandaloneRope(kit, context, rope, room, rng) {
-    if (!rope?.endPlatform?.mesh || !rope.startPlatform) return;
+    if (!rope?.endPlatform?.mesh || !rope.startPlatform || !kit.canClaimRoomSpot(room.id,'decorations','ropePayoff')) return;
     const order = forcedPayoff ? [forcedPayoff, 'chest'] : rng() < cfg('ropePayoffs.plateDoorLiftOrChestChance', .34) ? ['plateDoor', 'lift', 'chest'] : rng() < cfg('ropePayoffs.liftOrChestChance', .5) ? ['lift', 'chest'] : ['chest'];
     let payoff = null;
     rejects.push(`payoff order ${room.id}: ${order.join('>')}`);
