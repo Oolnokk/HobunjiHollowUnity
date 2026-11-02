@@ -44,6 +44,10 @@ assert.match(carry, /anchor\.getWorldScale\(new THREE\.Vector3\(\)\)/,
 const authored = read('docs/js/authored-furniture-runtime.js');
 assert.match(authored, /function createSurfaceAnchor\(/);
 assert.match(authored, /payloadAttachmentSurfaceId/);
+assert.match(authored, /1 \/ Math\.max\(\.001, Math\.abs\(partMesh\.scale\.y\)\)/,
+  'the attachment anchor cancels the moving plate scale when first created');
+assert.match(runtime, /anchor\.scale\.set\([\s\S]{0,220}Math\.abs\(mesh\.scale\.y\)/,
+  'the attachment anchor tracks inverse plate scale throughout the animation');
 
 const interactions = read('docs/js/furniture-table-system.js');
 assert.match(interactions, /function puzzleObject\(/);
