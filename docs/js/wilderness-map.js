@@ -636,9 +636,18 @@
         ruin: _plainJson(window.DevRandomRuin?.getState?.() || null),
         hachutu: hachutu?.active ? _plainJson(hachutu) : null,
         occupancy: _plainJson(window.DevRandomRuin?.getOccupancySnapshot?.() || null),
-        prototypeHooks: _plainJson(window.DevRandomRuinPrototypeHooks?.snapshot?.() || null),
-        wallPlanes: _plainJson(window.DevRandomRuinWallPlanes?.snapshot?.() || null),
-        wallRender: _plainJson(window.DevRandomRuinWallRenderProxy?.snapshot?.() || null),
+        runtimeSystems: _plainJson({
+          prototypeHooks: window.DevRandomRuinPrototypeHooks?.snapshot?.() || null,
+          hitPuzzles: window.DevRandomRuinHitPuzzles?.snapshot?.() || null,
+          motion: window.DevRandomRuinMotionRuntime?.snapshot?.() || null,
+          simplePuzzles: window.DevRandomRuinSimplePuzzles?.snapshot?.() || null,
+          coverage: window.DevRandomRuinRuntimeCoverage?.snapshot?.() || null,
+          interactions: window.DevRandomRuinInteractions?.snapshot?.() || null,
+          dynamicSurfaces: window.DynamicSurfaces?.debugSnapshot?.() || null,
+          generator: document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50?.getState?.() || null,
+          wallPlanes: window.DevRandomRuinWallPlanes?.snapshot?.() || null,
+          wallRender: window.DevRandomRuinWallRenderProxy?.snapshot?.() || null,
+        }),
         scene: scene.toJSON(),
       };
       const json = JSON.stringify(payload, null, 2);
