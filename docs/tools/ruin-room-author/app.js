@@ -215,7 +215,7 @@
   function addConnection(){
     saveInputs();const item=current();if(!item||state.kind!=='template')return;
     const side='north',limit=item.footprint.width;
-    item.connections.push({id:'connection-'+(item.connections.length+1),side,offset:Math.floor(limit/2),width:1,kind:'corridor',required:true});
+    item.connections.push({id:'connection-'+(item.connections.length+1),side,offset:limit/2,width:Math.min(6,limit),kind:'corridor',required:true}); // New openings start at the centre with enough width for V50's 5–6-cell runtime corridors.
     markDirty();renderConnections();
   }
   function addLink(){
