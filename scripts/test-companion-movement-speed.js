@@ -83,6 +83,16 @@ assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * 0.5 * cookingMul * combatMul
   'terrain slowdowns on the player are reflected by the companion');
 grid[2][2].type = 'grass';
 
+player.footing = 50;
+player.afflictions = { drunkenFooting: 50 };
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * 0.775)) < 1e-9,
+  'active drunken Footing applies the same current movement penalty as the player');
+player.afflictions = {};
+player.footing = 20;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'low Footing without the drunken affliction does not invent an extra movement penalty');
+player.footing = 100;
+
 devMul = 1.1;
 assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * devMul)) < 1e-9,
   'the live global movement-speed setting is included');
@@ -90,9 +100,15 @@ assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alc
 windowStub.Mounts.rideState = 'mounted';
 windowStub.Mounts.rideEntity = { def: { mountSpeed: 340 } };
 perceptionMul = 0.5;
-const mountedSpeed = 340 * alchemyMul * devMul * perceptionMul * cookingMul * combatMul;
+const mountedSpeed = 340 * alchemyMul * devMul * perceptionMul;
 assert.ok(Math.abs(playerPet.def.moveSpeed - mountedSpeed) < 1e-9,
-  'a mounted owner transfers the mount’s live top speed and applicable movement modifiers');
+  'a stationary mounted owner transfers the mount’s live top speed and mounted modifiers');
+windowStub.Mounts.rideEntity.vx = 90;
+windowStub.Mounts.rideEntity.vy = 120;
+assert.equal(playerPet.def.moveSpeed, 150,
+  'a moving mount transfers its actual current velocity, including acceleration and collision slowdown');
+windowStub.Mounts.rideEntity.vx = 0;
+windowStub.Mounts.rideEntity.vy = 0;
 windowStub.Mounts.rideState = 'none';
 windowStub.Mounts.rideEntity = null;
 devMul = 1;
