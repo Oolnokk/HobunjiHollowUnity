@@ -130,8 +130,7 @@
     for(let i=0;i<ROCKS_PER_LAYER;i++){
       const seedCol=ROCK_SEED_BASE+layer.index*101+i*17,seedRow=ROCK_SEED_BASE*3+layer.index*67+i*29;
       const built=geometryApi.buildRockTileGeo(seedCol,seedRow);
-      const geometry=built?.stoneGeo;
-      built?.grassGeo?.dispose?.(); // The backdrop keeps only the same raised stone surface used by mine rocks.
+      const geometry=built?.stoneGeo; // Keep the unused grass half undisposed because it shares vertex/UV attributes with stoneGeo.
       if(!geometry)throw new Error('mine-rock geometry missing for ridge '+layer.layer+', rock '+(i+1));
       const mesh=new T.Mesh(geometry,material);
       const variation=(Math.sin((i+1)*(layer.layer+2)*1.73)+1)*.5; // Deterministic per-rock variation avoids a repeated marching pattern.
