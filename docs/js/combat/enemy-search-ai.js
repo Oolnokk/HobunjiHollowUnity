@@ -10,7 +10,7 @@
 (() => {
   'use strict';
 
-  const ENEMY_SEARCH_DURATION_S = 3.4; // Time a hostile scans after the player leaves its shared ±45° sight cone.
+  const ENEMY_SEARCH_DURATION_S = 8; // Gives a hostile time to reach the last-known position and search nearby.
   const ENEMY_SEARCH_SWEEP_HALF_RAD = Math.PI * 0.85; // Alternating scan reaches well behind the creature before returning.
   const ENEMY_SEARCH_TURN_RATE_RAD_S = THREE.MathUtils.degToRad(190); // Base search rotation, also scaled by post-attack recovery.
 
@@ -27,18 +27,33 @@
   }
 
   function enemyCanSeeTarget(c, target, maxDistancePx = Infinity) {
-    if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > maxDistancePx) return false;
-    return window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
+    const rangedRadiusPx = window.RangedWeapons?.rangedAttackRadiusPx?.(c) || 0; // Ranged actors may acquire targets across their weapon's true projectile reach, independently of their home leash.
+    const acquisitionRadiusPx = Math.max(maxDistancePx, rangedRadiusPx);
+    if (!target || target.health <= 0 || Math.hypot(target.x - c.x, target.y - c.y) > acquisitionRadiusPx) return false;
+    const insideFacingCone = window.Combat?.targetInsideAttackCone?.(c, target, c.facing || 0) ?? true;
+    if (!insideFacingCone) return false;
+    const visible = window.RangedWeapons?.hasLineOfSight?.(c, target) ?? true; // Tile and real scene-geometry occlusion gate acquisition/reacquisition.
+    if (visible) {
+      c._enemyLastSeenX = target.x; // Updated only when the target is actually inside range, facing cone, and clear sight.
+      c._enemyLastSeenY = target.y; // The search destination must never follow an unseen player's current position.
+      c._enemyLastSeenAt = performance.now(); // Useful for future diagnostics and bounded stale-target policies.
+    }
+    return visible;
   }
 
   function beginEnemySearch(c, target) {
     c.state = 'searching';
     c.targetPlayer = target;
     c._enemySearchT = ENEMY_SEARCH_DURATION_S; // Countdown used by updateEnemySearch before the hostile gives up and returns.
+    c._enemySearchLastKnownX = Number.isFinite(c._enemyLastSeenX) ? c._enemyLastSeenX : target.x; // Reuse the last position confirmed visible; fallback only for externally forced chases without a sight sample.
+    c._enemySearchLastKnownY = Number.isFinite(c._enemyLastSeenY) ? c._enemyLastSeenY : target.y; // Paired with X for the last-known world position.
     c._enemySearchCenterFacing = c.facing || 0; // Sweep origin remembers the heading where sight was lost.
     c._enemySearchOffset = 0; // Signed scan displacement accumulated around the remembered heading.
-    const lostSide = angleDiff(Math.atan2(target.y - c.y, target.x - c.x), c.facing || 0);
-    c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // First scan turns toward the side where the player disappeared.
+    const lostSide = angleDiff(
+      Math.atan2(c._enemySearchLastKnownY - c.y, c._enemySearchLastKnownX - c.x),
+      c.facing || 0,
+    );
+    c._enemySearchDirection = lostSide >= 0 ? 1 : -1; // Sweep toward the last visible side, never the player's unseen current side.
   }
 
   function updateEnemySearch(c, dt, target) {
@@ -46,6 +61,8 @@
     if (enemyCanSeeTarget(c, target, c.def.aggroRangePx)) {
       c.state = 'chase';
       c.targetPlayer = target;
+      c._enemySearchLastKnownX = target.x; // Refresh only after legitimate reacquisition.
+      c._enemySearchLastKnownY = target.y; // Never follows the player while unseen.
       return c.facing || 0;
     }
     const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(c) ?? 1; // Search honors the same post-attack recovery slowdown.

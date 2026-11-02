@@ -36,6 +36,7 @@
   const hiveCache = new WeakMap(); // layout -> [{col,row}] — scanned once per generated layout.
   const defeatedAt = new Map(); // hiveKey -> monotonic timestamp when its active defender was defeated.
   const spawnedOnce = new Set(); // hiveKey -> true once a swarm has existed (session scope).
+  const unloadedKeys = new Set(); // hiveKeys whose swarm vanished without a recorded death (zone change, culling): they wait like a defeat but are NOT defended/provoked and still follow the morning-only rule.
 
   let listeningForDeaths = false; // Records the precise lethal damage frame rather than waiting for a two-second wildlife spawn scan.
   function init(injectedDeps) {
@@ -140,15 +141,18 @@
       if (existing) continue;
       if (Math.hypot((hive.col + 0.5) * T - px, (hive.row + 0.5) * T - py) > SPAWN_RADIUS_TILES * T) continue;
       if (!defeatedAt.has(hive.key) && spawnedOnce.has(hive.key)) {
-        defeatedAt.set(hive.key, nowMs); // A despawned/missing defender also waits before being replaced.
+        defeatedAt.set(hive.key, nowMs); // A despawned/missing defender also waits before being replaced...
+        unloadedKeys.add(hive.key); // ...but it was never killed (deaths are recorded as they happen), e.g. the zone was left and re-entered.
         continue;
       }
       const diedAt = defeatedAt.get(hive.key);
       if (diedAt != null && nowMs - diedAt < RESPAWN_DELAY_MS) continue;
-      if (isNight() && diedAt == null) continue; // Fresh wild swarms still emerge in the morning only.
+      const defeated = diedAt != null && !unloadedKeys.has(hive.key); // Only a swarm that was really beaten returns to the fight.
+      if (isNight() && !defeated) continue; // Fresh wild swarms (and ones that were merely unloaded) still emerge in the morning only.
       const replacement = spawnSwarm(zoneId, hive);
       if (replacement) {
         defeatedAt.delete(hive.key);
+        unloadedKeys.delete(hive.key);
         if (isNight()) provokeDefender(replacement); // A recently defeated night defender returns to the fight.
       }
     }
@@ -233,6 +237,7 @@
     if (tile) { tile.type = deps.TileType.GRASS; tile.water = 0; } // floraKind stays so the same stump regrows later.
     defeatedAt.delete(hiveKeyFor(zoneId, col, row)); // A collapsed stump cannot produce delayed replacements.
     spawnedOnce.delete(hiveKeyFor(zoneId, col, row));
+    unloadedKeys.delete(hiveKeyFor(zoneId, col, row));
     const entries = deps.felledPersist.get(zoneId) || [];
     entries.push({ col, row, feltDay: deps.calendar.day, regrowDays: HIVE_REGROW_DAYS, hive: true });
     deps.felledPersist.set(zoneId, entries);

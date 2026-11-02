@@ -296,10 +296,10 @@
     lastRebuildMs = Number((performance.now() - startedAt).toFixed(2));
   }
 
-  function ensureCandidates() {
-    if (!deps || !options.enabled || !options.projectiles) return false;
+  function ensureCandidates(forSight = false) {
+    if (!deps || (!forSight && (!options.enabled || !options.projectiles))) return false;
     const combat = !!deps.isCombatActive?.();
-    if (!combat) {
+    if (!forSight && !combat) {
       cachedCombat = false;
       return false;
     }
@@ -419,8 +419,8 @@
     return vertical ? vertical.enter : null;
   }
 
-  function segmentHit(start, end, radiusWorld = 0) {
-    if (!deps || !ensureCandidates()) return null;
+  function segmentHit(start, end, radiusWorld = 0, forSight = false) {
+    if (!deps || !ensureCandidates(forSight)) return null;
     const startedAt = performance.now();
     const projectileRadius = Math.max(0, finite(radiusWorld));
     const nearby = querySegmentCandidates(start, end, projectileRadius);
@@ -497,6 +497,7 @@
     setOptions,
     invalidate,
     segmentHit,
+    segmentSightHit: (start, end, radiusWorld = 0) => segmentHit(start, end, radiusWorld, true), // NPC perception must retain semantic cover even when projectile collision is disabled or combat has not started.
     debugSnapshot,
     debugVolumes,
     constants: { SPATIAL_CELL_TILES, TREE_HALF_TILE, HEAD_CACHE_MS },

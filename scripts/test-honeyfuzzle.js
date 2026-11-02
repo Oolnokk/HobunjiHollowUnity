@@ -392,6 +392,22 @@ function hiveWorld({ night = false } = {}) {
   // No spawns at night.
   const night = hiveWorld({ night: true }); night.H.ensureCurrentZone();
   assert.equal(night.state.created.length, 0);
+  // Leaving the zone clears its hostiles without killing anything. Coming back at night must not wake a swarm
+  // nobody attacked (it used to be mistaken for a defeated defender and respawned provoked); it returns by day.
+  {
+    const w = hiveWorld({ night: false });
+    w.H.ensureCurrentZone();
+    assert.equal(w.state.created.length, 1, 'daytime visit spawns the swarm');
+    w.state.hostile.delete(w.state.created[0]); // clearHostileObjects() on the area change.
+    w.state.night = true;
+    w.state.nowMs = 1000; w.H.ensureCurrentZone();
+    w.state.nowMs = 40000; w.H.ensureCurrentZone();
+    assert.equal(w.state.created.length, 1, 'returning at night does not spawn a provoked swarm for an unloaded one');
+    w.state.night = false;
+    w.H.ensureCurrentZone();
+    assert.equal(w.state.created.length, 2, 'the swarm is back once it is day');
+    assert.notEqual(w.state.created[1]._hiveNightProvoked, true, 'a merely unloaded swarm is not provoked');
+  }
   // Out of range: stumps far from the player stay empty.
   const far = hiveWorld(); far.player.x = 5000; far.player.y = 5000; far.H.ensureCurrentZone();
   assert.equal(far.state.created.length, 0);
