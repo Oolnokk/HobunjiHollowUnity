@@ -3664,10 +3664,6 @@ window.SCRATCHBONES_CONFIG = {
         // game.js and docs/assets/audio/sfx/README.md. Entries may use a real
         // recording (`url`) and optionally provide a fallback placeholder
         // for missing media. Set `preload: true` for frequently used cues.
-        // a real recording standing in for a similar-enough sound beats a
-        // from-scratch synth attempt, so several material-impact cues
-        // (digging, mashing, grinding, a barrel knock) borrow gravel/water
-        // steps this way instead of having their own generated .wav.
         "objectSfx": {
           "enabled": true,
           "flaskImpact": {
