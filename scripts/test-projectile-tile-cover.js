@@ -90,7 +90,7 @@ delete iceWall.userData.projectileCoverHalfZTiles;
 delete iceWall.userData.projectileCoverBottomOffsetTiles;
 delete iceWall.userData.projectileCoverKind;
 browser.NearbyVolumeCollision.invalidate();
-assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:.5,z:1},{x:2,y:.5,z:1}),null,
+assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:.5,z:1.7},{x:2,y:.5,z:1.7}),null,
   'melting/removing an ice wall clears its cached projectile cover');
 console.log('Projectile grass, rock height, radius, elevation, wall and movement regressions passed.');
 
