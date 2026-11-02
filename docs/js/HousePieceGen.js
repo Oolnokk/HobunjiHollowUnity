@@ -322,13 +322,13 @@
 
   function _lerp3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 
-  // Body wall faces are the 4 single_rectangle 'wall' faces (excluding the
-  // triangular gableEnd faces) produced by the Highland generator — one per
-  // side, corners ordered [bottom(u=0), top(u=0), top(u=1), bottom(u=1)].
-  // Classifies each by comparing its bottom-edge midpoint against the whole
-  // set's own bounding box (no piece-level bbox/footprint lookup needed).
+  // Procedural Highland body walls and explicitly side-tagged gable ends.
+  // Including generated gables lets shared-edge cuts remove the whole
+  // interior boundary, while authored gables without wallSide metadata keep
+  // their prior behavior. Body-face corners remain ordered
+  // [bottom(u=0), top(u=0), top(u=1), bottom(u=1)].
   function _classifyBodyWalls(faces) {
-    var walls = faces.filter(function (f) { return f.tag === 'wall' && (f.highlandFrustumWall || f.gableEnd); });
+    var walls = faces.filter(function (f) { return f.tag === 'wall' && (f.highlandFrustumWall || (f.gableEnd && f.wallSide)); });
     var minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     walls.forEach(function (f) {
       [f.v[0], f.v[3]].forEach(function (p) {
