@@ -1193,7 +1193,7 @@
   });
 
   function animalVoiceSpeciesKey(c) {
-    const raw = String(c?.creatureKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
+    const raw = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';
     if (raw.includes('gar-wolf')) return 'gar-wolf';
     if (raw.includes('grehlr')) return 'grehlr';
@@ -1211,8 +1211,10 @@
   }
 
   function animalVoicePool(c, opts) {
-    const authored = opts.allowedClips ?? window.AnimalVocalizations?.profileForDebug?.(c)?.[opts.meaning || 'chatter']?.allowedClips; // Semantic requests supply their authored clips; direct calls use the same profile authority.
-    return Array.isArray(authored) ? authored : ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)];
+    if (Array.isArray(opts.allowedClips)) return opts.allowedClips; // An explicitly empty list is an intentional silence request.
+    const authored = window.AnimalVocalizations?.profileForDebug?.(c)?.[opts.meaning || 'chatter']?.allowedClips; // Semantic requests and direct calls share authored profile selection.
+    if (Array.isArray(authored) && authored.length) return authored;
+    return ANIMAL_VOICE_POOLS[animalVoiceSpeciesKey(c)]; // Empty/default authored profiles must not mask existing legacy species recordings.
   }
 
   function preloadAnimalVoices() {

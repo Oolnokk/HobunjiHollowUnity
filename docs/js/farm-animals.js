@@ -829,6 +829,7 @@
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
@@ -937,6 +938,7 @@
         _updateFarmAnimalFacing(this, dt, idle);
       },
       reset() {
+        if (this._voiceActor) window.AnimalVocalizations?.releaseCreature?.(this._voiceActor); // Removes the stable actor from the scheduler's strong tracking set on sale/despawn.
         deps.scene.remove(avatarRef.group);
         avatarRef.dispose();
       },
@@ -1664,6 +1666,27 @@
     }
   }
 
+  function farmAnimalVoiceActor(animal) {
+    // Stable scheduler identity; live position and area are refreshed each rendered frame.
+    const actor = animal._voiceActor || (animal._voiceActor = {
+      id: `farm-voice:${animal.livestockId || animal.id}`,
+      creatureKey: animal.animalKey,
+      health: 1,
+      state: 'idle',
+    });
+    const tilePx = Number(deps.TILE) || 1; // Converts farm tile coordinates into AudioSystem pixel-space coordinates.
+    actor.creatureKey = animal.animalKey;
+    actor.genotype = animal.genotype || null;
+    actor.avatarRef = animal.avatarRef || null; // Lets AudioSystem sample the live sprite group's world height for elevation-aware spatial audio.
+    actor.areaId = deps.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.() || null;
+    actor.x = Number(animal.wx) * tilePx;
+    actor.y = Number(animal.wz) * tilePx;
+    actor.wy = Number(animal.wy) || 0;
+    actor.health = 1;
+    actor.state = 'idle';
+    return actor;
+  }
+
   function updateAnimalMeshes(dt) {
     // .tick() drives wander/barn-homing steps (throttled internally via
     // each animal's own tickCounter); .update(dt) is the continuous
@@ -1675,7 +1698,12 @@
     // persists it for real, so this is purely a read-dedup, not a
     // staleness risk.
     deps.setWorldLivestockFrameCache(deps.loadWorldLivestock());
-    for (const animal of deps.animalObjects) { animal.tick && animal.tick(dt); animal.update(dt); }
+    for (const animal of deps.animalObjects) {
+      animal.tick && animal.tick(dt);
+      animal.update(dt);
+      const frozen = !!(animal._vatWorkPose || animal._harvestFrozen || animal._dialogueFrozen);
+      window.AnimalVocalizations?.tickCreature?.(farmAnimalVoiceActor(animal), dt, { allowPassive: !frozen });
+    }
     deps.setWorldLivestockFrameCache(null);
   }
 
