@@ -54,7 +54,7 @@ V50's mechanism/activator placement checks both categories before creating the a
 
 The auxiliary puzzle composer kit exposes `roomAuthoringPlan`, `canClaimRoomSpot` and `claimRoomSpot`. Core auxiliary room modules also preflight their appropriate category before building: chord plates, lockable doors, canopies, ceiling glyphs, cycling elevators, sarcophagus spawners and rope traversals. Rope variants, lava basins, rope payoffs and ceiling-rail target encounters also filter candidate rooms by their configured category.
 
-The room runtime snapshot includes the chosen plan per room and successful/rejected module claims in `roomAuthoring.diagnostics`. This makes it possible to distinguish an unavailable room, a category mismatch and an exhausted spot capacity.
+The room runtime snapshot includes the chosen plan per room and successful/rejected module claims in `roomAuthoring.diagnostics`. Required spots and links that no module claimed are listed as `missingRequiredSpots` and `missingRequiredLinks`; they are surfaced as authoring diagnostics rather than making an otherwise safe ruin generation fail.
 
 ## Puzzle relationships
 
