@@ -28840,10 +28840,9 @@
           && !window.__mapEditorGizmoActive;
       }
       // Every other camera mode nudges a look-around offset on top of a fixed
-      // base framing. Yaw and downward pitch keep cameraRotateClampDeg (45° by
-      // default), while upward pitch can use cameraRotateUpClampDeg (85°). Seated
-      // players and the utility-wheel Character View still get genuine 360°
-      // horizontal orbit instead.
+      // base framing. cameraRotateClampDeg remains the limited-yaw setting for
+      // non-free modes; pitch independently reaches true vertical in either
+      // direction. Seated players and Character View retain 360° horizontal orbit.
       function freeRotateCameraActive() {
         return characterViewMode.enabled || cameraModeConfig(activeCameraMode).freeRotate === true;
       }
