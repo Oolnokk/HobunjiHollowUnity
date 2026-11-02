@@ -1739,6 +1739,195 @@
     return changedWaterTiles;
   }
 
+
+  // Reconciles generated water after every terrain-height pass. River centerlines are
+  // directed from the higher endpoint to the lower one, then their banks inherit the
+  // nearest centerline grade; pond basins receive one shared floor tier.
+  function stabilizeGeneratedHydrology() {
+    const report = {
+      riverPathsProcessed: 0,
+      riverCenterlineTiles: 0,
+      riverTilesLowered: 0,
+      riverTilesRaised: 0,
+      riverUpHillSteps: 0,
+      pondBodiesProcessed: 0,
+      pondBodiesFlattened: 0,
+      pondTilesFlattened: 0,
+      pondUnevenBodies: 0,
+      pondUnevenBodiesBefore: 0,
+      pondMaxElevationSpreadBefore: 0,
+      pondMaxElevationSpreadAfter: 0
+    }; // Returned with the generated workspace so terrain regressions can be checked without devtools.
+    const riverGradeSeeds = new Map(); // Centerline tile key -> solved river-bed elevation.
+    const riverProfiles = []; // Ordered centerline profiles used to recheck downhill flow after river crossings are reconciled.
+
+    for (const river of map.rivers || []) {
+      const pathTiles = []; // In-bounds water tiles sampled from this river's authored path.
+      let lastKey = '';
+      const pointScale = Math.max(1, Math.round(Number(settings.generationScale) || 1)); // Matches scaleGeneratedRivers/scaleMapPoint before the exported node resolves to a duplicated source tile.
+      for (const point of river.points || []) {
+        const scaledX = Math.round(Number(point.x) * pointScale); // Exact final-grid column used by the exported river node.
+        const scaledY = Math.round(Number(point.y) * pointScale); // Exact final-grid row used by the exported river node.
+        const x = Math.floor(scaledX / pointScale); // Source tile whose scaled block contains that exported node.
+        const y = Math.floor(scaledY / pointScale);
+        if (!inBounds(x, y)) continue;
+        const tile = tileAt(x, y); // Sample the same source tile that the exported scaled node will occupy.
+        if (!tile || !tile.water) continue; // A river may pass through pond/stream water; that shared water tile is part of the same downhill profile.
+        const key = tileKey(x, y); // Prevents sub-tile path wobble from duplicating a centerline sample.
+        if (key === lastKey) continue;
+        pathTiles.push(tile);
+        lastKey = key;
+      }
+      if (pathTiles.length < 2) continue;
+
+      if (pathTiles[pathTiles.length - 1].elevation > pathTiles[0].elevation) {
+        pathTiles.reverse();
+        river.points = (river.points || []).slice().reverse();
+        if (Array.isArray(river.widthSamples)) river.widthSamples.reverse();
+        const oldFromBorder = river.fromBorder; // Preserves border labels when the watercourse direction is reversed.
+        river.fromBorder = river.toBorder;
+        river.toBorder = oldFromBorder;
+      }
+
+      const profile = { tiles: pathTiles, grades: [] }; // One monotonic elevation sample for each centerline tile.
+      let previousHeight = Number(pathTiles[0].elevation) || 0;
+      for (const tile of pathTiles) {
+        const key = tileKey(tile.x, tile.y); // Shared junctions use the lower of the intersecting river grades.
+        const sharedGrade = riverGradeSeeds.get(key);
+        const targetHeight = Math.max(0, Math.min(
+          previousHeight,
+          Number(tile.elevation) || 0,
+          sharedGrade === undefined ? Infinity : sharedGrade
+        ));
+        profile.grades.push(targetHeight);
+        riverGradeSeeds.set(key, targetHeight);
+        previousHeight = targetHeight;
+      }
+      riverProfiles.push(profile);
+      report.riverPathsProcessed++;
+      report.riverCenterlineTiles += pathTiles.length;
+      river.flowDirection = 'higher-to-lower';
+      river.carving = true;
+    }
+
+    // A junction can lower a later river's shared tile. Propagate that lower
+    // elevation downstream through every intersecting path until all paths agree.
+    const profilePassLimit = Math.max(2, riverProfiles.length + Number(settings.maxTier) + 2); // Allows a grade change to propagate across every river junction, not only one tier's worth of passes.
+    for (let pass = 0; pass < profilePassLimit; pass++) {
+      let changed = false;
+      for (const profile of riverProfiles) {
+        for (let i = 0; i < profile.tiles.length; i++) {
+          const tile = profile.tiles[i]; // Current ordered sample in this river profile.
+          const key = tileKey(tile.x, tile.y);
+          const sharedGrade = riverGradeSeeds.get(key);
+          const previousGrade = i > 0 ? profile.grades[i - 1] : Infinity;
+          const targetHeight = Math.max(0, Math.min(profile.grades[i], previousGrade, sharedGrade));
+          if (targetHeight < profile.grades[i]) {
+            profile.grades[i] = targetHeight;
+            changed = true;
+          }
+          if (targetHeight < sharedGrade) {
+            riverGradeSeeds.set(key, targetHeight);
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+    }
+
+    for (const profile of riverProfiles) {
+      for (let i = 1; i < profile.grades.length; i++) {
+        if (profile.grades[i] > profile.grades[i - 1]) report.riverUpHillSteps++;
+      }
+    }
+
+    // Multi-source flood fill spreads each centerline grade across its river width
+    // without allowing a high bank or adjacent plateau to lift the channel.
+    const riverGradeByTile = new Map(riverGradeSeeds); // Starts with all authored centerline grades before filling channel shoulders.
+    const riverQueue = []; // Breadth-first work queue for river tiles not directly sampled by the centerline.
+    for (const key of riverGradeSeeds.keys()) {
+      const [x, y] = key.split(',').map(Number);
+      riverQueue.push({ x, y, height: riverGradeSeeds.get(key) });
+    }
+    for (let head = 0; head < riverQueue.length; head++) {
+      const current = riverQueue[head]; // Nearest solved centerline sample for the current water tile.
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = current.x + dx;
+        const y = current.y + dy;
+        if (!inBounds(x, y)) continue;
+        const neighbor = tileAt(x, y); // Candidate bankward tile in the same connected river channel.
+        if (!neighbor || !neighbor.water) continue; // Connected river, stream, and pond water share the same local flow grade.
+        const key = tileKey(x, y);
+        if (riverGradeByTile.has(key)) continue;
+        const neighborHeight = Math.max(0, Number(neighbor.elevation) || 0); // Existing low channel pockets must never be raised to match a higher centerline.
+        const propagatedHeight = Math.min(current.height, neighborHeight);
+        riverGradeByTile.set(key, propagatedHeight);
+        riverQueue.push({ x, y, height: propagatedHeight });
+      }
+    }
+    for (const [key, targetHeight] of riverGradeByTile) {
+      const [x, y] = key.split(',').map(Number);
+      const tile = tileAt(x, y); // River tile receiving its nearest centerline's solved elevation.
+      if (!tile || !tile.water) continue; // Also grades centerline samples that meet an existing stream or pond.
+      const originalHeight = Math.max(0, Number(tile.elevation) || 0); // Preserve any naturally lower channel pocket.
+      if (originalHeight > targetHeight) report.riverTilesLowered++;
+      if (originalHeight < targetHeight) report.riverTilesRaised++;
+      const solvedHeight = Math.min(originalHeight, targetHeight); // Hydrology may only carve downward, never create a raised underwater tile.
+      tile.elevation = solvedHeight;
+      tile.height = solvedHeight;
+    }
+
+    const isPondFloorTile = tile => !!tile && tile.water && !tile.canyonRiver
+      && (tile.terrain === 'pond' || tile.plateauPond); // Includes the still-water part of a plateau pond when a stream joins it.
+    const visitedPondTiles = new Set(); // Ensures each connected lake/pond basin is levelled exactly once.
+    for (const start of allTiles()) {
+      if (!isPondFloorTile(start)) continue;
+      const startKey = tileKey(start.x, start.y);
+      if (visitedPondTiles.has(startKey)) continue;
+      const component = []; // All connected water tiles that make up this lake/pond basin.
+      const queue = [start];
+      visitedPondTiles.add(startKey);
+      for (let head = 0; head < queue.length; head++) {
+        const current = queue[head];
+        component.push(current);
+        for (const neighbor of cardinalNeighbors(current.x, current.y)) {
+          if (!isPondFloorTile(neighbor)) continue;
+          const key = tileKey(neighbor.x, neighbor.y);
+          if (visitedPondTiles.has(key)) continue;
+          visitedPondTiles.add(key);
+          queue.push(neighbor);
+        }
+      }
+      const basinElevations = component.map(tile => Number(tile.elevation) || 0); // Snapshot before mutation so the report records the actual terrain defect.
+      const basinFloor = Math.max(0, basinElevations.reduce((lowest, height) => Math.min(lowest, height), Infinity)); // Lowest existing basin tile determines the common waterbed tier.
+      const basinCeiling = basinElevations.reduce((highest, height) => Math.max(highest, height), -Infinity);
+      const basinSpreadBefore = basinCeiling - basinFloor; // Measured before lowering the submerged high spots.
+      report.pondMaxElevationSpreadBefore = Math.max(report.pondMaxElevationSpreadBefore, basinSpreadBefore);
+      if (basinSpreadBefore > 0) report.pondUnevenBodiesBefore++;
+      let bodyChanged = false;
+      for (const tile of component) {
+        if (tile.elevation !== basinFloor) {
+          tile.elevation = basinFloor;
+          tile.height = basinFloor;
+          report.pondTilesFlattened++;
+          bodyChanged = true;
+        }
+      }
+      report.pondBodiesProcessed++;
+      if (bodyChanged) report.pondBodiesFlattened++;
+      const basinSpreadAfter = component.reduce((spread, tile) => Math.max(spread, tile.elevation - basinFloor), 0);
+      report.pondMaxElevationSpreadAfter = Math.max(report.pondMaxElevationSpreadAfter, basinSpreadAfter);
+      if (basinSpreadAfter > 0) report.pondUnevenBodies++;
+    }
+
+    logDebug('gravity hydrology: graded ' + report.riverPathsProcessed + ' river paths (' + report.riverCenterlineTiles
+      + ' centerline tiles; ' + report.riverTilesLowered + ' river tiles lowered; ' + report.riverUpHillSteps
+      + ' uphill steps remain), levelled ' + report.pondBodiesFlattened + '/' + report.pondBodiesProcessed
+      + ' pond basins (' + report.pondTilesFlattened + ' tiles lowered; ' + report.pondUnevenBodies + ' uneven basins remain)');
+    map.hydrologyReport = report;
+    return report;
+  }
+
   function syncTileHeights() {
     for (const tile of allTiles()) {
       tile.height = tile.elevation;
@@ -6289,7 +6478,8 @@
         width: Math.max(1, Math.round(river.widthTilesAverage || river.widthTiles || 3)),
         seed: hashSeed(`${map.seed}_${river.id || index}`),
         paintTiles: false,
-        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3
+        widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3,
+        flowDirection: river.flowDirection || 'higher-to-lower'
       };
     }).filter(river => river.nodes.length >= 2);
   }
@@ -6579,7 +6769,7 @@
       routeStyle: 'Stardew/Pokemon-like wilderness: sparse visible roads, clustered messy Giant\'s-Causeway-like plateau fields, manual-style reserved cliff rings, wraparound ramps with shared plateau contact tiles, boundary plateau modes generated after playable terrain height scanning, cave mouths in cliff faces, wild animal dens, and invisible navigation corridors for full walkable-tile reachability',
       cameraLocked: true,
       visibilityRule: 'plateaus are generated as clustered manual-paint-style causeway cells rather than global shelves; each footprint owns its reserved outer ring and inset submap top',
-      riverWidthRule: usesDramaticPlateauPreset() ? 'dramatic preset rivers are late-painted over finished terrain with no erosion carving; height breaks become waterfall tiles' : 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
+      riverWidthRule: usesDramaticPlateauPreset() ? 'dramatic preset rivers are painted over finished terrain, then graded from higher to lower terrain; downhill tier breaks become waterfall tiles' : 'big canyon rivers vary along their length; each sampled width is usually 4-8 tiles and carves river beds down through raised plateau fields',
       pathingRule: 'visible paths are sparse. invisiblePaths reserve natural walkable corridors for players, NPCs, and animal escape routing without drawing extra beaten roads.',
       tileDensityRule: `Generated at source size ${map.sourceWidth || map.width}x${map.sourceHeight || map.height}, then expanded by ${map.generationScale || 1}x so every source tile becomes ${(map.generationScale || 1) * (map.generationScale || 1)} exported tiles. At scale 2, every originally walkable source tile becomes four walkable exported tiles.`,
       presetRule: `${map.presetLabel || settings.presetLabel || 'Custom'} preset. Cliffs forces a south entry and dramatic packed-bleacher plateau tiers using the ${(map.stepCurveLabel || settings.stepCurveLabel || 'Northern Cliffs')} step curve. Nearby plateaus share parent aprons, and jagged east-west variation may dip or spike without dropping below southern support terrain. A plateau-component scanner detects low child plateau bodies and raises whole components instead of row tiles; boundary mode ${(map.boundaryModeLabel || settings.boundaryModeLabel)} uses a post-playable height scan before generating the world edge. Great Basin forces a north entry, uses a linear south-to-north height lerp as the base basin floor, then late in terrain generation extends higher-tier spoon sides along the east/west boundaries before raising the post-boundary road to the highest walkable plateau it directly connects to.`,
@@ -6590,7 +6780,7 @@
         height: 'render/traversal height. Normal tiles equal elevation; ramp tiles are fractional lerps.',
         ramp: 'designated slope tiles connecting significant tier jumps. rampProgress 0..1 lerps from rampFromTier to rampToTier.',
         pond: 'irregular water blob',
-        river: usesDramaticPlateauPreset() ? 'late-painted border-crossing water with widthSamples; preserves plateau elevations and relies on waterfall tiles at tier breaks' : 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
+        river: usesDramaticPlateauPreset() ? 'late-painted border-crossing water with widthSamples; channel beds are graded downhill after terrain shaping, with waterfall tiles at tier breaks' : 'border-crossing canyon water with widthSamples; widths usually vary between 4 and 8 tiles and carve broad channels through plateau fields',
         cliffSkirt: 'reserved tile outline at the base/sides of plateaus and ramps. Normal objects cannot be placed here.',
         caveOpening: 'black cave mouth embedded into a cliff-skirt tile with rarity superscript',
         secretCaveOpening: 'hidden cave opening embedded into a remote cliff-skirt tile with rarity superscript',
@@ -7879,9 +8069,10 @@
         widthSamples,
         points,
         paintedLate: true,
-        carving: false
+        carving: true,
+        flowDirection: 'higher-to-lower'
       });
-      logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, no erosion carving`);
+      logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, bed graded after terrain shaping`);
     }
     logDebug(`late painted rivers: ${settings.rivers} rivers painted over finished tiers, ${paintedTiles} new river tiles; waterfalls are assigned by cliff-skirt height breaks`);
     return { rivers: settings.rivers, tiles: paintedTiles };
@@ -8088,39 +8279,17 @@
     if (!tileCanReceiveLocalNorthwardRaise(tile)) return null;
     let best = null;
 
-    // A 1-row scanner still reads the row immediately south, but only through nearby support,
-    // not through a whole-column "highest so far" memory. This keeps the northward climb readable
-    // without turning every column into a wall from the first high tile it ever saw.
+    // The scanner reads nearby raised land only; watercourses keep their own gravity-graded bed.
     for (let dx = -1; dx <= 1; dx++) {
       const south = tileAt(tile.x + dx, tile.y + 1);
       const southHeight = northwardRowScannerSourceHeight(south);
       if (southHeight === null) continue;
-      if (tile.water) {
-        // Water follows its own course first, then may borrow adjacent terrain height at crossings.
-        if (south.water || south.plateauStream || south.waterfall || tileIsRaisedScannerTerrain(south)) {
-          best = considerScannerSupport(best, { height: southHeight }, south.water ? 'south-water' : 'south-terrain-crossing');
-        }
-      } else if (tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute) {
-        // Raised terrain only inherits from raised terrain or route support, never from a visual boundary wall.
+      if (tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute) {
         if (tileIsRaisedScannerTerrain(south) || south.path || south.invisiblePath || south.denRoute) {
           best = considerScannerSupport(best, { height: southHeight }, 'south-local-terrain');
         }
       }
     }
-
-    if (tile.water) {
-      // Let rivers/streams climb when they physically cross a plateau face. This is intentionally local:
-      // a nearby plateau can raise a water tile into a waterfall, but it cannot lift the whole row.
-      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-        const neighbor = tileAt(tile.x + dx, tile.y + dy);
-        if (!neighbor || neighbor.water || neighbor.borderEscarpment || neighbor.ramp || neighbor.navRamp) continue;
-        if (!tileIsRaisedScannerTerrain(neighbor) && !neighbor.path && !neighbor.invisiblePath) continue;
-        const neighborHeight = northwardRowScannerSourceHeight(neighbor);
-        if (neighborHeight === null) continue;
-        best = considerScannerSupport(best, { height: neighborHeight }, 'local-waterfall-crossing');
-      }
-    }
-
     return best;
   }
 
@@ -8184,9 +8353,9 @@
   }
 
   function northwardRowScannerSourceHeight(tile) {
-    if (!northwardRowScannerTouchesTile(tile)) return null;
-    // Cliff skirts are side faces. Water is allowed through because rivers/streams need to climb locally instead of route around plateaus.
-    if (tile.cliffSkirt && !tile.water) return null;
+    if (!tile || tile.water || !northwardRowScannerTouchesTile(tile)) return null;
+    // Water is solved by hydrology, never used as a height source for adjacent terrain.
+    if (tile.cliffSkirt) return null;
     return tileHeight(tile);
   }
 
@@ -8434,11 +8603,10 @@
   }
 
   function tileCanReceiveLocalNorthwardRaise(tile) {
-    if (!northwardRowScannerTouchesTile(tile)) return false;
-    if (tile.cliffSkirt && !tile.water) return false;
-    if (tile.dramaticShelfApron && !tile.water) return false;
-    // Do not convert whole lowland rows into plateaus. Only existing raised terrain, explicit routes, and water can climb.
-    return tile.water || tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute;
+    if (!tile || tile.water || !northwardRowScannerTouchesTile(tile)) return false;
+    if (tile.cliffSkirt || tile.dramaticShelfApron) return false;
+    // Lowlands stay low, and rivers/ponds are graded separately after terrain shaping.
+    return tileIsRaisedScannerTerrain(tile) || tile.path || tile.invisiblePath || tile.denRoute;
   }
 
   function tileIsRaisedScannerTerrain(tile) {
@@ -8531,6 +8699,10 @@
       generateCliffSkirts(); // refresh after late-painted rivers
       applyManualPlateauPaintingRules(); // refresh after late-painted rivers
     }
+    if (!settings.archipelagoEnabled) {
+      stabilizeGeneratedHydrology();
+      applyManualPlateauPaintingRules(); // Terrain-dependent placement sees the final graded river and pond floors.
+    }
     stampLocales(); // hand-authored locales get first pick of open ground
     placeStructures();
     placeCaves();
@@ -8553,6 +8725,7 @@
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.tradeExit = map.tradeExit ? { col: map.tradeExit.x, row: map.tradeExit.y, side: map.tradeExit.side } : null;
     workspace.warnings = map.warnings.slice();
+    workspace.hydrologyReport = map.hydrologyReport || null; // Mobile-friendly regression summary for final river/pond grading.
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
     // placements directly so the game never has to infer them from generic
