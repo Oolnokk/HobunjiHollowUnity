@@ -18,8 +18,8 @@
     new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,
     new URL('skeleton-species-runtime.js?v=20261027guardian1', base).href,
     new URL('harlyao-skeleton-species-runtime.js?v=20261010h93464d4', base).href,
-    new URL('mao-ao-skeleton-species-runtime.js?v=20261010maoskel1', base).href,
-    new URL('maskbound-guardian-species-runtime.js?v=20261029maskSlots2', base).href,
+    new URL('mao-ao-skeleton-species-runtime.js?v=20261101maoskelrear1', base).href,
+    new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261031hb701fa8', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20261031hbf28f8b', base).href,
@@ -42,7 +42,7 @@
   })), Promise.resolve());
   if (document.readyState === 'loading' && document.currentScript) {
     window.HobunjiLatestAuthoredRigReady = Promise.resolve();
-    for (const src of urls) document.write(`<script src="${src}"><\/script>`);
+    for (const src of urls) document.write(`<script src="${src}"><\\/script>`);
   } else {
     const ready = loadSequentially(urls);
     window.HobunjiLatestAuthoredRigReady = ready;
