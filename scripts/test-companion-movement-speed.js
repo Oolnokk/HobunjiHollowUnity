@@ -15,6 +15,7 @@ let alchemyMul = 1.2; // Represents the live Alchemy movement modifier.
 let cookingMul = 1.1; // Represents the live food movement modifier.
 let devMul = 1; // Represents the mutable global speed setting.
 let perceptionMul = 0.5; // Represents the mounted Perception Mode movement modifier.
+let npcOwnerMul = 0.75; // Lets the position-only NPC fixture change buffs while paused.
 const callbacks = []; // Captures scheduled animation callbacks without running an endless browser frame loop.
 const player = { x: 64, y: 64, footing: 100, maxFooting: 100 }; // Uses the same pixel-space player position and footing values as the runtime.
 const companionObjects = new Set(); // Mirrors Combat.deps.companionObjects.
@@ -30,7 +31,7 @@ const windowStub = {
   ResourceSystem: { getEffectiveMax() { return 100; } },
   PerceptionMode: { speedMultiplier() { return perceptionMul; } },
   Mounts: { rideState: 'none', rideEntity: null },
-  NpcCharacterState: { movementSpeedMultiplier() { return 0.75; } },
+  NpcCharacterState: { movementSpeedMultiplier() { return npcOwnerMul; } },
   _npcWalkers: new Map(),
 };
 const deps = {
@@ -135,6 +136,9 @@ jubmirMaster.x = 32;
 assert.equal(jubmirPet.def.moveSpeed, 32, 'position-only NPC owner movement is measured in the same pixel-per-second units as creature movement');
 now += 1000;
 assert.equal(jubmirPet.def.moveSpeed, 32, 'the last observed NPC pace remains available while the owner pauses so a trailing companion can catch up');
+npcOwnerMul = 0.5;
+assert.ok(Math.abs(jubmirPet.def.moveSpeed - (32 / 0.75 * 0.5)) < 1e-9,
+  'position-sampled NPC pace re-applies live owner buffs/debuffs even while the owner pauses');
 
 const mount = { id: 'mount', isCompanion: true, stableRole: 'mount', master: player, def: { moveSpeed: 200, chaseSpeed: 280, mountSpeed: 340 } };
 companionObjects.add(mount);
