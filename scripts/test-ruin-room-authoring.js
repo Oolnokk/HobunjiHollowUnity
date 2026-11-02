@@ -50,7 +50,7 @@ function makeTemplate() {
   };
 }
 function makeNetwork(id='room_1',width=5,height=5) {
-  const floorSet=new Set();
+  const floorSet=vm.runInNewContext('new Set()'); // Simulate the hidden V50 iframe's Set constructor, distinct from the parent page's realm.
   for(let z=0;z<height;z++)for(let x=0;x<width;x++)floorSet.add((10+x)+','+(10+z));
   return {
     floorSet,
