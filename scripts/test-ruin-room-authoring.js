@@ -111,6 +111,19 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.ok(diagnostics.claims.length>=2,'successful placement claims should be available for diagnostics');
   assert.ok(diagnostics.rejections.length>=2,'rejected placements should be recorded for diagnostics');
 
+  const clearanceTemplate=makeTemplate();
+  clearanceTemplate.spots[0].clearance=0.6;
+  clearanceTemplate.spots[1].clearance=0.6;
+  assert.equal(api.setLibrary({schema:'hobunji_ruin_room_library.v1',templates:[clearanceTemplate],proceduralProfiles:[]}).ok,true);
+  const clearanceNetwork=makeNetwork('room_clearance');
+  const clearancePlan=api.applyToNetwork(clearanceNetwork,{seed:'clearance-regression'}).plans[0];
+  const blockedPair=api.claimPuzzleLinkForPlan(clearancePlan,'room_clearance','stoneDoor','pressurePlate');
+  assert.equal(blockedPair.ok,false,'overlapping spot clearance radii must prevent an unsafe pair');
+  assert.equal(api.canClaimSpotForPlan(clearancePlan,'room_clearance','mechanisms','stoneDoor'),true,'failed pair must release its first spot claim');
+  assert.equal(api.getDiagnostics({roomAuthoringPlans:[JSON.parse(JSON.stringify(clearancePlan))]}).claims.length,0,'rolled-back claims must not remain in success diagnostics');
+  assert.ok(api.getDiagnostics({roomAuthoringPlans:[JSON.parse(JSON.stringify(clearancePlan))]}).rejections.length>0,'clearance failure should be explained in diagnostics');
+
+  assert.equal(api.setLibrary(validLibrary).ok,true,'restore linked puzzle fixture');
   const linkedNetwork=makeNetwork('room_linked');
   const linkedPlan=api.applyToNetwork(linkedNetwork,{seed:'linked-puzzle-regression'}).plans[0];
   const clonedLinkedPlan=JSON.parse(JSON.stringify(linkedPlan)); // V50 returns cloned metadata to the parent runtime; claim state must survive that boundary.
