@@ -175,7 +175,7 @@ function exportBeardHoodCosmeticConfig() {
   const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = url; link.download = `${safeName(garment.id)}.json`; link.click();
+  link.href = url; link.download = String(garment.configPath || `${safeName(garment.id)}.json`).split('/').pop(); link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
   log(`Exported ${property} for ${garment.id} · ${beardHoodMaskVariant()}. Replace that cosmetic's JSON with the downloaded file.`);
 }
