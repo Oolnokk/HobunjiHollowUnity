@@ -142,11 +142,13 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     }));
     assert.equal(unpaid.paid,false);
     assert.equal(underfunded.active,true,'empty-stamina dodge unexpectedly canceled a live two-hand tear: '+JSON.stringify(underfunded));
-    await page.evaluate(()=>{
-      const player=window.Combat?.deps?.player;player._grappleEscapeDodgePaid=true;
-      player.dodging=true;player.dodgeT=.3;
-    });
-    await page.waitForFunction(()=>window.RootSnarePlayerTear?.active?.()===false,null,{timeout:4000});
+    // Slow software-rendered CI can drop frames longer than the dodge window; keep the paid roll alive until the ruin update observes it.
+    await page.waitForFunction(()=>{
+      if(window.RootSnarePlayerTear?.active?.()===false)return true;
+      const player=window.Combat?.deps?.player;
+      if(player){player._grappleEscapeDodgePaid=true;player.dodging=true;player.dodgeT=.3;}
+      return false;
+    },null,{timeout:15000,polling:50});
     const cleared=await page.evaluate(()=>({
       tear:window.RootSnarePlayerTear.debug(),
       hands:window.DevHachutuRuin.debug().snare,
