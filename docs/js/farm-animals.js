@@ -1675,7 +1675,7 @@
     const tilePx = Number(deps.TILE) || 1; // Converts farm tile coordinates into AudioSystem pixel-space coordinates.
     actor.creatureKey = animal.animalKey;
     actor.genotype = animal.genotype || null;
-    actor.areaId = deps.getCurrentArea?.() || null;
+    actor.areaId = deps.getCurrentArea?.() ?? window.GridTileAccessors?.getCurrentArea?.() ?? null;
     actor.x = Number(animal.wx) * tilePx;
     actor.y = Number(animal.wz) * tilePx;
     actor.wy = Number(animal.wy) || 0;
