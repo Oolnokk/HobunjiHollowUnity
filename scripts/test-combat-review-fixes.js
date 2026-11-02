@@ -68,7 +68,7 @@ assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted e
 assert.match(game, /lineOfSightBlocker: c\._enemyVisibilityLosDebug[\s\S]{0,180}kind: c\._enemyVisibilityLosDebug\.kind/, 'mobile combat diagnostics identify the obstacle that blocked sight');
 assert.match(ranged, /losTerrainStepTiles: 0\.25/, 'NPC sight samples terrain finely enough to catch narrow wall crossings');
 assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(\)/, 'closed interior doors block NPC line of sight even though they are separate from terrain tiles');
-assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, 'ranged engagement radius follows the projectile's actual maximum travel distance');
+assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, "ranged engagement radius follows the projectile's actual maximum travel distance");
 assert.match(ranged, /function rangedAttackRadiusPx\(entity\)[\s\S]{0,260}rangedAttackRadiusPx/, 'an enemy definition may reduce its ranged attack radius without exceeding projectile reach');
 assert.match(ranged, /if \(distToPlayer > maxRange\) \{\s*return \{ aimAngle, moving: false, handled: true, holdingRange: true \}/, 'ranged bandits hold position instead of approaching targets');
 assert.match(ranged, /function hasLineOfSight\(observer, target\)/, 'ranged collision exposes the NPC visibility entry point');
