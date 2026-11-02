@@ -142,9 +142,9 @@ const waterMaterialStart = mergedWater.indexOf('  function createMaterial('); //
 const waterMaterialEnd = mergedWater.indexOf('  function createMesh(', waterMaterialStart);
 assert.ok(waterMaterialStart >= 0 && waterMaterialEnd > waterMaterialStart,
   'extract the merged-water material factory');
-const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'window',
+const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'window',
   mergedWater.slice(waterMaterialStart, waterMaterialEnd) + '\nreturn createMaterial;')(
-    testThree, 0.02, 0.02, { SurfaceOcclusionComposer: surfaceComposer });
+    testThree, 0.02, 0.02, 0.12, { SurfaceOcclusionComposer: surfaceComposer });
 const testedWaterMaterial = makeWaterMaterial(testThree, {});
 assert.equal(testedWaterMaterial.depthWrite, false, 'normal water rendering never writes depth');
 assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthOnly.value, 0,
