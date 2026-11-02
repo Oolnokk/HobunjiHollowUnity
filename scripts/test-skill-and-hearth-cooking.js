@@ -113,7 +113,10 @@ assert.match(cookingSource, /function currentGameHour\([\s\S]{0,900}timeDebugSna
 assert.match(cookingSource, /expiresAtGameHour/, 'ordinary food effects expire against in-game hours');
 assert.match(cookingSource, /remainingHours/, 'ordinary food timers persist as remaining in-game hours');
 assert.match(festivalSource, /FOOD_PORTION_HOURS = 4/, 'each festival food portion adds four in-game hours');
-assert.match(festivalSource, /Math\.min\(MAX_FOOD_PORTIONS\*FOOD_PORTION_HOURS,Math\.max\(0,existing\.expiresHour-now\)\+FOOD_PORTION_HOURS\)/, 'each additional serving adds exactly four hours up to the 40-hour cap');
+assert.match(festivalSource, /remainingHours\+FOOD_PORTION_HOURS/, 'each serving adds four hours to the transferred remaining duration');
+assert.match(festivalSource, /state\.feastBuffs=\[\{ id:meal\.id/, 'eating any festival meal replaces the previous meal buff with the newly eaten food');
+assert.match(festivalSource, /activeBuffs\.reduce\(\(total,entry\)=>total\+Math\.max\(0,entry\.expiresHour-now\),0\)/, 'changing foods carries forward all active remaining duration');
+assert.match(festivalSource, /combinedHours= Math\.min|combinedHours=Math\.min/, 'restoring legacy saves consolidates old meal timers under the newest food buff');
 assert.match(festivalSource, /storedHours\*\(FOOD_PORTION_HOURS\/24\)/, 'existing 24-hour portions scale down proportionally during one-time migration');
 assert.match(festivalSource, /FULLNESS_DURATION_HOURS = 24/, 'festival fullness remains an independent 24-hour effect');
 assert.match(festivalSource, /expiresHour/, 'festival meal effects expire against the calendar clock');
