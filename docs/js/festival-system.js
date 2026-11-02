@@ -284,7 +284,7 @@
     if (!heldBowl?.meal||heldBowl.uses<1||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit on a chair with a filled bowl.');
     if (currentFullness()>=MAX_FOOD_PORTIONS) return fail('You are full. The fullness effect fades 24 in-game hours after its first serving.');
     const meal=heldBowl.meal;
-    const now=worldHour(); // Each portion adds 24 in-game hours, with the existing ten-portion duration cap.
+    const now=worldHour(); // Each portion adds four in-game hours, with the existing ten-portion duration cap.
     const existing=(state.feastBuffs||[]).find(entry=>entry.id===meal.id && entry.expiresHour>now);
     if (existing) {
       const hours=Math.min(MAX_FOOD_PORTIONS*FOOD_PORTION_HOURS,Math.max(0,existing.expiresHour-now)+FOOD_PORTION_HOURS);
