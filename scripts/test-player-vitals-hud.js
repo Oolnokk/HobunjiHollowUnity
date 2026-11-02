@@ -156,6 +156,21 @@ context.AlchemySystem = { getMaxStaminaMultiplier: () => 1.25 }; // Simulates En
 refresh();
 assert.equal(shown('vbStaminaRow'), true, 'a buffed maximum reveals the unfilled portion of Stamina');
 assert.equal(bar('Stamina').style.width, '80%', 'buffed capacity denominator is respected');
+
+// When the buffed pool has recovered past its authored maximum, currentBack
+// afflictions must follow the live current edge instead of leaving normal fill
+// stranded on both sides of the afflicted segment.
+player.stamina = 120;
+player.afflictions.furiousStamina = 26;
+refresh();
+const buffedFurious = elements.get('vbStaminaSegments').children.find(span => span.title === 'Furious Stamina'); // The currentBack segment under test.
+assert.equal(buffedFurious.style.left, '75.2%', 'Furious Stamina is rebased to the recovered current edge');
+assert.equal(buffedFurious.style.width, '20.8%', 'Furious Stamina retains its full point width on the expanded scale');
+const buffedNormal = elements.get('vbStaminaNormal').children; // Ordinary fill should end where Furious Stamina begins.
+assert.equal(buffedNormal.length, 1, 'ordinary Stamina is not split onto both sides of Furious Stamina');
+assert.equal(buffedNormal[0].style.width, '75.2%', 'ordinary Stamina ends at the rebased affliction start');
+player.afflictions.furiousStamina = 0;
+player.stamina = 100;
 context.AlchemySystem = null;
 refresh();
 assert.equal(shown('vbStaminaRow'), false, 'the Stamina bar disappears when the bonus ends');
