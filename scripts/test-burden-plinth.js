@@ -38,6 +38,8 @@ assert.match(carry, /function heldBurdenInfo\(\)/);
 assert.match(carry, /function placeHeldBurdenOnSurface\(/);
 assert.match(carry, /function retrievePlacedBurden\(/);
 assert.match(carry, /vase\.plinthAttached\)continue/);
+assert.match(carry, /anchor\.getWorldScale\(new THREE\.Vector3\(\)\)/,
+  'payload seating must convert its world-bounds correction through the scaled attachment surface');
 
 const authored = read('docs/js/authored-furniture-runtime.js');
 assert.match(authored, /function createSurfaceAnchor\(/);
