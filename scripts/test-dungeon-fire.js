@@ -172,7 +172,12 @@ async function main() {
     min: new Vector3(.8, 2, .8),
     max: new Vector3(1.2, 2.2, 1.2),
   };
-  let burns = 0;
+  let rejectedBurns = 0, burns = 0;
+  assert(api.registerTarget({
+    id: 'test-rejecting-target',
+    object: target,
+    onBurn: () => { rejectedBurns++; return false; },
+  }), 'a target may legitimately reject ignition');
   assert(api.registerTarget({
     id: 'test-ceiling-target',
     object: target,
@@ -182,7 +187,8 @@ async function main() {
   assert.doesNotThrow(() => api.contactProjectile(
     thrown.projectile, thrown.projectile.mesh.position, thrown.projectile.mesh.position, 1, .05
   ), 'contact calculation must use the defined plume height');
-  assert.equal(burns, 1, 'upright fire volume reaches a target above its source anchor');
+  assert.equal(rejectedBurns, 1, 'the closest mechanism receives its fire callback');
+  assert.equal(burns, 1, 'a rejecting target does not shield the next valid target in the same fire sweep');
 
   api.disposeProjectile(thrown.projectile);
   api.disposeProjectile(arrow.projectile);

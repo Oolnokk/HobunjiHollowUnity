@@ -184,7 +184,7 @@
     const segmentEnd = state?.worldFlame ? state.anchorWorld : end;
     HIT_START.copy(segmentStart);
     HIT_END.copy(segmentEnd).lerp(segmentStart, 1 - limit);
-    let nearest = null;
+    const hits = [];
     for (const target of TARGETS.values()) {
       if (target.active === false || target.isActive?.() === false || !target.object?.visible) continue;
       target.object.updateWorldMatrix?.(true, true);
@@ -194,26 +194,29 @@
       HIT_BOX.expandByScalar(padding);
       HIT_BOX.min.y -= FLAME_HEIGHT; // Expanding target bounds downward models fire rising above the projectile/alpha-pixel anchor.
       const t = segmentBoxInterval(HIT_START, HIT_END, HIT_BOX);
-      if (t == null || (nearest && t >= nearest.t)) continue;
-      nearest = { target, t };
+      if (t != null) hits.push({ target, t });
     }
-    if (!nearest) return false;
-    const point = HIT_START.clone().lerp(HIT_END, nearest.t);
-    try {
-      const accepted = nearest.target.onBurn?.({
-        target:nearest.target, projectile, point,
-        fireKind:'world-flame',
-      });
-      if (accepted === false) return false;
-      nearest.target.active = false;
-      nearest.target.lastBurnedAt = performance.now();
-      lastEvent = 'burned target: ' + nearest.target.id;
-      return true;
-    } catch (error) {
-      console.warn('[Dungeon Fire] target ignition failed', error);
-      lastEvent = 'target ignition failed: ' + nearest.target.id;
-      return false;
+    hits.sort((a,b)=>a.t-b.t); // A target that rejects ignition (e.g. an already-empty cleanser) must not shield the next valid mechanism along the same flame sweep.
+    for (const hit of hits) {
+      const target=hit.target;
+      if (TARGETS.get(String(target.id))!==target || target.active===false || target.isActive?.()===false) continue;
+      const point = HIT_START.clone().lerp(HIT_END, hit.t);
+      try {
+        const accepted = target.onBurn?.({
+          target, projectile, point,
+          fireKind:'world-flame',
+        });
+        if (accepted === false) continue;
+        target.active = false;
+        target.lastBurnedAt = performance.now();
+        lastEvent = 'burned target: ' + target.id;
+        return true;
+      } catch (error) {
+        console.warn('[Dungeon Fire] target ignition failed', error);
+        lastEvent = 'target ignition failed: ' + target.id;
+      }
     }
+    return false;
   }
 
   function registerTarget(target) {
