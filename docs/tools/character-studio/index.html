@@ -224,6 +224,15 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
           <div class="sectionTitle"><b>NPC expressions &amp; clothing patterns</b><span class="sectionTag">default appearance</span></div>
           <label for="npcRestingExpression">Default expression</label><select id="npcRestingExpression"></select>
           <div class="help" style="margin:6px 0 12px">Used in the world, dialogue and cutscenes. Explicit dialogue expressions temporarily override it.</div>
+          <label for="npcPreviewLayerOrder">Experimental sprite layering</label>
+          <select id="npcPreviewLayerOrder">
+            <option value="default">Default game order</option>
+            <option value="clothes-behind-body">Clothing behind body</option>
+            <option value="swap-torso-overwear">Swap torso / overwear</option>
+            <option value="hood-behind-head">Hood behind head</option>
+            <option value="hat-under-hood">Hat under hood</option>
+          </select>
+          <div class="help" style="margin:5px 0 12px">Preview only. This experiment is never applied to or exported with NPC data.</div>
           <div id="npcPatternControls"></div>
           <div class="help" style="margin-top:10px">Choose clothing above, then assign patterns here. Use Apply to NPC, then Save as Local Override or download the NPC database.</div>
         </div>
@@ -391,7 +400,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/repo-picker.js?v=20261021hhybridhelm"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
 <script src="../../js/npc-wardrobe.js?v=20261102h93f8258"></script>
-<script src="../../js/portrait-utils.js?v=20261028h3d2c286"></script>
+<script src="../../js/portrait-utils.js?v=20261102npc-layer-preview"></script>
 <script src="../../js/portrait-breathing.js"></script>
 <script src="../../js/npc-avatar-preview-utils.js"></script>
 <script src="../../js/skeleton-species-runtime.js?v=20261010skelbridge1"></script>
@@ -823,7 +832,7 @@ function defaultAppearanceFor(src = {}) {
 }
 function defaultAvatarExportFor(src = {}) {
   const appearance = defaultAppearanceFor(src);
-  return { schema: 'npc_avatar_editor_export.v1', source: 'character-studio default', appearance, equippedCosmetics: [], appliedDyes: {} };
+  return { schema: 'npc_avatar_editor_export.v1', source: 'character-studio default', appearance, equippedCosmetics: [], appliedDyes: {}, cosmeticSlots: {} };
 }
 function asEquipArray(v) {
   if (Array.isArray(v)) return v.filter(Boolean);
@@ -836,21 +845,122 @@ function asEquipArray(v) {
 let target = { kind: 'player' };
 let work = makeWork('mao-ao', 'male');
 let npcAppearancePass = 0; // Discards slow pattern-layer results after changing the selected NPC or garment.
+let _npcPreviewLayerOrder = 'default'; // Editor-only experiment state; deliberately excluded from work and all export/save paths.
+
+const PLAYER_PORTRAIT_CLOTHING_SLOTS = new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear']);
+
+function playerClothingBaseId(item) {
+  const rawId = item?.baseCosmeticId || item?.cosmeticId || item?.blueprintId || '';
+  return String(rawId).replace(/#(?:loom|smith):.*$/i, '').trim();
+}
+function playerClothingSnapshotSignature(item) {
+  return JSON.stringify({
+    baseId: playerClothingBaseId(item),
+    slot: item?.slot || '',
+    colorA: item?.colorA || null,
+    colorB: item?.colorB || null,
+    colorC: item?.colorC || null,
+    weaving: item?.weaving || null,
+    metalKey: item?.metalKey || null,
+    temperXp: item?.temperXp ?? null,
+    smithTreatment: item?.smithTreatment || null,
+  });
+}
+function samePlayerClothingItem(a, b) {
+  if (!a || !b) return false;
+  if (a.uid && b.uid) return String(a.uid) === String(b.uid);
+  return playerClothingSnapshotSignature(a) === playerClothingSnapshotSignature(b);
+}
+function playerAccessibleClothing() {
+  const profile = readStoredPlayer() || window.__hobunjiPlayerProfile || {};
+  let meta = null;
+  try { meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); } catch (_) {}
+  const characterId = profile.characterId || window.__hobunjiPlayerProfile?.characterId || null;
+  const worldId = profile.worldId || window.__hobunjiPlayerProfile?.worldId || null;
+  const character = meta?.characters?.find(entry => entry?.id === characterId) || null;
+  const world = meta?.worlds?.find(entry => entry?.id === worldId) || null;
+  const member = world?.members?.[characterId] || null;
+  const gear = character?.gearInventory || profile.gearInventory || window.__hobunjiPlayerProfile?.gearInventory || {};
+  const staticCatalog = [
+    ...(window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []),
+    ...(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.shopCatalog || []),
+  ];
+  const result = [], seen = new Set();
+  const add = (item, source, slotHint = '') => {
+    if (!item || typeof item !== 'object' || item.cursed === true || item.isCursed === true || item.curse?.active === true) return;
+    const baseId = playerClothingBaseId(item);
+    if (!baseId) return;
+    const catalogItem = staticCatalog.find(entry => entry?.id === baseId);
+    const cachedOption = _cosmetics?.optionCache?.get?.(baseId);
+    const slot = String(item.slot || slotHint || window.MetalArmorSystem?.blueprintForItem?.(item)?.slot || catalogItem?.category || cachedOption?.slot || '').toLowerCase();
+    if (!PLAYER_PORTRAIT_CLOTHING_SLOTS.has(slot)) return; // Pants use their separate skinned-leg renderer, not the portrait clothing slots shown here.
+    const identity = item.uid ? 'uid:' + String(item.uid) : 'visual:' + slot + ':' + playerClothingSnapshotSignature({ ...item, slot });
+    if (seen.has(identity)) return;
+    seen.add(identity);
+    result.push({
+      baseId, slot,
+      label: String(item.baseLabel || item.label || item.displayName || item.name || cachedOption?.label || catalogItem?.label || baseId),
+      sourceLabel: source,
+      item: clone(item),
+    });
+  };
+  Object.entries(gear.clothing || {}).forEach(([slot, item]) => add(item, 'Equipped gear', slot));
+  (Array.isArray(gear.clothingItems) ? gear.clothingItems : []).forEach(item => add(item, 'Gear collection'));
+  const pack = Array.isArray(member?.packClothing) ? member.packClothing : (Array.isArray(profile.packClothing) ? profile.packClothing : []);
+  pack.forEach(item => add(item, 'World Pack'));
+  return result;
+}
+function equipPlayerClothing(entry) {
+  if (!entry?.baseId || !PLAYER_PORTRAIT_CLOTHING_SLOTS.has(entry.slot) || !entry.item) return false;
+  const catalog = StudioAccount.getShopCatalog();
+  work.cosmeticSlots = { ...(work.cosmeticSlots || {}) };
+  work.equippedCosmetics = work.equippedCosmetics.filter(id => {
+    const category = work.cosmeticSlots[id] || catalog.find(item => item.id === id)?.category || _cosmetics?.optionCache?.get?.(id)?.slot;
+    return category !== entry.slot;
+  });
+  work.equippedCosmetics.push(entry.baseId);
+  work.cosmeticSlots[entry.baseId] = entry.slot;
+  const defaultClothing = { ...(work.clothingPatterns?.defaultClothing || {}) };
+  defaultClothing[entry.slot] = {
+    ...clone(entry.item),
+    cosmeticId: entry.baseId,
+    baseCosmeticId: entry.baseId,
+    slot: entry.slot,
+  };
+  work.clothingPatterns = { ...(work.clothingPatterns || {}), defaultClothing };
+  invalidatePreview();
+  return true;
+}
 
 function makeWork(speciesId, gender) {
   const ap = defaultAppearanceFor({ speciesId, gender });
-  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {} };
+  return { name: '', appearance: ap, equippedCosmetics: [], appliedDyes: {}, cosmeticSlots: {} };
 }
 function workRenderAppearance() {
   return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };
 }
+function npcPreviewRenderOptions(extra = {}) {
+  return target.kind === 'npc' ? { ...extra, previewLayerOrder: _npcPreviewLayerOrder } : extra;
+}
 
 // ── Account mock (from npc-portrait-editor, wired to the working record) ────
 const StudioAccount = {
-  getShopCatalog:  () => [
-    ...(window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []),
-    ...(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.shopCatalog || []),
-  ],
+  getShopCatalog: () => {
+    const catalog = [
+      ...(window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || []),
+      ...(window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.shopCatalog || []),
+    ];
+    const knownIds = new Set(catalog.map(item => item?.id).filter(Boolean));
+    const extras = playerAccessibleClothing().filter(entry => !knownIds.has(entry.baseId)).map(entry => ({
+      id: entry.baseId,
+      category: entry.slot,
+      label: entry.label,
+      material: entry.item.material || entry.item.metalKey || null,
+      ...(entry.item.species ? { species: entry.item.species } : {}),
+      ...(entry.item.gender ? { gender: entry.item.gender } : {}),
+    }));
+    return [...catalog, ...extras];
+  },
   getDyeCatalog:   () => window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [],
   getDyeCategories:() => window.SCRATCHBONES_CONFIG?.game?.dyes?.categories || [],
   getAppliedDyes:  () => work.appliedDyes || {},
@@ -859,20 +969,42 @@ const StudioAccount = {
   isDyeOwned:      () => true,
   getEquippedForCategory: (cat) => {
     const catalog = StudioAccount.getShopCatalog();
-    return catalog.find(i => i.category === cat && work.equippedCosmetics.includes(i.id))?.id ?? null;
+    return work.equippedCosmetics.find(id =>
+      (work.cosmeticSlots?.[id] || catalog.find(item => item.id === id)?.category || _cosmetics?.optionCache?.get?.(id)?.slot) === cat
+    ) ?? null;
   },
   setAppearance: (ap) => { work.appearance = { ...ap }; },
   equipCosmetic: (id) => {
     const catalog = StudioAccount.getShopCatalog();
     const item = catalog.find(i => i.id === id);
-    if (!item) return;
+    const category = item?.category || _cosmetics?.optionCache?.get?.(id)?.slot;
+    if (!item || !category) return;
+    work.cosmeticSlots = { ...(work.cosmeticSlots || {}) };
     work.equippedCosmetics = work.equippedCosmetics.filter(eid => {
-      const ei = catalog.find(i => i.id === eid);
-      return ei?.category !== item.category;
+      const equippedCategory = work.cosmeticSlots[eid] || catalog.find(entry => entry.id === eid)?.category || _cosmetics?.optionCache?.get?.(eid)?.slot;
+      return equippedCategory !== category;
     });
     work.equippedCosmetics.push(id);
+    work.cosmeticSlots[id] = category;
+    const defaultClothing = { ...(work.clothingPatterns?.defaultClothing || {}) };
+    delete defaultClothing[category]; // Choosing a catalog article deliberately drops a previous player-owned garment snapshot for that slot.
+    work.clothingPatterns = { ...(work.clothingPatterns || {}), defaultClothing };
   },
-  unequipCosmetic: (id) => { work.equippedCosmetics = work.equippedCosmetics.filter(eid => eid !== id); },
+  equipPlayerClothing,
+  unequipCosmetic: (id) => {
+    const catalog = StudioAccount.getShopCatalog();
+    const category = work.cosmeticSlots?.[id] || catalog.find(item => item.id === id)?.category || _cosmetics?.optionCache?.get?.(id)?.slot;
+    work.equippedCosmetics = work.equippedCosmetics.filter(eid => eid !== id);
+    if (work.cosmeticSlots?.[id]) {
+      work.cosmeticSlots = { ...work.cosmeticSlots };
+      delete work.cosmeticSlots[id];
+    }
+    if (category && work.clothingPatterns?.defaultClothing?.[category]?.cosmeticId === id) {
+      const defaultClothing = { ...work.clothingPatterns.defaultClothing };
+      delete defaultClothing[category];
+      work.clothingPatterns = { ...(work.clothingPatterns || {}), defaultClothing };
+    }
+  },
   applyDye:  (dyeId, tintKey) => { work.appliedDyes[tintKey] = dyeId; syncNpcPatternColors(); },
   removeDye: (tintKey) => { delete work.appliedDyes[tintKey]; syncNpcPatternColors(); },
 };
@@ -1063,7 +1195,7 @@ function previewLoop() {
   }
   if (!_previewProfile || !window.renderProfile) return;
   _previewBusy = true;
-  Promise.resolve(window.NpcAvatarPreview.renderProfileToCanvas($('apCanvas'), _previewProfile, { seatId: 'studio-preview' }))
+  Promise.resolve(window.NpcAvatarPreview.renderProfileToCanvas($('apCanvas'), _previewProfile, npcPreviewRenderOptions({ seatId: 'studio-preview' })))
     .catch(() => {})
     .finally(() => { _previewBusy = false; });
 }
@@ -1085,10 +1217,10 @@ async function update3DModel() {
   const size = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize || 200;
   const frontCanvas = document.createElement('canvas');
   frontCanvas.width = size; frontCanvas.height = size;
-  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile);
+  await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, npcPreviewRenderOptions());
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
-  await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind' });
+  await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, npcPreviewRenderOptions({ portraitView: 'behind' }));
   threeD.model = threeD.previewScene.setAvatar(frontCanvas, {
     backCanvas,
     profile,
@@ -1435,6 +1567,7 @@ async function refreshColorPicker() {
 function renderCollections() {
   const acc = StudioAccount;
   const fullCatalog = acc.getShopCatalog();
+  const playerClothing = playerAccessibleClothing();
   const dyes = acc.getDyeCatalog();
   const dyeCategories = acc.getDyeCategories();
   const appliedDyes = acc.getAppliedDyes();
@@ -1518,11 +1651,24 @@ function renderCollections() {
     const ownedItems = [...ownedMap.values()];
     const equippedItem = fullCatalog.find(c => c.id === equippedId);
     const equippedDyeGroup = equippedItem?.dyeGroup || equippedItem?.material || 'cloth';
+    const playerItemsForSlot = playerClothing.map((entry, index) => ({ ...entry, index }))
+      .filter(entry => entry.slot === slot.category);
+    const activeSnapshot = work.clothingPatterns?.defaultClothing?.[slot.category] || null;
+    const activePlayerItem = playerItemsForSlot.find(entry =>
+      entry.baseId === equippedId && samePlayerClothingItem(activeSnapshot, entry.item)
+    );
     const opts = [
       `<option value="">None</option>`,
       ...ownedItems.map(item =>
-        `<option value="${esc(item.id)}"${item.id === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
+        `<option value="${esc(item.id)}"${!activePlayerItem && item.id === equippedId ? ' selected' : ''}>${esc(item.label)}</option>`
       ),
+      ...(playerItemsForSlot.length ? [
+        `<optgroup label="Player gear / Pack">`,
+        ...playerItemsForSlot.map(entry =>
+          `<option value="__player_clothing_${entry.index}" data-player-clothing-index="${entry.index}"${activePlayerItem && samePlayerClothingItem(activePlayerItem.item, entry.item) ? ' selected' : ''}>${esc(entry.label)} · ${esc(entry.sourceLabel)}</option>`
+        ),
+        `</optgroup>`,
+      ] : []),
     ].join('');
     const slotEmpty = !ownedItems.length && !equippedId;
     const isDyeOpen = _activeDyeSlot === slot.key;
@@ -1598,9 +1744,13 @@ function renderCollections() {
     sel.addEventListener('change', () => {
       const cat = sel.dataset.slotCat;
       const id = sel.value;
+      const playerIndex = sel.selectedOptions?.[0]?.dataset?.playerClothingIndex;
       if (!id) {
         const equipped = StudioAccount.getEquippedForCategory(cat);
         if (equipped) StudioAccount.unequipCosmetic(equipped);
+      } else if (playerIndex !== undefined) {
+        const entry = playerClothing[Number(playerIndex)];
+        if (entry) StudioAccount.equipPlayerClothing(entry);
       } else {
         StudioAccount.equipCosmetic(id);
       }
@@ -1657,6 +1807,8 @@ async function renderNpcAppearanceControls() {
   if (target.kind !== 'npc') return;
   fillRestingExpressionOptions(work.restingExpression);
   $('npcPatternControls').innerHTML = '<div class="help">Loading garment layers…</div>';
+  const layerOrderSelect = $('npcPreviewLayerOrder');
+  if (layerOrderSelect) layerOrderSelect.value = _npcPreviewLayerOrder;
   const patterns = window.RepoPatternLibrary?.listCached?.() || []; // Uses committed patterns rather than a player's unlocked pattern inventory.
   const dyes = StudioAccount.getDyeCatalog(); // Reuses the clothing dye catalog for the independent pattern color.
   const items = window.NpcWardrobe?.wornClothingItemsForRecord?.(workingNpcRecord(), true) || []; // Includes existing guard-emblem policies in the editor.
@@ -1843,6 +1995,7 @@ function setAsPlayer() {
 function loadPlayerIntoEditor() {
   const saved = readStoredPlayer();
   target = { kind: 'player' };
+  _npcPreviewLayerOrder = 'default';
   if (saved && saved.appearance) {
     work = {
       name: saved.nickname || '',
@@ -1871,7 +2024,7 @@ function exportAppearance() {
     appearance: clone(work.appearance),
     equippedCosmetics: [...work.equippedCosmetics],
     appliedDyes: { ...work.appliedDyes },
-    ...(target.kind === 'npc' ? { id: target.id, restingExpression: work.restingExpression || null, clothingPatterns: clone(work.clothingPatterns || {}) } : {}),
+    ...(target.kind === 'npc' ? { id: target.id, restingExpression: work.restingExpression || null, clothingPatterns: clone(work.clothingPatterns || {}), cosmeticSlots: clone(work.cosmeticSlots || {}) } : {}),
   };
   const fname = (String(data.name || 'character').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'character') + '.json';
   downloadJson(fname, data);
@@ -1882,7 +2035,7 @@ function importAppearance(obj) {
   const p = obj.profile || obj.avatarProfile || obj.npcProfile || obj;
   const appearance = obj.appearance || p.appearance || p.visuals?.appearance || null;
   if (!appearance) throw new Error('JSON does not contain an appearance object');
-  const carriesNpcSettings = Object.hasOwn(obj, 'clothingPatterns') || Object.hasOwn(p, 'clothingPatterns') || Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression'); // Older NPC exports lack an ID but still identify their NPC-specific settings.
+  const carriesNpcSettings = Object.hasOwn(obj, 'clothingPatterns') || Object.hasOwn(p, 'clothingPatterns') || Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression') || Object.hasOwn(obj, 'cosmeticSlots') || Object.hasOwn(p, 'cosmeticSlots'); // Older NPC exports lack an ID but still identify their NPC-specific settings.
   if (target.kind === 'player' && carriesNpcSettings) {
     const id = obj.id || p.id; // New exports identify the original NPC without depending on its display name.
     const name = String(obj.name || p.name || '').trim().toLowerCase(); // Resolves existing ID-less exports such as Surveyor Harkhanash.
@@ -1902,7 +2055,9 @@ function importAppearance(obj) {
   if (target.kind === 'npc') {
     if (Object.hasOwn(obj, 'restingExpression') || Object.hasOwn(p, 'restingExpression')) work.restingExpression = normalizeRestingExpression(obj.restingExpression ?? p.restingExpression);
     if (obj.clothingPatterns || p.clothingPatterns) work.clothingPatterns = clone(obj.clothingPatterns || p.clothingPatterns);
+    work.cosmeticSlots = clone(obj.cosmeticSlots || p.cosmeticSlots || work.cosmeticSlots || {});
   }
+  _npcPreviewLayerOrder = 'default';
   if (obj.name && target.kind === 'player') $('nickname').value = obj.name;
   _activeDyeSlot = null;
   refreshAppearanceUI();
@@ -1970,6 +2125,7 @@ function ensureNpcDefaults(n) {
   if (!n.appearance.cosmetics) n.appearance.cosmetics = {};
   if (!n.appearance.bodyColors) n.appearance.bodyColors = clone(DEFAULT_BODY_COLORS);
   n.equippedCosmetics = asEquipArray(n.equippedCosmetics);
+  n.cosmeticSlots = (n.cosmeticSlots && typeof n.cosmeticSlots === 'object') ? n.cosmeticSlots : {};
   n.appliedDyes = (n.appliedDyes && typeof n.appliedDyes === 'object') ? n.appliedDyes : {};
   if (!n.avatarEditor) n.avatarEditor = { sourceFormat: 'npc_avatar_editor_export', rawExport: defaultAvatarExportFor(n) };
   const romance = n.tags.includes('romanceable');
@@ -2003,6 +2159,7 @@ function portraitExportFor(n) {
     id: n.id,
     restingExpression: n.restingExpression,
     clothingPatterns: n.clothingPatterns || {},
+    cosmeticSlots: raw.cosmeticSlots || p.cosmeticSlots || n.cosmeticSlots || {},
     appearance,
     equippedCosmetics: asEquipArray(raw.equippedCosmetics || p.equippedCosmetics || p.cosmetics || p.equipment || n.equippedCosmetics),
     appliedDyes: raw.appliedDyes || p.appliedDyes || p.dyes || n.appliedDyes || {},
@@ -2083,7 +2240,9 @@ function loadWorkFromNpc(n) {
     appliedDyes: clone(exportNpc.appliedDyes || {}),
     restingExpression: normalizeRestingExpression(n.restingExpression),
     clothingPatterns: clone(n.clothingPatterns || {}),
+    cosmeticSlots: clone(exportNpc.cosmeticSlots || {}),
   };
+  _npcPreviewLayerOrder = 'default';
   _activeDyeSlot = null;
   refreshAppearanceUI();
 }
@@ -2215,6 +2374,7 @@ function applyWorkToNpc() {
   if (!n) { setStatus('Selected NPC no longer exists'); return; }
   n.appearance = clone(work.appearance);
   n.equippedCosmetics = [...work.equippedCosmetics];
+  n.cosmeticSlots = clone(work.cosmeticSlots || {});
   n.appliedDyes = clone(work.appliedDyes);
   n.restingExpression = normalizeRestingExpression(work.restingExpression);
   n.clothingPatterns = clone(work.clothingPatterns || {});
@@ -2229,6 +2389,7 @@ function applyWorkToNpc() {
       appliedDyes: clone(work.appliedDyes),
       restingExpression: n.restingExpression,
       clothingPatterns: clone(n.clothingPatterns),
+      cosmeticSlots: clone(n.cosmeticSlots),
     },
   };
   fillFields(n);
@@ -2294,6 +2455,12 @@ $('mainTabDatabase').onclick = () => switchMainTab('database');
 $('npcRestingExpression').onchange = () => {
   work.restingExpression = normalizeRestingExpression($('npcRestingExpression').value);
   invalidatePreview(); setStatus('Default expression changed — use Apply to NPC');
+};
+$('npcPreviewLayerOrder').onchange = () => {
+  const presets = window.renderPortraitProfile?.previewLayerOrderPresets || {};
+  const selected = $('npcPreviewLayerOrder').value;
+  _npcPreviewLayerOrder = Object.hasOwn(presets, selected) ? selected : 'default';
+  invalidatePreview();
 };
 
 $('setPlayerBtn').onclick = setAsPlayer;
