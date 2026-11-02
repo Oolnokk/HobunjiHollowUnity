@@ -9,11 +9,12 @@
   const STORAGE_KEY = 'hobunji.devRuinRoomLibrary.v1';
   const LIBRARY_URL = new URL('../config/ruin-room-authoring/room-library.json', new URL('.', document.currentScript?.src || document.baseURI)).href; // Resolve from this shared module so both docs/index.html and the nested editor iframe read the same repository library.
   const CATEGORIES = ['mechanisms', 'activators', 'decorations'];
-  const claimsByPlan = new WeakMap();
-  const diagnosticsByPlan = new WeakMap();
-  const puzzleLinksByPlan = new WeakMap();
+  const claimsByPlan = new Map(); // Stable keys survive V50's JSON clone between generation and runtime composition.
+  const diagnosticsByPlan = new Map(); // Shared claims/rejections are visible from the cloned gameplay metadata.
+  const puzzleLinksByPlan = new Map();
   let library = { schema:SCHEMA, templates:[], proceduralProfiles:[] };
   let loadPromise = null;
+  let nextNetworkId = 1; // Distinguishes active/recent generated layouts even when their room IDs and seeds are identical.
   let loadReport = { source:'defaults', errors:[], warnings:[] };
 
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -399,14 +400,21 @@
     };
   }
 
+  function planStoreKey(plan) {
+    const networkId = idOf(plan?.networkId);
+    return networkId ? networkId + '|' + idOf(plan?.roomId) : plan;
+  }
+
   function applyToNetwork(network, options = {}) {
     if (!network || !(network.floorSet instanceof Set) || !Array.isArray(network.rooms)) {
       return {ok:false,applied:0,carvedCells:0,errors:['V50 supplied an unsupported room-network shape.']};
     }
     const plans = [], cutCells = [], errors = [];
     const seed = String(options.seed ?? network.seed ?? 'ruin');
+    const networkId = 'ruin-room-network-' + (nextNetworkId++); // Unique to this generation; copied into V50 metadata for shared claim tracking.
     for (const room of network.rooms) {
       const plan = planForRoom(network,room,seed);
+      plan.networkId = networkId;
       room.roomAuthoringPlan = plan; // V50 mechanism generation can consult the exact same room plan before creating an activator.
       if (plan.source === 'template' && plan.footprint) {
         for (let z=0;z<room.h;z++) for (let x=0;x<room.w;x++) {
@@ -423,6 +431,7 @@
     network.roomAuthoringPlans = plans;
     network.roomAuthoringCutCells = cutCells;
     network.roomAuthoringReport = {
+      networkId,
       enabledTemplates:library.templates.filter(template=>template.enabled).length,
       templatesApplied:plans.filter(plan=>plan.source==='template').length,
       proceduralRooms:plans.filter(plan=>plan.source==='procedural').length,
@@ -430,11 +439,126 @@
       seed,
     };
     for (const plan of plans) {
-      claimsByPlan.set(plan,new Map());
-      diagnosticsByPlan.set(plan,{claims:[],rejections:[]});
+      const key = planStoreKey(plan);
+      claimsByPlan.set(key,new Map());
+      diagnosticsByPlan.set(key,{claims:[],rejections:[],links:[]});
+      puzzleLinksByPlan.set(key,new Set());
     }
-    return {ok:true,applied:plans.length,carvedCells:cutCells.length,plans,errors};
+    return {ok:true,networkId,applied:plans.length,carvedCells:cutCells.length,plans,errors};
   }
+
+  function roomPlan(network, roomId) {
+    const room = network?.rooms?.find?.(entry=>String(entry.id)===String(roomId));
+    return room?.roomAuthoringPlan || (network?.roomAuthoringPlans || []).find(plan=>String(plan.roomId)===String(roomId)) || null;
+  }
+
+  function isAllowed(spot, category, type) {
+    const values = spot?.allowlists?.[category] || [];
+    return values.includes('*') || values.includes('any') || values.includes(String(type));
+  }
+
+  function canClaimSpotForPlan(plan, roomId, category, type, spotId = null) {
+    if (!CATEGORIES.includes(category)) return false;
+    if (!plan) return true;
+    const key = planStoreKey(plan);
+    const claims = claimsByPlan.get(key) || new Map();
+    return (plan.spots || []).some(spot => {
+      const used = Number(claims.get(spot.id) || 0);
+      return (!spotId || spot.id === String(spotId)) && used < spot.maxUses && isAllowed(spot,category,type);
+    });
+  }
+
+  function claimSpotForPlan(plan, roomId, category, type, options = {}) {
+    if (!CATEGORIES.includes(category)) return {ok:false,reason:'Unknown placement category: '+category};
+    if (!plan) return {ok:true,spot:null,legacy:true};
+    const key = planStoreKey(plan);
+    let claims = claimsByPlan.get(key);
+    if (!claims) { claims = new Map(); claimsByPlan.set(key,claims); }
+    const requestedSpotId = idOf(options.spotId);
+    const spot = (plan.spots || []).find(candidate =>
+      (!requestedSpotId || candidate.id === requestedSpotId) && Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type));
+    let report = diagnosticsByPlan.get(key);
+    if (!report) { report = {claims:[],rejections:[],links:[]}; diagnosticsByPlan.set(key,report); }
+    if (!spot) {
+      const diagnostic = {roomId:String(roomId),category,type:String(type),reason:'No unclaimed spot allows this placement.'};
+      report.rejections.push(diagnostic);
+      return {ok:false,reason:diagnostic.reason,diagnostic};
+    }
+    claims.set(spot.id,(claims.get(spot.id)||0)+1);
+    const claim = {roomId:String(roomId),networkId:idOf(plan.networkId)||null,spotId:spot.id,category,type:String(type),claimId:idOf(options.claimId)||null};
+    report.claims.push(claim);
+    return {ok:true,spot,claim};
+  }
+
+  function nextPuzzleLink(plan) {
+    if (!plan?.puzzleLinks?.length) return null;
+    const used = puzzleLinksByPlan.get(planStoreKey(plan)) || new Set();
+    return plan.puzzleLinks.find(link=>!used.has(link.id)) || null;
+  }
+
+  function canClaimPuzzleLinkForPlan(plan, roomId, mechanismType, activatorType) {
+    if (!plan) return true;
+    const link = nextPuzzleLink(plan);
+    if (plan.puzzleLinks?.length && !link) return false;
+    return canClaimSpotForPlan(plan,roomId,'mechanisms',mechanismType,link?.mechanismSpot)
+      && canClaimSpotForPlan(plan,roomId,'activators',activatorType,link?.activatorSpot);
+  }
+
+  function claimPuzzleLinkForPlan(plan, roomId, mechanismType, activatorType, options = {}) {
+    if (!plan) return {ok:true,legacy:true};
+    const link = nextPuzzleLink(plan);
+    if (plan.puzzleLinks?.length && !link) return {ok:false,reason:'No unclaimed authored puzzle relationship remains for this room.'};
+    const mechanism = claimSpotForPlan(plan,roomId,'mechanisms',mechanismType,{claimId:idOf(options.claimId)+':mechanism',spotId:link?.mechanismSpot});
+    if (!mechanism.ok) return {ok:false,reason:mechanism.reason,mechanism};
+    const activator = claimSpotForPlan(plan,roomId,'activators',activatorType,{claimId:idOf(options.claimId)+':activator',spotId:link?.activatorSpot});
+    if (!activator.ok) {
+      releaseSpotForPlan(plan,mechanism.claim);
+      return {ok:false,reason:activator.reason,mechanism,activator};
+    }
+    if (link) {
+      const key = planStoreKey(plan);
+      let used = puzzleLinksByPlan.get(key);
+      if (!used) {used=new Set();puzzleLinksByPlan.set(key,used);}
+      used.add(link.id);
+    }
+    const key = planStoreKey(plan);
+    const report = diagnosticsByPlan.get(key) || {claims:[],rejections:[],links:[]};
+    report.links ||= [];
+    report.links.push({roomId:String(roomId),linkId:link?.id||null,relation:link?.relation||'activates',mechanismSpotId:mechanism.spot?.id||null,activatorSpotId:activator.spot?.id||null,mechanismType:String(mechanismType),activatorType:String(activatorType)});
+    diagnosticsByPlan.set(key,report);
+    return {ok:true,link:link?clone(link):null,mechanism,activator};
+  }
+
+  function releaseSpotForPlan(plan, claim) {
+    if (!plan || !claim?.spotId) return false;
+    const claims = claimsByPlan.get(planStoreKey(plan));
+    if (!claims) return false;
+    const count = Number(claims.get(String(claim.spotId)) || 0);
+    if (count <= 0) return false;
+    if (count === 1) claims.delete(String(claim.spotId));
+    else claims.set(String(claim.spotId),count-1);
+    return true;
+  }
+
+  function getDiagnostics(network) {
+    const report = {claims:[],rejections:[],links:[]};
+    const seen = new Set();
+    const append = plan => {
+      if (!plan) return;
+      const key = planStoreKey(plan);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const entry = diagnosticsByPlan.get(key);
+      if (!entry) return;
+      report.claims.push(...entry.claims);
+      report.rejections.push(...entry.rejections);
+      report.links.push(...(entry.links||[]));
+    };
+    for (const plan of network?.roomAuthoringPlans || []) append(plan);
+    for (const room of network?.rooms || []) append(room.roomAuthoringPlan);
+    return clone(report);
+  }
+
 
   function roomPlan(network, roomId) {
     return (network?.roomAuthoringPlans || []).find(plan=>String(plan.roomId)===String(roomId)) || null;
