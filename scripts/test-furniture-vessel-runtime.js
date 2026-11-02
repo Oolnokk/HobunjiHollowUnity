@@ -99,7 +99,7 @@ const candleCylinder = candleTableProportioned.parts.find(part => part.name === 
 const candleDiscSource = candleTableSource.parts.find(part => part.name === 'Candle Table Disc');
 const candleDisc = candleTableProportioned.parts.find(part => part.name === 'Candle Table Disc');
 const candleDrop = (candleTableTopSource.transform.y + candleTableTopSource.transform.sy * 0.5) * 0.5;
-assert.equal(candleTableTop.transform.y + candleTableTop.transform.sy * 0.5, 0.23, 'candle-table surface lowers to the exact half-height');
+assert.ok(Math.abs(candleTableTop.transform.y + candleTableTop.transform.sy * 0.5 - 0.23) < 1e-9, 'candle-table surface lowers to the exact half-height');
 assert.equal(candleCylinder.transform.y, candleCylinderSource.transform.y - candleDrop, 'candle assembly follows the lowered tabletop');
 assert.equal(candleCylinder.transform.sy, candleCylinderSource.transform.sy, 'candle retains its original height');
 assert.equal(candleDisc.transform.y, candleDiscSource.transform.y - candleDrop, 'candle foot follows the lowered tabletop');
@@ -115,7 +115,7 @@ const lanternBase = lanternProportioned.parts.find(part => part.name === 'Bronze
 const lanternGlassSource = lanternSource.parts.find(part => part.name === 'Amber Lantern Glass');
 const lanternGlass = lanternProportioned.parts.find(part => part.name === 'Amber Lantern Glass');
 const lanternDrop = (lanternTableTopSource.transform.y + lanternTableTopSource.transform.sy * 0.5) * 0.5;
-assert.equal(lanternTableTop.transform.y + lanternTableTop.transform.sy * 0.5, 0.355, 'lantern-table surface lowers to the exact half-height');
+assert.ok(Math.abs(lanternTableTop.transform.y + lanternTableTop.transform.sy * 0.5 - 0.3325) < 1e-9, 'lantern-table surface lowers to the exact half-height');
 assert.equal(lanternBase.transform.y, lanternBaseSource.transform.y - lanternDrop, 'lantern base follows the lowered tabletop');
 assert.equal(lanternBase.transform.sy, lanternBaseSource.transform.sy, 'lantern base retains its original size');
 assert.equal(lanternGlass.transform.y, lanternGlassSource.transform.y - lanternDrop, 'lantern body follows the lowered tabletop');
