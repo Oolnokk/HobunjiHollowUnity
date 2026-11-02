@@ -492,6 +492,7 @@
   }
 
   function foodBuffEntries() {
+    if (!activeFoodEffects.length) return [];
     const now = currentGameHour(); // HUD countdowns use the same in-game clock as effect expiry.
     if (!Number.isFinite(now)) return [];
     hydratePendingFoodTimers(now);
@@ -502,10 +503,14 @@
   }
 
   function getFoodEffectStacks(effectKey) {
-    const now = currentGameHour(); // Expiry and stat reads pause whenever the calendar clock pauses.
-    if (!Number.isFinite(now)) return 0;
-    hydratePendingFoodTimers(now);
-    let total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAtGameHour > now).reduce((sum, effect) => sum + effect.stacks, 0);
+    let total = 0; // Food timers are only consulted while ordinary food buffs are actually active.
+    if (activeFoodEffects.length) {
+      const now = currentGameHour(); // Expiry and stat reads pause whenever the calendar clock pauses.
+      if (Number.isFinite(now)) {
+        hydratePendingFoodTimers(now);
+        total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAtGameHour > now).reduce((sum, effect) => sum + effect.stacks, 0);
+      }
+    }
     for (const provider of externalFoodProviders.values()) {
       try { total += Math.max(0, Number(provider(effectKey)) || 0); }
       catch (error) { window.__farmLog?.('[cooking] external food effect failed: ' + error.message, 'warn'); }
@@ -558,6 +563,7 @@
   }
 
   function update() {
+    if (!activeFoodEffects.length) { window.EffectBuffBar?.refresh(false); return; }
     const now = currentGameHour(); // The world clock naturally stops during pause and time-freeze passages.
     if (!Number.isFinite(now)) return;
     hydratePendingFoodTimers(now);
