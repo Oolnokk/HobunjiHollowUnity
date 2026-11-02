@@ -1,7 +1,7 @@
 (async()=>{
   try{
     const parts=[]; // Collects the split V24 core editor source before evaluating it as one application.
-    for(let i=1;i<=12;i++){
+    for(let i=1;i<=13;i++){
       const r=await fetch(`app.part${i}.txt`,{cache:'no-store'});
       if(!r.ok)throw new Error(`app.part${i}.txt: ${r.status}`);
       parts.push(await r.text());
