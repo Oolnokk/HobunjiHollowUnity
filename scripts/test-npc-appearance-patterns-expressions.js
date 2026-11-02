@@ -278,6 +278,7 @@ async function main() {
   scene.closeLine();
   assert.equal(window.portraitBreathingComposer.getExpression(npc.id), 'frown');
   // Player-owned clothing spans equipped gear, the stored gear collection and this world's Pack.
+  editor.readStoredPlayer = () => ({ characterId: 'hero', worldId: 'world-1' }); // Restore the player identity after the earlier Load player/import round-trip fixture.
   editor.work = {
     ...copy(npc),
     equippedCosmetics: ['old_mask', 'old_pants', 'rugged_poncho'],
