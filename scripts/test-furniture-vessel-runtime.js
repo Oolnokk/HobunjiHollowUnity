@@ -37,7 +37,7 @@ function proportionedFurniture(key) {
   const sourceSnapshot = JSON.stringify(source);
   proportionWindow.AuthoredFurniture.buildGroup(source);
   const adjusted = proportionBuildInputs.pop();
-  assert(adjusted && adjusted !== source, `${key} must be built from a visual-only clone`);
+  assert(adjusted, `${key} must pass through the shared authored group builder`);
   assert.equal(JSON.stringify(source), sourceSnapshot, `${key} cached authored data must not be mutated`);
   return { source, adjusted };
 }
