@@ -250,6 +250,7 @@
 
   // ── Gift acceptance ──────────────────────────────────────────────
   function offerClothing(npcId, instance) {
+    if (instance?.cursed) return { accepted: false, worn: false, cursed: true }; // Cursed clothing never enters an NPC wardrobe by gift or commission, whatever the caller checked.
     const walker = findWalker(npcId);
     const rec = findRecord(npcId); // Gift targets normally have a walker, but canonical lookup keeps wardrobe mutation tied to persistent NPC data.
     const defaults = ensureDefaults(npcId, rec);

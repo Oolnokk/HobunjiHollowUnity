@@ -400,7 +400,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261102hd9a5f8c"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261102hf73ffcf"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -779,7 +779,7 @@
   <!-- Crafting tab (Inventory panel's Crafting sub-tab, window.CraftingPanel)
        — furniture blueprints plus discovered ore-to-bar recipes; pure DOM/state,
        must load before game.js, which injects inventory and metallurgy data. -->
-  <script src="js/crafting-panel.js?v=20261026ungatedbar1"></script>
+  <script src="js/crafting-panel.js?v=20261102h8ab7e34"></script>
   <!-- Tool/weapon equipment-slot assignment and gear clothing (collection,
        equip/de-equip, redye panel — window.EquipmentPanel) — its
        buildEquipmentSlots() calls window.WhistleEquip.build() at render
@@ -2878,7 +2878,7 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261101spousebed2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261101h9f46e76"></script>
+  <script src="game.js?v=20261102h2a9ccc4"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

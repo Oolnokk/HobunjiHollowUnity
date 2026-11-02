@@ -465,6 +465,12 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'legacy_off_style')).allowed, true, 'legacy stored clothing without provenance stays wearable after load');
   assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'player_placed')).allowed, false, 'clothing placed by the player keeps the ordinary-NPC style gate');
   assert.equal(wardrobe.clothingWearability(rec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'an item that never came through a save or the NPC still fails closed');
+  // Cursed clothing is refused by the wardrobe itself, whichever caller (gift UI, commission turn-in) reaches it.
+  const cursedStoredBefore = wardrobe.getWardrobeContents(rec.id).stored.length;
+  const cursedVerdict = wardrobe.offerClothing(rec.id, { uid: 'cursed-gift', cosmeticId: 'fine_poncho', slot: 'overwear', cursed: { kind: 'circlet', dispelBy: 'garanki' } });
+  assert.equal(cursedVerdict.accepted, false, 'cursed clothing is never accepted as a gift');
+  assert.equal(cursedVerdict.worn, false, 'and is never put on');
+  assert.equal(wardrobe.getWardrobeContents(rec.id).stored.length, cursedStoredBefore, 'nor stored in the wardrobe');
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
   console.log('Immediate NPC wardrobe behavior passed.');
 })().catch(error => {
