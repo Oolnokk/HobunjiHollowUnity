@@ -198,11 +198,31 @@
     return defaultTraitSets[npcId] || new Set();
   }
 
+  // Clothing the player moved into a spouse wardrobe (storePackItem) carries sourcePackUid; it is the only
+  // stored clothing that did not come from the NPC itself, so it is the only kind subject to the style gate
+  // after the NPC stops being the spouse.
+  function isPlayerPlacedClothing(item) {
+    return !!item && Object.prototype.hasOwnProperty.call(item, 'sourcePackUid');
+  }
+
+  // Wardrobe contents saved before gifts recorded acceptedByNpcId (or stored from the NPC's own outfit) have
+  // no provenance marker, but they can only have come from the NPC: gifts were style-checked when accepted
+  // and the rest is the NPC's own clothing. Mark them so manual Wear keeps working for existing saves.
+  function adoptLegacyStoredClothing(npcId, list) {
+    if (!Array.isArray(list)) return;
+    for (const item of list) {
+      if (item && typeof item === 'object' && !item.acceptedByNpcId && !isPlayerPlacedClothing(item)) item.acceptedByNpcId = String(npcId);
+    }
+  }
+
   function isCurrentSpouse(npcId) {
     return !!npcId && String(window.RomanceSystem?.getSpouse?.()?.npcId || '') === String(npcId);
   }
 
   function isActiveSpouseWardrobe(npcId) {
+    if (activeWardrobeContext?.mounted && typeof document !== 'undefined' && !document.getElementById('npcWardrobeOverlay')) {
+      activeWardrobeContext = null; activeWardrobeRender = null; // The panel was removed without closeWardrobePanel(); the spouse-only privileges end with it.
+    }
     return !!activeWardrobeContext?.spouseWardrobe
       && activeWardrobeContext.npcId === String(npcId || '')
       && isCurrentSpouse(npcId);
@@ -213,9 +233,9 @@
     const hatedTrait = (rec?.gifts?.hated || []).find(trait => traits.includes(trait)); // Hated traits take precedence in refusal feedback when both bad tiers match.
     const dislikedTrait = (rec?.gifts?.disliked || []).find(trait => traits.includes(trait)); // Disliked traits also hard-veto ordinary NPC wear.
     const defaults = ensureDefaults(rec?.id, rec);
-    const styleMatch = defaults.size > 0
-      ? traits.some(trait => defaults.has(trait))
-      : (options.allowUnknownStyle === true || item?.acceptedByNpcId === rec?.id); // Only a gift the NPC already accepted can be re-worn when legacy style data is absent.
+    const acceptedByThisNpc = !!rec?.id && item?.acceptedByNpcId === rec.id; // A garment this NPC already accepted as a gift (or wore as its own) stays theirs even if its style data is absent or has since changed.
+    const styleMatch = acceptedByThisNpc
+      || (defaults.size > 0 ? traits.some(trait => defaults.has(trait)) : options.allowUnknownStyle === true);
     const spouseOverride = options.spouseOverride === true && isActiveSpouseWardrobe(rec?.id);
     const blockedTrait = hatedTrait || dislikedTrait || null;
     const styleBlocked = !spouseOverride && !styleMatch;
@@ -309,6 +329,7 @@
       uid: 'wcloth_' + Math.random().toString(36).slice(2, 10),
       cosmeticId,
       slot,
+      ...(isPlayerPlacedClothing(current) ? {} : { acceptedByNpcId: rec.id }), // The NPC's own default/gifted garment can always go back on; spouse-placed pieces keep their restriction.
     };
   }
 
@@ -548,6 +569,7 @@
     activeWardrobeRender = render;
     render();
     document.body.appendChild(overlay);
+    if (activeWardrobeContext) activeWardrobeContext.mounted = true; // From here the live overlay element is the source of truth for whether the panel is still open.
   }
 
   function getActiveSpouseWardrobeTarget() {
@@ -600,6 +622,7 @@
 
     const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // V3 is a strict superset; legacy stored-only saves still follow the old branch.
     Object.assign(stored, isV2 ? data.stored : data);
+    for (const npcId of Object.keys(stored)) adoptLegacyStoredClothing(npcId, stored[npcId]);
     if (!isV2 || !data.outfits || typeof data.outfits !== 'object') return;
     Object.assign(outfitOverrides, data.outfits);
     for (const npcId of Object.keys(outfitOverrides)) {

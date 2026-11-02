@@ -773,9 +773,13 @@
     // moving anything (the held-object depth replays): declares that `scene`'s
     // matrices are still the ones the base render just computed, so the secondary
     // passes may keep skipping their own scene-wide updateMatrixWorld().
-    markSceneMatricesCurrent(renderer, scene) {
+    // `computedAt` is when those matrices were really computed (the base render's end); the reuse
+    // age limit is measured from it, not from this call, so the replays cannot extend the window.
+    markSceneMatricesCurrent(renderer, scene, computedAt) {
       if (!renderer || !scene?.isScene) return false;
-      reuseSequenceByRenderer.set(renderer, { scene, baseAt: performance.now() });
+      const now = performance.now();
+      const baseAt = Number.isFinite(computedAt) ? Math.min(computedAt, now) : now;
+      reuseSequenceByRenderer.set(renderer, { scene, baseAt });
       return true;
     },
   };

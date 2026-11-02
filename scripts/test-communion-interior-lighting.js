@@ -130,6 +130,16 @@ assert(Number.isFinite(halfOpenAlpha) && Math.abs(halfOpenAlpha - 0.4) < 0.01, '
 lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
 draw();
 assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'fully open door allows the furniture light through');
+{
+  // Several lights in one lighting draw read the door blockers once, not once per light.
+  let blockerReads = 0;
+  localLights = [1, 2, 3, 4].map(n => ({ x: 3, y: 1, z: n, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }));
+  lightingWindow.InteriorDoorTiles = { getLightBlockers: () => { blockerReads++; return [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }]; } };
+  draw();
+  assert.equal(blockerReads, 1, 'door blockers are read once per lighting draw regardless of light count');
+  draw();
+  assert.equal(blockerReads, 2, 'the next draw reads fresh blockers');
+}
 lightingWindow.InteriorDoorTiles = null;
 draw();
 assert.equal(gradients[1].radius, 7.5, 'furniture light reaches farther so its edge can fade over a wider area');
