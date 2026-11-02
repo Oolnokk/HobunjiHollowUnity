@@ -1445,6 +1445,7 @@
     recordElevationGroups(groups);
     let scissorActive = false;
     let depthWasCleared = false;
+    let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
 
     internalReplay = true;
     try {
@@ -1453,6 +1454,13 @@
         glState.setScissorTest(true);
         scissorActive = true;
         scissoredReplayCount++;
+        // Same sub-frustum cull as replayHeldOverlay: these depth replays
+        // render the whole scene (MASK_ALL) once per elevation group plus a
+        // final restore, but can only write inside the scissor. Without it
+        // the shell pass cost about as many draw calls as the base pass.
+        if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes)));
+        }
       } else {
         fullscreenReplayCount++;
         lastReplayScissorCoverage = 1;
@@ -1527,6 +1535,7 @@
           }
         }
       } finally {
+        if (replayCulled) restoreVisibility(replayCulled);
         clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
         if (scissorActive) restoreRendererScissor(renderer);
         camera.layers.mask = oldCameraMask;

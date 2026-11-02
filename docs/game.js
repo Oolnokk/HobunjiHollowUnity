@@ -9134,133 +9134,9 @@
       // exact same map, not a fresh reroll.
       let _tothalShiftedThisSession = false;
 
-      // Cache of performTothalShift's per-zone generator output, keyed by
-      // world+year+zone (the same string already used to seed the
-      // generator) plus the generator/fold scripts' own cache-busting
-      // ?v= tags. generateZoneWorkspace + buildMergedZoneGrid are pure
-      // functions of that seed — reachability validation/repair, plateau
-      // generation and animal-route pathfinding inside them measured at
-      // several seconds of blocking main-thread work per zone, redone from
-      // scratch on *every single page load* even though a same-year reload
-      // always reproduces the exact same result. Caching their raw output
-      // here lets a same-year session skip straight to replaying the
-      // (cheap) NPC-station/building/decor bookkeeping that follows.
-      //
-      // IndexedDB, not localStorage: one zone's merged tile grid alone
-      // serializes to several MB, which blew straight through localStorage's
-      // ~5-10MB per-origin quota after just the first zone — the other three
-      // zones' writes then failed (silently, since caching here is a pure
-      // optimization) and kept regenerating every load anyway. IndexedDB's
-      // quota is disk-sized, and its structured-clone storage accepts the
-      // tiles Map directly, no JSON (de)serialization needed. Mirrors the
-      // openDb/idbGet/idbSet helper shape docs/js/local-save-folder-core.js
-      // already uses for its own IndexedDB store, as its own separate DB
-      // (this one is a disposable cache, not save data worth backing up).
-      const _TOTHAL_GEN_VERSION_TAG = (() => {
-        const versionOf = (fileName) => {
-          const el = document.querySelector(`script[src*="${fileName}"]`);
-          const m = el && el.src.match(/[?&]v=([^&]+)/);
-          return m ? m[1] : 'noversion';
-        };
-        return `${versionOf('wilderness-map-generator.js')}_${versionOf('terrain-preview.js')}`;
-      })();
-      const _TOTHAL_CACHE_DB_NAME = 'hobunji-tothal-zone-cache';
-      const _TOTHAL_CACHE_STORE = 'zones';
-      function _tothalCacheOpenDb() {
-        return new Promise((resolve, reject) => {
-          const req = indexedDB.open(_TOTHAL_CACHE_DB_NAME, 1);
-          req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(_TOTHAL_CACHE_STORE)) req.result.createObjectStore(_TOTHAL_CACHE_STORE);
-          };
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-      }
-      async function _tothalCacheGet(key) {
-        try {
-          const db = await _tothalCacheOpenDb();
-          return await new Promise((resolve, reject) => {
-            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).get(key);
-            req.onsuccess = () => resolve(req.result ?? null);
-            req.onerror = () => reject(req.error);
-          });
-        } catch (_) { return null; }
-      }
-      async function _tothalCacheSet(key, value) {
-        try {
-          const db = await _tothalCacheOpenDb();
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
-            tx.objectStore(_TOTHAL_CACHE_STORE).put(value, key);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
-        } catch (_) {
-          // Quota exceeded or storage unavailable — this cache is a pure
-          // optimization; silently skip it and let next session regenerate.
-        }
-      }
-      async function _tothalCacheDeleteKeys(keys) {
-        if (!keys.length) return;
-        try {
-          const db = await _tothalCacheOpenDb();
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(_TOTHAL_CACHE_STORE, 'readwrite');
-            keys.forEach(k => tx.objectStore(_TOTHAL_CACHE_STORE).delete(k));
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
-        } catch (_) {}
-      }
-      async function _tothalCacheAllKeys() {
-        try {
-          const db = await _tothalCacheOpenDb();
-          return await new Promise((resolve, reject) => {
-            const req = db.transaction(_TOTHAL_CACHE_STORE, 'readonly').objectStore(_TOTHAL_CACHE_STORE).getAllKeys();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
-          });
-        } catch (_) { return []; }
-      }
-      function _tothalZoneCacheKey(worldId, year, zoneId) {
-        return `hobunji_tothal_zonecache_v2_${_TOTHAL_GEN_VERSION_TAG}_${worldId}_y${year}_${zoneId}`;
-      }
-      async function _loadTothalZoneCache(key) {
-        const cached = await _tothalCacheGet(key);
-        if (!cached?.merged || !cached?.workspace) return null;
-        return cached; // merged.tiles is already a real Map (IndexedDB structured clone, not JSON)
-      }
-      async function _saveTothalZoneCache(key, workspace, merged) {
-        await _tothalCacheSet(key, {
-          workspace: {
-            entry: workspace.entry || null,
-            tradeExit: workspace.tradeExit || null,
-            animalDens: workspace.animalDens || [],
-            localeInstances: workspace.localeInstances || [],
-            localeTransitions: (workspace.maps || []).find(map => map && !map.isSubmap)?.transitions?.filter(t => t?.generatedLocaleId) || [], // Restored zones need the stamped cave entrances as well as their instance markers.
-            rootTotems: workspace.rootTotems || [],
-            foliagePatches: workspace.foliagePatches || [],
-            wildernessFoliageFurniture: workspace.wildernessFoliageFurniture || [],
-            ambushStations: workspace.ambushStations || [],
-          },
-          merged: {
-            cols: merged.cols, rows: merged.rows, tiles: merged.tiles,
-            mesas: merged.mesas, buildings: merged.buildings,
-          },
-        });
-      }
-      // Drops this world's stale zone caches (older years or a stale
-      // generator/fold version) before writing this shift's entries, so a
-      // save that's played across many Tothal years doesn't accumulate an
-      // unbounded pile of dead cache entries. Other worlds' caches are left
-      // untouched.
-      async function _evictStaleTothalZoneCaches(worldId, year) {
-        const prefixes = ['hobunji_tothal_zonecache_v1_', 'hobunji_tothal_zonecache_v2_']; // Discard obsolete entries that lost stamped locale entrances.
-        const keep = new Set(WildernessMapGenerator.zoneMapIds().map(zoneId => _tothalZoneCacheKey(worldId, year, zoneId)));
-        const allKeys = await _tothalCacheAllKeys();
-        const stale = allKeys.filter(k => typeof k === 'string' && prefixes.some(prefix => k.startsWith(prefix)) && k.includes(`_${worldId}_y`) && !keep.has(k));
-        await _tothalCacheDeleteKeys(stale);
-      }
+      // The IndexedDB cache of performTothalShift's per-zone generator output
+      // (key/load/save/evictStale) now lives in js/tothal-zone-cache.js
+      // (window.TothalZoneCache).
 
       // Regenerates all four wilderness zones for the given Tothal year and
       // saves that year to the world file so future checks this session skip
@@ -9289,6 +9165,11 @@
           // it's generating -- so the pool of locales still needing a home
           // shrinks as each zone claims one, and a zone that couldn't fit a
           // locale simply leaves it for the next zone to try.
+          // Every zone's cache read is issued now, alongside the locale
+          // fetch and before this shift writes anything: IndexedDB queues a
+          // read behind any earlier multi-MB zone write, which made each
+          // later zone's lookup wait tens of seconds when read in the loop.
+          const cachedZonesPromise = forceRegenerate ? null : window.TothalZoneCache.loadAll(worldId, year, WildernessMapGenerator.zoneMapIds()); // Explicit dev forcing must rebuild this deterministic same-year zone instead of replaying its IndexedDB cache.
           const localeDefs = await loadStampableLocaleDefs();
           // Warm the bandit config/locale fetches now (both are cached-promise
           // singletons) so the first wilderness visit doesn't have to wait on
@@ -9297,13 +9178,15 @@
           // against the finished zone (see ensureCurrentZoneBanditCamps).
           window.BanditCombat?.loadGangConfig();
           window.BanditCombat?.loadCampLocaleDefs();
-          await _evictStaleTothalZoneCaches(worldId, year);
+          // Housekeeping for the IndexedDB cache isn't awaited: it never
+          // touches this shift's keys, and enterZone waits on this whole shift.
+          window.TothalZoneCache.evictStale(worldId, year, WildernessMapGenerator.zoneMapIds());
           let remainingLocales = window.RuinSites?.expandLocaleDefs?.(localeDefs, year, WildernessMapGenerator.zoneMapIds()) || localeDefs.slice(); // Ruin-entrance templates become rotated per-zone copies for this cycle (js/ruin-site-locales.js).
           for (const zoneId of WildernessMapGenerator.zoneMapIds()) {
             const seed = `${worldId}_tothal_y${year}_${zoneId}`;
             const preserved = TOTHAL_PRESERVED_TRANSITIONS[zoneId] || [];
-            const cacheKey = _tothalZoneCacheKey(worldId, year, zoneId);
-            const cached = forceRegenerate ? null : await _loadTothalZoneCache(cacheKey); // Explicit dev forcing must rebuild this deterministic same-year zone instead of replaying its IndexedDB cache.
+            const cacheKey = window.TothalZoneCache.key(worldId, year, zoneId);
+            const cached = cachedZonesPromise ? (await cachedZonesPromise).get(zoneId) || null : null;
             let workspace, merged;
             if (cached) {
               ({ workspace, merged } = cached);
@@ -9328,7 +9211,7 @@
                 continue;
               }
               if (!merged) { debugLog(`Tothal Shift: no fold math available for ${zoneId}, skipping`, 'warn'); continue; }
-              await _saveTothalZoneCache(cacheKey, workspace, merged);
+              window.TothalZoneCache.save(cacheKey, workspace, merged); // Next-load optimization only; snapshotted now, committed in the background.
             }
 
             const localeInstances = workspace.localeInstances || [];

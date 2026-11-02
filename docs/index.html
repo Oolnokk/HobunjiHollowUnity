@@ -481,7 +481,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261102roofjoin2&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261102h26920d8&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -866,7 +866,8 @@
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <script src="js/shattercasks.js?v=20261102shattercaskSfx1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
-  <script src="js/stampable-locale-defs.js?v=20261010h93ea9d8"></script>
+  <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
+  <script src="js/tothal-zone-cache.js?v=20261102a"></script>
   <script src="js/ruin-sites.js?v=20261031storyVault1"></script>
   <script src="js/zone-den-totem-features.js?v=20261102furnsurface2"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
@@ -2661,7 +2662,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261102surfacecomposer5"></script>
+  <script src="js/tool-icon-render.js?v=20261102h932403c"></script>
   <script src="js/sprite-recolor.js?v=20261028hspriterecoloraudit2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2879,7 +2880,7 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261102vertical90"></script>
+  <script src="game.js?v=20261102h2aaf127"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
