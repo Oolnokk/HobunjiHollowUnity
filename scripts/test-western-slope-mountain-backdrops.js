@@ -25,6 +25,9 @@ const oreTexturesScript = author.indexOf('../../js/ore-rock-textures.js?'); // T
 const backdropScript = author.indexOf('../../js/western-slope-mountain-backdrops.js?'); // Runtime must load only after both mine-rock dependencies.
 assert(terrainGeometryScript >= 0 && terrainGeometryScript < backdropScript, 'author page must load terrain geometry before the rock-ridge runtime');
 assert(oreTexturesScript >= 0 && oreTexturesScript < backdropScript, 'author page must load mine-rock textures before the rock-ridge runtime');
+const authorAssetBase = author.indexOf("window.OreRockTexturesAssetBase='../../';"); // The shared mine texture is rooted at docs/ in the standalone nested tool.
+assert(authorAssetBase >= 0 && authorAssetBase < oreTexturesScript, 'author page must configure the texture base before loading mine-rock materials');
+assert(author.includes('ore-rock-textures.js?v=20261102authorAssetBase1'), 'author page must use the refreshed shared mine-texture module');
 assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no longer present the PNG as the live scenery');
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
