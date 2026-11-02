@@ -45,6 +45,7 @@ sixty.window.__mapEditorOrbitActive=false;sixty.target=null;
 sixty.updateMobileAutoTargetCamera(1/60);assert.equal(sixty.cameraAzimuthOffsetDeg,blocked,'no target leaves the camera unchanged');
 const behind=tracker();behind.desiredYaw=2.5;behind.updateMobileAutoTargetCamera(1/60);
 assert(behind.cameraAzimuthOffsetDeg<0&&Math.abs(behind.cameraAzimuthOffsetDeg)<10,'behind-camera lock turns gradually without flipping');
+assert(Math.abs(behind.cameraAzimuthOffsetDeg)<10,'rear target camera correction remains below 10 degrees on the first frame');
 
 const orbit=tracker(5); // Model the existing player-centered camera boom rather than an in-place camera rotation.
 orbit.camera.matrixWorldInverse.localTarget=(point)=>{
