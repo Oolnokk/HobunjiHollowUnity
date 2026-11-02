@@ -3330,6 +3330,10 @@ renderProfile.defaultFrontLayerOrder = DEFAULT_FRONT_LAYER_ORDER;
 renderProfile.previewLayerOrderPresets = PREVIEW_LAYER_ORDER_PRESETS;
 
 window.loadPortraitCosmetics = loadPortraitCosmetics;
+window.getPortraitLayerOrders = () => ({
+  front: [...DEFAULT_FRONT_LAYER_ORDER],
+  behind: [...DEFAULT_BEHIND_LAYER_ORDER],
+}); // Character Studio consumes the canonical renderer order without duplicating its layer definitions.
 window.renderPortraitProfile = renderProfile;
 // renderProfile is also exported as window.renderProfile for consumers that check that name
 // (bootstrap.js, scratchbones-lobby.js).
