@@ -20,6 +20,10 @@ close.updateMobileAutoTargetCamera(1/60);far.updateMobileAutoTargetCamera(1/60);
 assert(far.cameraAzimuthOffsetDeg<close.cameraAzimuthOffsetDeg&&close.cameraAzimuthOffsetDeg<0,'close targets turn the camera more slowly');
 assert(Math.abs(far.cameraAzimuthOffsetDeg)<0.6*180/Math.PI,'camera cannot snap to target');
 assert(far.cameraAngleOffsetDeg<0,'target above center lowers downward pitch');
+const nearFast=tracker(0.5); // Even a nearby target should settle almost immediately, without snapping in one frame.
+for(let i=0;i<6;i++)nearFast.updateMobileAutoTargetCamera(1/60);
+assert(Math.abs(nearFast.cameraAzimuthOffsetDeg)>0.9*0.6*180/Math.PI,'nearby player auto-target settles at least 90% of the camera correction in about 0.1 seconds');
+assert(Math.abs(nearFast.cameraAzimuthOffsetDeg)<0.6*180/Math.PI,'nearby player auto-target approaches smoothly without overshooting');
 assert.deepEqual({...far.currentCombatReticleNDC()},{x:0,y:0},'reticle always stays at screen center');
 const sixty=tracker(),thirty=tracker(); // Equal elapsed time must produce equivalent camera tracking across mobile frame rates.
 for(let i=0;i<60;i++)sixty.updateMobileAutoTargetCamera(1/60);
@@ -41,6 +45,7 @@ sixty.window.__mapEditorOrbitActive=false;sixty.target=null;
 sixty.updateMobileAutoTargetCamera(1/60);assert.equal(sixty.cameraAzimuthOffsetDeg,blocked,'no target leaves the camera unchanged');
 const behind=tracker();behind.desiredYaw=2.5;behind.updateMobileAutoTargetCamera(1/60);
 assert(behind.cameraAzimuthOffsetDeg<0&&Math.abs(behind.cameraAzimuthOffsetDeg)<10,'behind-camera lock turns gradually without flipping');
+assert(Math.abs(behind.cameraAzimuthOffsetDeg)<10,'rear target camera correction remains below 10 degrees on the first frame');
 
 const orbit=tracker(5); // Model the existing player-centered camera boom rather than an in-place camera rotation.
 orbit.camera.matrixWorldInverse.localTarget=(point)=>{
