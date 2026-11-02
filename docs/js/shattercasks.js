@@ -837,7 +837,7 @@
     if(typeof handler==='function'){
       const accepted=handler(burden,cause); // Keep flying=true through the callback so existing impact resolvers use the live world-space collision height.
       if(accepted===false){burden.flying=false;refreshMeshBounds(burden);return false;}
-      if(!burden.exploded)burden.flying=false;
+      if(!burden.exploded){burden.flying=false;refreshMeshBounds(burden);} // An intact custom Burden remains a live collision target at its new landing position.
       return true;
     }
     if(burden.kind==='soursap')return detonateFruit(burden,cause);

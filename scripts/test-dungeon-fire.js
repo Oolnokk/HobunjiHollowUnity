@@ -161,6 +161,11 @@ async function main() {
   assert.equal(mappedIndices[0], 1, 'the chosen anchor is the actual metal pixel nearest the metal-region centroid');
   assert.equal(thrown.projectile._dungeonFire.worldFlame.name, 'dungeonFire_worldUprightFlame',
     'thrown weapons use the same tall world-upright plume object');
+  assert.deepEqual(
+    [thrown.projectile._dungeonFire.worldFlame.position.x,thrown.projectile._dungeonFire.worldFlame.position.y,thrown.projectile._dungeonFire.worldFlame.position.z],
+    [thrown.projectile.mesh.position.x,thrown.projectile.mesh.position.y,thrown.projectile.mesh.position.z],
+    'the flame starts at the projectile rather than flashing at scene origin before the image anchor resolves'
+  );
 
   const arrow = makeProjectile('arrow', 'assets/test-arrow.png');
   assert(api.attachProjectile(arrow.projectile), 'ordinary ranged projectile receives the shared flame');

@@ -123,6 +123,7 @@
     const scene = projectile.mesh?.parent;
     if (!scene) { ACTIVE_VISUALS.delete(state); projectile._dungeonFire=null; state.disposed=true; return false; }
     state.worldFlame = createWorldFlame();
+    state.worldFlame.position.copy(state.anchorWorld); // Avoid a one-frame flame flash at scene origin before the source-pixel anchor resolves.
     scene.add(state.worldFlame);
     resolveProjectileAnchor(projectile,state).then(anchor => {
       if (state.disposed || projectile.dead) return;
