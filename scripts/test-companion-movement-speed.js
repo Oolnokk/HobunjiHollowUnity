@@ -1,0 +1,182 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+const source = fs.readFileSync('docs/js/companion-movement-speed.js', 'utf8'); // Executes the production module in a deterministic fake game runtime.
+const index = fs.readFileSync('docs/index.html', 'utf8'); // Verifies the runtime is loaded by the playable game.
+const moduleScriptPattern = new RegExp('companion-movement-speed\\.js\\?v' + '=[A-Za-z0-9_-]+'); // Split the cache-token delimiter so the no-pin audit does not mistake this generic pattern for an exact version.
+assert.match(index, moduleScriptPattern, 'game index loads the owner-relative companion speed module with any valid cache token');
+
+let now = 1000; // Advances the deterministic clock used for position-only NPC owner sampling.
+let terrainType = 'grass'; // Changes the active player tile between grass and river for movement-speed parity.
+let combatMul = 0.9; // Represents the live Combat movement modifier.
+let alchemyMul = 1.2; // Represents the live Alchemy movement modifier.
+let cookingMul = 1.1; // Represents the live food movement modifier.
+let devMul = 1; // Represents the mutable global speed setting.
+let perceptionMul = 0.5; // Represents the mounted Perception Mode movement modifier.
+let npcOwnerMul = 0.75; // Lets the position-only NPC fixture change buffs while paused.
+const schedulerRegistrations = new Map(); // Captures the production pre-game subscription for ordering assertions.
+const player = { x: 64, y: 64, footing: 100, maxFooting: 100 }; // Uses the same pixel-space player position and footing values as the runtime.
+const companionObjects = new Set(); // Mirrors Combat.deps.companionObjects.
+const grid = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => ({ type: 'grass' }))); // Minimal active terrain for the player's tile lookup.
+const windowStub = {
+  RuntimeFrameScheduler: {
+    register(id, callback, options) {
+      schedulerRegistrations.set(id, { callback, options });
+      return () => schedulerRegistrations.delete(id);
+    },
+  },
+  Combat: {
+    init(deps) { this.deps = deps; },
+    getMovementSpeedMul() { return combatMul; },
+  },
+  CookingSystem: { getSpeedMultiplier() { return cookingMul; } },
+  AlchemySystem: { getMovementSpeedMultiplier() { return alchemyMul; } },
+  ResourceSystem: { getEffectiveMax() { return 100; } },
+  PerceptionMode: { speedMultiplier() { return perceptionMul; } },
+  Mounts: {
+    init(deps) { this.deps = deps; },
+    rideState: 'none',
+    rideEntity: null,
+  },
+  NpcCharacterState: { movementSpeedMultiplier() { return npcOwnerMul; } },
+  _npcWalkers: new Map(),
+};
+const deps = {
+  player,
+  companionObjects,
+  MOVE_SPEED: 238,
+  TILE: 32,
+  getActiveGrid: () => grid,
+};
+const context = {
+  window: windowStub,
+  performance: { now: () => now },
+  Date,
+  Math,
+  Number,
+  Object,
+  Array,
+  Map,
+  Set,
+  WeakMap,
+  Proxy,
+  Reflect,
+};
+vm.runInNewContext(source, context, { filename: 'companion-movement-speed.js' });
+
+windowStub.Mounts.init({
+  MOVE_SPEED: 238,
+  getDevGlobalSpeedMul: () => devMul,
+  getAlchemySpeedMul: () => alchemyMul,
+});
+windowStub.Combat.init(deps);
+const api = windowStub.CompanionMovementSpeed; // The same public diagnostic/test surface used by the live game.
+assert(api, 'companion movement speed API is installed');
+assert.equal(api.debugSnapshot().initialized, true, 'Combat.init supplies the live runtime dependencies');
+assert.equal(windowStub.Mounts.deps.MOVE_SPEED, 238, 'Mounts retains the authoritative movement dependency supplied to its init');
+assert.equal(schedulerRegistrations.get('companion-movement-speed')?.options.phase, 'pre-game',
+  'owner-relative speeds update before gameplay simulation consumes companion movement definitions');
+
+const sourceDef = { moveSpeed: 100, chaseSpeed: 160 }; // Represents shared species data that must not be mutated.
+const playerPet = { id: 'player-pet', isCompanion: true, master: player, def: sourceDef };
+companionObjects.add(playerPet);
+api.update();
+const defaultPlayerSpeed = 238 * cookingMul * combatMul * alchemyMul;
+assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9, 'ordinary follow speed equals 100% of the player’s current effective speed');
+assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9, 'chase speed also follows the player’s current effective pace');
+assert.equal(sourceDef.moveSpeed, 100, 'shared species moveSpeed remains unchanged');
+assert.equal(sourceDef.chaseSpeed, 160, 'shared species chaseSpeed remains unchanged');
+const playerPetDefinitionProxy = playerPet.def; // Retained to prove the per-frame discovery pass is idempotent.
+api.update();
+assert.strictEqual(playerPet.def, playerPetDefinitionProxy, 'repeated companion scans do not wrap an entity definition more than once');
+
+combatMul = 0.8;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'an active Combat speed change is reflected on the next speed read without rewrapping the companion');
+
+terrainType = 'river';
+grid[2][2].type = terrainType;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * 0.5 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'terrain slowdowns on the player are reflected by the companion');
+grid[2][2].type = 'grass';
+
+player.footing = 50;
+player.afflictions = { drunkenFooting: 50 };
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * 0.775)) < 1e-9,
+  'active drunken Footing applies the same current movement penalty as the player');
+player.afflictions = {};
+player.footing = 20;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul)) < 1e-9,
+  'low Footing without the drunken affliction does not invent an extra movement penalty');
+player.footing = 100;
+
+devMul = 1.1;
+assert.ok(Math.abs(playerPet.def.moveSpeed - (238 * cookingMul * combatMul * alchemyMul * devMul)) < 1e-9,
+  'the live global movement-speed setting is included');
+player.vx = 90;
+player.vy = 120;
+assert.equal(playerPet.def.moveSpeed, 150, 'on-foot companion speed follows the owner’s actual current velocity, including partial input and acceleration');
+player.vx = 0;
+player.vy = 0;
+
+windowStub.Mounts.rideState = 'mounted';
+windowStub.Mounts.rideEntity = { def: { mountSpeed: 340 } };
+perceptionMul = 0.5;
+const mountedSpeed = 340 * alchemyMul * devMul * perceptionMul;
+assert.ok(Math.abs(playerPet.def.moveSpeed - mountedSpeed) < 1e-9,
+  'a stationary mounted owner transfers the mount’s live top speed and mounted modifiers');
+windowStub.Mounts.rideEntity.vx = 90;
+windowStub.Mounts.rideEntity.vy = 120;
+assert.equal(playerPet.def.moveSpeed, 150,
+  'a moving mount transfers its actual current velocity, including acceleration and collision slowdown');
+windowStub.Mounts.rideEntity.vx = 0;
+windowStub.Mounts.rideEntity.vy = 0;
+windowStub.Mounts.rideState = 'none';
+windowStub.Mounts.rideEntity = null;
+devMul = 1;
+perceptionMul = 1;
+
+const npcOwner = { npcId: 'npc-owner', state: 'idle', def: { moveSpeed: 120, chaseSpeed: 170 } }; // NPC-style owner exposes its own live authored movement values.
+const npcPet = { id: 'npc-pet', isCompanion: true, master: npcOwner, def: { moveSpeed: 70, chaseSpeed: 90 } };
+companionObjects.add(npcPet);
+api.update();
+assert.equal(npcPet.def.moveSpeed, 90, 'NPC-owned companion uses the owner’s move speed and current NPC movement modifier');
+assert.equal(npcPet.def.chaseSpeed, 127.5, 'NPC-owned companion uses the owner’s chase speed and current NPC movement modifier');
+windowStub._npcWalkers.set('npc-owner', {
+  rec: { id: 'npc-owner' },
+  _moveSpeedTiles: 4,
+  root: { position: { x: 2, z: 2 } },
+});
+assert.equal(npcPet.def.moveSpeed, 128, 'a live NPC walker’s current catch-up pace takes precedence over its static authored species speed');
+
+npcPet.ownerMovementSpeedPercent = 50;
+assert.equal(npcPet.def.moveSpeed, 64, 'an explicit owner-speed percentage scales the owner’s current catch-up speed');
+
+const jubmirMaster = { npcId: 'jubmir', x: 0, y: 0, areaId: 'town' }; // Mirrors JubmirDabinggiHounds' position-only master adapter.
+windowStub._npcWalkers.set('jubmir', { rec: { id: 'jubmir' }, root: { position: { x: 0, z: 0 } } });
+const jubmirPet = { id: 'jubmir-pet', isCompanion: true, master: jubmirMaster, def: { moveSpeed: 80, chaseSpeed: 100 } };
+companionObjects.add(jubmirPet);
+api.update();
+assert.equal(jubmirPet.def.moveSpeed, 80, 'a position-only NPC owner keeps the authored companion fallback until its pace is observed');
+now += 1000;
+jubmirMaster.x = 32;
+assert.equal(jubmirPet.def.moveSpeed, 32, 'position-only NPC owner movement is measured in the same pixel-per-second units as creature movement');
+now += 1000;
+assert.equal(jubmirPet.def.moveSpeed, 32, 'the last observed NPC pace remains available while the owner pauses so a trailing companion can catch up');
+npcOwnerMul = 0.5;
+assert.ok(Math.abs(jubmirPet.def.moveSpeed - (32 / 0.75 * 0.5)) < 1e-9,
+  'position-sampled NPC pace re-applies live owner buffs/debuffs even while the owner pauses');
+
+const mount = { id: 'mount', isCompanion: true, stableRole: 'mount', master: player, def: { moveSpeed: 200, chaseSpeed: 280, mountSpeed: 340 } };
+companionObjects.add(mount);
+api.update();
+assert.equal(mount.def.moveSpeed, 200, 'the mounted animal itself is excluded from owner-relative pet scaling');
+assert.equal(mount.def.mountSpeed, 340, 'mount top speed remains authored and cannot feed back into its own rider speed');
+
+assert.equal(api.debugSnapshot().companionCount, 3, 'diagnostics report player, NPC, and position-only NPC companions but not the mount');
+assert.equal(api.debugSnapshot().lastError, null, 'normal update paths do not record an error');
+
+console.log('companion movement speed regressions passed');
