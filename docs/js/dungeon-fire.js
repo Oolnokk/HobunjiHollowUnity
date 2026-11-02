@@ -83,32 +83,60 @@
     state.worldFlame.rotation.y = state.worldFlame.userData.baseRotationY + Math.sin(state.age * 19) * .22;
   }
 
+  function representativeMetalAnchor(mask) {
+    const indices=mask?.indices;
+    if(!mask||!indices?.length||!(mask.width>0)||!(mask.height>0))return null;
+    let sumX=0,sumY=0;
+    for(const index of indices){sumX+=index%mask.width;sumY+=Math.floor(index/mask.width);}
+    const centerX=sumX/indices.length,centerY=sumY/indices.length;
+    let selected=indices[0],best=Infinity;
+    for(const index of indices){
+      const dx=index%mask.width-centerX,dy=Math.floor(index/mask.width)-centerY;
+      const distance=dx*dx+dy*dy;
+      if(distance<best){best=distance;selected=index;}
+    }
+    return {width:mask.width,height:mask.height,index:selected,opaquePixels:mask.matchedMetalPixels||indices.length,source:'metal'};
+  }
+
+  function resolveProjectileAnchor(projectile,state) {
+    const vfx=window.WeaponEnchantmentVFX;
+    const opaqueFallback=()=>Promise.resolve(vfx?.opaqueAnchorForSprite?.(state.spritePath))
+      .then(anchor=>anchor?{...anchor,source:'opaque'}:null);
+    if(projectile.def?.rangedType!=='thrown'||typeof vfx?.metalMaskForSprite!=='function')return opaqueFallback();
+    return Promise.resolve(vfx.metalMaskForSprite(state.spritePath))
+      .then(representativeMetalAnchor)
+      .catch(()=>null)
+      .then(anchor=>anchor||opaqueFallback());
+  }
+
   function attachProjectile(projectile) {
     if (!projectile || projectile.dungeonFire !== true || projectile._dungeonFire) return false;
     const plane = projectile.mesh?.userData?.projectilePlane || projectile.mesh?.userData?.facePivot?.children?.find?.(child => child.isMesh) || null;
     const state = {
       projectile, plane, spritePath:projectile.def?.projectileSprite || '',
-      worldFlame:null, anchor:null,
+      worldFlame:null, anchor:null, anchorKind:null,
       anchorWorld:projectile.mesh.position.clone(),previousAnchorWorld:projectile.mesh.position.clone(),
       age:0, disposed:false,
     };
     projectile._dungeonFire = state;
     ACTIVE_VISUALS.add(state);
     const scene = projectile.mesh?.parent;
-    if (!scene) return false;
+    if (!scene) { ACTIVE_VISUALS.delete(state); projectile._dungeonFire=null; state.disposed=true; return false; }
     state.worldFlame = createWorldFlame();
     scene.add(state.worldFlame);
-    const alphaPromise = window.WeaponEnchantmentVFX?.opaqueAnchorForSprite?.(state.spritePath);
-    Promise.resolve(alphaPromise).then(anchor => {
+    resolveProjectileAnchor(projectile,state).then(anchor => {
       if (state.disposed || projectile.dead) return;
       const resolved = anchor || (plane?.geometry?.parameters
-        ? { width:1, height:1, index:0, opaquePixels:0 }
+        ? { width:1, height:1, index:0, opaquePixels:0, source:'fallback' }
         : null);
       if (!resolved || !plane) return;
       const local = window.WeaponEnchantmentVFX?.metalPixelToLocal?.(resolved.index, resolved, plane);
       state.anchor = local ? { x:local.x, y:local.y } : { x:0, y:0 };
-      lastEvent = anchor ? 'projectile fire anchored to top opaque pixel' : 'projectile fire used centre fallback';
-    }).catch(() => { state.anchor = { x:0, y:0 }; });
+      state.anchorKind=resolved.source||'fallback';
+      lastEvent = state.anchorKind==='metal' ? 'thrown fire anchored to source metal pixels'
+        : state.anchorKind==='opaque' ? 'projectile fire anchored to top opaque pixel'
+        : 'projectile fire used centre fallback';
+    }).catch(() => { state.anchor = { x:0, y:0 }; state.anchorKind='fallback'; });
     lastEvent = 'world-space projectile flame created';
     return true;
   }
@@ -164,7 +192,7 @@
       if (HIT_BOX.isEmpty()) continue;
       const padding = plumeRadius + Math.max(0, Number(target.contactPadding) || .12);
       HIT_BOX.expandByScalar(padding);
-      HIT_BOX.min.y -= plumeHeight; // Expanding target bounds downward models fire rising above the projectile/alpha-pixel anchor.
+      HIT_BOX.min.y -= FLAME_HEIGHT; // Expanding target bounds downward models fire rising above the projectile/alpha-pixel anchor.
       const t = segmentBoxInterval(HIT_START, HIT_END, HIT_BOX);
       if (t == null || (nearest && t >= nearest.t)) continue;
       nearest = { target, t };
@@ -235,6 +263,7 @@
       activeVisuals:ACTIVE_VISUALS.size,
       thrownVisuals:[...ACTIVE_VISUALS].filter(state => state.projectile?.def?.rangedType === 'thrown').length,
       worldFlames:[...ACTIVE_VISUALS].filter(state => !!state.worldFlame).length,
+      anchorKinds:[...ACTIVE_VISUALS].map(state=>state.anchorKind||'pending'),
       lastEvent,
     }),
     _test:Object.freeze({ segmentBoxInterval, createFlameShape }),

@@ -294,14 +294,14 @@
     world.group.add(group);
     const targetMesh=group.userData.dungeonFireParts.collider;
     const record=addMechanismRecord({id:'dungeon-fire-cleansing-brazier-'+index,kind:'cleansingBrazier',group,hitObject:targetMesh,point,radius:CLEANSING_RADIUS,cleansed:0});
-    registerFireTarget(record,brazer=>{
-      if(brazer.cleansed>0)return false;
+    registerFireTarget(record,brazier=>{
+      if(brazier.cleansed>0)return false;
       brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;
       if(!brazier.cleansed){lastEvent='cleansing brazier burned but no plasm in radius';return false;}
       const parts=group.userData.dungeonFireParts;
       parts.ember.material.color.setHex(0x72ffbd);
       parts.pilot.visible=true;
-      lastEvent='Kanthic plasm cleansed '+brazer.cleansed+' tiles';
+      lastEvent='Kanthic plasm cleansed '+brazier.cleansed+' tiles';
       return true;
     });
     return record;

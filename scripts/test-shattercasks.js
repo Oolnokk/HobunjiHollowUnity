@@ -34,9 +34,11 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  code.includes("return detonate(candidate.vase,'projectile')") &&
-  code.includes("detonate(vase,'melee')"),
-  'one guarded detonation boundary plays the blast cue for thrown, projectile-hit, and melee-hit paths');
+  code.includes("detonate(vase,'melee')") &&
+  code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
+  code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
+  code.includes("return detonate(burden,'projectile');"),
+  'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
