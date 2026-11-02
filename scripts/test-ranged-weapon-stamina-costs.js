@@ -68,6 +68,40 @@ const sharedChargeCost = vm.runInNewContext(`(() => {
 })()`);
 assert.strictEqual(sharedChargeCost(0.5), 10, 'thrown charges must delegate to the live Charged Breaker cost function when it is available');
 
+const thrownCost = vm.runInNewContext(`(() => {
+  const window = {
+    RangedWeapons: { chargeStaminaCostForPose: (pose, multiplier) => pose * 20 * multiplier },
+    CombatProgression: { getEffects: () => ({ stats: { staminaCostMul: 0.25 } }) },
+    WeaponShapeStats: { current: () => ({ efficiency: 2 }) },
+  };
+  ${extractFunction(archetypeSource, 'thrownChargeCostForPose')}
+  return thrownChargeCostForPose;
+})()`);
+assert.strictEqual(thrownCost(0.5, 'hatchet_copper'), 6.25,
+  'thrown charge must inherit Charged Breaker progression cost modifiers and weapon efficiency');
+
+const chargePayments = []; // Captures the incremental payment slices for one held thrown weapon.
+const chargePlayer = {}; // Actor identity used to verify all charge slices are charged to the player.
+const payCharge = vm.runInNewContext(`(() => {
+  const window = {
+    Combat: { deps: { player: chargePlayer } },
+    ResourceSystem: { spendStamina: (actor, amount, reason, transaction) => { chargePayments.push({ actor, amount, reason, transaction }); return { spent: amount }; } },
+  };
+  const thrownChargeCostForPose = pose => pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52;
+  ${extractFunction(archetypeSource, 'payThrownChargeStamina')}
+  return payThrownChargeStamina;
+})()`, { chargePlayer, chargePayments });
+const heldThrow = { itemKey: 'hatchet_copper', paidChargeCost: 0 }; // Tracks the cumulative charge payment across hold updates and release settlement.
+payCharge(heldThrow, 0.48, 'test-ready');
+payCharge(heldThrow, 0.48, 'test-same-frame');
+payCharge(heldThrow, 0.74, 'test-mid-charge');
+payCharge(heldThrow, 1, 'test-release');
+assert.deepStrictEqual(chargePayments.map(entry => entry.amount), [12, 3, 3],
+  'held throws must pay only newly reached charge slices, with release settling the final delta once');
+assert.strictEqual(heldThrow.paidChargeCost, 18);
+assert.ok(chargePayments.every(entry => entry.actor === chargePlayer && entry.transaction.actionKind === 'offensiveHeldCharge'),
+  'all held throw charge slices must use the offensive held-charge resource transaction');
+
 assert.strictEqual(attackValues.rangedWeapons.crossbow.loadStaminaFraction, 0.85);
 assert.strictEqual(attackValues.rangedWeapons.scatterbow.loadStaminaFraction, 0.85);
 assert.match(rangedSource, /if \(kind === 'load'\) \{\s*spendRangedLoadStamina\(deps\.player, itemKey, def\);\s*setRangedLoadRegenBlocked\(deps\.player, true\);/,
