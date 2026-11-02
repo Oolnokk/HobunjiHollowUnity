@@ -72,11 +72,18 @@ assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait render
 assert(portraitSource.includes("fixedLayer?.hideWhenHood === true && hoodIsWorn"), 'fixed structural portrait layers must support hiding beneath an equipped hood');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'portrait renderer must keep authored hood rear art in its own behind-head bucket');
 assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'rear portraits must not double-draw a hood front when authored rear art exists');
-const hoodBackDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head');
-const frontHeadDrawIndex = portraitSource.indexOf('if (headUrl && !skipHeadSprite) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote', hoodBackDrawIndex);
-const hoodFrontDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodLayers);', frontHeadDrawIndex);
+const frontDrawMapIndex = portraitSource.indexOf('const frontDraw = {'); // The renderer now routes the default and experimental orders through keyed draw callbacks.
+const hoodBackDrawIndex = portraitSource.indexOf('hoodBack: () => drawBreathingLayers(hoodBackLayers),', frontDrawMapIndex);
+const frontHeadDrawIndex = portraitSource.indexOf('head: () => {', frontDrawMapIndex);
+const hoodFrontDrawIndex = portraitSource.indexOf('hood: () => drawBreathingLayers(hoodLayers),', frontDrawMapIndex);
+const defaultFrontOrderIndex = portraitSource.indexOf('const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([');
+const hoodBackOrderIndex = portraitSource.indexOf("'hoodBack'", defaultFrontOrderIndex);
+const headOrderIndex = portraitSource.indexOf("'head'", defaultFrontOrderIndex);
+const hoodOrderIndex = portraitSource.indexOf("'hood'", defaultFrontOrderIndex);
 assert(
-  hoodBackDrawIndex >= 0 && frontHeadDrawIndex > hoodBackDrawIndex && hoodFrontDrawIndex > frontHeadDrawIndex,
+  frontDrawMapIndex >= 0 && hoodBackDrawIndex > frontDrawMapIndex && frontHeadDrawIndex > hoodBackDrawIndex
+    && hoodFrontDrawIndex > frontHeadDrawIndex
+    && defaultFrontOrderIndex >= 0 && hoodBackOrderIndex < headOrderIndex && headOrderIndex < hoodOrderIndex,
   'front portraits must draw rear hood cloth before the skull and front hood cloth after the skull'
 );
 assert(pixelProbeSource.includes('window.HobunjiHarlyaoSkeletonSpecies?.formatDebug?.()'), 'Pixel Probe must expose Harlyao Skeleton bridge diagnostics on mobile');
