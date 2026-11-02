@@ -118,7 +118,7 @@ function rebuildGarmentSelector(){
   const wantedGarment=(A.settings?.region===region?E.garment.value:'')||savedGarment; // Remember the previously selected item separately for clothing and headwear.
   E.garment.innerHTML='';
   for(const garment of R.garments){
-    if(!(region==='body'?BODY_SLOTS:HEAD_SLOTS).has(garment.slot)||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
+    if(!(region==='body'?BODY_SLOTS.has(garment.slot):(HEAD_SLOTS.has(garment.slot)||garment.cfg?.portraitSlot==='facialHair'))||!sourceHasGarmentArt(garment,E.sourceSpecies.value,E.sourceGender.value))continue;
     const o=document.createElement('option');o.value=garment.id;o.textContent=`${garment.label} [${garment.slot}]`;E.garment.appendChild(o);
   }
   if([...E.garment.options].some(o=>o.value===wantedGarment))E.garment.value=wantedGarment;
