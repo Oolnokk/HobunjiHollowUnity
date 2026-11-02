@@ -727,6 +727,91 @@
     return root.result;
   }
 
+  function _threeSceneToJsonIterative(scene) {
+    // Three r128 Object3D.toJSON recursively calls child.toJSON; serialize one
+    // node at a time with children temporarily detached, then rebuild the tree.
+    const meta = {
+      geometries:{}, materials:{}, textures:{}, images:{},
+      shapes:{}, skeletons:{}, animations:{},
+    };
+    const seen = new WeakSet();
+    const MAX_OBJECTS = 250000; // Prevent runaway traversal in malformed scene graphs.
+
+    const serializeNode = node => {
+      const originalChildren = node.children;
+      const originalUserData = node.userData;
+      const restorers = [];
+      const sanitizeUserData = target => {
+        if (!target || !target.userData || typeof target.userData !== 'object') return;
+        const previous = target.userData;
+        target.userData = _plainJson(previous) || {};
+        restorers.push(() => { target.userData = previous; });
+      };
+
+      try {
+        node.children = [];
+        sanitizeUserData(node);
+        if (node.geometry) sanitizeUserData(node.geometry);
+        if (Array.isArray(node.material)) node.material.forEach(sanitizeUserData);
+        else if (node.material) sanitizeUserData(node.material);
+        return node.toJSON(meta).object;
+      } finally {
+        for (let i = restorers.length - 1; i >= 0; i--) restorers[i]();
+        node.userData = originalUserData;
+        node.children = originalChildren;
+      }
+    };
+
+    const rootObject = serializeNode(scene);
+    seen.add(scene);
+    const pending = [{ source:scene, target:rootObject }];
+    let objectCount = 1;
+
+    while (pending.length) {
+      const frame = pending.pop();
+      const children = Array.isArray(frame.source.children) ? frame.source.children : [];
+      if (!children.length) continue;
+      frame.target.children = [];
+
+      for (const child of children) {
+        if (!child || typeof child !== 'object') continue;
+        if (seen.has(child)) {
+          frame.target.children.push({ type:'SerializationReference', name:child.name || '' });
+          continue;
+        }
+        if (objectCount >= MAX_OBJECTS) {
+          frame.target.children.push({ type:'SerializationTruncated', name:'Object limit reached' });
+          continue;
+        }
+        seen.add(child);
+        objectCount++;
+        const childObject = serializeNode(child);
+        frame.target.children.push(childObject);
+        pending.push({ source:child, target:childObject });
+      }
+    }
+
+    const extract = cache => {
+      const values = [];
+      for (const key of Object.keys(cache)) {
+        const data = cache[key];
+        if (data && data.metadata) delete data.metadata;
+        values.push(data);
+      }
+      return values;
+    };
+
+    const output = {
+      metadata:{ version:4.5, type:'Object', generator:'Object3D.toJSON (iterative)' },
+      object:rootObject,
+    };
+    for (const key of ['geometries','materials','textures','images','shapes','skeletons','animations']) {
+      const values = extract(meta[key]);
+      if (values.length) output[key] = values;
+    }
+    return output;
+  }
+
   async function _copyRuinMapJson(button, status) {
     const currentArea = deps.getCurrentArea();
     if (!_isInPlayableRuin(currentArea)) return;
@@ -775,7 +860,7 @@
         }),
       };
       stage = 'Three.js scene serialization';
-      payload.scene = scene.toJSON();
+      payload.scene = _threeSceneToJsonIterative(scene);
       stage = 'JSON encoding';
       const json = JSON.stringify(payload, null, 2);
       let copied = false;
