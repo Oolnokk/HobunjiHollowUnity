@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ruin Room Author — Hobunji Hollow</title>
+<style>
+:root{color-scheme:dark;--bg:#09111b;--panel:#121e2b;--panel2:#172637;--line:#2b4056;--text:#edf4fc;--muted:#9cb0c7;--accent:#83b9ff;--good:#8dd8ad;--warn:#f7cb75;--danger:#ff9e9e}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}button{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:8px 11px;cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:#234c76;border-color:#477eb7}button.danger{color:var(--danger)}button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{width:100%;border:1px solid var(--line);background:#0b1622;border-radius:6px;padding:8px;min-width:0}textarea{min-height:66px;resize:vertical}label{display:block;color:var(--muted);font-size:12px;margin:0 0 5px}.muted{color:var(--muted)}.small{font-size:12px}.hidden{display:none!important}
+header{position:sticky;top:0;z-index:5;background:#0c1724;border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;margin:0 0 2px}h2{font-size:15px;margin:0 0 10px}h3{font-size:13px;margin:14px 0 7px;color:#dce8f8}
+.actions{display:flex;gap:7px;flex-wrap:wrap}.layout{display:grid;grid-template-columns:230px minmax(300px,1fr) minmax(280px,340px);gap:12px;padding:12px;max-width:1800px;margin:auto;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}.panel-title{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.stack{display:grid;gap:10px}.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.field{min-width:0}.check{display:flex;align-items:center;gap:8px;color:var(--text);font-size:13px}.check input{width:auto}
+#definition-list{display:grid;gap:6px;max-height:65vh;overflow:auto}.definition-item{text-align:left;display:grid;gap:2px}.definition-item.active{border-color:var(--accent);background:#1d3550}.definition-item span{font-size:11px;color:var(--muted)}
+#grid{display:grid;gap:2px;justify-content:start;max-width:100%;overflow:auto;padding:5px;background:#08111a;border-radius:8px}
+.cell{width:clamp(21px,3.1vw,34px);height:clamp(21px,3.1vw,34px);padding:0;border-radius:3px;background:#101d2a;border:1px solid #304355;position:relative}
+.cell.floor{background:#7e7666;border-color:#a49a83}.cell.void{background:#09111b;border-color:#26384a}.cell.selected{outline:2px solid var(--accent);outline-offset:-2px}.cell .spot-dot{position:absolute;inset:4px;border-radius:50%;background:#72c6b7;border:2px solid #e3fffa;pointer-events:none}.cell .spot-dot.required{background:#e1b15c}
+.legend{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:8px 0}.legend b{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}.legend .f{background:#7e7666}.legend .v{background:#09111b;border:1px solid #526579}.legend .s{background:#72c6b7;border-radius:50%}
+.list-card{border:1px solid var(--line);border-radius:7px;padding:8px;margin:6px 0;background:#0d1925}.list-card.selected{border-color:var(--accent)}.list-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.list-card-head button{padding:4px 7px;font-size:12px}
+.badge{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 6px;border-radius:99px}
+hr{border:0;border-top:1px solid var(--line);margin:13px 0}.hint{padding:9px;border:1px dashed #3c5874;border-radius:7px;color:var(--muted);font-size:12px}
+#status{padding:9px 12px;margin:0 12px 12px;border:1px solid var(--line);border-radius:8px;background:#101b28;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+#status.good{color:var(--good);border-color:#346b52}#status.bad{color:var(--danger);border-color:#71434b}
+@media(max-width:1050px){.layout{grid-template-columns:210px minmax(280px,1fr)}.inspector{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.inspector>.panel-title,.inspector>#spot-inspector{grid-column:1/-1}}
+@media(max-width:680px){header{position:static;padding:10px}.layout{display:flex;flex-direction:column;padding:8px}.layout>section{width:100%}.library-panel{order:0}.canvas-panel{order:1}.inspector{order:2;display:block}.library-panel #definition-list{max-height:230px;grid-template-columns:repeat(2,minmax(0,1fr))}.cell{width:27px;height:27px}.actions button{padding:7px 9px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Ruin Room Author</h1><div class="muted small">Authored footprints + procedural profiles · shared room placement rules</div></div>
+  <div class="actions">
+    <button id="new-template">+ Template</button><button id="new-profile">+ Procedural profile</button>
+    <button id="save" class="primary">Save locally</button><button id="export">Export JSON</button>
+    <button id="import">Import JSON</button><input id="import-file" type="file" accept="application/json,.json" class="hidden">
+  </div>
+</header>
+<main class="layout">
+  <section class="panel library-panel">
+    <div class="panel-title"><h2>Room library</h2><span id="library-count" class="badge">0</span></div>
+    <div class="small muted">Templates define real floor shapes. Profiles apply placement rules to rooms that do not use a template.</div>
+    <h3>Authored templates</h3><div id="definition-list"></div>
+    <hr><div class="small muted" id="library-summary">Loading room library…</div>
+  </section>
+  <section class="panel canvas-panel">
+    <div class="panel-title"><h2 id="canvas-title">Footprint</h2><span class="badge" id="selected-kind">Template</span></div>
+    <div id="template-tools" class="stack">
+      <div class="row2">
+        <div class="field"><label for="foot-width">Width (cells)</label><input id="foot-width" type="number" min="3" max="48" step="1"></div>
+        <div class="field"><label for="foot-height">Height (cells)</label><input id="foot-height" type="number" min="3" max="48" step="1"></div>
+      </div>
+      <div class="actions"><button id="resize-footprint">Resize footprint</button><button id="all-floor">Fill floor</button><button id="clear-floor">Clear floor</button><button id="place-spot-mode">Place spot: off</button></div>
+      <div class="small muted">Tap cells to carve or restore floor. Turn on “Place spot” and tap a walkable cell to move the selected placement spot.</div>
+      <div id="grid" aria-label="Room footprint editor"></div>
+      <div class="legend"><span><b class="f"></b>Walkable floor</span><span><b class="v"></b>Void / carved space</span><span><b class="s"></b>Placement spot</span></div>
+    </div>
+    <div id="profile-preview" class="hidden stack">
+      <div class="hint">Procedural profiles do not change the V50 room outline. Their spots use normalized coordinates: 0 is the near edge and 1 is the far edge.</div>
+      <div id="profile-spot-grid" class="list-card"></div>
+    </div>
+    <hr>
+    <div class="panel-title"><h2>Connections</h2><button id="add-connection">+ Door / entrance</button></div>
+    <div class="small muted">Offsets are measured from the north/west corner along that edge, in footprint cells.</div>
+    <div id="connections"></div>
+    <hr>
+    <div class="panel-title"><h2>Puzzle relationships</h2><button id="add-link">+ Link</button></div>
+    <div class="small muted">Connect an activator spot to a mechanism spot. These relationships are saved with the room plan.</div>
+    <div id="links"></div>
+  </section>
+  <section class="panel inspector">
+    <div class="panel-title"><h2>Room properties</h2><label class="check"><input id="enabled" type="checkbox"> Enabled</label></div>
+    <div class="stack">
+      <div class="field"><label for="room-name">Name</label><input id="room-name" type="text" maxlength="80"></div>
+      <div class="field"><label for="room-id">ID</label><input id="room-id" type="text" maxlength="64"></div>
+      <div id="template-properties" class="stack">
+        <div class="row2"><div class="field"><label for="weight">Selection weight</label><input id="weight" type="number" min="0" max="100" step=".1"></div><div class="field"><label for="rotations">Allowed rotations</label><select id="rotations" multiple size="4"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></div></div>
+        <div class="row2"><div class="field"><label for="min-doors">Minimum doors</label><input id="min-doors" type="number" min="0" max="8"></div><div class="field"><label for="max-doors">Maximum doors</label><input id="max-doors" type="number" min="0" max="16"></div></div>
+        <div class="field"><label for="room-ids">Restrict to room IDs (optional, comma-separated)</label><input id="room-ids" type="text" placeholder="room_3, room_5"></div>
+      </div>
+      <div id="profile-properties" class="hidden stack">
+        <div class="row2"><div class="field"><label for="min-width">Minimum width</label><input id="min-width" type="number" min="1" max="48"></div><div class="field"><label for="max-width">Maximum width</label><input id="max-width" type="number" min="1" max="48"></div></div>
+        <div class="row2"><div class="field"><label for="min-height">Minimum height</label><input id="min-height" type="number" min="1" max="48"></div><div class="field"><label for="max-height">Maximum height</label><input id="max-height" type="number" min="1" max="48"></div></div>
+        <div class="row2"><div class="field"><label for="profile-min-doors">Minimum doors</label><input id="profile-min-doors" type="number" min="0" max="8"></div><div class="field"><label for="profile-max-doors">Maximum doors</label><input id="profile-max-doors" type="number" min="0" max="16"></div></div>
+        <div class="field"><label for="size-classes">Room size classes (optional)</label><input id="size-classes" type="text" placeholder="large, veryLarge"></div>
+        <div class="field"><label for="profile-room-ids">Room IDs (optional)</label><input id="profile-room-ids" type="text"></div>
+      </div>
+      <hr>
+      <div class="panel-title"><h2>Placement spots</h2><button id="add-spot">+ Spot</button></div>
+      <div id="spot-list"></div>
+      <div id="spot-inspector" class="stack">
+        <div class="hint">Select a placement spot to configure its position, occupancy, clearances and independent allowlists.</div>
+      </div>
+      <hr>
+      <button id="delete-definition" class="danger">Delete this room definition</button>
+    </div>
+  </section>
+</main>
+<div id="status" role="status">Loading…</div>
+<script src="../../js/dev-random-ruin-room-authoring.js?v=20261102roomauthor2"></script>
+<script src="app.js?v=20261102roomauthor1"></script>
+</body>
+</html>
