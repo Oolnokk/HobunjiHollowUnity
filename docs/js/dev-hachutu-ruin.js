@@ -664,23 +664,39 @@
       const post=cylinder(session.group,'root gate stone post',.42,.55,4.2,x,y+2.1,z+side*1.85,0x2d2f29);
       post.userData.devRuinFootprintIgnore=true; // The solid seal below is the one collision authority.
     }
-    const LRG=window.LiveRootGrowth;
-    if(LRG?.create&&window.FoliageGenerator?.buildSurfaceGrowth){
-      try{
-        const guide=new THREE.Group();guide.add(new THREE.Mesh(new THREE.BoxGeometry(.5,3.6,3.3),material(0x383a34)));
-        const growth=LRG.create({THREE,foliage:window.FoliageGenerator,target:guide,
-          recipe:{seed:'hachutu-gate-'+id+'-'+session.context.seed,branchCount:8,strandLimit:30,
-            floorWidth:3.4,floorDepth:3.4,floorY:-1.8,floorDensity:.3,targetDensity:1.1,
-            radius:.07,branchRadius:.09,showGuide:false,duration:1.4},
-          progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
-        growth.setProgress(1);
-        growth.group.position.set(x,y+1.8,z);growth.group.userData.devRuinFootprintIgnore=true;
-        session.group.add(growth.group);gate.growth=growth;
-      }catch(error){session.errors.push('Gate '+id+' roots: '+String(error?.message||error));}
-    }
+    gate.passage=passage; // Roots are grown by growGateRoots() once this passage's floor root mat exists.
     window.DevRandomRuinTileOccupancy?.addSolidBox?.('hachutu-gate-'+id,{cx:x,cz:z,halfX:.6,halfZ:1.7},()=>!!session&&gate.blocking,'hachutu-door');
     session.gates.push(gate);
     return gate;
+  }
+  // Grows a gate's root plug FROM the passage's floor root mat (LiveRootGrowth growthSource): its branches start at
+  // real floor strands, so when the gate retracts the roots withdraw back into the substrate. The guide is placed at
+  // its world position and the growth group stays at the origin, which is what keeps the substrate's world-space
+  // nodes aligned with the branches. Falls back to the author's own flat floor patch if no substrate is available.
+  function growGateRoots(gate,substrate){
+    const LRG=window.LiveRootGrowth;
+    if(gate.growth||!LRG?.create||!window.FoliageGenerator?.buildSurfaceGrowth)return;
+    const y=session.floor;
+    const build=source=>{
+      const guide=new THREE.Group(),panel=new THREE.Mesh(new THREE.BoxGeometry(.5,3.6,3.3),material(0x383a34));
+      panel.position.set(gate.x,y+1.8,gate.z);guide.add(panel);
+      const growth=LRG.create({THREE,foliage:window.FoliageGenerator,target:guide,...(source?{growthSource:source}:{}),
+        recipe:{seed:'hachutu-gate-'+gate.id+'-'+session.context.seed,branchCount:10,strandLimit:34,
+          floorWidth:3.4,floorDepth:3.4,floorY:y,floorDensity:.3,targetDensity:1.1,
+          radius:.07,branchRadius:.09,showGuide:false,duration:1.4},
+        progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
+      growth.setProgress(1);growth.group.userData.devRuinFootprintIgnore=true;
+      return growth;
+    };
+    try{gate.growth=build(substrate);gate.onSubstrate=!!substrate;}
+    catch(error){
+      session.errors.push('Gate '+gate.id+' substrate roots: '+String(error?.message||error));
+      try{gate.growth=build(null);}catch(inner){session.errors.push('Gate '+gate.id+' roots: '+String(inner?.message||inner));}
+    }
+    if(gate.growth){
+      session.group.add(gate.growth.group);
+      if(gate.open)gate.growth.setProgress(0);
+    }
   }
   function updateGates(dt,now,p){
     for(const gate of session.gates){
@@ -810,7 +826,7 @@
     if(templeRootRecipes)return templeRootRecipes;
     templeRootRecipes=fetch(new URL('config/pieces/temple.json',document.baseURI)).then(response=>{
       if(!response.ok)throw new Error('temple.json HTTP '+response.status);return response.json();
-    }).then(data=>(data.surfaceGrowth||[]).filter(item=>item.kind==='roots')).catch(error=>{templeRootRecipes=null;throw error;});
+    }).then(data=>(data.surfaceGrowth||[]).filter(item=>item.kind==='roots'||item.kind==='vines')).catch(error=>{templeRootRecipes=null;throw error;});
     return templeRootRecipes;
   }
   function floorProxy(target,rects){
@@ -820,39 +836,67 @@
       proxy.userData={surfaceFoliageRole:'floors'};target.add(proxy);
     }
   }
+  function wallProxy(target,b){
+    const y=session.floor,t=.8,h=4;
+    for(const [w,d,x,z] of [[b.maxX-b.minX,t,(b.minX+b.maxX)/2,b.minZ],[b.maxX-b.minX,t,(b.minX+b.maxX)/2,b.maxZ],[t,b.maxZ-b.minZ,b.minX,(b.minZ+b.maxZ)/2],[t,b.maxZ-b.minZ,b.maxX,(b.minZ+b.maxZ)/2]]){
+      const proxy=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshBasicMaterial({color:0x34352e}));
+      proxy.position.set(x,y+h/2,z);proxy.userData={surfaceFoliageRole:'walls'};target.add(proxy);
+    }
+  }
+  const scaleRecipe=(recipe,factor)=>({...recipe,count:Math.max(8,Math.round(recipe.count*factor)),strandLimit:Math.max(8,Math.round(recipe.strandLimit*factor))});
+  function triStats(group){
+    let tris=0,meshes=0;
+    group.traverse(node=>{if(node.isMesh){meshes++;const g=node.geometry;tris+=(g.index?g.index.count:g.attributes.position.count)/3;}});
+    return {tris:Math.round(tris),meshes};
+  }
   async function growWingCover(owner){
     try{
-      const LRG=window.LiveRootGrowth,FG=window.FoliageGenerator;
+      const LRG=window.LiveRootGrowth,FG=window.FoliageGenerator,SA=window.StoneAgeRuinScenery;
       if(!LRG?.createCoverAsync||!FG?.normalizeSurfaceGrowth)throw new Error('Root Growth Author cover is unavailable.');
-      const authored=await loadTempleRootRecipes(),base=authored.find(item=>item.style==='wrap')||authored[0];
-      if(!base)throw new Error('Life Temple root recipe is missing.');
+      const authored=await loadTempleRootRecipes();
+      if(!authored.some(item=>item.kind==='roots'))throw new Error('Life Temple root recipe is missing.');
+      // The ruin preview's own vegetation recipes: wall roots/vines plus the floor-cover variants (natural roots and
+      // wrap vines across the floor, 80 strands each). That is the substrate the author's preview shows.
+      const all=SA?.coverRecipes?SA.coverRecipes(authored,'#24211d'):authored.map(item=>({...item,color:item.kind==='roots'?'#24211d':item.color}));
+      const floorRecipes=all.filter(item=>item.target==='floors'||item.target==='all').map(item=>({...item,target:'floors'}));
+      const wallRecipes=all.filter(item=>item.target!=='floors').map(item=>item.target==='all'?{...item,target:'walls'}:item);
+      if(!floorRecipes.length)throw new Error('Preview floor recipes are missing.');
       owner.cover=[];
       const swing=owner.layout.parts[0].bounds,inset=3;
       const jobs=[ // One independent strand budget per room so no single hall hoards the roots.
         ['swing',[rect(swing.minX,swing.minZ,inset,swing.maxZ-swing.minZ),rect(swing.maxX-inset,swing.minZ,inset,swing.maxZ-swing.minZ),
-          rect(swing.minX+inset,swing.minZ,swing.maxX-swing.minX-inset*2,inset),rect(swing.minX+inset,swing.maxZ-inset,swing.maxX-swing.minX-inset*2,inset)]],
-        ...owner.layout.parts.slice(1).map(part=>[part.name,[part.bounds]]),
-        ['passages',owner.layout.passages],
+          rect(swing.minX+inset,swing.minZ,swing.maxX-swing.minX-inset*2,inset),rect(swing.minX+inset,swing.maxZ-inset,swing.maxX-swing.minX-inset*2,inset)],swing],
+        ...owner.layout.parts.slice(1).map(part=>[part.name,[part.bounds],part.bounds]),
+        ...owner.layout.passages.map((b,i)=>['passage-'+i,[b],null]),
       ];
-      for(const [name,rects] of jobs){
-        if(owner.ended||session!==owner)return;
-        const target=new THREE.Group();floorProxy(target,rects);
-        const area=rects.reduce((sum,b)=>sum+(b.maxX-b.minX)*(b.maxZ-b.minZ),0);
-        const strands=name==='passages'?20:Math.max(24,Math.min(40,Math.round(20+area/25))); // Scales with floor area; each strand is ~700 triangles and a room is seen one at a time.
-        const recipe={...base,seed:base.seed+':hachutu-floor:'+name,target:'floors',style:'natural',color:'#24211d',
-          count:strands,strandLimit:strands,density:1,length:name==='passages'?5:11,inset:0,shrinkwrapFinal:false};
-        const cover=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:[recipe],seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
-        if(owner.ended||session!==owner){cover.dispose();return;}
-        owner.group.add(cover.targetGrowth); // targetGrowth lives in world space; the cloned proxy slabs are left behind with cover.group.
+      const attach=(name,kind,cover)=>{
+        owner.group.add(cover.targetGrowth); // targetGrowth lives in world space; the cloned proxy slabs are left behind.
         cover.targetGrowth.traverse(node=>{node.userData.devRuinFootprintIgnore=true;});
-        cover.target.traverse(node=>{if(node.geometry&&!node.userData.surfaceFoliage&&node.parent!==cover.targetGrowth){node.visible=false;}});
-        let tris=0,meshes=0;
-        cover.targetGrowth.traverse(node=>{if(node.isMesh){meshes++;const g=node.geometry;tris+=(g.index?g.index.count:g.attributes.position.count)/3;}});
-        owner.cover.push({name,cover,tris:Math.round(tris),meshes});
+        cover.target.traverse(node=>{if(node.geometry&&!node.userData.surfaceFoliage&&node.parent!==cover.targetGrowth)node.visible=false;});
+        owner.cover.push({name,kind,cover,...triStats(cover.targetGrowth)});
+      };
+      for(const [name,rects,hall] of jobs){
+        if(owner.ended||session!==owner)return;
+        const area=rects.reduce((sum,b)=>sum+(b.maxX-b.minX)*(b.maxZ-b.minZ),0);
+        const factor=Math.max(.4,Math.min(1,area/300)); // Small halls and corridors get proportionally fewer strands.
+        const target=new THREE.Group();floorProxy(target,rects);
+        const floor=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:floorRecipes.map(item=>scaleRecipe(item,factor)),seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
+        if(owner.ended||session!==owner){floor.dispose();return;}
+        try{SA?.compactFloorCover?.(floor.targetGrowth);}catch(_){} // Same triangle trim the preview applies to its floor cover.
+        attach(name,'floor',floor);
+        if(hall&&wallRecipes.length){ // Halls also get the preview's wall root/vine weave.
+          const wallTarget=new THREE.Group();wallProxy(wallTarget,hall);
+          const walls=await LRG.createCoverAsync({THREE,foliage:FG,target:wallTarget,recipes:wallRecipes.map(item=>scaleRecipe(item,factor*.6)),seed:'hachutu:'+owner.context.seed+':walls:'+name,floorY:owner.floor});
+          if(owner.ended||session!==owner){walls.dispose();return;}
+          attach(name,'walls',walls);
+        }
+        const gate=owner.gates.find(item=>name==='passage-'+owner.layout.passages.indexOf(item.passage));
+        if(gate)growGateRoots(gate,floor.targetGrowth); // This passage's gate grows out of the mat just laid.
       }
+      for(const gate of owner.gates)growGateRoots(gate,null); // Any gate whose passage had no mat still gets its plug.
       owner.coverReady=true;
     }catch(error){
-      if(owner)owner.errors.push('Temple floor roots: '+String(error?.message||error));
+      if(owner){owner.errors.push('Temple floor roots: '+String(error?.message||error));for(const gate of owner.gates)growGateRoots(gate,null);}
     }
   }
   function buildRooms(kit,context,rng,usedRooms,options){
@@ -952,7 +996,7 @@
     return {active:true,devOnly:true,entered:session.entered,rooms:session.layout.parts.map(p=>p.name),
       plants:session.weeds.map(w=>({name:w.name,dead:w.done,hits:w.damage,rings:w.rings.filter(r=>r.torus.visible).length})),
       pit:session.abyss,platforms:session.platforms.length,ropes:session.vineRopes?.length||0,mazeCells:session.maze?.visited.size||0,
-      rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null})),floorRoots:(session.cover||[]).map(c=>({room:c.name,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
+      rootHands:session.hands.length,gates:(session.gates||[]).map(g=>({id:g.id,open:g.open,blocking:g.blocking,grown:g.growth?+g.growth.getProgress().toFixed(2):null,onSubstrate:!!g.onSubstrate})),floorRoots:(session.cover||[]).map(c=>({room:c.name,kind:c.kind,tris:c.tris,meshes:c.meshes})),floorRootsReady:!!session.coverReady,mergedRootMeshes:session.mergedRootMeshes||0,tear:window.RootSnarePlayerTear?.debug?.()||null,livePillarRoots:!!session.pillarRootTemplate,snare:session.snare?.diagnostics?.()||null,coffins:session.coffins.length,aliveMinions:[...session.minions].filter(e=>e.health>0).length,
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared,resonance:session.trial.resonance}:null,
       seeds:(session.seeds||[]).map(seed=>({index:seed.index,taken:seed.taken})),bulbs:(session.bulbs||[]).map(bulb=>({index:bulb.index,lit:bulb.lit})),
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
