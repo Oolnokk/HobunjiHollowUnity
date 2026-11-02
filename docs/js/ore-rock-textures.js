@@ -15,8 +15,13 @@
     return texture;
   }
 
+  function sourceUrl() {
+    const base = String(window.OreRockTexturesAssetBase || '').trim(); // Standalone author tools can resolve the same texture from their nested URL.
+    return base ? base.replace(/\/?$/, '/') + SOURCE.replace(/^\/+/, '') : SOURCE;
+  }
+
   function baseStone(THREE) {
-    if (!stoneMap) stoneMap = setOriginalTextureOptions(new THREE.TextureLoader().load(SOURCE), THREE);
+    if (!stoneMap) stoneMap = setOriginalTextureOptions(new THREE.TextureLoader().load(sourceUrl()), THREE);
     return stoneMap;
   }
 
@@ -55,7 +60,7 @@
         states.set(key, 'stone fallback (recolor unavailable)');
         window.__farmLog?.('[ore rocks] Missing metal recolorer: ' + key, 'warn', 'assets');
       } else {
-        Promise.resolve().then(() => recolorer.getRecoloredCanvas(SOURCE, recolorOptions(oreDefs[key], key))).then(canvas => {
+        Promise.resolve().then(() => recolorer.getRecoloredCanvas(sourceUrl(), recolorOptions(oreDefs[key], key))).then(canvas => {
           const texture = setOriginalTextureOptions(new THREE.CanvasTexture(canvas), THREE);
           texture.needsUpdate = true;
           material.map = texture;
