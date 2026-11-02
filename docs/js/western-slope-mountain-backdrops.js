@@ -64,7 +64,7 @@
     const authored=normalizeAuthorConfig(config||readAuthorConfig());
     return sizes.map((s,i)=>{
       const width=s.width*pixelScale,height=s.height*pixelScale,layer=authored.layers[i],lengthScale=targetLength/Math.max(1e-5,width);
-      const staggerOffset=i===1?targetLength*.5:0; // The second ridge shifts by one original map-edge length, half its new doubled length.
+      const staggerOffset=i===1?targetLength:0; // The second ridge shifts by one complete doubled mountain length.
       const defaultPos=[-edge-span*WEST_STACK_SHIFT_MULTIPLIER-gap*i,height*.5,zCenter+staggerOffset],defaultRot=[0,0,0],defaultScale=[1,1,1];
       const position=defaultPos.map((v,a)=>finiteOr(layer?.transform?.position?.[a],v));
       const rotationDeg=defaultRot.map((v,a)=>finiteOr(layer?.transform?.rotationDeg?.[a],v));
