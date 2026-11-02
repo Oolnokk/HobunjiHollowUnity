@@ -733,8 +733,8 @@
       panel.position.set(gate.x,y+1.8,gate.z);guide.add(panel);
       const growth=LRG.create({THREE,foliage:window.FoliageGenerator,target:guide,...(source?{growthSource:source}:{}),
         recipe:{seed:'hachutu-gate-'+gate.id+'-'+session.context.seed,branchCount:10,strandLimit:34,
-          floorWidth:3.4,floorDepth:3.4,floorY:y,floorDensity:.3,targetDensity:1.1,
-          radius:.07,branchRadius:.09,showGuide:false,duration:1.4},
+          floorWidth:3.4,floorDepth:3.4,floorY:y,floorDensity:.6,targetDensity:1.5,
+          radius:.07,branchRadius:.09,showGuide:false,duration:2.8},
         progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
       growth.setProgress(1);growth.group.userData.devRuinFootprintIgnore=true;
       return growth;
@@ -894,7 +894,7 @@
       proxy.position.set(x,y+h/2,z);proxy.userData={surfaceFoliageRole:'walls'};target.add(proxy);
     }
   }
-  const COVER_SIMPLIFY=2.2; // Douglas-Peucker tolerance multiplier for generated root strands (1 = the preview's own setting).
+  const COVER_SIMPLIFY=1.0; // Preserve finer centerline detail in the denser Hachutu substrate.
   const scaleRecipe=(recipe,factor)=>({...recipe,count:Math.max(8,Math.round(recipe.count*factor)),strandLimit:Math.max(8,Math.round(recipe.strandLimit*factor))});
   function triStats(group){
     let tris=0,meshes=0;
@@ -930,15 +930,25 @@
       for(const [name,rects,hall] of jobs){
         if(owner.ended||session!==owner)return;
         const area=rects.reduce((sum,b)=>sum+(b.maxX-b.minX)*(b.maxZ-b.minZ),0);
-        const factor=Math.max(.4,Math.min(1,area/300)); // Small halls and corridors get proportionally fewer strands.
+        const factor=Math.max(.6,Math.min(1.5,area/300))*1.5; // Give every room and corridor a denser root budget.
         const target=new THREE.Group();floorProxy(target,rects);
-        const floor=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:floorRecipes.map(item=>scaleRecipe(item,factor)),seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
+        const floor=await LRG.createCoverAsync({THREE,foliage:FG,target,recipes:floorRecipes.map(item=>scaleRecipe(item,factor*1.5)),seed:'hachutu:'+owner.context.seed+':'+name,floorY:owner.floor});
         if(owner.ended||session!==owner){floor.dispose();return;}
-        try{SA?.compactFloorCover?.(floor.targetGrowth,COVER_SIMPLIFY);}catch(_){} // The preview's centerline simplification, a little stronger: same roots, fewer rings.
+        // Halve substrate thickness without shrinking its XZ footprint. Sink the bottom
+        // root layer so its vertical center sits just below ground, clipping its lower half.
+        const rootBox=new THREE.Box3().setFromObject(floor.targetGrowth);
+        const rootHeight=Math.max(.001,rootBox.max.y-rootBox.min.y);
+        floor.targetGrowth.scale.y*=.5;
+        floor.targetGrowth.updateMatrixWorld(true);
+        const compressedBox=new THREE.Box3().setFromObject(floor.targetGrowth);
+        floor.targetGrowth.position.y+=owner.floor+.05-(compressedBox.min.y+Math.min(.1,rootHeight*.025));
+        floor.targetGrowth.updateMatrixWorld(true);
+        floor.targetGrowth.traverse(node=>{if(node.isMesh)node.userData.hachutuGroundRoot=true;});
+        try{SA?.compactFloorCover?.(floor.targetGrowth,COVER_SIMPLIFY);}catch(_){} // Keep finer strands after raising density.
         attach(name,'floor',floor);
         if(hall&&wallRecipes.length){ // Halls also get the preview's wall root/vine weave.
           const wallTarget=new THREE.Group();wallProxy(wallTarget,hall);
-          const walls=await LRG.createCoverAsync({THREE,foliage:FG,target:wallTarget,recipes:wallRecipes.map(item=>scaleRecipe(item,factor*.6)),seed:'hachutu:'+owner.context.seed+':walls:'+name,floorY:owner.floor});
+          const walls=await LRG.createCoverAsync({THREE,foliage:FG,target:wallTarget,recipes:wallRecipes.map(item=>scaleRecipe(item,factor*.9)),seed:'hachutu:'+owner.context.seed+':walls:'+name,floorY:owner.floor});
           if(owner.ended||session!==owner){walls.dispose();return;}
           try{SA?.compactFloorCover?.(walls.targetGrowth,COVER_SIMPLIFY);}catch(_){} // Walls get the same ring simplification.
           attach(name,'walls',walls);
