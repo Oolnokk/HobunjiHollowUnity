@@ -30,7 +30,7 @@ assert.match(editor, /pointermove/);
 assert.match(editor, /destination-out/);
 assert.match(editor, /beardRevealMasks/);
 assert.match(editor, /beardOverpassMasks/);
-assert.match(editor, /Export selected cosmetic JSON/);
+assert.match(html, /Export selected cosmetic JSON/);
 assert.match(portrait, /beardRevealMasks: json\.beardRevealMasks/);
 assert.match(portrait, /beardOverpassMasks: json\.beardOverpassMasks/);
 assert.match(portrait, /hood\?\.beardRevealMasks/);
