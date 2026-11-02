@@ -82,7 +82,7 @@ window.AnimalVocalizations.tickCreature(creature('puktuk'), 20, { allowPassive: 
 assert.equal(played.length, start, 'existing suppression rules are preserved');
 window.SCRATCHBONES_CONFIG = { game: { audio: { enabled: false } } };
 assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('puktuk'), { allowedClips: ['sfx_bark-yap.ogg'] }), false, 'audio disable still applies');
-window.SCRATCHBONES_CONFIG.game.audio.enabled = true;
+window.SCRATCHBONES_CONFIG = { game: { audio: { enabled: true } } }; // Restore a fresh enabled config object after the mute-path assertion.
 window.AnimalVocalizations.setAuthoredProfiles({});
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('gar-wolf')), true, 'legacy voice eligibility survives missing authored data');
 now = 10000; // Keep the legacy playback check safely beyond the zone-entry grace window.
