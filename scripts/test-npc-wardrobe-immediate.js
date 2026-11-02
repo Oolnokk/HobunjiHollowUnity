@@ -243,8 +243,9 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.clothingWearability(rec, foreignStyle).allowed, false, 'ordinary NPCs cannot manually wear clothing outside their authored default style');
   const spouseStyleOverride = wardrobe.clothingWearability(spouseRec, { ...foreignStyle }, { spouseOverride: true });
   assert.equal(spouseStyleOverride.allowed, false, 'spouse override is unavailable until the assigned spouse wardrobe is actively open');
-  const fakeElement = () => ({ style: {}, dataset: {}, addEventListener() {}, appendChild() {}, querySelector: () => ({ addEventListener() {} }), querySelectorAll: () => [], remove() {} });
-  context.document = { createElement: fakeElement, getElementById: () => null, body: { appendChild() {} } };
+  let mountedOverlay = null; // Mirrors the real DOM: the overlay is findable by id only while it is mounted.
+  const fakeElement = () => { const el = { style: {}, dataset: {}, addEventListener() {}, appendChild() {}, querySelector: () => ({ addEventListener() {} }), querySelectorAll: () => [], remove() { if (mountedOverlay === el) mountedOverlay = null; } }; return el; };
+  context.document = { createElement: fakeElement, getElementById: id => (id === 'npcWardrobeOverlay' ? mountedOverlay : null), body: { appendChild(el) { if (el.id === 'npcWardrobeOverlay') mountedOverlay = el; } } };
   wardrobe.openWardrobePanel(spouseRec.id, { area: 'interior', source: 'family', furnitureId: 'assigned-spouse-wardrobe' });
   assert.equal(wardrobe.getActiveSpouseWardrobeTarget()?.npcId, spouseRec.id, 'only the assigned spouse furniture panel activates the clothing override');
   assert.equal(wardrobe.clothingWearability(rec, foreignStyle, { spouseOverride: true }).allowed, false, 'another NPC cannot borrow the spouse-only override while the spouse panel is open');
@@ -253,6 +254,10 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.getWardrobeContents(spouseRec.id).stored.some(item => item.cosmeticId === 'foreign_style_coat'), true, 'direct transfer stores the complete clothing instance for later wearing');
   assert.equal(await wardrobe.wearStoredItem(spouseRec.id, wardrobe.getWardrobeContents(spouseRec.id).stored.find(item => item.cosmeticId === 'foreign_style_coat').uid, { spouseOverride: true }), true, 'assigned spouse can actually equip a stored clothing item outside their default style');
   assert.ok(spouseRec.equippedCosmetics.includes('foreign_style_coat'), 'spouse override writes the new garment into the canonical NPC outfit');
+  mountedOverlay = null; // Something removed the overlay without going through closeWardrobePanel().
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'spouse privileges end when the panel disappears, even if closeWardrobePanel was bypassed');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-orphan', cosmeticId: 'foreign_style_coat', slot: 'torso' }), false, 'a vanished panel cannot keep accepting pack transfers');
+  wardrobe.openWardrobePanel(spouseRec.id, { area: 'interior', source: 'family', furnitureId: 'assigned-spouse-wardrobe' });
   wardrobe.closeWardrobePanel();
   assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'closing the spouse wardrobe removes the override context');
   assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-after-close', cosmeticId: 'foreign_style_coat' }), false, 'pack transfer cannot target a closed or unassigned wardrobe');
@@ -450,6 +455,16 @@ fallbackWalker.area = 'map_i_test_bedroom';
     assert.equal(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.pattern.frameY, -186, npcId + ' keeps the adjusted Tankan Guard Emblem placement');
     assert.deepEqual(Array.from(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.roles), ['poncho'], npcId + ' applies the emblem only to the poncho sprite role');
   }
+  // Wardrobes saved before gifts carried acceptedByNpcId must stay wearable by the NPC that owns them, while clothing the
+  // player placed into a spouse wardrobe (sourcePackUid) keeps the style gate once it is no longer a spouse-override.
+  wardrobe.restore({ version: 3, stored: { [rec.id]: [
+    { uid: 'legacy_off_style', cosmeticId: 'foreign_style_coat', slot: 'torso' },
+    { uid: 'player_placed', cosmeticId: 'foreign_style_coat', slot: 'torso', sourcePackUid: 'pack-1' },
+  ] }, outfits: {} });
+  const migrated = wardrobe.getWardrobeContents(rec.id).stored;
+  assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'legacy_off_style')).allowed, true, 'legacy stored clothing without provenance stays wearable after load');
+  assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'player_placed')).allowed, false, 'clothing placed by the player keeps the ordinary-NPC style gate');
+  assert.equal(wardrobe.clothingWearability(rec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'an item that never came through a save or the NPC still fails closed');
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
   console.log('Immediate NPC wardrobe behavior passed.');
 })().catch(error => {

@@ -247,7 +247,7 @@
   <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20260929glowdecals1"></script>
-  <script src="js/interior-door-tiles.js?v=20261101smoothdoors1"></script>
+  <script src="js/interior-door-tiles.js?v=20261102h292ab3a"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
@@ -400,7 +400,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261101spyglassLookCloser2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261102hd9a5f8c"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -481,7 +481,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261101interiorfixture1&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261102h80726f8&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -738,7 +738,7 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261101smoothdoors1"></script>
+  <script src="js/cloud-forest-fog.js?v=20261102hd62d9f3"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -2661,7 +2661,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261101shellxray2"></script>
+  <script src="js/tool-icon-render.js?v=20261102h978a51a"></script>
   <script src="js/sprite-recolor.js?v=20261028hspriterecoloraudit2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->

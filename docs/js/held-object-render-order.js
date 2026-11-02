@@ -1440,13 +1440,14 @@
       restoreVisibility(heldVisibility);
     }
 
+    const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
     const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
     replaySelectiveHeldOverlay(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask);
     window.PerfProfiler?.end(replayPerf);
     // The replays are renders of their own that the outline wrapper sees after the base pass, and they
     // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
     // pass's matrices are still current: re-arm the sequence for the PNG-depth/shell/mist/text passes.
-    window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene);
+    window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
     return result;
   }
 
