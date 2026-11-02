@@ -67,7 +67,7 @@ const maoScale = context.HobunjiCharacterRigScaleDefaults.scaleFor('mao-ao', 'ma
 assert.equal(scale.x, maoScale.x, "shares Mao'ao's whole-rig scale");
 
 const bootstrap = read('docs/js/attachment-rig-latest-authored-snapshot.js');
-const at = name => bootstrap.search(new RegExp(name.replace(/\\./g, '\\\\.') + '\\?v=[A-Za-z0-9_.-]+'));
+const at = name => bootstrap.indexOf(`new URL('${name}?v=`);
 assert(at('skeleton-species-runtime.js') >= 0 && at('skeleton-species-runtime.js') < at('mao-ao-skeleton-species-runtime.js') && at('mao-ao-skeleton-species-runtime.js') < at('maskbound-guardian-species-runtime.js') && at('maskbound-guardian-species-runtime.js') < at('character-rig-scale.js'), 'shared bridge and both species configs load in order');
 
 const minionContext = { console, Math, SCRATCHBONES_CONFIG: context.SCRATCHBONES_CONFIG };
