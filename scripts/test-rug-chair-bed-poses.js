@@ -57,10 +57,10 @@ const skin={material:[material,{}],renderOrder:2};
 const rig={isObject3D:true,position:new V,quaternion:new Q,scale:{x:2,y:2,z:2},
  parent:{updateWorldMatrix(){},worldToLocal(v){return v.sub(npc.root.position);}}}; // Scaled anatomical rig and actual bed-parent frame.
 const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
- root:{isObject3D:true,position:new V(3.5,0,5.5),rotation:{y:0}},
+ root:{isObject3D:true,position:new V(2.5,0,5.5),rotation:{y:0}},
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
-for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie'},.1,{x:3.5,z:5.5,y:.22,facingRad:0}); // Spouse activity targets may omit area even while correctly scheduled in this room.
+for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',bedCenter:true,c:2,r:5},.1,{x:4,z:6,y:.22,facingRad:0}); // A spouse arriving from the adjacent walkable tile must still lie on the mattress center.
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
 assert(Math.abs(rig.position.y+hip.y-.255)<.001,'scaled NPC hip rests on the half-height authored mattress');
