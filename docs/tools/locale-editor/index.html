@@ -291,7 +291,8 @@ async function loadFullFurniturePalette() {
           icon:'🪑',
           w:Math.max(1, Number(data.footprint?.w) || 1),
           h:Math.max(1, Number(data.footprint?.d) || 1),
-          collision:{ mode:'footprint' }
+          collision:{ mode:'footprint' },
+          puzzle:data.puzzle ? JSON.parse(JSON.stringify(data.puzzle)) : null
         };
       } catch (_) { return null; }
     }));
@@ -666,6 +667,7 @@ function placeOrSelectObject(c, r) {
   if (p.visual) obj.visual = JSON.parse(JSON.stringify(p.visual)); // Used by cave/asset-specific runtime renderers instead of an ambiguous generic structure.
   if (p.collision) obj.collision = JSON.parse(JSON.stringify(p.collision)); // New palette objects carry an explicit collider policy; old loaded objects remain legacy/auto.
   if (p.pieceFile) obj.pieceFile = p.pieceFile; // Used by explicit authored structural assets when present.
+  if (p.puzzle) obj.puzzle = window.FurniturePuzzleProperties?.normalizePuzzle?.(p.puzzle) || JSON.parse(JSON.stringify(p.puzzle)); // Preserve authored dungeon activator/mechanism data on each placed locale object.
   if (p.kind === 'tent') obj.interactable = { lootable: true, burnable: true, holdSeconds: 4 };
   m.objects.push(obj);
   selected = { type:'object', id: obj.id };
