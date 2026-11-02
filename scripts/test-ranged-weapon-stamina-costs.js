@@ -31,14 +31,15 @@ const loadCost = vm.runInNewContext(`(() => {
   const window = {
     AlchemySystem: { getStaminaSpendMultiplier: () => 0.8 },
     PerkSystem: { rank: () => 2 },
+    ResourceSystem: { timedDebuffModifier: () => 1.25 },
   };
   ${extractFunction(rangedSource, 'rangedLoadStaminaCost')}
   return rangedLoadStaminaCost;
 })()`, { player });
 
 const playerCost = loadCost(player, { loadStaminaFraction: 0.85 });
-assert.ok(Math.abs(playerCost * 0.8 * 0.84 - 85) < 1e-9,
-  'after the Alchemy multiplier and two ranks of Reduce Stamina Use, a full reload must still remove 85% of maximum Stamina');
+assert.ok(Math.abs(playerCost * 1.25 * 0.8 * 0.84 - 85) < 1e-9,
+  'after timed cost modifiers, Alchemy, and two ranks of Reduce Stamina Use, a full reload must still remove 85% of maximum Stamina');
 assert.strictEqual(loadCost({ maxStamina: 100, stamina: 100 }, { loadStaminaFraction: 0.85 }), 85,
   'NPC reload cost must be 85% of authored maximum Stamina without player-only discounts');
 assert.strictEqual(loadCost({ maxStamina: 100, stamina: 100 }, {}), 85,
