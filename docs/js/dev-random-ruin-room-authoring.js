@@ -9,6 +9,8 @@
   const STORAGE_KEY = 'hobunji.devRuinRoomLibrary.v1';
   const LIBRARY_URL = new URL('../config/ruin-room-authoring/room-library.json', new URL('.', document.currentScript?.src || document.baseURI)).href; // Resolve from this shared module so both docs/index.html and the nested editor iframe read the same repository library.
   const CATEGORIES = ['mechanisms', 'activators', 'decorations'];
+  const WORLD_TILE_SCALE = 2; // Must match RUIN_TILE_SCALE in dev-random-ruin-interior-map.js.
+  const WORLD_PAD = 2; // Must match PAD in dev-random-ruin-simple-puzzles.js.
   const claimsByPlan = new Map(); // Stable keys survive V50's JSON clone between generation and runtime composition.
   const diagnosticsByPlan = new Map(); // Shared claims/rejections are visible from the cloned gameplay metadata.
   const puzzleLinksByPlan = new Map();
@@ -354,8 +356,8 @@
   }
 
   function makeSpots(definition, room, network) {
-    const cs = (Number(network.cellSize) || .5) * 2; // V50 rooms scale 0.5-unit cells to one full game-world unit in makeMapRecord().
-    const pad = 2; // Mirrors the shared ruin runtime's PAD constant; generated V50 metadata does not carry a worldPad field. // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
+    const cs = (Number(network.cellSize) || .5) * WORLD_TILE_SCALE; // V50 rooms scale 0.5-unit cells to one full game-world unit in makeMapRecord().
+    const pad = WORLD_PAD; // Mirrors the shared ruin runtime's PAD constant; generated V50 metadata does not carry a worldPad field. // Match dev-random-ruin-simple-puzzles.js cellWorld(): V50 world coordinates use a two-unit pad, not a centered grid origin.
     return definition.spots.map(spot=>{
       const x = spot.coordinateMode === 'cell' ? Number(spot.x)+.5 : Number(spot.x)*room.w;
       const z = spot.coordinateMode === 'cell' ? Number(spot.z)+.5 : Number(spot.z)*room.h;
@@ -365,6 +367,14 @@
         world:{x:pad+(room.col+x)*cs,z:pad+(room.row+z)*cs},
       };
     });
+  }
+
+  function toGeneratorLocal(network, point) {
+    if (!network || !point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.z))) return null;
+    return {
+      x:(Number(point.x)-WORLD_PAD-(Number(network.worldWidth)||0)*WORLD_TILE_SCALE*.5)/WORLD_TILE_SCALE,
+      z:(Number(point.z)-WORLD_PAD-(Number(network.worldDepth)||0)*WORLD_TILE_SCALE*.5)/WORLD_TILE_SCALE,
+    };
   }
 
   function planForRoom(network, room, seed) {
@@ -679,6 +689,7 @@
     validateLibrary:value=>normalizeLibrary(value).errors,
     setLibrary,
     applyToNetwork,
+    toGeneratorLocal,
     roomPlan,
     canClaimSpot,
     claimSpot,
