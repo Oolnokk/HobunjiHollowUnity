@@ -135,7 +135,7 @@ async function main() {
   const untouchedPlayerMeta = copy(playerSaveMeta); // NPC editing must never mutate source gear or Pack items.
   const editor = vm.createContext({
     window, console, Object, JSON, target: { kind: 'npc', id: npc.id }, work: copy(npc), db: { npcs: [copy(npc)] },
-    npcAppearancePass: 0, _npcPreviewLayerOrder: 'default',
+    npcAppearancePass: 0, _npcFrontLayerOrder: ['hood', 'facialHair'], _npcBehindLayerOrder: [],
     NPC_EDITOR_CLOTHING_SLOTS: new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']),
     localStorage: { getItem: key => key === 'hobunjiSaveMeta' ? JSON.stringify(playerSaveMeta) : null },
     readStoredPlayer: () => ({ characterId: 'hero', worldId: 'world-1' }),
@@ -307,10 +307,13 @@ async function main() {
   assert.equal(editor.work.clothingPatterns.defaultClothing.pants.colorB.hex, '#223344');
   assert.deepEqual(playerSaveMeta, untouchedPlayerMeta, 'NPC selection copies player garment data without modifying the player save');
 
-  editor._npcPreviewLayerOrder = 'hood-behind-head';
   const previewOptions = editor.npcPreviewRenderOptions({ seatId: 'studio-preview' });
-  assert.equal(previewOptions.previewLayerOrder, 'hood-behind-head');
+  assert.deepEqual(copy(previewOptions.frontLayerOrder), ['hood', 'facialHair']);
+  assert.deepEqual(copy(previewOptions.behindLayerOrder), []);
+  assert.equal(previewOptions.forceShowFacialHair, true, 'moving facial hair above a concealing hood reveals it in the preview');
   assert.equal(previewOptions.seatId, 'studio-preview');
+  editor._npcFrontLayerOrder = ['facialHair', 'hood'];
+  assert.equal(editor.npcPreviewRenderOptions().forceShowFacialHair, false, 'default facial-hair order preserves hood concealment');
   assert(!Object.hasOwn(editor.work, 'previewLayerOrder'), 'preview experiment is not staged in NPC working data');
   editor.work.restingExpression = 'neutral';
   editor.applyWorkToNpc();
