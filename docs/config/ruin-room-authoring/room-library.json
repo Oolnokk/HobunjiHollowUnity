@@ -52,7 +52,7 @@
           "z": 6,
           "required": true,
           "maxUses": 1,
-          "clearance": 0.5,
+          "clearance": 0.1,
           "allowlists": {
             "mechanisms": [
               "verticalStoneDoor"
@@ -68,7 +68,7 @@
           "z": 6,
           "required": true,
           "maxUses": 1,
-          "clearance": 0.6,
+          "clearance": 0.1,
           "allowlists": {
             "mechanisms": [],
             "activators": [
