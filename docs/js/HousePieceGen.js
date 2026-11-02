@@ -427,7 +427,9 @@
     for (var i = 0; i < faces.length; i++) {
       var f = faces[i], side = classified.sideOf.get(f);
       if (!side) { out.push(f); continue; }
-      var sideCuts = openings.filter(function (opening) { return opening && opening.side === side; });
+      var sideCuts = openings.filter(function (opening) {
+        return opening && opening.side === side && (!f.gableEnd || opening.kind === 'internal');
+      }); // Doors/windows cut only the body wall; only shared room boundaries also remove the gable above it.
       if (!sideCuts.length) { out.push(f); continue; }
 
       var varyingIsX = side === 'north' || side === 'south';
@@ -770,7 +772,10 @@
 
         // Gable triangles are smaller — use denser, smaller bricks so they fill properly.
         var gableExtra = opts.wbGableOpts || Object.assign({}, wbExtra, { unitMult: 0.396, densityMult: 1.5, rockScale: 1.1 });
-        var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({ usePlaceholder: wbUse }, gableExtra));
+        var gableGroup = opts.wallBuilder.build(gablePanels, Object.assign({}, gableExtra, {
+          usePlaceholder: wbUse,
+          excludeQuads: (gableExtra.excludeQuads || []).concat(openingQuads),
+        }));
         gableGroup.userData.isWallBricks = true;
         _markOutlineLayer(gableGroup);
         group.add(gableGroup);
