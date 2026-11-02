@@ -330,13 +330,16 @@
     }
   }
 
-  function rangedLoadStaminaCost(entity, def) {
+  function rangedLoadStaminaCost(entity, def, itemKey = 'rangedWeapon') {
     const maxStamina = Math.max(0, Number(entity?.maxStamina) || Number(entity?.stamina) || 0); // Uses the actor's authored Stamina bar as the Exhaust Cutter threshold baseline.
     const fraction = Number.isFinite(Number(def?.loadStaminaFraction))
       ? Math.max(0, Number(def.loadStaminaFraction))
       : DEFAULT_RANGED_LOAD_STAMINA_FRACTION;
+    const transaction = { actionKind: 'rangedWeaponLoad', abilityId: String(itemKey || 'rangedWeapon') }; // Uses the same transaction context for enhanced-pool availability and the actual spend.
+    const enhancedCost = (window.ResourceSystem?.getEnhancedResources?.(entity, 'stamina', transaction) || [])
+      .reduce((sum, entry) => sum + Math.max(0, Number(entry.amount) || 0) * Math.max(0.0001, Number(entry.def?.conversionRate) || 1), 0); // Adds all enhanced Stamina first so the ordinary bar still falls below Exhaust Cutter's threshold.
     const timedCostMultiplier = Math.max(0.01, Number(window.ResourceSystem?.timedDebuffModifier?.(entity, 'staminaCost')) || 1); // Normalizes any timed cost discount/tax through the same modifier ResourceSystem applies during payment.
-    let cost = (maxStamina * fraction) / timedCostMultiplier;
+    let cost = (maxStamina * fraction + enhancedCost) / timedCostMultiplier; // The enhanced pool is paid first by ResourceSystem, leaving the requested ordinary Stamina loss afterward.
     if (entity === deps?.player) {
       const alchemyMultiplier = Math.max(0.01, Number(window.AlchemySystem?.getStaminaSpendMultiplier?.()) || 1); // Compensates for player-only cost reductions so the effective loss still crosses the intended threshold.
       const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
@@ -347,7 +350,7 @@
   }
 
   function spendRangedLoadStamina(entity, itemKey, def = defFor(itemKey)) {
-    const cost = rangedLoadStaminaCost(entity, def);
+    const cost = rangedLoadStaminaCost(entity, def, itemKey);
     if (!(cost > 0)) return null;
     return window.ResourceSystem?.spendStamina?.(entity, cost, `${def?.label || itemKey || 'Ranged weapon'} load`, {
       actionKind: 'rangedWeaponLoad', abilityId: String(itemKey || 'rangedWeapon'),
