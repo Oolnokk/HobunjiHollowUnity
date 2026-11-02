@@ -9,8 +9,8 @@
   const STORAGE_KEY = 'hobunji.devRuinRoomLibrary.v1';
   const LIBRARY_URL = new URL('../config/ruin-room-authoring/room-library.json', new URL('.', document.currentScript?.src || document.baseURI)).href; // Resolve from this shared module so both docs/index.html and the nested editor iframe read the same repository library.
   const CATEGORIES = ['mechanisms', 'activators', 'decorations'];
-  const claimsByNetwork = new WeakMap();
-  const diagnosticsByNetwork = new WeakMap();
+  const claimsByPlan = new WeakMap();
+  const diagnosticsByPlan = new WeakMap();
   let library = { schema:SCHEMA, templates:[], proceduralProfiles:[] };
   let loadPromise = null;
   let loadReport = { source:'defaults', errors:[], warnings:[] };
@@ -391,6 +391,7 @@
     const seed = String(options.seed ?? network.seed ?? 'ruin');
     for (const room of network.rooms) {
       const plan = planForRoom(network,room,seed);
+      room.roomAuthoringPlan = plan; // V50 mechanism generation can consult the exact same room plan before creating an activator.
       if (plan.source === 'template' && plan.footprint) {
         for (let z=0;z<room.h;z++) for (let x=0;x<room.w;x++) {
           if (plan.footprint.rows[z]?.[x] === '#') continue;
@@ -426,56 +427,77 @@
     return values.includes('*') || values.includes('any') || values.includes(String(type));
   }
 
-  function canClaimSpot(network, roomId, category, type) {
+  function canClaimSpotForPlan(plan, roomId, category, type) {
     if (!CATEGORIES.includes(category)) return false;
-    const plan = roomPlan(network,roomId);
-    if (!plan) return true; // Legacy rooms remain fully compatible when no room plan is present.
-    const claims = claimsByNetwork.get(network) || new Map();
-    return plan.spots.some(spot=>{
-      const used = Number(claims.get(String(roomId)+'|'+spot.id) || 0);
+    if (!plan) return true;
+    const claims = claimsByPlan.get(plan) || new Map();
+    return (plan.spots || []).some(spot => {
+      const used = Number(claims.get(spot.id) || 0);
       return used < spot.maxUses && isAllowed(spot,category,type);
     });
   }
 
-  function claimSpot(network, roomId, category, type, options = {}) {
+  function claimSpotForPlan(plan, roomId, category, type, options = {}) {
     if (!CATEGORIES.includes(category)) return {ok:false,reason:'Unknown placement category: '+category};
-    const plan = roomPlan(network,roomId);
     if (!plan) return {ok:true,spot:null,legacy:true};
-    let claims = claimsByNetwork.get(network);
-    if (!claims) {claims=new Map();claimsByNetwork.set(network,claims);}
-    const spot = plan.spots.find(candidate=>{
-      const used = Number(claims.get(String(roomId)+'|'+candidate.id) || 0);
-      return used < candidate.maxUses && isAllowed(candidate,category,type);
-    });
+    let claims = claimsByPlan.get(plan);
+    if (!claims) { claims = new Map(); claimsByPlan.set(plan,claims); }
+    const spot = (plan.spots || []).find(candidate =>
+      Number(claims.get(candidate.id) || 0) < candidate.maxUses && isAllowed(candidate,category,type));
+    let report = diagnosticsByPlan.get(plan);
+    if (!report) { report = {claims:[],rejections:[]}; diagnosticsByPlan.set(plan,report); }
     if (!spot) {
       const diagnostic = {roomId:String(roomId),category,type:String(type),reason:'No unclaimed spot allows this placement.'};
-      const report = diagnosticsByNetwork.get(network) || {claims:[],rejections:[]};
       report.rejections.push(diagnostic);
-      diagnosticsByNetwork.set(network,report);
       return {ok:false,reason:diagnostic.reason,diagnostic};
     }
-    const key = String(roomId)+'|'+spot.id;
-    claims.set(key,(claims.get(key)||0)+1);
+    claims.set(spot.id,(claims.get(spot.id)||0)+1);
     const claim = {roomId:String(roomId),spotId:spot.id,category,type:String(type),claimId:idOf(options.claimId)||null};
-    const report = diagnosticsByNetwork.get(network) || {claims:[],rejections:[]};
     report.claims.push(claim);
-    diagnosticsByNetwork.set(network,report);
     return {ok:true,spot,claim};
   }
 
-  function releaseSpot(network, claim) {
-    if (!network || !claim?.roomId || !claim?.spotId) return false;
-    const claims = claimsByNetwork.get(network);
+  function releaseSpotForPlan(plan, claim) {
+    if (!plan || !claim?.spotId) return false;
+    const claims = claimsByPlan.get(plan);
     if (!claims) return false;
-    const key = String(claim.roomId)+'|'+String(claim.spotId);
-    const count = Number(claims.get(key)||0);
+    const count = Number(claims.get(String(claim.spotId)) || 0);
     if (count <= 0) return false;
-    if (count === 1) claims.delete(key); else claims.set(key,count-1);
+    if (count === 1) claims.delete(String(claim.spotId));
+    else claims.set(String(claim.spotId),count-1);
     return true;
   }
 
+  function roomPlan(network, roomId) {
+    const room = network?.rooms?.find?.(entry=>String(entry.id)===String(roomId));
+    return room?.roomAuthoringPlan || (network?.roomAuthoringPlans || []).find(plan=>String(plan.roomId)===String(roomId)) || null;
+  }
+
+  function canClaimSpot(network, roomId, category, type) {
+    return canClaimSpotForPlan(roomPlan(network,roomId),roomId,category,type);
+  }
+
+  function claimSpot(network, roomId, category, type, options = {}) {
+    return claimSpotForPlan(roomPlan(network,roomId),roomId,category,type,options);
+  }
+
+  function releaseSpot(network, claim) {
+    const plan = roomPlan(network,claim?.roomId);
+    return releaseSpotForPlan(plan,claim);
+  }
+
   function getDiagnostics(network) {
-    const report = diagnosticsByNetwork.get(network) || {claims:[],rejections:[]};
+    const report = {claims:[],rejections:[]};
+    for (const plan of network?.roomAuthoringPlans || []) {
+      const entry = diagnosticsByPlan.get(plan);
+      if (entry) { report.claims.push(...entry.claims); report.rejections.push(...entry.rejections); }
+    }
+    for (const room of network?.rooms || []) {
+      const entry = diagnosticsByPlan.get(room.roomAuthoringPlan);
+      if (entry && !(network?.roomAuthoringPlans || []).includes(room.roomAuthoringPlan)) {
+        report.claims.push(...entry.claims); report.rejections.push(...entry.rejections);
+      }
+    }
     return clone(report);
   }
 
@@ -533,6 +555,9 @@
     canClaimSpot,
     claimSpot,
     releaseSpot,
+    canClaimSpotForPlan,
+    claimSpotForPlan,
+    releaseSpotForPlan,
     getDiagnostics,
     categories:CATEGORIES.slice(),
   });
