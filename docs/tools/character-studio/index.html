@@ -408,6 +408,12 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/mao-ao-skeleton-species-runtime.js?v=20261010maoskel1"></script>
 <script src="../../js/png-plane-avatar.js?v=20261101playerhead1"></script>
 <script src="../../js/avatar-preview-scene.js"></script>
+<!-- Shared game leg and skinned-pants renderer for the Character Studio 3D preview. -->
+<script src="../../js/leg-bones.js?v=20261013hb53d07e"></script>
+<script src="../../js/procedural-leg-animation.js?v=20261031h99e235f"></script>
+<script src="../../config/pants-rigs.js?v=20261015h74422e2"></script>
+<script src="../../js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
+<script src="../../js/pants-garment-renderer.js?v=20261031hd62c30c"></script>
 <script>
 (() => {
 'use strict';
@@ -847,7 +853,7 @@ let work = makeWork('mao-ao', 'male');
 let npcAppearancePass = 0; // Discards slow pattern-layer results after changing the selected NPC or garment.
 let _npcPreviewLayerOrder = 'default'; // Editor-only experiment state; deliberately excluded from work and all export/save paths.
 
-const PLAYER_PORTRAIT_CLOTHING_SLOTS = new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear']);
+const NPC_EDITOR_CLOTHING_SLOTS = new Set(['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']); // Includes skinned trousers and skirts, rendered in the 3D leg preview.
 
 function playerClothingBaseId(item) {
   const rawId = item?.baseCosmeticId || item?.cosmeticId || item?.blueprintId || '';
@@ -893,7 +899,7 @@ function playerAccessibleClothing() {
     const catalogItem = staticCatalog.find(entry => entry?.id === baseId);
     const cachedOption = _cosmetics?.optionCache?.get?.(baseId);
     const slot = String(item.slot || slotHint || window.MetalArmorSystem?.blueprintForItem?.(item)?.slot || catalogItem?.category || cachedOption?.slot || '').toLowerCase();
-    if (!PLAYER_PORTRAIT_CLOTHING_SLOTS.has(slot)) return; // Pants use their separate skinned-leg renderer, not the portrait clothing slots shown here.
+    if (!NPC_EDITOR_CLOTHING_SLOTS.has(slot)) return;
     const identity = item.uid ? 'uid:' + String(item.uid) : 'visual:' + slot + ':' + playerClothingSnapshotSignature({ ...item, slot });
     if (seen.has(identity)) return;
     seen.add(identity);
@@ -911,7 +917,7 @@ function playerAccessibleClothing() {
   return result;
 }
 function equipPlayerClothing(entry) {
-  if (!entry?.baseId || !PLAYER_PORTRAIT_CLOTHING_SLOTS.has(entry.slot) || !entry.item) return false;
+  if (!entry?.baseId || !NPC_EDITOR_CLOTHING_SLOTS.has(entry.slot) || !entry.item) return false;
   const catalog = StudioAccount.getShopCatalog();
   work.cosmeticSlots = { ...(work.cosmeticSlots || {}) };
   work.equippedCosmetics = work.equippedCosmetics.filter(id => {
@@ -1205,7 +1211,7 @@ function previewLoop() {
 // (docs/js/avatar-preview-scene.js), which pins the same Three.js build the
 // Attack Animation Editor and the live game use instead of this tool
 // guessing its own.
-const threeD = { enabled: false, loading: false, previewScene: null, model: null };
+const threeD = { enabled: false, loading: false, previewScene: null, model: null, legs: null, cameraTargetY: 0 }; // Owns the disposable preview leg rig and attached pants garment.
 
 function resize3d() {
   threeD.previewScene?.resize();
@@ -1221,12 +1227,73 @@ async function update3DModel() {
   const backCanvas = document.createElement('canvas');
   backCanvas.width = size; backCanvas.height = size;
   await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, npcPreviewRenderOptions({ portraitView: 'behind' }));
-  threeD.model = threeD.previewScene.setAvatar(frontCanvas, {
+
+  // The leg handle owns its pants garment, so dispose it before the old portrait model is replaced.
+  threeD.legs?.dispose?.();
+  threeD.legs = null;
+  const scene = threeD.previewScene;
+  threeD.model = scene.setAvatar(frontCanvas, {
     backCanvas,
     profile,
     name: 'Studio_Preview_Avatar',
     userData: { source: 'character-studio' },
   });
+  if (!threeD.model) return;
+
+  const modelHeight = Number(threeD.model.userData?.portraitModelHeight) || 0.9;
+  const modelWidth = Number(threeD.model.userData?.portraitModelWidth) || modelHeight;
+  threeD.model.position.y = modelHeight / 2; // Matches the floor-anchored ownership used by gameplay and the Attack Animation Editor.
+  const nextTargetY = modelHeight / 2;
+  const cameraShift = nextTargetY - threeD.cameraTargetY;
+  if (Number.isFinite(cameraShift) && Math.abs(cameraShift) > 1e-6) {
+    scene.camera.position.y += cameraShift;
+    if (scene.controls?.target) {
+      scene.controls.target.y = nextTargetY;
+      scene.controls.update();
+    } else scene.camera.lookAt(0, nextTargetY, 0);
+    threeD.cameraTargetY = nextTargetY;
+  }
+
+  const speciesId = work.appearance?.speciesId;
+  const gender = work.appearance?.gender;
+  const THREE = scene.THREE;
+  threeD.legs = window.ProceduralLegAnimation?.attach?.(THREE, scene.avatarHolder, {
+    speciesId, gender, bodyColors: profile.bodyColors, modelWidth, modelHeight,
+    handAttachY: threeD.model.userData?.handAttachY,
+    name: 'character_studio_preview', profile, portraitSize: size,
+  }) || null;
+  const Pants = window.PantsGarmentRenderer;
+  const garmentId = Pants?.garmentForCosmetics?.(work.equippedCosmetics || []) || null;
+  if (threeD.legs && garmentId && Pants?.hasRigFor?.(speciesId, gender, garmentId)) {
+    try {
+      const itemSnapshot = work.clothingPatterns?.defaultClothing?.pants || null;
+      const appearance = itemSnapshot
+        ? Pants.appearanceFromItem(itemSnapshot)
+        : Pants.appearanceFromBodyColors(profile.bodyColors);
+      const garmentSource = window.HOBUNJI_PANTS_RIGS?.garments?.[garmentId] || null;
+      if (garmentSource) {
+        const docsRoot = new URL('../../', location.href);
+        const sourceLayers = Array.isArray(garmentSource.imageLayers) && garmentSource.imageLayers.length
+          ? garmentSource.imageLayers
+          : (garmentSource.image ? [{ url: garmentSource.image }] : []);
+        const garmentRecord = {
+          ...garmentSource,
+          imageLayers: sourceLayers.map(layer => ({
+            ...layer,
+            url: new URL(String(layer.url || '').replace(/^\.\//, ''), docsRoot).href,
+          })),
+        };
+        const overlayMask = await Pants.buildOverlayMask(frontCanvas, profile);
+        Pants.attachToLegs(THREE, threeD.legs, {
+          avatarGroup: threeD.model, speciesId, gender,
+          name: 'character_studio_preview', garmentId, garmentRecord, appearance, overlayMask,
+        });
+      } else {
+        log('Pants preview data missing for garment: ' + garmentId, 'error');
+      }
+    } catch (error) { log('Pants preview failed: ' + error.message, 'error'); }
+  }
+  threeD.legs?.update?.(0, 0, false, null, {});
 }
 async function toggle3d() {
   if (threeD.enabled) {
@@ -1247,6 +1314,7 @@ async function toggle3d() {
         backgroundColor: 0x060c14,
         holderName: 'character_studio_preview_holder',
         initialView: 'angle',
+        gridY: 0,
       });
       threeD.enabled = true;
     } catch (e) {
@@ -1579,6 +1647,7 @@ function renderCollections() {
     { key: 'pauldron', label: 'Pauldrons', category: 'pauldron', tintKeys: ['PAULDRON'] },
     { key: 'torso',    label: 'Torso',    category: 'torso',    tintKeys: ['TORSO', 'TORSO_B', 'TORSO_C'] },
     { key: 'overwear', label: 'Overwear', category: 'overwear', tintKeys: ['CLOTH', 'CLOTH_B', 'CLOTH_C'] },
+    { key: 'pants',    label: 'Pants / Skirts', category: 'pants', tintKeys: ['PANTS', 'PANTS_B', 'PANTS_C'] },
   ];
   const ownedDyes = dyes; // dev tool: all dyes available
   const appearance = acc.getAppearance();
