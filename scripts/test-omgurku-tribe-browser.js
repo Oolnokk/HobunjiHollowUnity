@@ -24,6 +24,12 @@ const server=http.createServer((req,res)=>{
     res.end(data);
   });
 });
+// A wedged Chromium (software WebGL under load) must not keep this process alive after the result is known: the test printed
+// "passed" and then hung until the CI step was killed. Bound the close, then exit explicitly with the real result code.
+async function closeBounded(browser){
+  try{await Promise.race([browser.close(),new Promise(resolve=>setTimeout(resolve,20000))]);}catch(_){/* already closed */}
+}
+function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,args:['--enable-webgl','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
@@ -70,7 +76,7 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>window.DevSpawner.teleportToDevArena());
     await page.waitForFunction(()=>window.GridTileAccessors.getCurrentArea()==='map_dev_arena',null,{timeout:60000});
     await page.waitForFunction(()=>window.OmgurkuCamps?.debugSnapshot().configReady&&window.PorakanekiCamps?.debugSnapshot().configReady,null,{timeout:60000});
-    const spawned=await page.evaluate(async()=>{
+    await page.evaluate(()=>{window.__spawnTribeQa=async()=>{
       const deps=window.Combat.deps,cfg=await window.BanditCombat.loadGangConfig();
       const chunkSize=window.PorakanekiCamps.__test.streamChunkSizeTiles();
       const chunkCol=Math.floor(deps.player.x/deps.TILE/chunkSize),chunkRow=Math.floor(deps.player.y/deps.TILE/chunkSize);
@@ -78,10 +84,21 @@ const server=http.createServer((req,res)=>{
       const centerRow=Math.max(chunkRow*chunkSize+1.5,Math.min(deps.player.y/deps.TILE,(chunkRow+1)*chunkSize-1.5));
       const spawn=async(tribeId,dx)=>{
         const x=(centerCol+dx)*deps.TILE,y=centerRow*deps.TILE;
-        const entity=await window.BanditCombat.makeEntity({...cfg,speciesWeights:{[tribeId]:1},rangedWeaponChanceByRank:{grunt:0,lieutenant:0,captain:0}},'grunt',0,x,y,{
+        const make=()=>window.BanditCombat.makeEntity({...cfg,speciesWeights:{[tribeId]:1},rangedWeaponChanceByRank:{grunt:0,lieutenant:0,captain:0}},'grunt',0,x,y,{
           zoneId:'map_dev_arena',nameOverride:tribeId+' QA',
           defOverride:{weaponKey:'hatchet',weaponShapeKey:'hatchet'},
           extra:{homeX:x,homeY:y,state:'idle',isTribeHunter:true,tribeId,isPorakanekiHunter:tribeId==='porakaneki',porakanekiCampId:tribeId+'_qa_camp',_porakanekiPlannerControlled:true}});
+        // The weapon holder is built at spawn and stays null (the hostile is unarmed for good) if the weapon's texture is still loading;
+        // the first attempt starts that load. Respawn until it is armed instead of racing the load (bounded).
+        const armedDeadline=performance.now()+150000; // Texture loads can take minutes on a loaded CI runner.
+        let entity;
+        for(;;){
+          entity=await make();
+          if(entity._banditToolHolder)break;
+          window.BanditCombat.discardEntity(entity);
+          if(performance.now()>armedDeadline)throw new Error('The hatchet tool texture never loaded, so the '+tribeId+' hostile could not be armed');
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
       const omg=await spawn('omgurku',-0.25),pora=await spawn('porakaneki',0.25);
@@ -97,17 +114,48 @@ const server=http.createServer((req,res)=>{
         holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
         riderHandY:rider.y-floorY+(ref.riderMount.upper.scale.x||1)*(Number(ref.handAttachY)||0),groundHandY:Number(ref.handAttachY)||0,
         live:window.HobunjiOmgurkuSpecies.debugSnapshot().liveCount};
-    });
-    assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
-    assert.equal(spawned.species,'omgurku');
-    assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
-    assert.equal(spawned.enemyClass,'omgurku-hunter');
-    assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
-    assert(spawned.holderToRider!=null&&spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
-    assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
-    // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
-    await page.waitForFunction(()=>window.__tribeQa.omg._chunkCombatTarget===window.__tribeQa.pora&&window.__tribeQa.pora._chunkCombatTarget===window.__tribeQa.omg,null,{timeout:90000}); // Software-rendered CI frames are slow, so the 5 Hz ecology pass needs generous headroom.
-    await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa;return omg.health<omg.maxHealth||pora.health<pora.maxHealth;},null,{timeout:180000}); // Allow several attack cycles on slow software-rendered CI frames.
+    };});
+    // The yearly Tothal Shift finishes some time after a world starts and ends with clearHostileObjects(), which despawns EVERY hostile,
+    // including these two. When that lands after the spawn their weapon holders are disposed (null) and they keep stale target flags but
+    // are never simulated again, so no amount of waiting can produce a fight. That one cause made this smoke fail on main some runs at
+    // the weapon-holder check and others at the first-hit wait. Detect the wipe at each stage and respawn the pair (bounded).
+    const explainStall=async(stage,error)=>{ // A bare "Timeout exceeded" says nothing about WHY the fighters never fought.
+      const state=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa||{},live=window.Combat.deps.hostileObjects,T=window.Combat.deps.TILE;
+        const pick=e=>e?{state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,hasWeaponHolder:!!e._banditToolHolder,targetsRival:!!e._chunkCombatTarget,attackBusy:!!e._enemyAttackBusyLastFrame,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2)}:null;
+        return {omg:pick(omg),pora:pick(pora),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size};}).catch(()=>null);
+      return new Error(`${error.message}\n[${stage}] fighter state at timeout: ${JSON.stringify(state)}`); // New Error: a mutated message would not show in the already-captured stack that console.error prints.
+    };
+    let fought=false,spawned=null;
+    for(let attempt=0;attempt<3&&!fought;attempt++){
+      spawned=await page.evaluate(()=>window.__spawnTribeQa());
+      if(spawned.holderToRider==null)continue; // Wiped between spawn and measurement.
+      assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
+      assert.equal(spawned.species,'omgurku');
+      assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
+      assert.equal(spawned.enemyClass,'omgurku-hunter');
+      assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
+      assert(spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
+      assert(Math.abs(spawned.holderAboveFloor-spawned.riderHandY)<0.3,`weapon sits at the mounted rider's hand height (hand ${spawned.riderHandY}, weapon ${spawned.holderAboveFloor})`);
+      // Let the shared hostile loop and the 5 Hz tribe ecology pass run.
+      const engaged=await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa,live=window.Combat.deps.hostileObjects;
+        if(!live.has(omg)||!live.has(pora))return 'wiped';
+        return omg._chunkCombatTarget===pora&&pora._chunkCombatTarget===omg?'engaged':false;},null,{timeout:90000}).then(handle=>handle.jsonValue()).catch(async error=>{throw await explainStall('waiting for the tribes to target each other',error);}); // Software-rendered CI frames are slow, so the 5 Hz ecology pass needs generous headroom.
+      if(engaged==='wiped')continue;
+      // The fight is pure simulation, and the game loop caps each frame at 0.04 s of simulated time. With software-rendered 3D, CI frames
+      // can take seconds, so a wall-clock wait bought only a few seconds of combat. Skip rasterization while the fight plays out so simulated
+      // time tracks wall time instead of runner speed; the renderer is restored immediately after, before any screenshot or later check.
+      await page.evaluate(()=>{const renderer=window.__hobunjiGameRenderer;window.__tribeRestoreRender=renderer.render;renderer.render=function(){};});
+      let outcome;
+      try{
+        outcome=await page.waitForFunction(()=>{const {omg,pora}=window.__tribeQa,live=window.Combat.deps.hostileObjects;
+          if(!live.has(omg)||!live.has(pora))return 'wiped';
+          return omg.health<omg.maxHealth||pora.health<pora.maxHealth?'hit':false;},null,{timeout:180000}).then(handle=>handle.jsonValue()).catch(async error=>{throw await explainStall('waiting for the first hit',error);}); // Allow several attack cycles.
+      }finally{
+        await page.evaluate(()=>{if(window.__tribeRestoreRender){window.__hobunjiGameRenderer.render=window.__tribeRestoreRender;window.__tribeRestoreRender=null;}});
+      }
+      fought=outcome==='hit';
+    }
+    assert(fought,'the two tribe hunters spawn armed, engage and trade a hit within three spawn attempts');
     if(SHOTS){
       await page.evaluate(()=>{for(const id of ['ob-overlay','save-startup-gate'])document.getElementById(id)?.style.setProperty('display','none');if(window.Combat.deps.playerMesh)window.Combat.deps.playerMesh.visible=false;}); // Review-only: reveal the fighters under the new-world overlay and behind the player.
       await page.screenshot({path:path.join(SHOTS,'tribe-fight.png')});
@@ -159,5 +207,5 @@ const server=http.createServer((req,res)=>{
     assert.equal(removed.after,removed.before-(removed.wasAttached?1:0),'discarding the hostile releases its compound avatar');
     assert.deepEqual(errors.slice(baseline),[],'tribe spawning, fighting and cleanup raise no exceptions');
     console.log('Omgurku tribe browser smoke passed',JSON.stringify({fight,camps}));
-  }finally{await browser.close();server.close();}
-})().catch(error=>{console.error(error);server.close();process.exitCode=1;});
+  }finally{await closeBounded(browser);server.close();}
+})().catch(error=>{console.error(error);server.close();process.exitCode=1;}).finally(exitWithResult);

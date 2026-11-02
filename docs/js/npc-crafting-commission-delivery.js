@@ -90,6 +90,7 @@
     const startedAt = finite(commission.startedAt, 0); // Acceptance timestamp excluding stockpiled garments.
     const pack = giftingDeps?.getPackClothing?.() || taskDeps?.getPackClothing?.() || [];
     return pack.find(item => {
+      if (item?.cursed) return false; // A cursed garment cannot be delivered; it would be refused after matching and leave the turn-in failing silently.
       const baseId = item?.baseCosmeticId || String(item?.cosmeticId || '').split('::crafted::')[0]; // Authored article identity despite unique crafted ids.
       if (baseId !== commission.articleId || String(item?.weaveMaterial || '') !== commission.material) return false;
       if (startedAt && finite(item?.craftedAt, 0) < startedAt) return false;

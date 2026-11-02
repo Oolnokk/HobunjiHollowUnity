@@ -114,13 +114,37 @@ draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'windowless rooms are 80% dark outside local light pools');
 draw(17);
 assert.equal(fills.length, 1, 'camera-following lighting redraws at approximately 60 Hz');
-assert.equal(gradients[0].radius, 4.8, 'carried interior lantern radius doubles');
-assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 1], 'interior lantern fades linearly across its whole radius');
+assert.equal(gradients[0].radius, 6, 'carried interior lantern gets the broader fade radius');
+assert.deepEqual(gradients[0].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'interior lantern eases into the dark edge');
 localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert.equal(gradients[1].radius, 6, 'furniture light reaches twice its former radius');
-assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 1], 'lamp reveal has no bright plateau or abrupt knee');
-assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 1], 'lamp color glow fades linearly too');
+assert.equal(gradients[1].radius, 7.5, 'furniture light reaches farther so its edge can fade over a wider area');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] }; // Closed slab lies between the player and this lamp.
+draw();
+assert(!gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'a closed interior door blocks the furniture light behind it');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0.5 }] };
+draw();
+const halfOpenLamp = gradients.find(entry => Math.abs(entry.radius - 7.5) < 0.001 && entry.stops[0]?.[1]?.startsWith('rgba(0,0,0,')); // Isolates the lamp's darkness-reveal gradient, not its colored glow.
+const halfOpenAlpha = Number(halfOpenLamp?.stops[0]?.[1]?.match(/rgba\(0,0,0,([0-9.]+)\)/)?.[1]);
+assert(Number.isFinite(halfOpenAlpha) && Math.abs(halfOpenAlpha - 0.4) < 0.01, 'half-open door restores half the lamp light strength');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'fully open door allows the furniture light through');
+{
+  // Several lights in one lighting draw read the door blockers once, not once per light.
+  let blockerReads = 0;
+  localLights = [1, 2, 3, 4].map(n => ({ x: 3, y: 1, z: n, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }));
+  lightingWindow.InteriorDoorTiles = { getLightBlockers: () => { blockerReads++; return [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }]; } };
+  draw();
+  assert.equal(blockerReads, 1, 'door blockers are read once per lighting draw regardless of light count');
+  draw();
+  assert.equal(blockerReads, 2, 'the next draw reads fresh blockers');
+}
+lightingWindow.InteriorDoorTiles = null;
+draw();
+assert.equal(gradients[1].radius, 7.5, 'furniture light reaches farther so its edge can fade over a wider area');
+assert.deepEqual(gradients[1].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp reveal fades gradually into base darkness');
+assert.deepEqual(gradients[2].stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'lamp color glow eases into the dark edge too');
 
 // Farmhouse lights remain present when their sources rotate behind the camera.
 // Both the candle and window retain their full range while the camera turns a quarter-circle.
@@ -130,11 +154,11 @@ cameraAngle = 0;
 localLights = [{ x: 3, y: 1, z: -4, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 0; point.y = 1; point.z = -4; } } }];
 draw();
-assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
+assert.equal(gradients.filter(entry => Math.abs(entry.radius - 7.5) < 0.001).length, 3, 'farmhouse candle and window both illuminate the room when behind the camera');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow remains visible when the player is within the window light range but farther than the pane radius');
 cameraAngle = Math.PI / 2;
 draw();
-assert.equal(gradients.filter(entry => Math.abs(entry.radius - 6) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
+assert.equal(gradients.filter(entry => Math.abs(entry.radius - 7.5) < 0.001).length, 3, 'both farmhouse lights remain active after a 90-degree camera turn');
 assert(gradients.some(entry => Math.abs(entry.radius - 0.55) < 0.001), 'window pane glow also survives the 90-degree camera turn');
 localLights = [{ x: 0, y: 1, z: -20, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 sources = [];
@@ -149,18 +173,18 @@ cameraAngle = 0;
 // A light just beyond the camera far plane must keep its soft edge while its world-space radius overlaps the clip range.
 localLights = [{ x: 95, y: 1, z: 102, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(gradients.some(entry => Math.abs(entry.radius - 10) < 0.001), 'off-screen light center remains active while its influence sphere overlaps the far clip plane');
+assert(gradients.some(entry => Math.abs(entry.radius - 12.5) < 0.001), 'expanded interior light sphere remains active while it overlaps the far clip plane');
 
 // Once the entire light volume is beyond the far plane, it must not leak into the scene.
-localLights = [{ x: 95, y: 1, z: 112, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+localLights = [{ x: 95, y: 1, z: 123, distance: 5, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
 draw();
-assert(!gradients.some(entry => Math.abs(entry.radius - 10) < 0.001), 'light is clipped after its entire influence sphere passes the far plane');
+assert(!gradients.some(entry => Math.abs(entry.radius - 12.5) < 0.001), 'light is clipped after its expanded influence sphere passes the far plane');
 
 localLights = [];
 sources = [{ radiusTiles: 3, strength: 1, mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }];
 draw();
-assert.equal(gradients.at(-1).radius, 6, 'window daylight has a broad pool');
-assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 1], 'window daylight pool uses linear falloff');
+assert.equal(gradients.at(-1).radius, 7.5, 'window daylight has a broad pool');
+assert.deepEqual(gradients.at(-1).stops.map(stop => stop[0]), [0, 0.36, 0.72, 1], 'window daylight pool eases into base darkness');
 
 sources = [{ radiusTiles: 3, strength: 1, projectionPalette: ['#ff2040', '#20a0ff', '#ffe060'], mesh: { getWorldPosition(point) { point.x = 3; point.y = 1; point.z = 2; } } }]; // A patterned Life Temple pane supplies dye colors, not a screen-projected texture.
 draw();
@@ -176,10 +200,20 @@ assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.le
 
 area = 'interior'; // Live player farmhouse, rather than a map_i_* authored building.
 sources = [];
+activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } };
+localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] };
+draw();
+assert.equal(gradients.length, 0, 'a closed farmhouse doorway blocks a lamp in the next room');
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 1 }] };
+draw();
+assert(gradients.some(entry => Math.abs(entry.radius - 7.5) < 0.001), 'opening a farmhouse door restores the light behind it');
+lightingWindow.InteriorDoorTiles = null;
 localLights = [];
+activeScene = {}; // Restore the ordinary interior fixture before checking its carried-light radius.
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'farmhouse receives the same 80% shared interior darkness as authored rooms');
-assert.equal(gradients[0].radius, 4.8, 'farmhouse carried light uses the same doubled, linear indoor radius');
+assert.equal(gradients[0].radius, 6, 'farmhouse and authored rooms share the same broad indoor fade radius');
 activeScene = { userData: { hobunjiPlayerFarmhouseInterior: true } }; // Real player farmhouse scene suppresses the old unconditional player-lit circle.
 draw();
 assert.equal(fills[0], 'rgba(0,0,0,0.8)', 'ordinary farmhouse base darkness is painted even without any local light source');
@@ -194,11 +228,16 @@ activeScene = {};
 draw();
 assert.notEqual(fills[0], 'rgba(0,0,0,0.8)', 'returning to the farm restores outdoor lighting');
 area = 'map_i_town_mine_f_1';
+localLights = [{ x: 3, y: 1, z: 2, distance: 3, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
+lightingWindow.InteriorDoorTiles = { getLightBlockers: () => [{ x: 1.5, z: 1, normalX: 1, normalZ: 0, halfWidth: 0.5, openProgress: 0 }] };
 draw();
 assert.equal(gradients.filter(entry => entry.mode === 'screen' && entry.stops.length === 3).length, 0,
   'a stray glass source never tints underground mine darkness (the building-area selector includes mines)');
 assert.equal(fills[0], 'rgba(0,0,0,0.99)', 'mine darkness is preserved');
 assert.equal(gradients[0].radius, 2.4, 'mine lantern radius keeps its existing tuning');
+assert(!gradients.some(entry => Math.abs(entry.radius - 3) < 0.001), 'closed interior doors also block light in underground rooms');
+lightingWindow.InteriorDoorTiles = null;
+localLights = [];
 assert.equal(gradients[0].stops.length, 4, 'mine lantern profile remains unchanged');
 area = 'farm';
 draw();

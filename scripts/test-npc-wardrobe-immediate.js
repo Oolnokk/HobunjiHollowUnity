@@ -41,6 +41,11 @@ const rec = {
   },
   gifts: { loved: ['style:test'], liked: [], disliked: ['style:itchy'], hated: ['style:garish'] },
 };
+const spouseRec = {
+  id: 'assigned_spouse', name: 'Assigned Spouse', appearance: { speciesId: 'engh-sho', gender: 'female' },
+  equippedCosmetics: ['spouse_default_tunic'], appliedDyes: {}, gifts: { loved: [], liked: [], disliked: ['style:itchy'], hated: ['style:garish'] },
+};
+const noStyleRec = { id: 'no_style_npc', name: 'No Style NPC', appearance: { speciesId: 'engh-sho', gender: 'female' }, equippedCosmetics: ['no_trait_default'], appliedDyes: {} };
 const fallbackRec = {
   id: 'legacy_identity_npc',
   name: 'Legacy Identity NPC',
@@ -82,7 +87,7 @@ const fallbackWalker = {
   avatarBackCanvas: null,
 };
 const gearInventory = { clothingItems: [], clothing: {} };
-const recordById = new Map([[rec.id, rec], [fallbackRec.id, fallbackRec], [offscreenRec.id, offscreenRec]]); // Mimics scheduledNpcRecords so persistence is testable without a live walker.
+const recordById = new Map([[rec.id, rec], [spouseRec.id, spouseRec], [noStyleRec.id, noStyleRec], [fallbackRec.id, fallbackRec], [offscreenRec.id, offscreenRec]]); // Mimics scheduledNpcRecords so persistence is testable without a live walker.
 
 const context = {
   window: null,
@@ -90,9 +95,13 @@ const context = {
   Math,
   document: {},
   DialogueContent: { adjustNpcFavor() {} },
+  RomanceSystem: { getSpouse: () => ({ npcId: 'assigned_spouse' }) },
   ItemTraits: {
     computeItemTraits(cosmeticId, item) {
       if (cosmeticId === 'itchy_poncho') return ['style:test', 'style:itchy'];
+      if (cosmeticId === 'no_trait_default') return [];
+      if (cosmeticId === 'spouse_default_tunic') return ['style:spouse-default'];
+      if (cosmeticId === 'foreign_style_coat') return ['style:foreign'];
       if (cosmeticId === 'garish_hat') return ['style:test', 'style:itchy', 'style:garish'];
       if (cosmeticId === 'offscreen_default_tunic' || cosmeticId === 'default_style_scarf') return ['style:authored-default'];
       if (cosmeticId === 'restored_offscreen_tunic') return ['style:saved-override'];
@@ -164,6 +173,11 @@ walker.area = 'map_i_test_bedroom';
 fallbackWalker.area = 'map_i_test_bedroom';
 
 (async () => {
+  wardrobe.captureDefaultOutfitTraits(noStyleRec);
+  assert.equal(wardrobe.clothingWearability(noStyleRec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'missing default-style data never grants unrestricted manual Wear to ordinary NPCs');
+  const unknownStyleGift = wardrobe.offerClothing(noStyleRec.id, { uid: 'legacy_style_gift', cosmeticId: 'foreign_style_coat', slot: 'torso' });
+  assert.equal(unknownStyleGift.accepted, true, 'legacy NPC gift acceptance still fails open when no authored style traits exist');
+  assert.equal(unknownStyleGift.worn, true, 'legacy gift-time fallback remains intact without granting manual wardrobe override');
   assert.equal(await wardrobe.syncWalkerOutfit(walker), true, 'authored default NPC pattern policy triggers an initial post-spawn rebake without requiring a wardrobe override');
   const defaultPatternedOverwear = wovenRenderBatches.at(-1).find(item => item.slot === 'overwear');
   assert.equal(defaultPatternedOverwear.weaving.patterns[0].motifDataUrl, defaultNpcPrimary.motifDataUrl, 'default NPC clothing can carry an ordinary authored first pattern');
@@ -224,6 +238,32 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(rec.appliedDyes.CLOTH, 'dye:CLOTH:new_primary', 'manual Wear restores the stored copy\'s dye');
   contents = wardrobe.getWardrobeContents('test_npc');
   assert.equal(contents.stored.length, 2, 'same-cosmetic swaps keep exactly one stored copy per displaced color');
+
+  const foreignStyle = { uid: 'foreign_style', cosmeticId: 'foreign_style_coat', slot: 'torso' };
+  assert.equal(wardrobe.clothingWearability(rec, foreignStyle).allowed, false, 'ordinary NPCs cannot manually wear clothing outside their authored default style');
+  const spouseStyleOverride = wardrobe.clothingWearability(spouseRec, { ...foreignStyle }, { spouseOverride: true });
+  assert.equal(spouseStyleOverride.allowed, false, 'spouse override is unavailable until the assigned spouse wardrobe is actively open');
+  let mountedOverlay = null; // Mirrors the real DOM: the overlay is findable by id only while it is mounted.
+  const fakeElement = () => { const el = { style: {}, dataset: {}, addEventListener() {}, appendChild() {}, querySelector: () => ({ addEventListener() {} }), querySelectorAll: () => [], remove() { if (mountedOverlay === el) mountedOverlay = null; } }; return el; };
+  context.document = { createElement: fakeElement, getElementById: id => (id === 'npcWardrobeOverlay' ? mountedOverlay : null), body: { appendChild(el) { if (el.id === 'npcWardrobeOverlay') mountedOverlay = el; } } };
+  wardrobe.openWardrobePanel(spouseRec.id, { area: 'interior', source: 'family', furnitureId: 'assigned-spouse-wardrobe' });
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget()?.npcId, spouseRec.id, 'only the assigned spouse furniture panel activates the clothing override');
+  assert.equal(wardrobe.clothingWearability(rec, foreignStyle, { spouseOverride: true }).allowed, false, 'another NPC cannot borrow the spouse-only override while the spouse panel is open');
+  assert.equal(wardrobe.clothingWearability(spouseRec, { ...foreignStyle, cosmeticId: 'garish_hat' }, { spouseOverride: true }).allowed, true, 'assigned spouse wardrobe bypasses both style and disliked/hated clothing vetoes');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-coat', cosmeticId: 'foreign_style_coat', slot: 'torso' }), true, 'pack clothing can be moved directly into the active spouse wardrobe');
+  assert.equal(wardrobe.getWardrobeContents(spouseRec.id).stored.some(item => item.cosmeticId === 'foreign_style_coat'), true, 'direct transfer stores the complete clothing instance for later wearing');
+  assert.equal(await wardrobe.wearStoredItem(spouseRec.id, wardrobe.getWardrobeContents(spouseRec.id).stored.find(item => item.cosmeticId === 'foreign_style_coat').uid, { spouseOverride: true }), true, 'assigned spouse can actually equip a stored clothing item outside their default style');
+  assert.ok(spouseRec.equippedCosmetics.includes('foreign_style_coat'), 'spouse override writes the new garment into the canonical NPC outfit');
+  mountedOverlay = null; // Something removed the overlay without going through closeWardrobePanel().
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'spouse privileges end when the panel disappears, even if closeWardrobePanel was bypassed');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-orphan', cosmeticId: 'foreign_style_coat', slot: 'torso' }), false, 'a vanished panel cannot keep accepting pack transfers');
+  wardrobe.openWardrobePanel(spouseRec.id, { area: 'interior', source: 'family', furnitureId: 'assigned-spouse-wardrobe' });
+  wardrobe.closeWardrobePanel();
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'closing the spouse wardrobe removes the override context');
+  assert.equal(wardrobe.storePackItem(spouseRec.id, { uid: 'pack-after-close', cosmeticId: 'foreign_style_coat' }), false, 'pack transfer cannot target a closed or unassigned wardrobe');
+  wardrobe.openWardrobePanel(spouseRec.id, { area: 'map_i_spouse_bedroom', source: 'authored' });
+  assert.equal(wardrobe.getActiveSpouseWardrobeTarget(), null, 'an ordinary authored NPC wardrobe cannot activate the special spouse override');
+  wardrobe.closeWardrobePanel();
 
   const dislikedGift = wardrobe.offerClothing('test_npc', {
     uid: 'player_owned_disliked',
@@ -415,6 +455,22 @@ fallbackWalker.area = 'map_i_test_bedroom';
     assert.equal(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.pattern.frameY, -186, npcId + ' keeps the adjusted Tankan Guard Emblem placement');
     assert.deepEqual(Array.from(productionNpcPatternPolicy.npcs[npcId].forcedOverpassBySlot.overwear.roles), ['poncho'], npcId + ' applies the emblem only to the poncho sprite role');
   }
+  // Wardrobes saved before gifts carried acceptedByNpcId must stay wearable by the NPC that owns them, while clothing the
+  // player placed into a spouse wardrobe (sourcePackUid) keeps the style gate once it is no longer a spouse-override.
+  wardrobe.restore({ version: 3, stored: { [rec.id]: [
+    { uid: 'legacy_off_style', cosmeticId: 'foreign_style_coat', slot: 'torso' },
+    { uid: 'player_placed', cosmeticId: 'foreign_style_coat', slot: 'torso', sourcePackUid: 'pack-1' },
+  ] }, outfits: {} });
+  const migrated = wardrobe.getWardrobeContents(rec.id).stored;
+  assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'legacy_off_style')).allowed, true, 'legacy stored clothing without provenance stays wearable after load');
+  assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'player_placed')).allowed, false, 'clothing placed by the player keeps the ordinary-NPC style gate');
+  assert.equal(wardrobe.clothingWearability(rec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'an item that never came through a save or the NPC still fails closed');
+  // Cursed clothing is refused by the wardrobe itself, whichever caller (gift UI, commission turn-in) reaches it.
+  const cursedStoredBefore = wardrobe.getWardrobeContents(rec.id).stored.length;
+  const cursedVerdict = wardrobe.offerClothing(rec.id, { uid: 'cursed-gift', cosmeticId: 'fine_poncho', slot: 'overwear', cursed: { kind: 'circlet', dispelBy: 'garanki' } });
+  assert.equal(cursedVerdict.accepted, false, 'cursed clothing is never accepted as a gift');
+  assert.equal(cursedVerdict.worn, false, 'and is never put on');
+  assert.equal(wardrobe.getWardrobeContents(rec.id).stored.length, cursedStoredBefore, 'nor stored in the wardrobe');
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
   console.log('Immediate NPC wardrobe behavior passed.');
 })().catch(error => {

@@ -51,6 +51,38 @@ Do not opt these physical parts into `markHeldPlane()` or the reserved 1.5
 marker. `scripts/test-shattercasks.js` executes the production classifier
 against the held parts and tests the filled, terrain-projected blast preview.
 
+## Elevation-aware ground x-ray
+
+Ground is no longer removed wholesale from the held/foot depth rebuild.
+Each replay groups visible tools, hands, feet and shell sources by the
+standing elevation of their owning actor:
+
+- The player uses the movement root plus the active
+  `townSubtleElevation` composer channel, which is the same lift used for
+  town terrain and walkable furniture.
+- NPC equipment resolves to its `npc_walker_*` root (also explicitly tagged
+  by the NPC held-equipment runtime). NPC procedural body parts can resolve
+  through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
+  body groups use their existing `namedAnimalNpc` marker.
+- Ground materials with standard Three.js world-position shaders discard only
+  front-facing, upward-facing fragments within 0.18 world units of the actor's standing
+  elevation. Lit materials use their transformed normal; unlit MeshBasic grass
+  uses its geometry normal. Any ground geometry without a normal attribute keeps
+  full-depth occlusion rather than guessing its surface orientation. World-space Y naturally includes map
+  tiers, trench bottoms, raised earth and continuous terrain surfaces.
+- Vertical cliff/wall faces and back-facing floors/ceilings remain depth occluders. Water, slush, snow,
+  billboard grass, props and other solid geometry retain their existing
+  material/depth behavior.
+- Unknown actor ownership, missing geometry normals, and custom ground shaders
+  without the required standard chunks fail closed: their ground remains fully opaque to the
+  held/foot overlay rather than guessing an elevation.
+
+Actors at effectively the same elevation share a replay; different elevations
+get separate depth replays. The shell-outline pass uses the same grouping and
+fragment filter, so an object's visible pixels and expanded shell cannot
+disagree about which ground level blocks them. The final colorless ground
+restore remains before translucent water/slush tinting.
+
 ## Head-relative tools
 
 Head-relative (mouth-anchored) tools now draw alongside ordinary held equipment
@@ -86,14 +118,16 @@ world occlusion, underwater tint, or avatar ordering.
 `wrappedRender` in `held-object-render-order.js` first collects the
 current scene's `held`, `feet`, `ground`, `topFaceGround`, and
 `tintCovers`. It hides the selected held/foot meshes for the **ordinary
-world color pass**, then invokes `replaySelectiveHeldOverlay`.
+world color pass**, then invokes `replaySelectiveHeldOverlay`. The selective
+overlay now runs one depth/overlay pair per actor-elevation group; it keeps
+ground meshes in the depth replay and filters only same-elevation top faces.
 
 The replay order is:
 
 | Order | Operation | Color | Depth / stencil |
 | --- | --- | --- | --- |
-| 1 | Clear depth; replay real solid occluders while hiding selected **base grass/paths**, held/foot meshes, and (when tinting) water/slush covers | **Unchanged** | Rebuild solid depth. Force suitable alpha-cutout occluders to write depth while preserving their silhouettes |
-| 2 | Draw registered held objects, hands and procedural feet | **Draw once** | In tint mode, temporarily require `depthTest: true` and `depthWrite: true`, and stamp **stencil bit 0** on visible fragments |
+| 1 | For each actor-elevation group, clear depth; replay solid occluders with ground present, discarding only same-elevation upward-facing ground fragments; hide held/foot meshes and (when tinting) water/slush covers | **Unchanged** | Rebuild solid depth. Force suitable alpha-cutout occluders to write depth while preserving their silhouettes |
+| 2 | Draw that elevation group's registered held objects, hands and procedural feet | **Draw once per group** | In tint mode, temporarily require `depthTest: true` and `depthWrite: true`, and accumulate **stencil bit 0** on visible fragments |
 | **3 — critical** | **Restore base grass/path depth via `GROUND_REPLAY_LAYER`** | **None** (`colorWrite: false`) | Reintroduce the real foreground grass depth **BEFORE** sampling/translucently drawing water |
 | 4 | Replay water/slush via `WATER_REPLAY_LAYER` using their original translucent materials | **Blend tint once** | `depthTest: true`, `depthWrite: false`, stencil must equal bit 0. Both depth **and** stencil must pass |
 | 5 | Replay the water/slush surface **depth only** | **None** | `depthWrite: true`, `colorWrite: false`; do not apply the water color a second time |
@@ -116,14 +150,51 @@ The overlay's normal x-ray exemption is intentionally narrow:
 it also classifies explicitly tagged interior floors (farmhouse, authored, cavern walkable,
 V50 ruin plateau, and rooted Stone Age) while preserving ordinary raised
 geometry, cave walls, snow/slush caps, water, and grass billboards as
-occluders. Carved cave shells are never removed wholesale: only upward-facing
-floor triangles are omitted from their depth-reconstruction geometry;
-their vertical walls and ceiling still write depth.
+occluders. Carved cave shells retain their full original geometry during depth
+reconstruction. The elevation shader discards only same-height, front-facing
+upward floor fragments; different-height top faces, vertical walls and ceilings
+continue to write depth.
 The screen-space scissor, per-scene registries, and conservative cover/
 overlay overlap check limit the cost. Near-plane/uncertain geometry can
 fall back to the full tint path. Framebuffers with no usable stencil
 keep conservative cover occlusion rather than painting unsupported
 partial tint.
+
+## Shell outlines inherit the source object's ground-x-ray visibility
+
+The inverted-hull shell pass is a separate render from the visible object draw.
+Without an explicit parity step, the base mesh can correctly x-ray through
+classified ground while its shell is still rejected by the ordinary ground
+depth left in the framebuffer.
+
+HeldObjectRenderOrder applies the same rule to both representations:
+
+1. The normal layer-1 shell pass temporarily omits registered held/foot x-ray
+   meshes, preventing a duplicate shell draw under ordinary ground depth.
+2. A scissored replay clears depth only around those meshes and reconstructs
+   solid depth while excluding the exact groundKind() set used by the
+   visible held/foot x-ray. The source meshes remain in the depth replay (with
+   depth writes temporarily enabled) so their front faces still mask the
+   expanded shell. Snow, water, slush, furniture, rocks, walls and other
+   non-ground occluders remain in this depth reconstruction. Carved
+   cavern shells retain their complete geometry; only same-height top faces are
+   discarded by the elevation filter, while different-height floors, walls and
+   ceilings continue to block outlines.
+3. Only the registered x-ray meshes' layer-1 shells are drawn against that
+   reconstructed depth. Their shell therefore follows the same ground
+   visibility exception as the underlying mesh without becoming visible
+   through unrelated solid objects.
+4. The ordinary scene depth is rebuilt colorlessly before later target and
+   outline consumers run. The replay restores the camera mask, override
+   material, visibility, geometry, scissor, shadow and renderer state.
+
+This is deliberately tied to the shared x-ray participant registries and
+ground classifier, rather than adding separate per-material or per-species
+shell exceptions. When another object type joins the selective ground-x-ray
+system, its registered shell automatically receives the same visibility
+policy. The shell replay is limited to the projected bounds of the affected
+objects when safe; skinned, instanced, morphed or near-plane-uncertain bounds
+fall back to a full-frame replay.
 
 ## The confirmed regression: teal patches in raised flooded grass
 

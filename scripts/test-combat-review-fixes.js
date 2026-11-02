@@ -14,6 +14,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const game = read('docs/game.js');
 const core = read('docs/js/combat/combat-core.js');
 const ranged = read('docs/js/combat/ranged-weapons.js');
+const nv = read('docs/js/nearby-volume-collision.js');
 const reticle = read('docs/js/combat/melee-hud-reticle.js');
 const dodge = read('docs/js/combat/combat-enemy-dodge.js');
 const enemySearch = read('docs/js/combat/enemy-search-ai.js');
@@ -64,6 +65,23 @@ assert.match(reticle, /if \(outOfReach \|\| !profile\.attackId/, 'out-of-reach h
 
 // ── EnemySearchAI extraction ──────────────────────────────────────────
 assert.match(game, /= window\.EnemySearchAI;/, 'game.js consumes the extracted enemy search module');
+assert.match(game, /lineOfSightBlocker: c\._enemyVisibilityLosDebug[\s\S]{0,180}kind: c\._enemyVisibilityLosDebug\.kind/, 'mobile combat diagnostics identify the obstacle that blocked sight');
+assert.match(ranged, /losTerrainStepTiles: 0\.25/, 'NPC sight samples terrain finely enough to catch narrow wall crossings');
+assert.match(ranged, /InteriorDoorTiles\?\.blocksBox\?\.\(deps\.getCurrentArea\(\)/, 'closed interior doors block NPC line of sight even though they are separate from terrain tiles');
+assert.match(ranged, /function engagementRangePx\(itemKey\)[\s\S]{0,220}RANGE_FALLOFF_DISTANCE_MULTIPLIER/, "ranged engagement radius follows the projectile's actual maximum travel distance");
+assert.match(ranged, /function rangedAttackRadiusPx\(entity\)[\s\S]{0,260}rangedAttackRadiusPx/, 'an enemy definition may reduce its ranged attack radius without exceeding projectile reach');
+assert.match(ranged, /if \(distToPlayer > maxRange\) \{\s*return \{ aimAngle, moving: false, handled: true, holdingRange: true \}/, 'ranged bandits hold position instead of approaching targets');
+assert.match(ranged, /function hasLineOfSight\(observer, target\)/, 'ranged collision exposes the NPC visibility entry point');
+assert.match(ranged, /const result = computeBanditLos\(observer, target, \{ projectileRadiusPx: 0, losTerrainStepTiles: 0\.25 \}\)/, 'NPC perception uses the real terrain and cover segment test');
+assert.match(ranged, /NearbyVolumeCollision\?\.segmentSightHit/, 'NPC sight uses the setting-independent semantic-cover query');
+assert.match(nv, /function ensureCandidates\(forSight = false\)[\s\S]{0,260}if \(!deps \|\| \(!forSight && \(!options\.enabled \|\| !options\.projectiles\)\)\)/, 'sight candidate indexing bypasses projectile-only settings while ordinary projectile checks still respect them');
+assert.match(ranged, /sceneGeometrySightBlock\(segment\)/, "NPC perception raycasts the active area's real opaque scene geometry");
+assert.match(game, /getSightOccluders: enemySightOccluders/, 'game supplies cached active-area wall and building meshes to NPC sight');
+assert.match(enemySearch, /_enemyLastSeenX = target\.x[\s\S]{0,1400}_enemySearchLastKnownX = freshSighting \? c\._enemyLastSeenX/, 'search begins from a recently confirmed visible position (behavior covered by test-enemy-search-last-seen.js)');
+assert.match(ranged, /hasLineOfSight,/, 'ranged collision exposes the shared geometric LOS check');
+assert.match(enemySearch, /targetInsideAttackCone[\s\S]{0,180}RangedWeapons\?\.hasLineOfSight/, 'enemy acquisition requires both facing and geometric LOS');
+assert.doesNotMatch(game, /distToPlayer > def\.leashRangePx/, 'player distance alone cannot immediately break combat');
+assert.match(game, /lastKnownDistance > TILE \* 0\.45[\s\S]{0,180}moveCreatureToward\(c, lastKnownX, lastKnownY, def\.chaseSpeed, entityDt\)/, 'searching hostiles navigate toward their last-known player position');
 assert.doesNotMatch(game, /function (enemyCanSeeTarget|beginEnemySearch|updateEnemySearch|enemyAttackAlignment|enemyAttackBusy)\(/, 'no duplicate enemy search implementation remains in game.js');
 const coreTag = html.indexOf('js/combat/combat-core.js?v=');
 const searchTag = html.indexOf('js/combat/enemy-search-ai.js?v=');
@@ -71,25 +89,49 @@ const gameTag = html.indexOf('game.js?v=');
 assert(coreTag > 0 && searchTag > coreTag && searchTag < gameTag, 'enemy-search-ai.js loads after combat-core.js and before game.js');
 
 let inCone = false;
+let lineOfSightClear = true;
 const searchRuntime = {
   THREE: { MathUtils },
+  performance: { now: () => 1000 },
   window: {
     FormatUtils: { clamp: MathUtils.clamp },
     Combat: { targetInsideAttackCone: () => inCone, postAttackTurnMultiplier: () => 1 },
+    RangedWeapons: { hasLineOfSight: () => lineOfSightClear, rangedAttackRadiusPx: entity => entity.def.rangedWeaponKey ? 900 : 0 },
   },
 };
 vm.runInNewContext(enemySearch, searchRuntime);
 const AI = searchRuntime.window.EnemySearchAI;
 const hostile = { x: 0, y: 0, facing: 0, state: 'chase', def: { aggroRangePx: 500 } };
-const target = { x: 0, y: 100, health: 50 };
+const target = { x: 0, y: -100, health: 50 };
+inCone = true;
+assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), true, 'clear sight records the target position as last seen');
+const rangedGuard = { x: 0, y: 0, facing: 0, def: { aggroRangePx: 500, rangedWeaponKey: 'crossbow' } };
+const distantTarget = { x: 0, y: 700, health: 50 };
+assert.equal(AI.enemyCanSeeTarget(rangedGuard, distantTarget, 500), true, 'ranged enemies acquire targets within weapon reach even beyond ordinary aggro range');
+const meleeGuard = { x: 0, y: 0, facing: 0, def: { aggroRangePx: 500 } };
+assert.equal(AI.enemyCanSeeTarget(meleeGuard, distantTarget, 500), false, 'melee enemies retain their ordinary aggro radius');
+target.x = 25;
+target.y = 100; // The player moves around the NPC to the opposite side after disappearing.
+lineOfSightClear = false;
+assert.equal(AI.enemyCanSeeTarget(hostile, target, 500), false, 'a wall blocks the next sight sample');
 AI.beginEnemySearch(hostile, target);
 assert.equal(hostile.state, 'searching');
-assert.equal(hostile._enemySearchDirection, 1, 'first sweep turns toward the side the target vanished on');
+assert.equal(hostile._enemySearchDirection, -1, 'first sweep follows the last visible side, not the hidden current side');
+assert.equal(hostile._enemySearchLastKnownX, 0, 'search uses the last visible X, not the hidden live player X');
+assert.equal(hostile._enemySearchLastKnownY, -100, 'search uses the last visible Y, not the hidden live player Y');
+assert.equal(AI.ENEMY_SEARCH_DURATION_S, 8, 'search lasts long enough to pursue and investigate the last-known position');
+target.x = 40;
 AI.updateEnemySearch(hostile, 0.1, target);
-assert(hostile.facing > 0, 'search sweep rotates the hostile');
+assert.equal(hostile._enemySearchLastKnownX, 0, 'unseen player movement does not update the last-known position');
+AI.updateEnemySearch(hostile, 0.1, target);
+assert(hostile.facing < 0, 'search sweep rotates toward the last-seen side');
 inCone = true;
+lineOfSightClear = false;
 AI.updateEnemySearch(hostile, 0.1, target);
-assert.equal(hostile.state, 'chase', 'regaining sight resumes the chase');
+assert.equal(hostile.state, 'searching', 'a wall still blocks reacquisition inside the facing cone');
+lineOfSightClear = true;
+AI.updateEnemySearch(hostile, 0.1, target);
+assert.equal(hostile.state, 'chase', 'regaining geometric line of sight resumes the chase');
 inCone = false;
 AI.beginEnemySearch(hostile, target);
 AI.updateEnemySearch(hostile, AI.ENEMY_SEARCH_DURATION_S + 0.01, target);

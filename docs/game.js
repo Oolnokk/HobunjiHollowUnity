@@ -6809,7 +6809,10 @@
           // leash anchor; leashing to it flipped chase -> return every frame
           // between 5 Hz ecology ticks, so travel won and the fight never landed.
           // The ecology pass itself drops the target once it leaves the chunk.
-          if (c.state === 'chase' && (distToPlayer > def.leashRangePx || (!chunkCombatTarget && distFromHome > def.leashRangePx))) {
+          // The home leash is the actual pursuit boundary. Player distance alone must
+          // not cancel combat: otherwise a player can break engagement just by
+          // running a short distance, even while the hostile can still pursue.
+          if (c.state === 'chase' && !chunkCombatTarget && distFromHome > def.leashRangePx) {
             c.state = 'return';
           } else if (c.state === 'chase' && !chunkCombatTarget && !enemyAttackBusy(c) && !enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx)) {
             beginEnemySearch(c, targetPlayer);
@@ -6964,8 +6967,17 @@
               }
             }
           } else if (c.state === 'searching') {
-            moving = false;
             aimAngle = updateEnemySearch(c, entityDt, targetPlayer);
+            // Search is an active pursuit: move to the position where the
+            // player was last seen, then scan there instead of standing still.
+            const lastKnownX = c._enemySearchLastKnownX;
+            const lastKnownY = c._enemySearchLastKnownY;
+            if (c.state === 'searching' && Number.isFinite(lastKnownX) && Number.isFinite(lastKnownY)) {
+              const lastKnownDistance = Math.hypot(lastKnownX - c.x, lastKnownY - c.y);
+              moving = lastKnownDistance > TILE * 0.45
+                ? moveCreatureToward(c, lastKnownX, lastKnownY, def.chaseSpeed, entityDt)
+                : false;
+            }
           } else if (c.state === 'chase') {
             aimAngle = Math.atan2(dyp, dxp);
             if (c.isBandit) {
@@ -16946,6 +16958,10 @@
       // the wheel decide" via clearManualHeldItem.
       let manualHeldItem = null; // { kind: 'clothing', uid } | null
       function setManualHeldItem(item) {
+        if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
+          showToast('A cursed garment cannot be given away until its curse is lifted.', false);
+          return;
+        }
         if (item?.kind === 'clothing' && !window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: { uid: item.uid } })) {
           showToast('Only clothing in your pack can be held or given away.', false);
           return;
@@ -21281,6 +21297,20 @@
           if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
+      }
+      let enemySightOccluderFrame = -1; // Rebuilds the NPC sight obstacle list once per gameplay frame, not once per hostile.
+      let enemySightOccluderArea = null; // Prevents an old area's wall meshes surviving a fast doorway transition.
+      let enemySightOccluderMeshes = []; // Shared geometry list for every hostile's cached visibility ray this frame.
+      function enemySightOccluders() {
+        if (enemySightOccluderFrame !== gameFrameSerial || enemySightOccluderArea !== currentArea) {
+          enemySightOccluderMeshes = currentAreaOcclusionMeshes();
+          if (currentArea === 'interior' && interiorWallGroup && !enemySightOccluderMeshes.includes(interiorWallGroup)) {
+            enemySightOccluderMeshes.push(interiorWallGroup); // NPC sight must see interior walls even when the player camera is in its ordinary follow mode.
+          }
+          enemySightOccluderFrame = gameFrameSerial;
+          enemySightOccluderArea = currentArea;
+        }
+        return enemySightOccluderMeshes;
       }
       // Pulls the camera in along the target→camera line if something from
       // currentAreaOcclusionMeshes() sits between them — the fixed south-of-
@@ -29353,6 +29383,11 @@
             state: c.state,
             facingDeg: Math.round((c.facing || 0) * 180 / Math.PI),
             seesPlayer: enemyCanSeeTarget(c, player, c.def.aggroRangePx),
+            lineOfSightBlocker: c._enemyVisibilityLosDebug
+              ? { clear: !!c._enemyVisibilityLosDebug.clear, kind: c._enemyVisibilityLosDebug.kind, id: c._enemyVisibilityLosDebug.id || null } : null,
+            lastKnownPlayerTile: Number.isFinite(c._enemySearchLastKnownX) && Number.isFinite(c._enemySearchLastKnownY)
+              ? { x: Math.round(c._enemySearchLastKnownX / TILE), y: Math.round(c._enemySearchLastKnownY / TILE) } : null,
+            searchTimeRemainingS: Number.isFinite(c._enemySearchT) ? Math.max(0, c._enemySearchT) : null,
             attackBusy: enemyAttackBusy(c),
             turnRecoveryMultiplier: window.Combat?.postAttackTurnMultiplier?.(c) ?? 1,
           })),
@@ -29681,6 +29716,7 @@
         hostileObjects,
         npcWalkers, // Exposed to the ranged debug snapshot so friendly portrait hitboxes can be inspected without making them damage targets.
         getCurrentArea: () => currentArea,
+        getSightOccluders: enemySightOccluders,
         getActiveScene: window.GridTileAccessors.getActiveScene,
         // Same live render-height lookup Combat.init supplies for named
         // animal projectiles (see its own getActorWorldY) — a shooter or

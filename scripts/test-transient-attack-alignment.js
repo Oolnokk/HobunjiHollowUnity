@@ -67,7 +67,7 @@ assert.equal(requestContext.meleeAttackFacingCommit.angle,0.9,'manual heavy drag
 assert.doesNotMatch(game,/function updateMeleeAttackAlignment\(/,'player has no target-facing alignment simulation');
 assert.match(core, /configuredEase\(progress, targetingConfig\.alignmentEasing\)/, 'player alignment easing is configurable');
 assert.match(core, /configuredEase\(t, targetingConfig\.postAttackTurnEasing\)/, 'post-attack recovery easing is configurable');
-assert.match(enemySearch, /function enemyCanSeeTarget\([\s\S]{0,260}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
+assert.match(enemySearch, /function enemyCanSeeTarget\([\s\S]{0,500}targetInsideAttackCone/, 'enemy sight uses the same shared cone');
 assert.match(enemySearch, /state = 'searching'/, 'enemies search after losing sight');
 assert.match(enemySearch, /function updateEnemySearch\(/, 'enemy scanning can reacquire the player');
 assert.match(game, /postAttackTurnMultiplier\?\.\(player\)/, 'player look inputs are rate-scaled after attacks');

@@ -26,6 +26,7 @@
 
   const maps = new Map(); // mapId -> { mapId, puzzleMapId, doors: [door] }
   let deps = null;
+  const EMPTY_LIGHT_BLOCKERS = Object.freeze([]); // Shared result when no doors apply, so a lookup never allocates.
 
   function init(injected) { deps = injected || null; }
 
@@ -253,7 +254,7 @@
   async function build({ THREE, scene, mapId, mapData, floorSet, surfaceYAt, registerInteractable, decorate }) {
     discard(mapId);
     const tiles = doorGroupsOf(mapData, floorSet); // Includes map-switch doors without changing their travel action.
-    const state = { mapId, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
+    const state = { mapId, scene, puzzleMapId: `interiorDoors:${mapId}`, doors: [] };
     maps.set(mapId, state);
     if (!tiles.length) return state;
     const data = await loadDoorData();
@@ -337,5 +338,35 @@
     }));
   }
 
-  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
+  // Returns one record per door of the map for the active scene. The records (and the array) are
+  // reused and refreshed in place on every call so the per-frame lighting pass allocates nothing:
+  // callers must read them immediately and not keep them across calls.
+  function getLightBlockers(mapId, activeScene = null) {
+    const requested = mapId == null ? null : maps.get(String(mapId));
+    const state = requested && (!activeScene || requested.scene === activeScene)
+      ? requested
+      : (activeScene ? [...maps.values()].find(candidate => candidate.scene === activeScene) : null);
+    if (!state) return EMPTY_LIGHT_BLOCKERS;
+    const doors = state.doors;
+    const records = state.lightBlockers || (state.lightBlockers = []);
+    records.length = doors.length;
+    for (let i = 0; i < doors.length; i++) {
+      const entry = doors[i];
+      const record = records[i] || (records[i] = { x: 0, z: 0, normalX: 0, normalZ: 0, halfWidth: 0.5, openProgress: 0 });
+      const group = entry.group;
+      group.updateWorldMatrix?.(true, false); // Same refresh getWorldPosition() performs, without its Vector3.
+      const elements = group.matrixWorld?.elements;
+      record.x = elements ? elements[12] : (group.position?.x || 0);
+      record.z = elements ? elements[14] : (group.position?.z || 0);
+      const angle = -(ROTATION_DEG[entry.facing] ?? ROTATION_DEG.north) * Math.PI / 180;
+      record.normalX = Math.sin(angle);
+      record.normalZ = Math.cos(angle);
+      record.halfWidth = Math.max(0.5, entry.tiles.length * 0.5);
+      const progress = Number(group.userData?.puzzleProgress);
+      record.openProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : (entry.active ? 1 : 0);
+    }
+    return records;
+  }
+
+  window.InteriorDoorTiles = Object.freeze({ init, orientation, doorTilesOf, doorRecordsOf, doorGroupsOf, doorPosition, insideFloorForExit, outsideTileForExit, getLightBlockers, doubleDoorData, exitSettings, recordOrientation, build, discard, tick, update, blocksBox, debug });
 })();

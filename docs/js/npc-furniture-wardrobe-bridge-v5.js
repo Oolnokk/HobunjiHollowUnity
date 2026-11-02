@@ -170,9 +170,13 @@
       || safeId(id).replace(/[_-]+/g, ' ');
   }
 
-  function openWardrobe(npcId, area = null, furnitureId = null) {
+  function openWardrobe(npcId, area = null, furnitureId = null, validatedOwner = null) {
     if (!safeId(npcId) || !window.NpcWardrobe?.openWardrobePanel) return false;
-    window.NpcWardrobe.openWardrobePanel(npcId); // Existing per-NPC inventory, clothing rules and save data are reused unchanged.
+    const id = safeId(npcId), pieceId = safeId(furnitureId);
+    const binding = areaBindings.get(area)?.get(pieceId);
+    const validated = validatedOwner?.npcId === id && validatedOwner?.furnitureId === pieceId;
+    const source = validated ? validatedOwner.source : (binding?.npcId === id ? binding.source : 'authored'); // Family privileges require the exact owner/furniture pair returned by ownerForPlacement on the interaction path.
+    window.NpcWardrobe.openWardrobePanel(id, { area, source, furnitureId: pieceId }); // Only validated family furniture can grant the spouse-only clothing override.
     lastOpened = { npcId, area, furnitureId };
     return true;
   }

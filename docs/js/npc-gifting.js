@@ -261,7 +261,7 @@
       if (!uid) return false;
       const gear = deps.getGearInventory?.(); // Includes equipped records from older saves, even if the collection is missing.
       if (gear?.clothingItems?.some(item => item?.uid === uid) || Object.values(gear?.clothing || {}).some(item => item?.uid === uid)) return false;
-      return !!deps.getPackClothing?.()?.some(item => item?.uid === uid);
+      return !!deps.getPackClothing?.()?.some(item => item?.uid === uid && !item.cursed); // A cursed garment (looted lich circlet, Maskbound mask) is never handed to an NPC to wear or stash; the curse has to be lifted first.
     }
     const def = itemDefFor(held);
     return !!def && !def.noGift && (Number(deps.inventory?.[held.key]) || 0) > 0;

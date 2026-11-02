@@ -35,6 +35,7 @@ const sandbox = {
   spawnVolley: (key, _x, _y, _angle, team) => shots.push([key, team]),
   banditAimPitch: () => 0,
   banditLosStatus: () => ({ clear: true }),
+  rangedAttackRadiusPx: () => deps.TILE * 9, // updateBanditAI is extracted in isolation; keep its weapon-range dependency explicit.
   canMeleeReach: () => false,
   repositionBanditForLos: () => false,
 };

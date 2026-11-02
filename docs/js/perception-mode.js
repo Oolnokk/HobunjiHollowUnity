@@ -198,7 +198,7 @@
     lastStats.sources = Object.fromEntries(Object.entries(sources).map(([key, list]) => [key, count(list)]));
     lastStats.rejected = rejected;
     for (const c of sources.companions || []) if (isAliveCreature(c)) consider(rootOf(c), 'friendly');
-    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c));
+    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c });
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
     for (const animal of sources.livestock || []) consider(rootOf(animal), 'friendly', { livestockId: animal.livestockId || null });
     for (const c of sources.corpses || []) consider(rootOf(c), 'interact');
@@ -289,13 +289,22 @@
   function refreshInfoLists() {
     const popup = window.WorldPopupText;
     if (!popup?.syncInfoLists) return;
+    const showEnemyNames = window.Spyglass?.isLookingCloser?.() === true; // Spyglass close-look reuses the same nearby info-list presentation.
+    const enemies = showEnemyNames
+      ? targets.filter(t => t.category === 'hostile' && t.creature)
+        .sort((a, b) => a.dist - b.dist).slice(0, MAX_INFO_LISTS)
+      : [];
     const near = targets
       .filter(t => t.dist <= INFO_RANGE_TILES && (t.crop || t.livestockId))
       .sort((a, b) => a.dist - b.dist)
-      .slice(0, MAX_INFO_LISTS);
+      .slice(0, Math.max(0, MAX_INFO_LISTS - enemies.length));
     const ids = near.filter(t => t.livestockId).map(t => t.livestockId);
     const statuses = ids.length ? (window.FarmAnimals?.livestockStatus?.(ids) || new Map()) : new Map();
-    const entries = [];
+    const entries = enemies.map((target, index) => {
+      const creature = target.creature;
+      const name = String(creature.name || creature.def?.label || creature.def?.name || creature.speciesLabel || creature.species || creature.kind || 'Hostile').trim();
+      return { key: 'spyglass-enemy:' + (target.root.uuid || target.root.name || index), root: target.root, rows: [[{ text: name, color: INFO_COLORS.title }]] };
+    });
     for (const t of near) {
       if (t.crop) {
         const rows = cropRows(t.crop);
