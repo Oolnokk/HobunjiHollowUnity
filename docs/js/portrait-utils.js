@@ -299,7 +299,7 @@ const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([
   'preBack', 'baseBody', 'torsoClothing', 'overwear', 'hoodBack',
   'sideLeft', 'facialHairBelowHead', 'head', 'rightSideHair', 'facialHair',
   'frontHair', 'eyes', 'urHead', 'mouth', 'upperFace', 'hatUnder',
-  'elevatedEyes', 'hood', 'facialHairOverHood', 'mask', 'pauldron', 'urAboveHood', 'hatOver',
+  'elevatedEyes', 'hood', 'mask', 'pauldron', 'urAboveHood', 'hatOver',
 ]);
 
 function movePortraitLayersBefore(order, movingKeys, targetKey) {
@@ -2136,8 +2136,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     upperFace: () => drawEmoteLayers(upperFaceLayers),
     hatUnder: () => drawEmoteLayers(hatUnderLayers),
     elevatedEyes: () => drawEmoteLayers(elevatedEyeAccessoryLayers),
-    hood: () => drawBreathingLayers(hoodLayers),
-    facialHairOverHood: () => { if (pendingBeardOverpass) ctx.drawImage(pendingBeardOverpass, 0, 0); },
+    hood: () => { drawBreathingLayers(hoodLayers); if (pendingBeardOverpass) ctx.drawImage(pendingBeardOverpass, 0, 0); },
     mask: () => drawEmoteLayers(maskLayers),
     pauldron: () => { if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers); },
     urAboveHood: () => {
