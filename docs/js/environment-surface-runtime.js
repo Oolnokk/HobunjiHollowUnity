@@ -40,7 +40,7 @@
   'use strict';
 
   // This compatibility bootstrap already loads before game.js through
-  // rain-planes.js. Keep the Western Slope's static mountain scenery in that
+  // rain-planes.js. Keep the Western Slope's static mine-rock ridge scenery in that
   // environment boot slot so it can safely wrap BorderTerrain/WildernessChunks
   // without adding scenery code back into the game.js monolith.
   if (typeof window === 'undefined' || typeof document === 'undefined' || window.WesternSlopeMountainBackdrops) return;
