@@ -356,22 +356,26 @@
   function planForRoom(network, room, seed) {
     const rng = rngFor(seed + ':' + room.id);
     const templates = templateCandidates(network, room);
-    const templatePick = weightedPick(templates, rng);
-    if (templatePick) {
+    const doorCount = (network.doorways || []).filter(door=>door.from===room.id||door.to===room.id).length + (network.entrance?.roomId===room.id ? 1 : 0);
+    const profiles = library.proceduralProfiles.filter(profile=>profileMatches(profile,room,doorCount));
+    const choices = [
+      ...templates.map(entry=>({...entry,source:'template'})),
+      ...profiles.map(profile=>({profile,weight:profile.weight,source:'procedural'})),
+    ];
+    const choice = weightedPick(choices,rng);
+    if (choice?.source === 'template') {
       return {
         roomId:String(room.id),
         source:'template',
-        templateId:templatePick.template.id,
-        templateName:templatePick.template.name,
-        rotation:templatePick.oriented.rotation,
-        footprint:clone(templatePick.oriented.footprint),
-        spots:makeSpots(templatePick.oriented,room,network),
-        puzzleLinks:clone(templatePick.oriented.puzzleLinks),
+        templateId:choice.template.id,
+        templateName:choice.template.name,
+        rotation:choice.oriented.rotation,
+        footprint:clone(choice.oriented.footprint),
+        spots:makeSpots(choice.oriented,room,network),
+        puzzleLinks:clone(choice.oriented.puzzleLinks),
       };
     }
-    const doorCount = (network.doorways || []).filter(door=>door.from===room.id||door.to===room.id).length + (network.entrance?.roomId===room.id ? 1 : 0);
-    const profiles = library.proceduralProfiles.filter(profile=>profileMatches(profile,room,doorCount));
-    const profile = weightedPick(profiles,rng);
+    const profile = choice?.profile || null;
     return {
       roomId:String(room.id),
       source:'procedural',
