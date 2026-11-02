@@ -81,6 +81,8 @@ assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.materi
   'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
 assert.match(heldRender, /function isProtectedCover\(object\)[\s\S]{0,200}isGrassGroundCover\(object\) \|\| isWaterSurface\(object\)/,
   'water and standing grass both retain depth while the held x-ray is drawn');
+assert.match(heldRender, /data\.hachutuGroundRoot === true\) return 'terrain'/,
+  'Hachutu floor-root meshes participate in the same-elevation held/foot x-ray pass');
 assert.match(heldRender, /object\?\.userData\?\.environmentSurfaceMicroPlateau === true/,
   'snow/slush caps are protected from ground x-ray');
 assert.match(heldRender, /if \(object\.userData\?\.environmentSurfaceMicroPlateau === true\) return false/,
