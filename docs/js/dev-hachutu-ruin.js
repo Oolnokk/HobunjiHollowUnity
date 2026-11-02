@@ -261,12 +261,19 @@
       const count=3+ring*2,radius=3.7+ring*2.75;
       for(let index=0;index<count;index++){
         const phase=2*Math.PI*index/count+rng()*1.4,period=5+ring*2.4+rng()*2.4;
-        const entry={ring,index,radius,phase,period,rotation:0,position:{x:0,z:0},prev:{x:0,z:0},y:y+.55,
-          plate: ring===0&&index===0 || ring===1&&index===0 || ring===2&&index===0,triggered:false};
-        const stone=cylinder(session.group,'moving root-grown stone pillar',1.15,1.45,1.65,0,y-.30,0,0x464841);stone.userData.devRuinFootprintIgnore=true;
-        const cap=cylinder(session.group,'flat top of rooted pillar',1.13,1.15,.13,0,y+.61,0,0x5b5c53);cap.userData.devRuinFootprintIgnore=true;
-        entry.stone=stone;entry.cap=cap;
-        if(entry.plate){entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);entry.plateMesh.material=new THREE.MeshBasicMaterial({color:0x9d625c});entry.plateMesh.userData.devRuinFootprintIgnore=true;} // Own material: the shared per-colour one must not recolour all three plates.
+        const plate=ring===0&&index===0 || ring===1&&index===0 || ring===2&&index===0;
+        const entry={ring,index,radius,phase,period:period*5,rotation:0,position:{x:0,z:0},prev:{x:0,z:0},y:y+.55,
+          plate,moving:!plate,triggered:false,stone:null,cap:null,rootSkin:null};
+        // Only the three mechanism islands retain stone; other islands are root-grown with no rendered base.
+        if(plate){
+          entry.stone=cylinder(session.group,'stationary stone mechanism platform',1.15,1.45,1.65,0,y-.30,0,0x464841);
+          entry.stone.userData.devRuinFootprintIgnore=true;
+          entry.cap=cylinder(session.group,'stationary stone mechanism top',1.13,1.15,.13,0,y+.61,0,0x5b5c53);
+          entry.cap.userData.devRuinFootprintIgnore=true;
+          entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);
+          entry.plateMesh.material=new THREE.MeshBasicMaterial({color:0x9d625c});
+          entry.plateMesh.userData.devRuinFootprintIgnore=true;
+        } // Own material: the shared per-colour one must not recolour all three plates.
         kit.registerSurface({id:'hachutu-moving-'+ring+'-'+index,
           bounds:()=>({minX:entry.position.x-1.12,maxX:entry.position.x+1.12,minZ:entry.position.z-1.12,maxZ:entry.position.z+1.12}),
           topY:()=>y+.70,priority:30});
@@ -283,16 +290,16 @@
         const shape=new THREE.Mesh(new THREE.CylinderGeometry(1.14,1.38,1.65,9),material(0x383a34));
         guide.add(shape);
         const grown=window.LiveRootGrowth.create({THREE,foliage:window.FoliageGenerator,target:guide,
-          recipe:{seed:'hachutu-pillars-'+session.context.seed,branchCount:4,strandLimit:12,
-            floorWidth:2.8,floorDepth:2.8,floorY:-.6,floorDensity:.24,
-            targetDensity:.4,radius:.065,branchRadius:.085,showGuide:false,duration:.5},
+          recipe:{seed:'hachutu-pillars-'+session.context.seed,branchCount:6,strandLimit:20,
+            floorWidth:2.8,floorDepth:2.8,floorY:-.6,floorDensity:.48,
+            targetDensity:.8,radius:.065,branchRadius:.085,showGuide:false,duration:1},
           progress:1,rootFinish:{color:'#24211d',texture:'assets/textures/wibbly_surface.png'}});
         grown.setProgress(1);session.pillarRootTemplate=grown;
         try{window.StoneAgeRuinScenery?.compactFloorCover?.(grown.group,COVER_SIMPLIFY);}catch(_){} // Fifteen clones render this skin: simplify the strands once, before cloning.
-        for(const entry of platforms){
-          const clone=grown.group.clone(true);clone.name='root-grown moving pillar skin';
+        for(const entry of platforms.filter(item=>item.moving)){
+          const clone=grown.group.clone(true);clone.name='root-grown moving platform (no base)';
           clone.userData.devRuinFootprintIgnore=true;
-          entry.stone.add(clone);
+          session.group.add(clone);entry.rootSkin=clone;
         }
       }catch(error){session.errors.push('Pillar root author: '+String(error?.message||error));}
     }
@@ -321,15 +328,20 @@
   function updateSwing(dt,now){
     const p=session.kit.playerWorld();
     for(const entry of session.platforms){
-      const a=entry.phase+now*.001*(2*Math.PI/entry.period)*(entry.ring%2===0?1:-1)
-        +.14*Math.sin(now*.001*.31+entry.index*2.1);
       const old={...entry.position};
-      const r=entry.radius+.22*Math.sin(now*.001*(.27+entry.index*.03));
-      entry.position.x=session.layout.parts[0].center.x+Math.cos(a)*r;
-      entry.position.z=session.layout.parts[0].center.z+Math.sin(a)*r;
-      entry.stone.position.x=entry.cap.position.x=entry.position.x;
-      entry.stone.position.z=entry.cap.position.z=entry.position.z;
-      if(entry.plateMesh){entry.plateMesh.position.x=entry.position.x;entry.plateMesh.position.z=entry.position.z;}
+      if(entry.moving){
+        const a=entry.phase+now*.001*(2*Math.PI/entry.period)*(entry.ring%2===0?1:-1)
+          +.14*Math.sin(now*.001*.062+entry.index*2.1);
+        const r=entry.radius+.22*Math.sin(now*.001*.054);
+        entry.position.x=session.layout.parts[0].center.x+Math.cos(a)*r;
+        entry.position.z=session.layout.parts[0].center.z+Math.sin(a)*r;
+        if(entry.rootSkin){entry.rootSkin.position.x=entry.position.x;entry.rootSkin.position.z=entry.position.z;}
+      }else{
+        entry.position.x=session.layout.parts[0].center.x+Math.cos(entry.phase)*entry.radius;
+        entry.position.z=session.layout.parts[0].center.z+Math.sin(entry.phase)*entry.radius;
+        if(entry.stone){entry.stone.position.x=entry.cap.position.x=entry.position.x;entry.stone.position.z=entry.cap.position.z=entry.position.z;}
+        if(entry.plateMesh){entry.plateMesh.position.x=entry.position.x;entry.plateMesh.position.z=entry.position.z;}
+      }
       // Preserve a planted rider through the moving DynamicSurfaces support.
       if(p&&!session.kit.ownsPlayerMotion()&&Math.hypot(p.x-old.x,p.z-old.z)<.83&&Math.abs((p.y||0)-(session.floor+.7))<1.1){
         const dx=entry.position.x-old.x,dz=entry.position.z-old.z;
