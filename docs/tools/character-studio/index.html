@@ -876,7 +876,7 @@ function renderNpcLayerOrderList(containerId, order, group) {
   if (!container) return;
   container.innerHTML = order.map((key, index) => {
     const label = NPC_PREVIEW_LAYER_LABELS[key] || key;
-    const safeLabel = escapeHtml(label);
+    const safeLabel = esc(label);
     return '<div class="npcLayerOrderRow"><span>' + safeLabel + '</span>' +
       '<button type="button" data-layer-group="' + group + '" data-layer-index="' + index + '" data-layer-direction="-1" aria-label="Move ' + safeLabel + ' up" title="Move up" ' + (index === 0 ? 'disabled' : '') + '>↑</button>' +
       '<button type="button" data-layer-group="' + group + '" data-layer-index="' + index + '" data-layer-direction="1" aria-label="Move ' + safeLabel + ' down" title="Move down" ' + (index === order.length - 1 ? 'disabled' : '') + '>↓</button></div>';
