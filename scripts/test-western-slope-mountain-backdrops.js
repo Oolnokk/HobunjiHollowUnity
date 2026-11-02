@@ -198,7 +198,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert(root, 'Western Slope scenery root missing');
   assert.equal(root.children.length, 3, 'the three original PNG layers must remain three separately authorable ridges');
   assert.deepEqual(root.children.map(group => group.position.x), [-74, -244, -414], 'all ridges must retain the original westward shift and spacing');
-  assert.deepEqual(root.children.map(group => group.position.z), [100, 300, 100], 'the second ridge must be staggered by one original map-edge length');
+  assert.deepEqual(root.children.map(group => group.position.z), [100, 500, 100], 'the second ridge must be staggered by one complete doubled mountain length');
+  assert.equal(root.children[1].position.z - root.children[0].position.z, root.children[0].userData.targetWorldLength, 'the second ridge offset must equal the first ridge full north-south length');
   assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
   const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
   assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
