@@ -168,6 +168,13 @@ const groundShaderState = installElevationShader(groundMaterial);
 const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
 groundMaterial.onBeforeCompile(standardGroundShader, {});
 assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
+assert.ok(standardGroundShader.vertexShader.includes('#include <common>' + elevationNewline + 'varying float vHobunjiXrayWorldY;'),
+  'vertex varyings are injected as real GLSL lines, not literal backslash-n text');
+assert.ok(standardGroundShader.vertexShader.includes('#include <defaultnormal_vertex>' + elevationNewline + 'vHobunjiXrayWorldNormal ='),
+  'lit terrain normal assignment starts on a real GLSL line');
+assert.equal(standardGroundShader.vertexShader.includes('\\\\nvarying float'), false,
+  'vertex shader contains no escaped newline token');
+
 assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y'));
 assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') && standardGroundShader.vertexShader.includes('#ifdef USE_BATCHING'),
   'world height includes instancing and batching transforms before comparison');
