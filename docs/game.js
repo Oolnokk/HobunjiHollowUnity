@@ -16958,6 +16958,10 @@
       // the wheel decide" via clearManualHeldItem.
       let manualHeldItem = null; // { kind: 'clothing', uid } | null
       function setManualHeldItem(item) {
+        if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
+          showToast('A cursed garment cannot be given away until its curse is lifted.', false);
+          return;
+        }
         if (item?.kind === 'clothing' && !window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: { uid: item.uid } })) {
           showToast('Only clothing in your pack can be held or given away.', false);
           return;
