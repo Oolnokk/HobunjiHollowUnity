@@ -841,6 +841,56 @@
     deps()?.showToast?.('Carrying ' + cask.displayName + ' — Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
+  function heldBurdenInfo() {
+    return held && !held.exploded ? { id:held.id, kind:held.kind, displayName:held.displayName } : null;
+  }
+  function placeHeldBurdenOnSurface(anchor, surfaceId) {
+    if (!held || held.exploded || held.flying || !anchor || typeof anchor.add !== 'function' || held.mapId !== area()) return null;
+    const burden = held;
+    cancelShatterAim(); setHeldRearXray(null);
+    anchor.add(burden.group); // Reparent the real physical Burden; do not create an inventory copy or sprite proxy.
+    burden.group.position.set(0, .015, 0);
+    burden.group.quaternion?.identity?.();
+    burden.group.scale?.setScalar?.(1);
+    burden.group.updateWorldMatrix?.(true, true);
+    const surfaceOrigin = anchor.getWorldPosition(new THREE.Vector3());
+    const payloadBounds = new THREE.Box3().setFromObject(burden.group);
+    const attachmentScale = anchor.getWorldScale(new THREE.Vector3());
+    const localSeatOffset = (surfaceOrigin.y + .015 - payloadBounds.min.y) / Math.max(.001, Math.abs(attachmentScale.y));
+    burden.group.position.y = Math.max(.015, .015 + localSeatOffset); // Convert the world-space bounds correction back through the scaled attachment surface for both base- and center-origin Burdens.
+    burden.carried = false;
+    burden.flying = false;
+    burden.plinthAttached = true;
+    burden.plinthAnchor = anchor;
+    burden.plinthSurfaceId = String(surfaceId || anchor.userData?.payloadAttachmentSurfaceId || '');
+    burden.group.updateWorldMatrix?.(true, true);
+    const world = burden.group.getWorldPosition(carriedWorldPosition);
+    burden.col = Math.floor(world.x); burden.row = Math.floor(world.z);
+    held = null;
+    prompt();
+    deps()?.refreshActionBar?.();
+    lastEvent = 'placed ' + burden.id + ' on burden plinth ' + burden.plinthSurfaceId;
+    window.__farmLog?.('[burden] ' + lastEvent, 'world');
+    return burden;
+  }
+  function retrievePlacedBurden(burden, anchor) {
+    if (!burden || burden.exploded || !burden.plinthAttached || burden.group?.parent !== anchor || held || burden.mapId !== area()) return false;
+    window.ActionArcUI?.stowForCarry?.();
+    held = burden;
+    burden.carried = true;
+    burden.plinthAttached = false;
+    burden.plinthAnchor = null;
+    burden.plinthSurfaceId = '';
+    alignHeldVase(burden);
+    setHeldRearXray(burden);
+    Object.assign(lastEquipment, switchEquipment());
+    lastEvent = 'retrieved ' + burden.id + ' from burden plinth';
+    prompt();
+    deps()?.refreshActionBar?.();
+    deps()?.showToast?.('Carrying ' + burden.displayName + ' — Action 1: hold and release to throw; Action 2: drop.', false);
+    window.__farmLog?.('[burden] ' + lastEvent, 'world');
+    return true;
+  }
   function drop() {
     if(!held)return false;
     if (held.kind === 'soursap') return startFruitFall(held, 'drop'); // Fruit bursts when physically dropped; chopping its tree is the safe release.
@@ -864,7 +914,7 @@
     if(!p||!rec)return null;
     let choice=null,smallest=1.65;
     for(const vase of rec.vases.values()) {
-      if(vase.exploded||vase.carried||vase.flying||vase.hanging)continue;
+      if(vase.exploded||vase.carried||vase.flying||vase.hanging||vase.plinthAttached)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
@@ -1538,7 +1588,7 @@
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
-    if((cask.carried||cask.flying)&&cask.group.getWorldPosition&&carriedWorldPosition){
+    if((cask.carried||cask.flying||cask.plinthAttached)&&cask.group.getWorldPosition&&carriedWorldPosition){
       const world=cask.group.getWorldPosition(carriedWorldPosition);
       impact.x=world.x;impact.y=world.y;impact.z=world.z;
     }
@@ -1547,7 +1597,7 @@
     rec?.vases.delete(cask.id);
     saveConsumed(cask.mapId+':'+cask.id);
     const x=impact.x,z=impact.z;
-    const y=(cask.carried||cask.flying)?impact.y:baseHeight(cask.col,cask.row)+.30; // A charge shot out of someone's hands explodes where it is actually held.
+    const y=(cask.carried||cask.flying||cask.plinthAttached)?impact.y:baseHeight(cask.col,cask.row)+.30; // An attached charge explodes at its live surface position.
     shatterVisual(rec?.scene||scene(),x,z,y);
     applyBlast(cask.mapId,x,z);
     const cleared=destroyTerrain(cask.mapId,rec,x,z);
@@ -1836,11 +1886,12 @@
   window.Shattercasks=Object.freeze({
     init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
+    heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
     debugSnapshot:()=>({lastEvent,latestChange:'Soursap uses Shattercask-authored carry/throw alignment and a shared PNG rind; original burst and Sticky behavior preserved.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
-      vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying})),
+      vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
