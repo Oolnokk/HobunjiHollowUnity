@@ -21,6 +21,8 @@ assert.equal(clampPitchOffsetDeg(-120, {}, 9), -99, 'upward offset accounts for 
 assert.equal(clampPitchOffsetDeg(120, {}, 9), 81, 'downward offset accounts for the authored 9-degree camera base and stops at vertical');
 assert.equal(clampPitchOffsetDeg(-30, {}, 9), -30, 'camera module preserves in-range pitch offsets');
 assert.equal(clampPitchOffsetDeg(120), 90, 'the standalone clamp defaults to absolute vertical');
+assert.equal(clampPitchOffsetDeg(NaN, {}, 9), 0, 'invalid pitch input safely resets to neutral');
+assert.equal(clampPitchOffsetDeg(Infinity, {}, 9), 0, 'infinite pitch input safely resets to neutral');
 assert.match(game, /function clampCameraPitchOffsetDeg\(value, baseAngleDeg = Number\(cameraModeConfig\(activeCameraMode\)/, 'game.js supplies the active camera mode base angle to the shared clamp');
 assert.match(game, /CameraLookClamp\.clampPitchOffsetDeg\(value, desktopControlsConfig\(\), baseAngleDeg\)/, 'game.js passes the base angle into the isolated clamp module');
 assert.equal((game.match(/cameraAngleOffsetDeg = clampCameraPitchOffsetDeg\(/g) || []).length, 5, 'mouse, touch, controller, mobile autotarget, and seated look share the camera pitch bridge');
