@@ -545,6 +545,7 @@ const BASE_SPECIES_DATA = {
         { slot: 'facialHair', label: 'Facial Hair', options: [
           { id: null, label: 'None' },
           { id: 'appearance::Mao-ao_M::mao-ao_wildbeard', label: 'Wild Beard' },
+          { id: 'appearance::Mao-ao_M::mao-ao_grandbeard', label: 'Grand Beard' },
         ]},
       ],
       colorOptions: [
@@ -635,6 +636,7 @@ const BASE_SPECIES_DATA = {
         { slot: 'facialHair', label: 'Facial Hair', options: [
           { id: null, label: 'None' },
           { id: 'appearance::Tletingan_M::tl_wildbeard', label: 'Wild Beard' },
+          { id: 'appearance::Tletingan_M::tl_grandbeard', label: 'Grand Beard' },
         ]},
       ],
       colorOptions: [
@@ -680,6 +682,7 @@ const BASE_SPECIES_DATA = {
         { slot: 'facialHair', label: 'Facial Hair', options: [
           { id: null, label: 'None' },
           { id: 'appearance::Kenkari_M::kenk_wildbeard', label: 'Wild Beard' },
+          { id: 'appearance::Kenkari_M::kenk_grandbeard', label: 'Grand Beard' },
         ]},
       ],
       colorOptions: [
@@ -989,9 +992,15 @@ function workRenderAppearance() {
   return { ...work.appearance, equippedCosmetics: work.equippedCosmetics, appliedDyes: work.appliedDyes };
 }
 function npcPreviewRenderOptions(extra = {}) {
-  return target.kind === 'npc'
-    ? { ...extra, frontLayerOrder: _npcFrontLayerOrder, behindLayerOrder: _npcBehindLayerOrder }
-    : extra;
+  if (target.kind !== 'npc') return extra;
+  const hoodIndex = _npcFrontLayerOrder.indexOf('hood');
+  const beardIndex = _npcFrontLayerOrder.indexOf('facialHair');
+  return {
+    ...extra,
+    frontLayerOrder: _npcFrontLayerOrder,
+    behindLayerOrder: _npcBehindLayerOrder,
+    forceShowFacialHair: beardIndex > hoodIndex && hoodIndex >= 0,
+  };
 }
 
 // ── Account mock (from npc-portrait-editor, wired to the working record) ────
