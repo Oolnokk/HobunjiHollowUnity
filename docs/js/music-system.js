@@ -1810,7 +1810,12 @@
     if (!sfx?.url) return null;
     const audio = makeGameAudio(sfx.url, { loop: true });
     audio.volume = 0;
-    const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, audio };
+    const semitones = Number(sfx.semitones) || 0; // Optional tape-style pitch shift (also scales speed): playbackRate = 2^(semitones/12), pitch preservation off.
+    if (semitones) {
+      audio.preservesPitch = false; audio.mozPreservesPitch = false; audio.webkitPreservesPitch = false;
+      audio.playbackRate = Math.pow(2, semitones / 12);
+    }
+    const source = { area, x, z, range: Number(sfx.rangeTiles) || 5, maxVolume: Number(sfx.volume) || 0.7, semitones, audio };
     _furnitureSfxSources.push(source);
     audioDebug('registered furniture sfx area=' + area + ' url=' + audio.src + ' pos=' + x.toFixed(2) + ',' + z.toFixed(2) + ' range=' + source.range, 'furn-register-' + area + '-' + x + '-' + z, 0);
     return source;

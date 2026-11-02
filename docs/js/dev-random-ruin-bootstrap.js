@@ -44,7 +44,7 @@
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261016ropevariants1"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
-  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261101hachutusanctum2"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261102h18ed40e"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.

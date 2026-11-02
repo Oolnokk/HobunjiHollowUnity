@@ -408,8 +408,8 @@ assert.match(game, /getTimeOfDay: \(\) => window\.Fishing\?\.timeOfDay\?\.\(\),[
   'music condition evaluation receives the shared calendar condition values');
 assert.match(config, /"bgsFadeMs": 1600/,
   'background-loop fading remains authored in audio config');
-assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \} \}\s*\]/,
-  'Pure Focus is the sole combat track and carries its AAC priming/padding metadata for sample-accurate looping');
+assert.match(config, /"combatBgm": \[\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_pure_focus\.m4a", "loop": true, "gaplessLoop": \{ "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 \}, "excludeConditions": \{ "maps": \["map_i_dev_random_ruin"\] \} \},\s*\{ "url": "assets\/audio\/music\/bgm\/bgm_just_beyond_the_torchlight\.ogg", "loop": true, "conditions": \{ "maps": \["map_i_dev_random_ruin"\] \} \}\s*\]/,
+  'Pure Focus is the ordinary combat track (with its AAC priming/padding metadata); generated ruins use Just Beyond the Torchlight instead');
 assert.doesNotMatch(config, /"combatBgm": \[[\s\S]*?bgm_skirmish\.m4a[\s\S]*?\n        \],/,
   'Skirmish is not eligible for combat playback');
 

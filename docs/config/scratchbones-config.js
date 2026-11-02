@@ -3569,9 +3569,11 @@ window.SCRATCHBONES_CONFIG = {
         // Combat tracks loop by default until the existing combat state clears.
         // Area BGM/cues tagged exclusiveSoundtrack stay in control instead, which
         // keeps authored special soundtracks such as Just Beyond the Torchlight
-        // uninterrupted and leaves room for more opt-outs later.
+        // uninterrupted and leaves room for more opt-outs later. Inside generated ruins
+        // (Harlyao ruins and the Hachutu Root Temple) combat plays Just Beyond the Torchlight instead of Pure Focus.
         "combatBgm": [
-          { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 } }
+          { "url": "assets/audio/music/bgm/bgm_pure_focus.m4a", "loop": true, "gaplessLoop": { "sourceSampleRate": 44100, "encoderDelaySamples": 2048, "paddingSamples": 631, "contentSamples": 5667209 }, "excludeConditions": { "maps": ["map_i_dev_random_ruin"] } },
+          { "url": "assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg", "loop": true, "conditions": { "maps": ["map_i_dev_random_ruin"] } }
         ],
         // Short musical stings fired by explicit gameplay milestones through
         // Music.playGameplayCue(); they use the BGM volume path without taking

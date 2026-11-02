@@ -26,6 +26,7 @@
 
   const MAP_ID = 'map_i_dev_random_ruin';
   const BGS_URL = 'assets/audio/music/bgm/bgm_just_beyond_the_torchlight.ogg';
+  const DOOR_SEMITONES = 5; // The unlocked door's version of the track sounds a fourth higher than the combat version.
   const FIRE_BRIGHT = '#bfeaff', FIRE_COLOR = '#2f8dff';
   const DECAL_IDLE = 0x39424d, DECAL_LIT = 0x4fb6ff, DECAL_PULSE_LOW = 0x1c5a8f, DECAL_PULSE_HIGH = 0xb8ecff;
   const EXCLUDED_ITEM_LABELS = new Set(['Stone Idol']); // Decorative sunken-centerpiece fallback, not a puzzle goal.
@@ -536,7 +537,7 @@
     window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
     door.awakeAt = performance.now();
     if (!s.bgs && window.Music?.registerFurnitureSfxSource) {
-      s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8 });
+      s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8, semitones:DOOR_SEMITONES });
     }
   }
 
