@@ -180,10 +180,10 @@ assert.ok(meshBuilderStart >= 0 && meshBuilderEnd > meshBuilderStart,
   'extract the merged-water mesh factory');
 const makeWaterMesh = new Function(
   'buildMapWidePlaneSurfaceData', 'buildInvertedSurfaceData', 'buildSurfaceData',
-  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
-  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\\nreturn createMesh;'
+  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
+  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\nreturn createMesh;'
 )(() => meshDataForWaterTest, () => meshDataForWaterTest, () => meshDataForWaterTest,
-  meshWaterStats, new Map(), 4, 0.012, 0.035);
+  meshWaterStats, new Map(), 4, 0.12, 0.012, 0.035);
 const testedWaterMesh = makeWaterMesh({
   BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
   BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
