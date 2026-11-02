@@ -122,7 +122,7 @@ async function main() {
           pants: { uid: 'worn-pants', cosmeticId: 'draped_pants', slot: 'pants', colorA: { hex: '#334455' }, colorB: { hex: '#223344' } },
         },
         clothingItems: [
-          { uid: 'stored-hat', cosmeticId: 'basic_headband', slot: 'hat', label: 'Basic Headband' },
+          { uid: 'stored-hat', cosmeticId: 'basic_headband', label: 'Basic Headband' },
           { uid: 'worn-overwear', cosmeticId: 'rugged_poncho', slot: 'overwear' }, // Duplicate of equipped gear; the picker must show it once.
         ],
       },
