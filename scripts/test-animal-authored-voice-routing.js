@@ -85,6 +85,7 @@ assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('puktuk'), { a
 window.SCRATCHBONES_CONFIG.game.audio.enabled = true;
 window.AnimalVocalizations.setAuthoredProfiles({});
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('gar-wolf')), true, 'legacy voice eligibility survives missing authored data');
-assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('gar-wolf')), true, 'legacy recordings still prepare and play');
+now = 10000; // Keep the legacy playback check safely beyond the zone-entry grace window.
+assert.equal(window.AudioSystem.playAnimalVoiceUtterance(creature('gar-wolf'), { allowedClips: ['assets/audio/sfx/sfx_gar-wolf1.ogg'] }), true, 'legacy recording still prepares and plays through the shared native audio path');
 assert.equal(window.AudioSystem.hasAnimalVoice(creature('puktuk')), false, 'profile replacement invalidates previous authored eligibility');
 console.log('Authored animal voice routing checks passed.');
