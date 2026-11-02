@@ -135,8 +135,8 @@
     if ($('mountainEnabled')) $('mountainEnabled').checked = config.enabled !== false;
     if ($('mountainLayerSelect')) $('mountainLayerSelect').value = String(selectedLayer);
     if ($('mountainVisible')) $('mountainVisible').checked = layer.visible !== false;
-    if ($('mountainAsset')) $('mountainAsset').value = layer.asset;
-    if ($('mountainAssetThumb')) $('mountainAssetThumb').src = '../../' + layer.asset;
+    if ($('mountainAsset')) $('mountainAsset').value = '8 decorative mine rocks';
+    if ($('mountainAssetThumb')) $('mountainAssetThumb').style.display = 'none';
 
     displayVector(
       ['mountainPosX','mountainPosY','mountainPosZ'],
@@ -148,7 +148,7 @@
       ['mountainRotX','mountainRotY','mountainRotZ'],
       layer.transform.rotationDeg,
       resolved?.rotationDeg,
-      [0,90,0]
+      [0,0,0]
     );
     displayVector(
       ['mountainScaleX','mountainScaleY','mountainScaleZ'],
@@ -160,8 +160,8 @@
     const size = $('mountainResolvedSize');
     if (size) {
       size.textContent = resolved
-        ? `Base ${resolved.width.toFixed(1)} × ${resolved.height.toFixed(1)} world · final ${(resolved.width * resolved.scale[0]).toFixed(1)} × ${(resolved.height * resolved.scale[1]).toFixed(1)} · source ${resolved.sourceWidth}×${resolved.sourceHeight}px`
-        : '3D preview will report the exact scaled image dimensions after the PNG loads.';
+        ? `8 rocks · footprint ${resolved.width.toFixed(1)} × ${resolved.height.toFixed(1)} world · final ${(resolved.width * resolved.scale[0]).toFixed(1)} × ${(resolved.height * resolved.scale[1]).toFixed(1)}`
+        : '3D preview reports the eight-rock ridge footprint.';
     }
   }
 
@@ -224,7 +224,7 @@
     const previewControls = window.BackgroundSceneryPreview?.getControls(); // Used to update the orbit target and zoom limits after fitting.
     if (!root || !camera || !activeMap) return false;
     root.updateMatrixWorld?.(true);
-    const box = new THREE.Box3().setFromObject(root); // Used to include the gargantuan authored planes in the camera fit.
+    const box = new THREE.Box3().setFromObject(root); // Used to include all oversized rock ridges in the camera fit.
     box.expandByPoint(new THREE.Vector3(0, 0, 0));
     box.expandByPoint(new THREE.Vector3(activeMap.cols, 0, activeMap.rows));
     const center = box.getCenter(new THREE.Vector3());
@@ -288,19 +288,18 @@
     section.style.display = 'none';
     section.innerHTML = `
       <div class="row" style="justify-content:space-between;align-items:center">
-        <h2 style="margin:0">Mountain backdrop layers</h2>
+        <h2 style="margin:0">Western Slope rock ridges</h2>
         <label class="pill" style="display:flex;gap:5px;align-items:center"><input id="mountainEnabled" type="checkbox" checked> enabled</label>
       </div>
-      <p class="muted" style="margin:6px 0">The real Western Slope PNG planes. Transforms here are the same transforms consumed by the runtime and are saved as a browser-local author override plus normal scenery export data.</p>
+      <p class="muted" style="margin:6px 0">Each former mountain plane is now a row of eight oversized mine-style rocks. Transforms here apply to the complete ridge and are saved as a browser-local author override plus normal scenery export data.</p>
       <div class="g2">
         <div class="field"><label>Layer</label><select id="mountainLayerSelect"><option value="0">Layer 1 · near</option><option value="1">Layer 2 · middle</option><option value="2">Layer 3 · far</option></select></div>
-        <div class="field"><label><input id="mountainVisible" type="checkbox" checked> Layer visible</label><input id="mountainAsset" type="text" readonly></div>
+        <div class="field"><label>Scenery</label><input id="mountainAsset" type="text" readonly value="8 decorative mine rocks"><label><input id="mountainVisible" type="checkbox" checked> Layer visible</label></div>
       </div>
-      <img id="mountainAssetThumb" alt="Selected mountain backdrop" style="display:block;width:100%;max-height:150px;object-fit:contain;background:#07101a;border:1px solid rgba(255,255,255,.11);border-radius:7px;margin:5px 0 8px">
       <div class="field"><label>Position X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainPosX" type="number" step="0.25"><input id="mountainPosY" type="number" step="0.25"><input id="mountainPosZ" type="number" step="0.25"></div></div>
       <div class="field"><label>Rotation X / Y / Z (degrees)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainRotX" type="number" step="1"><input id="mountainRotY" type="number" step="1"><input id="mountainRotZ" type="number" step="1"></div></div>
       <div class="field"><label>Scale X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainScaleX" type="number" min="0.001" step="0.05"><input id="mountainScaleY" type="number" min="0.001" step="0.05"><input id="mountainScaleZ" type="number" min="0.001" step="0.05"></div></div>
-      <div id="mountainResolvedSize" class="muted" style="line-height:1.35;margin:5px 0">Load Western Slope to resolve PNG dimensions.</div>
+      <div id="mountainResolvedSize" class="muted" style="line-height:1.35;margin:5px 0">Load Western Slope to resolve the rock-ridge footprint.</div>
       <div class="row"><button class="sec" id="mountainFrameAll">Frame mountains</button><button class="sec" id="mountainResetLayer">Reset layer</button><button class="bad" id="mountainResetAll">Reset all</button></div>
     `;
     const firstSection = sideScroll.querySelector('.section');
