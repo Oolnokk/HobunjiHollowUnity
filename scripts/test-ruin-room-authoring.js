@@ -70,6 +70,7 @@ function makeNetwork(id='room_1',width=5,height=5) {
   const validLibrary={schema:'hobunji_ruin_room_library.v1',templates:[makeTemplate()],proceduralProfiles:[]};
   const validation=api.validateLibrary(validLibrary);
   assert.deepEqual(Array.from(validation),[],'valid template, connection and puzzle link should pass validation');
+  assert.equal(api.setLibrary(validLibrary).ok,true,'valid authored template should be selectable');
 
   const network=makeNetwork();
   const applied=api.applyToNetwork(network,{seed:'room-mask-regression'});
