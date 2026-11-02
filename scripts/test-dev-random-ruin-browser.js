@@ -359,6 +359,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       const coverage = window.DevRandomRuinRuntimeCoverage.snapshot();
       const wallPlaneControl = window.DevRandomRuinWallPlanes.snapshot();
       const wallRender = window.DevRandomRuinWallRenderProxy.snapshot();
+      const exitControl = window.DevRandomRuin.getInteractionControls().find(control => control.kind === 'exitDoor');
+      const exitTarget = exitControl?.object || null;
+      const exitBox = exitTarget ? new THREE.Box3().setFromObject(exitTarget) : null;
+      const exitSize = exitBox ? exitBox.getSize(new THREE.Vector3()) : null;
       const occupancy = window.DevRandomRuin.getOccupancySnapshot();
       const dynamic = window.DynamicSurfaces.debugSnapshot();
       const frame = document.getElementById('devRandomRuinGeneratorFrame');
@@ -463,6 +467,21 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         coverage,
         wallPlaneControl,
         wallRender,
+        exitDoorInteraction:{
+          present:!!exitTarget,
+          kind:exitControl?.kind || null,
+          promptRootMatches:exitControl?.promptRoot===exitTarget,
+          hasGeometry:!!exitTarget?.geometry,
+          tagged:exitTarget?.userData?.devRuinExitTarget===true,
+          interactive:exitTarget?.userData?.interactive3D===true,
+          invisible:exitTarget?.material?.colorWrite===false&&Number(exitTarget.material.opacity)===0,
+          bounds:exitBox&&!exitBox.isEmpty()?{
+            min:{x:+exitBox.min.x.toFixed(3),y:+exitBox.min.y.toFixed(3),z:+exitBox.min.z.toFixed(3)},
+            max:{x:+exitBox.max.x.toFixed(3),y:+exitBox.max.y.toFixed(3),z:+exitBox.max.z.toFixed(3)},
+            size:{x:+exitSize.x.toFixed(3),y:+exitSize.y.toFixed(3),z:+exitSize.z.toFixed(3)},
+          }:null,
+          point:exitControl?.point||null,
+        },
         materialStats:window.DevRandomRuin.getState()?.materialStats || null,
         occupancy,
         occupancyBlockers:dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy').length,
@@ -487,6 +506,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.building, true, JSON.stringify(active));
     assert.equal(active.sceneName, 'map_i_dev_random_ruin', JSON.stringify(active));
     assert.equal(active.hasRoot, true, JSON.stringify(active));
+    assert.equal(active.exitDoorInteraction.present, true, 'the ruin exit must be an explicit doorway target, not a proximity-only exit spot: '+JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.kind, 'exitDoor', JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.promptRootMatches, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.hasGeometry, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.tagged, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.interactive, true, JSON.stringify(active.exitDoorInteraction));
+    assert.equal(active.exitDoorInteraction.invisible, true, JSON.stringify(active.exitDoorInteraction));
+    assert.ok(active.exitDoorInteraction.bounds?.size?.x > .3 && active.exitDoorInteraction.bounds?.size?.y > 2 && active.exitDoorInteraction.bounds?.size?.z > .3, JSON.stringify(active.exitDoorInteraction));
     assert.equal(active.wallStyle, 'cavern', 'Random Test Ruin must use the game\'s combat-interior classification');
     if(active.nativeCrackedPillars?.theme==='hronal'){
       const cracked=active.nativeCrackedPillars;
