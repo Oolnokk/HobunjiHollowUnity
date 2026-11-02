@@ -6,7 +6,7 @@
   const SNOW_TEXTURE_URL = (() => { try { return new URL('../assets/textures/canvas.png', document.currentScript?.src || window.location?.href).href; } catch (_) { return 'assets/textures/canvas.png'; } })(); // Same authored canvas PNG as Western Slope ground snow, resolved for game and nested author-tool pages.
   const RIDGE_LENGTH_MAP_MULTIPLIER = 2; // Each complete eight-rock ridge spans exactly twice the map's north-south edge.
   const SNOW_CAP_HEIGHT_FRACTION = 2 / 3; // Snow covers the upper two-thirds of every rock's own vertical bounds.
-  const SNOW_BOUNDARY_LIFT = 0.002; // Tiny local lift keeps the cap outline visible without changing either surface's geometry.
+  const SNOW_BOUNDARY_LIFT = 0.00015; // Tiny local lift keeps the cap outline visible without changing either surface's geometry.
   const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Kept stable for scene duplicate detection and editor lookup.
   const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v1'; // Shared by the background author and live runtime.
   const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Original layer dimensions preserve the authored scenery footprint.
