@@ -835,6 +835,60 @@
     }};
   }
 
+  function plasmTileCenters() {
+    if(world?.theme!=='kanthic')return [];
+    const points=[];
+    const seen=new Set();
+    const append=patch=>{
+      for(const key of patch?.plasm||[]){
+        if(seen.has(key))continue;
+        seen.add(key);
+        const [x,z]=tileFromKey(key);
+        points.push({x:x+.5,z:z+.5,y:patch.plasmFloorY?.get(key)??floorY(world.kit,x+.5,z+.5)});
+      }
+    };
+    for(const room of world.rooms)append(room);
+    for(const patch of world.spellPlasm)append(patch);
+    return points;
+  }
+
+  function clearPlasmRadius(x,z,radius=2.4) {
+    if(world?.theme!=='kanthic'||!Number.isFinite(Number(x))||!Number.isFinite(Number(z)))return 0;
+    const kit=world.kit,range=Math.max(.1,Number(radius)||2.4),rangeSq=range*range;
+    let removed=0;
+    for(const room of world.rooms){
+      if(!room.plasm?.size)continue;
+      let changed=false;
+      for(const key of [...room.plasm]){
+        const [tx,tz]=tileFromKey(key),dx=tx+.5-x,dz=tz+.5-z;
+        if(dx*dx+dz*dz>rangeSq)continue;
+        room.plasm.delete(key);room.plasmFloorY.delete(key);removed++;changed=true;
+      }
+      if(changed){
+        updatePlasmMesh(kit,room); // Replace only this room's connected surface; other room patches retain their exact buffers.
+        room.plasmCleansed=(room.plasmCleansed||0)+1;
+      }
+    }
+    for(const patch of [...world.spellPlasm]){
+      if(!patch.plasm?.size)continue;
+      let changed=false;
+      for(const key of [...patch.plasm]){
+        const [tx,tz]=tileFromKey(key),dx=tx+.5-x,dz=tz+.5-z;
+        if(dx*dx+dz*dz>rangeSq)continue;
+        patch.plasm.delete(key);patch.plasmFloorY.delete(key);removed++;changed=true;
+      }
+      if(!changed)continue;
+      patch.mesh?.parent?.remove(patch.mesh);
+      patch.mesh?.geometry?.dispose?.();
+      if(patch.plasm.size){
+        patch.mesh=makePlasmSurface(kit,patch);
+        if(patch.mesh)world.group.add(patch.mesh);
+      }else world.spellPlasm.delete(patch);
+    }
+    if(removed)lastEvent='kanthic:cleansed-'+removed;
+    return removed;
+  }
+
   function plasmPatchAt(x,z,supportY) {
     if(!world)return null;
     const key=tileKey(x,z);
@@ -994,6 +1048,7 @@
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
       plasmCulled:world.rooms.reduce((n,r)=>n+(r.plasmCulls||0),0),
+      plasmCleansed:world.rooms.reduce((n,r)=>n+(r.plasmCleansed||0),0),
       plasmGrowthMs:0, plasmStatic:true, latestChange:'Static, checkpoint-safe seeded plasm; no automatic growth, lantern erasure or geometry rebuilds.',
       sinking:world.sink,lastEvent,
     } : {active:false,lastEvent};
@@ -1009,6 +1064,8 @@
     triggerBossBlizzard, // Named Tothal phase uses the normal icicle physics, hit and shatter handlers.
     plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
+    clearPlasmRadius, // Dungeon Fire removes only live Kanthic tiles, rebuilding just the connected surfaces it actually changes.
+    plasmTileCenters, // The cleansing-brazier composer chooses a reproducible location on real plasm rather than an arbitrary room floor.
     isProtectedPlasmAt:(x,z)=>!!(world?.theme==='kanthic'&&protectedPlasmTile(world.kit,Math.floor(x),Math.floor(z))), // Shared landing/doorway safety for both room and lich-spell plasm.
   });
 })();

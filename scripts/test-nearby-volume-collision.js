@@ -22,6 +22,8 @@ assert(volume.includes('window.RangedWeapons?.actorHitbox?.(deps.player)'), 'pla
 assert(volume.includes('headY - ground'), 'cover threshold is the player head-to-ground distance');
 assert(volume.includes('SPATIAL_CELL_TILES'), 'semantic cover is spatially bucketed');
 assert(volume.includes('projectileCoverUsesTile'), 'native trees use their centered solid tile as cheap cover');
+assert(volume.includes('data.projectileCoverHalfXTiles') && volume.includes('data.projectileCoverHalfZTiles'), 'semantic cover supports explicit thin axis-aligned wall footprints');
+assert(volume.includes('projectileCoverBottomOffsetTiles'), 'semantic cover can describe a centered wall mesh whose physical bottom is below its origin');
 assert(volume.includes("if (!forSight && !combat)"), 'ordinary projectile cover stays disabled outside combat while the dedicated sight query bypasses that gate');
 assert(volume.includes('segmentSightHit: (start, end, radiusWorld = 0) => segmentHit(start, end, radiusWorld, true)'), 'NPC sight has a setting-independent semantic-cover entry point');
 assert(volume.includes('!options.projectiles'), 'projectile cover retains its kill switch');

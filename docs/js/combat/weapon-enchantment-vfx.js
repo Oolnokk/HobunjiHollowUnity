@@ -19,6 +19,7 @@
   const LICH_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Used by lichDyeIds() to mirror combat-lich.js wardrobe possibilities.
   const FALLBACK_VISUALS = {}; // Used only in isolated tools/tests where a live gear inventory is unavailable.
   const MASK_CACHE = new Map(); // Used by metalMaskForSprite() so each source PNG is decoded/scanned once per page load.
+  const OPAQUE_ANCHOR_CACHE = new Map(); // Used by opaqueAnchorForSprite() so projectile fire shares one alpha scan per source PNG.
   const SHAPE_TEXTURE_CACHE = new Map(); // Used by shapeTexture() to share one white alpha sprite texture per particle silhouette.
   const EMITTERS = new Map(); // Used by updateEmitters() to retain pooled particles for each currently visible weapon plane.
 
@@ -263,6 +264,52 @@
     });
     MASK_CACHE.set(url, promise);
     return promise;
+  }
+
+  function opaqueAnchorForSprite(spritePath) {
+    if (!spritePath || typeof Image === 'undefined' || typeof document === 'undefined') return Promise.resolve(null);
+    const url = resolveSpriteUrl(spritePath); // Uses the same canonical asset resolution as the metal-region scanner.
+    const cacheKey = 'opaque-anchor:' + url;
+    if (OPAQUE_ANCHOR_CACHE.has(cacheKey)) return OPAQUE_ANCHOR_CACHE.get(cacheKey);
+    const task = new Promise(resolve => {
+      const image = new Image(); // Reads the original PNG alpha, never the recolored live projectile material.
+      image.crossOrigin = 'anonymous';
+      image.onload = () => {
+        try {
+          const width = image.naturalWidth || image.width;
+          const height = image.naturalHeight || image.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const context = canvas.getContext('2d', { willReadFrequently:true });
+          if (!context) throw new Error('Projectile alpha scan has no canvas context');
+          context.drawImage(image, 0, 0, width, height);
+          const data = context.getImageData(0, 0, width, height).data;
+          let bestIndex = -1, bestY = Infinity, bestCenterDistance = Infinity, opaquePixels = 0;
+          for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            const index = y * width + x;
+            if (data[index * 4 + 3] < SOURCE_ALPHA_MIN) continue;
+            opaquePixels++;
+            const centerDistance = Math.abs(x + 0.5 - width * 0.5);
+            if (y < bestY || (y === bestY && centerDistance < bestCenterDistance)) {
+              bestIndex = index; bestY = y; bestCenterDistance = centerDistance;
+            }
+          }
+          resolve(bestIndex >= 0 ? { width, height, index:bestIndex, opaquePixels } : null);
+        } catch (error) {
+          OPAQUE_ANCHOR_CACHE.delete(cacheKey); // A transient canvas/asset failure must be retryable.
+          lastEvent = 'opaque anchor scan failed: ' + (error?.message || error);
+          resolve(null);
+        }
+      };
+      image.onerror = () => {
+        OPAQUE_ANCHOR_CACHE.delete(cacheKey); // Do not poison this cache after a transient mobile asset miss.
+        lastEvent = 'opaque anchor image failed: ' + spritePath;
+        resolve(null);
+      };
+      image.src = url;
+    });
+    OPAQUE_ANCHOR_CACHE.set(cacheKey, task);
+    return task;
   }
 
   function sourceSpriteForWeapon(key) {
@@ -1019,6 +1066,9 @@
     setChoice,
     activeAlignments,
     buildMetalMask,
+    metalMaskForSprite, // Dungeon Fire samples the exact verdigris-compatible metal pixels used by this particle system.
+    opaqueAnchorForSprite, // Non-thrown projectile flame zones anchor to the topmost central opaque PNG pixel.
+    metalPixelToLocal, // Shared source-pixel to authored-plane transform for both visual systems.
     renderControls,
     createPreviewEmitter,
     createFixedEmitter,
