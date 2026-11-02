@@ -335,7 +335,8 @@
     const fraction = Number.isFinite(Number(def?.loadStaminaFraction))
       ? Math.max(0, Number(def.loadStaminaFraction))
       : DEFAULT_RANGED_LOAD_STAMINA_FRACTION;
-    let cost = maxStamina * fraction;
+    const timedCostMultiplier = Math.max(0.01, Number(window.ResourceSystem?.timedDebuffModifier?.(entity, 'staminaCost')) || 1); // Normalizes any timed cost discount/tax through the same modifier ResourceSystem applies during payment.
+    let cost = (maxStamina * fraction) / timedCostMultiplier;
     if (entity === deps?.player) {
       const alchemyMultiplier = Math.max(0.01, Number(window.AlchemySystem?.getStaminaSpendMultiplier?.()) || 1); // Compensates for player-only cost reductions so the effective loss still crosses the intended threshold.
       const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
