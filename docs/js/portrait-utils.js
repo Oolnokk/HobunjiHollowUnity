@@ -299,7 +299,7 @@ const DEFAULT_FRONT_LAYER_ORDER = Object.freeze([
   'preBack', 'baseBody', 'torsoClothing', 'overwear', 'hoodBack',
   'sideLeft', 'facialHairBelowHead', 'head', 'rightSideHair', 'facialHair',
   'frontHair', 'eyes', 'urHead', 'mouth', 'upperFace', 'hatUnder',
-  'elevatedEyes', 'hood', 'mask', 'pauldron', 'urAboveHood', 'hatOver',
+  'elevatedEyes', 'hood', 'facialHairOverHood', 'mask', 'pauldron', 'urAboveHood', 'hatOver',
 ]);
 
 function movePortraitLayersBefore(order, movingKeys, targetKey) {
@@ -1844,7 +1844,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, targetCtx = ctx) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -1855,20 +1855,20 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
-      ctx.save();
-      ctx.globalAlpha = opacity;
+      targetCtx.save();
+      targetCtx.globalAlpha = opacity;
       let drawImg = imageForTint(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
-      ctx.filter = 'none';
-      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
-      ctx.restore();
+      targetCtx.filter = 'none';
+      _drawPortraitLayerWarped(targetCtx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      targetCtx.restore();
     } else if (opacity < 1) {
-      ctx.save();
-      ctx.globalAlpha = opacity;
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
-      ctx.restore();
+      targetCtx.save();
+      targetCtx.globalAlpha = opacity;
+      drawPortraitLayer(targetCtx, img, xform, tint, sourceKey, imageForTint);
+      targetCtx.restore();
     } else {
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(targetCtx, img, xform, tint, sourceKey, imageForTint);
     }
   };
 
@@ -1921,9 +1921,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
-  const drawEmoteLayers = (layerList) => {
+  const drawEmoteLayers = (layerList, targetCtx = ctx) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey);
+      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, targetCtx);
     });
   };
 
@@ -1936,6 +1936,56 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
     });
+  };
+
+  const maskForVariant = (option, property) => {
+    const maps = option?.[property];
+    if (!maps || typeof maps !== 'object') return null;
+    const key = `${resolvedFighter?.speciesId || fighter?.speciesId || ''}_${resolvedFighter?.gender || fighter?.gender || ''}`;
+    return maps[key] || maps.default || null;
+  };
+  const hoodBeardMask = maskForVariant(hood, 'beardRevealMasks');
+  const beardPriorityMask = maskForVariant(facialHair, 'beardOverpassMasks');
+  let pendingBeardOverpass = null; // The selected beard pixels are composited after the hood.
+  const renderSplitBeard = (targetCtx = ctx) => {
+    const width = PORTRAIT_CW, height = PORTRAIT_CH;
+    const beardCanvas = Object.assign(document.createElement('canvas'), { width, height });
+    const beardCtx = beardCanvas.getContext('2d');
+    drawEmoteLayers(facialHairLayers, beardCtx);
+    const maskCanvas = Object.assign(document.createElement('canvas'), { width, height });
+    const maskCtx = maskCanvas.getContext('2d');
+    const maskImage = maskCtx.createImageData(width, height);
+    const applyRuns = mask => {
+      if (!mask || !Array.isArray(mask.runs)) return;
+      const sourceWidth = Math.max(1, Number(mask.width) || width);
+      const sourceHeight = Math.max(1, Number(mask.height) || height);
+      const coverage = new Uint8Array(sourceWidth * sourceHeight);
+      for (let i = 0; i + 1 < mask.runs.length; i += 2) {
+        const start = Math.max(0, Number(mask.runs[i]) | 0);
+        const end = Math.min(coverage.length, start + Math.max(0, Number(mask.runs[i + 1]) | 0));
+        coverage.fill(1, start, end);
+      }
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const sx = Math.min(sourceWidth - 1, Math.floor(x * sourceWidth / width));
+        const sy = Math.min(sourceHeight - 1, Math.floor(y * sourceHeight / height));
+        if (coverage[sy * sourceWidth + sx]) maskImage.data[(y * width + x) * 4 + 3] = 255;
+      }
+    };
+    applyRuns(hoodBeardMask);
+    applyRuns(beardPriorityMask);
+    let hasMask = false;
+    for (let i = 3; i < maskImage.data.length; i += 4) if (maskImage.data[i]) { hasMask = true; break; }
+    if (!hasMask) { drawEmoteLayers(facialHairLayers, targetCtx); return; }
+    maskCtx.putImageData(maskImage, 0, 0);
+    const above = Object.assign(document.createElement('canvas'), { width, height });
+    const aboveCtx = above.getContext('2d');
+    aboveCtx.drawImage(beardCanvas, 0, 0);
+    aboveCtx.globalCompositeOperation = 'destination-in';
+    aboveCtx.drawImage(maskCanvas, 0, 0);
+    beardCtx.globalCompositeOperation = 'destination-out';
+    beardCtx.drawImage(maskCanvas, 0, 0);
+    targetCtx.drawImage(beardCanvas, 0, 0);
+    pendingBeardOverpass = above;
   };
 
   // Neck-rig construction needs the base head's real opaque-pixel centroid,
@@ -2065,7 +2115,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     overwear: () => { if (!headCosmeticsOnly) drawBreathingLayers(overwearLayers); },
     hoodBack: () => drawBreathingLayers(hoodBackLayers),
     sideLeft: () => drawEmoteLayers(sideLeftLayers),
-    facialHairBelowHead: () => { if (_beardBelowHead) drawEmoteLayers(facialHairLayers); },
+    facialHairBelowHead: () => { if (_beardBelowHead) renderSplitBeard(); },
     head: () => {
       if (headUrl && !skipHeadSprite) {
         const img = imgMap.get(headUrl);
@@ -2073,7 +2123,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     },
     rightSideHair: () => drawEmoteLayers(rightSideHairLayers),
-    facialHair: () => { if (!_beardBelowHead) drawEmoteLayers(facialHairLayers); },
+    facialHair: () => { if (!_beardBelowHead) renderSplitBeard(); },
     frontHair: () => drawEmoteLayers(frontHairLayers),
     eyes: () => drawEmoteLayers(eyesLayers),
     urHead: drawNormalUrHead,
@@ -2082,6 +2132,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     hatUnder: () => drawEmoteLayers(hatUnderLayers),
     elevatedEyes: () => drawEmoteLayers(elevatedEyeAccessoryLayers),
     hood: () => drawBreathingLayers(hoodLayers),
+    facialHairOverHood: () => { if (pendingBeardOverpass) ctx.drawImage(pendingBeardOverpass, 0, 0); },
     mask: () => drawEmoteLayers(maskLayers),
     pauldron: () => { if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers); },
     urAboveHood: () => {
@@ -2385,7 +2436,7 @@ function portraitOptionFromJson(entry, json) {
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, beardRevealMasks: json.beardRevealMasks || null, beardOverpassMasks: json.beardOverpassMasks || null };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
