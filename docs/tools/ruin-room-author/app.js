@@ -29,7 +29,9 @@
   const saveInputs = () => {
     const item=current(); if(!item)return;
     item.name=$('room-name').value.trim()||item.id;
+    const previousDefinitionId=item.id; // Keep the selected definition attached when its stable identifier is edited.
     item.id=$('room-id').value.trim()||item.id;
+    if(state.id===previousDefinitionId)state.id=item.id;
     item.enabled=$('enabled').checked;
     if(state.kind==='template'){
       item.weight=Number($('weight').value)||0;
@@ -135,7 +137,10 @@
   }
   function saveSpotInputs(){
     const item=current(),spot=item?.spots.find(entry=>entry.id===state.spotId);if(!spot)return;
-    spot.label=$('spot-label').value.trim()||spot.id;spot.id=$('spot-id').value.trim()||spot.id;
+    spot.label=$('spot-label').value.trim()||spot.id;
+    const previousSpotId=spot.id; // Puzzle links follow the spot if its identifier changes.
+    spot.id=$('spot-id').value.trim()||spot.id;
+    if(previousSpotId!==spot.id){for(const link of item.puzzleLinks){if(link.activatorSpot===previousSpotId)link.activatorSpot=spot.id;if(link.mechanismSpot===previousSpotId)link.mechanismSpot=spot.id;}state.spotId=spot.id;}
     spot.x=Number($('spot-x').value);spot.z=Number($('spot-z').value);
     spot.maxUses=Math.max(1,Number($('spot-max').value)||1);spot.clearance=Math.max(0,Number($('spot-clearance').value)||0);
     spot.required=$('spot-required').checked;
@@ -195,13 +200,13 @@
     state.kind=kind;state.id=id;state.spotId=null;state.placingSpot=false;renderDefinition();
   }
   function addDefinition(kind){
-    saveInputs();const item=kind==='template'?defaultsTemplate():defaultsProfile();
+    saveInputs();if($('spot-label'))saveSpotInputs();const item=kind==='template'?defaultsTemplate():defaultsProfile();
     selectedListFor(kind).push(item);state.kind=kind;state.id=item.id;state.spotId=item.spots[0]?.id||null;state.placingSpot=false;markDirty();renderDefinition();
     setStatus('Created '+item.name+'. Configure its footprint, spots, connections and puzzle links.');
   }
   function selectedListFor(kind){return kind==='template'?state.library.templates:state.library.proceduralProfiles;}
   function addSpot(){
-    saveInputs();const item=current();if(!item)return;
+    saveInputs();if($('spot-label'))saveSpotInputs();const item=current();if(!item)return;
     const spot=newSpot(item.spots.length+1,state.kind);let suffix=item.spots.length+1;
     while(item.spots.some(entry=>entry.id===spot.id))spot.id='spot-'+(++suffix);
     item.spots.push(spot);state.spotId=spot.id;state.placingSpot=state.kind==='template';markDirty();renderDefinition();
