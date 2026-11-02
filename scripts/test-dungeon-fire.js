@@ -218,7 +218,8 @@ async function main() {
   assert(mechanismCode.includes('mesh.userData.projectileCoverHeightTiles=ICE_WALL_HEIGHT') &&
     mechanismCode.includes('mesh.userData.projectileCoverHalfXTiles=') &&
     mechanismCode.includes('delete mesh.userData.projectileCoverHeightTiles') &&
-    mechanismCode.includes('NearbyVolumeCollision?.invalidate?.()'),
+    mechanismCode.includes('NearbyVolumeCollision?.invalidate?.()') &&
+    mechanismCode.includes('projectileCoverBottomOffsetTiles=-ICE_WALL_HEIGHT*.5'),
     'Tothal ice walls block projectiles while frozen and invalidate cached cover when melting or removed');
   assert(mechanismCode.includes('buildNet(point,world.ceilingY,index)') &&
     mechanismCode.includes('buildIcicle(point,Number(context.ceilingY)||point.y+3.15,index)') &&

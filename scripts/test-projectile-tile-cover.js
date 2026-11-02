@@ -67,6 +67,31 @@ scene.children.push(node('stone table',{projectileCoverHeightTiles:0.8,projectil
 browser.NearbyVolumeCollision.invalidate();
 assert(browser.NearbyVolumeCollision.segmentHit({x:0,y:0.4,z:1},{x:2,y:0.4,z:1}),'solid furniture still blocks low shots');
 assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:2,z:1},{x:2,y:2,z:1}),null,'solid furniture can be cleared');
+const iceWall=node('tothal-ice-wall',{
+  projectileCoverHeightTiles:2,
+  projectileCoverHalfXTiles:.1,
+  projectileCoverHalfZTiles:.8,
+  projectileCoverBottomOffsetTiles:-1,
+  projectileCoverKind:'tothal-ice-wall',
+});
+iceWall.position.y=1; // The visible wall mesh is centered vertically; bottom offset restores its floor-level physical origin.
+scene.children.push(iceWall);
+browser.NearbyVolumeCollision.invalidate();
+const wallHit=browser.NearbyVolumeCollision.segmentHit({x:0,y:.5,z:1.7},{x:2,y:.5,z:1.7});
+assert(wallHit && wallHit.kind==='tothal-ice-wall' && wallHit.source==='explicit-aabb-metadata',
+  'the thin ice wall blocks projectiles across its actual long axis');
+assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:-.1,z:1},{x:2,y:-.1,z:1}),null,
+  'ice-wall cover does not extend below its actual bottom');
+assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:2.1,z:1},{x:2,y:2.1,z:1}),null,
+  'ice-wall cover does not extend above its actual top');
+delete iceWall.userData.projectileCoverHeightTiles;
+delete iceWall.userData.projectileCoverHalfXTiles;
+delete iceWall.userData.projectileCoverHalfZTiles;
+delete iceWall.userData.projectileCoverBottomOffsetTiles;
+delete iceWall.userData.projectileCoverKind;
+browser.NearbyVolumeCollision.invalidate();
+assert.equal(browser.NearbyVolumeCollision.segmentHit({x:0,y:.5,z:1},{x:2,y:.5,z:1}),null,
+  'melting/removing an ice wall clears its cached projectile cover');
 console.log('Projectile grass, rock height, radius, elevation, wall and movement regressions passed.');
 
 // Decorative ruin furniture uses authored geometry only as a decal/plaque host; its decorated door/target owns collision.
