@@ -142,15 +142,57 @@ const waterMaterialStart = mergedWater.indexOf('  function createMaterial('); //
 const waterMaterialEnd = mergedWater.indexOf('  function createMesh(', waterMaterialStart);
 assert.ok(waterMaterialStart >= 0 && waterMaterialEnd > waterMaterialStart,
   'extract the merged-water material factory');
-const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'window',
+const makeWaterMaterial = new Function('THREE', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'window',
   mergedWater.slice(waterMaterialStart, waterMaterialEnd) + '\nreturn createMaterial;')(
-    testThree, 0.02, 0.02, { SurfaceOcclusionComposer: surfaceComposer });
+    testThree, 0.02, 0.02, 0.12, { SurfaceOcclusionComposer: surfaceComposer });
 const testedWaterMaterial = makeWaterMaterial(testThree, {});
 assert.equal(testedWaterMaterial.depthWrite, false, 'normal water rendering never writes depth');
 assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthOnly.value, 0,
   'water material starts outside the temporary depth-only mode');
 assert.equal(testedWaterMaterial.uniforms.uHobunjiSurfaceOcclusionDepthAlphaThreshold.value,
   surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD, 'water material uses the shared composer threshold');
+// Execute the production mesh builder: diagnostics must read the threshold from
+// this mesh's own material rather than a local variable in createMaterial().
+class TestBufferGeometry {
+  constructor() { this.attributes = {}; } // Stores attributes emitted by the production mesh builder.
+  setAttribute(name, attribute) { this.attributes[name] = attribute; }
+  setIndex(index) { this.index = index; }
+  computeVertexNormals() {}
+}
+class TestFloat32BufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+}
+class TestBufferAttribute {
+  constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; }
+}
+class TestMesh {
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.userData = {}; }
+}
+const meshDataForWaterTest = {
+  positions: [0, 0, 0, 1, 0, 0, 0, 0, 1], uvs: [0, 0, 1, 0, 0, 1],
+  depths: [1, 1, 1], coverages: [1, 1, 1], flows: [0, 0, 0, 0, 0, 0],
+  indices: [0, 1, 2], tileCount: 1, representation: 'test-water',
+};
+const meshWaterStats = {};
+const meshBuilderStart = mergedWater.indexOf('  function createMesh('); // Extracts the exact production mesh factory.
+const meshBuilderEnd = mergedWater.indexOf('  function clearStats(', meshBuilderStart);
+assert.ok(meshBuilderStart >= 0 && meshBuilderEnd > meshBuilderStart,
+  'extract the merged-water mesh factory');
+const makeWaterMesh = new Function(
+  'buildMapWidePlaneSurfaceData', 'buildInvertedSurfaceData', 'buildSurfaceData',
+  'stats', 'lastLoggedCounts', 'DEFAULT_TEXTURE_TILE_SIZE', 'DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD', 'TEXTURE_SCROLL_U', 'TEXTURE_SCROLL_V',
+  mergedWater.slice(meshBuilderStart, meshBuilderEnd) + '\nreturn createMesh;'
+)(() => meshDataForWaterTest, () => meshDataForWaterTest, () => meshDataForWaterTest,
+  meshWaterStats, new Map(), 4, 0.12, 0.012, 0.035);
+const testedWaterMesh = makeWaterMesh({
+  BufferGeometry: TestBufferGeometry, Float32BufferAttribute: TestFloat32BufferAttribute,
+  BufferAttribute: TestBufferAttribute, Mesh: TestMesh,
+}, testedWaterMaterial, [], { mapWidePlane: true, statKey: 'scope-regression' });
+assert.ok(testedWaterMesh, 'town water mesh creation completes without a scope ReferenceError');
+assert.equal(meshWaterStats['scope-regression'].depthAlphaThreshold,
+  surfaceComposer.WATER_DEPTH_ALPHA_THRESHOLD,
+  'water mesh diagnostics read the exact threshold configured on its material');
+
 assert.match(testedWaterMaterial.fragmentShader,
   /uHobunjiSurfaceOcclusionDepthOnly > 0\.5[\s\S]*?alpha < uHobunjiSurfaceOcclusionDepthAlphaThreshold\) discard/,
   'the production water shader discards only faint fragments during depth-only replay');

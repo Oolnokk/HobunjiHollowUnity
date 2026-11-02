@@ -6,6 +6,7 @@
   const DEFAULT_EXCEPTION_SURFACE_THRESHOLD = 0.01; // Used by inversion to decide when local surface height needs exception geometry.
   const DEFAULT_EXCEPTION_DEPTH_THRESHOLD = 0.04; // Used by inversion when color depth differs despite a near-identical surface height.
   const DEFAULT_EXCEPTION_COVERAGE_THRESHOLD = 0.04; // Used by inversion when opacity differs despite a near-identical surface height.
+  const DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD = 0.12; // Shared fallback for material rendering and mesh diagnostics.
   const TEXTURE_SCROLL_U = 0.012; // Used by the shared shader to drift the tiled PNG sideways.
   const TEXTURE_SCROLL_V = 0.035; // Used by the shared shader to move the tiled PNG along world Z.
   const stats = Object.create(null); // Used by the in-game Debug panel and mobile bug reports.
@@ -379,7 +380,7 @@
       ? window.SurfaceOcclusionComposer?.WATER_DEPTH_ALPHA_THRESHOLD
       : null; // Shared with every other x-ray surface consumer when the composer is loaded.
     const depthAlphaThreshold = Math.max(0, Math.min(1,
-      Number(composerThreshold) || 0.12)); // Faint water fringe remains visible but does not become a full-strength depth occluder.
+      Number(composerThreshold) || DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD)); // Faint water fringe remains visible but does not become a full-strength depth occluder.
     const uniforms = {
       uTime: { value: 0 },
       uWaterTexture: { value: fallbackTexture },
@@ -500,7 +501,9 @@
         ? options.textureTileSize
         : DEFAULT_TEXTURE_TILE_SIZE,
       textureScrollUvPerSecond: [TEXTURE_SCROLL_U, TEXTURE_SCROLL_V],
-      depthAlphaThreshold,
+      depthAlphaThreshold: Number.isFinite(material?.uniforms?.uHobunjiSurfaceOcclusionDepthAlphaThreshold?.value)
+        ? material.uniforms.uHobunjiSurfaceOcclusionDepthAlphaThreshold.value
+        : DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD,
     };
     const logCount = `${data.representation}/${data.baselineRectangles || 0}/${data.exceptionCount || 0}/${data.maskedCellCount || 0}`; // Used to suppress unchanged representation logs.
     if (lastLoggedCounts.get(statKey) !== logCount) {
@@ -526,7 +529,7 @@
     DEFAULT_EXCEPTION_COVERAGE_THRESHOLD,
     TEXTURE_SCROLL_U,
     TEXTURE_SCROLL_V,
-    WATER_DEPTH_ALPHA_THRESHOLD: 0.12,
+    WATER_DEPTH_ALPHA_THRESHOLD: DEFAULT_WATER_DEPTH_ALPHA_THRESHOLD,
     buildSurfaceData,
     buildMapWidePlaneSurfaceData,
     buildInvertedSurfaceData,
