@@ -40,10 +40,10 @@ const loadCost = vm.runInNewContext(`(() => {
 const playerCost = loadCost(player, { loadStaminaFraction: 0.85 });
 assert.ok(Math.abs(playerCost * 1.25 * 0.8 * 0.84 - 85) < 1e-9,
   'after timed cost modifiers, Alchemy, and two ranks of Reduce Stamina Use, a full reload must still remove 85% of maximum Stamina');
-assert.strictEqual(loadCost({ maxStamina: 100, stamina: 100 }, { loadStaminaFraction: 0.85 }), 85,
-  'NPC reload cost must be 85% of authored maximum Stamina without player-only discounts');
-assert.strictEqual(loadCost({ maxStamina: 100, stamina: 100 }, {}), 85,
-  'missing per-weapon tuning must retain the safe 85% default');
+assert.ok(Math.abs(loadCost({ maxStamina: 100, stamina: 100 }, { loadStaminaFraction: 0.85 }) * 1.25 - 85) < 1e-9,
+  'NPC reload cost must remain 85% of authored maximum Stamina after timed cost modifiers');
+assert.ok(Math.abs(loadCost({ maxStamina: 100, stamina: 100 }, {}) * 1.25 - 85) < 1e-9,
+  'missing per-weapon tuning must retain the safe 85% default after timed cost modifiers');
 
 const chargeCost = vm.runInNewContext(`(() => {
   const HELD_CHARGE_MIN_READY_POSE = 0.48;
