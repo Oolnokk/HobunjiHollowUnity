@@ -578,6 +578,67 @@
     }
   }
 
+  function _isInPlayableRuin(currentArea) {
+    if (!String(currentArea || '').startsWith('map_i_')) return false;
+    return !!window.DevRandomRuin?.getRuntimeContext?.() || window.DevHachutuRuin?.debug?.()?.active === true;
+  }
+
+  async function _copyRuinMapJson(button, status) {
+    const currentArea = deps.getCurrentArea();
+    if (!_isInPlayableRuin(currentArea)) return;
+    const scene = window.GridTileAccessors?.getActiveScene?.()
+      || window.DevRandomRuin?.getRuntimeContext?.()?.scene;
+    if (!scene?.toJSON) {
+      status.textContent = 'Could not access the active ruin scene.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Preparing map JSON…';
+    try {
+      scene.updateMatrixWorld?.(true);
+      const payload = {
+        format: 'hobunji-ruin-map',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        area: currentArea,
+        ruin: window.DevRandomRuin?.getState?.() || null,
+        hachutu: window.DevHachutuRuin?.debug?.()?.active ? window.DevHachutuRuin.debug() : null,
+        occupancy: window.DevRandomRuin?.getOccupancySnapshot?.() || null,
+        scene: scene.toJSON(),
+      };
+      const json = JSON.stringify(payload, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+      status.textContent = `Copied ${(json.length / 1024).toFixed(0)} KB of ruin map JSON.`;
+    } catch (error) {
+      status.textContent = `Copy failed: ${error?.message || error}`;
+      console.error('[WildernessMap] Ruin JSON export failed', error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function _renderRuinJsonExport(tabsEl, currentArea) {
+    tabsEl.querySelector('[data-ruin-json-export]')?.remove();
+    tabsEl.querySelector('[data-ruin-json-status]')?.remove();
+    if (!_isInPlayableRuin(currentArea)) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'wmap-zone-tab';
+    button.dataset.ruinJsonExport = '1';
+    button.textContent = 'Copy Ruin JSON';
+    button.title = 'Copy the active ruin map, scene objects, geometry and runtime state as JSON';
+    const status = document.createElement('span');
+    status.dataset.ruinJsonStatus = '1';
+    status.setAttribute('role', 'status');
+    status.style.cssText = 'align-self:center;font-size:11px;opacity:.8;max-width:100%;overflow-wrap:anywhere';
+    button.addEventListener('click', () => _copyRuinMapJson(button, status));
+    tabsEl.append(button, status);
+  }
+
   let _wmapActiveZone = null;
   function renderWildernessMapPanel() {
     const tabsEl = document.getElementById('wmapZoneTabs');
@@ -585,7 +646,7 @@
     if (!tabsEl || !canvas) return;
     const currentArea = deps.getCurrentArea();
     const zoneIds = (typeof WildernessMapGenerator !== 'undefined') ? WildernessMapGenerator.zoneMapIds() : [];
-    if (!zoneIds.length) { tabsEl.innerHTML = ''; _drawWildernessMapOnCanvas(canvas, null); return; }
+    if (!zoneIds.length) { tabsEl.innerHTML = ''; _renderRuinJsonExport(tabsEl, currentArea); _drawWildernessMapOnCanvas(canvas, null); return; }
     if (!_wmapActiveZone || !zoneIds.includes(_wmapActiveZone)) {
       _wmapActiveZone = deps._isZoneArea(currentArea) ? currentArea : zoneIds[0];
     }
@@ -598,6 +659,7 @@
       btn.addEventListener('click', () => { _wmapActiveZone = zoneId; renderWildernessMapPanel(); });
       tabsEl.appendChild(btn);
     }
+    _renderRuinJsonExport(tabsEl, currentArea);
     _drawWildernessMapOnCanvas(canvas, _wmapActiveZone, { showPlayer: currentArea === _wmapActiveZone });
     _renderLandmarkList(_wmapActiveZone);
   }
