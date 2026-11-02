@@ -196,6 +196,11 @@ async function main() {
   api.clear();
   assert.equal(api.debugSnapshot().reactiveTargets, 0, 'clear removes all fire-reactive targets');
 
+  const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
+  assert(sourceBuilder.includes('world.group.add(group)'),
+    'the source brazier belongs to the composer-owned group and is removed on clear/reroll');
+  assert(mechanismCode.includes('!doors.some(item=>item.id===doorway.id)'),
+    'Tothal shared room doorways are deduplicated before ice walls are generated');
   assert(mechanismCode.includes("registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear})"),
     'Dungeon Fire is registered with the generated Harlyao ruin composer');
   assert(mechanismCode.includes('registerFireTarget(record,brazier=>') &&

@@ -125,7 +125,7 @@
   function buildSourceBrazier(kit,point,index=0) {
     const group=basketBrazier(point.x,point.y,point.z,'source');
     group.name='dungeon_fire_source_brazier_'+index;
-    kit.group().add(group);
+    world.group.add(group);
     const record=addMechanismRecord({id:'dungeon-fire-source-'+index,kind:'source',group,point,armed:false});
     record.control={
       kind:'dungeonFireSource',object:group,promptRoot:group,
@@ -314,7 +314,7 @@
       for(const room of context.meta?.rooms||[]){
         for(const entry of kit.roomDoorways(context,room)){
           const doorway=kit.doorwayWorld(context.meta,entry.door,entry.index);
-          if(doorway&&!doors.some(item=>item.index===entry.index))doors.push(doorway);
+          if(doorway&&!doors.some(item=>item.id===doorway.id))doors.push(doorway);
         }
       }
       doors.slice(0,2).forEach((door,index)=>buildIceWall(kit,context,door,index));
