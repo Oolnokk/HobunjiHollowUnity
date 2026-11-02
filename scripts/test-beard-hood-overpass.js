@@ -9,7 +9,7 @@ const appParts = Array.from({ length: 12 }, (_, index) => fs.readFileSync(`${fit
 const maskAuthor = fs.readFileSync(`${fitRoot}/app.part13.txt`, 'utf8');
 const closeAt = appParts[11].lastIndexOf('})();');
 assert.ok(closeAt >= 0, 'the twelve core chunks retain their standalone closure');
-appParts[11] = appParts[11].slice(0, closeAt) + maskAuthor + '\\n})();' + appParts[11].slice(closeAt + 5);
+appParts[11] = appParts[11].slice(0, closeAt) + maskAuthor + '\n})();' + appParts[11].slice(closeAt + 5);
 const appSource = appParts.join('');
 new vm.Script(appSource, { filename: 'clothing-species-fit-app.js' }); // The split editor must still compile as one private-scope application.
 
