@@ -13,7 +13,8 @@ const context = { window: {} };
 vm.runInNewContext(clampSource, context);
 const clampPitchOffsetDeg = context.window.CameraLookClamp.clampPitchOffsetDeg;
 
-assert.doesNotMatch(config, /cameraRotate(?:Up)?ClampDeg/, 'obsolete fixed-angle camera clamp settings are removed');
+assert.match(config, /"cameraRotateClampDeg": 45/, 'the existing limited-yaw clamp remains configured');
+assert.doesNotMatch(config, /cameraRotateUpClampDeg/, 'the obsolete fixed upward-pitch clamp is removed');
 assert.equal(context.window.CameraLookClamp.defaults.downDeg, 90, 'downward look reaches true vertical');
 assert.equal(context.window.CameraLookClamp.defaults.upDeg, 90, 'upward look reaches true vertical');
 assert.equal(clampPitchOffsetDeg(-120, {}, 9), -99, 'upward offset accounts for the authored 9-degree camera base and stops at vertical');
