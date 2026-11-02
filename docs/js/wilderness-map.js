@@ -588,12 +588,12 @@
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     if (typeof value === 'bigint') return String(value);
     if (typeof value === 'function' || typeof value === 'undefined') return undefined;
-    if (ArrayBuffer.isView(value)) return Array.from(value, item => _plainJson(item, seen));
-    if (value instanceof Set) return [...value].map(item => _plainJson(item, seen));
-    if (value instanceof Map) return [...value.entries()].map(([key, item]) => [_plainJson(key, seen), _plainJson(item, seen)]);
     if (typeof value !== 'object') return String(value);
     if (seen.has(value)) return '[Circular]';
     seen.add(value);
+    if (ArrayBuffer.isView(value)) return Array.from(value, item => _plainJson(item, seen));
+    if (value instanceof Set) return [...value].map(item => _plainJson(item, seen));
+    if (value instanceof Map) return [...value.entries()].map(([key, item]) => [_plainJson(key, seen), _plainJson(item, seen)]);
     if (Array.isArray(value)) return value.map(item => _plainJson(item, seen));
     const out = {};
     for (const [key, item] of Object.entries(value)) {
@@ -642,17 +642,24 @@
         scene: scene.toJSON(),
       };
       const json = JSON.stringify(payload, null, 2);
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(json);
-      } else {
-        const textarea = document.createElement('textarea'); // Mobile/older-browser fallback when the async Clipboard API is unavailable.
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(json);
+          copied = true;
+        }
+      } catch (_) { /* Fall through to the selection-based path when clipboard permission is denied. */ }
+      if (!copied) {
+        const textarea = document.createElement('textarea'); // Mobile/older-browser fallback when the async Clipboard API is unavailable or denied.
         textarea.value = json;
         textarea.setAttribute('readonly', '');
         textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
         document.body.appendChild(textarea);
+        textarea.focus();
         textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
+        textarea.setSelectionRange(0, textarea.value.length);
+        try { copied = document.execCommand('copy'); }
+        finally { textarea.remove(); }
         if (!copied) throw new Error('Clipboard access was denied');
       }
       status.textContent = `Copied ${(json.length / 1024).toFixed(0)} KB of ruin map JSON.`;
