@@ -68,6 +68,46 @@ assert.match(generator, /\(Number\(opening\.worldStart\) - v0Coord\) \/ edgeSpan
 assert.equal(mainCuts[0].vHeight, 1);
 assert.equal(mainCuts[0].kind, 'internal');
 
+// Exercise the actual production wall-clipping function against a full-size
+// body wall and its inset gable end. The two surviving sections must land on
+// exactly the same world-space shared interval boundary despite different
+// face widths.
+const cutStart = generator.indexOf('  function _lerp3(');
+const cutEnd = generator.indexOf('  function cutDoorPortal(', cutStart);
+assert(cutStart >= 0 && cutEnd > cutStart, 'wall opening helpers are present');
+const cutOpenings = vm.runInNewContext(`(() => {
+  ${generator.slice(cutStart, cutEnd)}
+  return _cutFacesForOpenings;
+})()`);
+const bodyWall = {
+  id: 'body-east', tag: 'wall', highlandFrustumWall: true, wallSide: 'east',
+  v: [[4, 0, 0], [4, 1.4, 0], [4, 1.4, 3], [4, 0, 3]],
+};
+const insetGable = {
+  id: 'gable-east', tag: 'wall', gableEnd: true, wallSide: 'east',
+  v: [[3.4, 1.4, 0.225], [3.4, 2.58, 0.225], [3.4, 2.58, 2.775], [3.4, 1.4, 2.775]],
+};
+const sharedCutFaces = cutOpenings([bodyWall, insetGable], [{
+  side: 'east', worldStart: 1, worldEnd: 2, vCenter: 0.5, vHeight: 1, kind: 'internal',
+}]);
+const zRanges = id => sharedCutFaces.filter(face => String(face.id).startsWith(id + ':opening:'))
+  .map(face => [Math.min(...face.v.map(point => point[2])), Math.max(...face.v.map(point => point[2]))])
+  .sort((a, b) => a[0] - b[0]);
+const bodyRanges = zRanges('body-east');
+const gableRanges = zRanges('gable-east');
+assert.equal(bodyRanges.length, 2, 'shared wall leaves two exterior body runs');
+assert.equal(gableRanges.length, 2, 'shared wall leaves two exterior gable runs');
+assert.ok(Math.abs(bodyRanges[0][1] - 1) < 1e-9 && Math.abs(gableRanges[0][1] - 1) < 1e-9,
+  'both body and inset gable end exactly at the shared interval start');
+assert.ok(Math.abs(bodyRanges[1][0] - 2) < 1e-9 && Math.abs(gableRanges[1][0] - 2) < 1e-9,
+  'both body and inset gable restart exactly at the shared interval end');
+
+// A real doorway must cut the body face but must never cut the room's gable.
+const doorCutFaces = cutOpenings([bodyWall, insetGable], [{
+  side: 'east', uCenter: 0.5, uWidth: 1 / 3, vCenter: 0.46, vHeight: 0.92, kind: 'door',
+}]);
+assert.ok(doorCutFaces.includes(insetGable), 'door apertures do not remove the gable face');
+
 // Perpendicular ridge joins continue the smaller gable to the host ridge.
 const crossSource = { id: 'cross-source', col: 0, row: 1, w: 4, h: 2, roofAxis: 'x' };
 const crossHost = { id: 'cross-host', col: 4, row: 0, w: 2, h: 4, roofAxis: 'z' };
