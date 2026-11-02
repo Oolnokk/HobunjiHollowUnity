@@ -44,6 +44,8 @@
   }
 
   function playerFootingMultiplier(player) {
+    const drunkenFooting = Math.max(0, Number(player?.afflictions?.drunkenFooting) || 0);
+    if (!(drunkenFooting > 0)) return 1; // The game's Footing pace penalty is part of drunken locomotion, not a general low-Footing penalty.
     const baseMax = Math.max(0, Number(player?.maxFooting) || 0);
     if (!(baseMax > 0)) return 1;
     const effectiveMax = Math.max(0, Number(window.ResourceSystem?.getEffectiveMax?.(player, 'footing')) || baseMax);
@@ -80,11 +82,11 @@
 
     if (mountActive) {
       const mount = mounts.rideEntity;
+      const actualVelocity = Math.hypot(Number(mount?.vx) || 0, Number(mount?.vy) || 0);
+      if (actualVelocity > 0.5) return actualVelocity; // Mounted velocity already contains acceleration, collision, and every modifier applied by Mounts.
       const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
       const perception = multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
-      return base * alchemy * devGlobal * perception
-        * multiplier(() => window.CookingSystem?.getSpeedMultiplier?.(), 1)
-        * multiplier(() => window.Combat?.getMovementSpeedMul?.(), 1);
+      return base * alchemy * devGlobal * perception; // Match updateMountedMovement's actual top-speed composition while stationary. 
     }
 
     const base = Math.max(0, Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
