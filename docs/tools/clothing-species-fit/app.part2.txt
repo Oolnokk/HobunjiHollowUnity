@@ -85,7 +85,7 @@ async function loadRepositoryData(){
       }
     }
     R.garments.sort((a,b)=>a.label.localeCompare(b.label));
-    rebuildSelectors();await refreshAssets();
+    rebuildSelectors();await refreshAssets();window.dispatchEvent(new Event('clothing-fit-repository-loaded'));
     status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} body/headwear items. Starting sprites: ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
     log('Repository load complete.');
   }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
