@@ -24,6 +24,7 @@ const bed=furniture('basicBed'),double=furniture('doubleBed'),chair=furniture('c
 assert(W.AuthoredFurniture.seatedKneeReach(chair)<chair.footprint.d/2);
 assert(W.AuthoredFurniture.sleepSurfaceHeight(bed)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(bed)<.25); // Half-height bed: fabric mattress, not pillow, defines contact.
 assert(W.AuthoredFurniture.sleepSurfaceHeight(double)>.20 && W.AuthoredFurniture.sleepSurfaceHeight(double)<.25); // Double-bed headboard must not be mistaken for its mattress.
+assert.equal(W.AuthoredFurniture.sleepSurfacePart(double)?.materialRole,'fabric','sleep x-ray resolves the authored mattress part, not the wooden bed frame');
 for (const data of [bed,double]) for (const part of data.parts) {
   assert(part.transform.y < .3, 'bed part vertical position is halved');
   assert(part.transform.sy < .12, 'bed part vertical thickness is halved');
@@ -44,15 +45,18 @@ assert(registry.unregisterPlacement('interior','rug1'));
 assert.equal(registry.snapshot('interior').placements[0].id,'rug2');
 registry.registerPlacement('interior',{id:'chair',key:'chairSimple',col:6,row:5},root(6.5,0,5.5),{sit:true,fw:1,fd:1});
 assert(registry.seatTransform('interior',{furnitureId:'chair'}).footprintHalfDepth<.2);
-const bedMaterial={depthTest:true,depthWrite:true,clone(){return{depthTest:this.depthTest,depthWrite:this.depthWrite,dispose(){this.disposed=true;}};}}; // The bed alone may stop writing depth while its sleeper is drawn.
-const bedMesh={isMesh:true,material:bedMaterial};
-const bedRoot={parent:{},position:{x:4,y:0,z:6},scale:{x:1,y:1,z:1},rotation:{y:0},userData:{},updateWorldMatrix(){},localToWorld(v){v.x+=4;v.y+=0;v.z+=6;return v;},traverse(fn){fn(bedMesh);}};
+const bedMaterial={depthTest:true,depthWrite:true,clone(){return{depthTest:this.depthTest,depthWrite:this.depthWrite,dispose(){this.disposed=true;}};}}; // Only the authored mattress mesh may stop writing depth.
+const frameMesh={isMesh:true,material:bedMaterial,name:'bed-frame'};
+const mattressMesh={isMesh:true,material:bedMaterial,name:'mattress',traverse(fn){fn(this);}};
+const headboardMesh={isMesh:true,material:bedMaterial,name:'headboard'};
+const mattressPart=W.AuthoredFurniture.sleepSurfacePart(double);
+const bedRoot={parent:{},position:{x:4,y:0,z:6},scale:{x:1,y:1,z:1},rotation:{y:0},userData:{meshById:new Map([[mattressPart.id,mattressMesh]])},updateWorldMatrix(){},localToWorld(v){v.x+=4;v.y+=0;v.z+=6;return v;}};
 registry.registerPlacement('bedroom',{id:'bed',key:'doubleBed',col:3,row:5},bedRoot,{fw:2,fd:2});
 const left=registry.lieTransform('bedroom',{pose:'lie',c:3,r:5});
 const right=registry.lieTransform('bedroom',{pose:'lie',c:4,r:5});
 const spouse=registry.lieTransform('bedroom',{pose:'lie',c:2,r:5,bedCol:3,bedRow:5,furnitureId:'bed',bedCenter:true});
 assert(spouse&&Math.abs(spouse.x-4)<1e-6&&Math.abs(spouse.z-6)<1e-6,'spouse resolves the exact bed center even from an adjacent walkable tile');
-assert.strictEqual(spouse.root,bedRoot,'resolved NPC mattress carries the exact placed bed root for scoped depth handling');
+assert.strictEqual(spouse.mattressMesh,mattressMesh,'resolved NPC mattress carries only the exact authored mattress mesh for scoped depth handling');
 assert(left&&right&&left.y>.20&&left.y<.25&&right.x>left.x); // Both double-bed stations resolve to the newly lowered mattress.
 vm.runInNewContext(read('docs/js/bed-lie-pose.js'),ctx);
 W.BedLiePose.init({THREE:W.THREE,player:()=>({}),playerRoot:()=>({}),tileSize:()=>32,area:()=>'interior'});
@@ -65,20 +69,24 @@ const npc={rec:{id:'npc-test'},animalDef:null,area:'interior',
  _npcCharacterRigRoot:rig,avatarGroup:{userData:{neckRig:{skinnedPlane:skin}}},
  legs:{standingPosteriorY:.34},avatarHeight:.9};
 const wallMaterial={depthTest:true,depthWrite:true}; // A subdivision wall is not part of the bed's temporary depth exception.
-for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',bedCenter:true,c:2,r:5},.1,{x:4,z:6,y:.22,facingRad:0,root:spouse.root}); // A spouse arriving from the adjacent walkable tile lies on the exact mattress.
+for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'lie',bedCenter:true,c:2,r:5},.1,{x:4,z:6,y:.22,facingRad:0,mattressMesh:spouse.mattressMesh}); // A spouse arriving from the adjacent walkable tile lies on the exact mattress.
 assert(npc._bedLieActive&&Math.abs(rig.quaternion.euler.x+Math.PI/2)<1e-5);
 assert.equal(skin.material[0].depthTest,true,'sleeping portrait must still depth-test against subdivision walls');
 assert.equal(skin.material[0].depthWrite,false,'sleeping portrait remains a non-writing overlay');
-assert.notEqual(bedMesh.material,bedMaterial,'only the occupied bed receives a temporary material override');
-assert.equal(bedMesh.material.depthTest,true,'bed still respects walls and other existing occluders');
-assert.equal(bedMesh.material.depthWrite,false,'occupied bed alone stops blocking its sleeper');
+assert.notEqual(mattressMesh.material,bedMaterial,'only the occupied mattress receives a temporary material override');
+assert.equal(mattressMesh.material.depthTest,true,'mattress still respects walls and other existing occluders');
+assert.equal(mattressMesh.material.depthWrite,false,'occupied mattress alone stops blocking its sleeper');
+assert.strictEqual(frameMesh.material,bedMaterial,'wooden frame retains its original depth-writing material');
+assert.strictEqual(headboardMesh.material,bedMaterial,'headboard retains its original depth-writing material');
 assert.equal(wallMaterial.depthWrite,true,'subdivision wall depth is never modified');
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
 assert(Math.abs(rig.position.y+hip.y-.255)<.001,'scaled NPC hip rests on the half-height authored mattress');
 assert.notEqual(skin.material[0],material);
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'stand',area:'interior'},.1,null);
 assert(!npc._bedLieActive&&skin.material[0]===material&&skin.renderOrder===2);
-assert.strictEqual(bedMesh.material,bedMaterial,'bed material and normal depth writing are restored when the spouse wakes');
+assert.strictEqual(mattressMesh.material,bedMaterial,'mattress material and normal depth writing are restored when the spouse wakes');
+assert.strictEqual(frameMesh.material,bedMaterial,'frame material remains untouched after wake');
+assert.strictEqual(headboardMesh.material,bedMaterial,'headboard material remains untouched after wake');
 assert.equal(rig.position.y,0);
 new Function(read('docs/game.js'));
 assert(read('docs/game.js').includes('window.BedLiePose?.syncNpc?.'));
