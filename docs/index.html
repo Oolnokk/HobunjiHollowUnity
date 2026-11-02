@@ -321,7 +321,7 @@
   <script src="js/tool-activity-stages.js?v=20261027h59190d9"></script> <!-- NPC dig/tool-action stages. -->
   <script src="js/combat/weapon-shape-stats.js?v=20261030torchstaff1"></script> <!-- Shared melee shape stat resolver; Foundry head modifiers are mitigated. -->
   <script src="js/combat/combat-core.js?v=20261031swipe3d1"></script>
-  <script src="js/combat/enemy-search-ai.js?v=20260926combatreview1"></script>
+  <script src="js/combat/enemy-search-ai.js?v=20261101lastseen3"></script>
   <!-- Stagger/Footing: authored 4-directional ragdoll blend clips + runtime
        playback onto the player's procedural rig and quarter-turned body-only
        animal planes. Must load after the procedural leg module and after
@@ -357,14 +357,14 @@
   <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/nearby-volume-collision.js?v=20261015h91b22f2"></script>
+  <script src="js/nearby-volume-collision.js?v=20261101enemySightCover1"></script>
   <!-- Finite projectile cover heights for rock/tree/cavern tiles (extracted from game.js; init(deps) from game.js). -->
   <script src="js/projectile-tile-cover.js?v=20261015a"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261031hbad4f8b"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261101enemyLOS2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -2878,7 +2878,7 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261101spousebed2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261101h9f46e76"></script>
+  <script src="game.js?v=20261102enemyLOSmerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
