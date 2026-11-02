@@ -7,7 +7,7 @@
 
   const SCHEMA = 'hobunji_ruin_room_library.v1';
   const STORAGE_KEY = 'hobunji.devRuinRoomLibrary.v1';
-  const LIBRARY_URL = 'config/ruin-room-authoring/room-library.json';
+  const LIBRARY_URL = new URL('../config/ruin-room-authoring/room-library.json', new URL('.', document.currentScript?.src || document.baseURI)).href; // Resolve from this shared module so both docs/index.html and the nested editor iframe read the same repository library.
   const CATEGORIES = ['mechanisms', 'activators', 'decorations'];
   const claimsByNetwork = new WeakMap();
   const diagnosticsByNetwork = new WeakMap();
