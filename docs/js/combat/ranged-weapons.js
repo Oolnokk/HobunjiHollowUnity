@@ -17,6 +17,11 @@
   const DEFAULT_PROJECTILE_EMBED_PERSIST_S = 10; // Embedded projectile lifetime including its normal end-of-life fade.
   const DEFAULT_PROJECTILE_EMBED_FADE_S = 0.65; // Short fade used both at normal expiry and when an older embedded projectile is displaced by the per-weapon cap.
   const DEFAULT_PROJECTILE_MAX_EMBEDDED = 3; // Default visible embedded projectile cap per owner + weapon key.
+  const DEFAULT_RANGED_LOAD_STAMINA_FRACTION = 0.85; // A full reload spends enough effective Stamina to put a rested target below Exhaust Cutter's 20% threshold.
+  const HELD_CHARGE_MIN_READY_POSE = 0.48; // Matches Charged Breaker's minimum ready pose for the shared cumulative charge-cost curve.
+  const HELD_CHARGE_COST_MIN = 12; // Matches Charged Breaker's cost at its first releasable pose.
+  const HELD_CHARGE_COST_MAX = 18; // Matches Charged Breaker's full-pose charge cost.
+  const RANGED_LOAD_REGEN_BLOCK_SOURCE = 'ranged-weapon-load'; // Keeps the reloader's newly depleted Stamina low throughout the vulnerable loading animation.
   const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
   // runs every frame for every live projectile until it hits something or
@@ -128,7 +133,7 @@
       rangeTiles: 9, projectileRadiusPx: 7, knockbackPxS: 130,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
-      staminaCost: 10,
+      staminaCost: 10, loadStaminaFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION,
       firePose: clonePoseSet(AUTHORED_FIRE_POSE),
       loadPose: clonePoseSet(AUTHORED_LOAD_POSE),
     },
@@ -139,7 +144,7 @@
       rangeTiles: 6.5, projectileRadiusPx: 4, knockbackPxS: 55,
       reloadDurationS: 1.04, reloadSequence: 'attack', reloadWindupFrac: 0.55, reloadStrikeFrac: 0.56, reloadHoldFrac: 0.692,
       fireDurationS: 1.04, fireSequence: 'attack', fireWindupFrac: 0.05, fireAtFrac: 0.08, fireHoldFrac: 0.17,
-      staminaCost: 14,
+      staminaCost: 14, loadStaminaFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION,
       firePose: clonePoseSet(AUTHORED_FIRE_POSE),
       loadPose: clonePoseSet(AUTHORED_LOAD_POSE),
     },
@@ -325,6 +330,45 @@
     }
   }
 
+  function rangedLoadStaminaCost(entity, def) {
+    const maxStamina = Math.max(0, Number(entity?.maxStamina) || Number(entity?.stamina) || 0); // Uses the actor's authored Stamina bar as the Exhaust Cutter threshold baseline.
+    const fraction = Number.isFinite(Number(def?.loadStaminaFraction))
+      ? Math.max(0, Number(def.loadStaminaFraction))
+      : DEFAULT_RANGED_LOAD_STAMINA_FRACTION;
+    let cost = maxStamina * fraction;
+    if (entity === deps?.player) {
+      const alchemyMultiplier = Math.max(0.01, Number(window.AlchemySystem?.getStaminaSpendMultiplier?.()) || 1); // Compensates for player-only cost reductions so the effective loss still crosses the intended threshold.
+      const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
+      const perkMultiplier = 1 - Math.min(0.6, reductionRank * 0.08);
+      cost /= alchemyMultiplier * perkMultiplier;
+    }
+    return cost;
+  }
+
+  function spendRangedLoadStamina(entity, itemKey, def = defFor(itemKey)) {
+    const cost = rangedLoadStaminaCost(entity, def);
+    if (!(cost > 0)) return null;
+    return window.ResourceSystem?.spendStamina?.(entity, cost, `${def?.label || itemKey || 'Ranged weapon'} load`, {
+      actionKind: 'rangedWeaponLoad', abilityId: String(itemKey || 'rangedWeapon'),
+    }) || null;
+  }
+
+  function setRangedLoadRegenBlocked(entity, blocked) {
+    return window.ResourceSystem?.setStaminaRegenBlocked?.(entity, RANGED_LOAD_REGEN_BLOCK_SOURCE, blocked) || false;
+  }
+
+  function chargeStaminaCostForPose(poseCharge) {
+    const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); // The visible Neutral→Windup interpolation is the one progress axis shared with Charged Breaker.
+    const ready = Math.max(0.0001, HELD_CHARGE_MIN_READY_POSE);
+    return pose <= ready
+      ? HELD_CHARGE_COST_MIN * (pose / ready)
+      : HELD_CHARGE_COST_MIN + (HELD_CHARGE_COST_MAX - HELD_CHARGE_COST_MIN) * ((pose - ready) / Math.max(0.0001, 1 - ready));
+  }
+
+  function paymentTotal(payment) {
+    return Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0)); // Includes ordinary, enhanced and exhaustion-debt portions exactly once.
+  }
+
   function defFor(itemKey) { return CONFIG[itemKey] || null; }
   function engagementRangePx(itemKey) {
     const def = defFor(itemKey);
@@ -478,7 +522,11 @@
     if (!def || playerAction) return false;
     const loaded = isLoaded(itemKey);
     const kind = loaded ? 'fire' : 'load';
-    if (kind === 'fire') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
+    if (kind === 'fire' && def.rangedType !== 'thrown') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
+    if (kind === 'load') {
+      spendRangedLoadStamina(deps.player, itemKey, def);
+      setRangedLoadRegenBlocked(deps.player, true);
+    }
     const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
     const pose = poseForAction(def, kind);
     const rawDamageScale = Number(options?.damageScale);
@@ -518,6 +566,7 @@
   function cancelPlayerAction() {
     const cancelled = playerAction;
     restoreHeldThrownWeapon(cancelled);
+    if (cancelled?.kind === 'load') setRangedLoadRegenBlocked(deps?.player, false);
     if (cancelled?.def?.rangedType === 'thrown') window.ProceduralHandGripRuntime?.clear?.();
     playerAction = null;
     deps?.refreshActionBar?.();
@@ -553,7 +602,10 @@
       consumeSpecialAmmo(ammoPayload);
     }
     if (action.t < action.durationS) return;
-    if (action.kind === 'load') setLoaded(action.itemKey, true);
+    if (action.kind === 'load') {
+      setLoaded(action.itemKey, true);
+      setRangedLoadRegenBlocked(deps?.player, false);
+    }
     restoreHeldThrownWeapon(action);
     if (action.def?.rangedType === 'thrown') window.ProceduralHandGripRuntime?.clear?.();
     playerAction = null;
@@ -1524,7 +1576,11 @@
     const fireDurationS = Math.max(0.01, Number(def.fireDurationS) || 0.01); // Remaining release/recovery time after a thrown charge.
     const durationS = kind === 'fire' ? chargeDurationS + fireDurationS : def.reloadDurationS; // Crossbow, scatterbow and blowgun loading remains independent.
     const releaseAtS = kind === 'fire' ? chargeDurationS + fireDurationS * fireReleaseFrac(def) : null; // NPCs preserve their charge windup, then release on the first firing tick.
-    c._rangedAction = { kind, t: 0, durationS, chargeDurationS, releaseAtS, fired: false };
+    c._rangedAction = { kind, t: 0, durationS, chargeDurationS, releaseAtS, fired: false, paidChargeCost: 0 };
+    if (kind === 'load') {
+      spendRangedLoadStamina(c, itemKey, def);
+      setRangedLoadRegenBlocked(c, true);
+    }
     c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c._rangedAimPitch = banditAimPitch(c, targetPlayer);
     if (kind === 'load') playRangedActionSfx(itemKey, 'load', c);
@@ -1667,6 +1723,17 @@
       action.t += dt;
       c._rangedAimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
       c._rangedAimPitch = banditAimPitch(c, targetPlayer);
+      if (action.kind === 'fire' && action.chargeDurationS > 0) {
+        const chargePose = Math.max(0, Math.min(1, action.t / action.chargeDurationS)); // NPC thrown holds spend against the same pose-based cost curve as player Charged Breaker.
+        const targetPaid = chargeStaminaCostForPose(chargePose);
+        const segmentCost = Math.max(0, targetPaid - (Number(action.paidChargeCost) || 0));
+        if (segmentCost > 0) {
+          const payment = window.ResourceSystem?.spendStamina?.(c, segmentCost, `${def.label} charge`, {
+            actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+          });
+          action.paidChargeCost = (Number(action.paidChargeCost) || 0) + paymentTotal(payment);
+        }
+      }
       if (action.kind === 'fire' && !action.fired && action.t >= (action.releaseAtS ?? action.durationS * fireReleaseFrac(def))) {
         action.fired = true;
         if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c); // A thrown weapon never enters the reload state; a fresh throwable is available after recovery.
@@ -1674,7 +1741,10 @@
         spawnVolley(itemKey, c.x, c.y, c._rangedAimAngle, 'bandit', c, null, c._rangedAimPitch || 0);
       }
       if (action.t >= action.durationS) {
-        if (action.kind === 'load') setLoaded(itemKey, true, c);
+        if (action.kind === 'load') {
+          setLoaded(itemKey, true, c);
+          setRangedLoadRegenBlocked(c, false);
+        }
         c._rangedAction = null;
         c._rangedCooldownT = action.kind === 'fire' ? 0.55 : 0.18;
       }
@@ -1793,6 +1863,7 @@
 
   function cancelBanditAction(c) {
     if (c) {
+      if (c._rangedAction?.kind === 'load') setRangedLoadRegenBlocked(c, false);
       c._rangedAction = null;
       c._rangedMode = false;
       delete c._rangedLosCache;
@@ -1867,6 +1938,7 @@
     isPlayerThrownFireThroughStrike, fireReleaseFrac, fireWindupFrac, // Shared firing timeline for weapon animation and direct shoulder/hand drivers.
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     beginBanditAction, // Shared timing/charge setup for isolated loadout animation previews.
+    rangedLoadStaminaCost, chargeStaminaCostForPose, // Shared balance helpers used by thrown-charge payment and regression coverage.
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     debugProjectileColliders: () => projectiles.filter(p => !p.dead && !p.embedded && p.areaId === deps?.getCurrentArea()).map(p => ({
@@ -1928,7 +2000,8 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Near-instant ranged release synchronized across projectiles, player/NPC weapon poses, and hand/shoulder targets; held throw charge and reload remain separate.',
+      latestChange: 'Ranged reloads spend 85% of effective maximum Stamina and hold regen blocked through the load; held throws use Charged Breaker’s cumulative pose-cost curve.',
+      staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: HELD_CHARGE_COST_MIN, thrownChargeFull: HELD_CHARGE_COST_MAX, thrownChargeReadyPose: HELD_CHARGE_MIN_READY_POSE },
       lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,

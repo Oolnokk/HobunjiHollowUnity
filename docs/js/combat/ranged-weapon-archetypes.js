@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 16;
+  const VERSION = 17;
   const PATCH_RETRY_MS = 50; // Used while game.js finishes constructing generated metal weapon definitions.
   const PATCH_RETRY_LIMIT = 160; // Used to stop the bootstrap poll after roughly eight seconds instead of polling forever.
   const THROWN_TYPE = 'thrown';
@@ -475,7 +475,7 @@
     }
     pendingThrownHold = null;
     const def = window.RangedWeapons.config[itemKey];
-    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now() };
+    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now(), paidChargeCost: 0 };
     window.RangedWeapons.setLoaded?.(itemKey, false);
     const totalS = Math.max(0.05, Number(def.throwDurationS) || ((def.chargeWindupS || 0.5096) + (def.fireDurationS || 0.5304)));
     window.RangedWeapons.triggerPlayerVisual?.(totalS, {
@@ -494,6 +494,37 @@
     return true;
   }
 
+  function thrownChargeCostForPose(poseCharge) {
+    const ranged = window.RangedWeapons;
+    const shapeStats = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Matches Charged Breaker's weapon-efficiency adjustment for the same pose-cost curve.
+    const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge)
+      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
+    return Math.max(0, baseCost / Math.max(0.05, Number(shapeStats.efficiency) || 1));
+  }
+
+  function payThrownChargeStamina(charge, poseCharge, reason = 'Thrown weapon charge') {
+    if (!charge) return 0;
+    const targetPaid = thrownChargeCostForPose(poseCharge);
+    const remainder = Math.max(0, targetPaid - (Number(charge.paidChargeCost) || 0));
+    if (!(remainder > 0)) return 0;
+    const payment = window.ResourceSystem?.spendStamina?.(
+      window.Combat?.deps?.player,
+      remainder,
+      reason,
+      { actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon' },
+    );
+    const paid = Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
+    charge.paidChargeCost = (Number(charge.paidChargeCost) || 0) + paid;
+    return paid;
+  }
+
+  function updateThrownChargeStamina() {
+    const charge = thrownCharge;
+    if (!charge) return;
+    const poseCharge = Number(window.RangedWeapons?.playerWindupPoseProgress?.());
+    if (Number.isFinite(poseCharge)) payThrownChargeStamina(charge, Math.max(0, Math.min(1, poseCharge)), 'Thrown weapon charge (holding)');
+  }
+
   function releaseThrownCharge(source = 'release') {
     const charge = thrownCharge;
     if (!charge) {
@@ -508,6 +539,7 @@
     const liveCharge = Number(ranged.playerWindupPoseProgress?.());
     const timeFallback = Math.max(0, Math.min(1, heldMs / Math.max(1, (Number(ranged.config[charge.itemKey]?.chargeWindupS) || 0.5096) * 1000)));
     const poseCharge = Number.isFinite(liveCharge) ? Math.max(0, Math.min(1, liveCharge)) : timeFallback;
+    payThrownChargeStamina(charge, poseCharge, 'Thrown weapon charge (release)'); // Catch up the final partial frame exactly once, matching Charged Breaker's release settlement.
 
     // Same release contract as current Charged Breaker: freeze the charge at
     // the exact visible Neutral→Windup percentage, slice Windup/Strike to that
@@ -569,6 +601,7 @@
       const baseUpdate = ranged.update.bind(ranged);
       ranged.update = function archetypeAwareUpdate(dt) {
         const result = baseUpdate(dt);
+        updateThrownChargeStamina();
         if (pendingThrownHold) resumePendingThrownHold();
         return result;
       };
