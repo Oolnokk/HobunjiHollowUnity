@@ -31,7 +31,11 @@
     const snapshot = calendar.timeDebugSnapshot?.(); // rawDay/rawTime01 remain continuous across calendar month and year boundaries.
     const rawDay = Number(snapshot?.rawDay);
     const rawTime01 = Number(snapshot?.time01 ?? snapshot?.rawTime01);
-    if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) return rawDay * 24 + rawTime01 * 24;
+    if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) {
+      const hour = Number(calendar.getHour?.()); // Match festival timers to the displayed in-game clock, including the overnight calendar transition.
+      if (Number.isFinite(hour)) return rawDay * 24 + hour;
+      return rawDay * 24 + rawTime01 * 24;
+    }
     const hour = Number(calendar.getHour?.());
     const year = Number(calendar.aotYearNumber?.());
     const month = Number(calendar.monthNumber?.());
