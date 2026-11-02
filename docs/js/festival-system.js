@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   let deps = null; // Runtime-owned inventory, scene, NPC, and persistence closures.
-  let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
+  let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, feastBuffDurationHours: 4, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let remembrance = null; // Active Tzizkhanash observance; completing twelve played seconds earns an annual reward.
@@ -48,10 +48,11 @@
   function fail(message) { lastError = message; deps?.toast?.(message, false); return { ok: false, message }; }
   const CUP_KEY = 'festival_cup', CUP_SWIGS = 4, CUP_FUN_PER_SWIG = 20;
   const CUP_DEF = Object.freeze({ key:CUP_KEY, icon:'🍺', label:'Festival Airag', tags:Object.freeze(['Alcohol','Airag']), swigsPerBottle:CUP_SWIGS, spriteIcon:'festival-cup.png', noGift:true }); // Airag is the mildest authored spirit tier; the same strength table as bottled drink applies.
-  const FOOD_PORTION_HOURS = 24; // Each festival bite adds one standard in-game food-effect duration.
+  const FOOD_PORTION_HOURS = 4; // Each festival bite adds four in-game hours of meal buffs.
+  const FULLNESS_DURATION_HOURS = 24; // Fullness remains a separate 24-hour effect, independent of meal-buff portions.
   const MAX_FOOD_PORTIONS = 10; // Bowl capacity, independent meal-duration cap, and fullness stack limit.
   const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
-  function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the 24-hour food-effect and fullness windows.
+  function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the calendar-based festival meal and fullness windows.
   function validGatheringHours(start, end) {
     return Number.isFinite(start) && start >= 0 && start < 24
       && Number.isFinite(end) && end >= 0 && end <= 24 && start !== end;
@@ -195,7 +196,7 @@
       rewarded:record.rewarded, day:visibleDay };
   }
   function currentFullness() {
-    const full = state.fullness || {stacks:0,expiresHour:0};
+    const full = state.fullness || {stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS};
     return worldHour() < full.expiresHour ? Math.max(0,Math.min(10,Number(full.stacks)||0)) : 0;
   }
   function foodDurationEntries() {
@@ -207,7 +208,7 @@
       fractionLabel:`${Math.ceil(entry.expiresHour-now)}h/${FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS}h`,
     })).concat(currentFullness() ? [{
       key:'festival-fullness',label:'Fullness',icon:'🥣',kind:'bane',sourceLabel:'Gorkunash',
-      stacks:currentFullness(),durationS:FOOD_PORTION_HOURS*3600,remainingS:Math.max(1,(state.fullness.expiresHour-worldHour())*3600),
+      stacks:currentFullness(),durationS:FULLNESS_DURATION_HOURS*3600,remainingS:Math.max(1,(state.fullness.expiresHour-worldHour())*3600),
     }] : []);
   }
   function festivalFoodStacks(effectKey) {
@@ -291,7 +292,7 @@
       existing.portions=Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(hours/FOOD_PORTION_HOURS)));
     } else state.feastBuffs.push({ id:meal.id,label:meal.label,icon:meal.icon,foodEffects:meal.foodEffects,portions:1,expiresHour:now+FOOD_PORTION_HOURS});
     state.feastBuffs=state.feastBuffs.filter(entry=>entry.expiresHour>now);
-    if (!currentFullness()) state.fullness={stacks:0,expiresHour:worldHour()+FOOD_PORTION_HOURS,durationHours:FOOD_PORTION_HOURS};
+    if (!currentFullness()) state.fullness={stacks:0,expiresHour:worldHour()+FULLNESS_DURATION_HOURS,durationHours:FULLNESS_DURATION_HOURS};
     state.fullness.stacks++;
     heldBowl.uses--;
     if (!heldBowl.uses){heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:heldBowl.selectedItemKey};seatedMeal=null;}
@@ -299,7 +300,7 @@
     const table=window.FurnitureTableSystem?.tableForSeat?.(deps.getArea(), dinerSeat);
     const diners=table ? (window.FurnitureTableSystem.members(deps.getArea(), table.id) || []).filter(member=>member.id!=='player') : [];
     for(const member of diners) addFestivalFun(member.id,25);
-    return commit(`${meal.label}: +24 in-game hours of food effects; fullness ${currentFullness()}/10; ${diners.length} tablemates gain 25 Festival Fun.`);
+    return commit(`${meal.label}: +${FOOD_PORTION_HOURS} in-game hours of meal effects; fullness ${currentFullness()}/10; ${diners.length} tablemates gain 25 Festival Fun.`);
   }
   function addFestivalFun(id,amount) {
     if (!id || !Number.isFinite(amount)||amount<=0) return;
@@ -482,12 +483,13 @@
   function serialize() {
     const copy=JSON.parse(JSON.stringify(state));
     const now=worldHour(); // Persist festival food time in calendar-hours rather than page-session seconds.
+    copy.feastBuffDurationHours=FOOD_PORTION_HOURS; // Save the timer schema so old 24-hour-per-portion saves migrate exactly once.
     copy.feastBuffs=(state.feastBuffs||[]).map(entry=>({...entry,remainingHours:Math.max(0,entry.expiresHour-now)})).filter(entry=>entry.remainingHours>0);
     return copy;
   }
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
-    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:24}, potluckContests:{} };
+    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
     heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
     window.FestivalLocaleActivities?.clear?.();
@@ -496,18 +498,22 @@
     if(Number.isFinite(saved?.fullness?.expiresHour)&&Number.isFinite(saved?.fullness?.stacks)) {
       const stacks=Math.max(0,Math.min(10,saved.fullness.stacks));
       const stillActive=saved.fullness.expiresHour>worldHour()&&stacks>0;
-      const legacyDuration=Number(saved.fullness.durationHours)!==FOOD_PORTION_HOURS;
-      state.fullness={stacks,expiresHour:stillActive&&legacyDuration?worldHour()+FOOD_PORTION_HOURS:saved.fullness.expiresHour,durationHours:FOOD_PORTION_HOURS};
+      const legacyDuration=Number(saved.fullness.durationHours)!==FULLNESS_DURATION_HOURS;
+      state.fullness={stacks,expiresHour:stillActive&&legacyDuration?worldHour()+FULLNESS_DURATION_HOURS:saved.fullness.expiresHour,durationHours:FULLNESS_DURATION_HOURS};
     }
-    const now=worldHour(); // Restore exact calendar-hour timers; legacy real-time feast buffs migrate to their remaining portion count.
+    const now=worldHour(); // Restore exact calendar-hour timers and migrate old 24-hour portions once.
+    const savedPortionHours=Number(saved?.feastBuffDurationHours);
+    const migrateLegacyPortions=savedPortionHours!==FOOD_PORTION_HOURS;
     state.feastBuffs=(Array.isArray(saved?.feastBuffs)?saved.feastBuffs:[]).filter(entry=>entry && (Number(entry.remainingHours)>0 || Number(entry.remainingS)>0))
       .slice(0,24).map(entry=>{
         const portions=Math.max(1,Math.min(MAX_FOOD_PORTIONS,Number(entry.portions)||1));
-        const remainingHours=Number.isFinite(Number(entry.remainingHours))
-          ? Math.min(FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS,Number(entry.remainingHours))
-          : portions*FOOD_PORTION_HOURS; // Old saves used five-minute portions; migrate to one 24-hour duration per saved portion.
-        return {...entry,portions,expiresHour:now+remainingHours};
+        const storedHours=Number(entry.remainingHours);
+        const remainingHours=Number.isFinite(storedHours)
+          ? Math.min(FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS,migrateLegacyPortions ? storedHours*(FOOD_PORTION_HOURS/24) : storedHours)
+          : portions*FOOD_PORTION_HOURS; // Legacy real-time saves have no calendar timer; grant four hours per recorded portion.
+        return {...entry,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(remainingHours/FOOD_PORTION_HOURS))),expiresHour:now+remainingHours};
       });
+    state.feastBuffDurationHours=FOOD_PORTION_HOURS;
     if (saved?.claims && typeof saved.claims === 'object' && !Array.isArray(saved.claims)) {
       for (const [key, value] of Object.entries(saved.claims)) if (/^\d+:[a-z_]+$/.test(key) && value && typeof value === 'object' && !Array.isArray(value)) state.claims[key] = { ...value };
     }
