@@ -110,14 +110,18 @@ function makeNetwork(id='room_1',width=5,height=5) {
 
   const linkedNetwork=makeNetwork('room_linked');
   const linkedPlan=api.applyToNetwork(linkedNetwork,{seed:'linked-puzzle-regression'}).plans[0];
+  const clonedLinkedPlan=JSON.parse(JSON.stringify(linkedPlan)); // V50 returns cloned metadata to the parent runtime; claim state must survive that boundary.
   assert.equal(api.canClaimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate'),true,'authored relationship should preflight both named spots');
   const linkedPair=api.claimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate',{claimId:'door-plate-pair'});
   assert.equal(linkedPair.ok,true,'authored activator/mechanism relationship should claim atomically');
   assert.equal(linkedPair.link.id,'plate-opens-door');
   assert.equal(linkedPair.mechanism.spot.id,'door');
   assert.equal(linkedPair.activator.spot.id,'plate');
-  assert.equal(api.canClaimPuzzleLinkForPlan(linkedPlan,'room_linked','stoneDoor','pressurePlate'),false,'a completed authored link cannot be claimed twice');
-  assert.equal(api.getDiagnostics(linkedNetwork).links.length,1,'linked pair should appear in diagnostics');
+  assert.equal(api.canClaimPuzzleLinkForPlan(clonedLinkedPlan,'room_linked','stoneDoor','pressurePlate'),false,'cloned metadata must see the original generation’s exhausted link and spots');
+  assert.equal(api.claimPuzzleLinkForPlan(clonedLinkedPlan,'room_linked','stoneDoor','pressurePlate').ok,false,'a second runtime layer cannot claim the same authored pair');
+  const clonedMetadata={roomAuthoringPlans:[clonedLinkedPlan],rooms:[{id:'room_linked',roomAuthoringPlan:clonedLinkedPlan}]};
+  assert.equal(api.getDiagnostics(clonedMetadata).links.length,1,'linked pair diagnostics survive the metadata clone without duplicates');
+  assert.equal(api.getDiagnostics(clonedMetadata).claims.length,2,'both linked spot claims survive the metadata clone');
 
   const profileLibrary={
     schema:'hobunji_ruin_room_library.v1',
@@ -139,6 +143,19 @@ function makeNetwork(id='room_1',width=5,height=5) {
   assert.equal(profileResult.plans[0].source,'procedural','non-matching footprint should fall back to a procedural profile');
   assert.equal(profileResult.plans[0].profileId,'large-chamber');
   assert.equal(profileResult.plans[0].spots[0].world.x,-13,'normalized center spot should resolve from room-local coordinates and network origin');
+
+  const weightedLibrary={
+    schema:'hobunji_ruin_room_library.v1',
+    templates:[{id:'weighted-template',name:'Weighted template',enabled:true,weight:0,rotations:[0],match:{minDoors:0,maxDoors:0,roomIds:[]},footprint:{width:8,height:8,rows:Array(8).fill('########')},connections:[],spots:[],puzzleLinks:[]}],
+    proceduralProfiles:[{id:'weighted-profile',name:'Weighted profile',enabled:true,weight:1,match:{minWidth:8,maxWidth:8,minHeight:8,maxHeight:8,minDoors:0,maxDoors:0,sizeClasses:[],roomIds:[]},spots:[],puzzleLinks:[]}],
+  };
+  assert.equal(api.validateLibrary(weightedLibrary).length,0,'weighted template/profile test library should validate');
+  assert.equal(api.setLibrary(weightedLibrary).ok,true);
+  const weightedNetwork=makeNetwork('weighted-room',8,8);weightedNetwork.doorways=[];
+  assert.equal(api.applyToNetwork(weightedNetwork,{seed:'weighted-selection'}).plans[0].source,'procedural','zero-weight authored templates yield to an enabled procedural profile');
+  weightedLibrary.templates[0].weight=100;weightedLibrary.proceduralProfiles[0].weight=0;api.setLibrary(weightedLibrary);
+  const authoredNetwork=makeNetwork('authored-room',8,8);authoredNetwork.doorways=[];
+  assert.equal(api.applyToNetwork(authoredNetwork,{seed:'weighted-selection'}).plans[0].source,'template','a higher-weight authored template can be selected over procedural defaults');
 
   const invalid={schema:'hobunji_ruin_room_library.v1',templates:[{
     ...makeTemplate(),id:'disconnected',footprint:{width:3,height:3,rows:['#.#','...','#.#']},connections:[],spots:[],puzzleLinks:[],
