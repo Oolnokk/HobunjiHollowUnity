@@ -10,6 +10,7 @@
   const ROCKS_PER_LAYER = 8; // Each former mountain PNG becomes one row of eight decorative mine-style rocks.
   const ROCK_SEED_BASE = 1731; // Used to create deterministic but visibly different rock silhouettes.
   const ROCK_HEIGHT_FRACTION = 0.72; // Typical peak height in the generated one-tile mine-rock geometry.
+  const ignoreRaycast = () => {}; // Decorative rocks must never intercept tool targeting or pointer queries.
   const MIN_WIDTH_MULTIPLIER = 2.75; // Used to keep every scenery layer wider than the wilderness.
   const MIN_HEIGHT_MULTIPLIER = 1.6; // Used to preserve the former mountain PNGs' tall vertical coverage.
   const WEST_EDGE_OFFSET_MULTIPLIER = 0.12; // Used for the nearest ridge's offset beyond the west edge.
@@ -142,6 +143,7 @@
       mesh.scale.set(cellWidth*(.74+variation*.12),heightScale*(.84+variation*.24),cellWidth*(1.08+variation*.04));
       mesh.castShadow=false;
       mesh.receiveShadow=false;
+      mesh.raycast=ignoreRaycast;
       mesh.frustumCulled=false;
       mesh.renderOrder=-101-layer.index;
       mesh.userData={backgroundScenery:true,skipOcclusionFade:true,westernSlopeMineRockBackdrop:true,visualOnly:true,layer:layer.layer,rockIndex:i+1};
