@@ -21,6 +21,7 @@
   document.write('<script src="js/ruin-footprint-pixel-probe.js?v=20261015ruinfootprintprobe1"></scr' + 'ipt>'); // One-shot Pixel Probe adapter: ray-tests the exact oriented ruin footprints used by movement/projectile occupancy.
   document.write('<script src="js/dynamic-surfaces.js?v=20260914v50wallsinputs1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
+  document.write('<script src="js/dev-random-ruin-room-authoring.js?v=20261102roomauthor1"></scr' + 'ipt>'); // Shared authored templates, procedural room profiles and per-spot allowlists.
   if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261015h7327f5e"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261015h65cbbc1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
