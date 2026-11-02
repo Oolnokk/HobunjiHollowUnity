@@ -901,6 +901,20 @@
     group.traverse(node=>{if(node.isMesh){meshes++;const g=node.geometry;tris+=(g.index?g.index.count:g.attributes.position.count)/3;}});
     return {tris:Math.round(tris),meshes};
   }
+  function lowestGrowthLayerCenterY(group){
+    group.updateMatrixWorld(true);
+    const bounds=[];
+    let lowest=Infinity;
+    group.traverse(node=>{
+      if(!node.isMesh||!node.geometry)return;
+      const box=new THREE.Box3().setFromObject(node);
+      if(box.isEmpty())return;
+      bounds.push(box);lowest=Math.min(lowest,box.min.y);
+    });
+    const layer=bounds.filter(box=>box.min.y<=lowest+.1);
+    return layer.length?layer.reduce((sum,box)=>sum+(box.min.y+box.max.y)*.5,0)/layer.length:lowest;
+  }
+
   async function growWingCover(owner){
     try{
       const LRG=window.LiveRootGrowth,FG=window.FoliageGenerator,SA=window.StoneAgeRuinScenery;
@@ -938,8 +952,8 @@
         // root layer so its vertical center sits at ground level, clipping its lower half.
         floor.targetGrowth.scale.y*=.5;
         floor.targetGrowth.updateMatrixWorld(true);
-        const compressedBox=new THREE.Box3().setFromObject(floor.targetGrowth);
-        floor.targetGrowth.position.y+=owner.floor-.05-compressedBox.min.y;
+        const lowestLayerCenter=lowestGrowthLayerCenterY(floor.targetGrowth);
+        floor.targetGrowth.position.y+=owner.floor-lowestLayerCenter;
         floor.targetGrowth.updateMatrixWorld(true);
         floor.targetGrowth.traverse(node=>{if(node.isMesh)node.userData.hachutuGroundRoot=true;});
         try{SA?.compactFloorCover?.(floor.targetGrowth,COVER_SIMPLIFY);}catch(_){} // Keep finer strands after raising density.
