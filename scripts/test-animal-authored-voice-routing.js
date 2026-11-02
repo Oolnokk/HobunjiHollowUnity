@@ -22,7 +22,10 @@ class FakeAudio {
     return Promise.resolve();
   }
 }
-const window = { HTMLMediaElement: FakeAudio }; // Lets the real adapter intercept native preparation before starting its chosen recording.
+const window = {
+  HTMLMediaElement: FakeAudio,
+  CreatureTextureCache: { create: () => ({}) }, // FarmAnimals creates its texture-residency cache at module load; this test exercises only its audio/frame loop.
+}; // Lets the real adapter intercept native preparation before starting its chosen recording.
 const context = vm.createContext({ window, Audio: FakeAudio, Math, Date: { now: () => now }, performance: { now: () => now } }); // No WebAudio context forces the supported native fallback.
 for (const file of ['audio-system.js', 'animal-vocalizations.js', 'animal-voice-independent-playback.js', 'farm-animals.js']) {
   vm.runInContext(read(`docs/js/${file}`), context, { filename: file });
@@ -63,7 +66,7 @@ window.FarmAnimals.init({
 const farmVoiceStart = played.length;
 window.FarmAnimals.updateAnimalMeshes(11);
 window.FarmAnimals.updateAnimalMeshes(0.4);
-assert.equal(played.length - farmVoiceStart, 2, 'farm livestock enters the shared passive vocalization scheduler and reaches real playback');
+assert.equal(played.length - farmVoiceStart, 3, 'farm livestock enters the shared passive vocalization scheduler and reaches real playback');
 assert.ok(played.slice(farmVoiceStart).every(url => url.includes('/sfx_grunt-rattle.ogg') || url.includes('/sfx_chirp-rattle.ogg')), 'farm Uumkao’ii uses its existing species-specific vocal assets');
 
 const start = played.length; // Silence/range/combat/mount guards must still suppress playback.
