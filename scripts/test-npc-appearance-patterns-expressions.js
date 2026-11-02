@@ -9,6 +9,7 @@ const renders = []; // Captures the seat and expression used by actual adapter c
 const document = { documentElement: { dataset: {} }, readyState: 'loading', addEventListener() {}, querySelectorAll: () => [], getElementById: () => null, currentScript: { src: 'https://example.test/docs/js/clothing-weaving-system.js' } }; // Skips browser boot while retaining production module initialization.
 const cosmetics = { optionCache: new Map(), hatOptions: [], hoodOptions: [], torsoPortraitOptions: [], armPortraitOptions: [] }; // Supplies the minimal valid avatar asset catalog.
 const window = {
+  getPortraitLayerOrders: () => ({ front: ['hood', 'facialHair'], behind: [] }), // Supplies the canonical test order consumed by the editor reset action.
   SCRATCHBONES_CONFIG: { game: { portrait: { expressions: { available: ['neutral', 'smile', 'frown', 'laugh'], defaultResting: 'neutral' }, cosmetics: {} }, account: { shopCatalog: [{ id: 'rugged_poncho', category: 'overwear' }] } } },
   loadPortraitCosmetics: async () => cosmetics,
   getPortraitFighters: () => [{ id: 'mao_m', speciesId: 'mao-ao', gender: 'male' }, { id: 'mammakhbuur_male', speciesId: 'mammakhbuur', gender: 'male' }],
