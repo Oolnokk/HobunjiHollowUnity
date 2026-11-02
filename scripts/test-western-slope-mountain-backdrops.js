@@ -18,6 +18,8 @@ assert.match(source, /const SNOW_CAP_HEIGHT_FRACTION = 2 \/ 3/, 'snow must cover
 assert.match(source, /farm-cliff-planar-stretch/, 'snow cap UVs must use the same planar stretch-to-fit method as farm cliffs');
 assert.match(source, /new T\.LineSegments/, 'the stone/snow boundary must retain a visible outline');
 assert.match(snowSurfaceSource, /getSnowMaterial: \(\) => material\('snow'\)/, 'rock caps must reuse the canonical Western Slope snow material');
+assert.match(snowSurfaceSource, /bindSnowTexture\(target\)/, 'cap material clones must receive the asynchronously loaded snow texture');
+assert.match(snowSurfaceSource, /unbindSnowTexture\(target\)/, 'disposed cap clones must unregister from the snow texture loader');
 assert.match(source, /decorativeRockRidges:true/, 'replacement scenery must identify itself as decorative ridges');
 assert.match(source, /visualOnly:true/, 'replacement scenery must be visual only');
 assert.doesNotMatch(source, /diggableRockOre|mineableRocksByTile|oreKey/, 'backdrop rocks must never register as mineable resources');
