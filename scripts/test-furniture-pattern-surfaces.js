@@ -42,7 +42,7 @@ class Mesh {
 }
 class Matrix3 {constructor(){this.elements=[1,0,0,0,1,0,0,0,1];}copy(other){this.elements=[...other.elements];return this;}} // Shader uniforms borrow the source PNG's real transform.
 class Vector2 {constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}}
-const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
+const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000,AdditiveBlending:2}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
 const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
 const stacks=[]; // Captures the production primary/overpass pair passed to the compositor.
@@ -124,7 +124,7 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(glowSource.userData.furniturePatternGlowState.pulseSpeed,8,'fuse runtime can accelerate glyph pulses');
   const oldGlow=glowOverlay.userData.engravingGlowMesh;
   glowOverlay.material.dispose();
-  assert.equal(oldGlow.material.disposed,undefined,'base engraving material disposal does not prematurely dispose shared glow material state');
+  assert.equal(oldGlow.material.disposed,true,'disposing the engraving also disposes its additive glow material');
     const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
   const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
   assert(shader.vertexShader.includes('hanging'));assert.equal(shader.uniforms.bannerTime.value,1);
