@@ -15,6 +15,8 @@
   label { display: block; margin: .35rem 0; }
   input, select, button { font: inherit; min-height: 2.4rem; box-sizing: border-box; }
   input[type=text], input[type=range] { display: block; width: 100%; }
+  #talonFields input { display: block; width: 5rem; }
+  #talonFields strong { flex-basis: 100%; }
   output { float: right; color: #a7e6d8; }
   canvas { display: block; width: 100%; }
   #viewport { height: clamp(14rem, 42vh, 28rem); }
@@ -53,6 +55,20 @@
       <canvas id="perchBody" aria-label="Perched body sprite with draggable bind and pose spline points"></canvas>
     </section>
     <section>
+      <h2>Talon carry</h2>
+      <label>Preview payload
+        <select id="talonType">
+          <option value="">None</option>
+          <option value="humanoid">Player / NPC</option>
+          <option value="animal">Animal</option>
+          <option value="burden">Burden</option>
+        </select>
+      </label>
+      <p>Place the shared grip axes between the talons. Each payload has its own offset, rotation, and scale around its hold anchor.</p>
+      <div id="talonFields" hidden></div>
+      <p id="talonStatus" role="status"></p>
+    </section>
+    <section>
       <h2>Wing hinges</h2>
       <p>Drag the two colored roots sideways. Each wing bends along its fore-aft hinge line. The white line marks where the body crosses the wings. The top of the PNG faces the bird’s head.</p>
       <canvas id="wings" aria-label="Wing sprite with draggable left and right hinges"></canvas>
@@ -86,7 +102,11 @@
 <script src="../../js/portrait-utils.js?v=20261030headMask1"></script>
 <script src="../../js/perp-rotation.js?v=20261103flight1"></script>
 <script src="../../js/animal-shoulder-spline.js?v=20260917spline10"></script>
-<script src="../../js/flying-animal-rig.js?v=20261103perch2"></script>
-<script src="app.js?v=20261103perch2"></script>
+<script src="../../js/flying-animal-rig.js?v=20261103talon1"></script>
+<script>window.__hobunjiFurnitureAssetBase = '../../assets/';</script>
+<script src="../../js/procedural-furniture.js?v=20261103talon1"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261103talon1"></script>
+<script src="talon-carry.js?v=20261103talon1"></script>
+<script src="app.js?v=20261103talon1"></script>
 </body>
 </html>

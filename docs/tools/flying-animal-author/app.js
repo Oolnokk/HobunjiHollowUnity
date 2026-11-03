@@ -31,7 +31,7 @@
       glideAngle: ['Glide angle (°)', 1], yawDeadzone: ['Yaw deadzone (°)', .5], pitchDeadzone: ['X-axis deadzone (°)', .5],
     };
     const controls = {}; // Map rig keys to their range and readout.
-    let rig = rigAPI.normalize(), images, assembly; // Current validated draft and its decoded assets.
+    let rig = rigAPI.normalize(rigAPI.defaults), images, assembly; // Current validated draft and its decoded assets.
     let loadId = 0, loading = false, activeHinge = null; // Latest asset request and captured drag.
     let needsRender = true; // Refresh static poses only when the view changes.
 
@@ -136,6 +136,7 @@
       images = nextImages;
       assembly = nextAssembly;
       scene.add(assembly.root);
+      talonEditor.refresh();
       drawHinges();
       perchCanvas.width = Math.min(800, images.perched.width);
       perchDirty = false;
@@ -309,6 +310,19 @@
       if (!loading) saveDraft();
     });
 
+    const talonEditor = window.createFlyingTalonEditor({
+      root: () => assembly?.pitch,
+      rig: () => rig,
+      changed(save) {
+        needsRender = true;
+        if (save) saveDraft();
+      },
+      showFlying() {
+        if (pose.value === 'perched') pose.value = 'glide';
+        viewChanged();
+      },
+    });
+
     function viewChanged() {
       get('orbitValue').value = orbit.value + '°';
       get('elevationValue').value = elevation.value + '°';
@@ -346,6 +360,7 @@
         needsRender = false;
       }
       assembly.update(camera, pose.value, ms / 1000);
+      talonEditor.setPerched(pose.value === 'perched');
       if (debug.parentElement.open) {
         const message = `${pose.value} · yaw ${(assembly.yaw.rotation.y / radians).toFixed(1)}° · X correction ${(assembly.pitch.rotation.x / radians).toFixed(1)}° · ${pose.value === 'perched' ? (rig.perchSpline ? '7 body spline points' : 'default body pose') : 'two wing bones'}`;
         if (debug.textContent !== message) debug.textContent = message;

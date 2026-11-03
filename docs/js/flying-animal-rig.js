@@ -12,6 +12,26 @@
     wingScale: 1.41, wingHeight: 0.15, wingOffset: -0.18, wingCenter: 0.451,
     flapUp: 43, flapDown: 28, flapHz: 2.2, glideAngle: 7,
     yawDeadzone: 27.5, pitchDeadzone: 22,
+    perchSpline: {
+      beforePoints: [
+        { x: 0.12, y: 0.42 },
+        { x: 0.25, y: 0.41666666666666663 },
+        { x: 0.38, y: 0.41333333333333333 },
+        { x: 0.51, y: 0.41000000000000003 },
+        { x: 0.64, y: 0.4066666666666667 },
+        { x: 0.77, y: 0.4033333333333333 },
+        { x: 0.9, y: 0.4 },
+      ],
+      afterPoints: [
+        { x: 0.21690159256776786, y: 0.49688129650143487 },
+        { x: 0.32969049320109534, y: 0.5062156881558175 },
+        { x: 0.41539226733126267, y: 0.5948924088724519 },
+        { x: 0.5343979073426857, y: 0.7504657252261289 },
+        { x: 0.6121067955743089, y: 0.8687014749622755 },
+        { x: 0.6649488395718127, y: 1.0211630832032237 },
+        { x: 0.7462100774834645, y: 1.2125181121180668 },
+      ],
+    },
   });
   const limits = Object.freeze({ // Bounds shared by JSON import and the author controls.
     leftHinge: [0.01, 0.98], rightHinge: [0.02, 0.99],
@@ -40,7 +60,8 @@
   function normalize(input = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Expected a flying animal rig object.');
     if (input.version !== undefined && input.version !== DEFAULT.version) throw new Error('Unsupported flying animal rig version.');
-    const rig = { ...DEFAULT }; // Independent settings for this assembly.
+    const rig = { ...DEFAULT };
+    delete rig.perchSpline; // Independent settings for this assembly.
     for (const key of ['flying', 'perched', 'wings']) {
       if (input[key] === undefined) continue;
       if (typeof input[key] !== 'string' || !/^[\w .()/\-]+\.png$/i.test(input[key]) ||
@@ -56,7 +77,37 @@
     }
     rig.leftHinge = Math.min(rig.leftHinge, rig.rightHinge - 0.01);
     if (input.perchSpline !== undefined) rig.perchSpline = normalizePerchSpline(input.perchSpline);
+    if (input.talonCarry !== undefined) rig.talonCarry = normalizeTalonCarry(input.talonCarry);
     return rig;
+  }
+
+  const TALON_TYPES = ['humanoid', 'animal', 'burden']; // Independent poses share the carrier's grip frame.
+
+  function normalizeTalonCarry(input = {}) {
+    const axis = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+    const vector = (value, fallback, limit) => Object.fromEntries(['x', 'y', 'z'].map(key =>
+      [key, axis(value?.[key], fallback[key] ?? 0, -limit, limit)]));
+    const socket = vector(input?.socket, { x: .02, y: -.23 }, 4);
+    const poses = Object.fromEntries(TALON_TYPES.map(type => {
+      const pose = input?.poses?.[type];
+      return [type, { position: vector(pose?.position, {}, 4), rotation: vector(pose?.rotation, {}, 180),
+        scale: axis(pose?.scale, 1, .1, 4) }];
+    }));
+    return { socket, poses };
+  }
+
+  // Match the Furniture Editor's object-local hold anchor to the authored talon pose.
+  // The posterior offset is for a humanoid carrier. Talon clearance is authored per pose.
+  function placeTalonPayload(frame, object, carry, type, anchor) {
+    const pose = carry.poses[type];
+    frame.position.set(...['x', 'y', 'z'].map(key => carry.socket[key] + pose.position[key]));
+    frame.rotation.set(pose.rotation.x * DEG, pose.rotation.y * DEG, pose.rotation.z * DEG);
+    object.rotation.set((anchor?.rotation?.x || 0) * DEG, (anchor?.rotation?.y || 0) * DEG,
+      (anchor?.rotation?.z || 0) * DEG);
+    object.quaternion.invert();
+    object.scale.setScalar(pose.scale / Math.max(.1, anchor?.size || 1));
+    object.position.set(anchor?.position?.x || 0, anchor?.position?.y || 0, anchor?.position?.z || 0)
+      .multiplyScalar(-object.scale.x).applyQuaternion(object.quaternion);
   }
 
   function flapAngle(rig, pose, seconds) {
@@ -176,5 +227,5 @@
     return { root, update, dispose, pitch, yaw, setPerchSpline, perched };
   }
 
-  window.FlyingAnimalRig = { defaults: DEFAULT, limits, perchPosePadding: PERCH_POSE_PADDING, normalize, normalizePerchSpline, flapAngle, create };
+  window.FlyingAnimalRig = { defaults: DEFAULT, limits, perchPosePadding: PERCH_POSE_PADDING, normalize, normalizePerchSpline, talonTypes: TALON_TYPES, normalizeTalonCarry, placeTalonPayload, flapAngle, create };
 })();
