@@ -114,7 +114,7 @@
         const qty = Math.max(0, Math.min(Number(pending) || 0, Number(bin[key]) || 0));
         delete pendingSaleCounts[key];
         if (qty < 1) continue;
-        const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, qty, 'shipping', shipPrice(key) || 1, bin[key]) : null; // The actual deposited coats determine the sale price.
+        const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, qty, 'shipping', shipPrice(key) || 1, bin[key], null, { eligibleCount: qty }) : null; // The actual deposited coats determine the sale price.
         if (hideSale && !hideSale.ok) continue;
         bin[key] -= qty;
         sold += qty;
@@ -512,7 +512,7 @@
         const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
         const originalCount = bin[key]; // The Shipping Box owns the source counts until the return succeeds.
-        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'shipping', 'pack', originalCount, shipPrice(key)) : null;
+        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'shipping', 'pack', originalCount, shipPrice(key), { pendingFirst: pendingSaleCounts[key] || 0 }) : null;
         if (hideMove && !hideMove.ok) return 0;
         bin[key] -= moved;
         if ((pendingSaleCounts[key] || 0) > 0) {
