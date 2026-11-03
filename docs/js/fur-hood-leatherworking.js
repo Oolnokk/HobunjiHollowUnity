@@ -87,7 +87,9 @@
     const mode = role === 'trim' ? 'pattern' : role === 'animalFront' ? entry.partColors?.front || 'base'
       : role === 'animalBack' ? entry.partColors?.back || 'base' : 'base';
     const gene = role === 'trim' ? entry.trimGene : role === 'animalFront' ? entry.partGenes?.front : role === 'animalBack' ? entry.partGenes?.back : null;
-    return mode === 'pattern' ? (patternColorFor(furHood, gene) || (role === 'trim' ? patternColorFor(furHood) : null) || base) : base; // Any inherited gene colors trim even when the prioritized gene is absent.
+    const expressed = expressedGenes(furHood); // Previewed priority overrides and runtime manifest preferences use the same ordered genotype set.
+    const pigment = gene ? expressed.find(g => g.geneId === gene)?.colorHex : expressed[0]?.colorHex;
+    return mode === 'pattern' ? (pigment || (role === 'trim' ? expressed[0]?.colorHex : null) || base) : base; // Trim chooses another expressed gene if its preference is absent.
   }
   const recoloredPartCache = new WeakMap(); // Cache small keyed Grehlr canvases against their original PNG, base shade and stripe color.
   function recolorAnimalPart(image, furHood, role) {
@@ -275,19 +277,20 @@
       const coat = fromHide(consumed.records[0]);
       const uid = 'gcloth_fur_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
       const sourceName = coat.kind.replace(/-/g, ' ');
+      const naturalTrimHex = colorForRole(coat, 'trim') || coat.baseColor; // Save the resolved natural trim to B for older dye/portrait consumers; live rendering always re-resolves from the unchanged genotype.
       const entry = {
         uid, cosmeticId: HOOD_ID + '#loom:' + uid, baseCosmeticId: HOOD_ID, slot: 'hood',
         label: sourceName + ' Fur Hood', baseLabel: 'Fur Hood',
         description: 'Leatherworked from one ' + sourceName + ' hide. Natural coat and original inherited markings cannot be dyed.',
         colorA: { hex: coat.baseColor, label: 'Natural coat' },
-        colorB: { hex: coat.baseColor, label: 'Natural fur trim' },
+        colorB: { hex: naturalTrimHex, label: 'Inherited fur trim' },
         colorC: null, articleDyeIds: [], dyeable: false,
         sellPrice: Math.max(1, Math.round(Number(source.sellPrice) * 1.5)),
         qualityStars: source.stars || 1, weaveMaterial: 'light', weightUnits: 2,
         weaving: null, furHood: coat, craftedAt: Date.now(),
       };
       pack.push(entry);
-      lastCraft = { uid, sourceKey: choice.key, sourceKind: coat.kind, stars: entry.qualityStars, baseColor: coat.baseColor };
+      lastCraft = { uid, sourceKey: choice.key, sourceKind: coat.kind, stars: entry.qualityStars, baseColor: coat.baseColor, trimColor: naturalTrimHex }; // Mobile debug distinguishes base/trim pigmentation without opening devtools.
       deps.saveMemberWorldData?.();
       deps.buildInventoryGrid?.();
       window.EquipmentPanel?.buildPackClothingSection?.();
