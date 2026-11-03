@@ -90,6 +90,11 @@
     const vector = (value, fallback, limit) => Object.fromEntries(['x', 'y', 'z'].map(key =>
       [key, axis(value?.[key], fallback[key] ?? 0, -limit, limit)]));
     const socket = vector(input?.socket, { x: .02, y: -.23 }, 4);
+    // Preserve the NPC comparison when collapsing legacy per-payload values into one scale.
+    const legacyPose = TALON_TYPES.map(type => input?.poses?.[type])
+      .find(pose => Number.isFinite(pose?.birdScale) || Number.isFinite(pose?.scale));
+    const birdScale = axis(input?.birdScale,
+      axis(legacyPose?.birdScale, 1 / axis(legacyPose?.scale, 1, .1, 4), .25, 10), .25, 10);
     const poses = Object.fromEntries(TALON_TYPES.map(type => {
       const pose = input?.poses?.[type];
       let rotation = vector(pose?.rotation, {}, 180);
@@ -99,10 +104,9 @@
         angles.reorder(TALON_ROTATION_ORDER);
         rotation = { x: angles.x / DEG, y: angles.y / DEG, z: angles.z / DEG };
       }
-      return [type, { position: vector(pose?.position, {}, 4), rotation,
-        birdScale: axis(pose?.birdScale, 1 / axis(pose?.scale, 1, .1, 4), .25, 10) }];
+      return [type, { position: vector(pose?.position, {}, 4), rotation }];
     }));
-    return { socket, poses, rotationOrder: TALON_ROTATION_ORDER };
+    return { socket, poses, birdScale, rotationOrder: TALON_ROTATION_ORDER };
   }
 
   // Match the Furniture Editor's object-local hold anchor to the authored talon pose.
@@ -115,7 +119,7 @@
       (anchor?.rotation?.z || 0) * DEG, 'XYZ');
     object.quaternion.invert();
     // The frame inherits bird scale. Cancel it on the payload so only the carrier grows.
-    object.scale.setScalar(1 / (pose.birdScale * Math.max(.1, anchor?.size || 1)));
+    object.scale.setScalar(1 / carry.birdScale);
     object.position.set(anchor?.position?.x || 0, anchor?.position?.y || 0, anchor?.position?.z || 0)
       .multiplyScalar(-object.scale.x).applyQuaternion(object.quaternion);
   }

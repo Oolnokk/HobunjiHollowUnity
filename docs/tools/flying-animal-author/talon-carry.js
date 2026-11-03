@@ -6,7 +6,8 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
   const type = get('talonType'), source = get('talonSource'), status = get('talonStatus'), fields = get('talonFields');
   const catalog = { // Sample identities are preview-only. Exported poses still apply by payload type.
     humanoid: [['garanki_gabu', 'Garanki Gabu'], ['aliri_ginju', 'Aliri Ginju'], ['kzubug', 'Kzubug']],
-    animal: [['gar-wolf', 'Gar-wolf'], ['puktuk', 'Puktuk']],
+    animal: [['uumkaoii', 'Uumkao’ii (Large)'], ['nelk', 'Nelk (Large)'], ['nazgraku', 'Nazgraku (Large)'],
+      ['gar-wolf', 'Gar-wolf (Medium)'], ['dabinggi-hound', 'Dabinggi-hound (Medium)']],
     burden: [['hronalWitchBomb', 'Hronal Witch-bomb'], ['shattercaskBlasting', 'Blasting Shattercask'], ['keyStatue', 'Key Statue']],
   };
   let bestiary; // Shared tool catalog for wildlife geometry dimensions.
@@ -61,22 +62,24 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
   }
 
   async function previewAnimal(id) {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = `../../assets/creaturesprites/${id}_idle.png`;
-    await image.decode();
     bestiary ??= fetch('../../config/creatures/hobunji-creature-bestiary.json').then(response => {
       if (!response.ok) throw new Error('Could not load game creature dimensions.');
       return response.json();
     }).catch(error => { bestiary = null; throw error; });
     const { creatures } = await bestiary;
-    // Puktuk's runtime registration uses Gar-wolf's native 2.1-wide, legacy-aspect frame.
-    const definition = creatures.find(record => record.id === id) ??
-      (id === 'puktuk' ? creatures.find(record => record.id === 'gar-wolf') : null);
-    if (!definition?.modelWidth || !definition.spriteAspect) throw new Error('This animal has no game plane dimensions.');
-    const medium = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures?.[id]?.sizeScales?.medium;
-    const width = definition.modelWidth * (medium?.x ?? 1);
-    const height = definition.modelWidth * definition.spriteAspect * (medium?.y ?? 1);
+    const definition = creatures.find(record => record.id === id);
+    if (!definition?.modelWidth || !definition.spriteAspect || !definition.sprites?.idle) {
+      throw new Error('This animal has no game plane dimensions or idle sprite.');
+    }
+    // These species use their ordinary wildlife spawn classes.
+    const sizeClass = ['gar-wolf', 'dabinggi-hound'].includes(id) ? 'medium' : 'large';
+    const size = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures?.[id]?.sizeScales?.[sizeClass];
+    const width = definition.modelWidth * (size?.x ?? 1);
+    const height = definition.modelWidth * definition.spriteAspect * (size?.y ?? 1);
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = '../../' + definition.sprites.idle;
+    await image.decode();
     const model = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, image.src, {
       name: id, modelWidth: width, modelHeight: height,
     });
@@ -85,7 +88,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     const object = new THREE.Group(); // Adapt the game's X-normal animal frame to the talon's Z-normal preview.
     model.group.rotation.y = -Math.PI / 2;
     object.add(model.group);
-    return { object, sizeLabel: `medium game plane ${width.toFixed(2)} × ${height.toFixed(2)}`,
+    return { object, sizeLabel: `${sizeClass} game plane ${width.toFixed(2)} × ${height.toFixed(2)}`,
       anchor: { position: { x: 0, y: .09 * height / .55, z: 0 } } };
   }
 
@@ -114,12 +117,17 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     return samples[key];
   }
 
-  function showScaleSummary(carry) {
-    get('talonScales').textContent = `Bird scale · NPC ${carry.poses.humanoid.birdScale}× · Animal ${carry.poses.animal.birdScale}× · Burden ${carry.poses.burden.birdScale}×`;
-  }
+  const birdScaleInput = get('talonBirdScale'); // One editable scale for the entire rig.
+  birdScaleInput.addEventListener('change', () => {
+    const carry = api.normalizeTalonCarry(rig().talonCarry);
+    if (Number.isFinite(birdScaleInput.valueAsNumber)) carry.birdScale = birdScaleInput.valueAsNumber;
+    rig().talonCarry = api.normalizeTalonCarry(carry);
+    refresh();
+    changed(true);
+  });
 
   function values(carry, group) {
-    return group === 'socket' ? carry.socket : group === 'birdScale' ? carry.poses[type.value] : carry.poses[type.value][group];
+    return group === 'socket' ? carry.socket : carry.poses[type.value][group];
   }
 
   let displayed = null, request = 0; // Reject results from an earlier dropdown selection.
@@ -129,7 +137,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     guide.visible = !!(bird && key && displayed?.key === key);
     fields.hidden = !key;
     const carry = rig().talonCarry ?? api.normalizeTalonCarry();
-    showScaleSummary(carry);
+    birdScaleInput.value = carry.birdScale;
     if (!bird || !key) return;
     if (guide.parent !== bird) bird.add(guide);
     for (const { input, group, axis } of controls) input.value = values(carry, group)[axis];
@@ -139,7 +147,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
 
   for (const [group, name, axes] of [
     ['socket', 'Talon grip', ['x','y','z']], ['position', 'Payload offset', ['x','y','z']],
-    ['rotation', 'Payload rotation (°)', ['x','y','z']], ['birdScale', 'Bird scale', ['birdScale']],
+    ['rotation', 'Payload rotation (°)', ['x','y','z']],
   ]) {
     const row = document.createElement('div'); // Group transforms by their reference frame.
     row.className = 'row';
@@ -150,10 +158,10 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       const label = document.createElement('label'), input = document.createElement('input');
       input.type = 'number';
       input.step = group === 'rotation' ? '1' : '.01';
-      input.min = group === 'birdScale' ? '.25' : group === 'rotation' ? '-180' : '-4';
-      input.max = group === 'birdScale' ? '10' : group === 'rotation' ? '180' : '4';
-      input.setAttribute('aria-label', name + (axis === 'birdScale' ? '' : ' ' + axis.toUpperCase()));
-      label.append(axis === 'birdScale' ? '' : axis.toUpperCase(), input);
+      input.min = group === 'rotation' ? '-180' : '-4';
+      input.max = group === 'rotation' ? '180' : '4';
+      input.setAttribute('aria-label', name + ' ' + axis.toUpperCase());
+      label.append(axis.toUpperCase(), input);
       row.append(label);
       controls.push({ input, group, axis });
       input.addEventListener('change', () => {
@@ -203,7 +211,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     refresh,
     applyPreviewState(perched) {
       guide.visible = !perched && !!type.value && displayed?.key === type.value;
-      return guide.visible ? rig().talonCarry?.poses[type.value]?.birdScale ?? 1 : 1;
+      return rig().talonCarry?.birdScale ?? 1;
     },
   };
 };
