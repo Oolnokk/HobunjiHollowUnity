@@ -1069,6 +1069,8 @@
     metalMaskForSprite, // Dungeon Fire samples the exact verdigris-compatible metal pixels used by this particle system.
     opaqueAnchorForSprite, // Non-thrown projectile flame zones anchor to the topmost central opaque PNG pixel.
     metalPixelToLocal, // Shared source-pixel to authored-plane transform for both visual systems.
+    heldVisualForItem: directHeldVisual, // Dungeon Fire reuses the exact player-owned weapon PNG, including virtual modular item keys.
+    sourceSpriteForWeapon, // Dungeon Fire scans the exact assembled weapon sprite instead of guessing from the shaft.
     renderControls,
     createPreviewEmitter,
     createFixedEmitter,
