@@ -1182,7 +1182,7 @@ function furHoodProfileLayers(profile) {
   const descriptors = profile?.bodyColors?.__hobunjiWovenClothing; // Item-specific decoration metadata shared by saved player and NPC portrait builders.
   const furHood = Array.isArray(descriptors) ? descriptors.find(item => item?.slot === 'hood' && item?.furHood)?.furHood : null;
   return (window.FurHoodLeatherworking?.specialPartsFor?.(furHood, profile?.fighter?.speciesId, profile?.fighter?.gender) || []).map(layer => ({
-    ...layer, url: portraitRelPath('./' + layer.url), // Portrait loaders use docs/assets-relative sprite names, unlike the authoring manifest's docs-root paths.
+    ...layer, url: portraitRelPath('./' + layer.url), behindUrl: portraitRelPath('./' + layer.url), // Species pieces stay on both planes; explicit same-art rear URL prevents generic hood replacement/hiding.
   }));
 }
 
@@ -1240,12 +1240,9 @@ function getProfileSpriteXforms(profile) {
     }
   }
   if (hairFront !== undefined) {
-    // Left-side hair and authored hood-back pieces belong behind the skull.
+    // Only structural hood back layers belong behind the skull. Species "-back" PNGs belong in the front hood stack, despite the filename.
     pushGroupRecords(hairSideL);
     pushGroupRecords(hood, layer => layer.pos === 'back');
-    for (const layer of furHoodProfileLayers(profile).filter(layer => layer.pos === 'back')) {
-      records.push(toRecord('cosmetic', layer, { group: hood?.id || null, pos: 'back' })); // Animal trophy backs are behind the wearer's skull.
-    }
     // Head
     if (headUrl) records.push({ part: 'head', url: headUrl, xform: getPortraitXformPreset('B') });
     // Facial hair and standard eyes after head, before ur-head. Tagged eye accessories
@@ -1263,17 +1260,14 @@ function getProfileSpriteXforms(profile) {
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
     pushGroupRecords(mask);
-    const hoodFront = resolveOptionLayers(hood, resolvedFighter).filter(layer => layer.pos !== 'back'); // Preserves the specific wearer's cloth fit.
-    const animalFront = furHoodProfileLayers(profile).filter(layer => layer.pos === 'front'); // Only front trophy pieces sit between fur base and trim.
-    let insertedAnimalFront = false;
-    for (const layer of hoodFront) {
-      if (!insertedAnimalFront && layer.paletteColorKey === 'B') {
-        for (const part of animalFront) records.push(toRecord('cosmetic', part, { group: hood?.id || null, pos: 'front' }));
-        insertedAnimalFront = true;
-      }
-      records.push(toRecord('cosmetic', layer, { group: hood?.id || null, pos: 'front' }));
-    }
-    if (!insertedAnimalFront) for (const part of animalFront) records.push(toRecord('cosmetic', part, { group: hood?.id || null, pos: 'front' }));
+    const hoodFront = resolveOptionLayers(hood, resolvedFighter).filter(layer => layer.pos !== 'back'); // Keep the exact wearer-fit hood sprite and transforms.
+    const furPieces = furHoodProfileLayers(profile); // Both front/back-named animal pieces are visible in the hood stack.
+    if(profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)){
+      const stack=[...hoodFront.map(layer=>({role:layer.paletteColorKey==='B'?'trim':'base',layer})),
+        ...furPieces.map(layer=>({role:layer.role,layer}))]; // Match the rendered front plane's exact layer order.
+      for(const entry of window.FurHoodLeatherworking?.orderLayersForView?.(stack,'front')||stack)
+        records.push(toRecord('cosmetic',entry.layer,{group:hood?.id||null,pos:'front'}));
+    }else for(const layer of hoodFront)records.push(toRecord('cosmetic',layer,{group:hood?.id||null,pos:'front'}));
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
   } else {
@@ -1610,26 +1604,26 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const groupLayers = resolveOptionLayers(hood, resolvedFighter); // Split authored back/front hood art so rear cloth cannot cover the face opening.
       const metalState = metalStateForGroup(hood); // Shared material state retained for both halves of the same hood.
       window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
-      let insertedAnimalFront = false; // The animal face sits over hood base but beneath furhood-trim even when base/trim use different source PNGs.
-      const animalFront = animalParts.filter(part => part.pos === 'front');
-      const furData=profile?.bodyColors?.__hobunjiWovenClothing?.find(item=>item?.slot==='hood' && item?.furHood)?.furHood; // Current owner's hide, never another portrait's palette.
+      const furData=profile?.bodyColors?.__hobunjiWovenClothing?.find(item=>item?.slot==='hood' && item?.furHood)?.furHood; // Each portrait's specific inherited hide, never a global tint choice.
       const tintForAnimalPart=part=>{
         const naturalHex=window.FurHoodLeatherworking?.colorForRole?.(furData,part.role);
         return naturalHex ? shadeFillTintForBodyColor({hex:naturalHex},_dyeReferenceHexForSlot(hood.tintSlot,_tintSpeciesId))
-          : tintFor(resolveLayerTintSlot(part.paletteColorKey,hood.tintSlot)); // Avoid assuming the inherited front color equals trim B.
+          : tintFor(resolveLayerTintSlot(part.paletteColorKey,hood.tintSlot)); // Drenkirra front and all other parts tint independently of trim.
       };
-      for (const layer of groupLayers) {
-        const key = layer.paletteColorKey;
-        const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
-        if (layer.pos !== 'back' && key === 'B' && !insertedAnimalFront) {
-          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
-          insertedAnimalFront = true;
+      if(furData){
+        const stack=[...groupLayers.filter(layer=>layer.pos!=='back').map(layer=>({
+          role:layer.paletteColorKey==='B'?'trim':'base',
+          layer,tint:tintFor(resolveLayerTintSlot(layer.paletteColorKey,hood.tintSlot)),group:hood,metalState,
+        })),...animalParts.map(part=>({role:part.role,layer:part,tint:tintForAnimalPart(part),group:hood,metalState:null}))];
+        // Front: animal back, base, animal front, trim. Rear: trim, animal front, furhood-behind, animal back.
+        hoodLayers.push(...(window.FurHoodLeatherworking?.orderLayersForView?.(stack,renderBehindView?'behind':'front')||stack));
+        for(const layer of groupLayers.filter(layer=>layer.pos==='back'))
+          hoodBackLayers.push({layer,tint:tintFor(resolveLayerTintSlot(layer.paletteColorKey,hood.tintSlot)),group:hood,metalState});
+      }else{
+        for(const layer of groupLayers){
+          const layerTintSlot=resolveLayerTintSlot(layer.paletteColorKey,hood.tintSlot);
+          (layer.pos==='back'?hoodBackLayers:hoodLayers).push({layer,tint:tintFor(layerTintSlot),group:hood,metalState});
         }
-        (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
-      }
-      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
-      for (const part of animalParts.filter(layer => layer.pos === 'back')) {
-        hoodBackLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
       }
     }
     pushToTarget(pauldron, pauldronLayers);
@@ -1667,7 +1661,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   if (renderBehindView) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
-    if (resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Only the actual hood's rear silhouette replaces its front; animal trophy backs alone must not erase the hood substrate.
+    if (!profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)
+        && resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Preserve other hoods' rear silhouette logic; fur stacks supply their own explicit rear order.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
