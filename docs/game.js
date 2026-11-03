@@ -9947,6 +9947,9 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
+        player.lungeOriginX = player.x; // Immutable record of where this attack's lunge began (lungeStartX/Y are re-seated when a flight freezes); read by hanging ropes to turn lunge distance into swing force.
+        player.lungeOriginY = player.y;
+        player.lungeOriginMs = nowMs;
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
