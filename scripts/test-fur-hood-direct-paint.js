@@ -30,6 +30,23 @@ assert(editor.includes('FurHoodDirectPaintEditor.visibleBounds(mask.canvas,12)')
 assert(editor.includes("furHoodMarkingsOverride:motif&&gene?[{geneId:gene,pattern:motif,colorHex:ink}]:[]"), 'bare hoods render even before any motif is authored');
 assert(editor.includes('id="furPaintView"'), 'front and behind authoring can be selected');
 assert(editor.includes('fur-hood-direct-paint-editor.js'), 'editor loads its dedicated paint module');
+// The editor loads portrait-utils.js, which provides window.loadImg to ClothingWeavingSystem.
+// Without explicitly configuring its base, the nested tool tries tools/pattern-editor/assets/ instead of docs/assets/.
+const baseBootstrap = editor.match(/<script>\s*\/\/ This nested tool page[\s\S]*?<\/script>/);
+assert(baseBootstrap, 'nested Pattern Editor configures its portrait asset root');
+let configuredAssetBase = null; // The standalone bootstrap is evaluated here against a commit-pinned tool-page URL.
+const toolUrl = 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/pinned/docs/tools/pattern-editor/index.html';
+vm.runInNewContext(baseBootstrap[0].replace(/^<script>|<\/script>$/g, ''), {
+  window: { setPortraitAssetBase(value) { configuredAssetBase = value; } },
+  document: { baseURI: toolUrl }, URL,
+});
+assert.equal(configuredAssetBase,
+  'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/pinned/docs/assets/',
+  'portrait image loader uses the current commit pinned docs/assets/ directory');
+for (const sprite of ['furhood-base_tl_m.png', 'furhood-trim_tl_m.png', 'furhood-base_mashtz_m.png', 'furhood-trim_mashtz_m.png']) {
+  const resolved = new URL('cosmetics/clothes/hood/' + sprite, configuredAssetBase).href;
+  assert(resolved.includes('/docs/assets/cosmetics/clothes/hood/' + sprite), 'hood sprite resolves within docs/assets: ' + sprite);
+}
 assert(editor.includes('FurHoodDirectPaintEditor.open'), 'button is wired to the real editor');
 assert.match(editor,/entry\.patterns\[gene\]\s*=\s*\{\s*motifPng:\s*path,\s*settings,\s*authoring\s*\}/,'runtime motif/setting fields remain unchanged while authoring is dev-only');
 assert(source.includes("patternDef?.garmentFixed === true && patternDef?.tiling === false"), 'non-tiling authored motifs use a fixed source frame');
