@@ -30,7 +30,8 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261031he412c8f"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261103fur1"></script>
+<script src="../../js/fur-hood-leatherworking.js?v=20261103fur1"></script>
 <script src="../../js/trim-contour-warp.js?v=20261002contourwarp1"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/pattern-authoring.js?v=20261026hMotifPNG1"></script>
@@ -51,6 +52,30 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
       <h2>Repo library</h2>
       <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Use any repo motif as the primary or as the overpass; each remains an independent reusable pattern.</div>
       <div id="library" class="library"><div class="muted">Loading…</div></div>
+      <div class="trimAuthor" id="furPatternAuthoring">
+        <h2>Animal fur-hood markings</h2>
+        <div class="muted">Dev-only natural coat patterns. Choose an animal species and its exact genotype pattern ID. Use the current editable motif, then export its PNG and the animal manifest. This never adds anything to the player's weaving library.</div>
+        <div class="fields">
+          <label>Animal species<select id="furAnimalSpecies"></select></label>
+          <label>Genotype pattern ID<input id="furGeneId" placeholder="e.g. spots"></label>
+          <label>Preview base coat<input id="furTestCoat" type="color" value="#8b7562"></label>
+          <label>Preview gene color<input id="furTestInk" type="color" value="#c8b3a0"></label>
+          <label>Optional animal-front PNG path<input id="furAnimalFront" placeholder="assets/...-front.png"></label>
+          <label>Optional animal-back PNG path<input id="furAnimalBack" placeholder="assets/...-back.png"></label>
+        </div>
+        <div class="row">
+          <button id="furAssignBtn">Assign current motif to gene</button>
+          <button class="secondary" id="furPreviewBtn">Preview on hood</button>
+          <button class="secondary" id="furSavePartsBtn">Save front/back paths</button>
+        </div>
+        <div class="row" style="margin-top:7px">
+          <button id="furDownloadPngsBtn" class="secondary">Export new animal motif PNGs</button>
+          <button id="furDownloadManifestBtn" class="secondary">Export fur-hoods.json</button>
+        </div>
+        <div class="trimPreviewWrap"><canvas id="furPreviewCanvas" width="1" height="1"></canvas></div>
+        <div id="furAuthorStatus" class="muted" style="margin-top:7px;white-space:pre-wrap">Loading animal coat manifest…</div>
+        <div id="furAssignments" class="path">No natural markings assigned.</div>
+      </div>
       <div class="trimAuthor">
         <h2>Garment trim authoring</h2>
         <div class="muted" style="margin-bottom:8px">Paint trim directly onto each garment species/gender sprite. The exported PNG is an exact sprite-space mask—not a repeating or repositioned pattern—while players only choose whether to add it and whether it uses dye A, B, or C.</div>
@@ -2160,8 +2185,133 @@ Overpass → not set</div>
     $('trimStatus').textContent = 'Exported clothing-trims.json. Keep every listed motifPng at the path shown in the manifest.';
   };
 
+function setupFurAuthoring() {
+  const field = id => document.getElementById(id);
+  const speciesSelect = field('furAnimalSpecies'); // Species selector resolves exact save-time hide.kind identifiers from the manifest.
+  const geneInput = field('furGeneId'); // Authored gene id must match the inherited allele key, not a user-facing trait label.
+  const status = field('furAuthorStatus'); // Exposes export and preview errors without developer tools.
+  const previewCanvas = field('furPreviewCanvas'); // Uses the production garment compositor for color and motif placement.
+  const newMotifPixels = new Map(); // Browser-session PNGs for natural motifs, isolated from ordinary pattern library saves.
+  let furManifest = { schema: 'hobunji_fur_hoods.v1', species: {} }; // Local editable copy of the shipped animal coat manifest.
+  let lastFurAuthorError = null; // Added to mobile Copy Debug output below.
+
+  const safeKind = value => String(value || '').trim().toLowerCase().replace(/[_\s]+/g,'-').replace(/[^a-z0-9-]/g,'');
+  const refreshSpecies = () => {
+    const previous = speciesSelect.value;
+    speciesSelect.innerHTML = '';
+    for (const kind of Object.keys(furManifest.species || {}).sort()) {
+      const option = document.createElement('option');
+      option.value = kind;
+      option.textContent = kind.replace(/-/g, ' ');
+      speciesSelect.appendChild(option);
+    }
+    speciesSelect.value = previous && furManifest.species[previous] ? previous : Object.keys(furManifest.species || {}).sort()[0] || '';
+    selectSpecies();
+  };
+  const selectedEntry = () => furManifest.species?.[speciesSelect.value] || null;
+  const updateAssignments = () => {
+    const entry = selectedEntry();
+    const names = Object.keys(entry?.patterns || {});
+    field('furAssignments').textContent = 'Species: ' + (speciesSelect.value || '(none)') + '\n'
+      + 'Authored genes: ' + (names.join(', ') || '(none)') + '\n'
+      + 'Front: ' + (entry?.parts?.front || '(none)') + '\nBack: ' + (entry?.parts?.back || '(none)') + '\n'
+      + 'New unsaved motif PNGs: ' + newMotifPixels.size;
+  };
+  function selectSpecies() {
+    const entry = selectedEntry();
+    field('furAnimalFront').value = entry?.parts?.front || '';
+    field('furAnimalBack').value = entry?.parts?.back || '';
+    updateAssignments();
+  }
+  speciesSelect.onchange = selectSpecies;
+  const selectedGenePattern = () => {
+    const gene = safeKind(geneInput.value);
+    const authored = selectedEntry()?.patterns?.[gene];
+    const unsaved = newMotifPixels.get(speciesSelect.value + ':' + gene);
+    if (draft?.motifDataUrl) return { ...draft }; // Current interactive Pattern Author motif wins over the saved repo reference.
+    if (unsaved) return { ...(authored?.settings || {}), motifDataUrl: unsaved.dataUrl };
+    if (authored?.motifPng) return { ...(authored.settings || {}), motifUrl: authored.motifPng };
+    return null;
+  };
+  async function preview() {
+    const kind = speciesSelect.value, gene = safeKind(geneInput.value);
+    const motif = selectedGenePattern();
+    if (!kind || !gene || !motif) { status.textContent = 'Choose a species and exact genotype pattern ID, then author/select a motif in Current pattern.'; return; }
+    const coat = field('furTestCoat').value, ink = field('furTestInk').value;
+    const genome = { base: { color: coat } }; // Temporary sample specimen: preview coloration never becomes an authored fixed palette.
+    genome[gene] = { enabled: true, copies: 2, color: ink };
+    const furHood = { kind, genotype: genome, baseColor: coat, appearance: { patterns: [{ id: gene, enabled: true, color: ink }] } };
+    status.textContent = 'Rendering genotype pattern on the real hood…';
+    try {
+      const result = await window.ClothingWeavingSystem.renderClothingLayers('fur_hood', {
+        furHood, primaryHex: coat, secondaryHex: coat,
+        furHoodMarkingsOverride: [{ geneId: gene, pattern: motif, colorHex: ink }],
+      });
+      if (!result?.canvas) throw new Error('No fur-hood base sprite resolved; check the fur_hood cosmetic registration.');
+      previewCanvas.width = result.canvas.width; previewCanvas.height = result.canvas.height;
+      const ctx = previewCanvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(result.canvas, 0, 0);
+      status.textContent = kind + ' · ' + gene + ' · base ' + coat + ', markings ' + ink + '. Preview uses the same renderer as the crafted hood.';
+    } catch (error) {
+      lastFurAuthorError = String(error?.message || error);
+      status.textContent = 'Animal hood preview failed: ' + lastFurAuthorError;
+    }
+  }
+  field('furPreviewBtn').onclick = preview;
+  field('furAssignBtn').onclick = () => {
+    const kind = speciesSelect.value, gene = safeKind(geneInput.value);
+    if (!kind || !gene || !draft?.motifDataUrl) { status.textContent = 'Select a species, enter an exact gene id, and edit the current motif before assigning.'; return; }
+    const file = 'assets/patterns/fur-hoods/' + kind + '__' + gene + '.png';
+    const entry = selectedEntry();
+    entry.patterns ||= {};
+    entry.patterns[gene] = { motifPng: file, settings: cleanSettings(draft) }; // Pattern geometry is dev-authored; player saves store only animal genes plus separately reweavable patterns.
+    newMotifPixels.set(kind + ':' + gene, { path: file, dataUrl: draft.motifDataUrl });
+    status.textContent = 'Assigned ' + kind + '/' + gene + '. Export its PNG and fur-hoods.json to publish; this is NOT a normal weaving pattern.';
+    updateAssignments();
+    preview();
+  };
+  const validatePartPath = value => !value || /^(?:\.\/)?assets\/[a-z0-9_./-]+\.(?:png|webp)$/i.test(value);
+  field('furSavePartsBtn').onclick = () => {
+    const entry = selectedEntry();
+    if (!entry) return;
+    const front = field('furAnimalFront').value.trim(), back = field('furAnimalBack').value.trim();
+    if (!validatePartPath(front) || !validatePartPath(back)) { status.textContent = 'Animal sprites must be docs-root relative paths beginning assets/ and ending .png or .webp.'; return; }
+    entry.parts = { ...(front ? {front:front.replace(/^\.\//,'')} : {}), ...(back ? {back:back.replace(/^\.\//,'')} : {}) };
+    status.textContent = 'Saved optional animal-front/back paths in this session. Export the manifest to publish them.';
+    updateAssignments();
+  };
+  field('furDownloadPngsBtn').onclick = () => {
+    for (const file of newMotifPixels.values()) dataUrlDownload(file.dataUrl, file.path.split('/').pop());
+    status.textContent = 'Exported ' + newMotifPixels.size + ' new PNGs; place them under docs/assets/patterns/fur-hoods/ alongside the exported manifest.';
+  };
+  field('furDownloadManifestBtn').onclick = () => {
+    jsonDownload(furManifest, 'fur-hoods.json');
+    status.textContent = 'Exported fur-hoods.json. Place in docs/config/patterns/ (animal markings never enter config/patterns/index.json).';
+  };
+  window.__furHoodAuthorDebug = () => ({
+    species: speciesSelect.value, gene: geneInput.value, assigned: Object.keys(selectedEntry()?.patterns || {}),
+    sessionMotifs: newMotifPixels.size, error: lastFurAuthorError,
+    latestChange: 'Separate dev-owned coat mapping editor and source-hide color live preview.',
+  });
+  fetch('../../config/patterns/fur-hoods.json').then(response => {
+    if (!response.ok) throw new Error('Manifest HTTP ' + response.status);
+    return response.json();
+  }).then(data => {
+    if (data?.schema !== 'hobunji_fur_hoods.v1') throw new Error('Wrong animal manifest schema');
+    furManifest = data;
+    refreshSpecies();
+    status.textContent = 'Select a species, type its genotype gene ID, and edit the current motif. Save species sprite paths separately.';
+  }).catch(error => {
+    lastFurAuthorError = String(error?.message || error);
+    status.textContent = 'Could not load animal manifest: ' + lastFurAuthorError;
+  });
+}
+  setupFurAuthoring();
+
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
     furniturePreview: window.PatternFurniturePreview.debug(),
+    furHoodAuthor: window.__furHoodAuthorDebug?.() || null,
     mostRecentChange: 'Added actual hanging banner and tall stained-glass church window previews. Cross-species trim replication defaults to contour warp: the finished source mask is carried along matched cloth contours (region, arc-length position, signed depth) instead of replaying strokes, so erase/expand errors cannot compound on multi-piece garments. Stroke replay remains selectable and no longer mirrors off-cloth samples inward.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
