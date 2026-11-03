@@ -37,6 +37,12 @@
       <label style="margin-top:5px">Reverse duration at 100% progress · seconds</label><input id="puzzleReverseDuration" type="number" min="0" step=".05">
       <p class="muted">The primary channel fires on payload placement. The completion channel fires only after the OFF → ON motion finishes. Removing the payload reverses from the current progress over reverse duration × progress.</p>
     </div>
+    <fieldset style="margin-top:8px"><legend>Reacts to events</legend>
+      <p class="muted">Act on a world event directly, no wire needed: e.g. a cracked pillar that falls when a blast reaches it. Leave radius empty to use the event's own radius.</p>
+      <div id="puzzleInputRows"></div>
+      <button id="puzzleInputAdd" type="button" style="margin-top:6px;width:100%">+ Add event input</button>
+      <datalist id="puzzleEventNames"><option value="blast"><option value="struck"></datalist>
+    </fieldset>
     ${transformFields('puzzleOff', 'OFF')}${transformFields('puzzleOn', 'ON')}`;
   host.appendChild(section);
 
@@ -125,6 +131,34 @@
     function frame(now){if(revision!==preview.animationRevision)return;const linear=Math.min(1,(now-start)/duration),smooth=linear*linear*(3-2*linear);applyPreview(smooth);if(linear<1)requestAnimationFrame(frame);else{preview.playing=false;preview.editState='on';state.selectedId='on';applyPreview(1,{attach:true});log('Puzzle transition preview finished at ON.');}}
     requestAnimationFrame(frame);
   }
+  // ── Event inputs ──────────────────────────────────────────────────────
+  const INPUT_FIELDS = ['event','action','withinTiles','tag','targetId','delaySeconds','once'];
+  function inputRowHtml(index) {
+    return `<div class="puzzleInputRow" style="margin-top:6px;padding:6px;border:1px solid rgba(148,163,184,.3);border-radius:8px">
+      <div class="g2"><input data-f="event" list="puzzleEventNames" placeholder="event (blast, struck)"><select data-f="action"><option value="on">turn ON</option><option value="off">turn OFF</option><option value="toggle">toggle</option></select></div>
+      <div class="g3" style="margin-top:4px"><input data-f="withinTiles" type="number" min="0" step=".1" placeholder="radius"><input data-f="tag" placeholder="tag (fire)"><input data-f="targetId" placeholder="target (self / id)"></div>
+      <div class="g3" style="margin-top:4px"><label class="chk"><input data-f="once" type="checkbox"> once</label><input data-f="delaySeconds" type="number" min="0" step=".1" placeholder="delay s"><button type="button" data-remove="${index}">Remove</button></div>
+    </div>`;
+  }
+  // Rebuilds rows only when their count changes, and never overwrites the field being typed in.
+  function renderInputs(inputs) {
+    const host = el('puzzleInputRows');
+    if (host.querySelectorAll('.puzzleInputRow').length !== inputs.length) host.innerHTML = inputs.map((_, index) => inputRowHtml(index)).join('');
+    host.querySelectorAll('.puzzleInputRow').forEach((row, index) => {
+      for (const field of INPUT_FIELDS) {
+        const control = row.querySelector(`[data-f="${field}"]`);
+        if (!control || control === document.activeElement) continue;
+        if (field === 'once') { if (control.checked !== !!inputs[index].once) control.checked = !!inputs[index].once; }
+        else { const value = String(inputs[index][field] ?? ''); if (control.value !== value) control.value = value; }
+      }
+    });
+  }
+  function readInputs() {
+    return [...el('puzzleInputRows').querySelectorAll('.puzzleInputRow')].map(row => {
+      const get = field => row.querySelector(`[data-f="${field}"]`);
+      return { event:get('event').value, action:get('action').value, withinTiles:get('withinTiles').value, tag:get('tag').value, targetId:get('targetId').value, delaySeconds:get('delaySeconds').value, once:get('once').checked };
+    });
+  }
   function render() {
     const puzzle = api.normalizePuzzle(state.puzzle);
     const displayed = puzzle || defaultPuzzle('mechanism');
@@ -140,6 +174,8 @@
     el('puzzlePayloadSurface').value = displayed.payloadSurfaceId;
     el('puzzleBurdenFields').style.display = displayed.behavior === 'burdenPlate' ? '' : 'none';
     writeState('puzzleOff', displayed.motion.off); writeState('puzzleOn', displayed.motion.on);
+    renderInputs(puzzle?.inputs || []);
+    el('puzzleInputAdd').disabled = !puzzle;
     section.querySelectorAll('input,select').forEach(input => { if (input.id !== 'puzzleRole') input.disabled = !puzzle; });
     for(const id of ['puzzleEditOff','puzzleEditOn','puzzlePlay'])el(id).disabled=!puzzle;
     updatePreviewStatus();
@@ -148,7 +184,7 @@
     const role = el('puzzleRole').value;
     state.puzzle = api.normalizePuzzle(role === 'none' ? null : {
       role, behavior:el('puzzleBehavior').value, channel:el('puzzleChannel').value, interactionRange:el('puzzleRange').value,
-      completionChannel:el('puzzleCompletionChannel').value,
+      completionChannel:el('puzzleCompletionChannel').value, inputs:readInputs(),
       requiredBurdenKind:el('puzzleRequiredBurden').value, payloadSurfaceId:el('puzzlePayloadSurface').value,
       prompt:el('puzzlePrompt').value, onPrompt:el('puzzleOnPrompt').value, offPrompt:el('puzzleOffPrompt').value,
       startsActive:el('puzzleStartsActive').checked, directInteraction:el('puzzleDirect').checked, blocksMovement:el('puzzleBlocks').checked,
@@ -168,6 +204,19 @@
       return;
     }
     read();
+  });
+  function setInputs(rows, label) {
+    if (!state.puzzle) return;
+    state.puzzle = api.normalizePuzzle({ ...state.puzzle, inputs:rows });
+    render();
+    if (typeof queueUndoHistory === 'function') queueUndoHistory(label);
+  }
+  el('puzzleInputAdd').onclick = () => setInputs([...readInputs(), { event:'blast' }], 'puzzle event input added');
+  el('puzzleInputRows').addEventListener('click', event => {
+    const button = event.target.closest?.('[data-remove]');
+    if (!button) return;
+    const rows = readInputs(); rows.splice(Number(button.dataset.remove), 1);
+    setInputs(rows, 'puzzle event input removed');
   });
   el('puzzleEditOff').onclick=()=>editTransitionState('off');el('puzzleEditOn').onclick=()=>editTransitionState('on');el('puzzlePlay').onclick=playTransition;el('puzzleExitPreview').onclick=()=>exitPreview();
   el('puzzlePreviewProgress').addEventListener('input',event=>{preview.animationRevision++;preview.playing=false;preview.editState=null;state.selectedType='puzzleTransition';state.selectedId='preview';transform.detach();applyPreview(event.target.value);});

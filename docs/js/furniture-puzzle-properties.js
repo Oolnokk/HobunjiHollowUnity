@@ -59,6 +59,31 @@
       collisionOpenProgress:Math.max(0, Math.min(1, number(motion.collisionOpenProgress, .55))),
     };
   }
+  // Event inputs: a node (mechanism or activator) reacts to a WorldEvents event without being wired to an
+  // activator. { event, withinTiles?, targetId?, tag?, action, once, delaySeconds }. See
+  // docs/architecture/ruin-capabilities.md. `event` is any lower-case event name (blast, struck, ...).
+  const INPUT_ACTIONS = Object.freeze(['on', 'off', 'toggle']);
+  const MAX_INPUTS = 8;
+  function normalizeInputs(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object' || out.length >= MAX_INPUTS) continue;
+      const event = text(item.event, 'blast').toLowerCase();
+      if (!/^[a-z][a-z0-9:_-]{0,31}$/.test(event)) continue;
+      const within = item.withinTiles === '' || item.withinTiles == null ? null : number(item.withinTiles, NaN);
+      out.push({
+        event,
+        withinTiles: Number.isFinite(within) && within >= 0 ? within : null, // null: use the event's own radius when it has one
+        targetId: text(item.targetId), // '' = any, 'self' = this node, otherwise a specific id
+        tag: text(item.tag),
+        action: INPUT_ACTIONS.includes(item.action) ? item.action : 'on',
+        once: !!item.once,
+        delaySeconds: Math.max(0, number(item.delaySeconds, 0)),
+      });
+    }
+    return out;
+  }
   function normalizePuzzle(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const role = ROLES.includes(raw.role) ? raw.role : 'none';
@@ -85,6 +110,7 @@
       offPrompt: text(raw.offPrompt, 'Turn off'),
       onPrompt: text(raw.onPrompt, 'Turn on'),
       directInteraction: role === 'mechanism' && !!raw.directInteraction,
+      inputs: normalizeInputs(raw.inputs),
       motion: transition(raw.motion),
     };
   }
@@ -142,6 +168,6 @@
 
   window.FurniturePuzzleProperties = Object.freeze({
     schema: 'hobunji_furniture_puzzle.v3', ROLES, ACTIVATORS, MECHANISMS,
-    normalizePuzzle, normalizeWiring, validateWiring, applyToObject3D, transitionState, partTransform,
+    normalizePuzzle, normalizeInputs, INPUT_ACTIONS, normalizeWiring, validateWiring, applyToObject3D, transitionState, partTransform,
   });
 })();

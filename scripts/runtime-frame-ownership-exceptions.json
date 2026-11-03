@@ -636,7 +636,7 @@
     "function": "startEmitterLoop",
     "reason": "One guarded shared requestAnimationFrame loop advances registered furniture-puzzle emitter visuals. startEmitterLoop starts it at most once for the runtime, so there is no per-puzzle RAF fan-out.",
     "migrationStage": "not-planned",
-    "line": 189
+    "line": 275
   },
   {
     "file": "docs/js/furniture-puzzle-runtime.js",
@@ -645,7 +645,7 @@
     "function": "animate",
     "reason": "A smoothstep requestAnimationFrame loop runs only while one mechanism moves toward its target and stops at t=1; its revision token cancels superseded re-toggle animations.",
     "migrationStage": "not-planned",
-    "line": 210
+    "line": 298
   },
   {
     "file": "docs/js/opening-story-cutscene.js",

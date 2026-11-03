@@ -20,7 +20,25 @@ Each interaction between two systems was bespoke code: the lunge-stop test loope
 
 **Aim note.** For the player, `Combat.meleeHit` is wrapped (`ranged-camera-focus.js`) so the strike cone follows the camera reticle, overriding the yaw/pitch a caller passes. Targetables go through the same wrapper, so a `lungeStop` target is found where the player is *aiming*, exactly like an enemy. Probes that need a specific direction must pass an explicit `direction`.
 
-## What this step changed (behaviour-preserving)
+## Event inputs (step 2)
+
+A mechanism or activator can react to a world event directly, with no activator wire. It is an optional list on the existing `puzzle` block (schema stays v3, additive):
+
+```json
+"puzzle": { "role": "mechanism", "behavior": "toggle", "channel": "bridge1", "motion": { ... },
+  "inputs": [ { "event": "blast", "withinTiles": null, "tag": "", "targetId": "", "action": "on", "once": true, "delaySeconds": 0 } ] }
+```
+
+- `event`: any lower-case event name (`blast`, `struck`, ...). `withinTiles`: distance from the node's origin to the event point; empty uses the event's own `radius` (a blast must reach the node). A distance condition is never met by an event with no position. `tag`: must equal the event's tag (e.g. `fire`). `targetId`: `self` or an id, matched against the event's `targetId` (for `struck`). `action`: `on`, `off` or `toggle`. `once`: unsubscribe after it fires. `delaySeconds`: act after a delay.
+- Mechanisms run `setMechanism`; activators run `activate`, so their wired mechanisms follow. Up to 8 inputs per node.
+- Subscriptions are scoped to the node's map and released when the node is unregistered, re-registered or replaced by a map re-registration, so they cannot leak or stack.
+- Authored in the Furniture Author's Puzzle Furniture section ("Reacts to events"). Placement tools inherit the authored `inputs` (the runtime merges `{...inherited, ...instance}`); per-instance overrides are not in the map/locale editors yet.
+
+**The pillar bridge**: open the piece, set its role to Mechanism, add an input `blast` (once). A witch bomb that goes off near it topples it with no further code. Its motion, `collisionOpenProgress` and blocked tiles are unchanged.
+
+Gotchas: (1) `channel` defaults to `A` and is shared by every mechanism in a map, so give event-driven nodes their own channel or an unrelated channel-A toggle will override them. (2) Distance is measured to the node's origin, not its footprint edge, so a long piece like the 1×5 pillar should use an explicit `withinTiles` that covers the part meant to be hit. (3) `struck` events are only emitted for burdens today; furniture reacting to being struck needs furniture to become a strike target first.
+
+## What step 1 changed (behaviour-preserving)
 
 `isHostileInLungeCone` moved to `LungeTargeting` and gained the targetable path; burdens are exposed as a `shattercasks` source (`burden`; `explosive` for shattercask/witch-bomb; `hangable` while hanging; `lungeStop` only if `burden.lungeStop === true`); `sweepMelee` emits `struck` before detonating; `applyBlast` emits `blast`; the witch bomb passes its `y` and id into the blast. No listener exists yet, so nothing observable changes.
 
@@ -34,7 +52,7 @@ Each interaction between two systems was bespoke code: the lunge-stop test loope
 ## Roadmap
 
 1. *(this step)* Targetables, WorldEvents, lunge targeting.
-2. Mechanism inputs that subscribe to events (`struck`, `blast` as activator kinds, with conditions like "blast within 2.5"). The Furniture Author gets a capabilities/ports block, like the existing `puzzle`, `elevation` and `climbWall` blocks, so the vocabulary stays data-driven.
+2. *(done)* Mechanism inputs that subscribe to events: `puzzle.inputs`, see below. Still to do: a capabilities block in the Furniture Author (e.g. marking furniture `breakable`/`targetable`) once furniture emits and receives strikes.
 3. A general rope component: a `hangable` pendulum any burden can attach to, `struck` → impulse (from lunge distance spent), release into the existing throw arc.
 4. Goals and encounters (`Defend`, spawners, objectives) plus a solver that chains capabilities from the player's verbs to a goal and validates the chain with the existing pendulum/flight simulations (a feasible-impulse window, so skill decides the exact throw).
 
@@ -45,3 +63,5 @@ Known limit: `sweepMelee` still has its own cone test (kept to avoid changing bu
 ## Verification
 
 Unit tests execute the registry, event stream, lunge targeting, and the real `shattercasks.js` (burden capabilities, blast event) in a sandbox. A headless run of the real game (see `headless-game-test`) placed a burden with a real hitbox along the player's actual aim and confirmed: no lunge stop by default; after opting in, a stop at 0.4, 1.0 and 1.8 tiles (range 2) but not too far, behind, to the side, far above, after opting out, or while carried; `blast` events arrive with the right payload; no page errors.
+
+Step 2 verification: `scripts/test-puzzle-event-inputs.js` runs the real puzzle runtime, schema and event stream (conditions, once, delay, activators driving wires, lifecycle, isolation, the real keyframe motion). The Author editor was exercised in a real browser (typing is not clobbered, tabbing keeps the row, add/remove, save/load round trip, disabled for non-puzzle pieces). In the real game a real `applyBlast` moved a nearby registered mechanism to its on-keyframe, left a pillar 28 tiles away and a differently tagged one alone, and released its subscriptions; no page errors. (In the headless sandbox frames arrive ~10 s apart, so animations complete late but correctly.)
