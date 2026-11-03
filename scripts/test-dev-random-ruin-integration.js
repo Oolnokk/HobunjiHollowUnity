@@ -27,6 +27,7 @@ const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 const interactions = read('docs/js/dev-random-ruin-interactions.js');
 const inputClaims = read('docs/js/world-action-input-claims.js');
 const simplePuzzles = read('docs/js/dev-random-ruin-simple-puzzles.js');
+const ropeCore = read('docs/js/rope-core.js'); // The rope swing arithmetic and constants (ROPE_BODY_RADIUS etc.) now live here; the ruin runtime delegates to it.
 const cloudFog = read('docs/js/cloud-forest-fog.js');
 const gameIndex = read('docs/index.html');
 const game = read('docs/game.js');
@@ -167,7 +168,7 @@ assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope trave
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
 assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must remain discoverable through the normal floating interaction list');
 assert(!simplePuzzles.includes('tryAutoGrabRope'), 'ropes are grabbed only through the Grab Rope prompt (which claims Action 1); proximity auto-grab caught players unintentionally');
-assert(simplePuzzles.includes('ROPE_BODY_RADIUS = 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
+assert(simplePuzzles.includes('ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS') && ropeCore.includes('BODY_RADIUS: 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
 assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
 assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
@@ -195,7 +196,7 @@ assert(simplePuzzles.includes('occludePoint') && simplePuzzles.includes('crossX'
 assert(simplePuzzles.includes('buildSunkenRoomShell'), 'the lower ossuary must use a reusable sunken-room shell rather than bespoke full-sequence geometry');
 assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePuzzles.includes("speciesId:'harlyao-skeleton'"), 'sarcophagus modules must spawn the existing Harlyao Skeleton Minion class');
 assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
-assert(game.includes('const dynamicSurfaceY = Number(c.surfaceYOverride?.())') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
+assert(game.includes('c.surfaceYOverride?.()') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
 assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
 assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
 assert(audioSystem.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
@@ -235,9 +236,9 @@ assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plat
 assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
 assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
 assert(simplePuzzles.includes('devRandomRuinMandatoryTraversal') && simplePuzzles.includes('usedHallways.add(hall.id)'), 'safe-path grids must occupy a required hallway crossing rather than a bypassable room-center square');
-assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && simplePuzzles.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
+assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && ropeCore.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
 assert(simplePuzzles.includes("label:'Jump Off Rope'") && simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("label:'Hold to Stop / Adjust Rope'"), 'rope controls must expose Dodge jump-off plus the held brake/adjust action');
-assert(simplePuzzles.includes('rope.yaw+=intent.side') && simplePuzzles.includes('rope.length=Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
+assert(ropeCore.includes('rope.yaw += move.side') && ropeCore.includes('rope.length = Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
 assert(simplePuzzles.includes('player?.inputX') && simplePuzzles.includes('player?.inputY') && simplePuzzles.includes('player?.inputStrength'), 'rope pumping/reorientation must consume the game-published movement intent rather than velocity the rope runtime zeroes');
 assert(simplePuzzles.includes('doorwayCrossing') && simplePuzzles.includes("activateCheckpoint('ruin-entry'"), 'ruin entry and every doorway must feed session checkpoint tracking');
 assert(game.includes("function respawnPlayer(reason = 'death')") && game.includes("window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)"), 'canonical respawnPlayer must offer every death source to the active ruin checkpoint before mine/totem/farm recovery while preserving its diagnostic reason');
@@ -257,7 +258,7 @@ assert(occupancy.includes("'#3498db'"), 'Map renderer must draw mechanism tiles 
 assert(occupancy.includes('doorIsClosed'), 'door collision must use logical open/closed state instead of rendered height');
 assert(occupancy.includes('function doorTiles(door, model)') && occupancy.includes('const runMin = alongX ? box.min.x : box.min.z'), 'closed door collision must rasterize the full visible doorway run instead of falling back to one center tile');
 assert(occupancy.includes('syncGridCollision(model)') && occupancy.includes('tile.type = blocked ? model.solidType : baseType'), 'generated blockers must stamp the ordinary interior grid so player/creature movement, dodge/lunge, and swept knockback share one collision authority');
-assert(interior.includes('function positionInfo(px,py)') && !interior.includes('blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS'), 'ruin player reconciliation must not run a second post-movement horizontal blocker pass after the normal interior grid has resolved collision');
+assert(interior.includes('function positionInfo(px,py') && !interior.includes('blocker:DS.blockerAt(x,z,{radius:PLAYER_RADIUS'), 'ruin player reconciliation must not run a second post-movement horizontal blocker pass after the normal interior grid has resolved collision');
 assert(interior.includes('grid:ruin.grid') && interior.includes("ROCK??'rock'"), 'ruin occupancy must mutate the actual registered map_i_* grid using the normal solid tile type');
 assert(occupancy.includes('nearestFloorAnchor'), 'mechanism diagnostics must use compact logical anchor tiles');
 assert(interior.includes('transitDoors:ruin.transitDoors'), 'transit doors must join the shared tile occupancy snapshot');
@@ -458,6 +459,19 @@ const ruinConfig = JSON.parse(read('docs/config/random-ruin/ruin-config.json'));
 assert(ruinConfig.schema === 'hobunji_random_ruin_config.v1' && ruinConfig.sanctum?.boss && ruinConfig.moduleChances, 'ruin tuning lives in docs/config/random-ruin/ruin-config.json');
 new vm.Script(read('docs/js/dev-random-ruin-config.js'), { filename: 'dev-random-ruin-config.js' });
 assert(interactions.includes('registerWorldClimbProvider') && !interactions.includes("label:'Climb Up'"), 'ruin ledges climb from a forward dodge (ClimbSystem world-climb provider), not a listed prompt');
+// Composed challenges must be reached from the actual game, not a disconnected preview/editor.
+{
+  const html=read('docs/index.html'); // Exact startup order for ordinary wilderness and mobile players.
+  const playable=read('docs/js/ruin-composer-playable.js'); // Shared native placement, support and enemy integration.
+  const worldInputs=read('docs/js/dev-random-ruin-interactions.js'); // Location passages must not require reticle focus.
+  assert(html.includes('js/ruin-composer-playable.js')&&html.indexOf('js/ruin-composer-playable.js')<html.indexOf('js/dev-random-ruin-bootstrap.js'),'the gameplay page loads the playable composer before the ruin bootstrap');
+  assert(interior.includes('await attachComposedTrialWing(rec,candidateSeed)')&&interior.includes("opts.site===true&&theme==='hronal'"),'seeded Hronal wilderness sites actually attach the composed room');
+  assert(interior.includes('window.RuinComposerPlayable.mount')&&interior.includes('ruin?.composedWing?.dispose?.()'),'real map generation must mount and tear down authored trials');
+  assert(interior.includes("composedButton.textContent='V50 + Composed Trial'"),'mobile Dev Mode exposes a reproducible trial entry');
+  assert(playable.includes('C.apply(composition')&&playable.includes('G.HangingRopes.registerRope')&&playable.includes('G.RuinEncounters.create'),'composition is consumed by gameplay furniture, rope and enemy runtimes');
+  assert(playable.includes('DS.registerPit')&&playable.includes('P.registerNode')&&playable.includes('P.unregisterNode'),'chasm collision and authored puzzles have lifecycle ownership');
+  assert(worldInputs.includes("'shaft-passage', 'composed-passage'"),'shaft and trial entry actions work without needing to aim at invisible portal meshes');
+}
 console.log('Random Test Ruin integration static audit passed.');
 const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
 assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');

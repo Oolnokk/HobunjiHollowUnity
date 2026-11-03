@@ -5,6 +5,8 @@
 (() => {
   'use strict';
 
+  const RopeCore = window.RopeCore; // Rope swing/release arithmetic lives once in js/rope-core.js; this runtime keeps the player, collision, meshes and input.
+  if (!RopeCore) { console.warn('[Random Test Ruin] RopeCore did not load; rope traversal is unavailable.'); return; }
   const MAP_ID = 'map_i_dev_random_ruin';
   const SCOPE = 'dev-random-ruin-simple-puzzles';
   const PAD = 2;
@@ -35,16 +37,16 @@
     poison:{ dim:0x1f3a18, hot:0xa6ff5c, shot:0x9cff5a },
   });
   const ROPE_FALL_BURNING = 14;
-  const ROPE_GRAB_RADIUS = 0.8;
-  const ROPE_BODY_RADIUS = 0.045; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
-  const ROPE_COLLISION_RADIUS = 0.24; // Player-sized horizontal clearance used to validate and sweep every rope arc/flight segment against normal interior solids.
+  const ROPE_GRAB_RADIUS = RopeCore.GRAB_RADIUS;
+  const ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
+  const ROPE_COLLISION_RADIUS = RopeCore.COLLISION_RADIUS; // Player-sized horizontal clearance used to validate and sweep every rope arc/flight segment against normal interior solids.
   const ROPE_ROUTE_SAMPLES = 28; // Samples the full authored pendulum arc before accepting a generated route through the room.
-  const ROPE_GRAVITY = 8.2;
+  const ROPE_GRAVITY = RopeCore.GRAVITY;
   const ROPE_BODY_SAMPLE_OFFSETS = Object.freeze([.15, .75, 1.3]); // Feet, waist and head heights of a rope rider above its datum.
-  const ROPE_MIN_LENGTH = 1.65;
-  const ROPE_PUMP = .45; // Pumping only adds swing in the direction of travel, so building height takes a few back-and-forth swings instead of one held push.
-  const ROPE_MAX_ANGLE = 1.28;
-  const ROPE_AIR_CATCH_RADIUS = .45; // A flying player within this of another rope's lower length catches it (rope-to-rope traversal).
+  const ROPE_MIN_LENGTH = RopeCore.MIN_LENGTH;
+  const ROPE_PUMP = RopeCore.PUMP; // Pumping only adds swing in the direction of travel, so building height takes a few back-and-forth swings instead of one held push.
+  const ROPE_MAX_ANGLE = RopeCore.MAX_ANGLE;
+  const ROPE_AIR_CATCH_RADIUS = RopeCore.AIR_CATCH_RADIUS; // A flying player within this of another rope's lower length catches it (rope-to-rope traversal).
   const PLATFORM_SIDE_CLEARANCE = .2; // Flight below a rope platform's top by more than this hits its side instead of passing through it.
   const CHECKPOINT_INVULN_MS = 1200;
   const KURRAYA_NOTE_URL = 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a'; // Shared authored pluck used by modular musical pressure plates until a dedicated ruin-note sample exists.
@@ -640,8 +642,7 @@
   }
 
   function ropeBobAt(rope,angle=rope.angle) {
-    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw),horizontal=Math.sin(angle)*rope.length;
-    return{x:rope.anchor.x+dirX*horizontal,z:rope.anchor.z+dirZ*horizontal,y:rope.anchor.y-Math.cos(angle)*rope.length};
+    return RopeCore.bobAt(rope,angle);
   }
 
   function updateRopeVisual(rope) {
@@ -673,17 +674,8 @@
 
   function releaseRope(rope) {
     if (!rope?.attached) return false;
-    const dirX = Math.cos(rope.yaw), dirZ = Math.sin(rope.yaw);
-    const tangentSpeed = Math.cos(rope.angle) * rope.length * rope.omega;
-    const verticalSpeed = Math.sin(rope.angle) * rope.length * rope.omega;
     const bob = updateRopeVisual(rope);
-    state.flight = {
-      x:bob.x, y:bob.y, z:bob.z,
-      vx:dirX*tangentSpeed,
-      vz:dirZ*tangentSpeed,
-      vy:verticalSpeed + .55,
-      ropeId:rope.id,
-    };
+    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id };
     rope.attached = false;
     rope.braking = false;
     state.activeRope = null;
@@ -737,13 +729,16 @@
   // in state.ropes: callers validate the route first, then push it (or call
   // disposeRopeObject). grabPoint null = only catchable mid-air from another
   // rope (no ground 'Grab Rope' prompt).
-  function createRopeObject({room,idSuffix='',anchor,yaw,length,maxLength=length,minBobY,angle=0,startPlatform=null,endPlatform=null,grabPoint=null}) {
+  function createRopeObject({room,idSuffix='',anchor,yaw,length,maxLength=length,minBobY,angle=0,startPlatform=null,endPlatform=null,grabPoint=null,mountObject=null}) {
     const suffix=idSuffix?'_'+idSuffix:'';
-    const mount=naturalizeStone(new THREE.Mesh(sharedCylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
-    mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+suffix;
-    mount.position.set(anchor.x,anchor.y-.025,anchor.z);
-    mount.userData.devRandomRuinRopeCeilingMount=true;
-    state.group.add(mount);
+    let mount=mountObject; // A furniture rope hangs from its own authored mount, which this runtime must not create, move or dispose.
+    if(!mount){
+      mount=naturalizeStone(new THREE.Mesh(sharedCylinderGeometry(.15,.11,.10,10),makeBasic(0x808080)));
+      mount.name='dev_ruin_swing_rope_ceiling_mount_'+room.id+suffix;
+      mount.position.set(anchor.x,anchor.y-.025,anchor.z);
+      mount.userData.devRandomRuinRopeCeilingMount=true;
+      state.group.add(mount);
+    }
 
     const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
@@ -755,14 +750,14 @@
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
       roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
       yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
-      attached:false,braking:false,startPlatform,endPlatform,
+      attached:false,braking:false,startPlatform,endPlatform,externalMount:!!mountObject,
       hazard:null,airOnly:!grabPoint,
       grabPoint,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,airCatchCount:0,
     };
   }
 
   function disposeRopeObject(rope) {
-    for(const mesh of [rope?.mesh,rope?.marker,rope?.mount])disposeObject(mesh);
+    for(const mesh of [rope?.mesh,rope?.marker,rope?.externalMount?null:rope?.mount])disposeObject(mesh);
   }
 
   // Every bob position of a swing of amplitude `amp` stays clear of walls,
@@ -799,17 +794,7 @@
   // point on the forward swing reaches the target platform or catches the
   // target rope; null when none does. rope only needs anchor/yaw/length.
   function ropeReachAmplitude(rope,target,{maxAmp=1.2,minAmp=.6,floorY=0}={}) {
-    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw),L=rope.length;
-    for(let amp=minAmp;amp<=maxAmp+1e-6;amp+=.05){
-      for(let i=0;i<=10;i++){
-        const theta=amp*(.15+.85*i/10);
-        const omega=Math.sqrt(Math.max(0,2*(ROPE_GRAVITY/L)*(Math.cos(theta)-Math.cos(amp))));
-        const tangent=Math.cos(theta)*L*omega;
-        const start={x:rope.anchor.x+dirX*Math.sin(theta)*L,z:rope.anchor.z+dirZ*Math.sin(theta)*L,y:rope.anchor.y-Math.cos(theta)*L,vx:dirX*tangent,vz:dirZ*tangent,vy:Math.sin(theta)*L*omega+.55};
-        if(simulateRopeFlight(start,target,floorY))return +amp.toFixed(2);
-      }
-    }
-    return null;
+    return RopeCore.reachAmplitude(rope,start=>simulateRopeFlight(start,target,floorY),{maxAmp,minAmp});
   }
 
   // Where a flying player would take hold of `rope`: anywhere on its lower
@@ -828,12 +813,7 @@
   // Mid-air catch: the rope takes the flyer at the grip height they reached,
   // with their velocity turned into swing so rope-to-rope chains keep momentum.
   function catchRopeInFlight(rope,f) {
-    const dirX=Math.cos(rope.yaw),dirZ=Math.sin(rope.yaw);
-    const horizontal=(f.x-rope.anchor.x)*dirX+(f.z-rope.anchor.z)*dirZ,drop=Math.max(.05,rope.anchor.y-f.y);
-    rope.length=Math.max(ROPE_MIN_LENGTH,Math.min(rope.maxLength,Math.hypot(horizontal,drop)));
-    rope.angle=Math.max(-ROPE_MAX_ANGLE,Math.min(ROPE_MAX_ANGLE,Math.atan2(horizontal,drop)));
-    const along=f.vx*dirX+f.vz*dirZ;
-    rope.omega=(along*Math.cos(rope.angle)+f.vy*Math.sin(rope.angle))/rope.length;
+    RopeCore.catchFromFlight(rope,f);
     rope.attached=true;rope.braking=false;rope.airCatchCount++;
     state.flight=null;
     state.activeRope=rope;
@@ -2046,61 +2026,25 @@
 
   function ropeIntent(rope, allowVelocityFallback = false) {
     const player=deps?.player;
-    const strength=Math.max(0,Math.min(1,Number(player?.inputStrength)||0)); // Game-published, camera-resolved movement intent remains live while the rope runtime owns physical motion.
-    const rawX=Number(player?.inputX)||0, rawZ=Number(player?.inputY)||0;
-    const rawLength=Math.hypot(rawX,rawZ);
-    let ix=rawLength>.001 ? rawX/rawLength*strength : 0;
-    let iz=rawLength>.001 ? rawZ/rawLength*strength : 0;
-    if(allowVelocityFallback&&strength<=.001){ // Preserve approach momentum on the one frame auto-grab happens before movement input has necessarily been published.
-      const tile=Math.max(1e-6,Number(deps?.TILE)||1);
-      const vx=(Number(player?.vx)||0)/tile, vz=(Number(player?.vy)||0)/tile;
-      const speed=Math.hypot(vx,vz);
-      if(speed>.001){ix=vx/Math.max(3,speed);iz=vz/Math.max(3,speed);}
-    }
-    const dx=Math.cos(rope.yaw),dz=Math.sin(rope.yaw);
-    const sx=-dz,sz=dx;
-    return {
-      forward:Math.max(-1,Math.min(1,ix*dx+iz*dz)),
-      side:Math.max(-1,Math.min(1,ix*sx+iz*sz)),
-      strength:Math.min(1,Math.hypot(ix,iz)),
-    };
+    const tile=Math.max(1e-6,Number(deps?.TILE)||1);
+    // Game-published, camera-resolved movement intent stays live while the rope runtime owns physical motion; the approach
+    // velocity is only a fallback for the one frame an auto-grab happens before movement input has been published.
+    return RopeCore.intent(rope,{strength:player?.inputStrength,x:player?.inputX,z:player?.inputY},
+      allowVelocityFallback?{vx:(Number(player?.vx)||0)/tile,vz:(Number(player?.vy)||0)/tile}:null);
   }
 
+  const ropeSweepBlocked=(from,to)=>sweptRopePoint(from,to).blocked;
   function updateAttachedRope(rope,dt) {
-    const intent=ropeIntent(rope),priorAngle=rope.angle,priorYaw=rope.yaw,priorLength=rope.length;
-    if(rope.braking){
-      rope.omega*=Math.exp(-9*dt);
-      rope.yaw+=intent.side*1.6*dt;
-      rope.length=Math.max(ROPE_MIN_LENGTH,Math.min(rope.maxLength,rope.length-intent.forward*.9*dt));
-    }else{
-      if(intent.forward*rope.omega>0)rope.omega+=intent.forward*ROPE_PUMP*dt; // Pump with the swing, not against it: height builds over several back-and-forth swings.
-      rope.omega+=(-ROPE_GRAVITY/Math.max(.4,rope.length))*Math.sin(rope.angle)*dt;
-      rope.omega*=Math.exp(-.16*dt);
-      rope.angle+=rope.omega*dt;
-      if(Math.abs(rope.angle)>ROPE_MAX_ANGLE){rope.angle=Math.sign(rope.angle)*ROPE_MAX_ANGLE;rope.omega*=.72;}
-    }
-    const candidate=ropeBobAt(rope),from=rope.lastSafeBob||ropeBobAt({...rope,angle:priorAngle,yaw:priorYaw,length:priorLength});
-    const sweep=sweptRopePoint(from,candidate);
-    if(sweep.blocked){
-      rope.angle=priorAngle;rope.yaw=priorYaw;rope.length=priorLength;rope.omega*=-.18;rope.collisionStops++;
-      const safe=updateRopeVisual(rope);
-      rope.lastSafeBob=clonePoint(safe);
-      setPlayerWorld(safe,true,false);
-    }else{
-      const bob=updateRopeVisual(rope);
-      rope.lastSafeBob=clonePoint(bob);
-      setPlayerWorld(bob,true,false);
-    }
+    const step=RopeCore.stepAttached(rope,ropeIntent(rope),dt,ropeSweepBlocked);
+    const bob=updateRopeVisual(rope); // Blocked or not, the rider sits at the (safe) bob.
+    rope.lastSafeBob=clonePoint(bob);
+    setPlayerWorld(bob,true,false);
     deps.player.vx=0;deps.player.vy=0;
+    return step;
   }
 
   function updateIdleRope(rope,dt) {
-    const priorAngle=rope.angle;
-    rope.omega+=(-ROPE_GRAVITY/Math.max(.4,rope.length))*Math.sin(rope.angle)*dt;
-    rope.omega*=Math.exp(-.28*dt);
-    rope.angle+=rope.omega*dt;
-    const candidate=ropeBobAt(rope),from=rope.lastSafeBob||ropeBobAt(rope,priorAngle),sweep=sweptRopePoint(from,candidate);
-    if(sweep.blocked){rope.angle=priorAngle;rope.omega*=-.18;rope.collisionStops++;}
+    RopeCore.stepIdle(rope,dt,ropeSweepBlocked);
     const bob=updateRopeVisual(rope);
     rope.lastSafeBob=clonePoint(bob);
   }
@@ -2244,7 +2188,7 @@
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
     for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);}
     for(const candidate of state.ropes){
-      if(candidate.attached||state.flight||candidate.airOnly)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor.
+      if(candidate.attached||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
       controls.push({
         kind:'ropeGrab',
         object:candidate.marker,
@@ -2349,8 +2293,35 @@
 
   DS.addBeforeRenderClient(update);
 
+  // A rope built from placed furniture (see js/rope-furniture.js): the piece is the ceiling mount; the swinging rope,
+  // grip, 'Grab Rope' / 'Jump Off' / brake prompts, pumping, collision and release flight are this runtime's own, so
+  // it rides exactly like a generated rope. spec: { id, anchor:{x,y,z}, yaw, length, maxLength?, angle? }.
+  function addFurnitureRope(spec,mountObject) {
+    if(!state||!inRuin()||!spec?.anchor)return null;
+    const length=Math.max(ROPE_MIN_LENGTH,Number(spec.length)||3),maxLength=Math.max(length,Number(spec.maxLength)||length);
+    const rope=createRopeObject({
+      room:{id:'furniture_'+String(spec.id)},anchor:spec.anchor,yaw:Number(spec.yaw)||0,length,maxLength,
+      minBobY:spec.anchor.y-maxLength-.05,angle:Number(spec.angle)||0,mountObject,
+      grabPoint:{x:spec.anchor.x,z:spec.anchor.z,y:spec.anchor.y-length}, // the rope's resting grip, at the foot of the rope, is where the 'Grab Rope' prompt is measured
+    });
+    rope.furnitureId=String(spec.id);
+    rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
+    state.ropes.push(rope);
+    return rope;
+  }
+  function removeFurnitureRope(rope) {
+    if(!state||!rope)return false;
+    const index=state.ropes.indexOf(rope);
+    if(index<0)return false;
+    if(rope.attached)releaseRope(rope);
+    state.ropes.splice(index,1);
+    disposeRopeObject(rope);
+    return true;
+  }
+
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
+    addFurnitureRope,removeFurnitureRope,
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.

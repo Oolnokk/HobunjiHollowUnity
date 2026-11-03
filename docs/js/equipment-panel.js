@@ -374,6 +374,7 @@
       weaveMaterial: item.weaveMaterial || null,
       weightUnits: Number.isFinite(Number(item.weightUnits)) ? Number(item.weightUnits) : null,
       weaving: item.weaving || null,
+      furHood: item.furHood ? JSON.parse(JSON.stringify(item.furHood)) : null, // The exact physical hide survives Pack → Gear and subsequent save/load cycles.
       craftedAt: item.craftedAt || null,
       // Smith-crafted metal clothing carries its own material/use-history state;
       // unlike cloth dyes these fields belong to the literal article.
@@ -431,6 +432,7 @@
   // A patterned or decorated garment is a physical collectible, not just another dye swatch of its base clothing.
   // Plain dyed copies still intentionally merge and teach the owned garment additional dye colors.
   function hasIndividualClothingPattern(item) {
+    if (item?.furHood) return true; // A crafted hide is always a unique physical garment even with no optional dyed weaving.
     const weaving = item?.weaving; // Reads saved visual state without relying on when the renderer initializes.
     if (!weaving || typeof weaving !== 'object') return false;
     if (weaving.forcedOverpassPattern || weaving.pattern || weaving.patternLibraryId || weaving.trim?.enabled) return true;
@@ -612,7 +614,7 @@
     const resolveIcon = window.ClothingWeavingSystem?.iconSpriteForCosmetic;
     if (typeof resolveIcon !== 'function' || !iconEl) return;
     const renderToken = Math.random().toString(36).slice(2, 8);
-    const compositeIncludesFinalDyes = !!window.ClothingWeavingSystem?.hasWovenPattern?.(item) || !!window.ClothingWeavingSystem?.isReweavableClothComponent?.(item); // Hybrid icon already contains final cap dye and faceguard finish. // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
+    const compositeIncludesFinalDyes = !!item?.furHood || !!window.ClothingWeavingSystem?.hasWovenPattern?.(item) || !!window.ClothingWeavingSystem?.isReweavableClothComponent?.(item); // Hybrid icon already contains final cap dye and faceguard finish. // Woven icon sprites already contain per-layer dyes + motif pixels; running the legacy single-color tint afterward would erase the visible weave.
     iconEl.dataset.clothingIconToken = renderToken;
     resolveIcon(item, fallbackSprite).then(sprite => {
       if (!sprite || sprite === fallbackSprite) return;

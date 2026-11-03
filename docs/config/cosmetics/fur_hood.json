@@ -1,0 +1,148 @@
+{
+  "slot": "hood",
+  "material": "fur",
+  "tags": [
+    "material:fur"
+  ],
+  "portraitAssets": true,
+  "meta": {
+    "name": "Fur Hood",
+    "artwork": "Fur-hood base/trim fit Tletingan and Mashtzarr; behindImage uses the newly authored furhood-behind sprite per fit and explicitly retains the trim on the backplane."
+  },
+  "palette": {
+    "colors": {
+      "A": {
+        "h": 150,
+        "s": 0.5,
+        "l": 0.3
+      },
+      "B": {
+        "h": 30,
+        "s": 0.5,
+        "l": 0.35
+      }
+    },
+    "layers": {
+      "base": "A",
+      "trim": "B"
+    }
+  },
+  "speciesVariants": {
+    "tletingan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_tl_m.png"
+              }
+            },
+            "front_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_tl_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_m.png"
+              }
+            },
+            "front_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

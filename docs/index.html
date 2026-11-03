@@ -166,7 +166,7 @@
   <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261031layoutCursor1">
+  <link rel="stylesheet" href="style.css?v=20261103kurrayaPuzzle2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -179,7 +179,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261030headMask1"></script>
+  <script src="js/portrait-utils.js?v=20261103furpaint1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=spine1"></script>
@@ -247,15 +247,15 @@
   <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
-  <script src="js/furniture-puzzle-properties.js?v=20261102witchBombKeyStatue1"></script>
-  <script src="js/furniture-puzzle-runtime.js?v=20261102witchBombKeyStatue1"></script>
+  <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
+  <script src="js/furniture-puzzle-runtime.js?v=20261103h976dc33"></script>
   <script src="js/interior-door-tiles.js?v=20261102h292ab3a"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261102chairreview2"></script>
-  <script src="js/authored-furniture-runtime.js?v=20261102mattressxray2"></script>
+  <script src="js/furniture-table-system.js?v=20261103h373b138"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261102burdenplinth1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
@@ -367,7 +367,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261102dungeonfire1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261103h94b647d"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -403,7 +403,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261102rangedStamina1"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261103furpaint2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -579,6 +579,14 @@
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/climb-system.js?v=20261027soursap1"></script>
   <script src="js/creature-cliff-climb.js?v=1"></script>
+  <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
+       Pure data/math with no dependencies, so load order doesn't matter.
+       See docs/architecture/vertical-grid.md. -->
+  <script src="js/cell-grid-3d.js?v=20261103he7fa634"></script>
+  <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
+       Needs ClimbSystem (registered as a world-climb provider by game.js). -->
+  <script src="js/climb-surfaces.js?v=1"></script>
+  <script src="js/shaft-hub.js?v=20261103h5605f19"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -683,7 +691,7 @@
   <!-- Pinned-enemy collision escape extracted out of game.js's
        moveCreatureToward (window.EnemyCollisionReposition); must load before
        game.js, which calls window.EnemyCollisionReposition.init(...). -->
-  <script src="js/enemy-collision-reposition.js?v=20260927reviewfix1"></script>
+  <script src="js/enemy-collision-reposition.js?v=20261103h605175f"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
   <script src="js/dev-spawner.js?v=20261031headtakerspawner6"></script>
@@ -791,7 +799,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261101spousewardrobe3"></script>
+  <script src="js/equipment-panel.js?v=20261103furpaint1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -867,8 +875,23 @@
   <script src="js/cave-site-system.js?v=20261029hguild2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
-  <script src="js/shattercasks.js?v=20261102witchBombKeyStatue1"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261102witchBomb2"></script>
+  <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
+       dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
+  <script src="js/world-events.js?v=1"></script>
+  <script src="js/targetables.js?v=1"></script>
+  <script src="js/shattercasks.js?v=20261103hb8b5a2a"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261103h2d90617"></script>
+  <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
+       call time only. See docs/architecture/ruin-capabilities.md. -->
+  <script src="js/rope-core.js?v=1"></script>
+  <script src="js/hanging-ropes.js?v=20261103h8f96c4f"></script>
+  <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
+  <script src="js/rope-launch.js?v=1"></script>
+  <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
+  <script src="js/room-plan.js?v=1"></script>
+  <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
+  <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
+  <script src="js/ruin-composer-playable.js?v=20261103h961d7ee"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261102keyStatues1"></script>
   <script src="js/dungeon-fire.js?v=20261102dungeonfire4"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
@@ -2210,7 +2233,7 @@
               <div class="settings-name">Editor Hub</div>
               <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
             </div>
-            <a href="tools/index.html" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+            <a href="tools/index.html?v=20261103puzzleReview4" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
           </div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -2655,6 +2678,7 @@
     <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
     <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
     <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    <button id="musicMinigameModeBtn" type="button" aria-label="Switch to Performance Mode">Performance Mode</button>
     <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
   </div>
 
@@ -2752,11 +2776,12 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261031hc1298e8"></script>
+  <script src="js/kurraya-instrument.js?v=20261103puzzleMode2"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261029maskSlots2"></script>
+  <script src="js/kurraya-puzzle.js?v=20261103puzzleReview4"></script>
+  <script src="js/music-minigame.js?v=20261103puzzleReview4"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2843,7 +2868,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261101spyglassToggle3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261102dungeonfire2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261103h9c44cda"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2886,7 +2911,8 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261103hd173be1"></script>
+  <script src="js/lunge-targeting.js?v=1"></script>
+  <script src="game.js?v=20261103h88591e6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

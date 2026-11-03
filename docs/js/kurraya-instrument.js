@@ -120,7 +120,7 @@
   function applyMinimalPerformanceUi() {
     if (!KURRAYA_MINIMAL_PERFORMANCE_UI || typeof document === 'undefined') return;
     const overlay = document.getElementById('musicMinigameOverlay'); // Supplies the authoritative open/closed state for the player's visible Kurraya performance.
-    const performanceOpen = Boolean(overlay?.classList.contains('open')); // Gates suppression so normal page chrome is restored immediately after the performance closes.
+    const performanceOpen = Boolean(overlay?.classList.contains('open') && overlay.dataset.instrumentMode === 'performance'); // Only legacy performance hides its iframe; puzzle mode must keep its notes visible.
     const playerFrame = document.getElementById('musicMinigameFrame'); // Keeps the music engine alive and focusable while hiding its lyre/chart presentation surface.
     setMinimalFrameHidden(playerFrame, performanceOpen);
     for (const selector of KURRAYA_MINIMAL_UI_HIDDEN_SELECTORS) {
@@ -150,7 +150,7 @@
     // refresh too, for no reason. #musicMinigameOverlay is always present from
     // load, so it's a safe, always-available narrower root.
     const watchRoot = document.getElementById('musicMinigameOverlay') || document.documentElement;
-    observer.observe(watchRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    observer.observe(watchRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ['class','data-instrument-mode'] });
     queueMinimalPerformanceUiRefresh();
   }
 

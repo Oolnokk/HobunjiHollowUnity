@@ -6155,7 +6155,7 @@
       // already does axis-separated movement, so a creature blocked here
       // slides along the obstacle's edge instead of freezing, exactly like
       // the player's own wall collision.
-      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN) {
+      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN, actor = null, walkingPath = false) {
         // A NaN/Infinite coordinate compares false against every bound
         // check below (NaN is never < or >= anything), so without this it
         // would silently pass through as "allowed" and let a corrupted
@@ -6166,6 +6166,7 @@
         if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
@@ -6244,9 +6245,9 @@
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
-        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY, c); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
         if (canMoveY) c.y = desiredY;
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
@@ -6264,7 +6265,10 @@
           c._collisionRepositionDebug.active = false;
         }
         c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
-        if (moved > 0) tickCreatureFootsteps(c, moved);
+        if (moved > 0) {
+          window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
+          tickCreatureFootsteps(c, moved);
+        }
         return moved > 0;
       }
 
@@ -6272,8 +6276,8 @@
       // coordinates — reuses creatureCanEnterTile at the tile's center so
       // the pathfinder's notion of "blocked" always matches what actual
       // movement will (and won't) let a creature step onto.
-      function creatureTileWalkable(col, row) {
-        return creatureCanEnterTile(null, (col + 0.5) * TILE, (row + 0.5) * TILE);
+      function creatureTileWalkable(col, row, actor = null) {
+        return creatureCanEnterTile(actor?.def, (col + 0.5) * TILE, (row + 0.5) * TILE, NaN, NaN, actor, true);
       }
 
       const CREATURE_STUCK_THRESHOLD_S = 0.6;
@@ -6317,7 +6321,7 @@
         c._travelStuckT = 0;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, creatureTileWalkable, {
+        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
           bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
         });
         if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
@@ -6380,7 +6384,7 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
-        const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
+        const dynamicSurfaceY = Number(c.shaftSupportY ?? c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
           : c._cliffClimb ? c._cliffClimb.surfaceY
@@ -8041,7 +8045,7 @@
         const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
         if (rawMoveInput || playerAutoWalk) return false;
         if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
-        if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
+        if (player.climbing || player.onBranch || player.onClimbSurface || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
         if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld) return false;
         if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
@@ -10149,6 +10153,7 @@
         }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
+        if (window.ClimbSurfaces?.release?.()) return; // Dodge while attached to a climbable wall lets go.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         // Climbing is now the forward-dodge context action. Sideways/backward
@@ -10196,6 +10201,9 @@
         player.lungeDur = durationS;
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
+        player.lungeOriginX = player.x; // Immutable record of where this attack's lunge began (lungeStartX/Y are re-seated when a flight freezes); read by hanging ropes to turn lunge distance into swing force.
+        player.lungeOriginY = player.y;
+        player.lungeOriginMs = nowMs;
         const aimDirection = currentPlayerMeleeAimDirection(); // Used to pitch this lunge and its 3D hit cone from the centered reticle.
         const aimYaw = Math.atan2(aimDirection.z, aimDirection.x);
         const aimPitch = Math.asin(window.FormatUtils.clamp(aimDirection.y, -1, 1));
@@ -10257,19 +10265,9 @@
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
       // cut a combat lunge short (see beginCombatLunge/updateMovement).
-      function isHostileInLungeCone(hitTest) {
-        if (!hitTest) return false;
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          if (window.Combat?.meleeHit?.(player, c, {
-            rangePx: hitTest.rangePx,
-            halfConeRad: hitTest.halfConeRad,
-            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
-            pitch: player.lungeAimPitch || 0,
-          })) return true;
-        }
-        return false;
-      }
+      // The lunge-stop target test (hostiles plus any Targetable with the 'lungeStop'
+      // capability) now lives in js/lunge-targeting.js.
+      function isHostileInLungeCone(hitTest) { return window.LungeTargeting.hasTargetInCone(hitTest); }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
       // Authored in docs/tools/map-editor and carried in hobunji_farm_layout_v3
@@ -18365,6 +18363,11 @@
           return;
         }
 
+        if (player.onClimbSurface) { // Attached to a wall (js/climb-surfaces.js): input moves along the wall plane, not the ground.
+          window.ClimbSurfaces.updatePlayer(dt);
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
@@ -24913,6 +24916,7 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onClimbSurface ? player.wallClimbY
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -25140,7 +25144,7 @@
           airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
             || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
             || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
-            || (!player.climbing && !player.onBranch && playerMesh.position.y > groundedTargetY + 0.12),
+            || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
       }
@@ -31700,6 +31704,23 @@
         getActiveRows: window.GridTileAccessors.getActiveRows,
       });
 
+      window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
+      // Read fresh input because player.inputX/Y are written after the
+      // on-branch early return. Shoulder cam uses the exact same
+      // camera-relative transform as ordinary ground movement. Shared by
+      // ClimbSystem (branches) and ClimbSurfaces (walls).
+      const climbMovementInput = () => {
+        const kb = getKeyboardVector();
+        const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+        const aim = shoulderPerspectiveFacingAngle();
+        const sin = Math.sin(aim), cos = Math.cos(aim);
+        return {
+          x: -move.x * sin - move.y * cos,
+          y: move.x * cos - move.y * sin,
+        };
+      };
+
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,
@@ -31722,21 +31743,22 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        // Read fresh input because player.inputX/Y are written after the
-        // on-branch early return. Shoulder cam uses the exact same
-        // camera-relative transform as ordinary ground movement.
-        getMovementInput: () => {
-          const kb = getKeyboardVector();
-          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
-          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
-          const aim = shoulderPerspectiveFacingAngle();
-          const sin = Math.sin(aim), cos = Math.cos(aim);
-          return {
-            x: -move.x * sin - move.y * cos,
-            y: move.x * cos - move.y * sin,
-          };
-        },
+        getMovementInput: climbMovementInput,
       });
+
+      // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
+      // ClimbSystem's world-climb provider, move along the wall until released.
+      window.ClimbSurfaces?.init({
+        player,
+        TILE,
+        getMovementInput: climbMovementInput,
+        getFeetY: () => window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+      });
+      window.ClimbSystem?.registerWorldClimbProvider?.(window.ClimbSurfaces?.worldClimbProvider);
 
       window.BanditCombatLog?.init({
         player,

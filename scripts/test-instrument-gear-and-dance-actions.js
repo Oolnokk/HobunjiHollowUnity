@@ -126,6 +126,10 @@ const noop = () => {}; // Shared no-op for unrelated browser and UI callbacks.
   window.MusicMinigame.beginPlayerSession();
   assert.equal(window.MusicMinigame.state.instrumentKey, 'kurraya');
   assert.equal(window.MusicMinigame.state.active, true);
+  assert.equal(window.MusicMinigame.state.instrumentMode,'puzzle','new sessions always open the timing-free five-note mode');
+  assert.match(frame.src,/kurraya-puzzle\.html/);
+  window.MusicMinigame.switchInstrumentMode('performance');
+  assert.match(frame.src,/lyre-performance\.html/,'legacy performance engine remains available');
   window.MusicMinigame.close();
   assert.equal(window.MusicMinigame.state, null);
 }

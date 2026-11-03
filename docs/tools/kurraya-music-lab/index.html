@@ -77,6 +77,13 @@
   .tool-tabs button.active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:#1e4c68}
   .tool-pane{display:none;gap:14px}
   .tool-pane.active{display:grid}
+  .puzzle-note-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}
+  .puzzle-note-row button{min-width:0;min-height:72px;font-size:21px;font-weight:900;background:linear-gradient(#2c526f,#192c44);border:2px solid #6997ba}
+  .puzzle-note-row small{font-size:11px;display:block;color:#cde2f2}
+  .puzzle-sequence-line{display:flex;flex-wrap:wrap;gap:8px;border-radius:10px;background:#091523;padding:11px}
+  #puzzleAuthorSequence{word-break:break-word;letter-spacing:.1em;color:#91f2c0}
+  #puzzleSongJson{display:block;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical;background:#0b1421;color:var(--text);font:12px/1.5 monospace}
+  @media(max-width:500px){.puzzle-note-row{gap:4px}.puzzle-note-row button{padding:5px 1px;min-height:65px}.puzzle-note-row small{font-size:9px}}
   .pane-heading{margin:0 0 -4px;font-size:18px}
   .pane-subtitle{margin:0;color:var(--muted);font-size:13px}
   .mix-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
@@ -129,6 +136,7 @@
 
   <nav class="tool-tabs" aria-label="Kurraya Music Lab sections">
     <button type="button" class="active" data-kurraya-pane="song" aria-selected="true">🎼 Song Scale Audition</button>
+    <button type="button" data-kurraya-pane="puzzle" aria-selected="false">🎶 Puzzle Song Composer</button>
     <button type="button" data-kurraya-pane="sfx" aria-selected="false">🎵 SFX Transposer</button>
   </nav>
 
@@ -235,6 +243,54 @@
 
   </section>
 
+  <section id="puzzlePane" class="tool-pane" aria-label="Puzzle Song Composer">
+    <div>
+      <h2 class="pane-heading">Five-note puzzle song composer</h2>
+      <p class="pane-subtitle">Write Ocarina-like melodies with five buttons. Note order matters, but timing and chords never do. Saved songs are recognized immediately by the game's default instrument mode on this browser and origin.</p>
+    </div>
+    <section class="panel">
+      <div class="grid">
+        <label>Song
+          <select id="puzzleSongSelect"><option value="">New song</option></select>
+        </label>
+        <label>Title
+          <input id="puzzleSongTitle" type="text" maxlength="64" placeholder="New melody title" value="">
+        </label>
+        <label>Scale
+          <select id="puzzleSongScale"></select>
+        </label>
+        <label>Root note
+          <select id="puzzleSongTonic"></select>
+        </label>
+      </div>
+      <div class="puzzle-note-row" id="puzzleAuthorNotes" aria-label="Add a note to the puzzle song"></div>
+      <div class="puzzle-sequence-line"><strong>Sequence:</strong> <span id="puzzleAuthorSequence">Tap notes to compose</span></div>
+      <p class="note">Songs contain 3–32 notes. Every press appends one note and auditions that pitch; hold length, tempo, and simultaneous inputs have no meaning.</p>
+      <div class="actions">
+        <button id="puzzleAuthorUndo" type="button">↶ Undo note</button>
+        <button id="puzzleAuthorClear" type="button">Clear sequence</button>
+        <button id="puzzleAuthorNew" type="button">New song</button>
+        <button id="puzzleAuthorSave" class="good" type="button">Save to game</button>
+        <button id="puzzleAuthorDelete" class="stop" type="button">Delete selected</button>
+        <button id="puzzleApplyScale" type="button">Use this scale in game</button>
+      </div>
+      <div id="puzzleAuthorStatus" class="status" role="status" aria-live="polite">Select a song to edit or start a new melody.</div>
+    </section>
+    <section class="panel">
+      <strong>Portable puzzle songbook JSON</strong>
+      <p class="note">Saved songs live in local browser storage. Export the JSON to move them to another browser or to add authored songs to the repository later. Import merges by song ID and validates all note sequences.</p>
+      <div class="actions">
+        <button id="puzzleExportSongs" type="button">⬇ Export JSON</button>
+        <button id="puzzleCopySongs" type="button">Copy JSON</button>
+        <button id="puzzleImportSongs" type="button">Import JSON below</button>
+        <button id="puzzleImportFileBtn" type="button">Import JSON file</button>
+        <input type="file" id="puzzleSongFile" accept=".json,application/json" hidden>
+      </div>
+      <textarea id="puzzleSongJson" rows="5" spellcheck="false" aria-label="Puzzle songbook JSON" placeholder="Paste songbook JSON here to import, or export to generate it."></textarea>
+      <details><summary>Composer diagnostics</summary><pre id="puzzleAuthorDebug">loading</pre></details>
+    </section>
+  </section>
+
   <section id="sfxPane" class="tool-pane" aria-label="Kurraya SFX Transposer">
     <div>
       <h2 class="pane-heading">Kurraya SFX Transposer</h2>
@@ -288,6 +344,137 @@
 
   </section>
 </main>
+
+<script src="../../js/kurraya-puzzle.js?v=20261103puzzleReview4"></script>
+<script>
+(() => {
+  'use strict';
+  const model = window.KurrayaPuzzle; // Shared schema and recognition rules used by the actual instrument mode.
+  const get = id => document.getElementById(id);
+  const pick = get('puzzleSongSelect'); // Song chooser; selecting an authored song loads its note sequence.
+  const title = get('puzzleSongTitle'); // Name used for the in-game melody-recognized event.
+  const scale = get('puzzleSongScale'); // Authoring scale, stored as a recommendation with each song.
+  const tonic = get('puzzleSongTonic'); // Authoring root pitch, used by sampler previews and game defaults.
+  const buttons = get('puzzleAuthorNotes'); // The same five melodic positions as the puzzle instrument.
+  const sequence = get('puzzleAuthorSequence'); // Mobile-visible transcription of the complete drafted sequence.
+  const status = get('puzzleAuthorStatus'); // Reports validation, save/import, and audio errors without a console.
+  const debug = get('puzzleAuthorDebug'); // Displays saved IDs and state for phone-based debugging.
+  const json = get('puzzleSongJson'); // Editable import/export payload, supports manual paste on mobile.
+  const sampler = model.createSampler('../../assets/audio/music/instruments/sfx_kurraya_pluck.m4a'); // Uses the bundled in-game pluck.
+  let draft = []; // Integer 0–4 notes in order; no timestamp, chord, tempo, or duration fields.
+  let selectedId = ''; // Preserves identity when updating a custom song; bundled practice creates a new copy.
+  const showStatus = (message,warning=false) => { status.textContent=message;status.className='status '+(warning?'warn':'good'); };
+  function renderChoices(id='') {
+    pick.replaceChildren();
+    const fresh = document.createElement('option');fresh.value='';fresh.textContent='New song';pick.appendChild(fresh);
+    model.listSongs().forEach(song => {
+      const option = document.createElement('option');
+      option.value=song.id;option.textContent=song.title+(song.id==='puzzle-practice'?' (built-in)':'');
+      pick.appendChild(option);
+    });
+    pick.value=id;
+  }
+  function render() {
+    sequence.textContent=draft.length ? draft.map(note=>note+1).join(' · ')+'  ('+draft.length+'/32)' : 'Tap a numbered note to compose';
+    [...buttons.children].forEach((button,i) => {
+      button.querySelector('small').textContent=model.noteName(model.pitchFor(i,{scale:scale.value,tonicMidi:Number(tonic.value)}));
+    });
+    get('puzzleAuthorSave').disabled=draft.length<3||draft.length>32||!title.value.trim();
+    get('puzzleAuthorDelete').disabled=!selectedId||selectedId==='puzzle-practice';
+    get('puzzleAuthorUndo').disabled=!draft.length;
+    debug.textContent=[
+      'savedSongs='+model.listSongs().length,'currentId='+(selectedId||'(new)'),
+      'notes='+JSON.stringify(draft),'scale='+scale.value,'tonic='+tonic.value,
+      'sampler='+JSON.stringify(sampler.diagnostics)
+    ].join('\n');
+  }
+  function resetDraft() {
+    selectedId='';draft=[];title.value='';
+    const tune=model.settings();scale.value=tune.scale;tonic.value=String(tune.tonicMidi);
+    renderChoices();render();
+  }
+  function loadSong(id) {
+    if (!id) {resetDraft();return;}
+    const song=model.listSongs().find(entry=>entry.id===id);
+    if (!song) {showStatus('Song was not found.','warn');resetDraft();return;}
+    selectedId=song.id;
+    title.value=song.title;draft=song.notes.slice();
+    scale.value=song.scale;tonic.value=String(song.tonicMidi);
+    render();
+    showStatus('Loaded '+song.title+'. Edit the notes, then Save to game.');
+  }
+  function addNote(index) {
+    if (draft.length>=32) {showStatus('A puzzle melody can have at most 32 notes.',true);return;}
+    draft.push(index);render();
+    void sampler.play(model.pitchFor(index,{scale:scale.value,tonicMidi:Number(tonic.value)}))
+      .catch(error=>{showStatus('Note added, but preview audio failed: '+error.message,true);render();});
+  }
+  Object.keys(model.SCALES).forEach(name => {const option=document.createElement('option');option.value=name;option.textContent=name;scale.appendChild(option);});
+  for(let midi=36;midi<=84;midi++){const option=document.createElement('option');option.value=String(midi);option.textContent=model.noteName(midi);tonic.appendChild(option);}
+  for(let index=0;index<5;index++){
+    const button=document.createElement('button');button.type='button';button.innerHTML=(index+1)+'<small>—</small>';
+    button.setAttribute('aria-label','Append note '+(index+1));
+    button.addEventListener('click',()=>addNote(index));buttons.appendChild(button);
+  }
+  pick.addEventListener('change',()=>loadSong(pick.value));
+  title.addEventListener('input',render);
+  scale.addEventListener('change',render);
+  tonic.addEventListener('change',render);
+  get('puzzleAuthorNew').addEventListener('click',()=>{resetDraft();showStatus('New melody started.');});
+  get('puzzleAuthorUndo').addEventListener('click',()=>{draft.pop();render();});
+  get('puzzleAuthorClear').addEventListener('click',()=>{draft=[];render();});
+  get('puzzleAuthorSave').addEventListener('click',()=>{
+    try {
+      const saved=model.saveSong({id:selectedId,title:title.value,notes:draft.slice(),scale:scale.value,tonicMidi:Number(tonic.value)});
+      selectedId=saved.id;renderChoices(selectedId);render();
+      showStatus('Saved '+saved.title+'. It is now recognized in the in-game puzzle instrument on this browser.');
+    } catch(error){showStatus(error.message,true);}
+  });
+  get('puzzleAuthorDelete').addEventListener('click',()=>{
+    if(!selectedId||selectedId==='puzzle-practice')return;
+    if(!confirm('Delete this puzzle melody from the saved songbook?'))return;
+    model.deleteSong(selectedId);resetDraft();showStatus('Deleted melody.');
+  });
+  get('puzzleApplyScale').addEventListener('click',()=>{
+    model.setSettings({scale:scale.value,tonicMidi:Number(tonic.value)});
+    showStatus('Puzzle mode will use '+scale.value+' in '+model.noteName(Number(tonic.value))+'.');
+  });
+  function exportData() {
+    return JSON.stringify({schema:'hobunji-kurraya-puzzle-songs-v1',songs:model.listSongs()},null,2);
+  }
+  get('puzzleExportSongs').addEventListener('click',()=>{
+    const value=exportData();json.value=value;
+    const url=URL.createObjectURL(new Blob([value],{type:'application/json'}));
+    const anchor=document.createElement('a');anchor.href=url;anchor.download='hobunji-kurraya-puzzle-songs.json';
+    document.body.appendChild(anchor);anchor.click();anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    showStatus('Exported '+model.listSongs().length+' songs. JSON is also available below.');
+  });
+  get('puzzleCopySongs').addEventListener('click',async()=>{
+    const value=exportData();json.value=value;
+    try {await navigator.clipboard.writeText(value);showStatus('Songbook JSON copied.');}
+    catch (_) {json.focus();json.select();showStatus('Copy the selected JSON manually (clipboard permission unavailable).',true);}
+  });
+  async function importText(text) {
+    try {
+      if(text.length>200000) throw Error('JSON is too large.');
+      const count=model.importSongs(JSON.parse(text));
+      resetDraft(); // Import may replace a selected ID: discard the stale editor copy before the user can overwrite it.
+      showStatus('Imported '+count+' songs. Open Puzzle mode in game to recognize them.');
+    }catch(error){showStatus('Import failed: '+error.message,true);}
+  }
+  get('puzzleImportSongs').addEventListener('click',()=>void importText(json.value));
+  get('puzzleImportFileBtn').addEventListener('click',()=>get('puzzleSongFile').click());
+  get('puzzleSongFile').addEventListener('change',async event=>{
+    const file=event.target.files?.[0];if(!file)return;
+    if(file.size>200000){showStatus('JSON file is too large.',true);event.target.value='';return;}
+    try{json.value=await file.text();await importText(json.value);}
+    catch(error){showStatus(error.message,true);}
+    event.target.value='';
+  });
+  resetDraft();
+})();
+</script>
 
 <script>
 
@@ -1324,11 +1511,11 @@
 (() => {
   'use strict';
   const paneButtons = [...document.querySelectorAll('[data-kurraya-pane]')]; // Used by the combined lab to switch between song audition and SFX authoring without loading another page.
-  const panes = {song:document.getElementById('songPane'),sfx:document.getElementById('sfxPane')}; // Used to keep exactly one Kurraya workflow visible at a time on mobile.
+  const panes = {song:document.getElementById('songPane'),puzzle:document.getElementById('puzzlePane'),sfx:document.getElementById('sfxPane')}; // Used to keep exactly one Kurraya workflow visible at a time on mobile.
   let sfxOpened = false; // Used to decode the bundled pluck only when the user first opens the SFX workflow.
 
   function activatePane(name,{updateHash=true}={}) {
-    const paneName = name === 'sfx' ? 'sfx' : 'song';
+    const paneName = ['song','puzzle','sfx'].includes(name) ? name : 'song';
     paneButtons.forEach(button => {
       const active = button.dataset.kurrayaPane === paneName;
       button.classList.toggle('active',active);
@@ -1339,11 +1526,11 @@
       sfxOpened = true;
       window.dispatchEvent(new Event('hobunji-kurraya-sfx-open'));
     }
-    if (updateHash) history.replaceState(null,'',paneName === 'sfx' ? '#sfx' : '#song');
+    if (updateHash) history.replaceState(null,'','#'+paneName);
   }
 
   paneButtons.forEach(button => button.addEventListener('click',() => activatePane(button.dataset.kurrayaPane)));
-  activatePane(location.hash === '#sfx' ? 'sfx' : 'song',{updateHash:false});
+  activatePane(['#sfx','#puzzle'].includes(location.hash) ? location.hash.slice(1) : 'song',{updateHash:false});
 })();
 </script>
 </body>

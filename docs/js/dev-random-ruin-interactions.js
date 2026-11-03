@@ -349,7 +349,7 @@
 
   // Rows that are not aim targets: a swinging rope is caught by proximity,
   // riding controls follow the player, and the exit is a spot, not an object.
-  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit']);
+  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit', 'shaft-passage', 'composed-passage']); // Portals have a position, not an aimable mesh; keep their actions available to all input devices.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
   let focusDebug = null;

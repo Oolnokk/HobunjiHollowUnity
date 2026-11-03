@@ -818,6 +818,14 @@
     return true;
   }
   function releaseBurdenDownward(burdenOrId,cause='dungeon-fire') {
+    return releaseBurden(burdenOrId,cause,null);
+  }
+  // Releases a burden into the shared fall/impact flight. With a velocity ({x,y,z} world units/s) it
+  // travels along an arc (a rope launching a bomb); without one it falls straight down exactly as before.
+  function releaseBurdenWithVelocity(burdenOrId,velocity,cause='released') {
+    return releaseBurden(burdenOrId,cause,velocity||null);
+  }
+  function releaseBurden(burdenOrId,cause,velocity) {
     const burden=typeof burdenOrId==='string'
       ?records.get(area())?.vases.get(burdenOrId)
       :burdenOrId;
@@ -838,7 +846,8 @@
     burden.plinthAttached=false;burden.plinthAnchor=null;burden.plinthSurfaceId=null;
     const resolvedGroundY=burden.fallGroundY?.({x:position.x,z:position.z,mapId:burden.mapId,cause});
     const groundY=Number.isFinite(Number(resolvedGroundY))?Number(resolvedGroundY):thrownGround(position.x,position.z)+.30; // Special Burdens can fall through void tiles; ordinary ceiling payloads keep the Shattercask landing height.
-    downwardFalls.set(burden.id,{burden,velocity:0,cause:String(cause||'dungeon-fire'),groundY});
+    const launched=!!velocity&&[velocity.x,velocity.y,velocity.z].every(v=>Number.isFinite(Number(v)));
+    downwardFalls.set(burden.id,{burden,velocity:launched?Number(velocity.y):0,vx:launched?Number(velocity.x):0,vz:launched?Number(velocity.z):0,horizontal:launched,cause:String(cause||'dungeon-fire'),groundY});
     refreshMeshBounds(burden);
     lastEvent='ceiling Burden released vertically '+burden.id+' via '+cause;
     window.__farmLog?.('[burden] '+lastEvent,'world');
@@ -871,7 +880,12 @@
       const from=burden.group.position.clone();
       state.velocity-=13*step;
       const nextY=from.y+state.velocity*step;
-      const end=new THREE.Vector3(from.x,Math.max(state.groundY,nextY),from.z);
+      const endX=from.x+(state.vx||0)*step,endZ=from.z+(state.vz||0)*step;
+      if(state.horizontal){ // A launched burden crosses ground of varying height: re-resolve it under the new position each step.
+        const resolved=burden.fallGroundY?.({x:endX,z:endZ,mapId:burden.mapId,cause:state.cause});
+        state.groundY=Number.isFinite(Number(resolved))?Number(resolved):thrownGround(endX,endZ)+.30;
+      }
+      const end=new THREE.Vector3(endX,Math.max(state.groundY,nextY),endZ);
       const radius=Math.max(.08,Number(burden.impactRadius)||.2);
       const otherHit=projectileHit(from,end,radius,1,burden.mapId);
       const volumeHit=window.NearbyVolumeCollision?.segmentHit?.(from,end,radius)||null;
@@ -1034,6 +1048,20 @@
     deps()?.showToast?.('Carrying ' + cask.displayName + ' — Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
+  // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
+  // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
+  function detachHeldBurden() {
+    if (!held || held.exploded || held.flying || held.mapId !== area()) return null;
+    const burden = held;
+    cancelShatterAim(); setHeldRearXray(null);
+    burden.carried = false;
+    held = null;
+    prompt();
+    deps()?.refreshActionBar?.();
+    lastEvent = 'released ' + burden.id + ' from the hands';
+    return burden;
+  }
+  function refreshBurdenBounds(burden) { refreshMeshBounds(burden); } // For systems that move a burden each frame (a swinging rope).
   function heldBurdenInfo() {
     return held && !held.exploded ? { id:held.id, kind:held.kind, displayName:held.displayName } : null;
   }
@@ -1323,7 +1351,15 @@
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shares action IDs; only burden-specific labels and impact payload change.
-  function actionButtons(){return held?(held.kind==='soursap'?CARRIED_FRUIT_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS):null;}
+  const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
+  const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  function actionButtons(){
+    if(!held)return null;
+    const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
+    if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
+    return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
+  }
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
     const inv=gameDeps?.inventory||deps()?.inventory;
@@ -1407,7 +1443,7 @@
     return pile?collectPile(pile):false;
   }
   function interact() {
-    if(held)return drop();
+    if(held)return window.HangingRopes?.tryHang?.(held)===true||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
     const target=nearInteraction();
     if(target?.type==='vase')return pickUp(target.obj);
     if(target?.type==='pile')return collectPile(target.obj);
@@ -1468,12 +1504,13 @@
     // intact cask claims Interact; rubble is an ordinary arch button instead
     // (see contextButtons) so touch players can collect it too.
     const vase=nearVase();
-    const claim=held?'carried:'+held.id:vase?'vase:'+vase.id:'';
+    const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
+    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
         {actionId:'action1',label:'Throw ' + held.displayName,priority:810,
           onPress:startShatterAim,onRelease:detail=>detail?.canceled?cancelShatterAim():releaseShatterAim()},
-        {actionId:'action2',label:'Drop ' + held.displayName,priority:810,onPress:drop},
+        {actionId:'action2',label:hang?'Hang on Rope':'Drop ' + held.displayName,priority:810,onPress:interact},
       ]);
       else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label:'Pick up ' + vase.displayName,priority:410,onPress:interact}]);
@@ -1689,6 +1726,7 @@
   }
   function applyBlast(mapId,x,z,options={}) {
     const radius=Math.max(.1,Number(options.radius)||RADIUS);
+    window.WorldEvents?.emit('blast',{scope:String(mapId),x,z,y:Number.isFinite(Number(options.y))?Number(options.y):undefined,radius,tag:options.tag||'blunt',sourceId:options.sourceId||null}); // Every explosion passes here, so subscribers (cracked props, mechanisms) see them all.
     const blastDamage=Math.max(0,Number(options.damage??DAMAGE)||0);
     const minimumDamage=Math.max(0,Number(options.minimumDamage??8)||0);
     const knockback=Math.max(0,Number(options.knockbackPxS??220)||0);
@@ -1859,6 +1897,12 @@
       if(delta>(collider.halfConeRad||.5)+.10)continue;
       const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
       if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      window.WorldEvents?.emit('struck',{scope:vase.mapId,targetId:vase.id,targetKind:'burden',burdenKind:vase.kind,source:'melee',attackerId:opts.actor?.id||null,x:cx,y:centerY,z:cz});
+      if(typeof vase.strikeHandler==='function') { // A burden that handles its own strikes (hanging on a rope: it swings) is not detonated by them.
+        let handled=false;
+        try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
+        if(handled)break;
+      }
       detonate(vase,'melee');break;
     }
   }
@@ -1970,6 +2014,7 @@
     updateBurdenFalls(dt); // Net/icicle payloads share the same timed tick and live collision helpers as player-thrown Burdens.
     window.HronalWitchBombs?.tick?.(dt); // Spawn-time fuse and carrier-drop state share the normal Burden combat frame.
     window.KeyStatues?.tick?.(dt); // Detached Key Statues are restored through their original dispenser.
+    window.HangingRopes?.tick?.(dt); // Ropes carrying burdens swing and release them (js/hanging-ropes.js).
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
     if(held&&!alignHeldVase(held)) {
@@ -2065,7 +2110,7 @@
       const id=actionButton(event);
       if(id!=='btnAction1'&&id!=='btnAction2')return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
-      if(id==='btnAction2'){dropPointers.add(event.pointerId);drop();return;}
+      if(id==='btnAction2'){dropPointers.add(event.pointerId);interact();return;}
       throwPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
       startShatterAim();
     },true);
@@ -2120,18 +2165,50 @@
   // dispatcher, while ControllerSelectionUI suppresses the entire held
   // selector gesture. A separate frame subscriber here would race that
   // dispatcher and accidentally recall equipment after pickup.
+  // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
+  // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
+  // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
+  const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb']);
+  const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
+  function targetableFor(burden) {
+    let entry=targetableEntries.get(burden);
+    if(entry)return entry;
+    entry={
+      id:burden.id,scope:burden.mapId,owner:burden,_actor:null,
+      position:()=>({x:burden.col+.5,z:burden.row+.5}),
+      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
+      hitbox:()=>{
+        const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
+        if(!box||!targetableCenter)return null;
+        box.getCenter(targetableCenter);
+        return {box,center:targetableCenter};
+      },
+      toActor(){return this._actor||(this._actor=window.Targetables.makeActor(this));},
+    };
+    targetableEntries.set(burden,entry);
+    return entry;
+  }
+  window.Targetables?.addSource?.('shattercasks',scope=>{
+    const out=[];
+    for(const burden of records.get(String(scope))?.vases?.values()||[]){
+      if(!burden||burden.exploded||burden.carried||!burden.group?.parent)continue; // Exploded or held burdens are not targets.
+      out.push(targetableFor(burden));
+    }
+    return out;
+  });
+
   window.Shattercasks=Object.freeze({
     init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
-    registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
+    registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
     applyBlast,triggerBurdenBlastAt,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Soursap uses Shattercask-authored carry/throw alignment and a shared PNG rind; original burst and Sticky behavior preserved.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Carried burdens show Hang on Rope when Action 2 can attach them to a free hook.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

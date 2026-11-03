@@ -873,8 +873,18 @@
     while (peers.length > allowedExisting) startProjectileFade(peers.shift(), 'capacity');
   }
 
+  function shaftCoverT(start, end, radius) {
+    return window.DevRandomRuin?.shaftSegmentHit?.(start, end, radius, segmentHitboxInterval) ?? null;
+  }
+
   function terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) {
-    if (!blockedAtTerrain && !groundedAtGround) return null;
+    const shaftT = shaftCoverT(
+      _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE),
+      _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE),
+      p.def.projectileRadiusPx / deps.TILE,
+    ); // Full sweep catches intervening walls even when both endpoints are open.
+    const shaftHit = shaftT === null ? null : { kind: 'solid-tile', t: shaftT };
+    if (!blockedAtTerrain && !groundedAtGround) return shaftHit;
     let lo = 0, hi = 1;
     for (let i = 0; i < 8; i++) {
       const t = (lo + hi) * 0.5;
@@ -886,6 +896,7 @@
       if (blocked || grounded) hi = t;
       else lo = t;
     }
+    if (shaftHit && shaftHit.t <= hi) return shaftHit;
     const t = hi;
     const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
     const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
@@ -1043,6 +1054,7 @@
 
   function actorHitbox(actor) {
     if (!deps || !actor) return null;
+    if (typeof actor.__targetableHitbox === 'function') return actor.__targetableHitbox(); // Stand-in actors from js/targetables.js (burdens, props) share this one melee/lunge geometry.
     const now = performance.now();
     const cached = actorHitboxCache.get(actor);
     if (cached && now - cached.at < ACTOR_HITBOX_CACHE_MS) return cached.value;
@@ -1642,6 +1654,8 @@
   function computeBanditLos(c, targetPlayer, def) {
     const segment = banditLosSegment(c, targetPlayer);
     const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
+    const shaftT = shaftCoverT(segment.start, segment.end, radiusWorld); // Enemy sight uses the same occupied cells as shots.
+    if (shaftT !== null && shaftT < 0.985) return { clear: false, kind: 'tile', id: 'shaft-wall' };
     const geometryHit = sceneGeometrySightBlock(segment);
     if (geometryHit) return geometryHit;
     const coverQuery = window.NearbyVolumeCollision?.segmentSightHit || window.NearbyVolumeCollision?.segmentHit;
@@ -1912,6 +1926,8 @@
     if(!first)return null;
     const cover=window.NearbyVolumeCollision?.segmentHit?.(segment.start,segment.end,radius);
     if(cover&&cover.t<=first.t)return null;
+    const shaftT=shaftCoverT(segment.start,segment.end,radius); // Keep the aim indicator consistent with shaft cover.
+    if(shaftT!==null&&shaftT<=first.t)return null;
     const maxRangePx=def.rangeTiles*deps.TILE,hitDistancePx=first.t*maxRangePx;
     const dirX=(segment.end.x-segment.start.x)/def.rangeTiles;
     const dirY=(segment.end.z-segment.start.z)/def.rangeTiles;

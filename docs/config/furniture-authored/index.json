@@ -308,6 +308,34 @@
     {
       "key": "witchBombCeilingTube",
       "file": "config/furniture-authored/witchBombCeilingTube.json"
+    },
+    {
+      "key": "ruinPillarBridge",
+      "file": "config/furniture-authored/ruinPillarBridge.json"
+    },
+    {
+      "key": "ruinRopeMount",
+      "file": "config/furniture-authored/ruinRopeMount.json"
+    },
+    {
+      "key": "ruinDefensePlinth",
+      "file": "config/furniture-authored/ruinDefensePlinth.json"
+    },
+    {
+      "key": "ruinClimbHoldsMid",
+      "file": "config/furniture-authored/ruinClimbHoldsMid.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndLeft",
+      "file": "config/furniture-authored/ruinClimbHoldsEndLeft.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndRight",
+      "file": "config/furniture-authored/ruinClimbHoldsEndRight.json"
+    },
+    {
+      "key": "ruinClimbHoldsSingle",
+      "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
     }
   ]
 }

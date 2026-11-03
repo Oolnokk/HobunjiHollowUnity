@@ -27,6 +27,7 @@
     const id = String(record.id || `${record.key || record.itemKey}:${record.col},${record.row}`); // Stable authored id; inventory placements retain a coordinate fallback.
     for (const [key, entry] of entries) if (entry.root === root || (record.id && key === id)) {
       window.FurniturePuzzleRuntime?.unregisterNode?.(area, key, entry.root);
+      window.RopeFurniture?.unregister?.(area, key);
       entries.delete(key); // Overlapping rugs own distinct ids; a coincident tile cannot evict another rug or table entry.
     }
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
@@ -40,6 +41,7 @@
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
+      if (data.rope) window.RopeFurniture?.register?.(area, id, root, data); // A piece with a rope block hangs a rope from itself (js/rope-furniture.js).
       if (data.puzzle || root.userData?.furniturePuzzle) {
         window.FurniturePuzzleRuntime?.registerNode?.(area, { id, key:record.key, puzzle:record.puzzle || data.puzzle }, root);
         const puzzle = root.userData?.furniturePuzzle || data.puzzle;
@@ -65,6 +67,7 @@
     const list = entries(area); // Removing one overlapping rug must not evict any unrelated instance on the same tile.
     for (const [id, entry] of list) if (id === idOrRoot || entry.root === idOrRoot) {
       window.FurniturePuzzleRuntime?.unregisterNode?.(areaId(area), id, entry.root);
+      window.RopeFurniture?.unregister?.(areaId(area), id);
       list.delete(id);
       collisionAreas.delete(areaId(area)); focusStamp = null; surfaceProbe.valid = false;
       return true;

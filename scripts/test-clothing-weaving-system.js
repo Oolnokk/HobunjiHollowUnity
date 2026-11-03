@@ -949,7 +949,7 @@ assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 29), false, 'solid n
   assert.equal(filtered[1 * width + 3], 1, 'trim compositor preserves the interior black separation line away from the garment outline');
 }
 assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
-assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass\)/, 'production sampling routes exact masks through zero per-cell offset');
+assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass(?: \|\| anchored)?\)/, 'production sampling routes exact masks through zero per-cell offset');
 assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
 assert.match(source, /directTrimOutlineSurfacePixelEligible\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim builds a stricter solid non-near-black surface specifically for generated outline geometry');
 assert.match(source, /directTrimAuthoredOutlinePixel\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim identifies the sprite existing dark\/anti-aliased border separately from trim fill');
@@ -966,7 +966,7 @@ assert.match(source, /renderClothingLayers\(id, \{/, 'woven icon cache is popula
 assert.match(source, /function reweaveFromLoom\(/, 'loom mutates a selected Gear garment through the dedicated reweave path');
 assert.match(source, /Math\.ceil\(fullCost \/ 2\)/, 'reweaving charges half the authored craft cost while keeping integer wool stacks');
 assert.match(source, /Reweave —/, 'loom operation selector exposes permanent Gear garments as reweave targets');
-assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = !!window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
+assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = [^;]*?window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
 assert.match(equipmentPanelSource, /hasSecondaryDyeForItem/, 'inventory redye asks the shared cosmetic-palette resolver whether a real Trim channel exists');
 assert.match(source, /const hasSecondary = \(\) => layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
 assert.match(source, /for \(const \{ role, key \} of patternRoles\(\)\)/, 'loom pattern controls deduplicate multiple raster sprites that share one logical cloth role');

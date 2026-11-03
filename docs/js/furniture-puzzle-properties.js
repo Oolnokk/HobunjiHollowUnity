@@ -59,6 +59,31 @@
       collisionOpenProgress:Math.max(0, Math.min(1, number(motion.collisionOpenProgress, .55))),
     };
   }
+  // Event inputs: a node (mechanism or activator) reacts to a WorldEvents event without being wired to an
+  // activator. { event, withinTiles?, targetId?, tag?, action, once, delaySeconds }. See
+  // docs/architecture/ruin-capabilities.md. `event` is any lower-case event name (blast, struck, ...).
+  const INPUT_ACTIONS = Object.freeze(['on', 'off', 'toggle']);
+  const MAX_INPUTS = 8;
+  function normalizeInputs(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const item of raw) {
+      if (!item || typeof item !== 'object' || out.length >= MAX_INPUTS) continue;
+      const event = text(item.event, 'blast').toLowerCase();
+      if (!/^[a-z][a-z0-9:_-]{0,31}$/.test(event)) continue;
+      const within = item.withinTiles === '' || item.withinTiles == null ? null : number(item.withinTiles, NaN);
+      out.push({
+        event,
+        withinTiles: Number.isFinite(within) && within >= 0 ? within : null, // null: use the event's own radius when it has one
+        targetId: text(item.targetId), // '' = any, 'self' = this node, otherwise a specific id
+        tag: text(item.tag),
+        action: INPUT_ACTIONS.includes(item.action) ? item.action : 'on',
+        once: !!item.once,
+        delaySeconds: Math.max(0, number(item.delaySeconds, 0)),
+      });
+    }
+    return out;
+  }
   function normalizePuzzle(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const role = ROLES.includes(raw.role) ? raw.role : 'none';
@@ -71,13 +96,18 @@
       behavior,
       channel: text(raw.channel, 'A') || 'A',
       completionChannel: text(raw.completionChannel, 'B') || 'B',
-      requiredBurdenKind: ['shattercask','soursap'].includes(text(raw.requiredBurdenKind, 'shattercask'))
+      requiredBurdenKind: ['shattercask','soursap','keyStatue'].includes(text(raw.requiredBurdenKind, 'shattercask'))
         ? text(raw.requiredBurdenKind, 'shattercask') : 'shattercask',
       payloadSurfaceId: text(raw.payloadSurfaceId),
       payloadPartId: text(raw.payloadPartId),
       bombFuseSeconds: Math.max(1, Math.min(120, number(raw.bombFuseSeconds, 10))), // Per-generated-tube fuse duration in seconds; consumed by HronalWitchBombs.
       startsActive: !!raw.startsActive,
       blocksMovement: role === 'mechanism' && raw.blocksMovement !== false,
+      // Used by FurniturePuzzleRuntime to expose the top face of a fully settled, animated furniture part as walkable terrain.
+      standingSurface: role === 'mechanism' && text(raw.standingSurface?.partId)
+        ? { partId:text(raw.standingSurface.partId), minProgress:Math.max(0,Math.min(1,number(raw.standingSurface.minProgress,.95))),
+            topOffset:Math.max(-.1,Math.min(.1,number(raw.standingSurface.topOffset,0))) }
+        : null,
       interactionRange: Math.max(.25, number(raw.interactionRange, 1.65)),
       activationSeconds: Math.max(0, number(raw.activationSeconds, 0)),
       resetSeconds: Math.max(0, number(raw.resetSeconds, 0)),
@@ -85,6 +115,7 @@
       offPrompt: text(raw.offPrompt, 'Turn off'),
       onPrompt: text(raw.onPrompt, 'Turn on'),
       directInteraction: role === 'mechanism' && !!raw.directInteraction,
+      inputs: normalizeInputs(raw.inputs),
       motion: transition(raw.motion),
     };
   }
@@ -142,6 +173,6 @@
 
   window.FurniturePuzzleProperties = Object.freeze({
     schema: 'hobunji_furniture_puzzle.v3', ROLES, ACTIVATORS, MECHANISMS,
-    normalizePuzzle, normalizeWiring, validateWiring, applyToObject3D, transitionState, partTransform,
+    normalizePuzzle, normalizeInputs, INPUT_ACTIONS, normalizeWiring, validateWiring, applyToObject3D, transitionState, partTransform,
   });
 })();
