@@ -94,4 +94,109 @@ assert.equal(H.consume(key, 1, 'pack', 26, 2, 'hide:generic').total, 26);
 assert.match(H.describe(null), /Legacy/);
 assert.equal(H.isHide('garWolfHide'), true);
 assert.equal(H.isHide('garWolfMeat'), false);
-console.log('Animal hide rarity, exact coat persistence, price, variants, and legacy inventory: passed');
+
+
+// Actual Shipping Box integration: a cheaper post-midnight deposit must never
+// displace the valuable pre-cutoff hide that is already committed for collection.
+const documentStub = { body: null, getElementById: () => null }; // Keeps the shipped FarmCrates test independent of the browser layout.
+function vector(x = 0, y = 0, z = 0) {
+  return { x, y, z, set(a, b, c) { this.x = a; this.y = b; this.z = c; }, clone() { return vector(this.x, this.y, this.z); } };
+}
+class MeshStub {
+  constructor() { this.position = vector(); this.userData = {}; this.children = []; }
+  add(child) { this.children.push(child); }
+}
+const threeStub = { Mesh: MeshStub, BoxGeometry: class {}, MeshLambertMaterial: class {} }; // Fake meshes satisfy the real Shipping Box's fallback visual contract.
+window.FarmPanel = {};
+window.addEventListener = () => {};
+window.setInterval = () => 1;
+window.__climbDebug = { getCurrentArea: () => 'farm' };
+window.ShippingPanel = { getShipPrice: () => 26 };
+window.TownMine = { applySaleBonus: value => value };
+load('docs/js/shipping-box-config.js');
+vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/js/farm-crates.js'), 'utf8'),
+  { window, console, document: documentStub, THREE: threeStub }, { filename: 'farm-crates.js' });
+
+const inventory = { [key]: 1, gold: 0 }; // The actual count inventory remains the sole authority for how many hides exist.
+const calendar = { day: 1 }; // Increments drive the Shipping Box's existing midnight cutoff.
+const deliveryLog = []; // Receives actual settlement events for verifying both the amount and sale date.
+window.FarmCrates.init({
+  inventory, calendar, BASE_PRICES: {}, TileType: { GRASS: 1 }, tileSurfaceY: () => 0,
+  scene: { add() {}, remove() {} }, hasFarmPermission: () => true, clampInventoryStack() {},
+  getDeliveryLog: () => deliveryLog, getMenuOpen: () => false, saveMemberWorldData() {},
+  itemIconForKey: () => '🟫', showToast() {},
+  getActiveInventoryItem: () => ({ key, label: 'Alpha Hide', icon: '🟫' }),
+});
+const shippingBox = window.FarmCrates.makeSellCrate(1, 1);
+const newRareCreature = () => ({
+  creatureKey: 'gar-wolf-alpha', genotype: {
+    base: { color: '#a13d27' },
+    colorpoint: { enabled: true, copies: 2, color: '#fef0d2' },
+  },
+});
+const newCommonCreature = () => ({
+  creatureKey: 'gar-wolf-alpha', genotype: {
+    base: { color: '#444444' },
+    colorpoint: { enabled: false, copies: 0, color: '#444444' },
+  },
+});
+function startShipmentTest() {
+  inventory[key] = 0;
+  H.restore(null, inventory);
+  shippingBox.reset();
+}
+startShipmentTest();
+inventory[key] = 1;
+H.recordFromCreature(key, newRareCreature(), 1, 26);
+assert.equal(shippingBox.depositItem(key, 1), 1);
+calendar.day = 2;
+shippingBox.tick();
+assert.equal(shippingBox.getPendingSaleCountFor(key), 1);
+inventory[key] = 1;
+H.recordFromCreature(key, newCommonCreature(), 1, 26);
+assert.equal(shippingBox.depositItem(key, 1), 1);
+assert.equal(shippingBox.getContents()[key], 2);
+assert.equal(shippingBox.getPendingSaleCountFor(key), 1, 'late deposits do not become midnight-eligible immediately');
+assert.equal(H.quote(key, 1, 'shipping', 26, 2, null, { eligibleCount: 1 }).total, 117);
+assert.equal(H.quote(key, 1, 'shipping', 26, 2).total, 26, 'unrestricted cheap-first valuation differs from midnight-reserved inventory');
+const settlement = window.FarmCrates.settlePendingShippingSale('test');
+assert.equal(settlement.sold, 1);
+assert.equal(settlement.earned, 117, 'only the valuable pre-midnight hide sells, not a later cheap substitute');
+assert.equal(inventory.gold, 117);
+assert.equal(shippingBox.getContents()[key], 1);
+assert.equal(shippingBox.withdrawItem(key, 1), 1);
+assert.equal(H.groupsFor(key, 1)[0].hideRecord.stars, 1, 'newer common coat is what remains after the cutoff sale');
+assert.match(deliveryLog[0].text, /117g/);
+
+// Withdrawing from a mixed box preferentially removes previously marked
+// inventory; otherwise its count-only pending-sale counter would reference
+// a different physical hide than the one returned to the player.
+startShipmentTest();
+inventory[key] = 1;
+H.recordFromCreature(key, newRareCreature(), 1, 26);
+assert.equal(shippingBox.depositItem(key, 1), 1);
+calendar.day = 3;
+shippingBox.tick();
+inventory[key] = 1;
+H.recordFromCreature(key, newCommonCreature(), 1, 26);
+assert.equal(shippingBox.depositItem(key, 1), 1);
+assert.equal(shippingBox.withdrawItem(key, 1), 1);
+assert.equal(H.groupsFor(key, 1)[0].hideRecord.stars, 4, 'the pending rare specimen was actually withdrawn, not the new cheap specimen');
+assert.equal(shippingBox.getPendingSaleCountFor(key), 0);
+assert.equal(window.FarmCrates.settlePendingShippingSale('test').sold, 0, 'withdrawn pending stock must not get sold again');
+
+// Legacy hides have no genotype: preserving an explicit null shipping slot
+// keeps the earlier generic item distinct from a later rare specimen.
+startShipmentTest();
+inventory[key] = 1;
+assert.equal(shippingBox.depositItem(key, 1), 1);
+calendar.day = 4;
+shippingBox.tick();
+inventory[key] = 1;
+H.recordFromCreature(key, newRareCreature(), 1, 26);
+assert.equal(shippingBox.depositItem(key, 1), 1);
+assert.equal(window.FarmCrates.settlePendingShippingSale('test').earned, 26, 'legacy pre-cutoff stock does not steal the later rare hide');
+assert.equal(shippingBox.withdrawItem(key, 1), 1);
+assert.equal(H.groupsFor(key, 1)[0].hideRecord.stars, 4);
+
+console.log('Animal hide rarity, exact coat persistence, Shipping Box midnight/withdrawal, pricing, and legacy inventory: passed');
