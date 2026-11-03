@@ -3202,6 +3202,7 @@
         }
         return !interiorFurnitureObjects.find(o => {
           if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Rugs remain overlap-friendly.
+          if (o.tableAttachment && o.tableId === ignoreId) return false; // A parent carries its own chairs to the new position.
           if (o.tableAttachment) {
             const candidate = DECORATIVE_FURNITURE_DEFS[furnitureKey];
             const attached = DECORATIVE_FURNITURE_DEFS[o.key];
@@ -3900,7 +3901,19 @@
         record.col = record.mesh.position.x - size.fw * 0.5;
         record.row = record.mesh.position.z - size.fd * 0.5;
         record.rotYDeg = record.mesh.rotation.y * 180 / Math.PI;
-        record.npcStationId = registerChairNpcStation(record.key, record.col, record.row, record.rotYDeg, area, record.roles, record.lookAt, record.id, record.npcStationId);
+        if (record.area === 'interior') {
+          const parentTable = interiorFurnitureObjects.find(obj => obj.id === record.tableId && obj.area === record.area);
+          const owner = parentTable ? housePieces.find(piece => piece.id === parentTable.ownerPieceId) : null;
+          const rect = interiorRoomRect(owner);
+          if (parentTable && rect) {
+            record.ownerPieceId = owner.id;
+            record.localCol = record.col - rect.col;
+            record.localRow = record.row - rect.row;
+          }
+        }
+        // The approach tile is selected from the actual chair center, not its potentially negative fractional bounds.
+        record.npcStationId = registerChairNpcStation(record.key, record.mesh.position.x, record.mesh.position.z,
+          record.rotYDeg, area, record.roles, record.lookAt, record.id, record.npcStationId);
       };
 
       function nearestDetachedChairTile(chair) {
@@ -3945,6 +3958,33 @@
             { x: centerX, z: centerZ, width: otherDef.fw || 1, depth: otherDef.fd || 1, yaw: (other.rotYDeg || 0) * Math.PI / 180 }
           );
         });
+      }
+
+      function canTransformTableWithAttachedChairs(table, x, y, z, rotYDeg) {
+        if (table.area !== 'interior') return true;
+        const children = interiorFurnitureObjects.filter(child =>
+          child.area === table.area && child.tableId === table.id && child.tableAttachment);
+        if (!children.length) return true;
+        const meshes = [table, ...children].map(record => ({
+          record, position: record.mesh.position.clone(), yaw: record.mesh.rotation.y,
+        })); // Transaction snapshot prevents rejected table moves from altering any child mesh.
+        const def = DECORATIVE_FURNITURE_DEFS[table.key];
+        try {
+          table.mesh.position.set(x, y, z);
+          table.mesh.rotation.y = rotYDeg * Math.PI / 180;
+          table.mesh.updateWorldMatrix?.(true, false);
+          for (const child of children) {
+            if (!window.TableChairPlacement?.apply?.(child.mesh, table.mesh, child.tableAttachment,
+              { width: def?.fw || 1, depth: def?.fd || 1 })) return false;
+          }
+          return children.every(child => canKeepAttachedChairHere(child, table));
+        } finally {
+          for (const snapshot of meshes) {
+            snapshot.record.mesh.position.copy(snapshot.position);
+            snapshot.record.mesh.rotation.y = snapshot.yaw;
+            snapshot.record.mesh.updateWorldMatrix?.(true, false);
+          }
+        }
       }
 
       function setFurnitureTableAttachment(id, requested) {
@@ -4013,6 +4053,11 @@
         if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, dimensions)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, dimensions);
+        const nextX = col + fw / 2, nextZ = row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, obj.rotYDeg || 0)) {
+          return { ok: false, message: 'Attached chairs would collide or leave the floor. Adjust the table placement first.' };
+        }
         if (obj.key === 'rug' && options.dimensions) {
           obj.widthTiles = dimensions.widthTiles; obj.heightTiles = dimensions.heightTiles; // Persist the moved rug's freshly selected rectangle.
           const farmhouseInset = obj.area === 'interior' ? 1 : 0; // Match initial placement when an interior rug is moved or resized.
@@ -4050,7 +4095,7 @@
         const changes = []; // Visible mobile diagnostics report displaced saved items rather than silently losing them.
         const built = housePieces.filter(piece => piece.stage === 'built'); // Search valid rooms before considering storage recovery.
         for (const obj of [...interiorFurnitureObjects]) {
-          if (obj.area !== 'interior' || obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
           const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           const clearFootprint = (c, r) => {
             for (let y = r; y < r + fd; y++) for (let x = c; x < c + fw; x++) {
@@ -4120,6 +4165,11 @@
         }
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot, obj);
+        const nextX = obj.col + fw / 2, nextZ = obj.row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, nextRot)) {
+          return { ok: false, message: 'Rotation would place an attached chair outside the floor or inside furniture.' };
+        }
         unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
