@@ -42,10 +42,16 @@
   }
   function apply(chair, table, descriptor, footprint = {}) {
     if (!chair || !table || !window.THREE?.Vector3 || !chair.position?.set || !table.localToWorld) return false;
-    const placement = localPosition(descriptor, footprint.width, footprint.depth);
-    if (!placement) return false;
     table.updateWorldMatrix?.(true, false);
-    const target = table.localToWorld(new window.THREE.Vector3(placement.x, 0, placement.z));
+    const scale = table.getWorldScale?.(new window.THREE.Vector3(1, 1, 1)) || table.scale || { x: 1, z: 1 };
+    const sx = Math.max(1e-4, Math.abs(scale.x || 1));
+    const sz = Math.max(1e-4, Math.abs(scale.z || 1));
+    // Compute edge clearance in world tiles, then undo table scale before localToWorld applies it.
+    const placement = localPosition(descriptor,
+      Math.max(0.1, finite(footprint.width, 1)) * sx,
+      Math.max(0.1, finite(footprint.depth, 1)) * sz);
+    if (!placement) return false;
+    const target = table.localToWorld(new window.THREE.Vector3(placement.x / sx, 0, placement.z / sz));
     const center = table.getWorldPosition(new window.THREE.Vector3());
     const currentWorld = chair.getWorldPosition ? chair.getWorldPosition(new window.THREE.Vector3()) : chair.position;
     target.y = currentWorld.y; // Seating height comes from the existing furniture grounding, never the tabletop.
