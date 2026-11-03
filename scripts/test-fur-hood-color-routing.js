@@ -38,8 +38,10 @@ const sourcePixels=[
   111,137,110,255,  // Grehlr back's actual mint shadow key (#6F896E).
   9,9,9,255,        // Near-black ink outline should not be recolored.
   200,200,200,0,    // Transparent pixels retain their alpha.
+  148,133,142,255, // Exact excluded source color #94858E.
+  86,115,114,255,  // Exact excluded source color #567372.
 ];
-const image={width:7,height:1,data:new Uint8ClampedArray(sourcePixels)};
+const image={width:9,height:1,data:new Uint8ClampedArray(sourcePixels)};
 const pixel=(cv,index)=>Array.from(cv.data.slice(index*4,index*4+4));
 async function main(){
   await api.ensureManifest();
@@ -63,6 +65,20 @@ async function main(){
   assert(pixel(plain,3)[2]>pixel(plain,4)[2],'mint retains original highlight/shadow brightness');
   assert.deepEqual(pixel(striped,5),[9,9,9,255],'near-black outlines stay unchanged');
   assert.deepEqual(pixel(striped,6),[200,200,200,0],'transparent pixels are preserved');
+  assert.deepEqual(pixel(striped,7),[148,133,142,255],'protected #94858E stays original in Grehlr selective fill');
+  assert.deepEqual(pixel(striped,8),[86,115,114,255],'protected #567372 stays original in Grehlr selective fill');
+  const tinted=new Uint8ClampedArray(sourcePixels.length).fill(77); // Simulate a whole-fur recolor that would otherwise overwrite every pixel.
+  assert.equal(api.restoreProtectedPixels(tinted,new Uint8ClampedArray(sourcePixels)),2,'only two exact RGB swatches are exempt');
+  assert.deepEqual(Array.from(tinted.slice(28,32)),[148,133,142,255],'first protected source pixel restores RGB and alpha');
+  assert.deepEqual(Array.from(tinted.slice(32,36)),[86,115,114,255],'second protected source pixel restores RGB and alpha');
+  assert.deepEqual(Array.from(tinted.slice(4,8)),[77,77,77,77],'neighboring gray detail remains eligible for tint');
+  assert.equal(api.isProtectedSourcePixel(new Uint8ClampedArray([148,133,141,255]),0),false,'exclusion does not overreach neighboring RGB values');
+  const wholeTint={width:9,height:1,data:new Uint8ClampedArray(sourcePixels.length).fill(31)};
+  const protectedComposite=api.preserveProtectedColors(image,wholeTint);
+  assert.deepEqual(pixel(protectedComposite,7),[148,133,142,255],'final garment compositor restores first protected swatch');
+  assert.deepEqual(pixel(protectedComposite,8),[86,115,114,255],'final garment compositor restores second protected swatch');
+  assert.deepEqual(pixel(protectedComposite,3),[31,31,31,31],'final garment compositor leaves other recolored fur alone');
+  assert.strictEqual(api.preserveProtectedColors(image,wholeTint),protectedComposite,'protected final compositing reuses cached canvas');
   assert.deepEqual(Array.from(image.data),sourcePixels,'source sprite never mutates');
   assert.strictEqual(api.recolorAnimalPart(image,active,'animalBack'),striped,'per-sprite genotype tint cache is reused');
   const front=api.recolorAnimalPart(image,active,'animalFront');
@@ -75,6 +91,22 @@ async function main(){
   wolf.genotype.foxtail.enabled=false;
   assert.equal(api.colorForRole(wolf,'animalFront'),'#886644','missing pattern falls back to base');
   wolf.genotype.foxtail.enabled=true;
+  const drenkirra={kind:'drenkirra',baseColor:'#996644',genotype:{base:{color:'#996644',copies:2},bodystripes:{enabled:true,copies:2,color:'#44ccee'}}};
+  assert.equal(registry.species.drenkirra.trimColor,'base','Drenkirra manifest keeps trim on base coat');
+  assert.equal(registry.species.drenkirra.partColors.front,'pattern','Drenkirra manifest assigns animal front to pattern coat');
+  assert.equal(api.colorForRole(drenkirra,'base'),'#996644','Drenkirra hood base uses base coat');
+  assert.equal(api.colorForRole(drenkirra,'trim'),'#996644','Drenkirra trim uses base coat even when patterned');
+  assert.equal(api.colorForRole(drenkirra,'animalFront'),'#44ccee','Drenkirra front takes inherited pattern hue');
+  assert.equal(api.colorForRole(drenkirra,'animalBack'),'#996644','Drenkirra back defaults to base');
+  const drenkirraParts=api.specialPartsFor(drenkirra,'tletingan','male');
+  assert.equal(drenkirraParts.find(part=>part.role==='animalFront')?.furColorMode,'pattern','Drenkirra front route follows authored manifest');
+  drenkirra.genotype.bodystripes.enabled=false;
+  assert.equal(api.colorForRole(drenkirra,'animalFront'),'#996644','Drenkirra unpatterned front falls back to base');
+  assert.equal(api.colorForRole(drenkirra,'trim'),'#996644','Drenkirra unpatterned trim remains base');
+  wolf.authoringPalette.trimColor='base';
+  assert.equal(api.colorForRole(wolf,'trim'),'#886644','editor trim-base preview overrides manifest until saved');
+  wolf.authoringPalette.trimColor='pattern';
+  assert.equal(api.colorForRole(wolf,'trim'),'#ddbb33','editor trim-pattern preview retains default inheritance');
   registry.species['gar-wolf'].partColors={front:'pattern',back:'base'}; // A shipped authoring selection also controls conventional portrait palette slot fallback.
   const wolfParts=api.specialPartsFor(wolf,'tletingan','male');
   assert.equal(wolfParts.find(part=>part.role==='animalFront')?.paletteColorKey,'B','pattern-colored front uses inherited trim B in plain portrait fallback');
@@ -83,13 +115,19 @@ async function main(){
   assert.match(loom,/colorForRole\?\.\(furHood, role\)/,'loom/icon uses canonical natural color resolver');
   assert.match(loom,/recolorAnimalPart\?\.\(img, furHood, role\)/,'loom/icon handles Grehlr keyed regions');
   assert.match(loom,/recolorAnimalPart\?\.\(img, descriptor\?\.furHood, descriptor\?\.role\)/,'equipped portrait uses same selective source');
+  assert.match(loom,/preserveProtectedColors\?\.\(shadingSource,img\)/,'icon and loom images protect authored source swatches after motifs');
+  assert.match(loom,/preserveProtectedColors\?\.\(img,decorated\)/,'final worn-portrait patterned pass protects source swatches');
+  assert.match(loom,/isProtectedSourcePixel\?\.\(pixels\.data,i\)/,'garment-space paint masks protect exact swatches');
   assert.match(loom,/if \(!descriptor\.furHood && !weavingPatternsForRole/,'motif-free fur layers still enter portrait tint resolver');
   assert.match(loom,/if \(furHood\) await window\.FurHoodLeatherworking\?\.ensureManifest/,'fur-hood icon rendering waits for species routing before caching');
   const portrait=read('docs/js/portrait-utils.js');
-  assert.match(portrait,/tintFor\(resolveLayerTintSlot\(part\.paletteColorKey, hood\.tintSlot\)\)/,'portrait fallback honors animal front and back tint slots');
+  assert.match(portrait,/tintForAnimalPart=part=>/,'portrait fallback independently resolves natural animal colors');
+  assert.match(portrait,/shadeFillTintForBodyColor\(\{hex:naturalHex\}/,'Drenkirra front obtains genotype pattern pigment without sharing trim slot');
   const editor=read('docs/tools/pattern-editor/index.html');
   assert(editor.includes('id="furFrontColorMode"') && editor.includes('id="furBackColorMode"'),'per-species natural front/back routing is authorable');
   assert(editor.includes('id="furTrimGene"'),'trim gene preference is authorable');
+  assert(editor.includes('id="furTrimColorMode"'),'base-versus-pattern trim route is authorable');
+  assert(editor.includes("trimColor:trimColor.value"),'unsaved trim routing previews through the same game renderer');
   console.log('OK: motif-free fur trim, configurable parts, Grehlr dual source palette, caching and portrait/loom integration');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
