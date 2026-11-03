@@ -414,7 +414,9 @@
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
-    for (const record of state.ropeChainDisabledSurfaces) DS.registerSurface(record); // Undo temporary carve-outs if this same generated ruin is revisited.
+    if(inRuin()&&window.DevRandomRuin?.getRuntimeContext?.()?.root===state.root){
+      for(const record of state.ropeChainDisabledSurfaces)DS.registerSurface(record); // Restore only while the owning map is still alive; never resurrect surfaces after the parent cleared its scope.
+    }
     for (const {tile,original} of state.ropeChainPitTiles){if(original===undefined)delete tile.bottomless;else tile.bottomless=original;}
     window.DevRandomRuinTileOccupancy?.clearSolids?.(SCOPE); // Drops this build's prop footprints (lock door, sarcophagi, ossuary shell, canopy posts...).
     const lavaTexture=state.lavaMaterial?.uniforms?.uWaterTexture?.value; // Material owns its dedicated wibbly-water texture loader result for this session.
@@ -664,7 +666,7 @@
     const exitFloor={x:exit.x,z:exit.z,y:exit.y,topY:exit.y,width:axis==='x'?2.2:Math.min(2.4,crossWidth-1),
       depth:axis==='z'?2.2:Math.min(2.4,crossWidth-1)};
     const reaches=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},
-      {maxAmp:1.15,minAmp:.55,floorY:floorY-2})!==null);
+      {maxAmp:1.15,minAmp:.55,floorY:floorY-.4})!==null); // A solver route below the lethal plane is not a valid airborne catch.
     if(!reaches){ropes.forEach(disposeRopeObject);return null;} // Keep the original solid hallway if any catch or exit is unreachable.
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
@@ -723,7 +725,11 @@
     for(const chain of state.ropeChains)for(const side of ['start','end']){
       const point=chain[side],id=chain.checkpointIds[side];
       if(state.checkpoints.active?.id===id)continue;
-      if(Math.hypot(player.x-point.x,player.z-point.z)>.7||!sampleSupport(player.x,player.z))continue;
+      const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
+      const pointAlong=chain.axis==='x'?point.x:point.z;
+      const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
+      const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
+      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue;
       activateCheckpoint(id,point,true); // Entering either side replaces the other side, including after a reverse traversal.
       return;
     }
