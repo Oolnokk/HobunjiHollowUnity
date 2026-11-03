@@ -77,6 +77,7 @@ assert(carry.includes('onLost:typeof options.onLost'));
 assert(carry.includes('function pickUp(cask)'));
 assert(carry.includes('cask.onPickup?.(cask)'));
 
+(async()=>{
 // Runtime lifecycle regression: a late/missing furniture asset must not permanently block respawn.
 class MockGroup {
  constructor(){this.isObject3D=true;this.children=[];this.parent=null;this.userData={};this.position={set(x,y,z){Object.assign(this,{x,y,z});}};this.quaternion={identity(){}};this.scale={setScalar(value){this.x=this.y=this.z=value;}};}
@@ -128,3 +129,4 @@ assert.equal(registered[1].group.parent,runtimeButton,'replacement is attached w
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,'successful replacement releases the respawn lock');
 
 console.log('Key Statue: authored statue/dispenser, inverted button transforms, mounted Burden, pickup channel, automatic loss cleanup and ON→OFF restoration checks passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});
