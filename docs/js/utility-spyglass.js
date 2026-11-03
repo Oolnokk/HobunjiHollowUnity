@@ -274,6 +274,7 @@
     }
     if (blockedByOtherActivity()) return false;
     buildLens();
+    installActionObserver(); // Recovery for late or initially missing action-arch markup.
     savedCamera = {
       mode: cameraDeps.getCameraMode(),
       target: cameraDeps.getCameraTarget?.() ?? null,
@@ -453,11 +454,16 @@
     document.addEventListener('pointercancel', handlePointerRelease, true);
     document.addEventListener('contextmenu', handleContextMenu, true);
     buildLens();
+    installActionObserver(); // Installs immediately only when the action arch already exists.
+  }
+
+  function installActionObserver() {
+    if (actionObserver || typeof MutationObserver !== 'function') return;
     const stack = document.getElementById?.('actionStack');
-    if (stack && typeof MutationObserver === 'function') {
-      actionObserver = new MutationObserver(() => { if (equipped) syncActionButtons(); });
-      actionObserver.observe(stack, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-action', 'data-combat-slot', 'class'] });
-    }
+    if (!stack) return; // The module loads in <head>; DOMContentLoaded attaches the observer once buttons exist.
+    actionObserver = new MutationObserver(() => { if (equipped) syncActionButtons(); });
+    actionObserver.observe(stack, { subtree: true, childList: true, attributes: true,
+      attributeFilter: ['data-action', 'data-combat-slot', 'class'] });
   }
 
   window.Spyglass = Object.freeze({
@@ -474,6 +480,7 @@
     isLookingCloser: () => equipped && aiming && lookingCloser,
     getDebug: () => ({
       equipped, aiming, lookingCloser, action1Held, lastReason,
+      actionObserverActive: !!actionObserver,
       cameraReady: !!cameraDeps,
       viewReady: !!viewDeps,
       currentCameraMode: cameraDeps?.getCameraMode?.() ?? null,
@@ -495,6 +502,10 @@
   });
 
   install(); // Capture camera/view dependency injection before game.js initializes.
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildLens, { once: true });
-  else buildLens();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { buildLens(); installActionObserver(); }, { once: true });
+  } else {
+    buildLens();
+    installActionObserver();
+  }
 })();
