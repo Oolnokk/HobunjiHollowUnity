@@ -419,7 +419,8 @@
     const proposedEcho = options?.echoChallenge; // Optional, ephemeral encounter melody; no songbook writes or global music-mode changes.
     if (proposedEcho && (!proposedEcho.id || !Array.isArray(proposedEcho.notes) || proposedEcho.notes.length < 3 ||
         proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < 5))) return false;
-    const instrumentKey = deps.getEquippedInstrument?.(); // Carries through both modes for the held Kurraya renderer.
+    window.EquipmentPanel?.ensureStarterFlute?.(); // Existing saved characters receive their one-time flute before the first music session.
+    const instrumentKey = deps.getEquippedInstrument?.(); // Both instrument modes use the currently assigned slot item.
     if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.',false); return false; }
     playerSession = {
       active:true,mode:'puzzle',instrumentMode:'initializing',area:deps.getCurrentArea(),
@@ -428,6 +429,7 @@
     };
     overlayEl.classList.add('open');
     switchInstrumentMode('puzzle'); // Puzzle is always the default; switching back never loses Performance mode.
+    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // Shares the authored blowgun mouth-aim pose for every sounded note.
     deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
     setHostChromeSuppressed(true);
@@ -438,6 +440,7 @@
     if (!playerSession) return;
     const { area, mode } = playerSession;
     playerSession = null;
+    window.KurrayaInstrument?.endFlute?.(); // Stops the head-mounted flute without disturbing Kurraya or any other equipped gear.
     overlayEl?.classList.remove('open');
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
     stopPuzzleInputs();
@@ -1401,6 +1404,7 @@
     diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,
+      flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
 })();
