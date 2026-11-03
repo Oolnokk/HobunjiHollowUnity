@@ -132,7 +132,9 @@
       song.notes.every((note,i) => note === history[history.length - song.notes.length + i]));
     return matches.sort((a,b) => b.notes.length - a.notes.length)[0] || null;
   }
-  function createSampler(url) {
+  function createSampler(url, options = {}) {
+    const useCustomSample = options.useCustomSample !== false; // Flute uses its own authored sample rather than a Kurraya Music Lab recording.
+    const allowMidiFallback = options.fallback === 'midi'; // The flute remains playable through Web Audio synthesis until its named sample is uploaded.
     let context = null; // Allocated on first gesture, preserving mobile autoplay policy.
     let buffer = null; // Decoded bundled Kurraya pluck, shared across all subsequent notes.
     let pending = null; // Coalesces decode when several notes are pressed during first load.
@@ -140,6 +142,7 @@
     let requestSerial = 0; // Makes only the newest note press audible if the first sample is still decoding.
     let sampleRootMidi = 60; // Recorded fundamental used by the same pitch-shift formula as the legacy Kurraya sampler.
     let sampleName = 'Bundled Kurraya pluck'; // Visible when the imported Music Lab sample is restored.
+    let usingMidiFallback = false; // Selects a pitched, monophonic flute synth when the optional sample cannot load.
     let lastError = ''; // Readable in the tool and puzzle diagnostics when audio cannot start.
     function configuredGain() {
       // Music Lab persists the shared Kurraya and master levels in the existing
@@ -188,15 +191,22 @@
       if (!AudioCtor) throw new Error('Web Audio is unavailable.');
       if (!context) context = new AudioCtor();
       if (context.state === 'suspended') await context.resume();
-      if (buffer) return context;
+      if (buffer || usingMidiFallback) return context;
       if (!pending) pending = (async () => {
-        if (await restoreImportedKurrayaSample()) return;
-        const response = await root.fetch(url);
-        if (!response.ok) throw new Error('Kurraya sample HTTP ' + response.status);
-        const bytes = await response.arrayBuffer();
-        buffer = await context.decodeAudioData(bytes);
-        sampleRootMidi = 60;
-        sampleName = 'Bundled Kurraya pluck';
+        if (useCustomSample && await restoreImportedKurrayaSample()) return;
+        try {
+          const response = await root.fetch(url);
+          if (!response.ok) throw new Error('Instrument sample HTTP ' + response.status);
+          const bytes = await response.arrayBuffer();
+          buffer = await context.decodeAudioData(bytes);
+          sampleRootMidi = 60;
+          sampleName = options.sampleName || 'Bundled Kurraya pluck';
+        } catch (error) {
+          if (!allowMidiFallback) throw error;
+          usingMidiFallback = true;
+          sampleName = 'MIDI flute fallback';
+          lastError = '';
+        }
       })().catch(error => { pending = null; lastError = String(error.message || error); throw error; });
       await pending;
       return context;
@@ -206,21 +216,33 @@
       const ctx = await ready();
       if (serial !== requestSerial) return false; // The later note is authoritative even across asynchronous decode.
       if (voice) { try { voice.stop(); } catch (_) {} voice = null; }
-      const source = ctx.createBufferSource();
+      const source = usingMidiFallback ? ctx.createOscillator() : ctx.createBufferSource();
       const gain = ctx.createGain();
-      source.buffer = buffer;
-      // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
-      source.playbackRate.value = Math.pow(2,(Number(midi) - sampleRootMidi) / 12);
-      gain.gain.value = configuredGain(); // Respects saved master/instrument levels while remaining strictly monophonic.
+      if (usingMidiFallback) {
+        // A simple MIDI-pitched sine flute with breathlike attack/release; no audio asset or external synth library is required.
+        const start = ctx.currentTime;
+        source.type = 'sine';
+        source.frequency.value = 440 * Math.pow(2, (Number(midi) - 69) / 12);
+        gain.gain.setValueAtTime(0.0001,start);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + 0.045);
+        gain.gain.exponentialRampToValueAtTime(0.0001,start + 0.42);
+        source.start(start);
+        source.stop(start + 0.44);
+      } else {
+        source.buffer = buffer;
+        // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
+        source.playbackRate.value = Math.pow(2,(Number(midi) - sampleRootMidi) / 12);
+        gain.gain.value = configuredGain();
+        source.start(ctx.currentTime + 0.001);
+      }
       source.connect(gain); gain.connect(ctx.destination);
       voice = source;
       source.onended = () => { if (voice === source) voice = null; source.disconnect(); gain.disconnect(); };
-      source.start();
       lastError = '';
       return true;
     }
     function stop() { ++requestSerial; if (voice) { try { voice.stop(); } catch (_) {} voice = null; } }
-    return {ready:ready,play:play,stop:stop,get diagnostics() { return {ready:!!buffer,playing:!!voice,sampleName:sampleName,sampleRootMidi:sampleRootMidi,error:lastError}; }};
+    return {ready:ready,play:play,stop:stop,get diagnostics() { return {ready:!!buffer,playing:!!voice,sampleName:sampleName,sampleRootMidi:sampleRootMidi,midiFallback:usingMidiFallback,error:lastError}; }};
   }
   const api = Object.freeze({SONGS_KEY:SONGS_KEY,SETTINGS_KEY:SETTINGS_KEY,SCALES:SCALES,NOTE_CODES:NOTE_CODES,
     normalizeSong:normalizeSong,listSongs:listSongs,saveSong:saveSong,deleteSong:deleteSong,importSongs:importSongs,
