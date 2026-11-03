@@ -7,7 +7,7 @@ The fur-hood implementation intentionally reuses the game’s existing item, dye
 - `AnimalHides.groupsFor()` lists individual hide variants with complete immutable genotype records and base-coat colors. Legacy hides without genotype are ineligible rather than given a randomly invented coat.
 - Crafting chooses one exact `hide:...` variant, calls `AnimalHides.consume(...,'pack',variant)`, decrements the count inventory and saves the world member.
 - Each crafted `fur_hood` article owns `furHood: {kind, sourceKind, sourceItemKey, genotype, appearance, baseColor, hideStars}`, distinct from regular `weaving`. Pack-to-Gear migration copies this object without dropping genome data, and individual articles stay distinct even without custom patterns.
-- Base and trim receive the preserved natural coat hue and are never re-dyed. Reweaving only changes the optional conventional pattern(s) and their Dye C color. An Advanced Loom can author a standard second overpass pattern.
+- The hood **base** retains the selected hide's base coat hue. Its **trim** inherits the first expressed natural pattern color, or the preferred `trimGene` when that gene is expressed; without any expressed pattern, trim falls back to base coat. Neither natural channel can be recolored with player dye. Reweaving changes only optional standard patterns and Dye C. An Advanced Loom can author a second overpass pattern.
 
 ## Sprite source and layering
 
@@ -21,9 +21,11 @@ The manifest currently references the uploaded Gar-wolf, Grehlr, Drenkirra, Nelk
 
 In **Tool Hub → Pattern Editor → Animal fur-hood markings**, select the animal species, wearer head fit, and **exact genotype pattern id**. Edit the ordinary motif in the Pattern Editor, assign it to the animal gene, and export **both** its PNG (to `docs/assets/patterns/fur-hoods/`) and `fur-hoods.json` (to `docs/config/patterns/`). Paths for special front/back sprites can also be edited there independently for the two wearer fits. These exports need committing to the repository before they become playable defaults.
 
-The same expressed genetic motifs and inherited ink colors are applied to `furhood-base`, `<animal>-front`, and `<animal>-back` sprites. They do not recolor `furhood-trim`. Player-authored base weaving also runs above the inherited markings on every hide-derived piece; the portrait resolver registers the dynamic animal sprite URLs for the currently rendered wearer so these effects match the loom preview and do not leak across characters.
+Natural coat gene colors do not require any motif PNG. The `furhood-trim` sprite automatically adopts the selected expressed pattern pigment. Each species can choose `partColors.front` and `partColors.back` as `base` or `pattern` (the latter falls back to base when unpatterned), configurable in **Animal fur-hood markings → Animal front/back pigment → Save sprites and pigment routing**. Both wearer fits share the species routing. The optional `partGenes.front/back` may select a particular pattern gene rather than the default inherited color. An authored motif remains a separate optional drawing applied to `furhood-base`, `<animal>-front`, and `<animal>-back`; ordinary custom player weaving still layers above it. The runtime portrait resolver registers these sprite URLs even when there are zero motif PNGs, so equip, icons and previews use the same natural tint.
 
-The manifest's `patterns[geneId] = {motifPng,settings}` is dev-authored geometry/placement only. At render time `FurHoodLeatherworking.markingsFor` checks whether the saved hide expresses each gene, reads the color from `genotype[geneId].color`, and produces independent motif/color passes on the base layer before optional player `weaving` motifs. Animal motifs do **not** occupy either normal player weaving slot and are not saved in a garment's `weaving` field.
+**Grehlr:** The actual front and back PNGs have white/gray stripe paint; those source pixels remain untouched when `coloredstripe` is not expressed, and when present receive its genotype pattern hue/saturation while retaining each original pixel's HSV value. In the back PNG, the separate mint-colored highlight/shadow family always takes the genotype's *base* coat hue/saturation. This reuses `ColorFill.hsvValueFillPixels` with disjoint source-region predicates, preserving alpha and outlines. Whole-part front/back selectors are disabled for Grehlr because each sprite uses these multiple independently keyed regions.
+
+The manifest's `patterns[geneId] = {motifPng,settings}` is **optional** dev-authored geometry/placement only; it is not needed for genotype color routing. At render time `FurHoodLeatherworking.markingsFor` checks whether the saved hide expresses each gene, reads the color from `genotype[geneId].color`, and produces independent motif/color passes on the base layer before optional player `weaving` motifs. Animal motifs do **not** occupy either normal player weaving slot and are not saved in a garment's `weaving` field.
 
 ### Paint directly on the hood (developer tool)
 
@@ -40,7 +42,7 @@ node scripts/test-fur-hood-direct-paint.js
 node scripts/test-fur-hood-leatherworking.js
 ```
 
-**Known authoring prerequisite:** No actual genotype motif PNGs were uploaded as part of the hood-sprite batches. The shipped manifest's `patterns` entries are empty until the dev exports those motifs; the hood still shows the accurate base coat and real animal head/trophy sprites.
+**No motif artwork is required for basic inherited fur coloration.** The shipped manifest's `patterns` entries may remain empty for every animal; the base, inherited-color trim, configurable animal pieces, and Grehlr's source-keyed stripe/mint regions all colorize from the saved genotype. Export motif PNGs only when a drawn surface pattern is wanted.
 
 ## Quick verification
 
