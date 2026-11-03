@@ -64,7 +64,7 @@
     const genome = furHood.genotype || {}; // Source genotype determines whether each natural dye gene exists and is expressed.
     const ids = window.CreatureGenetics?.PATTERN_DEFS?.[normalizeKind(furHood.kind)] || []; // Official animal-gene order is the stable color priority.
     const appearance = Array.isArray(furHood.appearance?.patterns) ? furHood.appearance.patterns : [];
-    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean);
+    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(genome).filter(id => id !== 'base' && typeof genome[id]?.color === 'string'), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean); // Saved genotype works before genetics registry initialization.
     return known.flatMap(id => {
       const gene = genome[id], trait = appearance.find(x => x?.id === id); // Old visual summaries are consulted only when genotype is missing.
       if (gene) {
@@ -83,11 +83,11 @@
   function colorForRole(furHood, role) {
     if (!furHood) return null;
     const base = colorHex(furHood.baseColor || furHood.genotype?.base?.color);
-    const entry = entryForKind(furHood.kind) || {}; // Per-species artist controls select base coat or inherited pigment for each sprite.
+    const entry = { ...(entryForKind(furHood.kind) || {}), ...(furHood.authoringPalette || {}) }; // Editor-only preview override never enters crafted furHood saves.
     const mode = role === 'trim' ? 'pattern' : role === 'animalFront' ? entry.partColors?.front || 'base'
       : role === 'animalBack' ? entry.partColors?.back || 'base' : 'base';
     const gene = role === 'trim' ? entry.trimGene : role === 'animalFront' ? entry.partGenes?.front : role === 'animalBack' ? entry.partGenes?.back : null;
-    return mode === 'pattern' ? (patternColorFor(furHood, gene) || base) : base;
+    return mode === 'pattern' ? (patternColorFor(furHood, gene) || (role === 'trim' ? patternColorFor(furHood) : null) || base) : base; // Any inherited gene colors trim even when the prioritized gene is absent.
   }
   const recoloredPartCache = new WeakMap(); // Cache small keyed Grehlr canvases against their original PNG, base shade and stripe color.
   function recolorAnimalPart(image, furHood, role) {
@@ -113,7 +113,7 @@
     const isStripe = i => {
       if (!stripe || source[i+3] <= 8) return false;
       const r=source[i], g=source[i+1], b=source[i+2]; // Covers pure white and neutral shaded grays without catching colored mint.
-      return Math.max(r,g,b)>=88 && Math.max(r,g,b)-Math.min(r,g,b)<=14;
+      return Math.max(r,g,b)>=48 && Math.max(r,g,b)-Math.min(r,g,b)<=14; // Includes shaded gray stripe pixels while excluding dark linework.
     };
     const rgb=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
     if (role==='animalBack' && base) fill.hsvValueFillPixels(frame.data,rgb(base),{sourceData:source,applyPredicate:isMint});
@@ -305,7 +305,7 @@
       species: Object.keys(manifest.species || {}),
       leatherworkingOpen: !!activePanel?.isConnected,
       lastCraft: copy(lastCraft), lastError,
-      latestChange: 'Craft natural fur hoods from exact saved-genotype hides; separate authored marking/animal-sprite registry.',
+      latestChange: 'Genotype colors natural trim without motifs; source-keyed Grehlr white/gray and mint remain independently tinted; species front/back routes are authorable.',
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
