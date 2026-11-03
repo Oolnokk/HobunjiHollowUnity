@@ -229,6 +229,55 @@ const server = http.createServer((request, response) => {
     assert(dungeonResult.halfGrowth && dungeonResult.finished && dungeonResult.cleanup,
       'Dungeon Fire must reverse ice growth continuously, unregister hits, and clear its owned meshes');
 
+    const authoredResult = await page.evaluate(() => {
+      const T=THREE, composer=window.__iceComposer, foliage=window.FoliageGenerator;
+      const scene=new T.Group(), root=new T.Group(), owner=new T.Group(); // Separate context tests the real furniture wrapper used in the sanctum.
+      scene.add(root);scene.add(owner);
+      const door=new T.Group();
+      door.userData.ruinFurnitureKey='ruinGreatDoor'; // DevRandomRuinFurniturePieces overrides authoredFurnitureKey to null.
+      door.userData.authoredFurnitureKey=null;
+      door.userData.authoredFurnitureData={parts:[{id:'leaf',name:'Door Leaf'}]};
+      const leaf=new T.Mesh(new T.BoxGeometry(3.16,3.1,.26),new T.MeshStandardMaterial());
+      leaf.name='Door Leaf';leaf.userData.authoredPartId='leaf';leaf.position.set(2,1.55,2);door.add(leaf);
+      root.add(door);
+      const preset=foliage.normalizeSurfaceGrowth({kind:'iceStalagmites',target:'all',seed:'authored-boss-ice',count:5,density:1,
+        radius:.4,iceHeightMin:1,iceHeightMax:1.6,iceCluster:3,iceEngulf:.75,iceFootprintPadding:.1,iceFacets:5,
+        iceTipSharpness:.8,iceLean:.1,iceRoughness:.22,iceOpacity:.93,color:'#bcecff'});
+      foliage.applySurfaceGrowth(door,[preset]); // Source door already has editor-authored ice; it must never grow a duplicate coat.
+      const existing=door.children.find(child=>child.userData.iceStalagmites);
+      const full=Array.from(existing.children[0].geometry.attributes.position.array);
+      const seal=new T.Group(); // The actual decorative ruinDoorSeal shares the word "door", but isn't a door.
+      seal.userData.ruinFurnitureKey='ruinDoorSeal';
+      seal.userData.authoredFurnitureData={parts:[{id:'plate'}]};
+      const sealPlate=new T.Mesh(new T.BoxGeometry(.4,1,.1),new T.MeshStandardMaterial());
+      sealPlate.position.set(2,1,2.4);seal.add(sealPlate);root.add(seal);
+      const rooms=[{id:'boss',col:0,row:0,w:5,h:5}],floorSet=new Set();
+      for(let x=0;x<5;x++)for(let z=0;z<5;z++)floorSet.add(x+','+z);
+      const context={scene,root,theme:'tothal',seed:456,meta:{rooms,floorSurfaceY:0,wallHeight:3.3},floorSet,ceilingY:3.4};
+      const kit={state:{group:owner,lockDoors:[]},group:()=>owner,sampleSupport:()=>({y:0}),
+        roomBounds:(_meta,room)=>({minX:room.col,maxX:room.col+room.w,minZ:room.row,maxZ:room.row+room.h})};
+      composer.buildRooms(kit,context);composer.update(kit,0,.016);
+      const snapshot=window.DevRandomRuinDungeonFire.snapshot();
+      const layers=[];root.traverse(node=>{if(node.userData?.iceStalagmites)layers.push(node)});
+      const reused=layers.length===1&&layers[0]===existing; // Dynamic ice uses the same existing furniture group.
+      const onBurn=[...window.__iceFireTargets.values()].find(target=>target.id==='dungeon-fire-ice-wall-0')?.onBurn;
+      const fired=onBurn?.()===true;
+      composer.update(kit,0,1.6);
+      const retracted=existing.userData.iceGrowthProgress===0 && !existing.children[0].visible;
+      composer.clear();
+      const restored=existing.userData.iceGrowthProgress===1 &&
+        existing.children[0].visible &&
+        existing.children[0].geometry.attributes.position.array.every((value,i)=>value===full[i]);
+      return {found:snapshot.iceDiscovery?.eligible, spawned:snapshot.iceWalls.length,
+        type:snapshot.iceWalls[0]?.doorType, reused, fired, retracted, restored};
+    });
+    assert.equal(authoredResult.found,1,'Only the actual authored sanctum door is eligible; decorative door seals must be excluded');
+    assert.equal(authoredResult.spawned,1,'An existing authored boss-door ice layer must not create a second obstacle');
+    assert.equal(authoredResult.type,'authoredDoor','The actual ruin furniture key must identify sanctum doors');
+    assert(authoredResult.reused && authoredResult.fired && authoredResult.retracted && authoredResult.restored,
+      'Already-authored door ice must melt and restore safely across a dungeon clear, without duplicating its geometry');
+
+
     await page.addScriptTag({ url: '/docs/tools/furniture-avatar-author/ice-stalagmites.js' });
     const uiResult = await page.evaluate(() => {
       const target = document.getElementById('ice-target'); // Controls are the real separate tab, not test-only copies.
