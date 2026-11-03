@@ -1,11 +1,11 @@
 # Ruin capabilities, targetables and world events
 
-Goal: build ruins (and anything else) from small modules that *combine*, instead of scripting each scenario. Two example combinations drive the design and are acceptance tests, not shipped content:
+Goal: build ruins (and anything else) from small modules that *combine*, instead of scripting each scenario. Two example combinations drive the design and now share a playable, optional Hronal trial wing:
 
 1. **Defend the key statue.** Put the key statue on the plinth; skeletons and demolitionists climb out of hidden pillar openings; demolitionists try to blow up the statue before the plinth finishes pressing, skeletons try to distract the player.
 2. **Rope-launched bomb opens a bridge.** Hang a witch-bomb on a rope, melee it so the lunge distance becomes swing force, it drops right before the swing back and lands by a cracked pillar, the blast topples the pillar and the bridge tiles become walkable.
 
-Neither is authored anywhere. The system's job is to make them *possible* as combinations of independent pieces.
+Neither encounter is hardcoded as a layout. `RuinComposer` solves both from independent goal rules, and `RuinComposerPlayable` now builds the result in the live ruin map using authored furniture and shared gameplay runtimes.
 
 ## Why they were not possible
 
@@ -84,7 +84,7 @@ Action 2 displays **Hang on Rope** while carrying a burden within reach of a fre
 
 ## Composing rooms (step 4)
 
-The two example combinations are not authored anywhere. They fall out of five small, separately tested layers:
+The two example combinations are not pre-authored room layouts. They fall out of five small, separately tested layers, with a sixth adapter responsible only for placing the solved plan in gameplay:
 
 | Layer | File | What it does |
 |---|---|---|
@@ -93,6 +93,18 @@ The two example combinations are not authored anywhere. They fall out of five sm
 | Room plan | `js/room-plan.js` | The room as a whole: a ledger of *claims* (footprints, clear areas, zones), `solidFn()` so later decisions see earlier ones, `circulation()` (zones that could reach each other still can), `reaches()`, budgets. |
 | Composer | `js/ruin-composer.js` | An *archetype* (`vaultHall`, `chasmHall`, `trialHall`) lists a room's goals and marks the focal one. Goals are solved focal-first against the plan's view of the room, every placement is claimed, and a clash, a cut-off zone or a blown budget retries another seed. Output is data: furniture records (`key`, position, `rotY`), an encounter description, wiring, a readable explanation. `apply()` hands records to a placer and creates the encounter. |
 | Encounter runtime | `js/ruin-encounters.js` | `defend`: arms when a Key Statue is seated on the plinth; the plinth's press progress is the clock; spawner pillars release skeletons (go for the player) and demolitionists (steered at an invulnerable statue stand-in through the AI's `_chunkCombatTarget` seam; they plant a witch bomb by the statue with a fresh fuse); any blast that reaches the statue destroys it; success on press completion, failure when the statue is lost, then the key-statue dispenser returns another and it re-arms. |
+
+### Playable room integration
+
+`js/ruin-composer-playable.js` invokes `RuinComposer.compose` and `apply` in the **real game scene**, then:
+- Expands the current `map_i_dev_random_ruin` grid without modifying existing V50 cells or the boss sanctum footprint. Two masonry shores are registered as DynamicSurfaces support; the intervening 3.4-tile gap is a lethal-looking void that sends the player back to their last safe point on a fall (footing is spent by the shared ruin fall path).
+- Loads `ruinPillarBridge`, `ruinDefensePlinth`, `keyStatueDispenser`, `witchBombCeilingTube`, `ruinRopeMount`, and spawner furniture through `AuthoredFurniture`. Nodes are registered with `FurniturePuzzleRuntime`; the native rope, bomb, statue and timed-enemy systems are reused, not simulated. The 30-second plinth and enemy schedule have the same clock; the plinth/tube have independent signal channels.
+- Uses native context actions for **Release Witch-bomb**, **Take Key Statue**, and the burden plinth. **Hang on Rope** remains the existing Action 2 behavior. The near-side entrance and return are location-based world actions rather than invisible reticle targets; all input devices receive them through `DevRandomRuinInteractions`.
+- Marks fixed fixture collision on the existing game grid, and calls `puzzleCollision` when the bridge's mechanism progress clears its upright blocker. The settled upper-shaft part exposes its *raycast* walking surface across both banks. Scene geometry, events, registered puzzle nodes, enemies, ropes and transient Burdens are released on exit/reroll or failed generation.
+
+**Where to find it:** Dev Mode → Random Test Ruin → **V50 + Composed Trial** forces one Hronal trial. In ordinary play, Hronal wilderness ruin sites use the accepted generation seed: values modulo 5 equal to 2 get the composed trial, and values modulo 5 equal to 1 get the Shaft Wing. These are optional side wings reached by a two-way world interaction near the entrance; the original V50 room graph remains in place. The door is currently a transition interaction, not a physical contiguous hallway.
+
+`scripts/test-ruin-composer-playable.js` exercises the real solver against a simulated gameplay host, including floor/pit setup, piece registration, action dispatch, collision changes, missing-asset rollback and full cleanup. `scripts/test-ruin-construction-browser.js` is the dedicated Playwright game test for the full rendered bridge, player standing support, passage and upper shaft balconies. Its CI result must be checked before claiming that browser traversal is verified.
 
 Pieces: `ruinDefensePlinth` (a burden plinth that requires a **Key Statue**, `requiredBurdenKind: "keyStatue"`, with a 30 s press; the press length *is* the encounter length) is new; the rest are existing authored furniture (`keyStatueDispenser`, `witchBombCeilingTube`, `ruinRopeMount`, `ruinPillarBroken` as the spawner pillar). The composer resolves `crackedPillar` to the authored `ruinPillarBridge`. Its puzzle input triggers the topple animation once when a blast lands within 2.5 tiles of the placement origin.
 
