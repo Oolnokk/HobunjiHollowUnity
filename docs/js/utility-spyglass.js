@@ -1,30 +1,27 @@
-// Utility-arch spyglass: action-arch presentation, toggle states and shared camera/input ownership.
+// Utility-arch spyglass: Action 2 lens toggle, held Action 1 close-look and shared camera/input ownership.
 // Its zoom belongs to HobunjiRangedCameraFocus; it does not run its own camera loop.
 (() => {
   'use strict';
 
   const CAMERA_MODE = 'shoulderSurf'; // Existing free-look camera used while the spyglass is equipped.
-  const CLAIM_OWNER = 'utility-spyglass'; // Reserves Action 1 without triggering weapons or nearby interactions.
-  const CLAIM_PRIORITY = 1000; // Wins over ordinary world Action 1 interactions while equipped.
-  const ACTION_DEBOUNCE_MS = 85; // Collapses the direct device observer and shared claim callback into one physical press.
+  const CLAIM_OWNER = 'utility-spyglass'; // Reserves both spyglass actions without triggering weapons or nearby interactions.
+  const CLAIM_PRIORITY = 1000; // Wins over ordinary world action interactions while equipped.
+  const ACTION_DEBOUNCE_MS = 85; // Collapses overlapping Action 2 observers into one toggle per physical press.
   let cameraDeps = null; // Captured from Fishing.init and used only for the standard gameplay camera.
   let viewDeps = null; // Captured from ActionArcUI.init and used to restore Character View and detect held equipment.
   let savedCamera = null; // Original camera mode/target/view restored when the spyglass is put away.
-  let savedActionAria = null; // Existing Action 1 accessibility label restored after spyglass use.
-  let savedActionPressed = null; // Existing pressed-state attribute restored when the temporary arch prompt is removed.
-  let savedActionDataAction = null; // Existing contextual action is restored when the spyglass leaves Action 1.
-  let savedActionCombatSlot = null; // Existing combat-slot marker is restored after the spyglass overrides attack presentation.
-  let savedActionCombatDualInput = false; // Restores the attack coin's dual-input styling after the spyglass takes over Action 1.
-  let actionButtonStateCaptured = false; // Ensures a rebuilt Action 1 button is snapshotted before its spyglass override.
+  const buttonSnapshots = new Map(); // Restores both action-arch buttons and combat styling on stow.
   let equipped = false; // True while selected from the Utility Arch.
   let aiming = false; // True while the spyglass lens is raised.
-  let lookingCloser = false; // True after the second Action 1 press activates perception and extra magnification.
+  let lookingCloser = false; // True only while Action 1 is held with the lens raised.
   let perceptionWasActive = null; // Preserves the player's perception state across the spyglass close-look mode.
   let lens = null; // Reused circular lens mask; contains no WebGL surfaces.
   let actionObserver = null; // Reapplies the normal action-arch prompt if the game rebuilds its buttons.
   let lastReason = 'not equipped'; // Mobile-readable diagnostic reason for the latest state transition.
-  let lastAction1At = -Infinity; // Debounces the shared input claim against its direct keyboard/mouse/controller observer.
-  let controllerActionDown = false; // Tracks the controller Action 1 edge without treating release as another action.
+  let lastAction2At = -Infinity; // Debounces the Action 2 toggle against its second observer.
+  let controllerAction1Down = false; // Tracks the held Action 1 edge and release on controllers.
+  let controllerAction2Down = false; // Tracks the Action 2 toggle edge on controllers.
+  const closePointers = new Set(); // Pairs touch/mouse Action 1 down with pointerup or pointercancel.
 
   function log(message) {
     window.__farmLog?.('[spyglass] ' + message, 'input');
@@ -41,60 +38,61 @@
     api.init = wrapped;
   }
 
-  function actionLabel() {
-    if (!aiming) return 'Raise Spyglass';
-    return lookingCloser ? 'Lower Spyglass' : 'Look Closer';
+  function actionLabel(actionId) {
+    return actionId === 'action2' ? (aiming ? 'Lower Spyglass' : 'Raise Spyglass') : 'Look Closer';
   }
 
-  function syncActionButton() {
-    const button = document.getElementById?.('btnAction1');
-    const stack = document.getElementById?.('actionStack');
-    stack?.classList?.toggle?.('spyglass-active', equipped);
+  function syncActionButton(actionId) {
+    const buttonId = actionId === 'action2' ? 'btnAction2' : 'btnAction1'; // Uses the game's actual Tool/Item Action slots.
+    const button = document.getElementById?.(buttonId);
     if (!button) return;
-    button.classList?.toggle?.('spyglass-action-visible', equipped);
+    const visible = equipped && (actionId === 'action2' || aiming); // Look Closer is offered only while the lens is up.
+    if (button.classList?.contains?.('spyglass-action-visible') !== visible)
+      button.classList?.toggle?.('spyglass-action-visible', visible);
+    const inactive = equipped && actionId === 'action1' && !aiming;
+    if (button.classList?.contains?.('spyglass-action-inactive') !== inactive)
+      button.classList?.toggle?.('spyglass-action-inactive', inactive);
     let icon = button.querySelector?.('.spyglass-action-icon');
     let label = button.querySelector?.('.spyglass-action-label');
     if (!equipped) {
       icon?.remove?.();
       label?.remove?.();
-      if (actionButtonStateCaptured) {
-        if (savedActionAria == null) button.removeAttribute?.('aria-label');
-        else button.setAttribute?.('aria-label', savedActionAria);
-        if (savedActionPressed == null) button.removeAttribute?.('aria-pressed');
-        else button.setAttribute?.('aria-pressed', savedActionPressed);
-        if (savedActionDataAction == null) delete button.dataset.action;
-        else button.dataset.action = savedActionDataAction;
-        if (savedActionCombatSlot == null) delete button.dataset.combatSlot;
-        else button.dataset.combatSlot = savedActionCombatSlot;
-        button.classList?.toggle?.('combat-dual-input', savedActionCombatDualInput);
+      const saved = buttonSnapshots.get(buttonId);
+      if (saved?.button === button) {
+        for (const [name, value] of [['aria-label', saved.aria], ['aria-pressed', saved.pressed]]) {
+          if (value == null) button.removeAttribute?.(name);
+          else button.setAttribute?.(name, value);
+        }
+        if (saved.action == null) delete button.dataset.action;
+        else button.dataset.action = saved.action;
+        if (saved.combatSlot == null) delete button.dataset.combatSlot;
+        else button.dataset.combatSlot = saved.combatSlot;
+        if (button.classList?.contains?.('combat-dual-input') !== saved.combatDualInput)
+          button.classList?.toggle?.('combat-dual-input', saved.combatDualInput);
       }
-      savedActionAria = null;
-      savedActionPressed = null;
-      savedActionDataAction = null;
-      savedActionCombatSlot = null;
-      savedActionCombatDualInput = false;
-      actionButtonStateCaptured = false;
+      buttonSnapshots.delete(buttonId);
       return;
     }
-    if (!actionButtonStateCaptured) {
-      savedActionAria = button.getAttribute?.('aria-label');
-      savedActionPressed = button.getAttribute?.('aria-pressed');
-      savedActionDataAction = button.dataset?.action ?? null;
-      savedActionCombatSlot = button.dataset?.combatSlot ?? null;
-      savedActionCombatDualInput = button.classList?.contains?.('combat-dual-input') === true;
-      actionButtonStateCaptured = true;
+    const previous = buttonSnapshots.get(buttonId);
+    if (!previous || previous.button !== button) {
+      buttonSnapshots.set(buttonId, {
+        button, aria: button.getAttribute?.('aria-label'), pressed: button.getAttribute?.('aria-pressed'),
+        action: button.dataset?.action ?? null, combatSlot: button.dataset?.combatSlot ?? null,
+        combatDualInput: button.classList?.contains?.('combat-dual-input') === true,
+      }); // A replacement action-bar node gets its own original state for restoration.
     }
+    const saved = buttonSnapshots.get(buttonId);
     if (button.dataset?.action !== 'spyglass') {
-      savedActionDataAction = button.dataset?.action ?? null; // Tracks a newer contextual action-bar state while the lens owns Action 1.
+      saved.action = button.dataset?.action ?? null; // Retain new contextual actions set by the ordinary action-bar owner.
       button.dataset.action = 'spyglass';
     }
     if (button.dataset?.combatSlot) {
-      savedActionCombatSlot = button.dataset.combatSlot; // Keeps a newly assigned combat slot intact when the spyglass is put away.
+      saved.combatSlot = button.dataset.combatSlot;
       delete button.dataset.combatSlot;
     }
     if (button.classList?.contains?.('combat-dual-input')) {
-      savedActionCombatDualInput = true;
-      button.classList.remove('combat-dual-input'); // Lets the shared arch-label system show the spyglass prompt instead of the attack coin face.
+      saved.combatDualInput = true;
+      button.classList.remove('combat-dual-input');
     }
     if (!icon) {
       icon = document.createElement('span');
@@ -108,11 +106,19 @@
       label.className = 'abt-label spyglass-action-label';
       button.insertBefore?.(label, icon.nextSibling || null);
     }
-    const nextLabel = actionLabel();
+    const nextLabel = actionLabel(actionId);
     if (label.textContent !== nextLabel) label.textContent = nextLabel;
     if (button.getAttribute?.('aria-label') !== nextLabel) button.setAttribute?.('aria-label', nextLabel);
-    const pressed = aiming ? 'true' : 'false';
+    const pressed = (actionId === 'action2' ? aiming : lookingCloser) ? 'true' : 'false';
     if (button.getAttribute?.('aria-pressed') !== pressed) button.setAttribute?.('aria-pressed', pressed);
+  }
+
+  function syncActionButtons() {
+    const stack = document.getElementById?.('actionStack');
+    if (stack?.classList?.contains?.('spyglass-active') !== equipped)
+      stack?.classList?.toggle?.('spyglass-active', equipped);
+    syncActionButton('action1');
+    syncActionButton('action2');
   }
 
   function buildLens() {
@@ -126,7 +132,7 @@
   }
 
   function syncHud() {
-    syncActionButton();
+    syncActionButtons();
     lens?.classList?.toggle?.('aiming', aiming);
     lens?.classList?.toggle?.('looking-closer', lookingCloser);
   }
@@ -138,15 +144,16 @@
       || !!focused?.matches?.('input, textarea, select, [contenteditable="true"]');
   }
 
-  function action1Binding(device) {
-    const saved = window.InputBindings?.getCurrentBindings?.()?.[device]; // Honors live remapping and explicit unbinding.
-    if (saved && Object.prototype.hasOwnProperty.call(saved, 'action1')) return saved.action1;
-    return window.SCRATCHBONES_CONFIG?.game?.input?.actions?.find?.(action => action.id === 'action1')?.[device]
-      || (device === 'controller' ? 'RightTrigger' : 'Mouse0');
+  function actionBinding(actionId, device) {
+    const saved = window.InputBindings?.getCurrentBindings?.()?.[device]; // Honors remapping, including explicit null bindings.
+    if (saved && Object.prototype.hasOwnProperty.call(saved, actionId)) return saved[actionId];
+    return window.SCRATCHBONES_CONFIG?.game?.input?.actions?.find?.(action => action.id === actionId)?.[device]
+      || (device === 'controller' ? (actionId === 'action2' ? 'LeftTrigger' : 'RightTrigger')
+        : (actionId === 'action2' ? 'Mouse2' : 'Mouse0'));
   }
 
-  function pointerBindingMatches(event) {
-    const binding = action1Binding('desktop');
+  function pointerBindingMatches(event, actionId) {
+    const binding = actionBinding(actionId, 'desktop');
     return (binding === 'Mouse0' && event.button === 0)
       || (binding === 'Mouse1' && event.button === 1)
       || (binding === 'Mouse2' && event.button === 2);
@@ -157,7 +164,7 @@
   }
 
   function setLookingCloser(next) {
-    next = !!next;
+    next = !!next && equipped && aiming; // Never enable the held zoom if the lens is lowered.
     if (next === lookingCloser) return lookingCloser;
     const perception = window.PerceptionMode;
     if (next) {
@@ -173,7 +180,7 @@
     return lookingCloser;
   }
 
-  function beginAim(reason = 'action 1') {
+  function beginAim(reason = 'action 2') {
     if (!equipped || !ownsCamera() || blockedByOtherActivity()) return false;
     if (window.SharedSelectionArch?.entryMenuOpen?.() || window.SharedSelectionArch?.toolMenuOpen?.()) return false;
     if (aiming) return true;
@@ -193,22 +200,38 @@
     log('lens lowered');
   }
 
-  function action1Press(reason = 'action 1') {
+  function action1Press(reason = 'held action 1') {
+    if (!equipped || !ownsCamera() || blockedByOtherActivity()) return false;
+    if (aiming) {
+      lastReason = reason;
+      setLookingCloser(true);
+    }
+    return true; // Consume Action 1 even when the lens is lowered; never fire an equipped weapon.
+  }
+
+  function action1Release(reason = 'action 1 released') {
+    if (lookingCloser) {
+      lastReason = reason;
+      setLookingCloser(false); // Release restores the base spyglass FOV without lowering the lens.
+    }
+    return equipped;
+  }
+
+  function action2Press(reason = 'action 2 toggle') {
     if (!equipped || !ownsCamera() || blockedByOtherActivity()) return false;
     const now = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
-    if (now - lastAction1At < ACTION_DEBOUNCE_MS) return true;
-    lastAction1At = now;
-    if (!aiming) beginAim(reason);
-    else if (!lookingCloser) setLookingCloser(true);
-    else endAim('action 1 lowered spyglass');
+    if (now - lastAction2At < ACTION_DEBOUNCE_MS) return true;
+    lastAction2At = now;
+    if (aiming) endAim(reason);
+    else beginAim(reason);
     return true;
   }
 
   function releaseInputClaim() {
     const claims = window.WorldActionInputClaims;
-    const pressed = claims?.snapshot?.().pressed || []; // Never cancel another Action 1 owner's active press.
-    if (pressed.some(entry => entry.ownerId === CLAIM_OWNER && entry.actionId === 'action1')) {
-      claims.dispatch('action1', 'cancel');
+    for (const entry of claims?.snapshot?.().pressed || []) {
+      if (entry.ownerId === CLAIM_OWNER && (entry.actionId === 'action1' || entry.actionId === 'action2'))
+        claims.dispatch?.(entry.actionId, 'cancel'); // Pair both physical releases before removing either claim.
     }
     claims?.clearClaims?.(CLAIM_OWNER);
   }
@@ -216,7 +239,9 @@
   function stow(reason = 'put away', options = {}) {
     if (!equipped) return false;
     endAim(reason);
-    controllerActionDown = false;
+    controllerAction1Down = false;
+    controllerAction2Down = false;
+    closePointers.clear();
     releaseInputClaim();
     equipped = false;
     lastReason = reason;
@@ -259,16 +284,15 @@
       viewDeps?.setCharacterViewMode?.(previous.characterView, 'spyglass-unavailable');
       if (previous.mode != null) cameraDeps.setCameraMode(previous.mode);
       cameraDeps.setCameraTarget?.(previous.target);
-      savedActionAria = null;
-      savedActionPressed = null;
-      savedActionDataAction = null;
-      savedActionCombatSlot = null;
-      savedActionCombatDualInput = false;
-      actionButtonStateCaptured = false;
+      buttonSnapshots.clear();
       lastReason = 'shoulder camera unavailable';
       return false;
     }
     equipped = true;
+    lastAction2At = -Infinity;
+    controllerAction1Down = false;
+    controllerAction2Down = false;
+    closePointers.clear();
     aiming = false;
     lookingCloser = false;
     perceptionWasActive = null;
@@ -276,13 +300,19 @@
     window.WorldActionInputClaims.setClaims(CLAIM_OWNER, [{
       actionId: 'action1',
       priority: CLAIM_PRIORITY,
-      label: 'Raise Spyglass / Look Closer',
+      label: 'Look Closer (hold)',
       onPress: () => action1Press('claimed action 1'),
-      onRelease: () => {}, // Toggle state is intentionally independent of physical button release.
+      onRelease: () => action1Release('claimed action 1 released'),
+    }, {
+      actionId: 'action2',
+      priority: CLAIM_PRIORITY,
+      label: 'Raise / Lower Spyglass',
+      onPress: () => action2Press('claimed action 2'),
+      onRelease: () => {}, // Action 2 only toggles on press, never on physical release.
     }]);
     syncHud();
     window.ShoulderCamPointerLock?.request?.();
-    log('equipped; Action 1 raises, looks closer, then lowers');
+    log('equipped; Action 2 toggles lens, Action 1 holds closer zoom');
     return true;
   }
 
@@ -310,47 +340,93 @@
       return;
     }
     if (!frame?.pad) {
-      controllerActionDown = false;
+      action1Release('controller disconnected');
+      controllerAction1Down = false;
+      controllerAction2Down = false;
       return;
     }
-    const binding = action1Binding('controller');
-    const actionCodes = controllerActionCodes(binding);
-    const pressed = frame.pressed && typeof frame.pressed[Symbol.iterator] === 'function' ? Array.from(frame.pressed) : Array.isArray(frame.pressed) ? frame.pressed : [];
-    const otherButtonPressed = pressed.some(code => !actionCodes.has(code) && !/^RightStick(?:Left|Right|Up|Down)$/.test(String(code))); // Right-stick look remains available while the lens is raised.
+    const binding1 = actionBinding('action1', 'controller');
+    const binding2 = actionBinding('action2', 'controller');
+    const codes1 = binding1 ? controllerActionCodes(binding1) : new Set();
+    const codes2 = binding2 ? controllerActionCodes(binding2) : new Set();
+    const allowed = new Set([...codes1, ...codes2]); // Neither spyglass control should count as an interruption.
+    const pressed = frame.pressed && typeof frame.pressed[Symbol.iterator] === 'function' ? Array.from(frame.pressed) : [];
+    const otherButtonPressed = pressed.some(code => !allowed.has(code) && !/^RightStick(?:Left|Right|Up|Down)$/.test(String(code)));
     if (otherButtonPressed || Number(frame.move?.magnitude) > 0.12) {
       stow(Number(frame.move?.magnitude) > 0.12 ? 'controller movement' : 'other controller input');
       return;
     }
-    const down = binding ? (typeof frame.isDown === 'function' ? frame.isDown(binding) : frame.down?.has(binding) || [...actionCodes].some(code => frame.down?.has?.(code))) : false;
-    const pressedAction1 = pressed.some(code => actionCodes.has(code));
-    if ((down && !controllerActionDown) || pressedAction1) action1Press('controller action 1');
-    controllerActionDown = !!down;
+    const downFor = (binding, codes) => !!binding &&
+      ((typeof frame.isDown === 'function' && frame.isDown(binding)) || [...codes].some(code => frame.down?.has?.(code)));
+    const down1 = downFor(binding1, codes1);
+    const down2 = downFor(binding2, codes2);
+    if ((down2 || pressed.some(code => codes2.has(code))) && !controllerAction2Down)
+      action2Press('controller action 2');
+    if ((down1 || pressed.some(code => codes1.has(code))) && !controllerAction1Down)
+      action1Press('controller action 1');
+    if (!down1 && controllerAction1Down) action1Release('controller action 1 released');
+    controllerAction1Down = down1;
+    controllerAction2Down = down2;
   }
 
   function handleKeyboardInput(event) {
     if (!equipped || event.repeat) return;
-    const binding = action1Binding('desktop');
-    if (binding && binding === event.code && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    const action1 = actionBinding('action1', 'desktop');
+    const action2 = actionBinding('action2', 'desktop');
+    if (!event.ctrlKey && !event.altKey && !event.metaKey && event.code === action2 && action2) {
+      action2Press('keyboard action 2');
+    } else if (!event.ctrlKey && !event.altKey && !event.metaKey && event.code === action1 && action1) {
       action1Press('keyboard action 1');
-      event.preventDefault?.();
-      event.stopImmediatePropagation?.();
+    } else {
+      stow('other keyboard input: ' + (event.code || event.key || 'unknown'));
       return;
     }
-    stow('other keyboard input: ' + (event.code || event.key || 'unknown'));
+    event.preventDefault?.();
+    event.stopImmediatePropagation?.();
+  }
+
+  function handleKeyboardRelease(event) {
+    if (!equipped) return;
+    if (event.code === actionBinding('action1', 'desktop')) {
+      action1Release('keyboard action 1 released');
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+    }
   }
 
   function handlePointerInput(event) {
     if (!equipped) return;
-    const actionButton = event.target?.closest?.('#btnAction1');
+    const action1Button = event.target?.closest?.('#btnAction1');
+    const action2Button = event.target?.closest?.('#btnAction2');
     const canvas = document.getElementById?.('threeContainer');
-    const sceneAction1 = event.pointerType !== 'touch' && canvas?.contains?.(event.target) && pointerBindingMatches(event);
-    if (actionButton || sceneAction1) {
-      action1Press(actionButton ? 'action arch action 1' : 'scene mouse action 1');
-      event.preventDefault?.();
-      event.stopImmediatePropagation?.();
+    const scene = event.pointerType !== 'touch' && canvas?.contains?.(event.target);
+    const actionId = action2Button || (scene && pointerBindingMatches(event, 'action2')) ? 'action2'
+      : action1Button || (scene && pointerBindingMatches(event, 'action1')) ? 'action1' : null;
+    if (!actionId) {
+      stow('other pointer input');
       return;
     }
-    stow('other pointer input');
+    if (actionId === 'action2') action2Press('pointer action 2');
+    else {
+      closePointers.add(event.pointerId);
+      action1Press('pointer action 1');
+    }
+    event.preventDefault?.();
+    event.stopImmediatePropagation?.();
+  }
+
+  function handlePointerRelease(event) {
+    if (!closePointers.delete(event.pointerId)) return;
+    action1Release(event.type === 'pointercancel' ? 'pointer canceled' : 'pointer action 1 released');
+    event.preventDefault?.();
+    event.stopImmediatePropagation?.();
+  }
+
+  function handleContextMenu(event) {
+    if (!equipped || actionBinding('action2', 'desktop') !== 'Mouse2') return;
+    const canvas = document.getElementById?.('threeContainer');
+    if (canvas?.contains?.(event.target) || event.target?.closest?.('#btnAction2'))
+      event.preventDefault?.(); // The default right-click binding must not open a browser menu.
   }
 
   function install() {
@@ -365,11 +441,15 @@
       if (document.hidden) stow('document hidden');
     });
     document.addEventListener('keydown', handleKeyboardInput, true);
+    document.addEventListener('keyup', handleKeyboardRelease, true);
     document.addEventListener('pointerdown', handlePointerInput, true);
+    document.addEventListener('pointerup', handlePointerRelease, true);
+    document.addEventListener('pointercancel', handlePointerRelease, true);
+    document.addEventListener('contextmenu', handleContextMenu, true);
     buildLens();
     const stack = document.getElementById?.('actionStack');
     if (stack && typeof MutationObserver === 'function') {
-      actionObserver = new MutationObserver(() => { if (equipped) syncActionButton(); });
+      actionObserver = new MutationObserver(() => { if (equipped) syncActionButtons(); });
       actionObserver.observe(stack, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-action', 'data-combat-slot', 'class'] });
     }
   }
@@ -380,6 +460,8 @@
     beginAim,
     endAim,
     action1Press,
+    action1Release,
+    action2Press,
     update,
     isEquipped: () => equipped,
     isAiming: () => equipped && aiming,
@@ -391,10 +473,16 @@
       currentCameraMode: cameraDeps?.getCameraMode?.() ?? null,
       savedCameraMode: savedCamera?.mode ?? null,
       ownsAction1: window.WorldActionInputClaims?.claimFor?.('action1')?.ownerId === CLAIM_OWNER,
-      action1Label: equipped ? actionLabel() : null,
-      controllerActionDown,
-      desktopAction1: action1Binding('desktop'),
-      controllerAction1: action1Binding('controller'),
+      ownsAction2: window.WorldActionInputClaims?.claimFor?.('action2')?.ownerId === CLAIM_OWNER,
+      action1Label: equipped ? actionLabel('action1') : null,
+      action2Label: equipped ? actionLabel('action2') : null,
+      controllerAction1Down,
+      controllerAction2Down,
+      closePointerCount: closePointers.size,
+      desktopAction1: actionBinding('action1', 'desktop'),
+      desktopAction2: actionBinding('action2', 'desktop'),
+      controllerAction1: actionBinding('action1', 'controller'),
+      controllerAction2: actionBinding('action2', 'controller'),
       perceptionWasActive,
       zoom: window.HobunjiRangedCameraFocus?.snapshot?.().fovDeg ?? null,
     }),
