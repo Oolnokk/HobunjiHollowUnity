@@ -107,18 +107,42 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
   constructor(x=0,y=0,z=0){this.set(x,y,z);}
   set(x,y,z){Object.assign(this,{x,y,z});return this;}
   add(other){this.x+=other.x;this.y+=other.y;this.z+=other.z;return this;}
+  normalize(){return this;}
  }
  class RuntimeGroup {
-  constructor(){this.isObject3D=true;this.position=new RuntimeVector3();this.userData={};this.parent=null;}
+  constructor(geometry,material){
+   this.isObject3D=true;this.position=new RuntimeVector3();this.userData={};this.parent=null;this.children=[];
+   this.scale={setScalar(){}};this.quaternion={setFromUnitVectors(){}};
+   this.geometry=geometry;this.material=material;this.instanceMatrix={};
+  }
+  add(child){child.parent=this;this.children.push(child);}
+  remove(child){this.children.splice(this.children.indexOf(child),1);child.parent=null;}
+  traverse(visit){
+   visit(this);
+   // Like Three.js r128, traversal captures the child count before visiting children.
+   for(let i=0,count=this.children.length;i<count;i++)this.children[i].traverse(visit);
+  }
+  getWorldPosition(target){return target.add(this.position);}
+  updateMatrix(){}
+  setMatrixAt(){}
  }
- const scene={isScene:true,add(group){group.parent=this;},remove(group){group.parent=null;}};
+ class RuntimeDisposable {
+  constructor(options){Object.assign(this,options);}
+  dispose(){}
+ }
+ const scene=new RuntimeGroup();
+ scene.isScene=true;
  const burdens=new Map(),factories=new Map(),glowStates=[];
  let clock=1000,spawns=0,releases=0;
  const tube={isObject3D:true,id:'tube-fixture',parent:scene,
   userData:{puzzleInstanceId:'tube-fixture',authoredFurnitureData:{bombTubeExit:{x:0,y:-.88,z:0}}},
   updateWorldMatrix(){},localToWorld(point){return point.add(new RuntimeVector3(2,3,4));}};
  const runtimeWindow={
-  THREE:{Vector3:RuntimeVector3},
+  THREE:{
+   Vector3:RuntimeVector3,Group:RuntimeGroup,Mesh:RuntimeGroup,
+   InstancedMesh:RuntimeGroup,Object3D:RuntimeGroup,
+   SphereGeometry:RuntimeDisposable,ConeGeometry:RuntimeDisposable,MeshBasicMaterial:RuntimeDisposable,
+  },
   GridTileAccessors:{getCurrentArea:()=> 'map_witch_bomb_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
   Shattercasks:{
    registerBurdenFactory(kind,factory){factories.set(kind,factory);return true;},
@@ -154,11 +178,26 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  clock=7000;runtimeWindow.HronalWitchBombs.tick(.016);
  assert(glowStates.at(-1).pulseSpeed>initialPulse,'the glyph pulse accelerates as the spawn-time fuse runs down');
  assert(first.group.userData.hronalFuse.remainingSeconds<2,'live fuse debug data tracks elapsed spawn time');
- runtimeWindow.Shattercasks.discardBurden(first);
+ const broken=[];
+ for(const name of ['throwing callback','adjacent prop']){
+  const prop=new RuntimeGroup();
+  prop.position.set(2,0,4);
+  prop.userData.hronalBombBreakable=true;
+  prop.userData.onHronalBombBreak=()=>{
+   broken.push(name);
+   if(name==='throwing callback')throw new Error('fixture callback failed');
+  };
+  scene.add(prop);
+ }
+ clock=8100;runtimeWindow.HronalWitchBombs.tick(.016);
+ assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
+ assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
+ assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().dispensers[0].activeBombId,null,'detonation frees the ceiling tube');
  const replacement=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
- assert(replacement&&replacement.id!==first.id,'losing the first payload releases the dispenser for a replacement');
+ assert(replacement&&replacement.id!==first.id,'detonating the first payload releases the dispenser for a replacement');
  assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
- console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and loss/unlock/re-dispense PASS');
+ console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
 console.log('Hronal Witch-bomb: authored whole-sphere glyph/glow, fuse, ceiling dispenser lock, carrier grip, hazard loss, fire blast and breakable hooks passed.');

@@ -126,16 +126,21 @@
       catch(error){removed=false;console.warn('[HronalWitchBombs] breakable callback failed',error);}
       if (removed) {record.object.parent?.remove(record.object);breakables.delete(id);}
     }
-    const scene=currentScene();
-    scene?.traverse?.(node=>{
+    const markedProps=[]; // Collect scene nodes before callbacks or removals can change the traversal.
+    currentScene()?.traverse?.(node=>{
       if (node.userData?.hronalBombBreakable!==true || node.userData?.hronalBombBreakQueued) return;
       node.updateWorldMatrix?.(true,false);
       const p=node.getWorldPosition?.(new THREE.Vector3());
       if (!p || Math.hypot(p.x-x,p.z-z)>radius) return;
-      node.userData.hronalBombBreakQueued=true;
-      try { node.userData.onHronalBombBreak?.({mapId,x,y:p.y,z,radius}); }
-      finally { node.parent?.remove(node); }
+      markedProps.push({node,y:p.y});
     });
+    for (const {node,y} of markedProps) {
+      if (!node.parent || node.userData.hronalBombBreakQueued) continue;
+      node.userData.hronalBombBreakQueued=true;
+      try { node.userData.onHronalBombBreak?.({mapId,x,y,z,radius}); }
+      catch(error){console.warn('[HronalWitchBombs] breakable callback failed',error);}
+      finally { node.parent?.remove(node); }
+    }
   }
   function explode(bomb,cause='fuse') {
     if (!bomb || bomb.exploded || bomb._witchBombExploding) return false;
@@ -354,7 +359,7 @@
   }
   function debugSnapshot() {
     return {
-      latestChange:'Hronal Witch-bombs fuse from physical spawn; glyph glow accelerates near detonation; ceiling tubes hold one live payload.',
+      latestChange:'Hronal Witch-bombs fuse from physical spawn; glyph glow accelerates near detonation; breaking props leaves the ceiling tube ready for another payload.',
       dispensers:[...dispensers.values()].map(item=>({id:item.id,mapId:item.mapId,activeBombId:item.activeBombId,dispensing:item.dispensing,fuseSeconds:item.fuseSeconds})),
       activeBombs:(window.Shattercasks.activeBurdenRecords?.(currentArea())||[]).filter(item=>item.kind===KIND).map(item=>({
         id:item.id,remainingSeconds:Math.max(0,(Number(item.fuseSeconds)||DEFAULT_FUSE_SECONDS)-(now()-Number(item.spawnedAtMs||now()))/1000),
