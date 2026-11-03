@@ -45,6 +45,19 @@ const image={width:9,height:1,data:new Uint8ClampedArray(sourcePixels)};
 const pixel=(cv,index)=>Array.from(cv.data.slice(index*4,index*4+4));
 async function main(){
   await api.ensureManifest();
+  // Actual author-exported per-species exclusions are manifest data, not fixed runtime code.
+  assert.deepEqual(Array.from(registry.excludedColors),['#94858e','#567372'],'global source swatches are unchanged');
+  for(const [kind,count] of [['gar-wolf',36],['nelk',23],['puktuk',112]]){
+    const perRole=registry.species[kind].excludedColorsByRole;
+    assert.equal(perRole.animalFront.length,count,kind+' front exclusion HEX count matches the artist export');
+    assert.deepEqual(Array.from(perRole.animalBack),[],kind+' has no new back exclusions');
+    assert.deepEqual(Array.from(perRole.base),[],kind+' base layer is unchanged');
+    assert.deepEqual(Array.from(perRole.trim),[],kind+' trim layer is unchanged');
+    const head={kind,baseColor:'#aabbcc',genotype:{base:{color:'#aabbcc'}}};
+    assert.equal(api.protectedColorsFor(head,'animalFront').length,2+count-(perRole.animalFront.includes('#94858e')?1:0)-(perRole.animalFront.includes('#567372')?1:0),kind+' live effective exclusions combine with global values');
+    assert.equal(api.protectedColorsFor(head,'animalBack').length,2,kind+' back keeps only global exclusions');
+  }
+
   assert.equal(api.colorForRole(sample,'base'),'#4488bb');
   assert.equal(api.colorForRole(sample,'trim'),'#aa4422','first expressed pattern colors trim without a drawn motif');
   assert.equal(api.colorForRole(none,'trim'),'#4488bb','plain hides retain base-colored trim');
