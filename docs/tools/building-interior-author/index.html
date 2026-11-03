@@ -830,20 +830,24 @@ function drawGrid(){
   // Furniture — from the currently-edited layout if one is selected (see
   // activeFurniture), otherwise the base room's own furniture.
   activeFurniture().forEach(function(f){
-    var cat=catOf(f.itemKey), info=furnGridInfo(f), sel=f.id===state.selectedId;
+    var cat=catOf(f.itemKey),info=furnGridInfo(f),sel=f.id===state.selectedId;
+    var childCenter=tableChildCenterOnGrid(f);
+    var left=childCenter ? childCenter.x-.35 : f.col;
+    var top=childCenter ? childCenter.z-.35 : f.row;
+    var w=childCenter ? .7 : info.gridW,d=childCenter ? .7 : info.gridD;
     gx.fillStyle=sel?'#76b8ff':catColHex(f.itemKey); gx.globalAlpha=sel?0.9:0.7;
-    gx.fillRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
+    gx.fillRect(left*cw+2,top*ch+2,Math.max(3,w*cw-4),Math.max(3,d*ch-4));
     gx.globalAlpha=1;
     gx.strokeStyle=sel?'#fff':'rgba(255,255,255,.4)'; gx.lineWidth=sel?2:1;
-    gx.strokeRect(f.col*cw+2,f.row*ch+2,info.gridW*cw-4,info.gridD*ch-4);
+    gx.strokeRect(left*cw+2,top*ch+2,Math.max(3,w*cw-4),Math.max(3,d*ch-4));
     var fs=Math.max(7,Math.min(11,cw*0.3));
     gx.font='bold '+fs+'px system-ui'; gx.textAlign='center'; gx.textBaseline='middle';
     gx.fillStyle='#fff'; gx.globalAlpha=sel?1:0.8;
-    var rotMark=info.gridRot?' ↻'+info.gridRot:'';
-    gx.fillText(((cat.label||f.itemKey).slice(0,7)+rotMark),(f.col+info.gridW/2)*cw,(f.row+info.gridD/2)*ch);
+    var rotMark=childCenter?' ↳':(info.gridRot?' ↻'+info.gridRot:'');
+    gx.fillText(((cat.label||f.itemKey).slice(0,7)+rotMark),(left+w/2)*cw,(top+d/2)*ch);
     if(f.nonColliding||f.walkableElevation){
       gx.font='bold '+Math.max(7,Math.min(10,cw*0.24))+'px system-ui';
-      gx.fillText('NO COLLISION',(f.col+info.gridW/2)*cw,(f.row+info.gridD-0.2)*ch);
+      gx.fillText('NO COLLISION',(left+w/2)*cw,(top+d-0.2)*ch);
     }
     gx.globalAlpha=1;
   });
@@ -866,8 +870,26 @@ function gridCell(e){
            r:Math.floor((e.clientY-rect.top)/rect.height*state.interior.rows) };
 }
 function inGrid(c,r){ return c>=0&&r>=0&&c<state.interior.cols&&r<state.interior.rows; }
+function tableChildCenterOnGrid(f) {
+  if(!f?.tableAttachment || !f.tableId) return null;
+  var table=activeFurniture().find(function(parent){return parent.id===f.tableId&&parent!==f;});
+  var desc=window.TableChairPlacement?.normalize?.(f.tableAttachment);
+  if(!table||!desc||desc.mode!==window.TableChairPlacement.modeForTable(table.itemKey))return null;
+  var cat=catOf(table.itemKey),visual=furnLegacyVisual(table);
+  var sx=Math.max(1e-4,Math.abs(Number(visual.postSX??visual.postScale??1)));
+  var sz=Math.max(1e-4,Math.abs(Number(visual.postSZ??visual.postScale??1)));
+  var local=window.TableChairPlacement.localPosition(desc,cat.fw*sx,cat.fd*sz);
+  if(!local)return null;
+  var yaw=(Number(visual.rotY)||0)*Math.PI/180,cos=Math.cos(yaw),sin=Math.sin(yaw);
+  return {
+    x:table.col+cat.fw/2+(Number(visual.postX)||0)+cos*local.x+sin*local.z,
+    z:table.row+cat.fd/2+(Number(visual.postZ)||0)-sin*local.x+cos*local.z,
+  }; // Same center as 3D preview; this child has no independent grid footprint.
+}
 function furnitureOccupiesTile(f,c,r){
-  if(!f) return false;
+  if(!f)return false;
+  var childCenter=tableChildCenterOnGrid(f);
+  if(childCenter)return Math.floor(childCenter.x)===c&&Math.floor(childCenter.z)===r;
   var info=furnGridInfo(f);
   return c>=f.col&&c<f.col+info.gridW&&r>=f.row&&r<f.row+info.gridD;
 }
@@ -923,8 +945,11 @@ function gridAction(e){
       }
       state.floorSet.delete(key);
       setActiveFurniture(activeFurniture().filter(function(f){
+        if(tableChildCenterOnGrid(f))return true; // Removing an old origin tile must not delete a table-relative child.
         var info=furnGridInfo(f);
         for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++)
+
+//
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       }));
