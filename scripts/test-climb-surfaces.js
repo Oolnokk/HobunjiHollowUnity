@@ -100,6 +100,26 @@ assert.equal(CS.getStyle('moss').speedV, 0.5);
 assert.equal(CS.getStyle('moss').speedU, 1.2, 'unspecified speeds default');
 assert.throws(() => CS.register({ id: 'bad', axis: 'z', normal: { x: 1, z: 0 }, plane: 0, u0: 1, u1: 1, y0: 0, y1: 1 }), /invalid/);
 
+// --- raw composer-face visuals ------------------------------------------------------
+// CellGrid3D emits raw faces without a tangent; the visual path must normalize them just like registerGrid.
+class VisualVector3 {
+  constructor(x,y,z){this.x=x;this.y=y;this.z=z;}
+  cross(v){const x=this.y*v.z-this.z*v.y,y=this.z*v.x-this.x*v.z,z=this.x*v.y-this.y*v.x;Object.assign(this,{x,y,z});return this;}
+}
+class VisualGroup {
+  constructor(){this.children=[];this.userData={};this.position={set:(x,y,z)=>{this.origin={x,y,z};}};this.quaternion={setFromRotationMatrix:m=>{this.basis=m.basis;}};}
+  add(item){this.children.push(item);}
+}
+class VisualMesh extends VisualGroup {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
+class VisualMatrix4 {makeBasis(x,y,z){this.basis=[x,y,z];return this;}}
+const FakeVisualThree={Group:VisualGroup,Mesh:VisualMesh,PlaneGeometry:class{},BoxGeometry:class{},MeshBasicMaterial:class{},DoubleSide:2,Vector3:VisualVector3,Matrix4:VisualMatrix4}; // Minimal render API isolates raw-face math from WebGL.
+for(const [axis,normal] of [['x',{x:0,z:1}],['x',{x:0,z:-1}],['z',{x:1,z:0}],['z',{x:-1,z:0}]]){
+  const raw={axis,normal,plane:4,u0:1,u1:3,y0:0,y1:4,style:'holds'}; // Matches the raw CellGrid3D faces passed by ShaftHub.buildVisual.
+  const visual=CS.buildVisual(FakeVisualThree,raw);
+  assert(visual.basis?.every(v=>Number.isFinite(v.x)&&Number.isFinite(v.y)&&Number.isFinite(v.z)), 'raw wall orientation must have a finite normalized tangent');
+  assert(visual.children.length===1&&visual.children[0].children.length===2,'plane and handholds must both render from a raw face');
+}
+
 // --- player glue ------------------------------------------------------------------
 CS.clearScope('dir'); CS.registerGrid(g, { scope: 't' });
 const TILE = 32, player = { x: 5.4 * TILE, y: 7 * TILE, angle: WEST, vx: 3, vy: 3 };
