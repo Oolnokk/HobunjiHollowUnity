@@ -402,8 +402,10 @@
             const cell=queue[front++],at=cell*4,x=cell%originalWidth,y=(cell-x)/originalWidth;
             if (rgba[at+3]<80 || Math.abs(rgba[at]-base[0])>14 || Math.abs(rgba[at+1]-base[1])>14 || Math.abs(rgba[at+2]-base[2])>14) continue;
             rgba[at+3]=0;
-            const neighbors=[x>0?cell-1:-1,x+1<originalWidth?cell+1:-1,y>0?cell-originalWidth:-1,y+1<originalHeight?cell+originalWidth:-1];
-            for(const neighbor of neighbors) if(neighbor>=0&&visited[neighbor]!==stamp) {visited[neighbor]=stamp;queue[back++]=neighbor;}
+            if(x>0&&visited[cell-1]!==stamp) {visited[cell-1]=stamp;queue[back++]=cell-1;}
+            if(x+1<originalWidth&&visited[cell+1]!==stamp) {visited[cell+1]=stamp;queue[back++]=cell+1;}
+            if(y>0&&visited[cell-originalWidth]!==stamp) {visited[cell-originalWidth]=stamp;queue[back++]=cell-originalWidth;}
+            if(y+1<originalHeight&&visited[cell+originalWidth]!==stamp) {visited[cell+originalWidth]=stamp;queue[back++]=cell+originalWidth;}
           }
         }
         ctx.putImageData(sourcePixels,0,0);
