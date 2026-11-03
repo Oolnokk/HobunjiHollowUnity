@@ -8,7 +8,7 @@
     "w": 1,
     "d": 5
   },
-  "notes": "Projectile activator. The glyph on the front face glows OFF (orange) until struck, then ON (green). Every target pillar at a ruin site must be struck to open its entrance door.",
+  "notes": "Blast-triggered falling pillar for a chasm puzzle. Its upper shaft settles as a walkable bridge after the topple animation; it does not respond to ordinary direct interaction.",
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
   "fireHazard": false,
@@ -1824,7 +1824,7 @@
     "version": 3,
     "role": "mechanism",
     "behavior": "toggle",
-    "channel": "A",
+    "channel": "PillarBridge",
     "completionChannel": "B",
     "requiredBurdenKind": "shattercask",
     "payloadSurfaceId": "",
