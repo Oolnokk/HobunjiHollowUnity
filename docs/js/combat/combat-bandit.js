@@ -3021,10 +3021,9 @@
     const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
       || c.carriesBurdenKind === 'hronalWitchBomb'
       || opts.carriesHronalWitchBomb === true || opts.carriesBurdenKind === 'hronalWitchBomb'
-      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb'
-      || !!c.mineWyrmWitchType; // The existing Wyrm-witch archetype is the first ordinary spawn source for the physical bomb.
+      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb';
     if (carriesHronalWitchBomb) {
-      // Explicit enemy flags and the existing mine Wyrm-witch variant share the real two-hand physical Burden path.
+      // Only explicitly authored enemy types may carry this ruin-specific Burden; unrelated mine Wyrm-witches do not.
       const fuseSeconds=c.witchBombFuseSeconds??opts.witchBombFuseSeconds
         ??opts.extra?.witchBombFuseSeconds??def.witchBombFuseSeconds;
       window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds})
