@@ -44,6 +44,7 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       const entered=await window.DevRandomRuin.generate(3,{composedTrial:true,theme:'hronal',rootMechanisms:false,stoneAge:false});
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress(),audit:window.DevRandomRuin.getLastSolvabilityAudit()};
       const state=window.DevRandomRuin.getState(),context=window.DevRandomRuin.getRuntimeContext();
+      if(!state.shaftHub || !context.shaftHub || !state.shaftNavigation?.length) return {ok:false,issue:'required shaft hub missing from composed ruin',state};
       const plan=window.RuinComposerPlayable.plan(state.seed).composition;
       const pillar=plan.records.find(record=>record.piece==='crackedPillar');
       const node=window.FurniturePuzzleRuntime.getNode('map_i_dev_random_ruin',pillar.id);
@@ -109,17 +110,17 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(cleared.ropes,0,'ruin exit must dispose the rope');
     assert.equal(cleared.puzzleNodes,0,'ruin exit must discard the authored puzzle graph');
     const shaft=await page.evaluate(async()=>{
-      const entered=await window.DevRandomRuin.generate(4,{shaftWing:true,theme:'hronal',rootMechanisms:false,stoneAge:false});
+      const entered=await window.DevRandomRuin.generate(4,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // No shaft option: every generated ruin receives one.
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress()};
       const state=window.DevRandomRuin.getState();
-      const door=window.DevRandomRuin.getInteractionControls().find(c=>c.label==='Enter Shaft Wing');
+      const door=window.DevRandomRuin.getInteractionControls().find(c=>c.label==='Enter Shaft Hub');
       if(door)await door.onPress();
       const surfaces=window.ClimbSurfaces.list().filter(s=>String(s.scope)==='shaft-hub');
       const highest=surfaces.reduce((best,next)=>!best||next.y1>best.y1?next:best,null);
       const top=highest&&window.ClimbSurfaces.topExitPoint(highest,(highest.u0+highest.u1)/2);
       const support=top&&window.DynamicSurfaces.sampleSupport(top.x,top.z,{minY:highest.y1-.2,maxY:highest.y1+.4});
       const teleported=top&&support&&window.DevRandomRuin.setPlayerWorldPoint({x:top.x,y:support.y,z:top.z},{grounded:true});
-      return {ok:!!door&&!!state.shaftNavigation?.length,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
+      return {ok:!!door&&!!state.shaftHub&&!!state.shaftNavigation?.length,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     });
