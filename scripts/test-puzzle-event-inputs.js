@@ -114,6 +114,32 @@ assert.equal(on(slow), false, 'a delayed input has not acted yet'); assert.equal
 timers[0].fn(); assert.equal(on(slow), true, 'and acts when the delay elapses');
 R.unregisterNode(MAP, 'slow');
 
+// Delayed inputs must not act on a replacement node after a reroll.
+timers.length = 0;
+const stale = node('reused', mech([{ event: 'blast', delaySeconds: 2 }]));
+register(stale);
+WorldEvents.emit('blast', { scope: MAP, x: 10, z: 10, radius: 1 });
+assert.equal(timers.length, 1, 'the original node queued its delayed event');
+R.unregisterNode(MAP, 'reused');
+const fresh = node('reused', mech([]));
+register(fresh);
+timers[0].fn();
+assert.equal(on(fresh), false, 'an old delayed event cannot activate a fresh node with the same id');
+assert.equal(on(stale), false, 'the removed node stays inactive');
+R.unregisterNode(MAP, 'reused');
+
+// Registering a new object under the same id must replace its subscriptions, not stack them.
+const oldObject = node('swapped', mech([{ event: 'blast' }]));
+register(oldObject);
+const beforeReplace = WorldEvents.listenerCount('blast');
+const newObject = node('swapped', mech([{ event: 'blast' }]));
+register(newObject);
+assert.equal(WorldEvents.listenerCount('blast'), beforeReplace, 'replacing a puzzle object retires its prior listener');
+WorldEvents.emit('blast', { scope: MAP, x: 10, z: 10, radius: 1 });
+assert.equal(on(oldObject), false, 'replaced object never receives the blast');
+assert.equal(on(newObject), true, 'replacement object alone receives the blast');
+R.unregisterNode(MAP, 'swapped');
+
 // ---------------------------------------------------------------- activators drive their wired mechanisms
 const sensor = node('sensor', { role: 'activator', behavior: 'interact', inputs: [{ event: 'blast' }] });
 const gate = node('gate', mech([]));
