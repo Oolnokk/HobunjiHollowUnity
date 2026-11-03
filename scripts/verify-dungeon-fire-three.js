@@ -215,6 +215,8 @@ async function main() {
   fire.updateHeldVisual(1 / 60);
   closeVector(heldEffect.position, heldPlane.localToWorld(new THREE.Vector3(.25, .5, 0)),
     'charged fire follows the transformed source-metal pixel on the modular weapon');
+  assert(heldPlane.userData.hobunjiDungeonFireVfxPadding > 2.8,
+    'the tall held flame extends the x-ray scissor beyond the narrow modular weapon silhouette');
   const otherRoom = new THREE.Scene(); // Real scene change must not leave fire behind in the old ruin.
   otherRoom.add(handHolder);
   assert.equal(fire.updateHeldVisual(1 / 60), true);
@@ -224,6 +226,8 @@ async function main() {
   handHolder.visible = false;
   assert.equal(fire.updateHeldVisual(1 / 60), false, 'hidden hand holder suspends fire');
   assert.equal(movedFlame.parent, null, 'the hidden weapon does not leave an unowned fire plume');
+  assert.equal(heldPlane.userData.hobunjiDungeonFireVfxPadding, undefined,
+    'hiding a weapon clears its special x-ray padding without modifying enchantment VFX');
   assert.equal(fire.debugSnapshot().armed, true, 'temporary invisibility does not consume the shot');
   handHolder.visible = true;
   assert.equal(fire.updateHeldVisual(1 / 60), true);
@@ -231,6 +235,8 @@ async function main() {
     'restoring weapon visibility creates a new world-upright plume');
   assert.equal(fire.consumeNextProjectile(), true);
   assert.equal(fire.debugSnapshot().heldFire, false, 'release instantly clears the charged weapon flame');
+  assert.equal(heldPlane.userData.hobunjiDungeonFireVfxPadding, undefined,
+    'launch removes charged-fire padding so normal held scissor bounds return');
   assert.equal(heldEffect.parent, null, 'weapon fire does not persist as a ghost after launch');
 
   assert.equal(fire.disposeProjectile(thrown.projectile), true);
