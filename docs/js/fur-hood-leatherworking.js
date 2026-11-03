@@ -58,26 +58,88 @@
     };
   }
 
+
+  function expressedGenes(furHood) {
+    if (!furHood) return [];
+    const genome = furHood.genotype || {}; // Source genotype determines whether each natural dye gene exists and is expressed.
+    const ids = window.CreatureGenetics?.PATTERN_DEFS?.[normalizeKind(furHood.kind)] || []; // Official animal-gene order is the stable color priority.
+    const appearance = Array.isArray(furHood.appearance?.patterns) ? furHood.appearance.patterns : [];
+    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean);
+    return known.flatMap(id => {
+      const gene = genome[id], trait = appearance.find(x => x?.id === id); // Old visual summaries are consulted only when genotype is missing.
+      if (gene) {
+        if (gene.enabled === false || (gene.copies != null && Number(gene.copies) <= 0)) return [];
+      } else if (!trait?.enabled) return [];
+      const color = colorHex(gene?.color || trait?.color);
+      return color ? [{ geneId: id, colorHex: color }] : [];
+    });
+  }
+  function patternColorFor(furHood, requestedGene = null) {
+    const expressed = expressedGenes(furHood); // Trim and animal parts never require a painted motif PNG.
+    if (requestedGene) return expressed.find(g => g.geneId === requestedGene)?.colorHex || null;
+    const priority = entryForKind(furHood?.kind)?.trimGene;
+    return (expressed.find(g => g.geneId === priority) || expressed[0])?.colorHex || null;
+  }
+  function colorForRole(furHood, role) {
+    if (!furHood) return null;
+    const base = colorHex(furHood.baseColor || furHood.genotype?.base?.color);
+    const entry = entryForKind(furHood.kind) || {}; // Per-species artist controls select base coat or inherited pigment for each sprite.
+    const mode = role === 'trim' ? 'pattern' : role === 'animalFront' ? entry.partColors?.front || 'base'
+      : role === 'animalBack' ? entry.partColors?.back || 'base' : 'base';
+    const gene = role === 'trim' ? entry.trimGene : role === 'animalFront' ? entry.partGenes?.front : role === 'animalBack' ? entry.partGenes?.back : null;
+    return mode === 'pattern' ? (patternColorFor(furHood, gene) || base) : base;
+  }
+  const recoloredPartCache = new WeakMap(); // Cache small keyed Grehlr canvases against their original PNG, base shade and stripe color.
+  function recolorAnimalPart(image, furHood, role) {
+    if (!image || !furHood || normalizeKind(furHood.kind) !== 'grehlr' || !['animalFront','animalBack'].includes(role)) return null;
+    const fill = window.ColorFill; // Existing HSV value-preserving color fill, not a new tinting algorithm.
+    if (!fill?.hsvValueFillPixels || !fill?.rgbToHsv || !fill?.hueDistance) return null;
+    const base = colorHex(furHood.baseColor || furHood.genotype?.base?.color);
+    const stripe = patternColorFor(furHood, 'coloredstripe'); // White/gray stripe stays untouched without this exact expressed gene.
+    const key = role + '|' + (base || '') + '|' + (stripe || '');
+    let cache = recoloredPartCache.get(image);
+    if (cache?.has(key)) return cache.get(key);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width; canvas.height = image.naturalHeight || image.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, 0, 0);
+    const frame = ctx.getImageData(0,0,canvas.width,canvas.height);
+    const source = new Uint8ClampedArray(frame.data); // Both region masks sample original unpainted pixels.
+    const mintHue = fill.rgbToHsv(0xA3,0xC8,0x9F).h; // Mint source-key highlights and shaded companions in the authored Grehlr back.
+    const isMint = i => {
+      if (role !== 'animalBack' || !base || source[i+3] <= 8) return false;
+      const hsv=fill.rgbToHsv(source[i],source[i+1],source[i+2]);
+      return hsv.v >= 0.12 && hsv.s >= 0.10 && fill.hueDistance(hsv.h,mintHue) <= 34;
+    };
+    const isStripe = i => {
+      if (!stripe || source[i+3] <= 8) return false;
+      const r=source[i], g=source[i+1], b=source[i+2]; // Covers pure white and neutral shaded grays without catching colored mint.
+      return Math.max(r,g,b)>=88 && Math.max(r,g,b)-Math.min(r,g,b)<=14;
+    };
+    const rgb=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
+    if (role==='animalBack' && base) fill.hsvValueFillPixels(frame.data,rgb(base),{sourceData:source,applyPredicate:isMint});
+    if (stripe) fill.hsvValueFillPixels(frame.data,rgb(stripe),{sourceData:source,applyPredicate:isStripe});
+    ctx.putImageData(frame,0,0);
+    if(!cache){cache=new Map();recoloredPartCache.set(image,cache);}
+    if(cache.size>=12)cache.clear();
+    cache.set(key,canvas);
+    return canvas;
+  }
   function markingsFor(furHood, role = 'base') {
     if (!furHood || !['base', 'animalFront', 'animalBack'].includes(role)) return []; // The hood base and both hide-derived animal pieces share genetic markings; the separate trim does not.
-    const kindEntry = entryForKind(furHood.kind);
-    const genes = kindEntry?.patterns || {};
-    const genotype = furHood.genotype || {};
-    const visibleTraits = (furHood.appearance?.patterns || []).filter(trait => trait?.enabled);
-    const visibleIds = visibleTraits.length ? visibleTraits.map(trait => trait.id) : Object.keys(genes).filter(id => genotype[id]?.enabled && Number(genotype[id]?.copies) > 0);
-    const results = []; // Each result is an independent original-coat ink pass, never a `weaving` record or user dye.
-    for (const id of visibleIds) {
-      const definition = genes[id];
-      const ink = colorHex(genotype[id]?.color || visibleTraits.find(x => x.id === id)?.color);
-      if (!definition || !ink || !definition.motifPng) continue;
+    const genes = entryForKind(furHood.kind)?.patterns || {};
+    const results = []; // Optional motif geometry is layered above automatic genotype color fills.
+    for (const { geneId, colorHex: ink } of expressedGenes(furHood)) {
+      const definition = genes[geneId];
+      if (!definition?.motifPng) continue;
       const pattern = { ...(definition.settings || {}), motifUrl: definition.motifPng };
-      results.push({ geneId: id, pattern, colorHex: ink });
+      results.push({ geneId, pattern, colorHex: ink });
     }
     return results;
   }
 
   function specialPartsFor(furHood, wearerSpecies = null, wearerGender = 'male') {
-    const partsByVariant = entryForKind(furHood?.kind)?.parts || {}; // One animal can supply distinct sprite geometry for the two authored hood head-shape groups.
+    const kindEntry=entryForKind(furHood?.kind); // Read species tint routing next to original authoring manifest parts.
+    const partsByVariant = kindEntry?.parts || {}; // One animal can supply distinct sprite geometry for the two authored hood head-shape groups.
     const species = normalizeKind(wearerSpecies || 'tletingan');
     const fatHead = new Set(['kenkari','rakakoan','mashtzarr','mammakhbuur']); // Mirrors cosmetic-fallback-groups.json for use before the portrait registry finishes loading.
     const defaultVariant = fatHead.has(species) ? 'mashtzarr_male' : 'tletingan_male';
@@ -94,6 +156,7 @@
         layerName: pos === 'front' ? 'animal-front' : 'animal-back',
         role: pos === 'front' ? 'animalFront' : 'animalBack',
         paletteColorKey: 'A',
+        furColorMode: kindEntry?.partColors?.[pos] || 'base', // Runtime role tint comes from source genotype, not cosmetic dyes.
         ax: 0, ay: 0, sx: 1, sy: 1, xformPreset: 'B',
       }];
     });
@@ -246,7 +309,7 @@
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    ensureManifest, fromHide, markingsFor, specialPartsFor, hideChoices, openLoom, closePanel, debugSnapshot,
+    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, recolorAnimalPart, markingsFor, specialPartsFor, hideChoices, openLoom, closePanel, debugSnapshot,
   });
   ensureManifest();
 })();
