@@ -201,6 +201,7 @@
       if (progress === 1) position.array.set(full);
       else for (let i = 0; i < full.length; i++) position.array[i] = anchors[i] + (full[i] - anchors[i]) * progress;
       position.needsUpdate = true;
+      node.geometry.computeVertexNormals?.(); // Keep icy facets correctly lit as each spike changes height and taper.
       node.visible = progress > .001; // At zero growth, hide the degenerate facets and disable their picking.
       updated = true;
     });
