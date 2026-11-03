@@ -23,6 +23,8 @@ select{width:100%;font:inherit;min-height:38px;border-radius:9px;padding:5px;bac
 .readout{margin-top:10px;display:flex;justify-content:space-between;gap:7px;font-size:12px;color:var(--muted);min-height:32px}
 #sequence{font-size:17px;color:var(--ink);letter-spacing:.1em}
 #result{font-weight:700;color:#9de9ba;min-height:21px}
+#echoReplay{margin:5px 0 0;min-height:44px;padding:8px 14px;color:#f3f9ff;background:#284864;border:1px solid #8caec2;border-radius:10px;cursor:pointer}
+#echoReplay[hidden]{display:none}
 details{margin-top:8px;font-size:12px;color:var(--muted)}
 summary{cursor:pointer;min-height:26px}
 #songList{max-height:100px;overflow:auto}
@@ -43,10 +45,11 @@ summary{cursor:pointer;min-height:26px}
 <div id="notes" class="notes" aria-label="Five single notes"></div>
 <div class="readout"><span>Recent notes: <span id="sequence">—</span></span><span id="count">1 song</span></div>
 <div id="result" role="status" aria-live="polite">Play any melody to begin.</div>
+<button type="button" id="echoReplay" hidden>Hear sequence again</button>
 <details><summary>Songbook (hints)</summary><div id="songList"></div></details>
 <details><summary>Diagnostics</summary><div id="debug"></div></details>
 </main>
-<script src="../../js/kurraya-puzzle.js?v=20261103puzzleReview4"></script>
+<script src="../../js/kurraya-puzzle.js?v=20261103fluteEcho1"></script>
 <script>
 (function () {
   'use strict';
@@ -59,7 +62,14 @@ summary{cursor:pointer;min-height:26px}
   const countEl = document.getElementById('count');
   const songListEl = document.getElementById('songList');
   const debugEl = document.getElementById('debug');
-  const sampler = music.createSampler('../audio/music/instruments/sfx_kurraya_pluck.m4a');
+  const isFlute = new URLSearchParams(location.search).get('instrument') === 'flute'; // Uses the instrument equipped by the host, not an unrelated Kurraya sample preference.
+  const sampler = isFlute
+    ? music.createSampler('../audio/music/instruments/sfx_flute_note.m4a',{useCustomSample:false,fallback:'midi',sampleName:'Bundled flute note'})
+    : music.createSampler('../audio/music/instruments/sfx_kurraya_pluck.m4a'); // Flute sample is optional; MIDI synth takes over if absent.
+  const echoReplay = document.getElementById('echoReplay');
+  let echoChallenge = null; // Active ruin echo and its attempted note index; ordinary song recognition is suspended while it exists.
+  let echoGeneration = 0; // Cancels delayed playback when replaying or closing, preventing stale notes from changing the next attempt.
+
   let history = []; // Recent note indices used for sequence recognition without timing constraints.
   let lastMatched = ''; // Last recognized melody, visible in diagnostics for mobile testing.
   let playbackSerial = 0; // Drops audio for older pending presses if a newer press wins the load race.
@@ -85,8 +95,73 @@ summary{cursor:pointer;min-height:26px}
       '\nlastSong=' + (lastMatched || 'none') + '\nnotes=' + JSON.stringify(history) +
       '\nsampler=' + JSON.stringify(sampler.diagnostics);
   }
+  function delay(ms) { return new Promise(resolve => setTimeout(resolve,ms)); }
+  async function replayEcho(passive = false) {
+    const challenge = echoChallenge;
+    if (!challenge) return false;
+    const generation = ++echoGeneration;
+    challenge.progress = 0;
+    challenge.phase = 'playing';
+    echoReplay.disabled = !passive; // Keep the manual gesture button usable if browsers block the automatic attempt.
+    resultEl.textContent = 'Listen carefully to ' + challenge.notes.length + ' notes…';
+    try {
+      const ready = await Promise.race([
+        sampler.ready().then(() => true),
+        delay(passive ? 850 : 1800).then(() => false)
+      ]); // Autoplay-blocked AudioContext.resume() may never settle until a new gesture; never deadlock replay.
+      if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+      if (!ready) {
+        challenge.phase = 'retry';
+        resultEl.textContent = 'Tap Hear sequence, or press a note button, to start/retry the melody.';
+        return false;
+      }
+      await delay(300);
+      for (const note of challenge.notes) {
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+        await sampler.play(music.pitchFor(note)); // The same configured five-note scale is used for both examples and player input.
+        await delay(510);
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
+        sampler.stop();
+        await delay(110);
+      }
+      if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+      challenge.phase = 'input';
+      resultEl.textContent = 'Your turn: repeat ' + challenge.notes.length + ' notes by ear.';
+      return true;
+    } catch (error) {
+      if (generation === echoGeneration && challenge === echoChallenge) {
+        challenge.phase = 'retry';
+        resultEl.textContent = 'Tap Hear sequence to enable audio: ' + (error.message || error);
+      }
+      return false;
+    } finally {
+      if (generation === echoGeneration && challenge === echoChallenge) echoReplay.disabled = false;
+      render();
+    }
+  }
+  function startEchoChallenge(id, notes) {
+    if (!id || !Array.isArray(notes) || notes.length < 3 || notes.length > 12 ||
+        !notes.every(note => Number.isInteger(note) && note >= 0 && note < 5)) return false;
+    ++echoGeneration; sampler.stop();
+    history = [];
+    echoChallenge = {id:String(id),notes:notes.slice(),phase:'retry',progress:0,mistakes:0};
+    scale.disabled = true; tonic.disabled = true; // Retuning midway would make the heard sequence and response incomparable.
+    echoReplay.hidden = false;
+    echoReplay.textContent = 'Hear sequence again';
+    resultEl.textContent = 'Press Hear sequence (or any note key/button) to listen, then copy the melody by ear.';
+    // Try autoplay once; if mobile Web Audio is suspended, the short timeout leaves the manual replay button and controller/keyboard restart fully usable.
+    replayEcho(true);
+    render();
+    return true;
+  }
+  echoReplay.addEventListener('click',() => replayEcho(false)); // An explicit gesture unlocks mobile Web Audio; keyboard and touch remain accessible.
   function playNote(index) {
     if (!Number.isInteger(index) || index < 0 || index > 4) return false;
+    if (echoChallenge && echoChallenge.phase === 'retry') {
+      replayEcho(); // Controller and keyboard users can request the audio without needing a touchscreen tap.
+      return true;
+    }
+    if (echoChallenge && echoChallenge.phase !== 'input') return false; // Never count notes accidentally struck while the example is sounding.
     const serial = ++playbackSerial;
     const button = notesEl.children[index];
     button?.classList.add('flash');
@@ -101,6 +176,25 @@ summary{cursor:pointer;min-height:26px}
     });
     history.push(index);
     if (history.length > 32) history.shift();
+    if (echoChallenge) {
+      const challenge = echoChallenge;
+      if (index === challenge.notes[challenge.progress]) {
+        challenge.progress++;
+        if (challenge.progress === challenge.notes.length) {
+          challenge.phase = 'solved';
+          resultEl.textContent = '♪ You matched the melody!';
+          post({type:'puzzle-echo-result',id:challenge.id,solved:true,progress:challenge.progress,mistakes:challenge.mistakes});
+        } else resultEl.textContent = 'Correct so far: ' + challenge.progress + ' / ' + challenge.notes.length;
+      } else {
+        challenge.mistakes++;
+        challenge.progress = 0;
+        challenge.phase = 'retry';
+        resultEl.textContent = 'That was not the melody. Hear it again, then retry.';
+        post({type:'puzzle-echo-result',id:challenge.id,solved:false,progress:0,mistakes:challenge.mistakes});
+      }
+      render();
+      return true;
+    }
     const song = music.matchSuffix(history);
     if (song) {
       lastMatched = song.title;
@@ -138,7 +232,8 @@ summary{cursor:pointer;min-height:26px}
   },true);
   window.addEventListener('hobunji-kurraya-puzzle-songs-changed',refreshSongs);
   window.addEventListener('error',event=>{resultEl.textContent='Puzzle error: '+event.message;render();});
-  window.HobunjiPuzzleInstrument={playNote:playNote,getState:()=>({history:history.slice(),lastMatched:lastMatched,...music.settings()})};
+  window.HobunjiPuzzleInstrument={playNote:playNote,startEchoChallenge:startEchoChallenge,
+    getState:()=>({history:history.slice(),lastMatched:lastMatched,echo:echoChallenge?{id:echoChallenge.id,phase:echoChallenge.phase,progress:echoChallenge.progress,length:echoChallenge.notes.length,mistakes:echoChallenge.mistakes}:null,sampler:sampler.diagnostics,...music.settings()})};
   refreshSongs();render();
   post({type:'puzzle-ready'});
 })();
