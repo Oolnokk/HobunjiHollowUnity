@@ -74,4 +74,4 @@ The standalone shaft uses `landings: true`, which extends each balcony tunnel in
 
 Verified: `scripts/test-shaft-hub.js` (including the real `DynamicSurfaces` showing the fixed band cannot see the top balcony and the level-relative one can). In a real generated ruin: the hub was composed and mounted, the player grabbed the lowest balcony's wall, held *down* (into the wall for the default camera) and climbed from y = 0.06 to 4.06, mantled onto the balcony, and stood there at support y = 4.06 with no fall or rejection, full health and no page errors.
 
-**Remaining integration:** V50 does not insert these hubs or attach adjacent procedural rooms to the upper corridors. The legacy 2D navigation and projectile grids still do not follow the shaft's levels.
+**Remaining integration:** V50 does not insert these hubs or attach adjacent procedural rooms to the upper corridors. AI navigation still uses the legacy 2D grid. Projectile flight, ranged enemy sight and the player’s aim indicator sweep the mounted shaft’s solid cells in 3D.
