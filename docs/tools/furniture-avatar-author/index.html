@@ -1203,18 +1203,16 @@ function rebuildFurnitureMeshes() {
   }
   if(state.lastSelectedSurfaceId&&!surfaceGroups.has(state.lastSelectedSurfaceId))state.lastSelectedSurfaceId=remapSurfaceId(state.lastSelectedSurfaceId);
   state.particleEmitters=(state.particleEmitters||[]).map(normalizeEmitter);state.processingWarps=(state.processingWarps||[]).map(normalizeWarp).filter(warp=>warp.partIds.length);state.processTimelines=(state.processTimelines||[]).map(normalizeProcessTimeline);if(!selectedProcessTimelineId||!state.processTimelines.some(item=>item.id===selectedProcessTimelineId))selectedProcessTimelineId=state.processTimelines[0]?.id||null;rebuildItemPreviews();normalizeSeatedAvatarRecords();rebuildSeatGrid();rebuildSeatedAvatars();if(state.selectedType==='partGroup'){state.selectedPartIds=activePartIds();if(state.selectedPartIds.length<2){state.selectedType=state.selectedPartIds.length?'part':null;state.selectedId=state.selectedPartIds[0]||null;}else syncPartGroupTransformProxy();}if(selectedPart()?.kind==='liquidSurface')syncLiquidTransformProxy(selectedPart());updateLists();updateStats();refreshSelectionUI();refreshSurfaceHighlights();
-  if (state.surfaceGrowth.some(recipe => recipe.kind === 'iceStalagmites')) {
-    for (const part of state.parts) if (part.kind === 'glb') {
-      const driver = meshes.get(part.id); // The procedural GLB wrapper is only a tiny invisible driver while the mesh downloads.
-      if (!driver) continue;
-      const previousReady = driver.userData.onRockSourceReady; // Preserve existing rock-contact and source-ready handling.
-      driver.userData.onRockSourceReady = () => {
-        previousReady?.();
-        if (driver.parent !== root) return; // Ignore late callbacks from replaced imports or stale undo states.
-        const report = rebuildSurfaceFoliage(); // Re-sample visible child geometry for furniture ice after the GLB arrives.
-        log('[Ice Stalagmites] Imported GLB ready. ' + report);
-      };
-    }
+  for (const part of state.parts) if (part.kind === 'glb') {
+    const driver = meshes.get(part.id); // The procedural GLB wrapper is only a tiny invisible driver while the mesh downloads.
+    if (!driver) continue;
+    const previousReady = driver.userData.onRockSourceReady; // Preserve existing rock-contact and source-ready handling.
+    driver.userData.onRockSourceReady = () => {
+      previousReady?.();
+      if (driver.parent !== root || !state.surfaceGrowth.some(recipe => recipe.kind === 'iceStalagmites')) return; // Covers ice added while an imported GLB is still loading.
+      const report = rebuildSurfaceFoliage(); // Re-sample visible child geometry for furniture ice after the GLB arrives.
+      log('[Ice Stalagmites] Imported GLB ready. ' + report);
+    };
   }
   rebuildSurfaceFoliage();
 }
