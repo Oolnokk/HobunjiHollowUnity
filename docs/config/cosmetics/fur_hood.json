@@ -1,0 +1,135 @@
+{
+  "slot": "hood",
+  "material": "fur",
+  "tags": [
+    "material:fur"
+  ],
+  "portraitAssets": true,
+  "meta": {
+    "name": "Fur Hood"
+  },
+  "palette": {
+    "colors": {
+      "A": {
+        "h": 150,
+        "s": 0.5,
+        "l": 0.3
+      },
+      "B": {
+        "h": 30,
+        "s": 0.5,
+        "l": 0.35
+      }
+    },
+    "layers": {
+      "base": "A",
+      "trim": "B"
+    }
+  },
+  "speciesVariants": {
+    "tletingan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/tl_finehood-base.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/tl_finehood-trim.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
