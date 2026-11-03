@@ -242,7 +242,9 @@
     const scene=enemy.scene||currentScene();
     if (!scene) return false;
     scene.add(bomb.group);
-    bomb.group.position.copy(p);bomb.group.quaternion.copy(q);bomb.group.scale.copy(scale);
+    bomb.group.position.copy(p);
+    bomb.group.quaternion.identity();
+    bomb.group.scale.setScalar(1); // Restore the normal world scale after detaching from the enemy's scaled body rig.
     const deps=window.Combat?.deps,TILE=Number(deps?.TILE)||64;
     const y=Number(deps?.getGroundYAtWorld?.(p.x,p.z)??deps?.getGroundY?.(p.x*TILE,p.z*TILE));
     bomb.group.position.y=(Number.isFinite(y)?y:0)+.45;
