@@ -57,6 +57,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
         <div class="muted">Dev-only natural coat patterns. Choose an animal species and its exact genotype pattern ID. Use the current editable motif, then export its PNG and the animal manifest. This never adds anything to the player's weaving library.</div>
         <div class="fields">
           <label>Animal species<select id="furAnimalSpecies"></select></label>
+          <label>Wearer hood fit<select id="furWearerVariant"><option value="tletingan_male">Tletingan-head fit</option><option value="mashtzarr_male">Mashtzarr-head fit</option></select></label>
           <label>Genotype pattern ID<input id="furGeneId" placeholder="e.g. spots"></label>
           <label>Preview base coat<input id="furTestCoat" type="color" value="#8b7562"></label>
           <label>Preview gene color<input id="furTestInk" type="color" value="#c8b3a0"></label>
@@ -2188,6 +2189,7 @@ Overpass → not set</div>
 function setupFurAuthoring() {
   const field = id => document.getElementById(id);
   const speciesSelect = field('furAnimalSpecies'); // Species selector resolves exact save-time hide.kind identifiers from the manifest.
+  const wearerSelect = field('furWearerVariant'); // The two authored hood fits have different animal-front/back sprite files.
   const geneInput = field('furGeneId'); // Authored gene id must match the inherited allele key, not a user-facing trait label.
   const status = field('furAuthorStatus'); // Exposes export and preview errors without developer tools.
   const previewCanvas = field('furPreviewCanvas'); // Uses the production garment compositor for color and motif placement.
@@ -2210,21 +2212,23 @@ function setupFurAuthoring() {
     selectSpecies();
   };
   const selectedEntry = () => furManifest.species?.[speciesSelect.value] || null;
+  const selectedPart = () => selectedEntry()?.parts?.[wearerSelect.value] || null; // Never flatten both wearer fits into a single sprite path.
   const updateAssignments = () => {
     const entry = selectedEntry();
     const names = Object.keys(entry?.patterns || {});
     field('furAssignments').textContent = 'Species: ' + (speciesSelect.value || '(none)') + '\n'
       + 'Authored genes: ' + (names.join(', ') || '(none)') + '\n'
-      + 'Front: ' + (entry?.parts?.front || '(none)') + '\nBack: ' + (entry?.parts?.back || '(none)') + '\n'
+      + 'Wearer fit: ' + wearerSelect.value + '\nFront: ' + (selectedPart()?.front || '(none)') + '\nBack: ' + (selectedPart()?.back || '(none)') + '\n'
       + 'New unsaved motif PNGs: ' + newMotifPixels.size;
   };
   function selectSpecies() {
     const entry = selectedEntry();
-    field('furAnimalFront').value = entry?.parts?.front || '';
-    field('furAnimalBack').value = entry?.parts?.back || '';
+    field('furAnimalFront').value = selectedPart()?.front || '';
+    field('furAnimalBack').value = selectedPart()?.back || '';
     updateAssignments();
   }
   speciesSelect.onchange = selectSpecies;
+  wearerSelect.onchange = selectSpecies; // Changing the wearer's head changes the authored animal overlay pair, not the hide genotype.
   const selectedGenePattern = () => {
     const gene = safeGene(geneInput.value);
     const authored = selectedEntry()?.patterns?.[gene];
@@ -2246,6 +2250,7 @@ function setupFurAuthoring() {
     try {
       const result = await window.ClothingWeavingSystem.renderClothingLayers('fur_hood', {
         furHood, primaryHex: coat, secondaryHex: coat,
+        speciesId: wearerSelect.value.split('_')[0].replace(/_/g,'-'), gender: wearerSelect.value.split('_')[1] || 'male', // Preview the actual selected fur-hood sprite pairing.
         furHoodMarkingsOverride: [{ geneId: gene, pattern: motif, colorHex: ink }],
       });
       if (!result?.canvas) throw new Error('No fur-hood base sprite resolved; check the fur_hood cosmetic registration.');
@@ -2278,7 +2283,8 @@ function setupFurAuthoring() {
     if (!entry) return;
     const front = field('furAnimalFront').value.trim(), back = field('furAnimalBack').value.trim();
     if (!validatePartPath(front) || !validatePartPath(back)) { status.textContent = 'Animal sprites must be docs-root relative paths beginning assets/ and ending .png or .webp.'; return; }
-    entry.parts = { ...(front ? {front:front.replace(/^\.\//,'')} : {}), ...(back ? {back:back.replace(/^\.\//,'')} : {}) };
+    entry.parts ||= {};
+    entry.parts[wearerSelect.value] = { ...(front ? {front:front.replace(/^\.\//,'')} : {}), ...(back ? {back:back.replace(/^\.\//,'')} : {}) }; // Preserve the other head fit's dedicated animal sprites.
     status.textContent = 'Saved optional animal-front/back paths in this session. Export the manifest to publish them.';
     updateAssignments();
   };
@@ -2291,7 +2297,7 @@ function setupFurAuthoring() {
     status.textContent = 'Exported fur-hoods.json. Place in docs/config/patterns/ (animal markings never enter config/patterns/index.json).';
   };
   window.__furHoodAuthorDebug = () => ({
-    species: speciesSelect.value, gene: geneInput.value, assigned: Object.keys(selectedEntry()?.patterns || {}),
+    species: speciesSelect.value, wearerVariant: wearerSelect.value, gene: geneInput.value, assigned: Object.keys(selectedEntry()?.patterns || {}),
     sessionMotifs: newMotifPixels.size, error: lastFurAuthorError,
     latestChange: 'Separate dev-owned coat mapping editor and source-hide color live preview.',
   });
