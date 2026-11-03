@@ -1070,8 +1070,28 @@
       const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
       const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
       const centerCross=crossStart+crossWidth*.5;
-      const along=longStart+longLength*.5; // One bronze trigger starts a listen-and-repeat sequence instead of requiring four note plates.
-      points.push(axis==='x'?{x:along,z:centerCross}:{x:centerCross,z:along});
+      // A single bronze trigger replaces the old four notes. Keep it on supported, empty floor and away from other hallway mechanisms.
+      const accepted = [];
+      for (const fraction of [.5,.4,.6,.3,.7]) {
+        for (const crossOffset of [0,-.15,.15]) {
+          const along=longStart+longLength*fraction,cross=centerCross+crossOffset;
+          const candidate=axis==='x'?{x:along,z:cross}:{x:cross,z:along};
+          if (window.DevRandomRuinTileOccupancy?.blocksAt?.(candidate.x,candidate.z,.34) ||
+              window.DevRandomRuinTileOccupancy?.solidAt?.(candidate.x,candidate.z,.34)) continue;
+          const samples=[[0,0],[-.3,-.3],[.3,-.3],[-.3,.3],[.3,.3]]
+            .map(([dx,dz])=>sampleSupport(candidate.x+dx,candidate.z+dz));
+          if (samples.some(support=>!support)) continue;
+          if (samples.some(support=>Math.abs(Number(support.y)-Number(samples[0].y))>.05)) continue;
+          accepted.push(candidate);
+          break;
+        }
+        if (accepted.length) break;
+      }
+      if (!accepted.length) {
+        recordModulePlacement('melodyEchoRejected','hallway',id,{reason:'no supported, clear trigger surface'});
+        return null;
+      }
+      points.push(accepted[0]);
     }else{
       const bounds=slot.bounds||roomBounds(context.meta,owner); // Explicit bounds let the same plate-set module live inside generated micro-rooms as well as ordinary V50 rooms.
       const centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
@@ -1089,7 +1109,7 @@
         const candidate=square(cx,cz);
         if(squareOnStaticFloor(candidate)){chosen=candidate;break;}
       }
-      if(!chosen){recordModulePlacement('chordPlatesRejected','room',id,{reason:'no static floor square'});return null;}
+      if(!chosen){recordModulePlacement('melodyEchoRejected','room',id,{reason:'no static floor square'});return null;}
       points.push(...chosen);
     }
     const root=new THREE.Group();
@@ -1109,7 +1129,7 @@
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,down:false,played:false,pressCount:0});
     }
     const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same five buttons as the normal puzzle instrument.
-    const melody=Array.from({length:noteCount},()=>Math.floor(rng()*5));
+    const melody=Array.from({length:noteCount},()=>Math.min(4,Math.max(0,Math.floor(rng()*5)))); // Clamp seeded RNG endpoints to the five supported note indices.
     const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
