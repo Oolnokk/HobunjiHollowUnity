@@ -204,6 +204,17 @@
     return false;
   }
 
+  // A generated ruin's map ID is reused on rerolls. Tear down one complete puzzle graph so its
+  // event listeners, delayed animations and animated support surfaces cannot leak into the new map.
+  function clearMap(mapId) {
+    const key = String(mapId), graph = maps.get(key); // Scope shared by furniture nodes and their event listeners.
+    if (!graph) return 0;
+    const ids = [...graph.nodes.keys()]; // Snapshot because unregisterNode deletes entries as it cleans them up.
+    for (const id of ids) unregisterNode(key, id);
+    maps.delete(key);
+    return ids.length;
+  }
+
   // ── Event inputs (puzzle.inputs) ─────────────────────────────────────────
   // A node subscribes to WorldEvents (scoped to its map) and acts when an event matches its
   // conditions, with no activator wire needed: a cracked pillar that falls when a blast reaches it,
@@ -564,7 +575,7 @@
   const getNode = (mapId, id) => maps.get(String(mapId))?.nodes.get(String(id)) || null;
 
   window.FurniturePuzzleRuntime = Object.freeze({
-    getNode, registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
+    getNode, registerMap, registerNode, unregisterNode, clearMap, activate, toggle, setMechanism, toggleMechanism,
     setChannelSource, burdenPlateButtons, interactBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();
