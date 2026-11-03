@@ -34,7 +34,7 @@
     a { color: var(--accent); overflow-wrap: anywhere; }
     nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; }
     nav a { border: 1px solid var(--border); padding: 9px 12px; border-radius: 10px; text-decoration: none; font-weight: 650; }
-    nav a:focus-visible, button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    nav a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     .panel {
       background: rgba(18, 30, 48, .98);
       border: 1px solid var(--border);
@@ -44,13 +44,13 @@
     }
     .fields, .outputs { display: grid; gap: 15px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     label { display: block; font-weight: 700; margin: 0 0 7px; }
-    input, button {
+    input, select, button {
       font: inherit;
       min-height: 45px;
       border-radius: 9px;
       border: 1px solid var(--border);
     }
-    input {
+    input, select {
       width: 100%;
       background: #0a1424;
       color: var(--text);
@@ -58,6 +58,9 @@
       min-width: 0;
     }
     input[readonly] { background: #0a1729; color: #cce3ff; }
+    .branch-picker { grid-column: 1 / -1; }
+    .branch-picker select { max-width: 100%; }
+    .branch-list-status { min-height: 1.4em; }
     button {
       background: var(--accent);
       color: #071426;
@@ -110,6 +113,14 @@
   <section class="panel" aria-labelledby="revisionHeading">
     <h2 id="revisionHeading">1. Select the revision</h2>
     <div class="fields">
+      <div class="branch-picker">
+        <label for="recentBranches">Choose a recent branch (optional)</label>
+        <select id="recentBranches" aria-describedby="recentHelp">
+          <option value="">Custom branch (type below)</option>
+          <option value="main" selected>main (default)</option>
+        </select>
+        <div id="recentHelp" class="hint branch-list-status" aria-live="polite">Looking for recent branch creations and open pull requests…</div>
+      </div>
       <div>
         <label for="branch">GitHub branch to check</label>
         <input id="branch" class="mono" value="main" autocomplete="off" spellcheck="false" aria-describedby="branchHelp">
@@ -123,6 +134,7 @@
     </div>
     <div class="actions">
       <button id="fetchLatest" type="button">↻ Get latest commit</button>
+      <button id="refreshBranches" type="button" class="secondary">↻ Refresh branch list</button>
       <button id="copySha" type="button" class="secondary">Copy SHA</button>
     </div>
     <div id="commitMeta" class="commit-meta" aria-live="polite">Looking up the latest commit…</div>
@@ -160,7 +172,7 @@
       <button id="copyBoth" class="secondary" type="button">Copy both URLs</button>
       <button id="copyBuilder" class="secondary" type="button">Copy this page’s address</button>
     </div>
-    <p class="micro">Bookmark this standalone page in your Quick Tab. GitHub's API resolves the branch head directly, avoiding the stale <span class="mono">/main/</span> GitHack cache. GitHack may still need a moment to serve a newly pushed commit.</p>
+    <p class="micro">Bookmark this standalone page in your Quick Tab. GitHub's API resolves the selected branch head directly, avoiding stale branch-name GitHack caches. Recently created branches come from GitHub's limited event history; branches with open pull requests are listed separately. Manual branch entry always works. GitHack may still need a moment to serve a newly pushed commit.</p>
     <details>
       <summary>Diagnostics (works without devtools)</summary>
       <pre id="debugLog" aria-label="Diagnostic event log">No diagnostics yet.</pre>
@@ -177,11 +189,13 @@
   const REPO = "Oolnokk/HobunjiHollowUnity"; // Used by the GitHub API and both generated links.
   const STORAGE_KEY = "hobunji.githack-link-builder.v1"; // Stores branch and page paths (never a stale SHA).
   const elements = {}; // Holds UI nodes accessed throughout the builder.
-  const ids = ["branch", "commit", "gamePath", "hubPath", "gameLink", "hubLink", "fetchLatest", "copySha", "openGame", "copyGame", "openHub", "copyHub", "copyBoth", "copyBuilder", "copyDebug", "commitsPage", "commitMeta", "status", "debugLog"];
+  const ids = ["branch", "recentBranches", "recentHelp", "refreshBranches", "commit", "gamePath", "hubPath", "gameLink", "hubLink", "fetchLatest", "copySha", "openGame", "copyGame", "openHub", "copyHub", "copyBoth", "copyBuilder", "copyDebug", "commitsPage", "commitMeta", "status", "debugLog"];
   ids.forEach(function (id) { elements[id] = document.getElementById(id); });
 
   let requestGeneration = 0; // Prevents stale GitHub replies from overwriting newer selections.
   let requestController = null; // Cancels an obsolete commit lookup.
+  let branchListGeneration = 0; // Ignores late branch-discovery replies after a refresh.
+  let branchListController = null; // Cancels an obsolete branch-list lookup.
   let diagnostics = []; // Holds mobile-friendly debug entries.
   let currentLinks = { game: "", hub: "" }; // Used by copy/open actions for each output.
 
@@ -293,6 +307,134 @@
     elements.copySha.disabled = !validRef(ref);
   }
 
+  function syncBranchPicker() {
+    const branch = elements.branch.value.trim(); // Matches manually typed branches against the offered choices.
+    elements.recentBranches.value = Array.from(elements.recentBranches.options).some(function (option) {
+      return option.value === branch;
+    }) ? branch : "";
+  }
+
+  function showBranchChoices(created, pullRequests) {
+    const select = elements.recentBranches; // Rebuilt from fresh GitHub results, never from unsafe HTML.
+    select.replaceChildren();
+    function addOption(parent, value, label) {
+      const option = document.createElement("option"); // Used by the accessible native branch selector.
+      option.value = value;
+      option.textContent = label;
+      parent.appendChild(option);
+    }
+    addOption(select, "", "Custom branch (type below)");
+    addOption(select, "main", "main (default)");
+    const seen = new Set(["main"]); // Prevents duplicate branches between GitHub events and pull requests.
+    function addGroup(title, entries) {
+      const group = document.createElement("optgroup"); // Groups exact creations separately from PR-based fallback choices.
+      group.label = title;
+      for (const item of entries) {
+        if (seen.has(item.name) || !validBranch(item.name)) continue;
+        seen.add(item.name);
+        const date = new Date(item.date);
+        addOption(group, item.name, item.name + (Number.isFinite(date.getTime()) ? " · " + date.toLocaleDateString() : ""));
+      }
+      if (group.children.length) select.appendChild(group);
+      return group.children.length;
+    }
+    const createdCount = addGroup("Recently created (GitHub event date)", created);
+    const prCount = addGroup("Open PR branches (PR creation date)", pullRequests);
+    syncBranchPicker();
+    elements.recentHelp.textContent = createdCount + " recent creations; " + prCount
+      + " other open PR branches. GitHub only retains about 30 days of public events; type any missing branch below.";
+    log("Branch choices: " + createdCount + " creations, " + prCount + " PR branches.");
+  }
+
+  async function fetchRecentBranches() {
+    branchListGeneration += 1;
+    if (branchListController) branchListController.abort();
+    const generation = branchListGeneration; // Prevents older refreshes from replacing newer lists.
+    const controller = new AbortController(); // Shared cancel signal and mobile network timeout for discovery.
+    branchListController = controller;
+    const timer = setTimeout(function () { controller.abort(); }, 15000); // Keeps refresh finite on slow connections.
+    elements.refreshBranches.disabled = true;
+    elements.recentHelp.textContent = "Finding recently created branches…";
+    const apiRoot = "https://api.github.com/repos/" + REPO; // Common source for creation-event and open-PR metadata.
+    async function getJson(url) {
+      log("GET " + url);
+      const response = await fetch(url, {
+        method: "GET", headers: { "Accept": "application/vnd.github+json" },
+        cache: "no-store", signal: controller.signal
+      });
+      if (!response.ok) throw new Error("GitHub HTTP " + response.status);
+      const result = await response.json();
+      if (!Array.isArray(result)) throw new Error("Unexpected GitHub API response");
+      return result;
+    }
+    async function recentCreations() {
+      const results = []; // Branch CreateEvents ordered newest first, limited by GitHub's public event retention.
+      const seen = new Set(); // Deduplicates re-created branch names within the activity window.
+      for (let page = 1; page <= 3 && results.length < 15; page++) {
+        const events = await getJson(apiRoot + "/events?per_page=100&page=" + page);
+        for (const event of events) {
+          const name = event && event.payload && event.payload.ref;
+          if (event.type !== "CreateEvent" || event.payload.ref_type !== "branch"
+            || !validBranch(name) || seen.has(name)) continue;
+          seen.add(name);
+          results.push({ name: name, date: event.created_at });
+        }
+        if (events.length < 100) break;
+      }
+      return results.slice(0, 15);
+    }
+    async function openPrBranches() {
+      const prs = await getJson(apiRoot + "/pulls?state=open&sort=created&direction=desc&per_page=50");
+      const entries = []; // Newest open PR heads supplement branch creations outside the event window.
+      const seen = new Set(); // Keeps a branch with multiple PRs from appearing multiple times.
+      for (const pr of prs) {
+        const name = pr && pr.head && pr.head.ref;
+        if (!pr.head || !pr.head.repo || pr.head.repo.full_name.toLowerCase() !== REPO.toLowerCase()
+          || !validBranch(name) || seen.has(name)) continue;
+        seen.add(name);
+        entries.push({ name: name, date: pr.created_at });
+        if (entries.length >= 20) break;
+      }
+      return entries;
+    }
+    try {
+      const outcomes = await Promise.allSettled([recentCreations(), openPrBranches()]);
+      if (generation !== branchListGeneration) return;
+      const created = outcomes[0].status === "fulfilled" ? outcomes[0].value : [];
+      const prs = outcomes[1].status === "fulfilled" ? outcomes[1].value : [];
+      showBranchChoices(created, prs);
+      if (outcomes.every(function (item) { return item.status === "rejected"; })) {
+        elements.recentHelp.textContent = "Branch list unavailable (GitHub API or network). Type a branch manually.";
+      } else if (outcomes.some(function (item) { return item.status === "rejected"; })) {
+        elements.recentHelp.textContent += " Some GitHub results were unavailable.";
+      }
+      outcomes.forEach(function (item) {
+        if (item.status === "rejected") log("Branch discovery: " + String(item.reason && item.reason.message || item.reason));
+      });
+    } catch (error) {
+      if (generation === branchListGeneration) {
+        elements.recentHelp.textContent = "Branch list unavailable; type a branch manually.";
+        log("Branch lookup failed: " + String(error.message || error));
+      }
+    } finally {
+      clearTimeout(timer);
+      if (generation === branchListGeneration) {
+        branchListController = null;
+        elements.refreshBranches.disabled = false;
+      }
+    }
+  }
+
+  function branchChanged() {
+    cancelLookup();
+    elements.commit.value = "";
+    elements.commitMeta.textContent = "Branch changed. Get its latest commit to create pinned links.";
+    updateCommitPage();
+    syncBranchPicker();
+    savePreferences();
+    renderLinks();
+  }
+
   function cancelLookup() {
     requestGeneration += 1;
     if (requestController) requestController.abort();
@@ -395,14 +537,14 @@
     status("Opened " + (kind === "game" ? "Game" : "Tool Hub") + " in a new tab.", "good");
   }
 
-  elements.branch.addEventListener("input", function () {
-    cancelLookup();
-    elements.commit.value = "";
-    elements.commitMeta.textContent = "Branch changed. Select Get latest commit to resolve it.";
-    updateCommitPage();
-    savePreferences();
-    renderLinks();
+  elements.branch.addEventListener("input", branchChanged);
+  elements.recentBranches.addEventListener("change", function () {
+    if (!elements.recentBranches.value) return; // Custom option defers to the manual branch field.
+    elements.branch.value = elements.recentBranches.value;
+    branchChanged();
+    fetchLatest(); // Branch selection immediately resolves its latest SHA, not main's cached SHA.
   });
+  elements.refreshBranches.addEventListener("click", fetchRecentBranches);
   elements.commit.addEventListener("input", function () {
     cancelLookup(); // A manual SHA must never be overwritten by an in-flight API response.
     elements.commitMeta.textContent = "Manual revision selected. A 40-character SHA is recommended.";
@@ -434,6 +576,7 @@
   updateCommitPage();
   renderLinks();
   fetchLatest();
+  fetchRecentBranches();
 })();
 </script>
 </body>
