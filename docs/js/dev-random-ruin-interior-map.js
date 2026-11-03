@@ -1620,6 +1620,9 @@
     const shaftWingButton=document.createElement('button'); // Opt-in V50 generation so ordinary ruins keep their existing topology.
     shaftWingButton.type='button';shaftWingButton.className='settings-small-btn';shaftWingButton.textContent='V50 + Shaft Wing';
     shaftWingButton.addEventListener('click',()=>generate(randomSeed(),{shaftWing:true}));row.appendChild(shaftWingButton);
+    const composedButton=document.createElement('button'); // Mobile-accessible generated bridge + statue defence trial.
+    composedButton.type='button';composedButton.className='settings-small-btn';composedButton.textContent='V50 + Composed Trial';
+    composedButton.addEventListener('click',()=>generate(randomSeed(),{composedTrial:true,theme:'hronal'}));row.appendChild(composedButton);
     row.querySelector('#devRandomTestRuinBtn')?.addEventListener('click',()=>{
       const selected=document.getElementById('devRandomRuinRootMechanisms')?.checked===true; // Single switch enables both the complete Stone Age environment and rooted mechanisms.
       generate(randomSeed(),{rootMechanisms:selected,stoneAge:selected});
