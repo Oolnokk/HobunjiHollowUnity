@@ -221,7 +221,7 @@
     const secs = state ? Math.max(0, Math.ceil(state.remainingS)) : 0;
     const pct = state ? Math.round((state.remainingS / state.totalS) * 100) : 0;
     const holdPct = state ? Math.round(100 * state.giveUpHoldS / CONFIG.giveUpHoldSeconds) : 0; // Quantized hold progress avoids redundant per-frame DOM writes.
-    const dodgeLabel = state ? (window.ActionPromptUI?.actionPromptGlyph?.('dodge', 'Dodge') || 'Dodge') : ''; // Uses live desktop/controller bindings and touch device state.
+    const dodgeLabel = state ? (window.ActionPromptUI?.actionPromptGlyph?.('dodge', '💨') || 'Dodge') : ''; // Uses live desktop/controller bindings and touch device state.
     const key = state ? `${secs}|${pct}|${holdPct}|${dodgeLabel}` : '';
     if (key === hudKey) return;
     hudKey = key;
