@@ -62,6 +62,15 @@ assert(bombs.includes('registerBreakable'),'breakable props have an explicit, op
 assert(bombs.includes('spawnCarriedByEnemy'));
 const bandit=read('docs/js/combat/combat-bandit.js');
 assert(!bandit.includes('|| !!c.mineWyrmWitchType'),'mine Wyrm-witches never receive ruin-specific Witch-bombs by default');
+const demolitionist=read('docs/js/combat/combat-minion.js');
+assert(demolitionist.includes('async function makeDemolitionist(options = {})'),'Harlyao Demolitionist is a separate explicit Minion archetype');
+assert(demolitionist.includes("if (options.ruinEncounter !== true)"),'Demolitionists cannot be spawned through the normal non-ruin Minion path');
+assert(demolitionist.includes("enemyClass:'harlyao-demolitionist'"));
+assert(demolitionist.includes('carriesHronalWitchBomb:true'),'the Demolitionist receives the real authored Witch-bomb');
+assert(demolitionist.includes('weaponKey:null, rangedWeaponKey:null'),'the Demolitionist has no competing weapon while carrying the bomb');
+assert(demolitionist.includes('makeDemolitionist,'));
+const sourceData=read('docs/tools/enemy-loadout-editor/source-data.js');
+assert(sourceData.includes("['harlyao-demolitionist', 'Harlyao Demolitionist', 'Undead']"));
 assert(bandit.includes('opts.carriesHronalWitchBomb === true'),'a ruin-specific Harlyao skeleton spawner can explicitly opt into the carrier path');
 assert(bandit.includes('opts.extra?.witchBombFuseSeconds'),'spawn-specific fuse duration is forwarded to the carrier');
 assert(bandit.includes("c.carriesHronalWitchBomb === true"));
