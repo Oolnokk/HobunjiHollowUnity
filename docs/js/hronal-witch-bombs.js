@@ -239,6 +239,10 @@
       onLost:options.onLost,
     });
     if (!bomb) return null;
+    if (!body.parent || (Number(enemy.health)||0)<=0) {
+      window.Shattercasks?.discardBurden?.(bomb); // A late async load must not attach an item to an already-despawned/dead enemy.
+      return null;
+    }
     const profile=bomb.data?.carryable?.enemyHoldAnchor||{};
     const anchor=profile.position||{};
     body.add(bomb.group);
