@@ -1,0 +1,30 @@
+{
+  "schema": "hobunji_fur_hoods.v1",
+  "comment": "Author hide-species parts and expressed-genotype pattern motifs here. Sprite paths must be real docs-root relative assets. Empty entries render an unmarked hood. Each patterns[geneId] uses {motifPng,settings}; gene ink comes ONLY from the saved hide genotype. Base coat and custom weaving remain separate.",
+  "species": {
+    "gar-wolf": {
+      "parts": {},
+      "patterns": {}
+    },
+    "dabinggi-hound": {
+      "parts": {},
+      "patterns": {}
+    },
+    "grehlr": {
+      "parts": {},
+      "patterns": {}
+    },
+    "drenkirra": {
+      "parts": {},
+      "patterns": {}
+    },
+    "puktuk": {
+      "parts": {},
+      "patterns": {}
+    },
+    "voorg-ass": {
+      "parts": {},
+      "patterns": {}
+    }
+  }
+}
