@@ -17092,9 +17092,8 @@
           ? (hideRecord ? `${starGlyphs(hideRecord.stars)} ${hideRecord.rarity?.tier || 'Common'} coat rarity` : 'Unrecorded hide (legacy stock)')
           : (stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def)));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc', isHide
-          ? [itemDescriptionWithFlavor(key, def), window.AnimalHides.describe(hideRecord)].filter(Boolean).join(' · ')
-          : itemDescriptionWithFlavor(key, def)); // Mobile Pack details expose the actual fur colors/patterns without requiring DevTools.
+        if (isHide) set('iiDesc', [itemDescriptionWithFlavor(key, def), window.AnimalHides.describe(hideRecord)].filter(Boolean).join(' · ')); // Mobile Pack details expose the actual fur colors/patterns.
+        else set('iiDesc', itemDescriptionWithFlavor(key, def)); // All non-hide items retain their established cooking-buff-aware description path.
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
