@@ -71,7 +71,7 @@ assert(portraitSource.includes('baseBodyTintEnabled'), 'Portrait renderer must s
 assert(portraitSource.includes('fixedPortraitSlots?.pauldron'), 'Portrait renderer must inject the female structural hair in the pauldron render slot');
 assert(portraitSource.includes("fixedLayer?.hideWhenHood === true && hoodIsWorn"), 'fixed structural portrait layers must support hiding beneath an equipped hood');
 assert(portraitSource.includes('const hoodBackLayers = []'), 'portrait renderer must keep authored hood rear art in its own behind-head bucket');
-assert(portraitSource.includes('if (hoodBackLayers.length) hoodLayers.length = 0'), 'rear portraits must not double-draw a hood front when authored rear art exists');
+assert(/layer\.pos === 'back'\)\) hoodLayers\.length = 0/.test(portraitSource), 'rear portraits must not double-draw a hood front when authored rear art exists');
 const hoodBackDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head');
 const frontHeadDrawIndex = portraitSource.indexOf('if (headUrl && !skipHeadSprite) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote', hoodBackDrawIndex);
 const hoodFrontDrawIndex = portraitSource.indexOf('drawBreathingLayers(hoodLayers);', frontHeadDrawIndex);

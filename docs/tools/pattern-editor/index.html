@@ -26,11 +26,19 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 </style>
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/portrait-utils.js?v=20261029maskSlots2"></script>
+<script src="../../js/portrait-utils.js?v=20261103furpaint1"></script>
+<script>
+  // This nested tool page must resolve the shared portrait loader at docs/assets/, not docs/tools/pattern-editor/assets/.
+  window.setPortraitAssetBase(new URL('../../assets/', document.baseURI).href);
+</script>
 <script src="../../js/scene-ready-poller.js"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/sprite-recolor.js"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261031he412c8f"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261103furpaint1"></script>
+<script src="../../js/fur-hood-direct-paint-editor.js?v=20261103furpaint1"></script>
+<script src="../../js/fur-hood-leatherworking.js?v=20261103fur1"></script>
+<script src="../../js/fur-hood-exclusion-editor.js?v=20261103fur-exclusions1"></script>
+<script src="../../js/creature-genetics.js?v=20261103furGeneChoices1"></script>
 <script src="../../js/trim-contour-warp.js?v=20261002contourwarp1"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261015hd172faa"></script>
 <script src="../../js/pattern-authoring.js?v=20261026hMotifPNG1"></script>
@@ -51,6 +59,43 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
       <h2>Repo library</h2>
       <div class="muted" style="margin-bottom:8px">Loaded from <code>config/patterns/index.json</code>. Use any repo motif as the primary or as the overpass; each remains an independent reusable pattern.</div>
       <div id="library" class="library"><div class="muted">Loading…</div></div>
+      <div class="trimAuthor" id="furPatternAuthoring">
+        <h2>Animal fur-hood markings</h2>
+        <div class="muted">Inherited patterns automatically color the hood trim; no drawn motif is required. Choose front/back pigment routing per species, or optionally paint a motif on the hood. Export fur-hoods.json to publish color routing and any optional motif PNGs separately.</div>
+        <div class="fields">
+          <label>Animal species<select id="furAnimalSpecies"></select></label>
+          <label>Wearer hood fit<select id="furWearerVariant"><option value="tletingan_male">Tletingan-head fit</option><option value="mashtzarr_male">Mashtzarr-head fit</option></select></label>
+          <label>Animal genotype pattern<select id="furGeneId"><option value="">Loading inherited patterns…</option></select></label>
+          <label>Preview base coat<input id="furTestCoat" type="color" value="#8b7562"></label>
+          <label>Preview gene color<input id="furTestInk" type="color" value="#c8b3a0"></label>
+          <label>Optional animal-front PNG path<input id="furAnimalFront" placeholder="assets/...-front.png"></label>
+          <label>Optional animal-back PNG path<input id="furAnimalBack" placeholder="assets/...-back.png"></label>
+          <label>Animal front pigment<select id="furFrontColorMode"><option value="base">Base coat</option><option value="pattern">Inherited pattern color</option></select></label>
+          <label>Animal back pigment<select id="furBackColorMode"><option value="base">Base coat</option><option value="pattern">Inherited pattern color</option></select></label>
+          <label>Trim pigment<select id="furTrimColorMode"><option value="pattern">Inherited pattern color</option><option value="base">Base coat</option></select></label>
+          <label>Trim gene priority<select id="furTrimGene"><option value="">First expressed pattern</option></select></label>
+          <div id="furPaletteHelp" class="muted" style="grid-column:1/-1">Having an expressed pattern automatically colors the trim; drawn motif PNGs are optional. Choose the front/back pigment sources and save the manifest.</div>
+        </div>
+        <div class="row" style="margin:9px 0">
+          <button id="furPaintBtn">Paint directly on hood…</button>
+          <button id="furMainViewportBtn" class="secondary" type="button">Paint hood in right viewport</button>
+          <button id="furSampleExclusionsBtn" class="secondary" type="button">Eyedrop raw sprite colors…</button>
+          <label style="min-width:120px">Paint / preview view<select id="furPaintView"><option value="front">Front</option><option value="behind">Behind</option></select></label>
+        </div>
+        <div class="row">
+          <button id="furAssignBtn">Assign current motif to gene</button>
+          <button class="secondary" id="furPreviewBtn">Preview on hood</button>
+          <button class="secondary" id="furSavePartsBtn">Save sprites and pigment routing</button>
+        </div>
+        <div class="row" style="margin-top:7px">
+          <button id="furDownloadPngsBtn" class="secondary">Export new animal motif PNGs</button>
+          <button id="furDownloadManifestBtn" class="secondary">Export fur-hoods.json</button>
+          <button id="furExportExclusionsBtn" class="secondary" type="button">Export exclusion lists (.json)</button>
+        </div>
+        <div class="trimPreviewWrap"><canvas id="furPreviewCanvas" width="1" height="1"></canvas></div>
+        <div id="furAuthorStatus" class="muted" style="margin-top:7px;white-space:pre-wrap">Loading animal coat manifest…</div>
+        <div id="furAssignments" class="path">No natural markings assigned.</div>
+      </div>
       <div class="trimAuthor">
         <h2>Garment trim authoring</h2>
         <div class="muted" style="margin-bottom:8px">Paint trim directly onto each garment species/gender sprite. The exported PNG is an exact sprite-space mask—not a repeating or repositioned pattern—while players only choose whether to add it and whether it uses dye A, B, or C.</div>
@@ -89,6 +134,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
         <label>Preview mode
           <select id="previewMode">
             <option value="weaving" selected>Weaving</option>
+            <option value="furHood">Animal fur hood</option>
             <option value="verdigris">Verdigris</option>
             <option value="banner">Hanging banner · 3D</option>
             <option value="churchWindow">Tall church window · 3D</option>
@@ -154,6 +200,9 @@ Overpass → not set</div>
   let loadedRepoId = null; // Repo provenance for the primary pattern while it remains unmodified.
   let overpassDraft = null; // Optional second pattern; rendered above primary with the shared Celtic-knot clearance behavior.
   let overpassLoadedRepoId = null; // Repo provenance for the dev-only overpass slot while it remains unmodified.
+  let drawFurMainPreview = null; // Installed by fur authoring; refreshPreview delegates its right-hand hood viewport to the real garment renderer.
+  let syncFurViewportButton = null; // Keeps the fur authoring toggle accurate when the main preview dropdown changes directly.
+  let furRightPainterActive = () => false; // Right-panel painter owns that viewport while editing; the main preview renderer checks before drawing.
   const debugState = { lastAction: 'init', lastError: null }; // Exposed below so mobile/tool debugging can inspect the most recent dual-pattern editor action.
   let trimManifest = { schema: 'hobunji_clothing_trim.v1', garments: {} }; // Mutable dev-tool copy exported as config/patterns/clothing-trims.json; runtime never receives motif data URLs.
   const trimCosmetics = new Map(); // cosmeticId -> { entry, config }; populated from the repo index so variants come from real clothing metadata rather than a hard-coded species list.
@@ -175,10 +224,11 @@ Overpass → not set</div>
   }
   function syncPreviewModeControls() {
     const mode = $('previewMode').value; // Preview choice never changes exported motif settings.
-    document.querySelectorAll('[data-preview-palette]').forEach(el => { el.hidden = mode === 'verdigris'; }); // Single dev-only preview switch; it never mutates pattern data.
+    document.querySelectorAll('[data-preview-palette]').forEach(el => { el.hidden = mode === 'verdigris' || mode === 'furHood'; }); // Single dev-only preview switch; it never mutates pattern data.
     document.querySelectorAll('[data-preview-mode]').forEach(el => { el.hidden = el.dataset.previewMode !== mode; });
     const ruggedPoncho = mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW;
-    $('previewModeHelp').textContent = ['banner','churchWindow'].includes(mode) ? 'Actual furniture geometry with cloth or stained-glass patterns. Drag to orbit; pinch or scroll to zoom.' : mode === 'verdigris'
+    syncFurViewportButton?.(); // Users can also choose a mode from the main preview dropdown; the button must reflect that.
+    $('previewModeHelp').textContent = mode === 'furHood' ? 'Shows the selected animal, gene color and hood fit using the game renderer. Use Paint directly on hood to edit its natural motif.' : ['banner','churchWindow'].includes(mode) ? 'Actual furniture geometry with cloth or stained-glass patterns. Drag to orbit; pinch or scroll to zoom.' : mode === 'verdigris'
       ? 'Verdigris mode uses the real tool-metal renderer on the fishing mace. Motif ink marks stripped clean metal; the rest stays oxidized, with the real 2px verdigris outline behavior.'
       : ruggedPoncho
         ? 'Rugged poncho uses the production clothing-layer renderer and the actual authored poncho + wrap sprites, so pattern position/scale are evaluated on real overwear instead of a rectangular test surface.'
@@ -1861,6 +1911,12 @@ Overpass → not set</div>
       return;
     }
     window.PatternFurniturePreview.dispose();
+    if (mode === 'furHood') {
+      if (furRightPainterActive()) return; // The right panel is occupied by the interactive hood painter; never overwrite it with passive preview renders.
+      if (drawFurMainPreview) await drawFurMainPreview(); // Uses the same exact preview as the fur authoring pane, including when no motif is saved.
+      else { ctx.clearRect(0,0,canvas.width,canvas.height); $('status').textContent='Loading the fur-hood preview…'; }
+      return;
+    }
     const rendered = await renderSimple(primary, overpass);
     canvas.width = rendered.width; canvas.height = rendered.height;
     const compactSpritePreview = mode === 'verdigris' || (mode === 'weaving' && $('surfaceTexture').value === RUGGED_PONCHO_PREVIEW);
@@ -2160,8 +2216,325 @@ Overpass → not set</div>
     $('trimStatus').textContent = 'Exported clothing-trims.json. Keep every listed motifPng at the path shown in the manifest.';
   };
 
+function setupFurAuthoring() {
+  const field = id => document.getElementById(id);
+  const speciesSelect = field('furAnimalSpecies'); // Species selector resolves exact save-time hide.kind identifiers from the manifest.
+  const wearerSelect = field('furWearerVariant'); // The two authored hood fits have different animal-front/back sprite files.
+  const geneInput = field('furGeneId'); // Native dropdown is populated from CreatureGenetics.PATTERN_DEFS, not a second hardcoded gene list.
+  const frontMode=field('furFrontColorMode'),backMode=field('furBackColorMode'),trimGene=field('furTrimGene'),trimColor=field('furTrimColorMode'); // Shared species-wide coat routing; authored values export to species manifest.
+  const status = field('furAuthorStatus'); // Exposes export and preview errors without developer tools.
+  const previewCanvas = field('furPreviewCanvas'); // Uses the production garment compositor for color and motif placement.
+  const newMotifPixels = new Map(); // Browser-session PNGs for natural motifs, isolated from ordinary pattern library saves.
+  let furManifest = { schema: 'hobunji_fur_hoods.v1', species: {} }; // Local editable copy of the shipped animal coat manifest.
+  let lastFurAuthorError = null; // Added to mobile Copy Debug output below.
+  let furPreviewRevision = 0; // A slower hood fetch cannot replace a newer gene/species/view in either preview canvas.
+  let exclusionSession=null; // Current raw-sprite eyedropper modal; it is closed when the user selects a different species or fit.
+
+  const safeKind = value => String(value || '').trim().toLowerCase().replace(/[_\s]+/g,'-').replace(/[^a-z0-9-]/g,'');
+  const safeGene = value => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g,''); // Genotype allele keys must retain their exact case and underscores.
+  const refreshSpecies = () => {
+    const previous = speciesSelect.value;
+    speciesSelect.innerHTML = '';
+    for (const kind of Object.keys(furManifest.species || {}).sort()) {
+      const option = document.createElement('option');
+      option.value = kind;
+      option.textContent = kind.replace(/-/g, ' ');
+      speciesSelect.appendChild(option);
+    }
+    speciesSelect.value = previous && furManifest.species[previous] ? previous : Object.keys(furManifest.species || {}).sort()[0] || '';
+    selectSpecies();
+  };
+  const selectedEntry = () => furManifest.species?.[speciesSelect.value] || null;
+  function refreshGeneChoices() {
+    const kind=speciesSelect.value, previous=geneInput.value; // Preserve the selected gene when switching between wearer fits.
+    const official=window.CreatureGenetics?.PATTERN_DEFS?.[kind] || []; // These exact genotype keys determine which alleles actually exist in creature saves.
+    const authored=Object.keys(selectedEntry()?.patterns || {}); // Retain older authored gene keys for compatibility, never discard existing work.
+    const genes=[...new Set([...official,...authored])];
+    geneInput.replaceChildren();
+    for(const gene of genes) {
+      const option=document.createElement('option');
+      option.value=gene;
+      option.textContent=gene.replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[-_]+/g,' ').replace(/^./,c=>c.toUpperCase())+(authored.includes(gene)?' · authored':'');
+      geneInput.appendChild(option);
+    }
+    if(!genes.length){
+      const option=document.createElement('option');
+      option.value='';option.textContent='No inherited coat pattern genes';
+      geneInput.appendChild(option);
+    }
+    geneInput.disabled=!genes.length;
+    geneInput.value=genes.includes(previous)?previous:(genes[0]||'');
+    trimGene.replaceChildren();
+    const automatic=document.createElement('option');automatic.value='';automatic.textContent='First expressed pattern';trimGene.appendChild(automatic);
+    for(const gene of genes){const option=document.createElement('option');option.value=gene;option.textContent=gene.replace(/[-_]/g,' ')+' preferred';trimGene.appendChild(option);}
+    trimGene.value=genes.includes(selectedEntry()?.trimGene)?selectedEntry().trimGene:'';
+    trimGene.disabled=trimColor.value==='base'; // A base-coated trim never consults genotype pattern priority.
+  }
+  const selectedPart = () => selectedEntry()?.parts?.[wearerSelect.value] || null; // Never flatten both wearer fits into a single sprite path.
+  const updateAssignments = () => {
+    const entry = selectedEntry();
+    const names = Object.keys(entry?.patterns || {});
+    field('furAssignments').textContent = 'Species: ' + (speciesSelect.value || '(none)') + '\n'
+      + 'Authored genes: ' + (names.join(', ') || '(none)') + '\n'
+      + 'Wearer fit: ' + wearerSelect.value + '\nFront: ' + (selectedPart()?.front || '(none)') + '\nBack: ' + (selectedPart()?.back || '(none)') + '\n'
+      + 'Front pigment: ' + (entry?.partColors?.front || 'base') + ' · Back pigment: ' + (entry?.partColors?.back || 'base') + ' · Trim pigment: ' + (entry?.trimColor || 'pattern') + ' · Trim gene: ' + (entry?.trimGene || 'first expressed') + '\n'
+      + 'New unsaved motif PNGs: ' + newMotifPixels.size;
+  };
+  function selectSpecies() {
+    exclusionSession?.close?.();exclusionSession=null; // Prevent sampling one animal sprite into the next animal's exclusion list.
+    field('furAnimalFront').value = selectedPart()?.front || '';
+    field('furAnimalBack').value = selectedPart()?.back || '';
+    frontMode.value=selectedEntry()?.partColors?.front==='pattern'?'pattern':'base';
+    backMode.value=selectedEntry()?.partColors?.back==='pattern'?'pattern':'base';
+    trimColor.value=selectedEntry()?.trimColor==='base'?'base':'pattern'; // Drenkirra uses this exception, unlike the normal inherited-trim default.
+    const keyed=speciesSelect.value==='grehlr'; // Grehlr source palettes require mixed pigment families; whole-part routes are deliberately disabled.
+    frontMode.disabled=keyed;backMode.disabled=keyed;
+    field('furPaletteHelp').textContent=keyed
+      ? 'Grehlr: white/gray remains unchanged unless coloredstripe is inherited, when it uses that gene color; back mint uses base coat. Individual part routing is automatic.'
+      : speciesSelect.value==='drenkirra'
+        ? 'Drenkirra: hood base and trim follow the base coat; its animal-front sprite uses the inherited pattern color.'
+        : 'Trim can inherit pattern or base coat. Animal front/back can independently use either pigment. No drawn motif is required.';
+    field('furPaletteHelp').textContent += ' Source colors #94858E and #567372 always remain unchanged.';
+    refreshGeneChoices();
+    updateAssignments();
+    preview(); // Show the bare hood immediately even when no gene motif has been authored yet.
+  }
+  speciesSelect.onchange = selectSpecies;
+  wearerSelect.onchange = selectSpecies;
+  geneInput.onchange = () => preview(); // Changing the wearer's head changes the authored animal overlay pair, not the hide genotype.
+  const selectedGenePattern = () => {
+    const gene = safeGene(geneInput.value);
+    const authored = selectedEntry()?.patterns?.[gene];
+    const unsaved = newMotifPixels.get(speciesSelect.value + ':' + gene);
+    if (unsaved) return { ...(unsaved.settings || authored?.settings || {}), motifDataUrl: unsaved.dataUrl }; // The exact saved animal motif takes precedence over an unrelated general pattern draft.
+    if (authored?.motifPng) return { ...(authored.settings || {}), motifUrl: authored.motifPng };
+    return null;
+  };
+  function exclusionOverridesForPreview() {
+    const entry=selectedEntry(); // Unsaved authoring swatches preview immediately without writing to the disk or game save.
+    return {global:[...(furManifest.excludedColors||['#94858e','#567372'])],byRole:JSON.parse(JSON.stringify(entry?.excludedColorsByRole||{}))};
+  }
+  function sampleFurHood() {
+    const kind=speciesSelect.value,gene=safeGene(geneInput.value),coat=field('furTestCoat').value,ink=field('furTestInk').value;
+    const genome={base:{color:coat}}; // Sample-only coat; authoring never writes an artificial genotype into owned hides.
+    if(gene)genome[gene]={enabled:true,copies:2,color:ink};
+    return {kind,genotype:genome,baseColor:coat,appearance:{patterns:gene?[{id:gene,enabled:true,color:ink}]:[]},
+      authoringPalette:{partColors:{front:frontMode.value,back:backMode.value},trimGene:trimGene.value,trimColor:trimColor.value,
+        exclusionOverrides:exclusionOverridesForPreview()}}; // Shares the game renderer's exact exclusion inputs with the raw sprite inspector.
+  }
+  function showFramedHood(source, target, bounds) {
+    // Framing comes from the paint-eligible mask, not the tinted art: black sprite backdrops must not hide the actual hood.
+    target.width=bounds.width;target.height=bounds.height;
+    const ctx=target.getContext('2d');
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(source,bounds.x,bounds.y,bounds.width,bounds.height,0,0,bounds.width,bounds.height);
+    target.style.width=Math.min(530,Math.max(bounds.width*3,320))+'px'; // Scale the actual opaque hood instead of fitting huge transparent sprite padding.
+    target.style.height='auto';
+    return bounds;
+  }
+  async function preview() {
+    const request=++furPreviewRevision;
+    const kind=speciesSelect.value, gene=safeGene(geneInput.value), motif=selectedGenePattern();
+    if(!kind){status.textContent='Choose an animal species first.';return;}
+    const coat=field('furTestCoat').value, ink=field('furTestInk').value;
+    const furHood=sampleFurHood(); // Also used by the raw-sprite inspector; active exclusions are applied to the live full hood immediately.
+    status.textContent='Loading hood sprites for '+kind+'…';
+    try {
+      await window.FurHoodLeatherworking?.ensureManifest?.(); // Animal front/back layers are fetched before resolving either head-fit preview.
+      const options={
+        furHood,primaryHex:coat,secondaryHex:coat,view:field('furPaintView').value,
+        speciesId:wearerSelect.value.split('_')[0].replace(/_/g,'-'),gender:wearerSelect.value.split('_')[1]||'male',
+        furHoodMarkingsOverride:motif&&gene?[{geneId:gene,pattern:motif,colorHex:ink}]:[],uncachedPatternPreview:true,
+      }; // Both draws reuse the same selected animal/head-fit geometry.
+      const [result,mask]=await Promise.all([
+        window.ClothingWeavingSystem.renderClothingLayers('fur_hood',options),
+        window.ClothingWeavingSystem.renderClothingLayers('fur_hood',{...options,furPaintMaskOnly:true}),
+      ]);
+      if(request!==furPreviewRevision)return;
+      if(!result?.canvas||!mask?.canvas)throw new Error('The hood or its natural-fur mask returned no sprite. Verify this fit and asset paths.');
+      const bounds=window.FurHoodDirectPaintEditor.visibleBounds(mask.canvas,12); // The mask identifies fur even if the original hood PNG includes opaque black padding.
+      showFramedHood(result.canvas,previewCanvas,bounds);
+      if($('previewMode').value==='furHood' && !furRightPainterActive())showFramedHood(result.canvas,$('preview'),bounds); // Inline painting owns the right viewport until explicitly closed.
+      status.textContent=kind+' · '+(gene||'no gene')+' · '+(motif?'genetic markings':'plain coat (paint to create a marking)')+' · '+bounds.width+'×'+bounds.height+'px visible';
+      lastFurAuthorError=null;
+    }catch(error){
+      if(request!==furPreviewRevision)return;
+      lastFurAuthorError=String(error?.message||error);
+      status.textContent='Animal hood preview failed: '+lastFurAuthorError;
+      const main=$('preview');if($('previewMode').value==='furHood' && !furRightPainterActive()){main.width=384;main.height=160;main.getContext('2d').clearRect(0,0,main.width,main.height);}
+    }
+  }
+  drawFurMainPreview=preview; // The passive main hood option and smaller authoring preview share the actual garment compositor.
+  const mainButton=field('furMainViewportBtn');
+  let rightPainter=null,openingRightPainter=false; // One embedded painting session at a time; ordinary full-screen editor remains separate.
+  furRightPainterActive=()=>openingRightPainter||!!rightPainter?.isOpen?.();
+  const lockedFields=['furAnimalSpecies','furWearerVariant','furGeneId','furPaintView','furTestCoat','furTestInk','furFrontColorMode','furBackColorMode','furTrimGene','furTrimColorMode']; // Source genotype and pigment-routing inputs stay fixed during one inline hood paint session.
+  function lockRightPaintSelection(value){
+    for(const id of lockedFields)field(id).disabled=value;
+    if(!value && speciesSelect.value==='grehlr'){frontMode.disabled=true;backMode.disabled=true;} // Leaving the painter must preserve Grehlr's dedicated dual-key coloring constraint.
+    if(!value && trimColor.value==='base')trimGene.disabled=true; // Maintain trim-gene disabled state after exiting inline painter.
+    $('previewMode').disabled=value; // Prevent switching to an unrelated preview while its canvas has been replaced by the live painter.
+  }
+  syncFurViewportButton=()=>{
+    const active=furRightPainterActive();
+    mainButton.textContent=active?'Return to pattern preview':'Paint hood in right viewport';
+    mainButton.classList.toggle('active',active);
+    mainButton.disabled=openingRightPainter;
+  };
+  function exitRightPainter(){
+    rightPainter=null;openingRightPainter=false;
+    lockRightPaintSelection(false);
+    $('preview').hidden=false;
+    $('previewMode').value='weaving'; // Original pattern editor is immediately usable after a Save, Cancel, or close.
+    syncPreviewModeControls();
+    refreshPreview();
+  }
+  mainButton.onclick=async()=>{
+    if(rightPainter?.isOpen?.()){rightPainter.close();return;}
+    if(openingRightPainter)return;
+    openingRightPainter=true;
+    lockRightPaintSelection(true);
+    $('previewMode').value='furHood';
+    $('furniturePreview').hidden=true; // The former right viewport may have been a 3D banner; restore the normal canvas container first.
+    $('preview').parentElement.hidden=false;
+    window.PatternFurniturePreview.dispose();
+    $('preview').hidden=true; // The painter is mounted INSIDE the old preview container, not on top of the whole page.
+    syncPreviewModeControls();
+    status.textContent='Opening a paintable hood in the right viewport…';
+    try {
+      rightPainter=await openHoodPainter($('preview').parentElement,exitRightPainter);
+      if(!rightPainter?.isOpen?.())throw new Error('The embedded hood paint session closed during loading.');
+    }catch(error){
+      lastFurAuthorError=String(error?.message||error);
+      status.textContent='Could not open right-panel hood painter: '+lastFurAuthorError;
+      exitRightPainter();
+    }finally{
+      openingRightPainter=false;
+      syncFurViewportButton?.();
+    }
+  };
+  field('furPreviewBtn').onclick = preview;
+  field('furTestCoat').oninput=()=>preview(); // Natural coat recolor is visible before any motif has been authored.
+  field('furTestInk').oninput=()=>preview(); // Only the selected genotype gene is recolored in preview.
+  frontMode.onchange=()=>preview();backMode.onchange=()=>preview();trimGene.onchange=()=>preview();
+  trimColor.onchange=()=>{trimGene.disabled=trimColor.value==='base';preview();}; // Switches between inherited trim and base-colored trim.
+  field('furPaintView').onchange = () => preview(); // Front and back authoring use the same exported gene motif, but show the actual selected sprite stack.
+  async function openHoodPainter(mountTarget=null,onClose=null) {
+    const kind=speciesSelect.value,gene=safeGene(geneInput.value),entry=selectedEntry();
+    if(!entry||!gene)throw new Error('Select an animal and one of its real inherited pattern genes first.');
+    const current=entry.patterns?.[gene]||null; // Reopening retrieves the same gene's saved motif and editable paint journal.
+    const unsaved=newMotifPixels.get(kind+':'+gene); // Session edits take priority over the repo export until explicitly downloaded.
+    const sourcePattern=unsaved?{...(unsaved.settings||current?.settings||{}),motifDataUrl:unsaved.dataUrl}
+      :current?.motifPng?{...(current.settings||{}),motifUrl:current.motifPng}:null;
+    status.textContent='Resolving the hood and eligible natural-fur pixels…';
+    return window.FurHoodDirectPaintEditor.open({
+      kind,gene,wearerVariant:wearerSelect.value,view:field('furPaintView').value,
+      coat:field('furTestCoat').value,ink:field('furTestInk').value,
+      paletteOverride:{partColors:{front:frontMode.value,back:backMode.value},trimGene:trimGene.value,trimColor:trimColor.value,
+        exclusionOverrides:exclusionOverridesForPreview()}, // Painting and the raw-sprite dropper agree on unsaved exact-source exclusions.
+      sourcePattern,authoring:unsaved?.authoring||current?.authoring||null,mountTarget,onClose,
+      onSave:async({motifDataUrl,settings,authoring})=>{
+        const path='assets/patterns/fur-hoods/'+kind+'__'+gene+'.png'; // Natural motif asset remains independent of player weaving even when authored inline.
+        entry.patterns||={};
+        entry.patterns[gene]={motifPng:path,settings,authoring};
+        newMotifPixels.set(kind+':'+gene,{path,dataUrl:motifDataUrl,settings,authoring});
+        status.textContent='Painted gene saved for '+kind+'/'+gene+'. Export its PNG and fur-hoods.json to publish.';
+        updateAssignments();
+        await preview();
+      },
+    });
+  }
+  field('furSampleExclusionsBtn').onclick=()=>{
+    if(!selectedEntry()){status.textContent='Select an animal species before sampling source sprite colors.';return;}
+    try{
+      exclusionSession?.close?.(); // One inspector at a time, matching the editor's existing modal behavior.
+      exclusionSession=window.FurHoodExclusionEditor.open({
+        manifest:furManifest,
+        getState:()=>({kind:speciesSelect.value,fit:wearerSelect.value,view:field('furPaintView').value,
+          furHood:sampleFurHood()}),
+        onChange:()=>{updateAssignments();preview();}, // Full actual hood preview updates as soon as a raw pixel is excluded.
+      });
+      status.textContent='Eyedropper ready. Tap the untreated source sprite to protect an exact RGB value, then export fur-hoods.json.';
+    }catch(error){lastFurAuthorError=String(error?.message||error);status.textContent='Raw fur eyedropper failed: '+lastFurAuthorError;}
+  };
+  field('furExportExclusionsBtn').onclick=()=>{
+    const exportAll={
+      schema:'hobunji_fur_exclusions.v1',
+      global:window.FurHoodLeatherworking?.normalizeExclusions?.(furManifest.excludedColors)||furManifest.excludedColors||[],
+      species:Object.fromEntries(Object.entries(furManifest.species||{}).map(([kind,entry])=>[kind,entry.excludedColorsByRole||{}])),
+    }; // Separate portable authoring list plus the canonical full fur-hoods.json export.
+    jsonDownload(exportAll,'fur-hood-exclusion-hexes.json');
+    status.textContent='Exported global and per-species/role HEX lists. Export fur-hoods.json too to publish the exclusions in-game.';
+  };
+  field('furPaintBtn').onclick=async()=>{
+    const button=field('furPaintBtn');
+    button.disabled=true;
+    try{await openHoodPainter();}
+    catch(error){lastFurAuthorError=String(error?.message||error);status.textContent='Direct hood painting failed: '+lastFurAuthorError;}
+    finally{button.disabled=false;}
+  };
+  field('furAssignBtn').onclick = () => {
+    const kind = speciesSelect.value, gene = safeGene(geneInput.value);
+    if (!kind || !gene || !draft?.motifDataUrl) { status.textContent = 'Select a species and inherited gene from the dropdown, then edit the current motif before assigning.'; return; }
+    const file = 'assets/patterns/fur-hoods/' + kind + '__' + gene + '.png';
+    const entry = selectedEntry();
+    entry.patterns ||= {};
+    entry.patterns[gene] = { motifPng: file, settings: cleanSettings(draft) }; // Pattern geometry is dev-authored; player saves store only animal genes plus separately reweavable patterns.
+    newMotifPixels.set(kind + ':' + gene, { path: file, dataUrl: draft.motifDataUrl });
+    status.textContent = 'Assigned ' + kind + '/' + gene + '. Export its PNG and fur-hoods.json to publish; this is NOT a normal weaving pattern.';
+    updateAssignments();
+    preview();
+  };
+  const validatePartPath = value => !value || /^(?:\.\/)?assets\/[a-z0-9_./-]+\.(?:png|webp)$/i.test(value);
+  field('furSavePartsBtn').onclick = () => {
+    const entry = selectedEntry();
+    if (!entry) return;
+    const front = field('furAnimalFront').value.trim(), back = field('furAnimalBack').value.trim();
+    if (!validatePartPath(front) || !validatePartPath(back)) { status.textContent = 'Animal sprites must be docs-root relative paths beginning assets/ and ending .png or .webp.'; return; }
+    entry.parts ||= {};
+    entry.parts[wearerSelect.value] = { ...(front ? {front:front.replace(/^\.\//,'')} : {}), ...(back ? {back:back.replace(/^\.\//,'')} : {}) }; // Preserve the other head fit's dedicated animal sprites.
+    entry.partColors={front:frontMode.value,back:backMode.value}; // Species-wide choice is shared across both wearer's head fits.
+    if(trimColor.value==='base')entry.trimColor='base';else delete entry.trimColor; // Absence means conventional pattern-colored trim.
+    if(trimGene.value)entry.trimGene=trimGene.value;else delete entry.trimGene; // Default chooses canonical first expressed gene.
+    // Grehlr's white stripe always depends on coloredstripe; trim priority remains independently authorable.
+    status.textContent = 'Saved optional sprites and natural pigment routing. Export fur-hoods.json to publish.';
+    preview();
+    updateAssignments();
+  };
+  field('furDownloadPngsBtn').onclick = () => {
+    for (const file of newMotifPixels.values()) dataUrlDownload(file.dataUrl, file.path.split('/').pop());
+    status.textContent = 'Exported ' + newMotifPixels.size + ' new PNGs; place them under docs/assets/patterns/fur-hoods/ alongside the exported manifest.';
+  };
+  field('furDownloadManifestBtn').onclick = () => {
+    jsonDownload(furManifest, 'fur-hoods.json');
+    status.textContent = 'Exported fur-hoods.json. Place in docs/config/patterns/ (animal markings never enter config/patterns/index.json).';
+  };
+  window.__furHoodAuthorDebug = () => ({
+    species: speciesSelect.value, wearerVariant: wearerSelect.value, gene: geneInput.value, geneOptions:[...geneInput.options].map(x=>x.value), mainViewport:$('previewMode').value==='furHood', assigned: Object.keys(selectedEntry()?.patterns || {}),
+    partColors:{front:frontMode.value,back:backMode.value},trimColor:trimColor.value,trimGene:trimGene.value,grehlrSelective:speciesSelect.value==='grehlr',
+    exclusions:{global:furManifest.excludedColors||[],speciesByRole:selectedEntry()?.excludedColorsByRole||{}},
+    rawEyedropper:exclusionSession?.debug?.()||null,
+    sessionMotifs: newMotifPixels.size, paintedMotifs: [...newMotifPixels.keys()], error: lastFurAuthorError,
+    latestChange: 'Nelk Mashtzarr back sprite renamed; raw art pixel-eyedropper exports exact global/role exclusions with live no-exclusion/with-exclusion comparisons.',
+  });
+  fetch('../../config/patterns/fur-hoods.json').then(response => {
+    if (!response.ok) throw new Error('Manifest HTTP ' + response.status);
+    return response.json();
+  }).then(data => {
+    if (data?.schema !== 'hobunji_fur_hoods.v1') throw new Error('Wrong animal manifest schema');
+    furManifest = data;
+    refreshSpecies();
+    status.textContent = 'Select a species and a real genotype pattern, then paint on the hood or assign an existing motif.';
+  }).catch(error => {
+    lastFurAuthorError = String(error?.message || error);
+    status.textContent = 'Could not load animal manifest: ' + lastFurAuthorError;
+  });
+}
+  setupFurAuthoring();
+
   window.__patternEditorDebug = () => ({ // Mobile-visible console substitute for checking the dev tool's two-slot state.
     furniturePreview: window.PatternFurniturePreview.debug(),
+    furHoodAuthor: window.__furHoodAuthorDebug?.() || null,
     mostRecentChange: 'Added actual hanging banner and tall stained-glass church window previews. Cross-species trim replication defaults to contour warp: the finished source mask is carried along matched cloth contours (region, arc-length position, signed depth) instead of replaying strokes, so erase/expand errors cannot compound on multi-piece garments. Stroke replay remains selectable and no longer mirrors off-cloth samples inward.',
     previewMode: $('previewMode').value,
     weavingBackground: $('surfaceTexture').value,
