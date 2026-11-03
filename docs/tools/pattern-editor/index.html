@@ -2449,7 +2449,7 @@ function setupFurAuthoring() {
     entry.parts[wearerSelect.value] = { ...(front ? {front:front.replace(/^\.\//,'')} : {}), ...(back ? {back:back.replace(/^\.\//,'')} : {}) }; // Preserve the other head fit's dedicated animal sprites.
     entry.partColors={front:frontMode.value,back:backMode.value}; // Species-wide choice is shared across both wearer's head fits.
     if(trimGene.value)entry.trimGene=trimGene.value;else delete entry.trimGene; // Default chooses canonical first expressed gene.
-    if(speciesSelect.value==='grehlr')entry.trimGene='coloredstripe'; // Neutral stripe pigmentation remains keyed to this specific allele.
+    // Grehlr's white stripe always depends on coloredstripe; trim priority remains independently authorable.
     status.textContent = 'Saved optional sprites and natural pigment routing. Export fur-hoods.json to publish.';
     preview();
     updateAssignments();
