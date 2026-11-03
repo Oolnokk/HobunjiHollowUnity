@@ -8,9 +8,9 @@
     flying: 'creaturesprites/tzatzul_flying.png',
     perched: 'creaturesprites/tzatzul_perched.png',
     wings: 'creaturesprites/tzatzul_wings.png',
-    leftHinge: 0.40, rightHinge: 0.48,
-    wingScale: 1, wingHeight: 0.08, wingOffset: 0.02, wingCenter: 0.44,
-    flapUp: 42, flapDown: 28, flapHz: 2.2, glideAngle: 7,
+    leftHinge: 0.435, rightHinge: 0.467,
+    wingScale: 1.41, wingHeight: 0.15, wingOffset: -0.18, wingCenter: 0.451,
+    flapUp: 43, flapDown: 28, flapHz: 2.2, glideAngle: 7,
     yawDeadzone: 27.5, pitchDeadzone: 22,
   });
   const limits = Object.freeze({ // Bounds shared by JSON import and the author controls.
@@ -57,9 +57,9 @@
     root.add(yaw);
     yaw.add(pitch);
 
-    function material(key) {
+    function material(key, overrides) {
       const name = `flying-animal-${key}`; // Name visible in renderer diagnostics.
-      return png.makeMaterial(THREE, png.makeCanvasTexture(THREE, images[key], name), name, { side: THREE.DoubleSide });
+      return png.makeMaterial(THREE, png.makeCanvasTexture(THREE, images[key], name), name, { side: THREE.DoubleSide, ...overrides });
     }
 
     function body(key) {
@@ -89,7 +89,8 @@
     geometry.computeVertexNormals();
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
-    const wings = new THREE.SkinnedMesh(geometry, material('wings')); // One connected, double-sided surface.
+    // Three.js r128 needs the material flag to apply bone transforms in the shader.
+    const wings = new THREE.SkinnedMesh(geometry, material('wings', { skinning: true }));
     const bones = cuts.slice(1, 3).map((hinge, index) => {
       const bone = new THREE.Bone();
       bone.name = index === 0 ? 'Left wing' : 'Right wing';
