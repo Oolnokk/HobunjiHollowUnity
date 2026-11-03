@@ -1223,8 +1223,7 @@
 
   // Build the equipment slots panel inside #invEquipSection
   function buildEquipmentSlots() {
-    ensureStarterFlute(); // Backfill loaded legacy saves even when the player entered through the inventory rather than onboarding.
-    const sec = document.getElementById('invEquipSection');
+    const sec = document.getElementById('invEquipSection'); // Rendering must never grant gear or write a save; migration happens at character load.
     if (!sec) return;
     sec.innerHTML = '';
     const gearInventory = deps.getGearInventory();
