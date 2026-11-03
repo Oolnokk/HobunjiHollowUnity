@@ -382,6 +382,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
               <p class="muted">Pick furniture to assign its table, edit locale links, or adjust optional activity and dressing settings. Changes belong to the selected base map or alternate layout; normal JSON export/import and undo preserve them.</p>
               <select id="festivalPropSelect"></select>
               <label>Belongs to table (optional furniture id)</label><input id="propTableId" placeholder="table instance id, or blank">
+              <label>Choose a table in this map</label><select id="propTableChoice"><option value="">No table</option></select>
               <label>Spatial chair placement</label><select id="propTableMode"><option value="">Independent placement</option><option value="orbit">Orbit around round table</option><option value="edge">Along a flat table edge</option></select>
               <div class="g2"><div><label>Orbit angle (degrees)</label><input id="propTableAngle" type="number" min="0" max="360" step="1" value="0"></div><div><label>Distance from table edge</label><input id="propTableDistance" type="number" min="0" max="4" step="0.05" value="0.65"></div></div>
               <div class="g2"><div><label>Flat table side</label><select id="propTableSide"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option></select></div><div><label>Edge position (%)</label><input id="propTableAlong" type="number" min="0" max="100" step="1" value="50"></div></div>
@@ -1907,6 +1908,12 @@ function loadFestivalPropFields() {
   if (!record) return;
   $('festivalPropType').innerHTML = '<option value="">No activity</option>' + Object.entries(window.FestivalCalendar.activityLabels).map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
   $('propTableId').value = record.tableId || '';
+  const tableOptions = $('propTableChoice'); // Native mobile selector avoids typing raw furniture ids.
+  tableOptions.replaceChildren(new Option('No table', ''));
+  activeDecor(activeMap()).filter(candidate => candidate.id !== record.id
+    && /table|desk|counter/i.test(candidate.key)).forEach(table =>
+      tableOptions.add(new Option((DECOR[table.key]?.label || table.key) + ' (' + table.id + ')', table.id)));
+  tableOptions.value = [...tableOptions.options].some(option => option.value === record.tableId) ? record.tableId : '';
   const tablePlacement=window.TableChairPlacement?.normalize?.(record.tableAttachment)||null;
   $('propTableMode').value=tablePlacement?.mode||'';
   $('propTableAngle').value=tablePlacement?.angleDeg??0;
@@ -1928,6 +1935,7 @@ function loadFestivalPropFields() {
     label.append(input); links.append(label);
   }
 }
+$('propTableChoice').addEventListener('change', () => { $('propTableId').value = $('propTableChoice').value; });
 function renderFestivalPropsPanel(force = false) {
   const select = $('festivalPropSelect'); // Panel exists in both exterior and interior map-editor workspaces.
   if (!select || !window.FestivalCalendar) return;
@@ -3979,6 +3987,11 @@ function deleteSelectedPlacement() {
     const idx = decorArr.findIndex(d => d.id === selectedPlacement.id);
     if (idx >= 0) { decorArr.splice(idx, 1); setStatus('Decor deleted.'); }
   }
+  // A removed table must not leave children with an invisible, collision-free ghost parent.
+  for (const child of activeDecor(m)) if (child.tableId === selectedPlacement.id) {
+    child.tableId = '';
+    delete child.tableAttachment;
+  }
   selectedPlacement = null;
   draw(); refreshPreview(); saveWorkspace();
 }
@@ -5304,15 +5317,29 @@ $('festivalPropApply').addEventListener('click', () => {
   const type = $('festivalPropType').value;
   if (type) record.activity = { ...(record.activity || {}), type, label: $('festivalPropLabel').value.trim() || window.FestivalCalendar.activityLabels[type], radius: Math.max(1, Math.min(8, Number($('festivalPropRadius').value) || 2.5)) };
   else delete record.activity;
-  record.tableId = $('propTableId').value.trim(); // Exported chair/table relationship, independent of activity metadata.
-  const tableMode=$('propTableMode').value;
-  if(!tableMode||!record.tableId)delete record.tableAttachment;
-  else {
-    const descriptor=tableMode==='orbit'?{mode:'orbit',angleDeg:Number($('propTableAngle').value),distance:Number($('propTableDistance').value)}:{mode:'edge',side:$('propTableSide').value,along:Number($('propTableAlong').value)/100,distance:Number($('propTableDistance').value)};
-    const normalized=window.TableChairPlacement?.normalize?.(descriptor);
-    if(!normalized){setStatus('The table-relative chair placement settings are invalid.');return;}
-    record.tableAttachment=normalized;
+  const tableId = $('propTableId').value.trim();
+  const tableMode = $('propTableMode').value;
+  let tableAttachment = null; // Keep the original authoring record intact when validation fails.
+  if(tableMode && tableId) {
+    const table = activeDecor(activeMap()).find(candidate => candidate.id === tableId && candidate.id !== record.id);
+    if(!/chair|bench|stool/i.test(record.key || '') || !table
+      || !/table|desk|counter/i.test(table.key || '')
+      || tableMode !== window.TableChairPlacement?.modeForTable?.(table.key)) {
+      setStatus('Choose a valid table and use its matching chair placement mode.'); return;
+    }
+    if(!$('propTableDistance').value.trim()
+      || (tableMode === 'orbit' && !$('propTableAngle').value.trim())
+      || (tableMode === 'edge' && !$('propTableAlong').value.trim())) {
+      setStatus('Enter an angle/edge position and distance.'); return;
+    }
+    const descriptor=tableMode==='orbit'
+      ? {mode:'orbit',angleDeg:Number($('propTableAngle').value),distance:Number($('propTableDistance').value)}
+      : {mode:'edge',side:$('propTableSide').value,along:Number($('propTableAlong').value)/100,distance:Number($('propTableDistance').value)};
+    tableAttachment=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!tableAttachment){setStatus('The table-relative chair placement settings are invalid.');return;}
   }
+  record.tableId = tableId; // Existing table membership is still valid without spatial placement.
+  if(tableAttachment) record.tableAttachment=tableAttachment; else delete record.tableAttachment;
   record.festivalDecoration = $('festivalPropDressing').value;
   record.festivalColor = $('festivalPropColor').value;
   renderFestivalPropsPanel(true); draw(); refreshPreview(); saveWorkspace(); schedule3DRebuild();
