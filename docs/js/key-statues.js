@@ -33,6 +33,14 @@
     state.anchor=anchor;
     return anchor;
   }
+  function sceneFor(root) {
+    let cursor=root;
+    while(cursor) {
+      if(cursor.isScene)return cursor;
+      cursor=cursor.parent;
+    }
+    return currentScene(); // Active-scene fallback is only for detached authoring/test roots.
+  }
   function lostStatue(state,burden,reason='lost') {
     if(!state||state.disposed||state.payload!==burden)return false;
     state.payload=null;
@@ -43,35 +51,43 @@
     return true;
   }
   function queueRespawn(state,reason) {
+    if(!state||state.disposed||state.respawning)return false;
+    if(state.payload&&!state.payload.exploded&&state.payload.group?.parent)return false;
+    state.respawning=true;
     Promise.resolve().then(async()=>{
-      if(state.disposed||!state.root?.parent)return;
-      const anchor=getOrCreateAnchor(state);
-      if(!anchor)return;
-      const data=await window.AuthoredFurniture?.load?.('keyStatue');
-      if(!data||state.disposed||!state.root?.parent)return;
-      const scene=state.root.getObjectByProperty?.('isScene',true)||currentScene();
-      const group=window.AuthoredFurniture?.buildGroup?.(data);
-      if(!group)return;
-      anchor.add(group);
-      group.position.set(0,0,0);group.quaternion.identity();group.scale.setScalar(1);
-      group.updateWorldMatrix?.(true,true);
-      const burden=window.Shattercasks.registerBurden({
-        id:'key_statue_'+state.id+'_'+(++spawnSerial),mapId:state.mapId,scene,group,data,
-        kind:'keyStatue',displayName:'Key Statue',hanging:false,
-        onImpact:impact,onPickup:record=>{record.keyStatueMounted=false;window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,true);},
-        onLost:(record,cause)=>lostStatue(state,record,cause),
-      });
-      if(!burden){group.parent?.remove(group);state.respawning=false;return;}
-      burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
-      state.payload=burden;
-      state.root.userData.keyStatuePayload=burden;
-      state.respawning=false;
-      if(reason!=='initial') window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // Spawn low on the sunken button, then ride its ON→OFF return animation.
-      else window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false);
-    }).catch(error=>{
-      state.respawning=false;
-      console.warn('[KeyStatues] failed to restore dispenser payload',error);
+      let group=null;
+      try {
+        if(state.disposed||!state.root?.parent)return;
+        const anchor=getOrCreateAnchor(state);
+        if(!anchor)return; // Retry on a later tick if the authored button mesh has not finished building.
+        const data=await window.AuthoredFurniture?.load?.('keyStatue');
+        if(!data||state.disposed||!state.root?.parent)return; // A failed/late asset load must not wedge this dispenser in respawning=true.
+        const scene=sceneFor(state.root);
+        if(!scene)return;
+        group=window.AuthoredFurniture?.buildGroup?.(data);
+        if(!group)return;
+        if(state.disposed||!state.root?.parent){group.parent?.remove(group);return;}
+        anchor.add(group);
+        group.position.set(0,0,0);group.quaternion.identity();group.scale.setScalar(1);
+        group.updateWorldMatrix?.(true,true);
+        const burden=window.Shattercasks.registerBurden({
+          id:'key_statue_'+state.id+'_'+(++spawnSerial),mapId:state.mapId,scene,group,data,
+          kind:'keyStatue',displayName:'Key Statue',hanging:false,
+          onImpact:impact,onPickup:record=>{record.keyStatueMounted=false;window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,true);},
+          onLost:(record,cause)=>lostStatue(state,record,cause),
+        });
+        if(!burden){group.parent?.remove(group);group=null;return;}
+        burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
+        state.payload=burden;
+        state.root.userData.keyStatuePayload=burden;
+        window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // Replacement rises from the sunken button; initial spawns remain at OFF.
+      } catch(error) {
+        console.warn('[KeyStatues] failed to restore dispenser payload',error);
+      } finally {
+        state.respawning=false; // Missing assets, meshes and scene transitions remain retryable from tick().
+      }
     });
+    return true;
   }
   function impact(burden,cause='impact') {
     if(!burden||burden.exploded)return false;
