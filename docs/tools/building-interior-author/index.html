@@ -550,7 +550,11 @@ function furnLegacyVisual(f){
   return helper&&helper.legacyRecordFor?helper.legacyRecordFor(f):f;
 }
 function furnitureFitsFloor(f,col,row){
-  if(f&&f.tableAttachment)return true; // A spatial child is carried by its table and has no independent floor footprint.
+  if(f&&f.tableAttachment){
+    var parent=activeFurniture().find(function(candidate){return candidate.id===f.tableId&&candidate.id!==f.id;});
+    if(parent&&/chair|bench|stool/i.test(f.itemKey||'')&&/table|desk|counter/i.test(parent.itemKey||'')
+      &&window.TableChairPlacement?.normalize?.(f.tableAttachment)?.mode===window.TableChairPlacement.modeForTable(parent.itemKey))return true;
+  } // Invalid/missing attachments retain an ordinary grid footprint.
   var info=furnGridInfo(f); // Used to validate the complete current grid footprint before placement, dragging, rotation, or scaling.
   for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++){
     var tc=col+dc,tr=row+dd;
@@ -630,6 +634,10 @@ function activeFurniture(){
   return lay.furniture;
 }
 function setActiveFurniture(arr){
+  var kept=new Set(arr.map(function(f){return f.id;})); // Used to clear links to tables removed by erase, floor edits or Delete.
+  arr.forEach(function(f){
+    if(f.tableAttachment&&!kept.has(f.tableId)){delete f.tableAttachment;f.tableId='';}
+  });
   var lay=currentLayoutObj();
   if(lay) lay.furniture=arr; else state.interior.furniture=arr;
 }
@@ -1280,18 +1288,28 @@ $('nonCollidingFurniture').addEventListener('change',function(){
 });
 $('applyPTBtn').addEventListener('click',function(){
   var f=activeFurniture().filter(function(x){return x.id===state.selectedId;})[0]; if(!f) return;
-  pushUndo();
-  f.tableId=$('pTableId').value; // Saved alongside the chair's normal transform in either the base room or its active layout.
-  var tableMode=$('pTableMode').value;
-  if(!tableMode||!f.tableId) delete f.tableAttachment;
-  else {
+  var tableId=$('pTableId').value, tableMode=$('pTableMode').value;
+  var tableAttachment=null; // Validated before pushUndo or changing the live authoring record.
+  if(tableMode&&tableId){
+    var table=activeFurniture().find(function(candidate){return candidate.id===tableId&&candidate.id!==f.id;});
+    if(!table||!/chair|bench|stool/i.test(f.itemKey||'')
+      ||!/table|desk|counter/i.test(table.itemKey||'')
+      ||tableMode!==window.TableChairPlacement?.modeForTable?.(table.itemKey)){
+      $('statusLine').textContent='Choose a compatible table and chair placement mode.';return;
+    }
+    if(!$('pTableDistance').value.trim()||(tableMode==='orbit'&&!$('pTableAngle').value.trim())
+      ||(tableMode==='edge'&&!$('pTableAlong').value.trim())){
+      $('statusLine').textContent='Enter a valid distance and position.';return;
+    }
     var descriptor=tableMode==='orbit'
       ? {mode:'orbit',angleDeg:Number($('pTableAngle').value),distance:Number($('pTableDistance').value)}
       : {mode:'edge',side:$('pTableSide').value,along:Number($('pTableAlong').value)/100,distance:Number($('pTableDistance').value)};
-    var normalized=window.TableChairPlacement?.normalize?.(descriptor);
-    if(!normalized){$('statusLine').textContent='Invalid table-relative chair placement settings.';return;}
-    f.tableAttachment=normalized;
+    tableAttachment=window.TableChairPlacement?.normalize?.(descriptor);
+    if(!tableAttachment){$('statusLine').textContent='Invalid table-relative chair placement settings.';return;}
   }
+  pushUndo();
+  f.tableId=tableId; // Legacy table membership remains valid without spatial attachment.
+  if(tableAttachment)f.tableAttachment=tableAttachment;else delete f.tableAttachment;
   f.rotY=+$('pRotY').value||0; f.postX=+$('pX').value||0; f.postY=+$('pY').value||0; f.postZ=+$('pZ').value||0;
   f.postSX=Math.max(0.05,+$('pSX').value||1); f.postSY=Math.max(0.05,+$('pSY').value||1); f.postSZ=Math.max(0.05,+$('pSZ').value||1);
   delete f.postScale;
