@@ -48,7 +48,7 @@
     inverse.copy(parent.matrixWorld).invert();
     parent.traverse(function (object) {
       if (sources.length >= MAX_SOURCE_MESHES || !object.isMesh || !object.geometry || !object.visible) return;
-      if (object.userData?.surfaceFoliage || object.userData?.surfaceFoliageGuide) return;
+      if (object.userData?.surfaceFoliage || object.userData?.surfaceFoliageGuide || object.userData?.furnitureGlbPart) return; // GLB wrappers are invisible 0.001-unit drivers; sample their loaded child meshes instead.
       const partId = findPartId(object, parent); // Generated overlays and attached item previews have no authored part id.
       if (!partId || (settings.target === 'selected' && !selected.has(partId))) return;
       if (settings.targetMeshId && settings.targetMeshId !== partId) return;
