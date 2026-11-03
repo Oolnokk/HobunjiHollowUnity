@@ -100,4 +100,59 @@ assert.match(mapEditorCode,/id="propTableChoice"/,'Map Editor offers a native ta
 const index=fs.readFileSync('docs/index.html','utf8');
 assert.ok(index.includes('js/table-chair-placement.js?v='), 'shared module loads in game');
 
-console.log('table-chair-placement: geometry, parent refresh, collision, NPC identity, save/restore and editor integration tests passed');
+// A twice-scaled round table still leaves the requested world-space distance from its visible rim.
+const scaleTable={
+ position:new Vector3(0,0,0),rotation:{y:0},scale:{x:2,y:1,z:2},parent:{},updateWorldMatrix(){},
+ localToWorld(v){return new Vector3(v.x*2,v.y,v.z*2);},getWorldPosition(){return this.position.clone();}
+};
+const scaleChair={
+ position:new Vector3(0,0,0),rotation:{y:0},parent:{},updateWorldMatrix(){},
+ getWorldPosition(){return this.position.clone();}
+};
+scaleChair.position.set=function(x,y,z){this.x=x;this.y=y;this.z=z;};
+assert.equal(api.apply(scaleChair,scaleTable,{mode:'orbit',angleDeg:0,distance:.5},{width:2,depth:2}),true);
+assert.equal(scaleChair.position.z,2.5,'Clearance must not double when table scale doubles');
+assert.equal(api.normalize({mode:'edge',side:'front',along:'bogus'}),null);
+assert.equal(api.normalize({mode:'orbit',angleDeg:Infinity}),null);
+assert.equal(api.normalize({mode:'orbit',distance:NaN}),null);
+
+// Provisional parent transforms must restore BOTH roots when an attached child fails validation.
+const transformSource=game.match(/      function canTransformTableWithAttachedChairs\(table, x, y, z, rotYDeg\) \{[\s\S]*?\n      \}/)?.[0];
+assert.ok(transformSource,'Table transform transaction helper exists');
+const rigTable={id:'parent',key:'tableRound',area:'interior',mesh:{
+ position:new Vector3(3,0,3),rotation:{y:0},scale:{x:1,z:1},parent:{},updateWorldMatrix(){},
+ localToWorld(v){return new Vector3(this.position.x+v.x,this.position.y+v.y,this.position.z+v.z);},
+ getWorldPosition(){return this.position.clone();}
+}};
+const rigChair={id:'child',key:'chairSimple',area:'interior',tableId:'parent',tableAttachment:{mode:'orbit',angleDeg:0,distance:.5},mesh:{
+ position:new Vector3(3,0,4.5),rotation:{y:0},parent:{},updateWorldMatrix(){},
+ getWorldPosition(){return this.position.clone();}
+}};
+for(const rig of [rigTable,rigChair]){
+ rig.mesh.position.set=function(x,y,z){this.x=x;this.y=y;this.z=z;};
+ rig.mesh.position.copy=function(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;};
+}
+const env={
+ window,Math,interiorFurnitureObjects:[rigTable,rigChair],
+ DECORATIVE_FURNITURE_DEFS:{tableRound:{fw:2,fd:2}},
+ canKeepAttachedChairHere:chair=>chair.mesh.position.x<10,
+};
+const canTransform=vm.runInNewContext(transformSource+'; canTransformTableWithAttachedChairs',env);
+assert.equal(canTransform(rigTable,20,0,3,0),false);
+assert.equal(rigTable.mesh.position.x,3,'Rejected parent must stay in place');
+assert.equal(rigChair.mesh.position.x,3,'Rejected child must stay in place');
+assert.equal(canTransform(rigTable,5,0,3,0),true);
+assert.equal(rigTable.mesh.position.x,3,'Successful dry-run must also restore original parent');
+assert.equal(rigChair.mesh.position.z,4.5,'Successful dry-run must restore original child');
+
+const placerCode=fs.readFileSync('docs/js/furniture-placer.js','utf8');
+assert.match(game,/function placeTableAttachedChair\(/);
+assert.match(game,/placeTableAttachedChair,/);
+assert.match(placerCode,/Place at Table/);
+assert.match(placerCode,/deps\.placeTableAttachedChair\(/);
+assert.match(game,/o\.tableAttachment && o\.tableId === ignoreId/,'Parent table must ignore its own children on provisional moves');
+const authorCode=fs.readFileSync('docs/tools/building-interior-author/index.html','utf8');
+assert.match(authorCode,/function tableChildCenterOnGrid\(/);
+assert.match(authorCode,/var childCenter=tableChildCenterOnGrid\(f\)/);
+
+console.log('table-chair-placement: scale-aware geometry, atomic table moves, direct placement, collision, save/restore and editor integration tests passed');
