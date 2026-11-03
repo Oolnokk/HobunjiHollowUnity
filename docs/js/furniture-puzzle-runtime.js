@@ -101,6 +101,12 @@
     const graph = graphFor(key);
     const id = initializeNode(key, record, object, options);
     if (!id) return false;
+    const previous = graph.nodes.get(id); // A replacement node must not retain the old object's event subscriptions.
+    if (previous && previous !== object) {
+      releaseInputs(previous);
+      for (const entry of previous.userData?.puzzleEmitterVisuals || []) entry.visual.dispose?.();
+      previous.userData.puzzleEmitterVisuals = [];
+    }
     graph.nodes.set(id, object);
     bindInputs(key, id, object);
     if (object.userData.furniturePuzzle?.role === 'mechanism') {
@@ -167,6 +173,8 @@
   function runInput(mapId, id, object, input) {
     const role = object.userData.furniturePuzzle?.role;
     const apply = () => {
+      // Delayed signals can outlive a removed node or a rerolled ruin with the same map/id.
+      if (maps.get(String(mapId))?.nodes.get(id) !== object) return false;
       const target = input.action === 'toggle' ? !object.userData.puzzleActive : input.action === 'on';
       return role === 'mechanism' ? setMechanism(mapId, id, target) : activate(mapId, id, target);
     };
