@@ -490,8 +490,10 @@
     }));
   }
 
+  const getNode = (mapId, id) => maps.get(String(mapId))?.nodes.get(String(id)) || null;
+
   window.FurniturePuzzleRuntime = Object.freeze({
-    registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
+    getNode, registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
     setChannelSource, burdenPlateButtons, interactBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();
