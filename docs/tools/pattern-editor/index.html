@@ -2351,6 +2351,7 @@ function setupFurAuthoring() {
   const lockedFields=['furAnimalSpecies','furWearerVariant','furGeneId','furPaintView','furTestCoat','furTestInk','furFrontColorMode','furBackColorMode','furTrimGene']; // Source genotype and pigment-routing inputs stay fixed during one inline hood paint session.
   function lockRightPaintSelection(value){
     for(const id of lockedFields)field(id).disabled=value;
+    if(!value && speciesSelect.value==='grehlr'){frontMode.disabled=true;backMode.disabled=true;} // Leaving the painter must preserve Grehlr's dedicated dual-key coloring constraint.
     $('previewMode').disabled=value; // Prevent switching to an unrelated preview while its canvas has been replaced by the live painter.
   }
   syncFurViewportButton=()=>{
