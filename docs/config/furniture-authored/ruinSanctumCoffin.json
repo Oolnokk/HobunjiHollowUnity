@@ -4,11 +4,22 @@
   "id": "ruinSanctumCoffin",
   "name": "Ruin Coffin",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
-  "notes": "Lich-room coffin. The Lid part slides off when its skeleton rises (animated by the sanctum runtime from the lid rest position).",
   "footprint": {
     "w": 1,
     "d": 1
   },
+  "notes": "Lich-room coffin. The Lid part slides off when its skeleton rises (animated by the sanctum runtime from the lid rest position).",
+  "portraitFogMaskHidden": false,
+  "bladedHazard": false,
+  "fireHazard": false,
+  "createdAt": "2026-11-02T23:52:45.356Z",
+  "surfaceRecognition": {
+    "splitAngleDeg": 24,
+    "colorCode": false,
+    "selectSurfaces": true,
+    "multiSelect": true
+  },
+  "partMultiSelect": true,
   "tileBase": {
     "visible": true,
     "tileSize": 1,
@@ -17,6 +28,106 @@
     "y": 0,
     "gridOpacity": 0.55
   },
+  "placementGrid": {
+    "visible": true,
+    "snap": true,
+    "opacity": 0.85
+  },
+  "seating": {
+    "visible": true,
+    "opacity": 0.9,
+    "surfaceId": null,
+    "defaultSpecies": "mao-ao",
+    "defaultGender": "male",
+    "cellSpanScale": 1,
+    "showLegs": true,
+    "showLegBones": true
+  },
+  "seatLegModel": {
+    "version": 14,
+    "sourceCommit": "48ccf77f607a6ec62fcdeef4d7f202640d6d1468",
+    "solver": "fixed-equal-half-reach-v4",
+    "runtimeReferenceSolver": "docs/js/leg-bones.js solveTwoBoneLeg",
+    "sourcePose": "equal fixed bones; thigh projected flush to the area-weighted average seat plane; calf stays exactly straight while the knee is over the seat footprint and bends exactly 90 degrees only after clearing the edge",
+    "footSource": "scratchbones-config proceduralFeet species GLBs or exact generated runtime fallback",
+    "coordinateSpace": "actor floor-relative; PNGPlaneAvatar visual model lifted portraitModelHeight/2 as required by its authored portrait-space anchors",
+    "posteriorSource": "species+gender attachment-rig heightPercentOffset applied to PNGPlaneAvatar portrait-derived handAttachY/baseY",
+    "handAttachYFallback": "local alpha-bottom scan using PNGPlaneAvatar placement formula, then the profile heightPercentOffset",
+    "legSpacingSource": "runtime torso-only widest-opaque-row pixel scan, cached by species+gender",
+    "anchorDifference": "measured posterior is directly verified against the authored chair seat anchor",
+    "hipDifference": "semantic 90-degree seated hip turn is solved directly as a thigh tangent to the averaged seat plane",
+    "seatSurfaceRule": "recognized seat faces contribute an area-weighted average normal; each thigh is projected to that plane with 0.001 clearance",
+    "calfRule": "two-state seated chain: calf is exactly collinear with the thigh while the knee projection remains inside the seat-face bounds; exact 90-degree drop opposite the average normal after the knee clears the edge",
+    "seatGeometryCalibration": {
+      "source": "adjustedchair2.json",
+      "currentBasicSeat": {
+        "x": 0.65,
+        "z": 0.65
+      },
+      "adjustedSeat": {
+        "x": 0.5158,
+        "z": 0.4164
+      },
+      "scaleX": 0.7935384615384615,
+      "scaleZ": 0.6406153846153846,
+      "benchWidthScale": 1,
+      "benchDepthScale": 0.6406153846153846,
+      "defaultSeatNormalOffset": 0.01,
+      "backrestHeightMultiplier": 1.1,
+      "standardBackrestHeight": 0.458
+    },
+    "anchorLocalYRule": "seat-anchor normal offset is authored per anchor; new and reset anchors use the adjusted-chair-derived 0.01 default",
+    "backrestRule": "seat backrests are shortened from the top while preserving their lower attachment; target height is 1.10 times seat depth, so bench width is never used",
+    "edgeBehavior": "seat-face footprint bounds determine whether the calf remains straight or drops 90 degrees; no furniture-edge raycast is needed",
+    "standingComparison": "per-avatar optional linked half-width viewport using the runtime standing leg solver, posterior marker, outer-box edges, and optional billboarded numeric labels",
+    "posteriorAdjustmentPreview": "per-avatar non-destructive portrait-relative draft with draggable 2D guide, exact numeric fields, one-tap posterior-X centering between live left/right leg X values, live seated/standing preview, persisted override, repository reset, and copyable attachment-profile patch",
+    "portraitFogMask": "global authoring toggle removes fighter.opacityMaskLayer from every generated front/rear portrait without changing the deterministic avatar profile"
+  },
+  "seatedAvatars": [],
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "avatar": {
+    "visible": true,
+    "sourceMode": "runtimePortrait",
+    "sourcePixels": [
+      200,
+      200
+    ],
+    "baseModelWidth": 0.9,
+    "scaleMultiplier": 1,
+    "placementRatio": 0.95,
+    "widthMode": "world",
+    "visualLift": 0,
+    "transform": {
+      "x": 0,
+      "y": -0.37,
+      "z": 0,
+      "rx": -90,
+      "ry": 0,
+      "rz": -90
+    },
+    "textureDataUrl": null,
+    "textureName": "actual GitHub Mao\u2019ao portrait + behind",
+    "calculated": {
+      "pxW": 200,
+      "pxH": 200,
+      "aspect": 1,
+      "width": 0.9,
+      "height": 0.9,
+      "placementRatio": 0.95,
+      "assemblyOffsetY": 0.40499999999999997,
+      "authoredAnchorY": -0.37,
+      "visualLift": 0,
+      "visualRootY": 0.08000000000000002,
+      "visibleBottomY": -0.37,
+      "visibleTopY": 0.53,
+      "groundContactY": 0.08000000000000002
+    }
+  },
+  "surfaceGrowth": [],
   "parts": [
     {
       "id": "plinth",
@@ -24,13 +135,13 @@
       "name": "Plinth",
       "transform": {
         "x": 0,
-        "y": 0.06,
+        "y": 0.0125,
         "z": 0,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 1.66,
-        "sy": 0.12,
+        "sy": 0.0832,
         "sz": 0.96
       },
       "color": "#5d5850",
@@ -54,6 +165,7 @@
       "materialCapRotationDeg": 0,
       "materialFillEnabled": false,
       "materialFillColor": null,
+      "materialFillMode": "never",
       "surfaceOpacity": 1,
       "substanceColor": "#5d5850",
       "substanceFillOpacity": 0,
@@ -63,27 +175,26 @@
       "textureTransparent": true,
       "textureTileSize": 1,
       "materialLighting": "unlit",
-      "materialFillMode": "never",
       "materialUvMapping": "connected-surface-stretch",
       "materialUvMaxPatchWorldSize": 6
     },
     {
       "id": "body",
       "kind": "box",
-      "name": "Body",
+      "name": "North Panel",
       "transform": {
         "x": 0,
-        "y": 0.31,
-        "z": 0,
+        "y": 0.1857,
+        "z": -0.35,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 1.5,
-        "sy": 0.62,
-        "sz": 0.8
+        "sy": 0.4296,
+        "sz": 0.1
       },
       "color": "#6d675f",
-      "segments": 1,
+      "segments": 3,
       "taperAxis": "y",
       "topScaleX": 1,
       "topScaleZ": 1,
@@ -103,6 +214,7 @@
       "materialCapRotationDeg": 0,
       "materialFillEnabled": false,
       "materialFillColor": null,
+      "materialFillMode": "never",
       "surfaceOpacity": 1,
       "substanceColor": "#6d675f",
       "substanceFillOpacity": 0,
@@ -112,7 +224,6 @@
       "textureTransparent": true,
       "textureTileSize": 1,
       "materialLighting": "unlit",
-      "materialFillMode": "never",
       "materialUvMapping": "connected-surface-stretch",
       "materialUvMaxPatchWorldSize": 6
     },
@@ -122,17 +233,17 @@
       "name": "Lid",
       "transform": {
         "x": 0,
-        "y": 0.69,
+        "y": 0.4015,
         "z": 0,
         "rx": 0,
         "ry": 0,
         "rz": 0,
         "sx": 1.58,
-        "sy": 0.14,
+        "sy": 0.097,
         "sz": 0.88
       },
       "color": "#7a746b",
-      "segments": 1,
+      "segments": 3,
       "taperAxis": "y",
       "topScaleX": 1,
       "topScaleZ": 1,
@@ -152,6 +263,7 @@
       "materialCapRotationDeg": 0,
       "materialFillEnabled": false,
       "materialFillColor": null,
+      "materialFillMode": "never",
       "surfaceOpacity": 1,
       "substanceColor": "#7a746b",
       "substanceFillOpacity": 0,
@@ -161,14 +273,2572 @@
       "textureTransparent": true,
       "textureTileSize": 1,
       "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq",
+      "kind": "box",
+      "name": "West Panel",
+      "transform": {
+        "x": -0.7,
+        "y": 0.1857,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.1,
+        "sy": 0.4296,
+        "sz": 0.6015
+      },
+      "color": "#6d675f",
+      "segments": 3,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
       "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6d675f",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    },
+    {
+      "id": "part_mvzwdpwp_14zya",
+      "kind": "box",
+      "name": "East Panel",
+      "transform": {
+        "x": 0.7,
+        "y": 0.1857,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.1,
+        "sy": 0.4296,
+        "sz": 0.6015
+      },
+      "color": "#6d675f",
+      "segments": 3,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6d675f",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns",
+      "kind": "box",
+      "name": "South Panel",
+      "transform": {
+        "x": 0,
+        "y": 0.1857,
+        "z": 0.35,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 1.5,
+        "sy": 0.4603,
+        "sz": 0.1
+      },
+      "color": "#6d675f",
+      "segments": 3,
+      "taperAxis": "y",
+      "topScaleX": 1,
+      "topScaleZ": 1,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#6d675f",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "materialLighting": "unlit",
       "materialUvMapping": "connected-surface-stretch",
       "materialUvMaxPatchWorldSize": 6
     }
   ],
-  "recognizedSurfaces": [],
+  "surfaceSettings": {
+    "plinth:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "plinth:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "plinth:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "plinth:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "plinth:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "plinth:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "body:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "lid:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwd2eg_riwmq:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdpwp_14zya:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:0": {
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:2": {
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:4": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:6": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:8": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    "part_mvzwdw6t_za9ns:surface:10": {
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  },
+  "recognizedSurfaces": [
+    {
+      "id": "plinth:surface:0",
+      "partId": "plinth",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 1.593599932336808,
+      "localCentroid": [
+        0,
+        -0.0416,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.47999998927116394,
+        "maxU": 0.47999998927116394,
+        "minV": -0.8299999833106995,
+        "maxV": 0.8299999833106995
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "plinth:surface:2",
+      "partId": "plinth",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.593599932336808,
+      "localCentroid": [
+        0,
+        0.0416,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.47999998927116394,
+        "maxU": 0.47999998927116394,
+        "minV": -0.8299999833106995,
+        "maxV": 0.8299999833106995
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "plinth:surface:4",
+      "partId": "plinth",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.13811199759888648,
+      "localCentroid": [
+        0,
+        0,
+        -0.48
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.8299999833106995,
+        "maxU": 0.8299999833106995,
+        "minV": -0.041600000113248825,
+        "maxV": 0.041600000113248825
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "plinth:surface:6",
+      "partId": "plinth",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.07987199843215942,
+      "localCentroid": [
+        0.83,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.47999998927116394,
+        "maxU": 0.47999998927116394,
+        "minV": -0.041600000113248825,
+        "maxV": 0.041600000113248825
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "plinth:surface:8",
+      "partId": "plinth",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.13811199759888648,
+      "localCentroid": [
+        0,
+        0,
+        0.48
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.8299999833106995,
+        "maxU": 0.8299999833106995,
+        "minV": -0.041600000113248825,
+        "maxV": 0.041600000113248825
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "plinth:surface:10",
+      "partId": "plinth",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.07987199843215942,
+      "localCentroid": [
+        -0.83,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.47999998927116394,
+        "maxU": 0.47999998927116394,
+        "minV": -0.041600000113248825,
+        "maxV": 0.041600000113248825
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#5d5850",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:0",
+      "partId": "lid",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 1.3904000302314756,
+      "localCentroid": [
+        0,
+        -0.0485,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.4399999976158142,
+        "maxU": 0.4399999976158142,
+        "minV": -0.7900000214576721,
+        "maxV": 0.7900000214576721
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:2",
+      "partId": "lid",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 1.3904000302314756,
+      "localCentroid": [
+        0,
+        0.0485,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.4399999976158142,
+        "maxU": 0.4399999976158142,
+        "minV": -0.7900000214576721,
+        "maxV": 0.7900000214576721
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:4",
+      "partId": "lid",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.15326000868320477,
+      "localCentroid": [
+        0,
+        0,
+        -0.44
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.7900000214576721,
+        "maxU": 0.7900000214576721,
+        "minV": -0.048500001430511475,
+        "maxV": 0.048500001430511475
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:6",
+      "partId": "lid",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.08536000205516814,
+      "localCentroid": [
+        0.79,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.4399999976158142,
+        "maxU": 0.4399999976158142,
+        "minV": -0.048500001430511475,
+        "maxV": 0.048500001430511475
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:8",
+      "partId": "lid",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.15326000868320477,
+      "localCentroid": [
+        0,
+        0,
+        0.44
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.7900000214576721,
+        "maxU": 0.7900000214576721,
+        "minV": -0.048500001430511475,
+        "maxV": 0.048500001430511475
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "lid:surface:10",
+      "partId": "lid",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.08536000205516814,
+      "localCentroid": [
+        -0.79,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.4399999976158142,
+        "maxU": 0.4399999976158142,
+        "minV": -0.048500001430511475,
+        "maxV": 0.048500001430511475
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7a746b",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:0",
+      "partId": "body",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.15000000223517418,
+      "localCentroid": [
+        0,
+        -0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.75,
+        "maxV": 0.75
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:2",
+      "partId": "body",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.15000000223517418,
+      "localCentroid": [
+        0,
+        0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.75,
+        "maxV": 0.75
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:4",
+      "partId": "body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.6444000005722046,
+      "localCentroid": [
+        0,
+        0,
+        -0.05
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.75,
+        "maxU": 0.75,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:6",
+      "partId": "body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        0.75,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:8",
+      "partId": "body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.6444000005722046,
+      "localCentroid": [
+        0,
+        0,
+        0.05
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.75,
+        "maxU": 0.75,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "body:surface:10",
+      "partId": "body",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        -0.75,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:0",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.06014999836906787,
+      "localCentroid": [
+        0,
+        -0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.05000000074505806,
+        "maxV": 0.05000000074505806
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:2",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.06014999836906787,
+      "localCentroid": [
+        0,
+        0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.05000000074505806,
+        "maxV": 0.05000000074505806
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:4",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        0,
+        0,
+        -0.30075
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:6",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.25840438937244414,
+      "localCentroid": [
+        0.05,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:8",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        0,
+        0,
+        0.30075
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwd2eg_riwmq:surface:10",
+      "partId": "part_mvzwd2eg_riwmq",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.25840438937244414,
+      "localCentroid": [
+        -0.05,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:0",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.06014999836906787,
+      "localCentroid": [
+        0,
+        -0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.05000000074505806,
+        "maxV": 0.05000000074505806
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:2",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.06014999836906787,
+      "localCentroid": [
+        0,
+        0.2148,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.05000000074505806,
+        "maxV": 0.05000000074505806
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:4",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        0,
+        0,
+        -0.30075
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:6",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.25840438937244414,
+      "localCentroid": [
+        0.05,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:8",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.04296000067830086,
+      "localCentroid": [
+        0,
+        0,
+        0.30075
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdpwp_14zya:surface:10",
+      "partId": "part_mvzwdpwp_14zya",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.25840438937244414,
+      "localCentroid": [
+        -0.05,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.3007499873638153,
+        "maxU": 0.3007499873638153,
+        "minV": -0.21480000019073486,
+        "maxV": 0.21480000019073486
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:0",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.15000000223517418,
+      "localCentroid": [
+        0,
+        -0.23015,
+        0
+      ],
+      "localNormal": [
+        0,
+        -1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.75,
+        "maxV": 0.75
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:2",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.15000000223517418,
+      "localCentroid": [
+        0,
+        0.23015,
+        0
+      ],
+      "localNormal": [
+        0,
+        1,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        1,
+        0,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.75,
+        "maxV": 0.75
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:4",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.6904499977827072,
+      "localCentroid": [
+        0,
+        0,
+        -0.05
+      ],
+      "localNormal": [
+        0,
+        0,
+        -1
+      ],
+      "basisU": [
+        -1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.75,
+        "maxU": 0.75,
+        "minV": -0.2301499992609024,
+        "maxV": 0.2301499992609024
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:6",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.04603000053808093,
+      "localCentroid": [
+        0.75,
+        0,
+        0
+      ],
+      "localNormal": [
+        1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        -1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.2301499992609024,
+        "maxV": 0.2301499992609024
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:8",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.6904499977827072,
+      "localCentroid": [
+        0,
+        0,
+        0.05
+      ],
+      "localNormal": [
+        0,
+        0,
+        1
+      ],
+      "basisU": [
+        1,
+        0,
+        0
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.75,
+        "maxU": 0.75,
+        "minV": -0.2301499992609024,
+        "maxV": 0.2301499992609024
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "part_mvzwdw6t_za9ns:surface:10",
+      "partId": "part_mvzwdw6t_za9ns",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.04603000053808093,
+      "localCentroid": [
+        -0.75,
+        0,
+        0
+      ],
+      "localNormal": [
+        -1,
+        0,
+        0
+      ],
+      "basisU": [
+        0,
+        0,
+        1
+      ],
+      "basisV": [
+        0,
+        1,
+        0
+      ],
+      "bounds": {
+        "minU": -0.05000000074505806,
+        "maxU": 0.05000000074505806,
+        "minV": -0.2301499992609024,
+        "maxV": 0.2301499992609024
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#6d675f",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  ],
+  "itemPlacements": [],
+  "globalCharacterDeadzoneDeg": 40,
+  "puzzle": {
+    "version": 3,
+    "role": "mechanism",
+    "behavior": "toggle",
+    "channel": "A",
+    "completionChannel": "B",
+    "requiredBurdenKind": "shattercask",
+    "payloadSurfaceId": "",
+    "startsActive": false,
+    "blocksMovement": true,
+    "interactionRange": 1.65,
+    "activationSeconds": 0,
+    "resetSeconds": 0,
+    "prompt": "",
+    "offPrompt": "Turn off",
+    "onPrompt": "Turn on",
+    "directInteraction": false,
+    "motion": {
+      "off": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "on": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 1,
+          "opacity": 1
+        }
+      },
+      "parts": {
+        "lid": {
+          "off": {
+            "x": 0,
+            "y": 0.4015,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 1.58,
+            "sy": 0.097,
+            "sz": 0.88
+          },
+          "on": {
+            "x": 0.0199,
+            "y": 0.2788,
+            "z": -0.6815,
+            "rx": -34.251,
+            "ry": 0,
+            "rz": 0,
+            "sx": 1.58,
+            "sy": 0.097,
+            "sz": 0.88
+          }
+        }
+      },
+      "durationSeconds": 0.8,
+      "reversalSeconds": 0.8,
+      "collisionOpenProgress": 0.55
+    }
+  },
+  "carryable": {
+    "enabled": false,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": 0,
+        "y": 0.53,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": 1
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0.025,
+        "y": 0.25,
+        "z": 0
+      },
+      "size": {
+        "x": 0.43,
+        "y": 0.49,
+        "z": 0.31
+      }
+    },
+    "handTargets": {
+      "left": {
+        "x": -0.3,
+        "y": 0.46,
+        "z": 0.08,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "right": {
+        "x": 0.3,
+        "y": 0.46,
+        "z": 0.08,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    }
+  },
   "decals": [],
   "decalAuthoring": {
-    "version": 4
+    "version": 4,
+    "coordinateSpace": "recognized-surface-local",
+    "sizeUnits": "surface-fraction",
+    "offsetUnits": "half-surface-span",
+    "sourceTypes": [
+      "image",
+      "tankanText"
+    ],
+    "tankanLayout": "vertical-word-columns",
+    "tankanSizing": "container-fit-down-v1"
+  },
+  "daylightWindowAuthoring": {
+    "version": 1,
+    "role": "daylightWindow",
+    "lightingModel": "interior-overlay-aperture",
+    "surfaceTint": "live-outdoor-rgb-over-neutralized-texture"
+  },
+  "pieceAnimations": [],
+  "pieceAnimationAuthoring": {
+    "version": 2,
+    "model": "rigid-piece-relative",
+    "separateFromProcessingWarps": true,
+    "windDirection": "furniture-local horizontal degrees",
+    "windAxisBias": true
   }
 }

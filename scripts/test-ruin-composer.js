@@ -67,7 +67,7 @@ for (const [name, room] of [['vaultHall', C.rooms.hall()], ['chasmHall', C.rooms
   const r = results.chasmHall, room = C.rooms.chasm();
   const pillar = by(r, 'crackedPillar')[0], mount = by(r, 'ropeMount')[0], stand = by(r, 'strikeStand')[0], dispenser = by(r, 'bombDispenser')[0];
   assert.deepEqual(pillar.params.input, { event: 'blast', withinTiles: 2.5, once: true });
-  assert(pillar.x > 9.5 + 3.4 - .5, 'the pillar is at the far edge of the gap'); assert(pillar.authored === false, 'its authored file is the author’s own');
+  assert(pillar.x > 9.5 + 3.4 - .5, 'the pillar is at the far edge of the gap'); assert.equal(pillar.authored, true, 'the bridge uses the authored pillar');
   assert(mount.x < 9.5 && stand.x < 9.5 && dispenser.x < 9.5, 'the tools are on the near side');
   assert(dist(dispenser, mount) < 4, 'the bomb dispenser is near the rope');
   // physics: sweep every lunge strength along the rope's strike line

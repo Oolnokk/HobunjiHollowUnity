@@ -61,19 +61,21 @@ const on = n => !!n.userData.puzzleActive, y = n => n.position.y;
 const flush = () => { for (let i = 0; i < 3; i++) for (const f of frames.splice(0)) f(performance.now() + 1e7); };
 
 // ---------------------------------------------------------------- a blast topples a cracked pillar
-const pillar = node('pillar', mech([{ event: 'blast', once: true }]));
+const bridge = JSON.parse(read('config/furniture-authored/ruinPillarBridge.json')); // Exercise the authored blast input and motion.
+const pillar = node('pillar', bridge.puzzle);
 assert.equal(register(pillar), true);
 assert.equal(WorldEvents.listenerCount('blast'), 1, 'one subscription for one input');
 assert.equal(on(pillar), false);
 
 WorldEvents.emit('blast', { scope: MAP, x: 10, z: 20, radius: 4.4 });           // 10 tiles away, radius 4.4: out of reach
-assert.equal(on(pillar), false, 'a blast that does not reach the node does nothing (default limit is the blast radius)');
+assert.equal(on(pillar), false, 'a blast outside the authored trigger distance does nothing');
 WorldEvents.emit('blast', { scope: 'some_other_map', x: 10, z: 10, radius: 4.4 });
 assert.equal(on(pillar), false, 'a blast in another map does nothing');
 WorldEvents.emit('blast', { scope: MAP, x: 12, z: 11, radius: 4.4 });           // ~2.2 tiles away: in reach
 assert.equal(on(pillar), true, 'a blast whose radius reaches the node turns the mechanism on');
 flush();
-assert.equal(pillar.userData.puzzleProgress, 1); assert.equal(y(pillar), -2, 'and it plays its on-keyframe through the real runtime');
+assert.equal(pillar.userData.puzzleProgress, 1); assert(Math.abs(y(pillar) - bridge.puzzle.motion.on.position.y) < 1e-9, 'the authored on-keyframe plays through the real runtime');
+assert.equal(pillar.userData.blocksMovement, false, 'the toppled pillar clears its upright blocker');
 assert.equal(WorldEvents.listenerCount('blast'), 0, 'once: the subscription is released after it fires');
 
 // ---------------------------------------------------------------- conditions
