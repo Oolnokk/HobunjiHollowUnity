@@ -79,6 +79,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    registerFluteDefinition();
+    // Existing characters receive the same starter instrument after their saved character data is loaded.
+    document?.addEventListener?.('hobunjiPlayerReady', () => ensureStarterFlute());
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -94,6 +97,33 @@
     });
     installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function registerFluteDefinition() {
+    if (!deps?.TOOL_ITEM_DEFS) return false;
+    deps.TOOL_ITEM_DEFS.flute ||= {
+      label:'Flute', icon:'🎶', sprite:'assets/toolsprites/flute.png', slots:['instrument'],
+      isInstrument:true, heldAnimationKey:'blowgunReady',
+      description:'A simple mouth-played flute. Its five notes can echo melodies heard in ancient ruins.',
+    }; // The canonical item registry drives equipment/ownership and the existing tool sprite renderer.
+    return true;
+  }
+
+  function ensureStarterFlute() {
+    const gear = deps?.getGearInventory?.(); // Current character-owned gear, never a global once-per-browser entitlement.
+    if (!gear || !registerFluteDefinition()) return false;
+    if (gear.starterFluteGranted) return false; // Never reassign after the player deliberately unequips or replaces it.
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    deps.saveGearInventory?.();
+    if (!deps.equipmentSlots?.instrument) {
+      deps.equipmentSlots.instrument = 'flute';
+      deps.saveEquipmentSlots?.();
+    }
+    deps.rebuildToolMeshes?.(); // A migrated flute becomes available to the live held-tool renderer, not just the Inventory UI.
+    window.__farmLog?.('[starter-flute] granted once to current character; instrument=' + deps.equipmentSlots?.instrument,'input');
+    return true;
   }
 
   function installInventorySelectionBridge() {
@@ -1184,6 +1214,7 @@
 
   // Build the equipment slots panel inside #invEquipSection
   function buildEquipmentSlots() {
+    ensureStarterFlute(); // Backfill loaded legacy saves even when the player entered through the inventory rather than onboarding.
     const sec = document.getElementById('invEquipSection');
     if (!sec) return;
     sec.innerHTML = '';
@@ -1385,6 +1416,7 @@
 
   window.EquipmentPanel = {
     init,
+    ensureStarterFlute,
     dispelCurse,
     getEquippedWeaponPreviewPlane,
     squareToolIcon,
