@@ -1926,13 +1926,10 @@
     const resolvedLayers = await resolveIconLayers(baseCosmeticIdValue, resolvedSpeciesId, resolvedGender); // Keeps all authored sprites available so view selection can distinguish an explicit hood rear layer from an ordinary layered garment.
     const iconBaseLayers = iconLayersForView(resolvedLayers, view); // Base garment artwork remains authored by wearer species and view.
     const furParts = furHood ? (window.FurHoodLeatherworking?.specialPartsFor?.(furHood, resolvedSpeciesId, resolvedGender) || []) : []; // Extra animal trophy sprites are optional, independently authored.
-    const extraLayers = furParts.map(part => ({ ...part, url: normalizeAssetPath(part.url), paletteKey: 'A', slot: 'hood', layerName: part.pos }));
-    const layers = []; // Used by this compositor to put the animal front between fur base and trim, and animal back behind the hood in rear preview.
-    if (view === 'behind') layers.push(...extraLayers.filter(layer => layer.pos === 'back'));
-    for (const layer of iconBaseLayers) {
-      layers.push(layer);
-      if (view !== 'behind' && layer.role === 'base') layers.push(...extraLayers.filter(part => part.pos === 'front'));
-    }
+    const extraLayers = furParts.map(part => ({ ...part, url: normalizeAssetPath(part.url), paletteKey: 'A', slot: 'hood', layerName: part.pos })); // Species front and back both exist on both planes.
+    const layers = furHood
+      ? (window.FurHoodLeatherworking?.orderLayersForView?.([...iconBaseLayers,...extraLayers],view) || [...iconBaseLayers,...extraLayers])
+      : iconBaseLayers; // Ordinary garment compositor ordering is unaffected by the fur-only stack contract.
     // Ragged Hood becomes front-only in the normal preview and rear-only after flipping, while non-hood back/front layering remains unchanged.
     if (!layers.length) return { canvas: null, layers };
     const primaryColorHex = primaryHex || '#ffffff'; // Used as the ordinary base-layer color or, when swapped, as that layer's pattern color.
@@ -1952,7 +1949,7 @@
       // trim), and others just reuse their front sprite — same three
       // outcomes the real 3D avatar's rear render picks between.
       let url = frontUrl;
-      if (behindGender && role !== 'animalBack') { // An authored animal back is already rear-facing; never apply a generic hood hide/replacement rule.
+      if (behindGender && role !== 'animalBack' && role !== 'animalFront') { // Both species sprites are explicitly shared across planes; only base and trim resolve their dedicated rear image.
         const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, behindGender, behindUrl);
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
