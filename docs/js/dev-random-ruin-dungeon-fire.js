@@ -264,6 +264,7 @@
           :info.dungeonFireIceEligible===true?'markedDoor'
           :/door/i.test(String(info.authoredFurnitureKey||''))&&info.authoredFurnitureData?.parts?'authoredDoor':null;
         if(!type)return;
+        for(let parent=object.parent;parent&&parent!==source;parent=parent.parent)if(seen.has(parent.uuid))return; // A tagged door's inner panel must not receive a duplicate ice layer.
         seen.add(object.uuid);
         const module=kit.state?.lockDoors?.find(item=>item.panel===object); // Standalone locked doors can begin raised/open.
         if(module && module.progress>.72)return; // Never freeze an already open doorway with a floating ice barrier.
@@ -282,7 +283,8 @@
     if(!coverage?.create)return null;
     const {object,type,bounds}=door; // The actual door object/leaf replaces the former arbitrary wall across an opening.
     const support=kit.sampleSupport(bounds.center.x,bounds.center.z); // All crystals anchor at the real floor, not at the door's animated midpoint.
-    const floorY=Number.isFinite(Number(support?.y))?Number(support.y):Number(context.meta?.floorSurfaceY)||bounds.box.min.y;
+    const floorY=support&&Number.isFinite(Number(support.y))&&Number(support.y)<=bounds.box.min.y+.45
+      ?Number(support.y):bounds.box.min.y; // If support is absent or hits an elevated door face, use the actual leaf bottom rather than fabricating Y=0.
     const placement=coverage.create({door:object,parent:world.group,groundY:floorY,
       seed:'tothal-door:'+String(context.seed||'ruin')+':'+String(object.userData?.mechanismId||object.name||index)});
     if(!placement)return null; // No invisible blocker is created if the coverage system fails to produce ice.
