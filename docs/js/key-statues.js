@@ -10,7 +10,7 @@
   const currentGrid=()=>window.GridTileAccessors?.getActiveGrid?.()||null;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number(n)||0));
   function tileHazard(mapId,x,z) {
-    if(String(mapId)!==currentArea())return '';
+    if(String(mapId)!==currentArea()||!currentGrid())return '';
     const tile=currentGrid()?.[Math.floor(z)]?.[Math.floor(x)];
     if(!tile)return 'void';
     const type=String(tile.type||'').toLowerCase();
@@ -58,10 +58,11 @@
       const burden=window.Shattercasks.registerBurden({
         id:'key_statue_'+state.id+'_'+(++spawnSerial),mapId:state.mapId,scene,group,data,
         kind:'keyStatue',displayName:'Key Statue',hanging:false,
-        onImpact:impact,onPickup:()=>window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,true),
+        onImpact:impact,onPickup:record=>{record.keyStatueMounted=false;window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,true);},
         onLost:(record,cause)=>lostStatue(state,record,cause),
       });
       if(!burden){group.parent?.remove(group);state.respawning=false;return;}
+      burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
       state.payload=burden;
       state.root.userData.keyStatuePayload=burden;
       state.respawning=false;
@@ -122,6 +123,10 @@
         const lost=state.payload;
         if(!lost.exploded)window.Shattercasks?.discardBurden?.(lost); // Drop orphaned map records as well as restoring the visible dispenser.
         if(state.payload===lost)lostStatue(state,lost,'detached');
+      }
+      if(state.payload&&!state.payload.exploded&&!state.payload.carried&&!state.payload.flying&&!state.payload.keyStatueMounted) {
+        const world=state.payload.group?.getWorldPosition?.(new THREE.Vector3());
+        if(world&&tileHazard(state.mapId,world.x,world.z))window.Shattercasks?.discardBurden?.(state.payload);
       }
       if(!state.payload&&!state.respawning)queueRespawn(state,'missing');
     }
