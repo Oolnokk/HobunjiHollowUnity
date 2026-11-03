@@ -1,7 +1,23 @@
 (() => {
   'use strict';
   // The pattern editor owns the dev controls; no runtime game page loads this file.
-  window.FurHoodDirectPaintEditor = Object.freeze({ open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,sourcePattern,authoring,onSave}) {
+  function visibleBounds(canvas, padding = 10) {
+    if (!canvas?.width || !canvas?.height) throw new Error('The hood sprite has no dimensions.');
+    const w = canvas.width, h = canvas.height; // Actual canvas-space dimensions are never changed by visual framing.
+    const rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    let left = w, top = h, right = -1, bottom = -1; // Finds authored visible fur, ignoring large transparent sprite margins.
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (rgba[(y * w + x) * 4 + 3] <= 16) continue;
+      left = Math.min(left, x); right = Math.max(right, x);
+      top = Math.min(top, y); bottom = Math.max(bottom, y);
+    }
+    if (right < left) throw new Error('The fur-hood image is completely transparent. Check the selected sprite fit and asset paths.');
+    const gap = Math.max(0, Math.min(64, Math.round(Number(padding) || 0))); // Stable garment framing, not a change to source pixels.
+    const x = Math.max(0, left - gap), y = Math.max(0, top - gap);
+    return { x, y, width: Math.min(w, right + gap + 1) - x, height: Math.min(h, bottom + gap + 1) - y };
+  }
+
+  window.FurHoodDirectPaintEditor = Object.freeze({ visibleBounds, open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,sourcePattern,authoring,onSave}) {
   const api=window.ClothingWeavingSystem;
   if (!api?.garmentPaintToMotif || !api?.renderClothingLayers) throw Error('Updated garment motif compositor is missing.');
   if (!kind || !gene) throw Error('Choose an animal and genotype gene first.');
@@ -13,6 +29,7 @@
   if(!baseResult?.canvas||!maskResult?.canvas) throw Error('Hood base or fur-substrate mask did not resolve.');
   const base=baseResult.canvas,w=base.width,h=base.height; // Fixed logical sprite size for all stored strokes and generated motifs.
   if(w>4096||h>4096) throw Error('Hood art is too large to paint.');
+  const crop=visibleBounds(base, 12); // Only the viewport is cropped: all brush coordinates, inverse transforms, and saved operations remain on the full hood raster.
   const coverage=document.createElement('canvas'); coverage.width=w;coverage.height=h; // Merges actual hood base/front/back masks without the decorative trim.
   const coverCtx=coverage.getContext('2d',{willReadFrequently:true});coverCtx.drawImage(maskResult.canvas,0,0);
   const coverageData=coverCtx.getImageData(0,0,w,h).data;
@@ -31,7 +48,7 @@
           <label>Brush <input data-fur-brush type="range" min="1" max="32" step="1" value="4"><span data-fur-brush-label>4px</span></label>
           <label>Zoom <input data-fur-zoom type="range" min="1" max="8" step="1" value="2"><span data-fur-zoom-label>2×</span></label>
         </div>
-        <div class="trimPaintScroller" data-fur-scroller><div class="trimPaintStage" data-fur-stage><canvas data-fur-base></canvas><canvas class="trimPaintInk" data-fur-ink></canvas></div></div>
+        <div class="trimPaintScroller" data-fur-scroller><div class="trimPaintStage" data-fur-stage style="overflow:hidden;background-color:#28362f;background-image:linear-gradient(45deg,#35453d 25%,transparent 25%),linear-gradient(-45deg,#35453d 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#35453d 75%),linear-gradient(-45deg,transparent 75%,#35453d 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0"><canvas data-fur-base></canvas><canvas class="trimPaintInk" data-fur-ink></canvas></div></div>
         <details style="margin-top:9px"><summary>Non-tiling weaving transform</summary><div class="fields" style="margin-top:9px">
           <label>Scale <input type="number" min="0.4" max="3.2" step="0.05" data-fur-setting="meshScale" value="${settings.meshScale}"></label>
           <label>Rotation ° <input type="number" min="-180" max="180" step="1" data-fur-setting="meshRotationDeg" value="${settings.meshRotationDeg}"></label>
@@ -133,7 +150,9 @@
     const token=++revision;
     if(closed)return;
     if(!hasInk()){
-      result.width=w;result.height=h;rctx.clearRect(0,0,w,h);rctx.drawImage(base,0,0);previewStatus.textContent='No motif painted yet.';return;
+      result.width=crop.width;result.height=crop.height;rctx.imageSmoothingEnabled=false;
+      rctx.drawImage(base,crop.x,crop.y,crop.width,crop.height,0,0,crop.width,crop.height);
+      previewStatus.textContent='Plain hood is visible; draw on the left to see the generated motif.';return;
     }
     previewStatus.textContent='Converting into a motif and rendering through the game compositor…';
     try{
@@ -142,11 +161,22 @@
       const pattern={...settings,motifDataUrl:mask.toDataURL('image/png')}; // Runtime receives a normal motif + non-tiling settings, not a direct garment mask.
       const rendered=await api.renderClothingLayers('fur_hood',{...args,furHoodMarkingsOverride:[{geneId:gene,pattern,colorHex:ink}],uncachedPatternPreview:true}); // Per-stroke transient PNGs are never stored in persistent patterned-sprite caches.
       if(closed||token!==revision||!rendered?.canvas)return;
-      result.width=rendered.canvas.width;result.height=rendered.canvas.height;rctx.imageSmoothingEnabled=false;rctx.drawImage(rendered.canvas,0,0);
+      result.width=crop.width;result.height=crop.height;rctx.imageSmoothingEnabled=false;
+      rctx.drawImage(rendered.canvas,crop.x,crop.y,crop.width,crop.height,0,0,crop.width,crop.height);
       previewStatus.textContent='Exact in-game preview · '+settings.meshScale.toFixed(2)+'× mesh · '+settings.meshRotationDeg+'° · non-tiling. Generated outline included.';
     }catch(error){if(!closed&&token===revision)previewStatus.textContent='Preview error: '+error.message;}
   }
-  function zoom(){const scale=Math.max(1,Number(zoomInput.value)||1);stage.style.width=w*scale+'px';stage.style.height=h*scale+'px';baseCanvas.style.width=paint.style.width='100%';baseCanvas.style.height=paint.style.height='100%';$('[data-fur-zoom-label]').textContent=scale+'×';}
+  function zoom(){
+    const scale=Math.max(1,Number(zoomInput.value)||1); // One pixel-to-CSS scale is shared by the full-sized canvases and their cropped stage.
+    stage.style.width=crop.width*scale+'px';stage.style.height=crop.height*scale+'px';
+    for(const canvas of [baseCanvas,paint]){
+      canvas.style.width=w*scale+'px';canvas.style.height=h*scale+'px';
+      canvas.style.left=-crop.x*scale+'px';canvas.style.top=-crop.y*scale+'px';
+      canvas.style.right='auto';canvas.style.bottom='auto'; // Override trimPaintStage's generic inset:0 while retaining unmodified pixel coordinates.
+    }
+    result.style.width=Math.min(480,crop.width*Math.max(2,Math.floor(350/Math.max(crop.width,crop.height))))+'px';
+    $('[data-fur-zoom-label]').textContent=scale+'×';
+  }
   paint.addEventListener('pointerdown',event=>{
     event.preventDefault();try{paint.setPointerCapture?.(event.pointerId);}catch(_){}
     if(mode==='pan'){pan={x:event.clientX,y:event.clientY,left:scroller.scrollLeft,top:scroller.scrollTop};return;}
@@ -201,7 +231,8 @@
       status.textContent='Projected the existing motif onto this hood view. Brush and erase to modify it.';
     }else if(sourcePattern)status.textContent='Older motif uses custom motif-space placement. Paint here to replace it with a garment-anchored non-tiling version.';
   }catch(error){status.textContent='Could not restore previous paint: '+error.message+'. You can paint a new motif.';}
-  zoomInput.value=String(Math.max(1,Math.min(8,Math.floor(520/Math.max(w,h)))));
+  zoomInput.max='16';
+  zoomInput.value=String(Math.max(1,Math.min(16,Math.floor(520/Math.max(crop.width,crop.height)))));
   zoom();buttons();await preview();
 } });
 })();
