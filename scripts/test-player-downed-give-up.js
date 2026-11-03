@@ -29,7 +29,7 @@ const context = {
   PlayerCrawl: { setActive(active) { crawlChanges.push(active); } },
   ActionPromptUI: { actionPromptGlyph(action, touch) {
     assert.equal(action, 'dodge');
-    assert.equal(touch, 'Dodge');
+    assert.equal(touch, '💨', 'touch players see the actual Dodge button icon');
     return dodgeLabel;
   } },
   addEventListener(type, handler) { handlers.set('window:' + type, handler); },
