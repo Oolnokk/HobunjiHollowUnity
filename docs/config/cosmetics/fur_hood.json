@@ -6,7 +6,8 @@
   ],
   "portraitAssets": true,
   "meta": {
-    "name": "Fur Hood"
+    "name": "Fur Hood",
+    "artwork": "Original furhood base and trim sprites uploaded for Tletingan male and Mashtzarr male; every playable head can inherit one of these variants."
   },
   "palette": {
     "colors": {
@@ -34,7 +35,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/tl_finehood-base.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_tl_m.png",
                 "colors": [
                   "A"
                 ]
@@ -56,7 +57,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/tl_finehood-trim.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_tl_m.png",
                 "colors": [
                   "B"
                 ]
@@ -86,7 +87,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-base_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_m.png",
                 "colors": [
                   "A"
                 ]
@@ -108,7 +109,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-trim_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png",
                 "colors": [
                   "B"
                 ]
