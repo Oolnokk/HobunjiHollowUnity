@@ -132,8 +132,37 @@ vm.runInContext(runtimeSource, context, { filename: 'npc-silliness-reaction-runt
   assert.equal(suppressed, null, 'AmbientDialogue does not show an empty reaction');
   assert.equal(renderedPets, 0, 'hardcoded pet copy cannot leak through the AmbientDialogue wrapper');
   assert.equal(context.NpcReactionProfiles.animalLineFor('gantami_ginju', { entry: pet, role: 'companion', bondRank: 0 }), null, 'stable progression receives null for unauthored reactions');
+  const walker = { rec: { id: 'gantami_ginju' }, area: 'town', root: { position: { x: 0, z: 0 } } }; // Test NPC remains inside the active player-stimulus radius across repeated updates.
+  const playerStimulus = { sourceIsPlayer: true, type: 'dance', x: 0, z: 0, strength: 1, radius: 3 }; // Active dance lets the encounter tracker exercise blank authored copy.
+  let activeStimulus = playerStimulus; // Test-controlled source for validating encounter entry/exit behavior.
+  context.NpcSocialStimuli = { getActive: () => activeStimulus ? [activeStimulus] : [] };
+  context.NpcActivityPlanner = { init() {} };
+  context.NpcActivityPlanner.init({
+    listNpcWalkersInArea: () => [walker], getCurrentArea: () => 'town',
+    getPlayerPosition: () => ({ x: 0, z: 0 }),
+  }); // Planner's injected walker and position queries drive the same update path used in-game.
+  context.AmbientDialogue = { show() { renderedPets++; return { shown: true }; }, update() {} };
+  for (let i = 0; i < 5; i++) context.AmbientDialogue.update(1000 + i * 200);
+  assert.equal(context.NpcReactionProfiles.getDebug('gantami_ginju').encounter.serial, 1, 'empty social pools are not retried every update tick');
+  assert.equal(renderedPets, 0, 'empty social pools remain silent during automatic ambient updates');
   config.profiles.child.animal.wary.companion = originalPetLines;
   config.profiles.child.dance.positive = originalDanceLines;
+  activeStimulus = null;
+  context.AmbientDialogue.update(3000);
+  activeStimulus = playerStimulus;
+  context.AmbientDialogue.update(3200);
+  assert.equal(renderedPets, 1, 'restoring an authored line permits a normal reaction on the next encounter');
+  assert.equal(context.NpcReactionProfiles.getDebug('gantami_ginju').encounter.serial, 2, 'a later encounter remains eligible for authored reactions');
+
+  const normalFetch = context.fetch; // Snapshot of the working config fetch restored after exercising offline fallback.
+  context.fetch = async () => { throw new Error('simulated offline config'); };
+  await context.NpcReactionProfiles.reload();
+  assert.equal(context.NpcReactionProfiles.getDebug().configLoaded, false, 'load failure is available to mobile diagnostics');
+  assert.equal(context.NpcReactionProfiles.resolve({ npcId: 'unassigned_npc', category: 'animal', tier: 'recognized' }), null, 'a failed config fetch never speaks embedded default copy');
+  assert.equal(context.NpcReactionProfiles.animalLineFor('gantami_ginju', { entry: pet, role: 'companion', bondRank: 0 }), null, 'offline animal greetings stay silent');
+  context.fetch = normalFetch;
+  await context.NpcReactionProfiles.reload();
+  assert.equal(context.NpcReactionProfiles.getDebug().configLoaded, true, 'profile reactions resume after the config reload succeeds');
   const properAnimal = context.NpcReactionProfiles.resolve({ npcId: 'father_hunundi_hodu', category: 'animal', tier: 'trained', role: 'mount', values: { animalName: 'Moss', species: 'grehlr' }, seed: 'test' }); // Resolver output verifies animal placeholders and role/tier routing.
   assert.ok(properAnimal && !properAnimal.includes('{'), 'animal reaction resolves placeholders through assigned proper profile');
   const debug = context.NpcReactionProfiles.getDebug(); // Public debug surface is required for mobile diagnosis without console access.
