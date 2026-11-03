@@ -55,6 +55,15 @@
     dispenser.lastReleasedAt=now();
     return true;
   }
+  function clearEnemyGrip(bomb) {
+    const enemy=bomb?.enemyCarrier;
+    if(!enemy)return false;
+    const handRoot=enemy.avatarRef?.handRigAvatarRoot;
+    if(handRoot?.userData?.proceduralHeldItemTarget?.holder===bomb.group)
+      handRoot.userData.proceduralHeldItemTarget=null;
+    bomb.enemyCarrier=null;
+    return true;
+  }
   function impact(bomb,cause='impact') {
     if (!bomb || bomb.exploded) return false;
     if (String(cause).includes('witch-bomb-chain')) {
@@ -147,6 +156,7 @@
     breakNearby(mapId,x,z,BLAST_RADIUS);
     buildEffect(scene,x,y,z);
     window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Reuses the existing positional explosive cue until a dedicated fire-bomb clip is authored.
+    clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target before its mesh is removed.
     window.Shattercasks?.discardBurden?.(bomb);
     window.__farmLog?.('[hronal-witch-bomb] '+bomb.id+' exploded via '+cause,'world');
     return true;
@@ -243,6 +253,9 @@
       window.Shattercasks?.discardBurden?.(bomb); // A late async load must not attach an item to an already-despawned/dead enemy.
       return null;
     }
+    const previousPickup=bomb.onPickup,previousLost=bomb.onLost;
+    bomb.onPickup=record=>{try{previousPickup?.(record);}finally{clearEnemyGrip(record);}}; // Player pickup transfers ownership away from the enemy hand rig.
+    bomb.onLost=(record,cause)=>{try{previousLost?.(record,cause);}finally{clearEnemyGrip(record);}}; // Hazard loss/disposal also releases the hand target.
     const profile=bomb.data?.carryable?.enemyHoldAnchor||{};
     const anchor=profile.position||{};
     body.add(bomb.group);
@@ -261,9 +274,7 @@
   function dropEnemyBomb(bomb) {
     const enemy=bomb?.enemyCarrier;
     if (!enemy || !bomb.group?.parent) return false;
-    const handRoot=enemy.avatarRef?.handRigAvatarRoot;
-    if (handRoot?.userData?.proceduralHeldItemTarget?.holder===bomb.group)
-      handRoot.userData.proceduralHeldItemTarget=null;
+    clearEnemyGrip(bomb);
     bomb.group.updateWorldMatrix?.(true,true);
     const p=bomb.group.getWorldPosition(new THREE.Vector3());
     const q=bomb.group.getWorldQuaternion(new THREE.Quaternion());
