@@ -1708,7 +1708,10 @@
       else if(d?.hostileObjects?.has?.(actor))d?.damageCreature?.(actor,damage,x*t,z*t,knockback,opts);
       else window.ResourceSystem?.applyDamage?.(actor,damage,opts);
       if(Number(options.burningHealth)>0)window.ResourceSystem?.addAffliction?.(actor,'burningHealth',Number(options.burningHealth));
-      window.ResourceSystem?.spendFooting?.(actor,Math.max(0,Number(options.footingDamage??24)*(1-dist/radius)),reason);
+      const footingLoss=options.footingDamage!==undefined
+        ?Math.max(0,Number(options.footingDamage)*(1-dist/radius))
+        :Math.max(8,24*(1-dist/radius)); // Preserve Shattercask's original minimum Footing loss unless a new blast explicitly overrides it.
+      window.ResourceSystem?.spendFooting?.(actor,footingLoss,reason);
     }
   }
   function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='') {
