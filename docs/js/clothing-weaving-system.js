@@ -1919,6 +1919,7 @@
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
   async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null, furHood = null, furHoodMarkingsOverride = null, furPaintMaskOnly = false, uncachedPatternPreview = false } = {}) {
+    if (furHood) await window.FurHoodLeatherworking?.ensureManifest?.(); // An uncached species palette is not safe to bake into a permanent Pack/Gear icon; await the source registry first.
     const playerVariant = playerSpeciesGender();
     const resolvedSpeciesId = speciesId || playerVariant.speciesId; // Pattern Editor passes an explicit species so authored trim can be positioned against every variant.
     const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
