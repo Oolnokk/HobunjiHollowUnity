@@ -61,6 +61,24 @@
     return true;
   }
 
+  // Separating-axis test for two oriented physical footprints; attached chairs still collide despite not owning a tile.
+  function overlapsFootprints(a, b) {
+    if (![a, b].every(p => p && [p.x, p.z, p.width, p.depth, p.yaw].every(Number.isFinite))) return false;
+    const basis = p => {
+      const cos = Math.cos(p.yaw), sin = Math.sin(p.yaw);
+      return [{ x: cos, z: -sin }, { x: sin, z: cos }];
+    };
+    const axesA = basis(a), axesB = basis(b);
+    const separation = { x: b.x - a.x, z: b.z - a.z };
+    const dot = (u, v) => u.x * v.x + u.z * v.z;
+    for (const axis of [...axesA, ...axesB]) {
+      const radiusA = Math.abs(dot(axis, axesA[0])) * a.width / 2 + Math.abs(dot(axis, axesA[1])) * a.depth / 2;
+      const radiusB = Math.abs(dot(axis, axesB[0])) * b.width / 2 + Math.abs(dot(axis, axesB[1])) * b.depth / 2;
+      if (Math.abs(dot(separation, axis)) >= radiusA + radiusB - 1e-6) return false;
+    }
+    return true;
+  }
+
   // Registration passes the changed id, avoiding redundant NPC station writes during full-map restores.
   function refreshArea(area, entries, changedId = null) {
     const byId = new Map(Array.from(entries || [], entry => [String(entry.id), entry]));
@@ -86,5 +104,5 @@
     }
     return moved;
   }
-  window.TableChairPlacement = Object.freeze({ normalize, modeForTable, localPosition, apply, refreshArea });
+  window.TableChairPlacement = Object.freeze({ normalize, modeForTable, localPosition, overlapsFootprints, apply, refreshArea });
 })();
