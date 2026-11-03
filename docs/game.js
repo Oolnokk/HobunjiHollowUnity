@@ -7787,7 +7787,7 @@
         const rawMoveInput = keyboard.active || Math.hypot(input.x, input.y) > 0.08;
         if (rawMoveInput || playerAutoWalk) return false;
         if (Math.hypot(player.vx || 0, player.vy || 0) > 5) return false;
-        if (player.climbing || player.onBranch || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
+        if (player.climbing || player.onBranch || player.onClimbSurface || player.dodging || player.lunging || player.knockbackT > 0 || player.prone) return false;
         if (dialogueOpen || sitInteraction || actionHeldDown || chargeAction || toolSwingT > 0 || combatSwingAnim || combatSwingHeld) return false;
         if (window.PlayerChat?.isOpen || window.PlayerSocialPoses?.active || window.Fishing?.state?.active || window.MusicMinigame?.state?.active) return false;
         if (window.Mounts?.rideState && window.Mounts.rideState !== 'none') return false;
@@ -9894,6 +9894,7 @@
         }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
+        if (window.ClimbSurfaces?.release?.()) return; // Dodge while attached to a climbable wall lets go.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
         // Climbing is now the forward-dodge context action. Sideways/backward
@@ -18087,6 +18088,11 @@
           return;
         }
 
+        if (player.onClimbSurface) { // Attached to a wall (js/climb-surfaces.js): input moves along the wall plane, not the ground.
+          window.ClimbSurfaces.updatePlayer(dt);
+          return;
+        }
+
         if (player.dodging) {
           player.dodgeT -= dt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
@@ -24635,6 +24641,7 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onClimbSurface ? player.wallClimbY
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -24862,7 +24869,7 @@
           airborne: ordinaryLungeHopY > 0.03 || (Number.isFinite(player.lungeFlightWorldY) && player.lungeFlightWorldY > groundedTargetY + 0.03)
             || !!player._knockbackLedgeAir || !!player._knockbackLedgeFall
             || (player.climbing && player.climbSurfaceEndY < player.climbSurfaceStartY)
-            || (!player.climbing && !player.onBranch && playerMesh.position.y > groundedTargetY + 0.12),
+            || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
       }
@@ -31424,6 +31431,22 @@
         getActiveRows: window.GridTileAccessors.getActiveRows,
       });
 
+      // Read fresh input because player.inputX/Y are written after the
+      // on-branch early return. Shoulder cam uses the exact same
+      // camera-relative transform as ordinary ground movement. Shared by
+      // ClimbSystem (branches) and ClimbSurfaces (walls).
+      const climbMovementInput = () => {
+        const kb = getKeyboardVector();
+        const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
+        if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
+        const aim = shoulderPerspectiveFacingAngle();
+        const sin = Math.sin(aim), cos = Math.cos(aim);
+        return {
+          x: -move.x * sin - move.y * cos,
+          y: move.x * cos - move.y * sin,
+        };
+      };
+
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,
@@ -31446,21 +31469,22 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        // Read fresh input because player.inputX/Y are written after the
-        // on-branch early return. Shoulder cam uses the exact same
-        // camera-relative transform as ordinary ground movement.
-        getMovementInput: () => {
-          const kb = getKeyboardVector();
-          const move = kb.active ? { x: kb.x, y: kb.y } : { x: input.x, y: input.y };
-          if (activeCameraMode !== SHOULDER_SURF_MODE || (!move.x && !move.y)) return move;
-          const aim = shoulderPerspectiveFacingAngle();
-          const sin = Math.sin(aim), cos = Math.cos(aim);
-          return {
-            x: -move.x * sin - move.y * cos,
-            y: move.x * cos - move.y * sin,
-          };
-        },
+        getMovementInput: climbMovementInput,
       });
+
+      // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
+      // ClimbSystem's world-climb provider, move along the wall until released.
+      window.ClimbSurfaces?.init({
+        player,
+        TILE,
+        getMovementInput: climbMovementInput,
+        getFeetY: () => window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
+        setFacingAngle: (v) => { facingAngle = v; },
+        setTargetAimAngle: (v) => { targetAimAngle = v; },
+        setLastMoveAngle: (v) => { lastMoveAngle = v; },
+      });
+      window.ClimbSystem?.registerWorldClimbProvider?.(window.ClimbSurfaces?.worldClimbProvider);
 
       window.BanditCombatLog?.init({
         player,

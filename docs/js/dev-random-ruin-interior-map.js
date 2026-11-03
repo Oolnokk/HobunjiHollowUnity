@@ -1260,8 +1260,8 @@
   function positionInfo(px,py){const x=px/deps.TILE,z=py/deps.TILE;return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
-    if(deps.player?.climbing){
-      const climbY=Number(deps.player.climbSurfaceY); // Used to advance the ruin's accepted-height baseline during the shared ladder animation so landing is not rejected as an oversized step.
+    if(deps.player?.climbing||deps.player?.onClimbSurface){ // Scripted climbs and ClimbSurfaces wall grabs both drive the accepted height themselves.
+      const climbY=Number(deps.player.onClimbSurface?deps.player.wallClimbY:deps.player.climbSurfaceY); // Used to advance the ruin's accepted-height baseline during the shared ladder animation so landing is not rejected as an oversized step.
       if(Number.isFinite(climbY)){
         ruin.supportY=climbY;
         ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
