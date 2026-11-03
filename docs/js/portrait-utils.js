@@ -1616,14 +1616,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
         if (layer.pos !== 'back' && key === 'B' && !insertedAnimalFront) {
-          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
+          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
           insertedAnimalFront = true;
         }
         (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
       }
-      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
+      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
       for (const part of animalParts.filter(layer => layer.pos === 'back')) {
-        hoodBackLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
+        hoodBackLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
       }
     }
     pushToTarget(pauldron, pauldronLayers);

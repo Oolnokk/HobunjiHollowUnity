@@ -106,11 +106,12 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, 0, 0);
     const frame = ctx.getImageData(0,0,canvas.width,canvas.height);
     const source = new Uint8ClampedArray(frame.data); // Both region masks sample original unpainted pixels.
-    const mintHue = fill.rgbToHsv(0x9B,0xC0,0x9A).h; // Actual Grehlr back source keys: light #9BC09A and shaded #6F896E share this mint hue.
+    const mintSource = fill.rgbToHsv(0x9B,0xC0,0x9A); // Authored Grehlr mint highlight #9BC09A and shadow #6F896E share a hue.
+    const mintHue = mintSource.h, mintMinimumSaturation = Math.max(0.05,mintSource.s*0.35); // Picks partially shaded/antialiased mint while ignoring near-neutral white stripe.
     const isMint = i => {
       if (role !== 'animalBack' || !base || source[i+3] <= 8) return false;
       const hsv=fill.rgbToHsv(source[i],source[i+1],source[i+2]);
-      return hsv.v >= 0.12 && hsv.s >= 0.10 && fill.hueDistance(hsv.h,mintHue) <= 34;
+      return hsv.v >= 0.12 && hsv.s >= mintMinimumSaturation && fill.hueDistance(hsv.h,mintHue) <= 34;
     };
     const isStripe = i => {
       if (!stripe || source[i+3] <= 8) return false;
@@ -157,8 +158,8 @@
         pos,
         layerName: pos === 'front' ? 'animal-front' : 'animal-back',
         role: pos === 'front' ? 'animalFront' : 'animalBack',
-        paletteColorKey: 'A',
-        furColorMode: kindEntry?.partColors?.[pos] || 'base', // Runtime role tint comes from source genotype, not cosmetic dyes.
+        paletteColorKey: kindEntry?.partColors?.[pos] === 'pattern' ? 'B' : 'A', // Fallback portrait uses saved inherited trim B for pattern-colored parts when the live fur hook is unavailable.
+        furColorMode: kindEntry?.partColors?.[pos] || 'base', // Normal runtime still resolves each part's exact inherited color, independent of B.
         ax: 0, ay: 0, sx: 1, sy: 1, xformPreset: 'B',
       }];
     });
