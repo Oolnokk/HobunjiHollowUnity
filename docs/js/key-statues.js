@@ -46,8 +46,7 @@
     state.payload=null;
     state.root.userData.keyStatuePayload=null;
     if(state.respawning)return true;
-    state.respawning=true;
-    queueRespawn(state,reason);
+    queueRespawn(state,reason); // queueRespawn is the sole owner of the retry lock.
     return true;
   }
   function queueRespawn(state,reason) {
