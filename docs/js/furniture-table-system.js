@@ -423,7 +423,7 @@
       if(!entry.root?.parent)continue;
       const f=placementFrame(entry);
       const puzzle = entry.root.userData?.furniturePuzzle;
-      const isBurdenPlate = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+      const isBurdenPlate = puzzle?.role === 'activator' && ['burdenPlate','keyStatue'].includes(puzzle.behavior);
       const reach = isBurdenPlate
         ? Math.max(.25, Number(puzzle.interactionRange) || 1.65) + Math.hypot(f.w,f.d)/2
         : 3 + Math.max(f.w,f.d);
