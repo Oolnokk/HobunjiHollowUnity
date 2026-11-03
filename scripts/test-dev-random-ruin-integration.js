@@ -27,6 +27,7 @@ const renderProxy = read('docs/js/dev-random-ruin-wall-render-proxy.js');
 const interactions = read('docs/js/dev-random-ruin-interactions.js');
 const inputClaims = read('docs/js/world-action-input-claims.js');
 const simplePuzzles = read('docs/js/dev-random-ruin-simple-puzzles.js');
+const ropeCore = read('docs/js/rope-core.js'); // The rope swing arithmetic and constants (ROPE_BODY_RADIUS etc.) now live here; the ruin runtime delegates to it.
 const cloudFog = read('docs/js/cloud-forest-fog.js');
 const gameIndex = read('docs/index.html');
 const game = read('docs/game.js');
@@ -167,7 +168,7 @@ assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope trave
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
 assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("point:candidate.grabPoint"), 'idle ropes must remain discoverable through the normal floating interaction list');
 assert(!simplePuzzles.includes('tryAutoGrabRope'), 'ropes are grabbed only through the Grab Rope prompt (which claims Action 1); proximity auto-grab caught players unintentionally');
-assert(simplePuzzles.includes('ROPE_BODY_RADIUS = 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
+assert(simplePuzzles.includes('ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS') && ropeCore.includes('BODY_RADIUS: 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
 assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
 assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
@@ -235,9 +236,9 @@ assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plat
 assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
 assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
 assert(simplePuzzles.includes('devRandomRuinMandatoryTraversal') && simplePuzzles.includes('usedHallways.add(hall.id)'), 'safe-path grids must occupy a required hallway crossing rather than a bypassable room-center square');
-assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && simplePuzzles.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
+assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && ropeCore.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
 assert(simplePuzzles.includes("label:'Jump Off Rope'") && simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("label:'Hold to Stop / Adjust Rope'"), 'rope controls must expose Dodge jump-off plus the held brake/adjust action');
-assert(simplePuzzles.includes('rope.yaw+=intent.side') && simplePuzzles.includes('rope.length=Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
+assert(ropeCore.includes('rope.yaw += move.side') && ropeCore.includes('rope.length = Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
 assert(simplePuzzles.includes('player?.inputX') && simplePuzzles.includes('player?.inputY') && simplePuzzles.includes('player?.inputStrength'), 'rope pumping/reorientation must consume the game-published movement intent rather than velocity the rope runtime zeroes');
 assert(simplePuzzles.includes('doorwayCrossing') && simplePuzzles.includes("activateCheckpoint('ruin-entry'"), 'ruin entry and every doorway must feed session checkpoint tracking');
 assert(game.includes("function respawnPlayer(reason = 'death')") && game.includes("window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)"), 'canonical respawnPlayer must offer every death source to the active ruin checkpoint before mine/totem/farm recovery while preserving its diagnostic reason');

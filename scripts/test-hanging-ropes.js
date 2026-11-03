@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
-// HangingRopes against the real RopePendulum, WorldEvents and Targetables, with a fake Shattercasks.
+// HangingRopes against the real RopeCore (the original rope behavior), WorldEvents and Targetables, with a fake Shattercasks.
 const assert = require('assert');
 globalThis.window = globalThis;
 globalThis.performance = performance;
 globalThis.WorldEvents = require('../docs/js/world-events.js');
 globalThis.Targetables = require('../docs/js/targetables.js');
-globalThis.RopePendulum = require('../docs/js/rope-pendulum.js');
+globalThis.RopeCore = require('../docs/js/rope-core.js');
 const MAP = 'map_test'; const TILE = 64;
 const player = { x: 5 * TILE, y: 5 * TILE };
 const toasts = [];
@@ -122,4 +122,48 @@ assert.equal(b.rope, null, 'removing a rope releases its hold on the burden'); a
 reset(); HR.registerRope({ id: 'x', mapId: MAP, scene, x: 0, y: 3, z: 0, length: 1 }); HR.registerRope({ id: 'y', mapId: 'other', scene, x: 0, y: 3, z: 0, length: 1 });
 assert.equal(HR.clearScope(MAP), 1); assert.equal(HR.ropes.length, 1); HR.clearScope('other');
 assert.doesNotThrow(() => HR.tick(NaN)); assert.equal(HR.debugSnapshot().ropes.length, 0);
+
+// ---- strike speed mapping (units/s): a close hit is small, a full lunge is large, monotonic and clamped
+assert.equal(HR.strikeSpeed(0), HR.CONFIG.minSpeed); assert.equal(HR.strikeSpeed(10), HR.CONFIG.maxSpeed);
+{ let last = -1; for (const d of [0, 0.2, 0.5, 0.8, 1.2, 1.6]) { const v = HR.strikeSpeed(d); assert(v >= last); last = v; } }
+assert.equal(HR.strikeSpeed(undefined), HR.CONFIG.minSpeed); assert.equal(HR.strikeSpeed(-3), HR.CONFIG.minSpeed);
+
+// ---- the burden swings with the ORIGINAL rope behavior: an owned rope steps exactly like RopeCore.stepIdle
+reset(); r = rope(); b = burden('twin'); HR.attach(r, b);
+HR.applyStrike(r, 1, 0, 4);   // sets the swing; then compare the owned rope's motion to a bare core rope given the same state
+const twin = RopeCore.create({ anchor: r.anchor, yaw: r.yaw, length: r.length, maxLength: r.maxLength }); twin.omega = r.omega; twin.angle = r.angle; twin.bob = RopeCore.bobAt(twin); twin.lastSafeBob = RopeCore.clonePoint(twin.bob);
+r.detachAngleRad = 99; r.armed = false; // keep it swinging: no release rules in this comparison
+for (let i = 0; i < 40; i++) { HR.tick(0.05); RopeCore.stepIdle(twin, 0.05, null); twin.lastSafeBob = RopeCore.clonePoint(twin.bob); }
+assert.strictEqual(r.angle, twin.angle, 'angle matches the original rope step for step'); assert.strictEqual(r.omega, twin.omega, 'and so does omega');
+assert.deepEqual([b.group.position.x, b.group.position.y, b.group.position.z], [twin.bob.x, twin.bob.y, twin.bob.z], 'the burden hangs at the rope bob');
+
+// ---- a long frame is split so it behaves like the original's frame-rate-bounded steps
+reset(); r = rope(); b = burden('long'); HR.attach(r, b); HR.applyStrike(r, 1, 0, 3); r.detachAngleRad = 99; r.armed = false;
+const split = RopeCore.create({ anchor: r.anchor, yaw: r.yaw, length: r.length, maxLength: r.maxLength }); split.omega = r.omega; split.bob = RopeCore.bobAt(split); split.lastSafeBob = RopeCore.clonePoint(split.bob);
+HR.tick(0.1); RopeCore.stepIdle(split, 0.05, null); split.lastSafeBob = RopeCore.clonePoint(split.bob); RopeCore.stepIdle(split, 0.05, null);
+assert.strictEqual(r.angle, split.angle, 'a 0.1 s frame is two 0.05 s steps');
+
+// ---- a rope already swinging keeps its plane and gains the strike's component along it
+reset(); r = rope(); b = burden('plane'); HR.attach(r, b); HR.applyStrike(r, 1, 0, 3); r.armed = false; for (let i = 0; i < 6; i++) HR.tick(0.05);
+const yawBefore = r.yaw, omegaBefore = r.omega; HR.applyStrike(r, 0, 1, 3);
+assert.strictEqual(r.yaw, yawBefore, 'a swinging rope keeps its swing plane'); assert.strictEqual(r.omega, omegaBefore, 'a strike at right angles to the plane adds nothing along it');
+HR.applyStrike(r, 1, 0, 3); assert(r.omega > omegaBefore, 'a strike along the plane adds to the swing');
+reset(); r = rope(); b = burden('rest'); HR.attach(r, b); HR.applyStrike(r, 0, -1, 3);
+assert(Math.abs(r.yaw - -Math.PI / 2) < 1e-12, 'a rope at rest takes the strike direction as its plane'); assert(r.omega > 0);
+
+// ---- adopting a rope someone else owns and steps (the ruin runtime's ropes, which players ride)
+reset();
+const ext = RopeCore.create({ anchor: { x: 20, y: 4, z: 20 }, yaw: 0, length: 2.4 }); ext.bob = RopeCore.bobAt(ext); ext.lastSafeBob = RopeCore.clonePoint(ext.bob); ext.id = 'ext1'; ext.mesh = { parent: scene };
+assert(HR.adoptRope(ext, { mapId: MAP, scene }) === ext); assert.equal(ext.external, true);
+const eb = burden('eb'); assert.equal(HR.attach(ext, eb), true);
+HR.tick(0.05); assert.strictEqual(ext.angle, 0, 'the rope is not stepped by HangingRopes: its owner steps it');
+HR.applyStrike(ext, 1, 0, 4); const owner = () => { RopeCore.stepIdle(ext, 0.05, null); ext.lastSafeBob = RopeCore.clonePoint(ext.bob); };
+let guard = 0; while (!released.length && guard++ < 400) { owner(); HR.tick(0.05); }
+assert(released.length === 1 && /rope-/.test(released[0].cause), 'an adopted rope releases by the same rules');
+assert.equal(ext.burden, null, 'and is free again'); assert.equal(ext.mesh.parent, scene, 'its owner keeps its mesh');
+assert.equal(HR.removeRope(ext), true); assert.equal(ext.mesh.parent, scene, 'removing an adopted rope never disposes the owner\'s mesh');
+reset(); const ridden = RopeCore.create({ anchor: { x: 20, y: 4, z: 20 }, length: 2.4 }); ridden.bob = RopeCore.bobAt(ridden); ridden.attached = true; HR.adoptRope(ridden, { mapId: MAP, scene });
+assert.equal(HR.canAttach(ridden, burden('nope')), false, 'a rope a rider is on cannot take a burden');
+assert.equal(HR.adoptRope({}, {}), null, 'something that is not a rope is refused');
+
 console.log('hanging-ropes: ok');

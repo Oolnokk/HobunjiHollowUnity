@@ -253,7 +253,7 @@
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
-  <script src="js/furniture-table-system.js?v=20261102witchBombKeyStatue1"></script>
+  <script src="js/furniture-table-system.js?v=20261103h6f4dc6e"></script>
   <script src="js/authored-furniture-runtime.js?v=20261102burdenplinth1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
@@ -872,10 +872,11 @@
   <script src="js/targetables.js?v=1"></script>
   <script src="js/shattercasks.js?v=20261103h713a0b2"></script>
   <script src="js/hronal-witch-bombs.js?v=20261103h2d90617"></script>
-  <!-- Hanging ropes: pendulum physics (pure) and the rope component burdens hang from. Needs Shattercasks at
+  <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
-  <script src="js/rope-pendulum.js?v=1"></script>
+  <script src="js/rope-core.js?v=1"></script>
   <script src="js/hanging-ropes.js?v=1"></script>
+  <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/key-statues.js?v=20261102keyStatues1"></script>
   <script src="js/dungeon-fire.js?v=20261102dungeonfire4"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
@@ -2850,7 +2851,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261101spyglassToggle3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261102dungeonfire2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261103h43d2a44"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

@@ -308,6 +308,10 @@
     {
       "key": "witchBombCeilingTube",
       "file": "config/furniture-authored/witchBombCeilingTube.json"
+    },
+    {
+      "key": "ruinRopeMount",
+      "file": "config/furniture-authored/ruinRopeMount.json"
     }
   ]
 }
