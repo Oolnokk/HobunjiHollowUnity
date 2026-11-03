@@ -261,7 +261,9 @@
       event.target.textContent = view === 'front' ? 'View behind' : 'View front';
       refresh();
     };
-    overlay.querySelector('[data-action="craft"]').onclick = () => {
+    overlay.querySelector('[data-action="craft"]').onclick = async () => {
+      await ensureManifest(); // Prefer the fully loaded per-species trim-gene priority before saving natural color B.
+      if (activePanel !== overlay) return; // Ignore a craft click whose overlay was closed while the manifest was loading.
       const choice = chosen();
       const current = choice && hideChoices(deps.inventory).find(x => x.key === choice.key && x.variant === choice.variant);
       const pack = deps.getPackClothing?.();
