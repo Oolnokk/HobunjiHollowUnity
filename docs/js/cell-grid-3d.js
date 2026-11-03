@@ -63,6 +63,51 @@
     return { c0, c1, r0, r1, l0, l1, cellsW: c1 - c0 + 1, cellsD: r1 - r0 + 1, cellsH: l1 - l0 + 1 };
   }
 
+  // Greedy-merges climbable faces into rectangles. A face is { c, r, l, dir, style, inset? }:
+  // the `dir` side of cell (c, r, l); `inset` pulls the surface plane that far inside the cell
+  // (0 = on the cell edge) for thin panels that sit inside their cell. Used by CellGrid3D walls
+  // and by furniture wall-tiles (ClimbWallTiles), so both produce identical surfaces.
+  function mergeClimbFaces(faces, geom = {}) {
+    const cellSize = Number(geom.cellSize) || UNITS.CELL_SIZE, cellHeight = Number(geom.cellHeight) || UNITS.CELL_HEIGHT;
+    const originX = Number(geom.originX) || 0, originZ = Number(geom.originZ) || 0, baseY = Number(geom.baseY) || 0;
+    const colToX = c => originX + c * cellSize, rowToZ = r => originZ + r * cellSize, levelToY = l => baseY + l * cellHeight;
+    const byGroup = new Map(); // `${dir}|${style}|${plane}|${inset}` -> Set(`${u},${l}`)
+    for (const f of faces) {
+      const alongZ = f.dir === DIR.E || f.dir === DIR.W; // E/W faces are walls running along z.
+      const plane = alongZ ? f.c : f.r, u = alongZ ? f.r : f.c;
+      const gk = `${f.dir}|${f.style}|${plane}|${Number(f.inset) || 0}`;
+      if (!byGroup.has(gk)) byGroup.set(gk, new Set());
+      byGroup.get(gk).add(`${u},${f.l}`);
+    }
+    const surfaces = [];
+    for (const [gk, set_] of byGroup) {
+      const [dirStr, style, planeStr, insetStr] = gk.split('|'), dir = Number(dirStr), plane = Number(planeStr), inset = Number(insetStr);
+      const alongZ = dir === DIR.E || dir === DIR.W;
+      const has = (u, l) => set_.has(`${u},${l}`);
+      const used = new Set(), sorted = [...set_].map(s => s.split(',').map(Number)).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      for (const [u, l] of sorted) {
+        if (used.has(`${u},${l}`)) continue;
+        let u1 = u; while (has(u1 + 1, l) && !used.has(`${u1 + 1},${l}`)) u1++;
+        let l1 = l;
+        for (;;) { let full = true; for (let k = u; k <= u1; k++) if (!has(k, l1 + 1) || used.has(`${k},${l1 + 1}`)) { full = false; break; } if (!full) break; l1++; }
+        for (let ll = l; ll <= l1; ll++) for (let k = u; k <= u1; k++) used.add(`${k},${ll}`);
+        const [nx, nz] = DIR_VEC[dir];
+        // The face lies on the +/- side of the cell along its normal, pulled `inset` back inside.
+        const edge = alongZ ? colToX(plane + (dir === DIR.E ? 1 : 0)) : rowToZ(plane + (dir === DIR.S ? 1 : 0));
+        const planeCoord = edge - (alongZ ? nx : nz) * inset * cellSize;
+        surfaces.push({
+          dir, facing: DIR_NAMES[dir], style, normal: { x: nx, z: nz },
+          plane: planeCoord, // x for E/W faces, z for N/S faces
+          axis: alongZ ? 'z' : 'x', // the world axis that `u0..u1` runs along
+          u0: alongZ ? rowToZ(u) : colToX(u), u1: alongZ ? rowToZ(u1 + 1) : colToX(u1 + 1),
+          y0: levelToY(l), y1: levelToY(l1 + 1),
+          levels: [l, l1], span: [u, u1],
+        });
+      }
+    }
+    return surfaces.sort((a, b) => a.y0 - b.y0 || a.dir - b.dir || a.plane - b.plane || a.u0 - b.u0);
+  }
+
   // ---------------------------------------------------------------- grid
 
   function create(options = {}) {
@@ -205,44 +250,14 @@
     // Greedy-merged rectangles of coplanar, same-style faces. `u` runs along the
     // wall (col for N/S faces, row for E/W), `v` is up. Consumed by ClimbSurfaces.
     function collectClimbSurfaces() {
-      const byGroup = new Map(); // `${dir}|${style}|${plane}` -> Map(`${u},${l}`)
+      const faces = [];
       for (const [key, entry] of climb) {
         const c = key % cols, r = Math.floor(key / cols) % rows, l = Math.floor(key / (cols * rows));
         for (const dir of [DIR.N, DIR.E, DIR.S, DIR.W]) {
-          if (!(entry.mask & dir) || !isSolid(c, r, l)) continue;
-          const alongZ = dir === DIR.E || dir === DIR.W; // E/W faces are walls running along z.
-          const plane = alongZ ? c : r, u = alongZ ? r : c;
-          const gk = `${dir}|${entry.styles[dir]}|${plane}`;
-          if (!byGroup.has(gk)) byGroup.set(gk, new Set());
-          byGroup.get(gk).add(`${u},${l}`);
+          if ((entry.mask & dir) && isSolid(c, r, l)) faces.push({ c, r, l, dir, style: entry.styles[dir] });
         }
       }
-      const surfaces = [];
-      for (const [gk, set_] of byGroup) {
-        const [dirStr, style, planeStr] = gk.split('|'), dir = Number(dirStr), plane = Number(planeStr);
-        const alongZ = dir === DIR.E || dir === DIR.W;
-        const has = (u, l) => set_.has(`${u},${l}`);
-        const used = new Set(), sorted = [...set_].map(s => s.split(',').map(Number)).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-        for (const [u, l] of sorted) {
-          if (used.has(`${u},${l}`)) continue;
-          let u1 = u; while (has(u1 + 1, l) && !used.has(`${u1 + 1},${l}`)) u1++;
-          let l1 = l;
-          for (;;) { let full = true; for (let k = u; k <= u1; k++) if (!has(k, l1 + 1) || used.has(`${k},${l1 + 1}`)) { full = false; break; } if (!full) break; l1++; }
-          for (let ll = l; ll <= l1; ll++) for (let k = u; k <= u1; k++) used.add(`${k},${ll}`);
-          // World placement: the face lies on the +/- side of the solid cell along its normal.
-          const planeCoord = alongZ ? colToX(plane + (dir === DIR.E ? 1 : 0)) : rowToZ(plane + (dir === DIR.S ? 1 : 0));
-          const [nx, nz] = DIR_VEC[dir];
-          surfaces.push({
-            dir, facing: DIR_NAMES[dir], style, normal: { x: nx, z: nz },
-            plane: planeCoord, // x for E/W faces, z for N/S faces
-            axis: alongZ ? 'z' : 'x', // the world axis that `u0..u1` runs along
-            u0: alongZ ? rowToZ(u) : colToX(u), u1: alongZ ? rowToZ(u1 + 1) : colToX(u1 + 1),
-            y0: levelToY(l), y1: levelToY(l1 + 1),
-            levels: [l, l1], span: [u, u1],
-          });
-        }
-      }
-      return surfaces.sort((a, b) => a.y0 - b.y0 || a.dir - b.dir || a.plane - b.plane || a.u0 - b.u0);
+      return mergeClimbFaces(faces, { originX, originZ, baseY, cellSize, cellHeight });
     }
 
     function stats() {
@@ -277,5 +292,5 @@
     return { grid, maxQuantizationError: maxError };
   }
 
-  return Object.freeze({ UNITS, KIND, DIR, DIR_NAMES, create, fromHeightfield, heightToCells, measureBox });
+  return Object.freeze({ UNITS, KIND, DIR, DIR_NAMES, DIR_VEC, create, fromHeightfield, heightToCells, measureBox, mergeClimbFaces });
 });

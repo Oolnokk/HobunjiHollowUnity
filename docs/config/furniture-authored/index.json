@@ -292,6 +292,22 @@
     {
       "key": "honeyfuzzleHouse",
       "file": "config/furniture-authored/honeyfuzzleHouse.json"
+    },
+    {
+      "key": "ruinClimbHoldsMid",
+      "file": "config/furniture-authored/ruinClimbHoldsMid.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndLeft",
+      "file": "config/furniture-authored/ruinClimbHoldsEndLeft.json"
+    },
+    {
+      "key": "ruinClimbHoldsEndRight",
+      "file": "config/furniture-authored/ruinClimbHoldsEndRight.json"
+    },
+    {
+      "key": "ruinClimbHoldsSingle",
+      "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
     }
   ]
 }

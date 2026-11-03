@@ -1,6 +1,6 @@
 # Vertical grid (cubic cells) and climbable surfaces
 
-Status: **steps 1–2 of 4 landed.** `js/cell-grid-3d.js` (step 1) is still not called by gameplay; `js/climb-surfaces.js` (step 2) is wired into the player loop but no area registers any wall yet, so nothing is climbable in normal play until step 4 (or the console recipe below).
+Status: **steps 1–3 of 4 landed.** `js/cell-grid-3d.js` (step 1) is still not called by gameplay; `js/climb-surfaces.js` (step 2) is wired into the player loop but no area registers any wall yet, so nothing is climbable in normal play until step 4 (or the console recipe below).
 
 ## The idea
 
@@ -36,9 +36,26 @@ Verified: `scripts/test-climb-surfaces.js` (pure math, every facing, glue); a he
 
 Not done / known gaps: nothing yet calls `buildVisual` in-game (it is checked but not mounted); no fall animation or damage on release mid-wall (the ruin just re-seats the player on the floor); no climbing pose; mobile has only the forward-dodge attach.
 
+## Furniture metadata and wall tiles (step 3)
+
+Two optional blocks on authored furniture JSON, edited in the Furniture Author's **Cells & Climbable Wall** section (`tools/furniture-avatar-author/climb-wall-properties.js`):
+
+- **`elevation`** — attached to *every* export, re-measured from the preview's bounding box so it never drifts: `{ version, mode: 'auto'|'manual', measured: { sizeX/Y/Z, minY, maxY, cellsW, cellsD, cellsH }, manual: { cellsW?, cellsD?, cellsH? } }`. Cells are whole 1×1×1 cubes (`CellGrid3D.UNITS`) with a 1e-3 tolerance so a piece authored at exactly 1.0 never measures as 2. `FurnitureElevation.effective(block)` is what generators read: measured values, with manual fields overriding one by one only in manual mode. Pieces without the block simply have no measurement yet.
+- **`climbWall`** — marks a piece as a climbable wall tile (`js/climb-wall-tiles.js`):
+  `{ version, enabled, style, face: { side: '+z', offset }, role: 'mid'|'endLeft'|'endRight'|'single', variants: { endLeft, endRight, single } }`. A tile is one cell wide and one cell tall, authored so neighbouring copies look continuous (the shipped set keeps handhold spacing at 0.5 across tile boundaries, and the slab fills the cell so tiles also stack). `face.offset` is the climb plane's signed distance from the tile centre along the face normal; holds and posts may protrude in front of it. The **mid** piece lists its sibling keys, so one key identifies the whole set and the end pieces are ordinary furniture.
+  "Left"/"right" are as seen facing the wall from its open side. `resolveRuns` groups tiles by wall plane, facing, level and style, splits at gaps, and returns `endLeft` / `mid` / `endRight` / `single` per tile; `placementFor` gives position and yaw; `toSurfaces`/`register` merge a run into one `ClimbSurfaces` wall whose plane equals the placed art. `validateSet` checks roles, style and face plane agree across the set (the Author's *Check this set* button runs it against the repo files).
+- Shipped set: `ruinClimbHoldsMid / EndLeft / EndRight / Single` (style `holds`) in `config/furniture-authored/`.
+- `CellGrid3D.mergeClimbFaces(faces, geom)` is now shared by grid walls and furniture tiles; faces take an `inset` for panels that sit inside their cell.
+
+Not done: inner/outer **corner** variants (a run currently ends at a corner with end caps on both walls); the Author has no 3D preview of a run; nothing places the tiles in a ruin yet (step 4); tiles are visual + climb surface only, with no collision of their own.
+
+## Decision: shaft hubs are a post-generation composer (step 4)
+
+The shaft hub will be a composer that operates on a `CellGrid3D` after generation, not a new V50 room type. It works on any hub room (V50 interiors, other generators, outdoor locales), composes with the existing ruin modules (which are all post-generation, e.g. `balconyRopeElevator`), leaves the V50 source untouched, and can be extended with new variants (balcony rings, bridges, door placements) without touching the generator.
+
 ## Steps
 
 1. `CellGrid3D`: cubic units, standing/walking/slice, DynamicSurfaces bridge, climb-face merge. *(done)*
 2. `ClimbSurfaces` runtime: attach/move/detach, style registry, player-loop and ruin-reconcile wiring. *(done; visuals not yet mounted)*
-3. Furniture Author: measure pieces into whole cells (`measureBox`, `heightToCells`) and store an `elevation` block plus a `climbSurfaces` block on the furniture JSON, alongside existing capability blocks such as `walkableElevation`.
-4. Shaft-hub composer for ruins: carve a hollow shaft, ring balconies, doors on balconies, climbable walls, using measured piece heights; register the grid's surfaces and mount `buildVisual`; make the ruin's `positionInfo` support sampling level-relative (see above).
+3. Furniture Author: auto-measured `elevation` block on every export, and climbable `climbWall` tiles with end variants. *(done)*
+4. Shaft-hub composer for ruins (post-generation, on a `CellGrid3D`): carve a hollow shaft, ring balconies, doors on balconies, place wall-tile runs, using measured piece heights; register the grid's surfaces and mount `buildVisual`; make the ruin's `positionInfo` support sampling level-relative (see above).

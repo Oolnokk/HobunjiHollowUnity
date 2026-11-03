@@ -50,6 +50,7 @@
     return styles.get(key);
   }
   const getStyle = id => styles.get(String(id)) || styles.get('default');
+  const listStyles = () => [...styles.values()].map(({ id, label }) => ({ id, label })); // For editors that offer a style picker.
   registerStyle('default', { label: 'Climbable wall', speedU: 1.2, speedV: 1.2, color: '#7a7a6a' });
   registerStyle('ivy', { label: 'Ivy', speedU: 1.6, speedV: 1.4, color: '#3f6b34' });
   registerStyle('rungs', { label: 'Rungs', speedU: 0.8, speedV: 2.2, color: '#6a5a48', build: buildRungs });
@@ -245,7 +246,7 @@
   }
 
   return Object.freeze({
-    DEFAULTS, init, registerStyle, getStyle, register, registerGrid, remove, clearScope, list,
+    DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, clearScope, list,
     findGrabTarget, attach, step, topExitPoint, buildVisual,
     worldClimbProvider, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
