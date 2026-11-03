@@ -16,6 +16,8 @@ class Vector3 {
   clone() { return new Vector3(this.x, this.y, this.z); }
   add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
   multiply(v) { this.x *= v.x; this.y *= v.y; this.z *= v.z; return this; }
+  fromBufferAttribute(attribute, index) { return this.set(...attribute.values[index]); }
+  applyMatrix4() { return this; }
 }
 class Quaternion { clone() { return new Quaternion(); } copy() { return this; } multiply() { return this; } setFromEuler() { return this; } }
 class Euler { constructor(x, y, z) { this.x = x; this.y = y; this.z = z; } }
@@ -25,6 +27,10 @@ class Box3 {
   setFromObject(mesh) { this.min.copy(mesh.testBox.min); this.max.copy(mesh.testBox.max); return this; }
 }
 class Raycaster {
+  constructor() { this.ray={intersectTriangle:(a,b,c,_cull,hit)=>{
+    if (a.y!==b.y || b.y!==c.y || this.origin.y<a.y) return null;
+    hit.set(this.origin.x,a.y,this.origin.z); return hit;
+  }}; }
   set(origin) { this.origin = origin.clone(); }
   intersectObject(mesh) { return mesh.testHitY == null ? [] : [{point:{x:this.origin.x,y:mesh.testHitY,z:this.origin.z}}]; }
 }
@@ -104,6 +110,13 @@ assert(bridgeSurface.enabled(), 'after the fall the real upper-shaft mesh become
 assert(bridgeSurface.supports(10,10), 'vertical ray intersects the fallen authored bridge');
 assert(Math.abs(bridgeSurface.topY()- .33) < 1e-9, 'standing height comes from the surface hit plus authored offset');
 assert(!bridgeSurface.supports(100,100), 'outside the actual bridge bounds has no support');
+partMesh.testHitY = null; // Decorative material culling must not remove the physical stone triangles.
+partMesh.isMesh = true;
+partMesh.matrixWorld = {};
+partMesh.geometry = { index:null, getAttribute:()=>({count:3,values:[[9.6,.4,9.6],[10.4,.4,9.6],[10,.4,10.4]]}) };
+assert(bridgeSurface.supports(10,10), 'a real triangle still supports the bridge if the renderer raycast rejects its material');
+assert(Math.abs(bridgeSurface.topY()-.41)<1e-9, 'double-sided triangle fallback returns the geometry height');
+partMesh.testHitY = .32;
 assert.equal(WorldEvents.listenerCount('blast'), 0, 'once: the subscription is released after it fires');
 
 // ---------------------------------------------------------------- conditions
