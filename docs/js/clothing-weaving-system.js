@@ -1903,7 +1903,7 @@
   // one flat canvas. This is what actually lets a garment's base and trim
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null, furHood = null } = {}) {
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null, furHood = null, furHoodMarkingsOverride = null } = {}) {
     const playerVariant = playerSpeciesGender();
     const resolvedSpeciesId = speciesId || playerVariant.speciesId; // Pattern Editor passes an explicit species so authored trim can be positioned against every variant.
     const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
@@ -1982,7 +1982,9 @@
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      for (const mark of (window.FurHoodLeatherworking?.markingsFor?.(furHood, role) || [])) {
+      const naturalMarkings = role === 'base' && Array.isArray(furHoodMarkingsOverride)
+        ? furHoodMarkingsOverride : (window.FurHoodLeatherworking?.markingsFor?.(furHood, role) || []); // Tool preview may show an unsaved animal-pattern draft without changing the runtime manifest.
+      for (const mark of naturalMarkings) {
         img = await applyPatternToTintedImage(img, mark.pattern, mark.colorHex, `fur:${url}:${tintValue}:${mark.geneId}`, shadingSource, 'fur-hood-marking'); // Genetically colored motifs render before dyed player overweaves.
       }
       if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif');
