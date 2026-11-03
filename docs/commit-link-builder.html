@@ -214,7 +214,7 @@
   function savePreferences() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        branch: elements.branch.value,
+        branch: validBranch(elements.branch.value.trim()) ? elements.branch.value.trim() : "main",
         gamePath: elements.gamePath.value,
         hubPath: elements.hubPath.value
       }));
