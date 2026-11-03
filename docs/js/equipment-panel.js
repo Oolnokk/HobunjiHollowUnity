@@ -50,7 +50,7 @@
   }
 
   function renderToolIcon(parent, def) {
-    const source = deps.metalToolImgSrc(def); // Includes the authoritative metal, plating and verdigris finish.
+    const source = deps.metalToolImgSrc?.(def) || def?.sprite; // Metal tools keep their authored finish; the nonmetal flute uses its uploaded sprite.
     const image = document.createElement('img'); // Preserves existing inventory sizing and accessibility.
     image.className = 'ies-sprite'; image.alt = def.label;
     image.crossOrigin = 'anonymous';
