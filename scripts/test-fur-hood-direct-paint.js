@@ -24,7 +24,7 @@ assert(editor.includes('<option value="furHood">Animal fur hood</option>'), 'mai
 assert(editor.includes("mode === 'furHood'"), 'normal preview renderer delegates to the hood when selected');
 assert(editor.includes('window.CreatureGenetics?.PATTERN_DEFS?.[kind]'), 'gene dropdown uses canonical genotype definitions');
 assert(editor.includes('<select id="furGeneId">'), 'animal genes are selected rather than manually typed');
-assert(editor.includes('FurHoodDirectPaintEditor.visibleBounds(source, 12)'), 'main hood preview frames actual opaque pixels');
+assert(editor.includes('FurHoodDirectPaintEditor.visibleBounds(mask.canvas,12)'), 'main hood preview frames only paintable fur, not black opaque sprite padding');
 assert(editor.includes("furHoodMarkingsOverride:motif&&gene?[{geneId:gene,pattern:motif,colorHex:ink}]:[]"), 'bare hoods render even before any motif is authored');
 assert(editor.includes('id="furPaintView"'), 'front and behind authoring can be selected');
 assert(editor.includes('fur-hood-direct-paint-editor.js'), 'editor loads its dedicated paint module');
@@ -38,6 +38,7 @@ assert(author.includes('stage.style.width=crop.width*scale'), 'the paint stage i
 assert(author.includes("canvas.style.left=-crop.x*scale"), 'paint and base canvases preserve full-size source coordinates when visually cropped');
 assert(author.includes('result.width=crop.width'), 'result pane also frames the real hood');
 assert(author.includes('visibleBounds, open:'), 'framing helper is reused by the right viewport');
+assert(author.includes('visibleBounds(maskResult.canvas, 12)'), 'paintable fur mask, not opaque dark backgrounds, determines the hood editor framing');
 assert(author.includes('maskRle:encodePaintRuns()'), 'editor retains an exact re-editable pixel baseline');
 assert(author.includes('restorePaintRuns(authoring.maskRle)'), 'reopening restores the saved pixel baseline');
 assert(author.includes('api.garmentMotifToPaint(motif,settings,w,h)'), 'cross-view re-editing can reproject an existing motif');

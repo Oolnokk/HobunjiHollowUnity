@@ -2278,8 +2278,8 @@ function setupFurAuthoring() {
     if (authored?.motifPng) return { ...(authored.settings || {}), motifUrl: authored.motifPng };
     return null;
   };
-  function showFramedHood(source, target) {
-    const bounds=window.FurHoodDirectPaintEditor.visibleBounds(source, 12); // Crop only the display: pattern coordinates and exported PNGs stay on full original sprites.
+  function showFramedHood(source, target, bounds) {
+    // Framing comes from the paint-eligible mask, not the tinted art: black sprite backdrops must not hide the actual hood.
     target.width=bounds.width;target.height=bounds.height;
     const ctx=target.getContext('2d');
     ctx.imageSmoothingEnabled=false;
@@ -2299,15 +2299,20 @@ function setupFurAuthoring() {
     status.textContent='Loading hood sprites for '+kind+'…';
     try {
       await window.FurHoodLeatherworking?.ensureManifest?.(); // Animal front/back layers are fetched before resolving either head-fit preview.
-      const result=await window.ClothingWeavingSystem.renderClothingLayers('fur_hood',{
+      const options={
         furHood,primaryHex:coat,secondaryHex:coat,view:field('furPaintView').value,
         speciesId:wearerSelect.value.split('_')[0].replace(/_/g,'-'),gender:wearerSelect.value.split('_')[1]||'male',
         furHoodMarkingsOverride:motif&&gene?[{geneId:gene,pattern:motif,colorHex:ink}]:[],uncachedPatternPreview:true,
-      });
+      }; // Both draws reuse the same selected animal/head-fit geometry.
+      const [result,mask]=await Promise.all([
+        window.ClothingWeavingSystem.renderClothingLayers('fur_hood',options),
+        window.ClothingWeavingSystem.renderClothingLayers('fur_hood',{...options,furPaintMaskOnly:true}),
+      ]);
       if(request!==furPreviewRevision)return;
-      if(!result?.canvas)throw new Error('The hood returned no sprite. Verify the selected fur_hood cosmetic variant and asset paths.');
-      const bounds=showFramedHood(result.canvas,previewCanvas);
-      if($('previewMode').value==='furHood' && !furRightPainterActive())showFramedHood(result.canvas,$('preview')); // Inline painting owns the right viewport until explicitly closed.
+      if(!result?.canvas||!mask?.canvas)throw new Error('The hood or its natural-fur mask returned no sprite. Verify this fit and asset paths.');
+      const bounds=window.FurHoodDirectPaintEditor.visibleBounds(mask.canvas,12); // The mask identifies fur even if the original hood PNG includes opaque black padding.
+      showFramedHood(result.canvas,previewCanvas,bounds);
+      if($('previewMode').value==='furHood' && !furRightPainterActive())showFramedHood(result.canvas,$('preview'),bounds); // Inline painting owns the right viewport until explicitly closed.
       status.textContent=kind+' · '+(gene||'no gene')+' · '+(motif?'genetic markings':'plain coat (paint to create a marking)')+' · '+bounds.width+'×'+bounds.height+'px visible';
       lastFurAuthorError=null;
     }catch(error){

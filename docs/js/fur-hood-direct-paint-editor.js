@@ -29,7 +29,7 @@
   if(!baseResult?.canvas||!maskResult?.canvas) throw Error('Hood base or fur-substrate mask did not resolve.');
   const base=baseResult.canvas,w=base.width,h=base.height; // Fixed logical sprite size for all stored strokes and generated motifs.
   if(w>4096||h>4096) throw Error('Hood art is too large to paint.');
-  const crop=visibleBounds(base, 12); // Only the viewport is cropped: all brush coordinates, inverse transforms, and saved operations remain on the full hood raster.
+  const crop=visibleBounds(maskResult.canvas, 12); // Frame the ACTUAL paintable fur; source art may contain broad opaque black regions outside the hood. Full-sprite paint coordinates remain unchanged.
   const coverage=document.createElement('canvas'); coverage.width=w;coverage.height=h; // Merges actual hood base/front/back masks without the decorative trim.
   const coverCtx=coverage.getContext('2d',{willReadFrequently:true});coverCtx.drawImage(maskResult.canvas,0,0);
   const coverageData=coverCtx.getImageData(0,0,w,h).data;
