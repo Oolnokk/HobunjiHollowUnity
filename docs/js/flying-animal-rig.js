@@ -153,7 +153,11 @@
     }
 
     const flying = body('flying'); // Side profile while the wing rig is visible.
-    const perched = body('perched'); // Folded-wing side profile.
+    const perched = body('perched'); // Folded-wing side profile with its ground pose spline.
+    // Keep the grip art in its original pose so the talons stay on the authored socket.
+    const gripping = new THREE.Mesh(new THREE.PlaneGeometry(perched.geometry.parameters.width, 1), perched.material);
+    gripping.visible = false;
+    pitch.add(gripping);
     function setPerchSpline(authored) {
       const geometry = perched.geometry; // Deform the existing mesh without reloading any PNGs.
       const { position, uv } = geometry.attributes;
@@ -214,9 +218,11 @@
       return window.PerpRotation.perpClamp(state, 0, perps, radius * DEG).effectiveTarget;
     }
 
-    function update(camera, pose, seconds) {
+    function update(camera, pose, seconds, carrying = false) {
       const grounded = pose === 'perched'; // Perched preview retains only the usual yaw deadzone.
-      flying.visible = wings.visible = !grounded;
+      wings.visible = !grounded;
+      flying.visible = !grounded && !carrying;
+      gripping.visible = !grounded && carrying;
       perched.visible = grounded;
       camera.getWorldPosition(view);
       root.worldToLocal(view);
@@ -235,6 +241,7 @@
         mesh.material.map.dispose();
         mesh.material.dispose();
       }
+      gripping.geometry.dispose(); // The perched mesh owns the shared material.
       wings.skeleton.dispose();
     }
 

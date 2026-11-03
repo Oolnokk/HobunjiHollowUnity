@@ -361,7 +361,7 @@
         camera.lookAt(0, 0, 0);
         needsRender = false;
       }
-      assembly.update(camera, pose.value, ms / 1000);
+      assembly.update(camera, pose.value, ms / 1000, talonEditor.isCarrying());
       if (debug.parentElement.open) {
         const message = `${pose.value} · yaw ${(assembly.yaw.rotation.y / radians).toFixed(1)}° · X correction ${(assembly.pitch.rotation.x / radians).toFixed(1)}° · ${pose.value === 'perched' ? (rig.perchSpline ? '7 body spline points' : 'default body pose') : 'two wing bones'}`;
         if (debug.textContent !== message) debug.textContent = message;

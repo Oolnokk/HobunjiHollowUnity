@@ -73,7 +73,10 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     }
     // These species use their ordinary wildlife spawn classes.
     const sizeClass = ['gar-wolf', 'dabinggi-hound'].includes(id) ? 'medium' : 'large';
-    const size = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures?.[id]?.sizeScales?.[sizeClass];
+    const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures?.[id];
+    const size = profile?.sizeScales?.[sizeClass];
+    const saddle = profile?.anchors?.saddle?.position; // Unscaled creature-local coordinates.
+    if (!saddle) throw new Error('This animal has no authored saddle origin.');
     const width = definition.modelWidth * (size?.x ?? 1);
     const height = definition.modelWidth * definition.spriteAspect * (size?.y ?? 1);
     const image = new Image();
@@ -89,7 +92,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     model.group.rotation.y = -Math.PI / 2;
     object.add(model.group);
     return { object, sizeLabel: `${sizeClass} game plane ${width.toFixed(2)} × ${height.toFixed(2)}`,
-      anchor: { position: { x: 0, y: .09 * height / .55, z: 0 } } };
+      anchor: { position: { x: -saddle.z * (size?.x ?? 1), y: saddle.y * (size?.y ?? 1), z: saddle.x } } };
   }
 
   async function previewBurden(id) {
@@ -192,7 +195,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       displayed = { ...sample, key };
       frame.add(sample.object);
       status.textContent = label + (key === 'burden' ? ' · Furniture Editor hold anchor' :
-        key === 'humanoid' ? ' · NPC portrait and posterior anchor' : ' · Animal portrait planes') + ' · ' + sample.sizeLabel;
+        key === 'humanoid' ? ' · NPC portrait and posterior anchor' : ' · Authored saddle origin') + ' · ' + sample.sizeLabel;
       refresh();
       changed(false);
     } catch (error) {
@@ -209,6 +212,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
 
   return {
     refresh,
+    isCarrying: () => guide.visible,
     applyPreviewState(perched) {
       guide.visible = !perched && !!type.value && displayed?.key === type.value;
       return rig().talonCarry?.birdScale ?? 1;
