@@ -74,6 +74,26 @@
     ctx.putImageData(pixels,0,0);
   }
   function hasInk(){const data=ctx.getImageData(0,0,w,h).data;for(let i=3;i<data.length;i+=4)if(data[i]>16)return true;return false;}
+  function encodePaintRuns(){
+    const data=ctx.getImageData(0,0,w,h).data; // Serialized editor-only baseline preserves any imported/reprojected motif alongside the editable stroke journal.
+    const runs=[];let state=0,length=0;
+    for(let p=0;p<w*h;p++){
+      const painted=data[p*4+3]>16?1:0;
+      if(painted!==state){runs.push(length);length=0;state=painted;}
+      length++;
+    }
+    runs.push(length);return runs;
+  }
+  function restorePaintRuns(runs){
+    if(!Array.isArray(runs)||runs.some(n=>!Number.isInteger(n)||n<0)||runs.reduce((a,b)=>a+b,0)!==w*h)return false;
+    const pixels=ctx.createImageData(w,h);let offset=0;
+    for(let i=0;i<runs.length;i++){
+      const end=offset+runs[i];
+      if(i%2===1)for(let p=offset;p<end;p++){const n=p*4;pixels.data[n]=pixels.data[n+1]=pixels.data[n+2]=pixels.data[n+3]=255;}
+      offset=end;
+    }
+    ctx.putImageData(pixels,0,0);normalize();return true;
+  }
   function snapshot(){return {pixels:ctx.getImageData(0,0,w,h),operations:deep(operations)};}
   function restore(value){ctx.clearRect(0,0,w,h);ctx.putImageData(value.pixels,0,0);operations=deep(value.operations);buttons();}
   function buttons(){undoBtn.disabled=!undo.length;redoBtn.disabled=!redo.length;saveBtn.disabled=!hasInk();}
@@ -153,15 +173,34 @@
       const projection=currentSettings(),generated=api.garmentPaintToMotif(paint,projection);
       if(!generated)throw Error('Motif inverse transform returned no canvas.');
       const motifDataUrl=generated.toDataURL('image/png');
-      await onSave({motifDataUrl,settings:projection,authoring:{mode:'hood-paint',view,width:w,height:h,operations:deep(operations)}}); // Author journal is dev-only metadata; runtime reads motif and settings.
+      await onSave({motifDataUrl,settings:projection,authoring:{mode:'hood-paint',view,width:w,height:h,operations:deep(operations),maskRle:encodePaintRuns()}}); // Editor-only run-length mask safely preserves imported strokes; runtime still reads only motif and settings.
       close();
     }catch(error){saveBtn.disabled=false;status.textContent='Could not save: '+error.message;}
   };
-  if(authoring?.mode==='hood-paint'&&authoring.view===view&&authoring.width===w&&authoring.height===h&&Array.isArray(authoring.operations)){
-    operations=deep(authoring.operations);replay(operations);
-    status.textContent='Restored editable strokes from the animal manifest. You can continue painting.';
-  }else if(sourcePattern?.garmentFixed)status.textContent='Previously saved motif has no compatible stroke journal for this view; start a new painted version to replace it.';
-  else if(sourcePattern)status.textContent='Existing motif was authored in motif space. Painting here creates a replacement, without changing its runtime format.';
+  try {
+    const matching=authoring?.mode==='hood-paint'&&authoring.view===view&&authoring.width===w&&authoring.height===h;
+    if(matching&&restorePaintRuns(authoring.maskRle)){
+      operations=Array.isArray(authoring.operations)?deep(authoring.operations):[];
+      status.textContent='Restored the exact saved paint mask and editable stroke journal.';
+    }else if(matching&&Array.isArray(authoring.operations)){
+      operations=deep(authoring.operations);replay(operations);
+      status.textContent='Replayed the saved fur-hood strokes on this view.';
+    }else if(sourcePattern?.garmentFixed&&(sourcePattern.motifDataUrl||sourcePattern.motifUrl)){
+      const source=sourcePattern.motifDataUrl||sourcePattern.motifUrl;
+      const url=/^(?:data:|blob:|https?:)/i.test(source)?source:new URL('../../'+String(source).replace(/^\.\/?/,''),location.href).href;
+      const image=await new Promise((resolve,reject)=>{
+        const img=new Image();img.crossOrigin='anonymous';
+        img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Existing motif PNG could not be read.'));
+        img.src=url;
+      });
+      if(closed)return;
+      const motif=document.createElement('canvas');motif.width=image.naturalWidth||image.width;motif.height=image.naturalHeight||image.height;
+      motif.getContext('2d').drawImage(image,0,0);
+      const projected=api.garmentMotifToPaint(motif,settings,w,h); // Reopen an existing motif on the opposite view with the same normal mesh projection.
+      if(projected){ctx.drawImage(projected,0,0);normalize();}
+      status.textContent='Projected the existing motif onto this hood view. Brush and erase to modify it.';
+    }else if(sourcePattern)status.textContent='Older motif uses custom motif-space placement. Paint here to replace it with a garment-anchored non-tiling version.';
+  }catch(error){status.textContent='Could not restore previous paint: '+error.message+'. You can paint a new motif.';}
   zoomInput.value=String(Math.max(1,Math.min(8,Math.floor(520/Math.max(w,h)))));
   zoom();buttons();await preview();
 } });
