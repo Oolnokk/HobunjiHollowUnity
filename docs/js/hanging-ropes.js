@@ -64,10 +64,12 @@
   function buildVisual(rope) {
     const THREE = window.THREE;
     if (!THREE?.Mesh || !rope.scene || rope.mountOnly) return null;
-    ropeGeometry ||= new THREE.CylinderGeometry(CONFIG.ropeRadius, CONFIG.ropeRadius, 1, 8, 1);
-    ropeMaterial ||= new THREE.MeshBasicMaterial({ color: CONFIG.ropeColor });
     scratchDir ||= new THREE.Vector3(); scratchUp ||= new THREE.Vector3(0, 1, 0);
-    const mesh = new THREE.Mesh(ropeGeometry, ropeMaterial);
+    const mesh = window.DungeonRopeArt?.createRopePlane?.('hanging_rope_' + rope.id) || (() => {
+      ropeGeometry ||= new THREE.CylinderGeometry(CONFIG.ropeRadius, CONFIG.ropeRadius, 1, 8, 1);
+      ropeMaterial ||= new THREE.MeshBasicMaterial({ color: CONFIG.ropeColor });
+      return new THREE.Mesh(ropeGeometry, ropeMaterial);
+    })();
     mesh.name = 'hanging_rope_' + rope.id;
     mesh.userData.hangingRopeId = rope.id;
     rope.scene.add(mesh);
@@ -80,8 +82,10 @@
     const length = Math.max(0.001, scratchDir.length());
     scratchDir.multiplyScalar(1 / length);
     mesh.position.set((rope.anchor.x + bob.x) * 0.5, (rope.anchor.y + bob.y) * 0.5, (rope.anchor.z + bob.z) * 0.5);
-    mesh.quaternion.setFromUnitVectors(scratchUp, scratchDir);
-    mesh.scale.set(1, length, 1);
+    if (mesh.userData?.dungeonRopeSprite) {
+      const cam = window.Combat?.deps?.getActiveCamera?.() || window.Shattercasks?.deps?.getActiveCamera?.();
+      window.DungeonRopeArt.updateRopePlane(mesh, rope.anchor, bob, cam);
+    } else { mesh.quaternion.setFromUnitVectors(scratchUp, scratchDir);mesh.scale.set(1, length, 1); }
   }
 
   // Swept collision for a swinging burden against the nearby static volumes (walls, furniture), like the rider's sweep.
@@ -125,7 +129,13 @@
     if (!rope) return false;
     detachInternal(rope, 'removed');
     rope.disposed = true;
-    if (!rope.external) rope.mesh?.parent?.remove(rope.mesh);
+    if (!rope.external) {
+      rope.mesh?.parent?.remove(rope.mesh);
+      if (rope.mesh?.userData?.dungeonRopeSprite) { // Sprite geometry/material are private per rope; their loaded PNG is shared.
+        rope.mesh.geometry?.dispose?.();
+        rope.mesh.material?.dispose?.();
+      }
+    }
     ropes.delete(rope.id);
     return true;
   }
