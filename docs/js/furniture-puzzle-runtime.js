@@ -6,6 +6,7 @@
   const api = window.FurniturePuzzleProperties;
   const DEG = Math.PI / 180;
   let emitterLoopStarted = false; // Keeps furniture emitters and burden-payload validity alive between interactions.
+  let standingSurfaceSerial = 0; // Gives each animated support surface its own DynamicSurfaces registration, even across rerolls.
 
   function graphFor(mapId) {
     const key = String(mapId || '');
@@ -17,6 +18,51 @@
     graph.bulkRegisteredIds ||= new Set();
     graph.channelSources ||= new Map();
     return graph;
+  }
+
+  function releaseStandingSurface(object) {
+    const id = object?.userData?.puzzleStandingSurfaceId; // Registered for this specific object's animated part, not the map's other furniture.
+    if (!id) return;
+    window.DynamicSurfaces?.remove?.(id);
+    object.userData.puzzleStandingSurfaceId = null;
+  }
+
+  // Standable moving furniture uses its real rendered top. Raycasting from above also handles tilted/fallen parts
+  // without pretending that the bounding box's highest corner is a flat platform.
+  function registerStandingSurface(mapId, object) {
+    const config = object.userData?.furniturePuzzle?.standingSurface; // Authored metadata opts in; all other furniture is unchanged.
+    const part = object.userData?.puzzlePartMeshes?.get?.(config?.partId);
+    const DS = window.DynamicSurfaces, Three = window.THREE;
+    if (!config || !part || !DS?.registerSurface || !Three?.Box3 || !Three?.Raycaster) return false;
+    const box = new Three.Box3(), ray = new Three.Raycaster(); // Reused to sample the animated part without allocating on each support query.
+    const origin = new Three.Vector3(), down = new Three.Vector3(0, -1, 0); // Raycast straight down from the surface's moving world bounds.
+    const id = 'furniture-puzzle-standing-' + (++standingSurfaceSerial); // Unique identity prevents a replacement from accidentally removing its successor.
+    let hitY = null; // The supports predicate resolves the exact height read by topY in the same sampleSupport call.
+    const bounds = () => {
+      part.updateWorldMatrix?.(true, false);
+      box.setFromObject(part);
+      return { minX:box.min.x, maxX:box.max.x, minZ:box.min.z, maxZ:box.max.z };
+    };
+    DS.registerSurface({
+      id, scope:String(mapId), priority:12,
+      enabled:() => object.visible !== false && part.visible !== false && Number(object.userData?.puzzleProgress) >= config.minProgress,
+      bounds,
+      supports:(x,z) => {
+        hitY = null;
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+        bounds();
+        if (!Number.isFinite(box.max.y) || x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z) return false;
+        ray.set(origin.set(x,box.max.y + .2,z), down);
+        ray.far = Math.max(1,box.max.y-box.min.y+1);
+        const hit = ray.intersectObject(part,true).find(entry=>Number.isFinite(entry.point?.y));
+        if (!hit) return false;
+        hitY = hit.point.y + config.topOffset;
+        return true;
+      },
+      topY:() => hitY,
+    });
+    object.userData.puzzleStandingSurfaceId = id;
+    return true;
   }
 
   function initializeNode(mapId, record, object, options = {}) {
@@ -66,7 +112,9 @@
       object.userData.keyStatueTaken = false;
     }
     window.FurnitureDecalRuntime?.setGlowState?.(object, object.userData.puzzleProgress);
+    releaseStandingSurface(object);
     applyMechanism(object, object.userData.puzzleProgress);
+    registerStandingSurface(mapId, object);
     return id;
   }
 
@@ -76,6 +124,8 @@
     for (const id of graph.bulkRegisteredIds) {
       const old = graph.nodes.get(id);
       releaseInputs(old);
+      releaseStandingSurface(old);
+      if (old?.userData) old.userData.puzzleAnimationRevision = (old.userData.puzzleAnimationRevision || 0) + 1;
       for (const entry of old?.userData?.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       graph.nodes.delete(id);
     }
@@ -83,6 +133,13 @@
     for (const record of records || []) {
       const id = String(record.id || '');
       const object = objectById.get(id);
+      const previous = graph.nodes.get(id); // Bulk registration can replace a separately registered instance as well.
+      if (previous && previous !== object) {
+        releaseInputs(previous);
+        releaseStandingSurface(previous);
+        previous.userData.puzzleAnimationRevision = (previous.userData.puzzleAnimationRevision || 0) + 1;
+        for (const entry of previous.userData.puzzleEmitterVisuals || []) entry.visual.dispose?.();
+      }
       const initializedId = initializeNode(key, record, object, options);
       if (!initializedId) continue;
       graph.nodes.set(initializedId, object);
@@ -104,6 +161,8 @@
     const previous = graph.nodes.get(id); // A replacement node must not retain the old object's event subscriptions.
     if (previous && previous !== object) {
       releaseInputs(previous);
+      releaseStandingSurface(previous);
+      previous.userData.puzzleAnimationRevision = (previous.userData.puzzleAnimationRevision || 0) + 1;
       for (const entry of previous.userData?.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       previous.userData.puzzleEmitterVisuals = [];
     }
@@ -135,6 +194,8 @@
       if (object.userData.furniturePuzzle?.behavior === 'witchBombDispenser')
         window.HronalWitchBombs?.unregisterDispenser?.(mapId,id);
       releaseInputs(object);
+      releaseStandingSurface(object);
+      object.userData.puzzleAnimationRevision = (object.userData.puzzleAnimationRevision || 0) + 1;
       for (const entry of object.userData.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       graph.nodes.delete(id);
       graph.bulkRegisteredIds.delete(id);
@@ -492,7 +553,8 @@
         id, role:object.userData.furniturePuzzle?.role, behavior:object.userData.furniturePuzzle?.behavior,
         active:!!object.userData.puzzleActive, progress:Number(object.userData.puzzleProgress) || 0,
         inputs:object.userData.furniturePuzzle?.inputs?.length || 0,
-        blocked:!!object.userData.blocksMovement, payload:object.userData.burdenPlatePayload?.id || null,
+        blocked:!!object.userData.blocksMovement, standingSurface:object.userData.puzzleStandingSurfaceId || null,
+        payload:object.userData.burdenPlatePayload?.id || null,
         payloadComplete:!!object.userData.burdenPlateComplete,
         keyStatueTaken:!!object.userData.keyStatueTaken,
       })),
