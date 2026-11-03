@@ -59,12 +59,22 @@
     assert.equal(window.FurHoodLeatherworking.fromHide({kind:'gar-wolf'}),null,'legacy hides cannot invent genotype');
     assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'trim').length,0,'natural markings never recolor the decorative rim');
     assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'animalFront').length,1,'natural gene marks color the animal face');
-    assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'animalBack').length,1,'natural gene marks color the hide behind the head');
+    assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'animalBack').length,1,'natural gene marks color the species back hood piece');
     assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'unknown').length,0,'non-fur layers remain untouched');
     const marks = window.FurHoodLeatherworking.markingsFor(fur,'base');
     assert.equal(marks.length,1,'only expressed authored genes are painted');
     assert.equal(marks[0].colorHex,'#eeddcc','genetic color is used instead of Dye C');
     assert.equal(marks[0].pattern.scale,1.2,'dev-authored motif placement is preserved');
+    const shuffled=['animalFront','trim','animalBack','base'].map(role=>({role})); // The shared renderer must ignore incoming layer enumeration order.
+    assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(shuffled,'front')].map(entry=>entry.role),['animalBack','base','animalFront','trim'],'front plane puts animal-back behind hood and animal-front above it');
+    assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(shuffled,'behind')].map(entry=>entry.role),['trim','animalFront','base','animalBack'],'rear plane puts species-back in front of furhood-behind');
+    const hoodConfig=JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
+    for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_m']]){
+      const layers=hoodConfig.speciesVariants[key].parts.head.layers;
+      assert(layers.front.behindImage.url.endsWith('furhood-behind_'+suffix+'.png'),'backplane replaces base with dedicated rear art');
+      assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');
+      assert(fs.existsSync(path.join(root,'docs',layers.front.behindImage.url)),'rear hood art must be bundled in the feature branch');
+    }
     const tl = window.FurHoodLeatherworking.specialPartsFor(fur,'nuhongan','female');
     const mashtz = window.FurHoodLeatherworking.specialPartsFor(fur,'kenkari','male');
     assert.equal(tl.length,2,'inherited Tletingan head sees wolf front and back');
@@ -80,9 +90,11 @@
     assert.match(weaving,/specialPartsFor\?\.\(descriptor\.furHood, wearer\?\.speciesId, wearer\?\.gender\)/,'dynamic animal sprite URLs must be mapped to the portrait tint and pattern pipeline');
     assert.match(weaving,/naturalHoodWeavingRole\(descriptor\.role, descriptor\.furHood\)/,'regular base weaving also follows animal sprites in worn portraits');
     assert.match(weaving,/naturalHoodWeavingRole\(role, furHood\)/,'regular base weaving also follows animal sprites in preview icons');
-    assert.match(weaving,/behindGender && role !== 'animalBack'/,'explicit animal back images must not be filtered by generic hood replacement rules');
-    assert.match(portrait,/animalParts\.filter\(part => part\.pos === 'front'\)/,'animal face layered between base and trim');
-    assert.match(portrait,/animalParts\.filter\(layer => layer\.pos === 'back'\)/,'animal back remains behind skull');
+    assert.match(weaving,/behindGender && role !== 'animalBack' && role !== 'animalFront'/,'both species sprites survive backplane generic hood replacements');
+    assert.match(weaving,/orderLayersForView\?\.\(\[\.\.\.iconBaseLayers,\.\.\.extraLayers\],view\)/,'loom and authoring preview share the source-defined view order');
+    assert.match(portrait,/orderLayersForView\?\.\(stack,renderBehindView\?'behind':'front'\)/,'both world-avatar planes use the shared layer order');
+    assert.match(portrait,/hoodLayers\.push\(\.\.\.\(window\.FurHoodLeatherworking/,'species back is in visible hood layers instead of pre-head rear layers');
+    assert.match(portrait,/behindUrl: portraitRelPath\('\.\/' \+ layer\.url\)/,'animal front/back art retains identical URLs on both planes');
     assert.match(read('docs/js/equipment-panel.js'),/furHood: item\.furHood \? JSON\.parse/,'Pack to Gear transfer preserves the literal hide');
     const editor = read('docs/tools/pattern-editor/index.html');
     for (const id of ['furAnimalSpecies','furGeneId','furWearerVariant','furAssignBtn','furDownloadManifestBtn']) {

@@ -11,9 +11,14 @@ The fur-hood implementation intentionally reuses the game’s existing item, dye
 
 ## Sprite source and layering
 
-The verified uploaded art lives in `docs/assets/cosmetics/clothes/hood/`. The `fur_hood` cosmetic uses `furhood-base_tl_m.png`, `furhood-trim_tl_m.png`, `furhood-base_mashtz_m.png`, and `furhood-trim_mashtz_m.png`. These two head-shape variants cover playable genders/species through the existing head-cosmetic fallback chain.
+The verified uploaded art lives in `docs/assets/cosmetics/clothes/hood/`. The `fur_hood` cosmetic uses `furhood-base_tl_m.png`, `furhood-trim_tl_m.png`, `furhood-base_mashtz_m.png`, and `furhood-trim_mashtz_m.png`. The rear plane explicitly substitutes the newly added `furhood-behind_tl_m.png` or `furhood-behind_mashtz_m.png` for the base, while retaining trim. Both new sprites were imported from `main` without merging unrelated changes. These two head-shape variants cover playable genders/species through the existing head-cosmetic fallback chain.
 
-`docs/config/patterns/fur-hoods.json` records optional per-animal, **per-wearer-variant** front/back art, e.g. `species["gar-wolf"].parts["tletingan_male"].front`. `front` is drawn between fur-hood base and trim. `back` is drawn behind the wearer's skull; adding an animal back does not erase the hood's front/base when no separate base rear sprite is authored.
+`docs/config/patterns/fur-hoods.json` records optional per-animal, **per-wearer-variant** front/back art, e.g. `species["gar-wolf"].parts["tletingan_male"].front`. These are names of the *animal artworks*, not back-of-head placement instructions. `FurHoodLeatherworking.orderLayersForView` is shared across the runtime and previews.
+
+- **Front plane, back-to-front:** `<animal>-back` → `furhood-base` → `<animal>-front` → `furhood-trim`. The animal back is behind the hood, but still in the front plane.
+- **Backplane, back-to-front:** `furhood-trim` → `<animal>-front` → `furhood-behind` → `<animal>-back`. The animal back sits over the rear hood silhouette.
+
+An absent species piece simply drops out without disturbing the remaining order. `furhood-behind` retains the base layer role, natural coat color, and motif inheritance.
 
 The manifest currently references the uploaded Gar-wolf, Grehlr, Drenkirra, Nelk, Puktuk and Voorg-ass parts that actually exist, with missing front/back sides omitted rather than guessed.
 
