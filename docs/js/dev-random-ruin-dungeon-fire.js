@@ -146,20 +146,18 @@
     const group=new THREE.Group();
     group.name='dungeon_fire_burden_net_'+index;
     group.position.set(point.x,ceilingY-.05,point.z);
-    const ropeMat=material(0x60472e,{roughness:.95});
-    const netMat=material(0x725a3b,{roughness:.92,transparent:true,opacity:.9});
     const beamMat=material(0x59432d,{roughness:.92});
     const width=.82,depth=.68,drop=.92;
     addRod(group,{x:-width*.5,y:0,z:0},{x:width*.5,y:0,z:0},.035,beamMat,'net_top_beam');
     addRod(group,{x:0,y:0,z:-depth*.5},{x:0,y:0,z:depth*.5},.025,beamMat,'net_top_crossbeam');
-    for(let i=0;i<=6;i++){
-      const t=i/6-.5,x=t*width,z=t*depth;
-      addRod(group,{x,y:-.02,z:-depth*.5},{x,y:-drop,z:0},.009,netMat,'net_longitudinal_'+i);
-      addRod(group,{x:-width*.5,y:-.02,z},{x:0,y:-drop,z},.009,netMat,'net_lateral_'+i);
-      addRod(group,{x:width*.5,y:-.02,z},{x:0,y:-drop,z},.009,netMat,'net_diagonal_'+i);
-    }
-    for(const x of [-width*.5,width*.5])for(const z of [-depth*.5,depth*.5]){
-      addRod(group,{x,y:0,z},{x:x*.45,y:-drop*.84,z:z*.45},.016,ropeMat,'net_hanging_cord');
+    // One open, four-sided upside-down transparent frustum replaces 25+ rod meshes.
+    // Its PNG atlas contains separated full-length rope stripes and crossing strands, never UV-tiled.
+    const netSkin=window.DungeonRopeArt?.createNetFrustum?.(width,depth,drop);
+    if(netSkin)group.add(netSkin);
+    else { // Preserve functional, visible nets when opened from an old cached HTML shell.
+      const ropeMat=material(0x60472e,{roughness:.95});
+      for(const x of [-width*.5,width*.5])for(const z of [-depth*.5,depth*.5])
+        addRod(group,{x,y:0,z},{x:x*.28,y:-drop,z:z*.28},.016,ropeMat,'net_hanging_cord');
     }
     const anchor=new THREE.Group();
     anchor.name='net_burden_attachment';
@@ -474,9 +472,10 @@
       source:world.source?{id:world.source.id,armed:window.DungeonFire?.debugSnapshot?.().armed===true,at:world.source.point}:null,
       iceWalls:world.walls.map(wall=>({id:wall.id,doorType:wall.doorType,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2),growth:+(wall.icePlacement.iceLayer.userData.iceGrowthProgress??1).toFixed(3),spikes:wall.icePlacement.iceLayer.userData.surfaceGrowthStats?.spikes||0})), // No devtools required to inspect melting or generated ice.
       iceDiscovery:{eligible:world.iceEligibleCount,attempts:world.iceScanTries,spawned:world.walls.length}, // Diagnoses scenes with no matching physical door.
-      nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable})),
+      nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable,visual:record.group?.children?.some(mesh=>mesh.userData?.dungeonNetAtlas)?'sprite-frustum':'fallback-cords'})),
       icicles:world.records.filter(record=>record.kind==='icicle').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending})),
       cleansers:world.records.filter(record=>record.kind==='cleansingBrazier').map(record=>({id:record.id,cleansed:record.cleansed,radius:record.radius})),
+      ropeArt:window.DungeonRopeArt?.debugSnapshot?.() || null, // Exposes actual PNG-loading state in the mobile Dungeon Fire debug report.
       lastEvent,
     };
   }

@@ -68,6 +68,7 @@
           fillOpacity: part.substanceFillOpacity,
         });
       }
+      window.FurnitureSurfacePngRuntime?.applyToPart?.(mesh, data, part); // Only v2 opted-in per-face PNGs; unchanged furniture retains its original material pipeline.
       mesh.name = `authored_${data.key || 'furniture'}_${part.name || part.id}`;
       mesh.userData.authoredPartId = part.id;
       mesh.userData.authoredPart = part;
