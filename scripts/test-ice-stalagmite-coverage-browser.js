@@ -191,6 +191,7 @@ const server = http.createServer((request, response) => {
       const transit = new T.Group(); // A second eligible door type demonstrates generic coverage discovery.
       transit.userData.transitDoor = true;
       const transitFrame = new T.Mesh(new T.BoxGeometry(2.4,3.1,.4),new T.MeshStandardMaterial()); // Frame appears first in the hierarchy.
+      transitFrame.name='Door Leaf'; // Even a misleadingly named decorative frame cannot override runtime's tracked moving panel.
       transitFrame.position.set(6,1.55,2);transit.add(transitFrame);
       const transitLeaf = new T.Mesh(new T.BoxGeometry(1.8, 1.9, .2), new T.MeshStandardMaterial());
       transitLeaf.position.set(6, .95, 2);transit.add(transitLeaf);
