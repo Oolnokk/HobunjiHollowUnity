@@ -476,7 +476,11 @@
         progress:Number(data.progress)||0,mistakes:Number(data.mistakes)||0}; // Only the active iframe and current ruin challenge may report a result.
       window.dispatchEvent(new CustomEvent('hobunji-ruin-melody-result',{detail}));
       window.__farmLog?.('Ruin echo ' + detail.id + ': ' + (detail.solved ? 'solved' : 'retry'), 'input');
-      if (detail.solved) close();
+      if (detail.solved) {
+        // Let the last played note sound before tearing down the instrument iframe; closing instantly silenced the winning tone.
+        const solvedId = detail.id;
+        setTimeout(() => { if (playerSession?.echoChallenge?.id === solvedId) close(); },480);
+      }
     }
     if (data.type === 'puzzle-song-recognized' && playerSession?.instrumentMode === 'puzzle') {
       const song = window.KurrayaPuzzle?.normalizeSong?.(data.song) || data.song;
