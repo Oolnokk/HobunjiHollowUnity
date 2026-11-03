@@ -12,6 +12,7 @@ const mechanismCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-d
 const rangedCode = fs.readFileSync(path.join(root, 'docs/js/combat/ranged-weapons.js'), 'utf8');
 const burdenCode = fs.readFileSync(path.join(root, 'docs/js/shattercasks.js'), 'utf8');
 const themeCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-lich-themes.js'), 'utf8');
+const weaponVfxCode = fs.readFileSync(path.join(root, 'docs/js/combat/weapon-enchantment-vfx.js'), 'utf8'); // Verifies the production held-plane and modular source adapters are exported.
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
@@ -287,6 +288,15 @@ async function main() {
     burdenCode.includes('BURDEN_IMPACT_HANDLERS') &&
     burdenCode.includes('registerBurdenFactory,registerBurdenImpactHandler'),
     'ceiling mechanisms support future modular Burden factories and impact handlers');
+  assert(weaponVfxCode.includes('heldVisualForItem: directHeldVisual') &&
+    weaponVfxCode.includes('sourceSpriteForWeapon,'),
+    'the charged fire uses production player-held plane and assembled modular source exports');
+  assert(rangedCode.includes('window.DungeonFire?.updateHeldVisual?.(dt)'),
+    'the regular ranged frame must animate the already-armed held weapon before firing');
+  const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
+  assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
+    fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8').includes('20261103dungeonplumepadding2'),
+    'the authored flame padding is supported and its dynamic loader cache token updated');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
     rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
     'only one player projectile in a volley consumes the one-shot fire charge');
