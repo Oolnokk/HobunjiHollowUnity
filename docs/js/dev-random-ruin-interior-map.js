@@ -1286,6 +1286,7 @@
   }
 
   function clearRuntime(removeMap=true) {
+    window.FurniturePuzzleRuntime?.clearMap?.(MAP_ID); // The map ID is reused on reroll: release authored support, inputs and pending animations before scene disposal.
     for(const shaft of ruin?.shaftGrids?.values()||[])shaft.dispose();
     ruin?.rootGrowthAbort?.abort();for(const binding of ruin?.rootGrowthBindings||[])binding.dispose();
     ruin?.stoneAgeAbort?.abort();ruin?.stoneAgeScenery?.cover?.dispose();ruin?.stoneAgeScenery?.dispose(); // Restore native V50 visibility before the hidden generator reclaims its preview roots.
