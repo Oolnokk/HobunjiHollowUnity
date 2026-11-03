@@ -27,7 +27,7 @@ assert.match(editorSource, /Dance/, 'editor exposes dance pools');
 assert.match(editorSource, /Music/, 'editor exposes music pools');
 
 assert.ok(config.profiles?.[config.defaultProfile], 'configured default personality exists');
-assert.deepEqual(Object.keys(config.profiles).sort(), ['neighborly', 'playful', 'proper', 'reserved', 'stern'], 'starter personality set is stable');
+assert.deepEqual(Object.keys(config.profiles).sort(), ['child', 'neighborly', 'playful', 'proper', 'reserved', 'stern'], 'starter personality set is stable');
 assert.ok(Object.keys(config.assignments || {}).length >= 25, 'starter NPC database has broad personality assignments');
 
 const defaultAnimalReactions = config.profiles[config.defaultProfile].animal; // Default personality owns the shared rare-size copy inherited by personalities that leave these pools blank.
@@ -45,7 +45,7 @@ for (const [profileId, profile] of Object.entries(config.profiles)) {
   assert.ok(profile.label, `${profileId} has a display label`);
   assert.ok(Array.isArray(profile.animal?.recognized) && profile.animal.recognized.length, `${profileId} has recognized-animal copy`);
   for (const tier of animalTiers) for (const role of roles) {
-    assert.ok(Array.isArray(profile.animal?.[tier]?.[role]) && profile.animal[tier][role].length, `${profileId} ${tier}/${role} has copy`);
+    assert.ok(Array.isArray(profile.animal?.[tier]?.[role]) && (profileId === 'child' || profile.animal[tier][role].length), `${profileId} ${tier}/${role} has copy or inherits the default`);
   }
   for (const category of socialCategories) for (const polarity of ['positive', 'negative']) {
     assert.ok(Array.isArray(profile?.[category]?.[polarity]) && profile[category][polarity].length, `${profileId} ${category}/${polarity} has copy`);
@@ -102,14 +102,18 @@ vm.runInContext(runtimeSource, context, { filename: 'npc-silliness-reaction-runt
   assert.equal(rareSizeTierForEntry({ kind: 'tinyCritter' }, 'mount'), 'sizeTwoLarger', 'active Stable role preserves rare legacy size when an old entry has no genotype payload');
   const inheritedRareLine = context.NpcReactionProfiles.resolve({ npcId: 'father_hunundi_hodu', category: 'animal', tier: 'sizeTwoLarger', role: 'mount', values: { animalName: 'Moss', species: 'Tiny Critter' }, seed: 'rare-size-test' }); // Proper personality intentionally has no rare-size override, so this must inherit the shared default line.
   assert.equal(inheritedRareLine, 'Dear Breath, that has to be the biggest Tiny Critter I have ever seen in my life.', 'rare-size copy inherits through the existing personality fallback');
-  assert.equal(context.NpcReactionProfiles.profileForNpc('gantami_ginju').id, 'playful', 'Gantami uses playful reaction personality');
+  assert.equal(context.NpcReactionProfiles.profileForNpc('gantami_ginju').id, 'child', 'Gantami uses child reaction personality');
+  assert.equal(context.NpcReactionProfiles.profileForNpc('child_k42z').id, 'child', 'generated player child IDs use the child reaction personality');
+  assert.equal(context.NpcReactionProfiles.profileForNpc('child_not_valid!').id, 'neighborly', 'unrelated IDs do not accidentally gain the child profile');
   assert.equal(context.NpcReactionProfiles.profileForNpc('spearhead_unumanuk').id, 'stern', 'Spearhead uses stern reaction personality');
-  const playfulDance = context.NpcReactionProfiles.resolve({ npcId: 'gantami_ginju', category: 'dance', polarity: 'positive', seed: 'test' }); // Resolver output verifies social profile routing.
-  assert.ok(config.profiles.playful.dance.positive.includes(playfulDance), 'dance reaction resolves from assigned playful profile');
+  const childDance = context.NpcReactionProfiles.resolve({ npcId: 'gantami_ginju', category: 'dance', polarity: 'positive', seed: 'test' }); // Resolver output verifies social profile routing.
+  assert.ok(config.profiles.child.dance.positive.includes(childDance), 'dance reaction resolves from assigned child profile');
+  const childInheritedRecognition = context.NpcReactionProfiles.resolve({ npcId: 'child_k42z', category: 'animal', tier: 'recognition', role: 'mount', values: { animalName: 'Moss', species: 'grehlr' }, seed: 'test' }); // Child intentionally leaves recognition blank so the adult default is inherited.
+  assert.ok(config.profiles.neighborly.animal.recognition.mount.some(line => line.replaceAll('{animalName}', 'Moss').replaceAll('{species}', 'grehlr') === childInheritedRecognition), 'blank child recognition pool safely inherits adult neighborly copy');
   const properAnimal = context.NpcReactionProfiles.resolve({ npcId: 'father_hunundi_hodu', category: 'animal', tier: 'trained', role: 'mount', values: { animalName: 'Moss', species: 'grehlr' }, seed: 'test' }); // Resolver output verifies animal placeholders and role/tier routing.
   assert.ok(properAnimal && !properAnimal.includes('{'), 'animal reaction resolves placeholders through assigned proper profile');
   const debug = context.NpcReactionProfiles.getDebug(); // Public debug surface is required for mobile diagnosis without console access.
-  assert.equal(debug.profileCount, 5, 'debug reports authored profile count');
+  assert.equal(debug.profileCount, 6, 'debug reports authored profile count');
   console.log('NPC reaction personality profiles passed.');
 })().catch(error => {
   console.error(error);
