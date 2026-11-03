@@ -484,35 +484,8 @@
   }
 
   function ambientLineFor(walker, animal) {
-    const npcId = walker?.rec?.id || '';
-    const name = animal.entry.name || animalSpeciesLabel(animal.entry);
-    const species = animalSpeciesLabel(animal.entry);
-    const rank = animal.bondRank;
-    const recognized = npcRecognizesAnimal(npcId, animal.entry);
-    if (recognized && rank >= DIRECT_PET_GREETING_RANK) {
-      return [`${name}! Good to see you.`, `Hello, ${name}!`, `There you are, ${name}.`][Math.abs(hashCode(`${npcId}:${name}`)) % 3];
-    }
-    if (rank >= DIRECT_PET_GREETING_RANK) {
-      return animal.role === 'mount'
-        ? `Oh, look at you. You're a magnificent one, aren't you?`
-        : animal.role === 'companion'
-          ? `Hello there, beautiful. You keep good watch over your person.`
-          : `Well hello, little one. Aren't you charming?`;
-    }
-    if (rank > 0) {
-      return animal.role === 'mount'
-        ? `You've trained that ${species} well. It carries itself gently around people.`
-        : animal.role === 'companion'
-          ? `${name} listens to you well. That's a good ${species}.`
-          : `${name} looks very comfortable up there.`;
-    }
-    if (animal.role === 'mount') {
-      return [`Easy with that ${species}, please.`, `Keep a good hold on that ${species} around town.`, `That's a lot of animal. Give me a little room, would you?`][Math.abs(hashCode(`${npcId}:${name}:mount`)) % 3];
-    }
-    if (animal.role === 'companion') {
-      return [`Keep ${name} close, please.`, `That ${species} isn't going to lunge, is it?`, `I know it's with you, but warn me before ${name} comes any closer.`][Math.abs(hashCode(`${npcId}:${name}:companion`)) % 3];
-    }
-    return [`Oh! You've got company on your shoulder.`, `I nearly missed that little ${species}.`, `Does ${name} always ride up there?`][Math.abs(hashCode(`${npcId}:${name}:shoulder`)) % 3];
+    const npcId = String(walker?.rec?.id || ''); // Speaker ID selects the authored personality; never use the old hardcoded animal lines.
+    return window.NpcReactionProfiles?.animalLineFor?.(npcId, animal) || null;
   }
 
   function hashCode(text) {
@@ -543,9 +516,9 @@
       const key = `${day}:${npcId}:${animal.entry.id}`;
       if (ambientSeen.has(key)) continue;
       ambientSeen.add(key);
-      lastAmbientSpokeAt = now;
-      const line = ambientLineFor(walker, animal);
-      window.AmbientDialogue?.show?.(walker.root, line, {
+      const line = ambientLineFor(walker, animal); // An empty authored pool must not produce an ambient bubble or consume the spoken-line cooldown.
+      if (!line) continue;
+      const shown = window.AmbientDialogue?.show?.(walker.root, line, {
         speakerId: npcId,
         profile: walker.profile,
         mode: 'chathead',
@@ -555,12 +528,14 @@
         faceWalker: walker,
         faceTarget: animal.actor?.avatarRef?.group ? { root: animal.actor.avatarRef.group } : player,
       });
+      if (!shown) continue;
+      lastAmbientSpokeAt = now;
       break;
     }
   }
 
   function recognitionCandidate(rec) {
-    if (!rec?.id || window.NpcInteractionPolicy?.isPassiveGreatFey?.(rec)) return null; // Keep the Great Fey's authored Talk/quest tree instead of an animal-recognition interruption.
+    if (!rec?.id || window.NpcInteractionPolicy?.isPassiveGreatFey?.(rec)) return null; // Great Fey do not participate in automatic animal recognition.
     const state = window.DialogueContent?.getNpcDlgState?.(rec.id);
     if ((Number(state?.favor) || 0) < FRIEND_FAVOR_MIN) return null;
     for (const animal of presentAnimals()) {
@@ -569,13 +544,6 @@
       return animal;
     }
     return null;
-  }
-
-  function recognitionLine(rec, animal) {
-    const name = animal.entry.name || animalSpeciesLabel(animal.entry);
-    if (animal.role === 'mount') return `${name} has really grown on me. I was nervous around them at first, but now I look forward to seeing the two of you come by.`;
-    if (animal.role === 'companion') return `${name} has really grown on me. I can see how closely they watch you—and how carefully you've taught them to behave around people.`;
-    return `${name} has really grown on me. I think I'd notice if you came by without that little face perched beside yours.`;
   }
 
   function patchDialogueContent(api) {
@@ -590,24 +558,12 @@
     if (typeof api.beginNpcConversation === 'function') {
       const originalBegin = api.beginNpcConversation.bind(api);
       api.beginNpcConversation = function stableAnimalRecognitionConversation(rec, ...rest) {
-        const animal = recognitionCandidate(rec);
-        if (!animal) return originalBegin(rec, ...rest);
-        const previousTrees = rec.dialogueTrees;
-        const tree = {
-          id: `stable_animal_recognition_${animal.entry.id}`,
-          name: 'Animal Recognition',
-          trigger: 'interact',
-          priority: 999999,
-          conditions: {},
-          entryNode: 'recognition',
-          nodes: [{ id: 'recognition', type: 'text', text: recognitionLine(rec, animal), next: null }],
-        };
-        rec.dialogueTrees = [tree];
-        let result;
-        try { result = originalBegin(rec, ...rest); }
-        finally { rec.dialogueTrees = previousTrees; }
-        api.recordNpcMemory?.(rec.id, recognitionMemoryKey(animal.entry));
-        currentDeps()?.saveMemberWorldData?.();
+        const animal = recognitionCandidate(rec); // A friendly NPC silently remembers a bonded animal without replacing normal conversations.
+        const result = originalBegin(rec, ...rest); // Original dialogue trees keep their priority and are never interrupted by recognition copy.
+        if (animal) {
+          api.recordNpcMemory?.(rec.id, recognitionMemoryKey(animal.entry));
+          currentDeps()?.saveMemberWorldData?.();
+        }
         return result;
       };
     }
