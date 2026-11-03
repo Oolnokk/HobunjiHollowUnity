@@ -208,6 +208,14 @@ const server = http.createServer((request, response) => {
       const noVisibleSheet = owner.children.some(child=>child.name==='dev_random_ruin_dungeon_fire') &&
         coverage.length===2 && !owner.children.some(child=>child.name.startsWith('tothal_dungeon_fire_ice_wall_'));
       const targets = [...window.__iceFireTargets.values()].filter(value => value.id.startsWith('dungeon-fire-ice-wall-'));
+      const coverFitsIce = coverage.length===targets.length && coverage.every((layer,index) => {
+        const ice = new T.Box3().setFromObject(layer); // Visible tips and ice edges must all be within the ignitable hitbox.
+        const hit = new T.Box3().setFromObject(targets[index].object);
+        return !ice.isEmpty() && hit.min.x<=ice.min.x+.06 && hit.max.x>=ice.max.x-.06 &&
+          hit.min.z<=ice.min.z+.06 && hit.max.z>=ice.max.z-.06 &&
+          hit.min.y<=ice.min.y+.06 && hit.max.y>=ice.max.y-.06;
+      });
+      const frozenBlocking = window.__iceSolids.get('dungeon-fire-ice-wall-footprint-0')?.enabled() === true;
       const fire = targets[0]?.onBurn?.();
       const freed = frozen.length === 2 && fire===true && window.__iceSolids.get('dungeon-fire-ice-wall-footprint-0')?.enabled() === false;
       composer.update(kit,0,.8); // Halfway through the actual 1.6-second melt lerp.
@@ -218,14 +226,14 @@ const server = http.createServer((request, response) => {
       const finished = melted?.phase==='melted' && melted?.growth===0 && !window.__iceFireTargets.has('dungeon-fire-ice-wall-0');
       composer.clear();
       const cleanup = window.DevRandomRuinDungeonFire.snapshot().active===false && window.__iceSolids.size===0;
-      return {frozen, noVisibleSheet, freed, halfGrowth, finished, cleanup};
+      return {frozen, noVisibleSheet, coverFitsIce, frozenBlocking, freed, halfGrowth, finished, cleanup};
     });
     assert.equal(dungeonResult.frozen.length, 2, 'Tothal should frost two real door objects, not arbitrary empty passageways');
     assert(dungeonResult.frozen.some(wall=>wall.doorType==='stoneDoor') &&
       dungeonResult.frozen.some(wall=>wall.doorType==='modularDoor'),
       'Real generated and late-built modular door types must be eligible in the same room');
-    assert(dungeonResult.noVisibleSheet && dungeonResult.freed,
-      'Invisible projectile and tile blockers must coexist with visible procedural ice, then unlock on fire');
+    assert(dungeonResult.noVisibleSheet && dungeonResult.coverFitsIce && dungeonResult.frozenBlocking && dungeonResult.freed,
+      'The invisible fire hitbox must cover every visible crystal and block only until Dungeon Fire ignites it');
     assert(dungeonResult.halfGrowth && dungeonResult.finished && dungeonResult.cleanup,
       'Dungeon Fire must reverse ice growth continuously, unregister hits, and clear its owned meshes');
 
@@ -251,6 +259,10 @@ const server = http.createServer((request, response) => {
       seal.userData.authoredFurnitureData={parts:[{id:'plate'}]};
       const sealPlate=new T.Mesh(new T.BoxGeometry(.4,1,.1),new T.MeshStandardMaterial());
       sealPlate.position.set(2,1,2.4);seal.add(sealPlate);root.add(seal);
+      const duplicateDoor = new T.Group(); // Two systems can represent the same doorway, but must never spawn a second ice coat.
+      duplicateDoor.userData.ruinFurnitureKey='ruinGreatDoor'; duplicateDoor.userData.authoredFurnitureData={parts:[{id:'leaf'}]};
+      const duplicateLeaf=new T.Mesh(new T.BoxGeometry(3.16,3.1,.26),new T.MeshStandardMaterial());
+      duplicateLeaf.name='Door Leaf';duplicateLeaf.position.set(2,1.55,2);duplicateDoor.add(duplicateLeaf);root.add(duplicateDoor);
       const rooms=[{id:'boss',col:0,row:0,w:5,h:5}],floorSet=new Set();
       for(let x=0;x<5;x++)for(let z=0;z<5;z++)floorSet.add(x+','+z);
       const context={scene,root,theme:'tothal',seed:456,meta:{rooms,floorSurfaceY:0,wallHeight:3.3},floorSet,ceilingY:3.4};
@@ -271,8 +283,8 @@ const server = http.createServer((request, response) => {
       return {found:snapshot.iceDiscovery?.eligible, spawned:snapshot.iceWalls.length,
         type:snapshot.iceWalls[0]?.doorType, reused, fired, retracted, restored};
     });
-    assert.equal(authoredResult.found,1,'Only the actual authored sanctum door is eligible; decorative door seals must be excluded');
-    assert.equal(authoredResult.spawned,1,'An existing authored boss-door ice layer must not create a second obstacle');
+    assert.equal(authoredResult.found,2,'Both authored door wrappers are eligible, but the ornamental door seal is excluded');
+    assert.equal(authoredResult.spawned,1,'Overlapping door wrappers must not double-frost the same threshold');
     assert.equal(authoredResult.type,'authoredDoor','The actual ruin furniture key must identify sanctum doors');
     assert(authoredResult.reused && authoredResult.fired && authoredResult.retracted && authoredResult.restored,
       'Already-authored door ice must melt and restore safely across a dungeon clear, without duplicating its geometry');
