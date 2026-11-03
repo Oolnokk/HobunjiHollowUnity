@@ -2196,6 +2196,7 @@ function setupFurAuthoring() {
   let lastFurAuthorError = null; // Added to mobile Copy Debug output below.
 
   const safeKind = value => String(value || '').trim().toLowerCase().replace(/[_\s]+/g,'-').replace(/[^a-z0-9-]/g,'');
+  const safeGene = value => String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g,''); // Genotype allele keys must retain their exact case and underscores.
   const refreshSpecies = () => {
     const previous = speciesSelect.value;
     speciesSelect.innerHTML = '';
@@ -2225,7 +2226,7 @@ function setupFurAuthoring() {
   }
   speciesSelect.onchange = selectSpecies;
   const selectedGenePattern = () => {
-    const gene = safeKind(geneInput.value);
+    const gene = safeGene(geneInput.value);
     const authored = selectedEntry()?.patterns?.[gene];
     const unsaved = newMotifPixels.get(speciesSelect.value + ':' + gene);
     if (draft?.motifDataUrl) return { ...draft }; // Current interactive Pattern Author motif wins over the saved repo reference.
@@ -2234,7 +2235,7 @@ function setupFurAuthoring() {
     return null;
   };
   async function preview() {
-    const kind = speciesSelect.value, gene = safeKind(geneInput.value);
+    const kind = speciesSelect.value, gene = safeGene(geneInput.value);
     const motif = selectedGenePattern();
     if (!kind || !gene || !motif) { status.textContent = 'Choose a species and exact genotype pattern ID, then author/select a motif in Current pattern.'; return; }
     const coat = field('furTestCoat').value, ink = field('furTestInk').value;
@@ -2260,7 +2261,7 @@ function setupFurAuthoring() {
   }
   field('furPreviewBtn').onclick = preview;
   field('furAssignBtn').onclick = () => {
-    const kind = speciesSelect.value, gene = safeKind(geneInput.value);
+    const kind = speciesSelect.value, gene = safeGene(geneInput.value);
     if (!kind || !gene || !draft?.motifDataUrl) { status.textContent = 'Select a species, enter an exact gene id, and edit the current motif before assigning.'; return; }
     const file = 'assets/patterns/fur-hoods/' + kind + '__' + gene + '.png';
     const entry = selectedEntry();
