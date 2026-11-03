@@ -83,6 +83,8 @@
 
   const TALON_TYPES = ['humanoid', 'animal', 'burden']; // Independent poses share the carrier's grip frame.
 
+  const TALON_ROTATION_ORDER = 'YXZ'; // Yaw, then pitch and roll. Yaw at 90° keeps X and Z independent.
+
   function normalizeTalonCarry(input = {}) {
     const axis = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
     const vector = (value, fallback, limit) => Object.fromEntries(['x', 'y', 'z'].map(key =>
@@ -90,10 +92,17 @@
     const socket = vector(input?.socket, { x: .02, y: -.23 }, 4);
     const poses = Object.fromEntries(TALON_TYPES.map(type => {
       const pose = input?.poses?.[type];
-      return [type, { position: vector(pose?.position, {}, 4), rotation: vector(pose?.rotation, {}, 180),
-        scale: axis(pose?.scale, 1, .1, 4) }];
+      let rotation = vector(pose?.rotation, {}, 180);
+      if (input?.rotationOrder !== TALON_ROTATION_ORDER && (rotation.x || rotation.y || rotation.z)) {
+        // Convert old drafts without changing how their payload was oriented.
+        const angles = new window.THREE.Euler(rotation.x * DEG, rotation.y * DEG, rotation.z * DEG, 'XYZ');
+        angles.reorder(TALON_ROTATION_ORDER);
+        rotation = { x: angles.x / DEG, y: angles.y / DEG, z: angles.z / DEG };
+      }
+      return [type, { position: vector(pose?.position, {}, 4), rotation,
+        birdScale: axis(pose?.birdScale, 1 / axis(pose?.scale, 1, .1, 4), .25, 10) }];
     }));
-    return { socket, poses };
+    return { socket, poses, rotationOrder: TALON_ROTATION_ORDER };
   }
 
   // Match the Furniture Editor's object-local hold anchor to the authored talon pose.
@@ -101,11 +110,12 @@
   function placeTalonPayload(frame, object, carry, type, anchor) {
     const pose = carry.poses[type];
     frame.position.set(...['x', 'y', 'z'].map(key => carry.socket[key] + pose.position[key]));
-    frame.rotation.set(pose.rotation.x * DEG, pose.rotation.y * DEG, pose.rotation.z * DEG);
+    frame.rotation.set(pose.rotation.x * DEG, pose.rotation.y * DEG, pose.rotation.z * DEG, TALON_ROTATION_ORDER);
     object.rotation.set((anchor?.rotation?.x || 0) * DEG, (anchor?.rotation?.y || 0) * DEG,
-      (anchor?.rotation?.z || 0) * DEG);
+      (anchor?.rotation?.z || 0) * DEG, 'XYZ');
     object.quaternion.invert();
-    object.scale.setScalar(pose.scale / Math.max(.1, anchor?.size || 1));
+    // The frame inherits bird scale. Cancel it on the payload so only the carrier grows.
+    object.scale.setScalar(1 / (pose.birdScale * Math.max(.1, anchor?.size || 1)));
     object.position.set(anchor?.position?.x || 0, anchor?.position?.y || 0, anchor?.position?.z || 0)
       .multiplyScalar(-object.scale.x).applyQuaternion(object.quaternion);
   }

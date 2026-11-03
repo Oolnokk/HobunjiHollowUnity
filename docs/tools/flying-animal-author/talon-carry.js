@@ -99,7 +99,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
   }
 
   function values(carry, group) {
-    return group === 'socket' ? carry.socket : group === 'scale' ? carry.poses[type.value] : carry.poses[type.value][group];
+    return group === 'socket' ? carry.socket : group === 'birdScale' ? carry.poses[type.value] : carry.poses[type.value][group];
   }
 
   let displayed = null, request = 0; // Reject results from an earlier dropdown selection.
@@ -118,7 +118,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
 
   for (const [group, name, axes] of [
     ['socket', 'Talon grip', ['x','y','z']], ['position', 'Payload offset', ['x','y','z']],
-    ['rotation', 'Payload rotation (°)', ['x','y','z']], ['scale', 'Payload scale', ['scale']],
+    ['rotation', 'Payload rotation (°)', ['x','y','z']], ['birdScale', 'Bird scale', ['birdScale']],
   ]) {
     const row = document.createElement('div'); // Group transforms by their reference frame.
     row.className = 'row';
@@ -129,10 +129,10 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       const label = document.createElement('label'), input = document.createElement('input');
       input.type = 'number';
       input.step = group === 'rotation' ? '1' : '.01';
-      input.min = group === 'scale' ? '.1' : group === 'rotation' ? '-180' : '-4';
-      input.max = group === 'rotation' ? '180' : '4';
-      input.setAttribute('aria-label', name + (axis === 'scale' ? '' : ' ' + axis.toUpperCase()));
-      label.append(axis === 'scale' ? '' : axis.toUpperCase(), input);
+      input.min = group === 'birdScale' ? '.25' : group === 'rotation' ? '-180' : '-4';
+      input.max = group === 'birdScale' ? '10' : group === 'rotation' ? '180' : '4';
+      input.setAttribute('aria-label', name + (axis === 'birdScale' ? '' : ' ' + axis.toUpperCase()));
+      label.append(axis === 'birdScale' ? '' : axis.toUpperCase(), input);
       row.append(label);
       controls.push({ input, group, axis });
       input.addEventListener('change', () => {
@@ -178,5 +178,11 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
   });
   source.addEventListener('change', showSample);
 
-  return { refresh, setPerched(perched) { guide.visible = !perched && !!type.value && displayed?.key === type.value; } };
+  return {
+    refresh,
+    applyPreviewState(perched) {
+      guide.visible = !perched && !!type.value && displayed?.key === type.value;
+      return guide.visible ? rig().talonCarry?.poses[type.value]?.birdScale ?? 1 : 1;
+    },
+  };
 };

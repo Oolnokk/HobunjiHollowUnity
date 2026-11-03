@@ -338,6 +338,8 @@
 
     renderer.setAnimationLoop(ms => {
       if (!assembly || !canvas.clientWidth || !canvas.clientHeight || document.hidden || (!needsRender && pose.value !== 'flap')) return;
+      const birdScale = talonEditor.applyPreviewState(pose.value === 'perched');
+      assembly.root.scale.setScalar(birdScale);
       if (perchDirty) {
         assembly.setPerchSpline(rig.perchSpline);
         perchDirty = false;
@@ -351,7 +353,7 @@
         const wingReach = Math.hypot(wingHalfSpan, rig.wingScale / 2 + Math.abs(rig.wingOffset), rig.wingHeight);
         const posedBounds = pose.value === 'perched' ? assembly.perched.geometry.boundingSphere : null;
         const posedExtent = posedBounds ? posedBounds.center.length() + posedBounds.radius : 0;
-        const extent = Math.max(Math.hypot(bodyHalfWidth, 0.5), wingReach, posedExtent); // Keep wide or offset wings inside the orbit view.
+        const extent = Math.max(Math.hypot(bodyHalfWidth, 0.5), wingReach, posedExtent) * Math.max(1, birdScale); // Keep wide or offset wings inside the orbit view.
         const radius = Math.max(3.4, extent / Math.sin(camera.fov * radians / 2) * 1.12) * Math.max(1, 1 / camera.aspect);
         const azimuth = orbit.valueAsNumber * radians, altitude = elevation.valueAsNumber * radians;
         camera.position.set(radius * Math.sin(azimuth) * Math.cos(altitude), radius * Math.sin(altitude), radius * Math.cos(azimuth) * Math.cos(altitude));
@@ -360,7 +362,6 @@
         needsRender = false;
       }
       assembly.update(camera, pose.value, ms / 1000);
-      talonEditor.setPerched(pose.value === 'perched');
       if (debug.parentElement.open) {
         const message = `${pose.value} · yaw ${(assembly.yaw.rotation.y / radians).toFixed(1)}° · X correction ${(assembly.pitch.rotation.x / radians).toFixed(1)}° · ${pose.value === 'perched' ? (rig.perchSpline ? '7 body spline points' : 'default body pose') : 'two wing bones'}`;
         if (debug.textContent !== message) debug.textContent = message;
