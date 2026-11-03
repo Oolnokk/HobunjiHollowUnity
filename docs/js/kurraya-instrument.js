@@ -377,7 +377,30 @@
         canvas.width = originalWidth; canvas.height = originalHeight;
         const ctx = canvas.getContext('2d',{willReadFrequently:true});
         ctx.drawImage(source,0,0);
-        const rgba = ctx.getImageData(0,0,originalWidth,originalHeight).data;
+        const sourcePixels = ctx.getImageData(0,0,originalWidth,originalHeight);
+        const rgba = sourcePixels.data;
+        // Old PNG exports sometimes bake an opaque black/white matte into otherwise transparent art.
+        // Remove only matte-coloured areas connected to an image edge, preserving the flute's dark outlines and interior holes.
+        const pixelsCount = originalWidth * originalHeight; // One-time flood capacity, released after loading the sprite.
+        const visited = new Uint8Array(pixelsCount);
+        const queue = new Int32Array(pixelsCount);
+        const seeds = [0,originalWidth-1,(originalHeight-1)*originalWidth,pixelsCount-1];
+        for (let index=0;index<seeds.length;index++) {
+          const seed = seeds[index],offset=seed*4;
+          const base=[rgba[offset],rgba[offset+1],rgba[offset+2]]; // Each corner's matte colour, when it is opaque and nearly monochrome.
+          if (rgba[offset+3]<230 || Math.max(...base)-Math.min(...base)>12) continue;
+          const stamp=index+1;
+          let front=0,back=0;
+          queue[back++]=seed; visited[seed]=stamp;
+          while(front<back) {
+            const cell=queue[front++],at=cell*4,x=cell%originalWidth,y=(cell-x)/originalWidth;
+            if (rgba[at+3]<80 || Math.abs(rgba[at]-base[0])>14 || Math.abs(rgba[at+1]-base[1])>14 || Math.abs(rgba[at+2]-base[2])>14) continue;
+            rgba[at+3]=0;
+            const neighbors=[x>0?cell-1:-1,x+1<originalWidth?cell+1:-1,y>0?cell-originalWidth:-1,y+1<originalHeight?cell+originalWidth:-1];
+            for(const neighbor of neighbors) if(neighbor>=0&&visited[neighbor]!==stamp) {visited[neighbor]=stamp;queue[back++]=neighbor;}
+          }
+        }
+        ctx.putImageData(sourcePixels,0,0);
         let left = originalWidth, right = -1, top = originalHeight, bottom = -1; // Tight bounds of opaque pixels, used to preserve the PNG's actual proportions.
         for (let y=0;y<originalHeight;y++) for(let x=0;x<originalWidth;x++){
           if(rgba[(y*originalWidth+x)*4+3]<16)continue;
