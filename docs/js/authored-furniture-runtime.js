@@ -82,6 +82,18 @@
       for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
       refreshRockContacts();
     }
+    if ((data.surfaceGrowth || []).some(recipe => recipe.kind === 'iceStalagmites')) {
+      for (const part of data.parts) if (part.kind === 'glb') {
+        const driver = meshById.get(part.id); // GLB parts begin as invisible placeholder geometry; only actual loaded children can anchor ice.
+        if (!driver) continue;
+        const previousReady = driver.userData.onRockSourceReady; // Preserve the pre-existing rock-joint completion callback.
+        driver.userData.onRockSourceReady = () => {
+          previousReady?.();
+          if (driver.parent !== group) return; // A removed/replaced model must not regenerate a stale furniture instance.
+          window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth); // Re-sample all real lower meshes once each GLB finishes loading.
+        };
+      }
+    }
     group.userData.authoredParticleEmitters = (data.particleEmitters || []).map(record => JSON.parse(JSON.stringify(record))); // FurniturePuzzleRuntime scales these between OFF/ON emission states.
     group.userData.timelineLiquidStates = new Map(); // Used by the live stomp anchor to follow the animated surface level.
     setItemPlacements(group, data, data.itemPlacements || []);
