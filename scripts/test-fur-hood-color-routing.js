@@ -74,11 +74,19 @@ async function main(){
   assert.equal(api.colorForRole(wolf,'animalBack'),'#886644','independent back can select base');
   wolf.genotype.foxtail.enabled=false;
   assert.equal(api.colorForRole(wolf,'animalFront'),'#886644','missing pattern falls back to base');
+  wolf.genotype.foxtail.enabled=true;
+  registry.species['gar-wolf'].partColors={front:'pattern',back:'base'}; // A shipped authoring selection also controls conventional portrait palette slot fallback.
+  const wolfParts=api.specialPartsFor(wolf,'tletingan','male');
+  assert.equal(wolfParts.find(part=>part.role==='animalFront')?.paletteColorKey,'B','pattern-colored front uses inherited trim B in plain portrait fallback');
+  assert.equal(wolfParts.find(part=>part.role==='animalBack')?.paletteColorKey,'A','base-colored back keeps A in plain portrait fallback');
   const loom=read('docs/js/clothing-weaving-system.js');
   assert.match(loom,/colorForRole\?\.\(furHood, role\)/,'loom/icon uses canonical natural color resolver');
   assert.match(loom,/recolorAnimalPart\?\.\(img, furHood, role\)/,'loom/icon handles Grehlr keyed regions');
   assert.match(loom,/recolorAnimalPart\?\.\(img, descriptor\?\.furHood, descriptor\?\.role\)/,'equipped portrait uses same selective source');
   assert.match(loom,/if \(!descriptor\.furHood && !weavingPatternsForRole/,'motif-free fur layers still enter portrait tint resolver');
+  assert.match(loom,/if \(furHood\) await window\.FurHoodLeatherworking\?\.ensureManifest/,'fur-hood icon rendering waits for species routing before caching');
+  const portrait=read('docs/js/portrait-utils.js');
+  assert.match(portrait,/tintFor\(resolveLayerTintSlot\(part\.paletteColorKey, hood\.tintSlot\)\)/,'portrait fallback honors animal front and back tint slots');
   const editor=read('docs/tools/pattern-editor/index.html');
   assert(editor.includes('id="furFrontColorMode"') && editor.includes('id="furBackColorMode"'),'per-species natural front/back routing is authorable');
   assert(editor.includes('id="furTrimGene"'),'trim gene preference is authorable');
