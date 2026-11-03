@@ -25635,6 +25635,7 @@
         window.Music?.logAudioTickDiagnostics();
         window.PerfProfiler?.end(prePausePerf);
 
+        if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
