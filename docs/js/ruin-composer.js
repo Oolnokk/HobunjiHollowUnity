@@ -98,7 +98,7 @@
   }
 
   // ---------------------------------------------------------------- composition -> data
-  const rotYFor = f => Math.atan2((f && f.x) || 0, (f && f.z) || 1); // facing +z is rotation 0
+  const rotYFor = f => Math.atan2(Number(f?.x) || 0, Number.isFinite(Number(f?.z)) ? Number(f.z) : 1); // Preserve cardinal z=0: +z is rotation 0, -x is -90 degrees.
   function toRecords(goalId, placements, taken) {
     const out = [];
     placements.forEach((p, i) => {
