@@ -78,6 +78,7 @@
     if (!id) return null;
     object.userData.puzzleInstanceId = id;
     object.userData.puzzleMapId = String(mapId);
+    object.userData.puzzleRegistrationRevision = (object.userData.puzzleRegistrationRevision || 0) + 1; // Cancels old delayed signals when the same object is registered again.
     object.userData.puzzleActive = ['burdenPlate','keyStatue'].includes(puzzle.behavior) ? false : puzzle.startsActive;
     object.userData.puzzleRestTransform ||= {
       position:object.position.clone(), quaternion:object.quaternion.clone(), scale:object.scale.clone(),
@@ -244,9 +245,10 @@
   }
   function runInput(mapId, id, object, input) {
     const role = object.userData.furniturePuzzle?.role;
+    const revision = object.userData.puzzleRegistrationRevision; // A delayed input belongs to one registration, not just one object/id.
     const apply = () => {
       // Delayed signals can outlive a removed node or a rerolled ruin with the same map/id.
-      if (maps.get(String(mapId))?.nodes.get(id) !== object) return false;
+      if (maps.get(String(mapId))?.nodes.get(id) !== object || object.userData.puzzleRegistrationRevision !== revision) return false;
       const target = input.action === 'toggle' ? !object.userData.puzzleActive : input.action === 'on';
       return role === 'mechanism' ? setMechanism(mapId, id, target) : activate(mapId, id, target);
     };
@@ -421,7 +423,14 @@
       const mechanism = graph.nodes.get(wire.toId);
       if (!mechanism) continue;
       const target = wire.invert ? !active : !!active;
-      const run = () => { mechanism.userData.puzzleActive = target; animate(mechanism, target ? 1 : 0); };
+      const sourceRevision = activator.userData.puzzleRegistrationRevision, targetRevision = mechanism.userData.puzzleRegistrationRevision; // Delayed wires cannot reach a replacement graph.
+      const run = () => {
+        const nodes = maps.get(String(mapId))?.nodes;
+        if (nodes?.get(String(activatorId)) !== activator || nodes?.get(wire.toId) !== mechanism
+          || activator.userData.puzzleRegistrationRevision !== sourceRevision || mechanism.userData.puzzleRegistrationRevision !== targetRevision) return false;
+        mechanism.userData.puzzleActive = target;
+        return animate(mechanism, target ? 1 : 0);
+      };
       wire.delaySeconds > 0 ? setTimeout(run, wire.delaySeconds * 1000) : run();
     }
     return true;
