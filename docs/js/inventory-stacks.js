@@ -31,7 +31,8 @@
 
   function variants(key, total, qualityTracked = false) {
     const lineages = window.LivestockItemGenotypePersistence?.groupsFor?.(key, total); // Saved lineage groups take precedence over ordinary quality buckets.
-    const groups = lineages || (qualityTracked ? window.CookingSystem?.availableQualityEntries?.(key).map(entry => ({ ...entry, variant: `stars:${entry.stars}` })) : null); // Queries happen on menu rebuild, never in the frame loop.
+    const hides = !lineages && window.AnimalHides?.groupsFor?.(key, total); // Hide stacks keep one real source coat, rarity and price per variant.
+    const groups = lineages || hides || (qualityTracked ? window.CookingSystem?.availableQualityEntries?.(key).map(entry => ({ ...entry, variant: `stars:${entry.stars}` })) : null); // Queries happen on menu rebuild, never in the frame loop.
     return (groups || [{ count: total, variant: 'plain' }]).flatMap(group => stackCounts(group.count).map((count, index) => ({ ...group, key, count, stackId: `${key}|${group.variant}|${index}` })));
   }
 
