@@ -1711,6 +1711,27 @@
       window.ResourceSystem?.spendFooting?.(actor,Math.max(0,Number(options.footingDamage??24)*(1-dist/radius)),reason);
     }
   }
+  function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='') {
+    const rec=records.get(String(mapId));
+    if(!rec?.vases)return 0;
+    const limit=Math.max(0,Number(radius)||0),hit=[];
+    for(const burden of rec.vases.values()) {
+      if(!burden||burden.id===ignoreId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent)continue;
+      burden.group.updateWorldMatrix?.(true,true);
+      const world=burden.group.getWorldPosition(new THREE.Vector3());
+      if(Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
+    }
+    let count=0;
+    for(const burden of hit) {
+      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast'))count++;}
+      else if(burden.kind==='hronalWitchBomb') {
+        const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind);
+        if(typeof handler==='function'&&handler(burden,'witch-bomb-chain')!==false)count++;
+      }
+    }
+    return count;
+  }
+
   function applyFruitBlast(mapId,x,z) {
     const d=deps(),tile=tileSize(),player=d?.player;
     const targets=[player,...(d?.hostileObjects||[]),...(d?.npcWalkers||[])];
@@ -1936,6 +1957,8 @@
     updateShatterThrow(dt);
     updateFruitFalls(Math.min(.1,Math.max(0,Number(dt)||0)));
     updateBurdenFalls(dt); // Net/icicle payloads share the same timed tick and live collision helpers as player-thrown Burdens.
+    window.HronalWitchBombs?.tick?.(dt); // Spawn-time fuse and carrier-drop state share the normal Burden combat frame.
+    window.KeyStatues?.tick?.(dt); // Detached Key Statues are restored through their original dispenser.
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
     // Held objects must track the player every rendered frame, not every 140ms.
     if(held&&!alignHeldVase(held)) {
@@ -2093,7 +2116,7 @@
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
-    applyBlast,
+    applyBlast,triggerBurdenBlastAt,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
