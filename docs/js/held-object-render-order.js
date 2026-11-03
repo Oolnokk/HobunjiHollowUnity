@@ -1007,8 +1007,15 @@
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
       scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Live sprite growth/drift can reach outside this plane's geometric rectangle.
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Ordinary enchantment particles retain their symmetric world overdraw budget.
       if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis());
+      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // The charged flame rises in world +Y, not radially around the weapon.
+      if (dungeonRise > 0) {
+        const lateral = .55; // Covers the authored fire emitter's initial radius, random spread and point size without full-screen redraws.
+        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise; // Plume height is already world-space; never multiply it by shaft scale.
+      }
       const { min, max } = scissorBox;
       for (let corner = 0; corner < 8; corner++) {
         scissorCorner.set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z);
@@ -1032,7 +1039,7 @@
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
       let valid = true; // Used to conservatively disable scissoring if a child emitter has unreliable bounds.
       mesh.traverseVisible(child => {
-        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0)) return;
+        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0)) return;
         if (!includeBounds(child)) valid = false;
       });
       if (!valid) return false;

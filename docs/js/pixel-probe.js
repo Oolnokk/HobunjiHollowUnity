@@ -1057,6 +1057,13 @@
       for (const fire of burningVfxDebug.entities || []) lines.push(`  Fire ${fire.entity}: Burning=${fire.burning} Kindling=${fire.kindling} particles=${fire.visible == null ? '?' : (fire.visible ? 'visible' : 'hidden')}`);
       if (burningVfxDebug.latestChange) lines.push(`  Latest change: ${burningVfxDebug.latestChange}`);
     }
+    const dungeonFireDebug = window.DungeonFire?.debugSnapshot?.(); // Mobile-readable status for player-held charges and live world-upright projectile particles.
+    if (dungeonFireDebug) {
+      lines.push(`Dungeon Fire: armed=${dungeonFireDebug.armed ? 'yes' : 'no'} held=${dungeonFireDebug.heldFire ? dungeonFireDebug.heldWeaponKey : 'none'} source=${dungeonFireDebug.heldAnchorKind || '-'} projectiles=${dungeonFireDebug.activeVisuals} targets=${dungeonFireDebug.reactiveTargets}`);
+      if (dungeonFireDebug.armed || dungeonFireDebug.activeVisuals) {
+        lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
+      }
+    }
     const tentDebug = window.BanditCamps?.tentInteractionDebug; // Identifies missing ray/focus/nearby state without requiring a console.
     if (tentDebug?.focus) lines.push(`Bandit tent focus: ${tentDebug.focus.result} nearby=${tentDebug.focus.nearby} ray=${tentDebug.focus.hasRay ? 1 : 0} api=${tentDebug.focus.hasFocusApi ? 1 : 0}`);
     // GPU/context capabilities — a mobile WebGL context commonly only

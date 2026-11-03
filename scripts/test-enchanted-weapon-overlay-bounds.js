@@ -83,4 +83,14 @@ main.userData.hobunjiHeldOverlayVfxPadding = 0; // Retired particles should not 
 off.userData.hobunjiHeldOverlayVfxPadding = 0;
 assert.strictEqual(projection(renderer, camera, [source], rect), true);
 assert(rect.x > 450 && rect.x + rect.z < 550, 'without live child particles the overlay should remain the original small rectangle');
+// Dungeon Fire has a much taller world-up plume; it needs its own replay padding so ordinary
+// enchantment particle updates cannot overwrite its clipping bounds.
+main.userData.hobunjiDungeonFireVfxPadding = 0.75; // Independent live plume size for the player-held weapon.
+assert.strictEqual(projection(renderer, camera, [source], rect), true);
+assert(rect.x > 450 && rect.x + rect.z > 900 && rect.y + rect.w > 850,
+  'world-up Dungeon Fire extends above the blade without widening the replay over the whole screen');
+main.userData.hobunjiDungeonFireVfxPadding = 0; // Extinguishing Dungeon Fire must restore the original scissor budget.
+assert.strictEqual(projection(renderer, camera, [source], rect), true);
+assert(rect.x > 450 && rect.x + rect.z < 550,
+  'extinguished Dungeon Fire does not permanently enlarge held-object scissoring');
 console.log('enchantment aura held-overlay bounds tests passed');
