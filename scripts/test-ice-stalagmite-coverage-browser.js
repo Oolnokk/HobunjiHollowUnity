@@ -19,7 +19,7 @@ const server = http.createServer((request, response) => {
   if (route === '/ice-test') {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end('<!doctype html><html><head><script src="/vendor-three.js"></script>' +
-      '<script src="/docs/js/ice-stalagmite-coverage.js"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/authored-furniture-runtime.js"></script>' +
+      '<script src="/docs/js/ice-stalagmite-coverage.js"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/dungeon-door-ice-coverage.js"></script><script src="/docs/js/authored-furniture-runtime.js"></script>' +
       '</head><body><div id="tab-ice"></div><pre id="debugLog"></pre></body></html>');
     return;
   }
@@ -91,6 +91,32 @@ const server = http.createServer((request, response) => {
       foliage.applySurfaceGrowth(furniture, []);
       const cleaned = !getLayer() && furniture.children.length === 3 && furniture.children.every(child => child.isMesh);
       const selfTest = window.IceStalagmiteCoverage.selfTest(T); // Public mobile self-check uses the same implementation.
+      const door = new T.Group(); // Arbitrary authored stone door; the coverage builder must not require a particular furniture ID.
+      const leaf = new T.Mesh(new T.BoxGeometry(3.16, 3.1, .26), new T.MeshStandardMaterial()); // Same leaf size as the uploaded boss-door scale reference.
+      leaf.name = 'Door Leaf'; leaf.position.set(4, 1.55, 1); leaf.userData.authoredPartId = 'leaf'; door.add(leaf);
+      const iceParent = new T.Group(); // Door ice stays in world space while the original door can animate independently.
+      const placement = window.DungeonDoorIceCoverage.create({ door, parent: iceParent, groundY: 0, seed: 'tothal-door:test' });
+      const sourceDimensions = placement && placement.recipe; // Author-derived scaled recipe is saved through the shared normalizer.
+      const iceGeometry = placement?.iceLayer?.children?.[0]?.geometry; // Checks actual mesh vertices, not shader/material opacity.
+      const full = new Float32Array(iceGeometry?.getAttribute('position').array || []);
+      const anchors = iceGeometry?.userData?.iceGrowthAnchors;
+      const generatedDoorIce = full.length > 0 && iceParent.children.length === 1; // Old transparent door sheet must not be present.
+      window.DungeonDoorIceCoverage.setGrowth(placement, .5); // Midpoint should be a geometric lerp to individual ground origins.
+      const midpoint = iceGeometry.getAttribute('position').array;
+      const midpointCorrect = midpoint.every((value, i) => Math.abs(value - .5 * (full[i] + anchors[i])) < .000002);
+      window.DungeonDoorIceCoverage.setGrowth(placement, 0); // At zero the ice must be invisible and non-raycastable.
+      const fullyMelted = iceGeometry.getAttribute('position').array.every((value, i) => Math.abs(value - anchors[i]) < .000002) &&
+        placement.iceLayer.children[0].visible === false;
+      window.DungeonDoorIceCoverage.setGrowth(placement, 1); // Reverse lerp must restore the exact authored facets.
+      const restoredDoorIce = iceGeometry.getAttribute('position').array.every((value, i) => value === full[i]);
+      const shorterDoor = new T.Group(); // A different door size gets appropriately scaled ice, not a boss-only recipe.
+      const smallerLeaf = new T.Mesh(new T.BoxGeometry(1.8, 1.9, .2), new T.MeshStandardMaterial());
+      smallerLeaf.userData.authoredPartId = 'leaf'; smallerLeaf.position.y = .95; shorterDoor.add(smallerLeaf);
+      const smallIce = window.DungeonDoorIceCoverage.create({ door: shorterDoor, parent: new T.Group(), groundY: 0, seed: 'short-door' });
+      const scaledSmallDoor = smallIce?.recipe?.iceHeightMax < placement?.recipe?.iceHeightMax &&
+        smallIce?.recipe?.radius < placement?.recipe?.radius; // The same builder supports full and ordinary-sized door leaves.
+      const coveringDoorFace = anchors && anchors.some((value, i) => i % 3 === 0 && Math.abs(value - 4) < 1); // Engulf must place crystals on the leaf face, not only its outer corners.
+
       let readyCallbacks = 0; // Ensures a preexisting source-ready handler isn't lost to the ice lifecycle.
       window.ProceduralFurniture = { buildPartMesh() {
         const driver = new T.Mesh(new T.BoxGeometry(.001, .001, .001), new T.MeshBasicMaterial());
@@ -117,7 +143,7 @@ const server = http.createServer((request, response) => {
       window.rebuildSurfaceFoliage = () => foliage.applySurfaceGrowth(window.root, window.state.surfaceGrowth);
       window.queueUndoHistory = () => { window.undoCalls = (window.undoCalls || 0) + 1; };
       window.log = () => {};
-      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest, initialGlbEmpty, glbAfterReady, glbReadyPreservesCallback};
+      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest, initialGlbEmpty, glbAfterReady, glbReadyPreservesCallback, sourceDimensions, generatedDoorIce, midpointCorrect, fullyMelted, restoredDoorIce, scaledSmallDoor, coveringDoorFace};
     });
     assert.equal(geometryResult.normalized.kind, 'iceStalagmites', 'Normalization must retain the ice kind');
     assert.equal(geometryResult.normalized.iceFacets, 6, 'Ice-only settings must survive the common JSON schema');
@@ -127,6 +153,13 @@ const server = http.createServer((request, response) => {
     assert(geometryResult.stable && geometryResult.persisted, 'Saved seed must regenerate identical geometry across JSON round-trip');
     assert(geometryResult.missingTargetEmpty && geometryResult.capped && geometryResult.cleaned, 'Empty targets, safety limits, and cleanup must work');
     assert.equal(geometryResult.selfTest.ok, true, 'In-editor mobile geometry self-check must succeed');
+    assert(geometryResult.generatedDoorIce && geometryResult.midpointCorrect && geometryResult.fullyMelted && geometryResult.restoredDoorIce,
+      'Visible door ice must grow and melt by reversing original crystal geometry, not by fading a sheet');
+    assert.equal(geometryResult.sourceDimensions.iceHeightMin, 2, 'Boss-door reference must retain its 2-unit minimum spike height');
+    assert.equal(geometryResult.sourceDimensions.iceHeightMax, 3, 'Boss-door reference must retain its 3-unit maximum spike height');
+    assert.equal(geometryResult.sourceDimensions.radius, .5, 'Boss-door reference must retain its .5-unit base radius');
+    assert(geometryResult.scaledSmallDoor && geometryResult.coveringDoorFace,
+      'Any eligible door size must inherit scaled ice and engulf its actual leaf surface');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
     await page.addScriptTag({ url: '/docs/tools/furniture-avatar-author/ice-stalagmites.js' });
