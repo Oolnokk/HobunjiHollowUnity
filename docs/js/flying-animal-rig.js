@@ -4,34 +4,131 @@
 
   const DEG = Math.PI / 180; // Authoring angles are in degrees.
   const DEFAULT = Object.freeze({
-    version: 1,
-    flying: 'creaturesprites/tzatzul_flying.png',
-    perched: 'creaturesprites/tzatzul_perched.png',
-    wings: 'creaturesprites/tzatzul_wings.png',
-    leftHinge: 0.435, rightHinge: 0.467,
-    wingScale: 1.41, wingHeight: 0.15, wingOffset: -0.18, wingCenter: 0.451,
-    flapUp: 43, flapDown: 28, flapHz: 2.2, glideAngle: 7,
-    yawDeadzone: 27.5, pitchDeadzone: 22,
-    perchSpline: {
-      beforePoints: [
-        { x: 0.12, y: 0.42 },
-        { x: 0.25, y: 0.41666666666666663 },
-        { x: 0.38, y: 0.41333333333333333 },
-        { x: 0.51, y: 0.41000000000000003 },
-        { x: 0.64, y: 0.4066666666666667 },
-        { x: 0.77, y: 0.4033333333333333 },
-        { x: 0.9, y: 0.4 },
+    "version": 1,
+    "flying": "creaturesprites/tzatzul_flying.png",
+    "perched": "creaturesprites/tzatzul_perched.png",
+    "wings": "creaturesprites/tzatzul_wings.png",
+    "leftHinge": 0.435,
+    "rightHinge": 0.469,
+    "wingScale": 1.41,
+    "wingHeight": 0.15,
+    "wingOffset": -0.18,
+    "wingCenter": 0.451,
+    "flapUp": 43,
+    "flapDown": 48,
+    "flapHz": 2.2,
+    "glideAngle": 7,
+    "yawDeadzone": 27.5,
+    "pitchDeadzone": 22,
+    "perchSpline": {
+      "beforePoints": [
+        {
+          "x": 0.12,
+          "y": 0.42
+        },
+        {
+          "x": 0.25,
+          "y": 0.41666666666666663
+        },
+        {
+          "x": 0.38,
+          "y": 0.41333333333333333
+        },
+        {
+          "x": 0.51,
+          "y": 0.41000000000000003
+        },
+        {
+          "x": 0.64,
+          "y": 0.4066666666666667
+        },
+        {
+          "x": 0.77,
+          "y": 0.4033333333333333
+        },
+        {
+          "x": 0.9,
+          "y": 0.4
+        }
       ],
-      afterPoints: [
-        { x: 0.21690159256776786, y: 0.49688129650143487 },
-        { x: 0.32969049320109534, y: 0.5062156881558175 },
-        { x: 0.41539226733126267, y: 0.5948924088724519 },
-        { x: 0.5343979073426857, y: 0.7504657252261289 },
-        { x: 0.6121067955743089, y: 0.8687014749622755 },
-        { x: 0.6649488395718127, y: 1.0211630832032237 },
-        { x: 0.7462100774834645, y: 1.2125181121180668 },
-      ],
+      "afterPoints": [
+        {
+          "x": 0.21690159256776786,
+          "y": 0.49688129650143487
+        },
+        {
+          "x": 0.32969049320109534,
+          "y": 0.5062156881558175
+        },
+        {
+          "x": 0.41539226733126267,
+          "y": 0.5948924088724519
+        },
+        {
+          "x": 0.5343979073426857,
+          "y": 0.7504657252261289
+        },
+        {
+          "x": 0.6121067955743089,
+          "y": 0.8687014749622755
+        },
+        {
+          "x": 0.6649488395718127,
+          "y": 1.0211630832032237
+        },
+        {
+          "x": 0.7462100774834645,
+          "y": 1.2125181121180668
+        }
+      ]
     },
+    "talonCarry": {
+      "socket": {
+        "x": 0.02,
+        "y": -0.23,
+        "z": 0
+      },
+      "poses": {
+        "humanoid": {
+          "position": {
+            "x": 0.2,
+            "y": -0.065,
+            "z": 0
+          },
+          "rotation": {
+            "x": -77.75,
+            "y": 90,
+            "z": 0
+          }
+        },
+        "animal": {
+          "position": {
+            "x": -0.05,
+            "y": 0.05,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": 90,
+            "z": 0
+          }
+        },
+        "burden": {
+          "position": {
+            "x": 0.07,
+            "y": -0.2,
+            "z": 0
+          },
+          "rotation": {
+            "x": 0,
+            "y": -90,
+            "z": 0
+          }
+        }
+      },
+      "birdScale": 2,
+      "rotationOrder": "YXZ"
+    }
   });
   const limits = Object.freeze({ // Bounds shared by JSON import and the author controls.
     leftHinge: [0.01, 0.98], rightHinge: [0.02, 0.99],
