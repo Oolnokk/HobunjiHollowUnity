@@ -162,58 +162,69 @@
     disposeWorldFlame(heldVisualState.worldFlame);
     heldVisualState=null;
   }
-  function currentHeldSource() {
-    const key=window.RangedWeapons?.equippedRangedKey?.();
-    const vfx=window.WeaponEnchantmentVFX;
-    const visual=key&&vfx?.heldVisualForItem?.(key);
-    const plane=visual?.userData?.toolPlane;
-    const heldMode=window.Combat?.deps?.getHeldMode?.()??window.ProceduralHandAttachments?.gameDeps?.getHeldMode?.();
-    const activeTool=window.Combat?.deps?.getActiveTool?.()??window.ProceduralHandAttachments?.gameDeps?.getActiveTool?.(); // Keep the flame on the drawn ranged weapon, not a holstered duplicate.
-    if(activeTool && activeTool!=='ranged')return null;
-    if(!key||!plane?.isObject3D||visual.visible===false||plane.visible===false||(heldMode&&heldMode!=='tool'))return null;
-    const spritePath=vfx?.sourceSpriteForWeapon?.(key)||null; // Virtual modular composite, not the naked shaft.
-    return {key,visual,plane,spritePath};
-  }
-  function updateHeldVisual(dt=0) {
-    if(!pendingIgnition){disposeHeldVisual();return false;}
-    const source=currentHeldSource();
-    if(!source){disposeHeldVisual();return false;}
-    let state=heldVisualState;
-    if(!state||state.visual!==source.visual||state.plane!==source.plane||state.key!==source.key||state.spritePath!==source.spritePath){
-      disposeHeldVisual();
-      const scene=window.Combat?.deps?.scene||(()=>{
-        let root=source.visual;
-        while(root?.parent)root=root.parent;
-        return root!==source.visual?root:null;
-      })(); // Scene-owned fire stays upright even when the shaft rotates.
-      if(!scene?.add)return false;
-      const worldFlame=createWorldFlame();
-      worldFlame.name='dungeonFire_chargedHeldWeapon';
-      scene.add(worldFlame);
-      state={...source,worldFlame,anchor:null,anchorKind:'pending',age:0}; // Tracks the original rapid Dungeon Fire pulse while equipped.
-      heldVisualState=state;
-      const request=++heldRequest,vfx=window.WeaponEnchantmentVFX;
-      const task=source.spritePath&&vfx?.metalMaskForSprite
-        ?Promise.resolve(vfx.metalMaskForSprite(source.spritePath)).then(representativeMetalAnchor).catch(()=>null)
-        :Promise.resolve(null);
-      task.then(anchor=>{
-        if(request!==heldRequest||heldVisualState!==state||!pendingIgnition)return;
-        const local=anchor&&vfx?.metalPixelToLocal?.(anchor.index,anchor,source.plane);
-        state.anchor=local?{x:local.x,y:local.y}:{x:0,y:0};
-        state.anchorKind=local?'metal':'center-fallback';
-        lastEvent=state.key+': charged held weapon fire ('+state.anchorKind+')';
-      });
-      lastEvent=source.key+': charged held weapon flame created';
+  function heldRenderScene(visual) {
+    let root = null; // Follows the actual hand/weapon ancestor chain to choose the scene rendered in this room.
+    for (let node = visual; node; node = node.parent) {
+      if (node.visible === false) return null; // A hidden toolHolder or ancestor must never leave floating flames.
+      root = node;
     }
-    state.plane.updateWorldMatrix?.(true,false);
-    WORLD_POINT.set(state.anchor?.x||0,state.anchor?.y||0,0);
+    if (!root || root === visual || typeof root.add !== 'function') return null;
+    const activeScene = window.Combat?.deps?.getActiveScene?.(); // Rejects an old, detached room scene during a map transition.
+    if (activeScene?.isScene && root !== activeScene) return null;
+    return root;
+  }
+
+  function currentHeldSource() {
+    const key = window.RangedWeapons?.equippedRangedKey?.();
+    const vfx = window.WeaponEnchantmentVFX;
+    const visual = key && vfx?.heldVisualForItem?.(key);
+    const plane = visual?.userData?.toolPlane;
+    const heldMode = window.Combat?.deps?.getHeldMode?.() ?? window.ProceduralHandAttachments?.gameDeps?.getHeldMode?.();
+    const activeTool = window.Combat?.deps?.getActiveTool?.() ?? window.ProceduralHandAttachments?.gameDeps?.getActiveTool?.(); // A selected but holstered or melee-slot weapon must not show ranged fire.
+    if (activeTool && activeTool !== 'ranged') return null;
+    if (!key || !plane?.isObject3D || visual.visible === false || plane.visible === false || (heldMode && heldMode !== 'tool')) return null;
+    const scene = heldRenderScene(visual); // The held weapon's current scene wins over an injected default farm scene.
+    if (!scene) return null;
+    const spritePath = vfx?.sourceSpriteForWeapon?.(key) || null; // Virtual modular composite, not the bare shaft.
+    return { key, visual, plane, spritePath, scene };
+  }
+
+  function updateHeldVisual(dt = 0) {
+    if (!pendingIgnition) { disposeHeldVisual(); return false; }
+    const source = currentHeldSource();
+    if (!source) { disposeHeldVisual(); return false; }
+    let state = heldVisualState; // Retains one set of particles while the same weapon remains visible in the same room.
+    if (!state || state.visual !== source.visual || state.plane !== source.plane
+      || state.key !== source.key || state.spritePath !== source.spritePath || state.scene !== source.scene) {
+      disposeHeldVisual();
+      const worldFlame = createWorldFlame(); // One room-owned world-upright effect follows this precise player-held PNG.
+      worldFlame.name = 'dungeonFire_chargedHeldWeapon';
+      source.scene.add(worldFlame);
+      state = { ...source, worldFlame, anchor:null, anchorKind:'pending', age:0 }; // Tracks pulsing and the modular metal pixel position.
+      heldVisualState = state;
+      const request = ++heldRequest, vfx = window.WeaponEnchantmentVFX; // Reject stale async masks following room or item changes.
+      const task = source.spritePath && vfx?.metalMaskForSprite
+        ? Promise.resolve(vfx.metalMaskForSprite(source.spritePath)).then(representativeMetalAnchor).catch(() => null)
+        : Promise.resolve(null);
+      task.then(anchor => {
+        if (request !== heldRequest || heldVisualState !== state || !pendingIgnition) return;
+        const local = anchor && vfx?.metalPixelToLocal?.(anchor.index, anchor, source.plane);
+        state.anchor = local ? { x:local.x, y:local.y } : { x:0, y:0 };
+        state.anchorKind = local ? 'metal' : 'center-fallback';
+        lastEvent = state.key + ': charged held weapon fire (' + state.anchorKind + ')';
+      });
+      lastEvent = source.key + ': charged held weapon flame created';
+    }
+    state.plane.updateWorldMatrix?.(true, false);
+    WORLD_POINT.set(state.anchor?.x || 0, state.anchor?.y || 0, 0);
     state.plane.localToWorld(WORLD_POINT);
     state.worldFlame.position.copy(WORLD_POINT);
-    const step=Math.max(0,Math.min(.05,Number(dt)||0));
-    state.age+=step;
-    tickWorldFlame(state.worldFlame,step,state.age);
+    const step = Math.max(0, Math.min(.05, Number(dt) || 0)); // Stable particle simulation during stalls or UI pauses.
+    state.age += step;
+    tickWorldFlame(state.worldFlame, step, state.age);
     return true;
   }
+
   function segmentBoxInterval(start, end, box) {
     let enter = 0, exit = 1;
     for (const axis of ['x', 'y', 'z']) {
