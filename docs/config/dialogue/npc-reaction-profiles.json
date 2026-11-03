@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Shared personality-driven NPC ambient reactions. The Ambient Dialogue Editor owns this file. Blank profile pools inherit from the default profile.",
+  "description": "Shared personality-driven NPC ambient reactions. The Ambient Dialogue Editor owns this file. Empty reaction pools are silent; unassigned NPCs use the default profile.",
   "settings": {
     "reactionRadiusTiles": 4,
     "cooldownMs": 9000,
@@ -13,96 +13,89 @@
       "label": "Neighborly",
       "animal": {
         "recognized": [
-          "{animalName}! Good to see you.",
-          "Hello, {animalName}!"
+          "Hello again, {animalName}.",
+          "There you are, {animalName}."
         ],
         "sizeTwoLarger": [
-          "Dear Breath, that has to be the biggest {species} I have ever seen in my life."
+          "I've never seen a {species} that big."
         ],
         "sizeOneLarger": [
-          "I think you might be overfeeding your {species}."
+          "That {species} is bigger than most."
         ],
         "sizeOneSmaller": [
-          "What a cute little fellow. Runt of the litter?"
+          "That's a small {species}, isn't it?"
         ],
         "sizeTwoSmaller": [
-          "Dear Breath, that has to be the tiniest {species} I have ever seen in my life."
+          "I didn't know a {species} could be that tiny."
         ],
         "trained": {
           "mount": [
-            "That's a fine {species}.",
-            "Looking good, {animalName}."
+            "You two look comfortable together.",
+            "That {species} follows your lead."
           ],
           "companion": [
-            "Good {species}.",
-            "Hello, {animalName}."
+            "That's a well-mannered {species}.",
+            "{animalName} listens well."
           ],
           "shoulderPet": [
-            "Well, hello up there.",
-            "Hello, little {animalName}."
+            "{animalName} looks happy up there.",
+            "That's a good spot to ride along."
           ]
         },
         "familiar": {
           "mount": [
-            "They're settling in nicely."
+            "That {species} seems more at ease now."
           ],
           "companion": [
-            "{animalName} listens well."
+            "{animalName}'s getting used to people."
           ],
           "shoulderPet": [
-            "{animalName} looks comfortable up there."
+            "{animalName} looks settled up there."
           ]
         },
         "wary": {
           "mount": [
-            "Easy with that {species}.",
-            "Give that {species} a little room."
+            "Could you keep that {species} steady?",
+            "Mind giving us a little room?"
           ],
           "companion": [
-            "Keep {animalName} close, please.",
-            "Is that {species} friendly?"
+            "Is {animalName} friendly?",
+            "Could you keep {animalName} close?"
           ],
           "shoulderPet": [
-            "Oh! I almost missed {animalName}.",
-            "You've got company up there."
-          ]
-        },
-        "recognition": {
-          "mount": [
-            "I've gotten used to seeing {animalName} with you."
-          ],
-          "companion": [
-            "I know {animalName} now."
-          ],
-          "shoulderPet": [
-            "I'd notice if {animalName} wasn't up there."
+            "Oh, there's someone on your shoulder!",
+            "I nearly missed {animalName} up there."
           ]
         }
       },
       "silliness": {
         "positive": [
-          "Ha! All right, that was funny."
+          "Ha! That caught me off guard.",
+          "All right, that was funny."
         ],
         "negative": [
-          "All right. That's enough."
+          "I'm not in the mood for jokes.",
+          "Please don't do that again."
         ]
       },
       "dance": {
         "positive": [
-          "There you go!",
-          "Ha! Keep going."
+          "That's the spirit!",
+          "You're keeping good time."
         ],
         "negative": [
-          "Not with me, thanks."
+          "Please, not right beside me.",
+          "I'm not joining in."
         ]
       },
       "music": {
         "positive": [
-          "That's nice.",
-          "Hey, that's good."
+          "That's a lovely tune.",
+          "I could listen to that awhile."
         ],
         "negative": [
-          "Could you play a little farther away?"
+          "Would you mind playing farther away?",
+          "I've heard enough for now."
         ]
       }
     },
@@ -148,17 +141,6 @@
           "shoulderPet": [
             "Oh! Tiny passenger.",
             "How long has {animalName} been up there?"
-          ]
-        },
-        "recognition": {
-          "mount": [
-            "I like {animalName}. Keep bringing them around."
-          ],
-          "companion": [
-            "{animalName}! Yeah, I know you now."
-          ],
-          "shoulderPet": [
-            "I'd miss {animalName} if that shoulder were empty."
           ]
         }
       },
@@ -229,17 +211,6 @@
           "shoulderPet": [
             "I didn't notice {animalName} at first."
           ]
-        },
-        "recognition": {
-          "mount": [
-            "I've gotten used to {animalName}."
-          ],
-          "companion": [
-            "I recognize {animalName} now."
-          ],
-          "shoulderPet": [
-            "I'd notice if {animalName} were missing."
-          ]
         }
       },
       "silliness": {
@@ -305,17 +276,6 @@
           "shoulderPet": [
             "Ah. You have a passenger."
           ]
-        },
-        "recognition": {
-          "mount": [
-            "{animalName} has become a familiar sight."
-          ],
-          "companion": [
-            "I've come to recognize {animalName}."
-          ],
-          "shoulderPet": [
-            "That shoulder would look strange without {animalName}."
-          ]
         }
       },
       "silliness": {
@@ -380,17 +340,6 @@
           ],
           "shoulderPet": [
             "What's that doing on your shoulder?"
-          ]
-        },
-        "recognition": {
-          "mount": [
-            "{animalName} doesn't bother me anymore."
-          ],
-          "companion": [
-            "I know {animalName}. They're fine."
-          ],
-          "shoulderPet": [
-            "I've gotten used to {animalName} up there."
           ]
         }
       },
@@ -470,11 +419,6 @@
           "shoulderPet": [
             "Grumpy kitty! Mreeeow!!!"
           ]
-        },
-        "recognition": {
-          "mount": [],
-          "companion": [],
-          "shoulderPet": []
         }
       },
       "silliness": {
