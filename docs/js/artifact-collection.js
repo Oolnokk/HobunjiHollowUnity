@@ -74,6 +74,7 @@
     }
     syncWorld();
     window.DelversGuild?.bindInventoryDeps?.(injected); // Reuses these authoritative inventory and save adapters for the Stone and key-stones.
+    window.TownMagicCheckpoint?.bindInventoryDeps?.(injected); // Shares the same live pack, member save and inventory UI for imperial custody.
     window.DialogueContent?.registerTreeProvider?.('garanki_gabu', () => window.DelversGuild?.dialogueTree?.() || unlockDialogue());
     window.DialogueContent?.registerNodeEnterHandler?.('garanki_gabu', node => {
       if (node?.id === 'artifact_explanation') acknowledgeUnlocks();
@@ -114,7 +115,7 @@
     if (!pending.length) return null;
     return { id: 'artifact_unlock_' + pending.map(u => u.id).join('_'), trigger: 'interact', priority: 100,
       entryNode: 'artifact_explanation', nodes: [{ id: 'artifact_explanation', type: 'text', text: pending.map(u => u.text).join('\n\n'), next: 'artifact_services' },
-        { id: 'artifact_services', type: 'choice', choices: [{ label: 'Artifacts & Enchanting', actions: [{ type: 'openShop', pool: 'garankiEnchanting' }] }, { label: 'Thank you', next: null }] }] };
+        { id: 'artifact_services', type: 'choice', choices: [{ label: 'Artifacts, Custody & Enchanting', actions: [{ type: 'openShop', pool: 'garankiEnchanting' }] }, { label: 'Thank you', next: null }] }] };
   }
   function acknowledgeUnlocks() {
     syncWorld();

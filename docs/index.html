@@ -244,7 +244,8 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261103ice2"></script>
+  <script src="js/foliage-generator.js?v=20261103ice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
@@ -254,7 +255,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/furniture-table-system.js?v=20261103h6f4dc6e"></script>
-  <script src="js/authored-furniture-runtime.js?v=20261102burdenplinth1"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261103ice2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
@@ -354,7 +355,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20261027shape2"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261102dungeonfire1"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261103particlesheld1"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
   <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
@@ -366,7 +367,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261103h94b647d"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261103particlesheld1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -516,8 +517,8 @@
        calls window.JubmirShop.init(...) during its own setup. -->
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
-  <script src="js/artifact-collection.js?v=20261101hbeb03c2"></script>
-  <script src="js/harlyao-relics.js?v=20261101hf69c13e"></script>
+  <script src="js/artifact-collection.js?v=20261103magicCustody5"></script>
+  <script src="js/harlyao-relics.js?v=20261103magicCustody5"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261022h0605f09"></script>
@@ -892,7 +893,7 @@
   <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
   <script src="js/ruin-composer-playable.js?v=20261103h961d7ee"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261102keyStatues1"></script>
-  <script src="js/dungeon-fire.js?v=20261102dungeonfire4"></script>
+  <script src="js/dungeon-fire.js?v=20261103particlesheld1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
@@ -2691,7 +2692,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261102h932403c"></script>
+  <script src="js/tool-icon-render.js?v=20261103dungeonplumepadding3"></script>
   <script src="js/sprite-recolor.js?v=20261028hspriterecoloraudit2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2720,7 +2721,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261102surfaceprobe1"></script>
+  <script src="js/pixel-probe.js?v=20261103dungeonparticles1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2907,7 +2908,8 @@
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
+  <script src="js/delvers-guild-story.js?v=20261103magicCustody5"></script>
+  <script src="js/town-magic-checkpoint.js?v=20261103magicCustody6"></script> <!-- Spearhead and Oddclaw exterior gate check, legal item registration and Garanki's persistent custody. -->
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
