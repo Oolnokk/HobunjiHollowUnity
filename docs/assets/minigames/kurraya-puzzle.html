@@ -96,17 +96,25 @@ summary{cursor:pointer;min-height:26px}
       '\nsampler=' + JSON.stringify(sampler.diagnostics);
   }
   function delay(ms) { return new Promise(resolve => setTimeout(resolve,ms)); }
-  async function replayEcho() {
+  async function replayEcho(passive = false) {
     const challenge = echoChallenge;
     if (!challenge) return false;
     const generation = ++echoGeneration;
     challenge.progress = 0;
     challenge.phase = 'playing';
-    echoReplay.disabled = true;
+    echoReplay.disabled = !passive; // Keep the manual gesture button usable if browsers block the automatic attempt.
     resultEl.textContent = 'Listen carefully to ' + challenge.notes.length + ' notes…';
     try {
-      await sampler.ready();
+      const ready = await Promise.race([
+        sampler.ready().then(() => true),
+        delay(passive ? 850 : 1800).then(() => false)
+      ]); // Autoplay-blocked AudioContext.resume() may never settle until a new gesture; never deadlock replay.
       if (challenge !== echoChallenge || generation !== echoGeneration) return false;
+      if (!ready) {
+        challenge.phase = 'retry';
+        resultEl.textContent = 'Tap Hear sequence, or press a note button, to start/retry the melody.';
+        return false;
+      }
       await delay(300);
       for (const note of challenge.notes) {
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
@@ -140,11 +148,12 @@ summary{cursor:pointer;min-height:26px}
     echoReplay.hidden = false;
     echoReplay.textContent = 'Hear sequence again';
     resultEl.textContent = 'Press Hear sequence (or any note key/button) to listen, then copy the melody by ear.';
-    // Do not start AudioContext.resume() from iframe load: mobile browsers can leave its promise unresolved until a user gesture, deadlocking the disabled replay button.
+    // Try autoplay once; if mobile Web Audio is suspended, the short timeout leaves the manual replay button and controller/keyboard restart fully usable.
+    replayEcho(true);
     render();
     return true;
   }
-  echoReplay.addEventListener('click',replayEcho); // Explicit gesture is required for mobile Web Audio startup; the button remains keyboard accessible.
+  echoReplay.addEventListener('click',() => replayEcho(false)); // An explicit gesture unlocks mobile Web Audio; keyboard and touch remain accessible.
   function playNote(index) {
     if (!Number.isInteger(index) || index < 0 || index > 4) return false;
     if (echoChallenge && echoChallenge.phase === 'retry') {
