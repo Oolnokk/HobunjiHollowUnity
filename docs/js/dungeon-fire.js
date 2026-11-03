@@ -11,78 +11,71 @@
   const FLAME_RADIUS = .34; // Used to widen fire contacts beyond the projectile's physical collider.
   const TARGETS = new Map(); // Registered fire-reactive ruin mechanisms, removed by each composer on teardown.
   const ACTIVE_VISUALS = new Set(); // Live per-projectile visual records; each is disposed with its ranged projectile.
-  const UP = new THREE.Vector3(0, 1, 0); // Reused axis for the world-upright flame layers.
   const WORLD_POINT = new THREE.Vector3(); // Reused world position for the non-thrown projectile's alpha anchor.
   const HIT_START = new THREE.Vector3(); // Reused start anchor for the alpha-pixel flame's swept contact volume.
   const HIT_END = new THREE.Vector3(); // Reused clipped endpoint for swept fire-contact tests.
   const HIT_BOX = new THREE.Box3(); // Reused target bounds for the short list of fire-reactive mechanisms.
   const HIT_SIZE = new THREE.Vector3(); // Reused target bounds size.
   let pendingIgnition = false; // Consumed by RangedWeapons exactly once when the next player projectile is released.
-  let flameArt = null; // Shared pointed-flame geometry/materials; each projectile owns only lightweight mesh instances.
   let lastEvent = 'idle'; // Exposed in the mobile diagnostic snapshot.
 
-  function createFlameShape(width, height, bend = 0) {
-    const shape = new THREE.Shape();
-    shape.moveTo(-width * .5, 0);
-    shape.bezierCurveTo(-width * .68, height * .18, -width * .34 + bend, height * .48, -width * .12 + bend, height * .72);
-    shape.bezierCurveTo(-width * .08 + bend, height * .9, width * .08 + bend, height, width * .16 + bend, height);
-    shape.bezierCurveTo(width * .12 + bend, height * .72, width * .58, height * .42, width * .5, height * .16);
-    shape.bezierCurveTo(width * .39, height * .04, width * .2, 0, -width * .5, 0);
-    return new THREE.ShapeGeometry(shape, 10);
-  }
 
-  function getFlameArt() {
-    if (flameArt) return flameArt;
-    const layers = [
-      { width:.48, height:FLAME_HEIGHT, color:0xff2600, opacity:.92, bend:0 },
-      { width:.32, height:FLAME_HEIGHT * .82, color:0xff8a06, opacity:.96, bend:.025 },
-      { width:.17, height:FLAME_HEIGHT * .58, color:0xffef6b, opacity:.98, bend:-.018 },
-    ];
-    flameArt = layers.map(layer => ({
-      geometry:createFlameShape(layer.width, layer.height, layer.bend),
-      material:new THREE.MeshBasicMaterial({
-        color:layer.color, transparent:true, opacity:layer.opacity,
-        side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending,
-      }),
-    }));
-    return flameArt;
-  }
-
+  // Campfire-equivalent reference rates: yellow 12, red 12, orange 16 per second.
+  const FIRE_STREAMS = Object.freeze([
+    {id:'yellow',rate:18,colorA:'#fff56a',colorB:'#ffdc12'},
+    {id:'red',rate:15,colorA:'#ff5225',colorB:'#e91b08'},
+    {id:'orange',rate:7,colorA:'#ffab3b',colorB:'#ff740c'},
+  ]); // 50% more yellow, 25% more red, orange reduced; still 40 particles/s.
+  const PLUME_LIFETIME = 1.3; // Longer than regular campfire's .72 seconds.
+  const PLUME_SPEED = 2.35; // World-up rise ~3 units, vs regular campfire's ~0.5.
   function createWorldFlame() {
     const group = new THREE.Group();
-    group.name = 'dungeonFire_worldUprightFlame';
-    group.userData.dungeonFireVisual = true;
-    const art = getFlameArt();
-    for (let layer = 0; layer < art.length; layer++) {
-      for (let angle = 0; angle < 3; angle++) {
-        const mesh = new THREE.Mesh(art[layer].geometry, art[layer].material);
-        mesh.rotation.y = angle * Math.PI / 3;
-        mesh.position.y = layer * .003;
-        group.add(mesh);
+    group.name='dungeonFire_worldUprightFlame';
+    group.userData.dungeonFireVisual=true;
+    const create=window.AuthoredFurniture?.createEmitterVisual;
+    const emitters=[]; // GPU particle emitters owned/disposed by the ordinary authored furniture system.
+    if(typeof create==='function')for(const stream of FIRE_STREAMS){
+      const record={id:'dungeon_fire_'+stream.id,name:'Dungeon Fire '+stream.id,
+        type:'fire',enabled:true,position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},
+        radius:.14,size:.22,rate:stream.rate,lifetime:PLUME_LIFETIME,
+        speed:PLUME_SPEED,spread:.34,gravity:-.06,colorA:stream.colorA,colorB:stream.colorB}; // Campfire emitter schema.
+      const visual=create(group,record,Math.ceil(stream.rate*PLUME_LIFETIME)+3);
+      if(visual){
+        visual.update?.(1/stream.rate,true); // Prime a visible ignition particle in the very first frame.
+        if(visual.points){
+          visual.points.renderOrder=3; // Flame draws above PNG without disabling world depth.
+          const overlay=window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
+          if(Number.isInteger(overlay)&&overlay>0&&overlay<32)visual.points.layers?.enable?.(overlay);
+        }
+        emitters.push(visual);
       }
     }
-    group.userData.baseRotationY = Math.random() * Math.PI * 2;
+    else lastEvent='authored fire-particle renderer unavailable';
+    group.userData.fireEmitterVisuals=emitters;
     return group;
   }
-
-  function updateWorldFlame(state, dt) {
-    const plane = state.plane;
+  function tickWorldFlame(group,dt,age=0) {
+    const pulse=Math.max(.6,1+Math.sin(age*31)*.2+Math.sin(age*53+.8)*.09); // Retains the original violent furnace flicker without scaling gameplay contact bounds.
+    for(const visual of group?.userData?.fireEmitterVisuals||[])visual.update?.(dt,true,{size:.22*pulse});
+  }
+  function disposeWorldFlame(group) {
+    for(const visual of group?.userData?.fireEmitterVisuals||[])visual.dispose?.();
+    group?.parent?.remove(group);
+    if(group?.userData)group.userData.fireEmitterVisuals=[];
+  }
+  function updateWorldFlame(state,dt) {
+    const plane=state.plane;
     state.previousAnchorWorld.copy(state.anchorWorld);
-    if (plane?.isObject3D && state.anchor) {
-      plane.updateWorldMatrix?.(true, false);
-      WORLD_POINT.set(state.anchor.x, state.anchor.y, 0);
+    if(plane?.isObject3D&&state.anchor){
+      plane.updateWorldMatrix?.(true,false);
+      WORLD_POINT.set(state.anchor.x,state.anchor.y,0);
       plane.localToWorld(WORLD_POINT);
       state.anchorWorld.copy(WORLD_POINT);
-    } else {
-      state.anchorWorld.copy(state.projectile.mesh.position);
-    }
+    }else state.anchorWorld.copy(state.projectile.mesh.position);
     state.worldFlame.position.copy(state.anchorWorld);
-    state.age += dt;
-    const pulse = Math.sin(state.age * 31) * .18 + Math.sin(state.age * 53 + .8) * .075;
-    state.worldFlame.scale.set(1 + pulse, .9 + Math.cos(state.age * 37) * .2 + pulse * .3, 1 + Math.sin(state.age * 43) * .16);
-    state.worldFlame.rotation.y = state.worldFlame.userData.baseRotationY + Math.sin(state.age * 19) * .22;
+    state.age+=dt;
+    tickWorldFlame(state.worldFlame,dt,state.age);
   }
-
   function representativeMetalAnchor(mask) {
     const indices=mask?.indices;
     if(!mask||!indices?.length||!(mask.width>0)||!(mask.height>0))return null;
@@ -153,13 +146,74 @@
     const state = projectile?._dungeonFire;
     if (!state || state.disposed) return false;
     state.disposed = true;
-    state.worldFlame?.parent?.remove(state.worldFlame);
+    disposeWorldFlame(state.worldFlame);
 
     ACTIVE_VISUALS.delete(state);
     projectile._dungeonFire = null;
     return true;
   }
 
+
+  let heldVisualState=null; // One charged player-held weapon; no NPC/free-floating matching gear.
+  let heldRequest=0; // Invalidate late modular mask promises on holster, swap, launch or cleanup.
+  function disposeHeldVisual() {
+    heldRequest++;
+    if(!heldVisualState)return;
+    disposeWorldFlame(heldVisualState.worldFlame);
+    heldVisualState=null;
+  }
+  function currentHeldSource() {
+    const key=window.RangedWeapons?.equippedRangedKey?.();
+    const vfx=window.WeaponEnchantmentVFX;
+    const visual=key&&vfx?.heldVisualForItem?.(key);
+    const plane=visual?.userData?.toolPlane;
+    const heldMode=window.Combat?.deps?.getHeldMode?.()??window.ProceduralHandAttachments?.gameDeps?.getHeldMode?.();
+    const activeTool=window.Combat?.deps?.getActiveTool?.()??window.ProceduralHandAttachments?.gameDeps?.getActiveTool?.(); // Keep the flame on the drawn ranged weapon, not a holstered duplicate.
+    if(activeTool && activeTool!=='ranged')return null;
+    if(!key||!plane?.isObject3D||visual.visible===false||plane.visible===false||(heldMode&&heldMode!=='tool'))return null;
+    const spritePath=vfx?.sourceSpriteForWeapon?.(key)||null; // Virtual modular composite, not the naked shaft.
+    return {key,visual,plane,spritePath};
+  }
+  function updateHeldVisual(dt=0) {
+    if(!pendingIgnition){disposeHeldVisual();return false;}
+    const source=currentHeldSource();
+    if(!source){disposeHeldVisual();return false;}
+    let state=heldVisualState;
+    if(!state||state.visual!==source.visual||state.plane!==source.plane||state.key!==source.key||state.spritePath!==source.spritePath){
+      disposeHeldVisual();
+      const scene=window.Combat?.deps?.scene||(()=>{
+        let root=source.visual;
+        while(root?.parent)root=root.parent;
+        return root!==source.visual?root:null;
+      })(); // Scene-owned fire stays upright even when the shaft rotates.
+      if(!scene?.add)return false;
+      const worldFlame=createWorldFlame();
+      worldFlame.name='dungeonFire_chargedHeldWeapon';
+      scene.add(worldFlame);
+      state={...source,worldFlame,anchor:null,anchorKind:'pending',age:0}; // Tracks the original rapid Dungeon Fire pulse while equipped.
+      heldVisualState=state;
+      const request=++heldRequest,vfx=window.WeaponEnchantmentVFX;
+      const task=source.spritePath&&vfx?.metalMaskForSprite
+        ?Promise.resolve(vfx.metalMaskForSprite(source.spritePath)).then(representativeMetalAnchor).catch(()=>null)
+        :Promise.resolve(null);
+      task.then(anchor=>{
+        if(request!==heldRequest||heldVisualState!==state||!pendingIgnition)return;
+        const local=anchor&&vfx?.metalPixelToLocal?.(anchor.index,anchor,source.plane);
+        state.anchor=local?{x:local.x,y:local.y}:{x:0,y:0};
+        state.anchorKind=local?'metal':'center-fallback';
+        lastEvent=state.key+': charged held weapon fire ('+state.anchorKind+')';
+      });
+      lastEvent=source.key+': charged held weapon flame created';
+    }
+    state.plane.updateWorldMatrix?.(true,false);
+    WORLD_POINT.set(state.anchor?.x||0,state.anchor?.y||0,0);
+    state.plane.localToWorld(WORLD_POINT);
+    state.worldFlame.position.copy(WORLD_POINT);
+    const step=Math.max(0,Math.min(.05,Number(dt)||0));
+    state.age+=step;
+    tickWorldFlame(state.worldFlame,step,state.age);
+    return true;
+  }
   function segmentBoxInterval(start, end, box) {
     let enter = 0, exit = 1;
     for (const axis of ['x', 'y', 'z']) {
@@ -235,12 +289,14 @@
     if (!window.RangedWeapons?.equippedRangedKey?.()) return false;
     pendingIgnition = true;
     lastEvent = 'next player projectile armed';
+    updateHeldVisual(1/40); // Show ignition immediately after the brazier interaction.
     return true;
   }
 
   function consumeNextProjectile() {
     if (!pendingIgnition) return false;
     pendingIgnition = false;
+    disposeHeldVisual(); // The launched projectile now owns the fire.
     lastEvent = 'projectile ignition consumed';
     return true;
   }
@@ -249,6 +305,7 @@
     for (const state of [...ACTIVE_VISUALS]) disposeProjectile(state.projectile);
     TARGETS.clear();
     pendingIgnition = false;
+    disposeHeldVisual();
     lastEvent = 'cleared';
   }
 
@@ -256,6 +313,7 @@
     armNextProjectile,
     consumeNextProjectile,
     attachProjectile,
+    updateHeldVisual,
     updateProjectile,
     disposeProjectile,
     contactProjectile,
@@ -267,9 +325,13 @@
       activeVisuals:ACTIVE_VISUALS.size,
       thrownVisuals:[...ACTIVE_VISUALS].filter(state => state.projectile?.def?.rangedType === 'thrown').length,
       worldFlames:[...ACTIVE_VISUALS].filter(state => !!state.worldFlame).length,
+      heldFire:!!heldVisualState,
+      heldWeaponKey:heldVisualState?.key||null,
+      heldAnchorKind:heldVisualState?.anchorKind||null,
+      fireStreams:FIRE_STREAMS.map(stream=>({color:stream.id,rate:stream.rate})),
       anchorKinds:[...ACTIVE_VISUALS].map(state=>state.anchorKind||'pending'),
       lastEvent,
     }),
-    _test:Object.freeze({ segmentBoxInterval, createFlameShape }),
+    _test:Object.freeze({ segmentBoxInterval, representativeMetalAnchor, FIRE_STREAMS, PLUME_SPEED, PLUME_LIFETIME }),
   });
 })();
