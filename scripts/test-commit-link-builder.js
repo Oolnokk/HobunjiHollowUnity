@@ -40,6 +40,7 @@ function harness({ events = [], prs = [], failEvents = false, failPrs = false, d
   elements.gamePath.value = 'docs/index.html';
   elements.hubPath.value = 'docs/tools/index.html';
   const requests = []; // Exposes which GitHub API endpoints the page actually called.
+  let preferences = null; // Captures persisted defaults when the custom branch field is empty.
   let releaseMain = null; // Lets the test deliver an obsolete main response after a branch switch.
   const fetchMock = async (requestUrl) => {
     const url = new URL(requestUrl);
@@ -74,11 +75,11 @@ function harness({ events = [], prs = [], failEvents = false, failPrs = false, d
     URL, Date, AbortController,
     setTimeout: () => 0,
     clearTimeout() {},
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: { getItem: () => preferences, setItem(_key, value) { preferences = value; } },
     navigator: {},
     location: { href: 'https://example.com/docs/commit-link-builder.html' },
   }, { filename: 'commit-link-builder.inline.js' });
-  return { elements, requests, releaseMain: () => releaseMain?.() };
+  return { elements, requests, releaseMain: () => releaseMain?.(), stored: () => JSON.parse(preferences || 'null') };
 }
 
 async function flush() {
@@ -136,12 +137,14 @@ async function run() {
   elements.recentBranches.dispatch('change');
   assert.equal(elements.branch.value, '', 'selecting custom clears the prior branch, ready for manual entry');
   assert.equal(elements.commit.value, '', 'selecting custom invalidates the old pinned URL');
+  assert.equal(app.stored().branch, 'main', 'unfinished custom entry cannot corrupt the next startup default');
 
   elements.branch.value = 'feature/custom';
   elements.branch.dispatch('input');
   assert.equal(elements.commit.value, '', 'switching to a custom branch clears the stale SHA');
   assert.equal(elements.gameLink.value, '', 'invalidates stale pinned URL');
   assert.equal(elements.recentBranches.value, '', 'picker reflects the custom branch');
+  assert.equal(app.stored().branch, 'feature/custom', 'finished custom branch is persisted correctly');
 
   const partial = harness({
     failEvents: true,
