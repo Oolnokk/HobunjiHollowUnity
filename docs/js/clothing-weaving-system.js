@@ -2077,38 +2077,62 @@
     }; // These are the SAME settings buildPatternMask uses; full source bounds remain stable as paint is added.
   }
 
-  function garmentPaintProjectionTransform(ctx, settings, width, height, invert) {
-    const p = garmentPaintSettings(settings); // Canonicalized once before forward/inverse canvas projection.
+  function garmentPaintProjectionAxes(settings) {
+    const p = garmentPaintSettings(settings); // Shared scale/rotation/stretch/flip values that the real non-tiling motif renderer reads.
     const rotation = p.meshRotationDeg * Math.PI / 180;
-    const sx = resolvedPatternMeshScale(p) * p.usageStretchX * (p.usageFlipX ? -1 : 1);
-    const sy = resolvedPatternMeshScale(p) * p.usageStretchY * (p.usageFlipY ? -1 : 1);
-    if (invert) {
-      ctx.translate(width / 2, height / 2);
-      ctx.scale(1 / sx, 1 / sy);
-      ctx.rotate(-rotation);
-      ctx.translate(-width / 2 - p.usageOffsetX, -height / 2 - p.usageOffsetY);
-    } else {
-      ctx.translate(width / 2 + p.usageOffsetX, height / 2 + p.usageOffsetY);
-      ctx.rotate(rotation);
-      ctx.scale(sx, sy);
-      ctx.translate(-width / 2, -height / 2);
-    }
-    return p;
+    return {
+      p, rotation,
+      sx: resolvedPatternMeshScale(p) * p.usageStretchX * (p.usageFlipX ? -1 : 1),
+      sy: resolvedPatternMeshScale(p) * p.usageStretchY * (p.usageFlipY ? -1 : 1),
+    };
   }
 
-  function garmentPaintTransformCanvas(sourceCanvas, settings, invert) {
+  function garmentPaintMotifDimensions(width, height, settings) {
+    const { p, rotation, sx, sy } = garmentPaintProjectionAxes(settings); // Calculates required motif bounds before any paint can be silently cropped at extreme scales or rotations.
+    const cosine = Math.cos(rotation), sine = Math.sin(rotation);
+    let extentX = 0, extentY = 0; // Maximum inverse-projected garment-corner distances from the center of the exported motif.
+    for (const x of [0, width]) for (const y of [0, height]) {
+      const dx = x - width / 2 - p.usageOffsetX, dy = y - height / 2 - p.usageOffsetY;
+      extentX = Math.max(extentX, Math.abs((cosine * dx + sine * dy) / sx));
+      extentY = Math.max(extentY, Math.abs((-sine * dx + cosine * dy) / sy));
+    }
+    const motifWidth = Math.max(width, Math.ceil(extentX * 2) + 2); // A fixed canvas frame avoids clipping any fur-paint brush stroke after inverse scaling.
+    const motifHeight = Math.max(height, Math.ceil(extentY * 2) + 2);
+    if (Math.hypot(motifWidth, motifHeight) > 4094) throw new RangeError('This scale/offset needs a motif PNG larger than 4094 diagonal pixels. Reduce the offset or raise the scale.');
+    return { width: motifWidth, height: motifHeight };
+  }
+
+  function garmentPaintProjectionTransform(ctx, settings, sourceWidth, sourceHeight, targetWidth, targetHeight, invert) {
+    const { p, rotation, sx, sy } = garmentPaintProjectionAxes(settings); // The drawing matrix is exactly the one used by buildPatternMask's single-cell non-tiling path.
+    if (invert) {
+      ctx.translate(targetWidth / 2, targetHeight / 2);
+      ctx.scale(1 / sx, 1 / sy);
+      ctx.rotate(-rotation);
+      ctx.translate(-sourceWidth / 2 - p.usageOffsetX, -sourceHeight / 2 - p.usageOffsetY);
+    } else {
+      ctx.translate(targetWidth / 2 + p.usageOffsetX, targetHeight / 2 + p.usageOffsetY);
+      ctx.rotate(rotation);
+      ctx.scale(sx, sy);
+      ctx.translate(-sourceWidth / 2, -sourceHeight / 2);
+    }
+  }
+
+  function garmentPaintTransformCanvas(sourceCanvas, settings, invert, targetWidth = null, targetHeight = null) {
     if (!sourceCanvas?.width || !sourceCanvas?.height || sourceCanvas.width > 4096 || sourceCanvas.height > 4096) return null;
-    const canvas = Object.assign(document.createElement('canvas'), { width: sourceCanvas.width, height: sourceCanvas.height }); // Source and result retain one fixed hood-space raster size for pixel-accurate export and restoration.
+    const dimensions = invert ? garmentPaintMotifDimensions(sourceCanvas.width, sourceCanvas.height, settings)
+      : { width: targetWidth || sourceCanvas.width, height: targetHeight || sourceCanvas.height }; // Forward restoration knows the real wearer hood's current dimensions, which may differ from the motif PNG.
+    if (dimensions.width > 4096 || dimensions.height > 4096) return null;
+    const canvas = Object.assign(document.createElement('canvas'), dimensions); // Inverse output grows for rotated/small-scale masks rather than discarding edge brushwork.
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     ctx.save();
-    garmentPaintProjectionTransform(ctx, settings, canvas.width, canvas.height, invert);
+    garmentPaintProjectionTransform(ctx, settings, sourceCanvas.width, sourceCanvas.height, canvas.width, canvas.height, invert);
     ctx.drawImage(sourceCanvas, 0, 0);
     ctx.restore();
     return canvas;
   }
   function garmentPaintToMotif(canvas, settings) { return garmentPaintTransformCanvas(canvas, settings, true); }
-  function garmentMotifToPaint(canvas, settings) { return garmentPaintTransformCanvas(canvas, settings, false); }
+  function garmentMotifToPaint(canvas, settings, width = null, height = null) { return garmentPaintTransformCanvas(canvas, settings, false, width, height); }
 
   function hexRgb(hex) {
     const match = String(hex || '').trim().match(/^#?([0-9a-f]{6})$/i);
