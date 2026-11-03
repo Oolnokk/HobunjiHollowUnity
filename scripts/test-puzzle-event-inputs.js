@@ -196,6 +196,22 @@ assert.equal(WorldEvents.listenerCount('blast'), base + 1);
 R.registerMap(MAP + '_bulk', [], new Map(), []);
 assert.equal(WorldEvents.listenerCount('blast'), base, 're-registering a map releases the old nodes\' subscriptions');
 
+// ---------------------------------------------------------------- ruin teardown clears both map subscriptions and physical support
+{
+  const mapId = MAP + '_reroll', old = node('old-pillar', bridge.puzzle);
+  old.userData.meshById = new Map([[bridgePart.id, partMesh]]);
+  old.userData.partById = new Map([[bridgePart.id, bridgePart]]);
+  register(old, mapId);
+  const surfaceId = old.userData.puzzleStandingSurfaceId; // Map removal must free surfaces registered outside the ruin scene's ordinary scope.
+  assert(registeredSurfaces.has(surfaceId));
+  const oldBlastCount = WorldEvents.listenerCount('blast');
+  assert.equal(R.clearMap(mapId), 1, 'a map teardown removes its registered mechanism');
+  assert.equal(WorldEvents.listenerCount('blast'), oldBlastCount - 1, 'a map teardown also unbinds its events');
+  assert(!registeredSurfaces.has(surfaceId), 'no dangling support may survive into the next generated ruin');
+  assert.equal(R.getNode(mapId,'old-pillar'), null);
+  assert.equal(R.clearMap(mapId), 0, 'teardown is idempotent');
+}
+
 // ---------------------------------------------------------------- debug + isolation
 const dbg = node('dbg', mech([{ event: 'blast' }, { event: 'struck' }]));
 register(dbg);
