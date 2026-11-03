@@ -369,15 +369,15 @@
     }
     async function recentCreations() {
       const results = []; // Branch CreateEvents ordered newest first, limited by GitHub's public event retention.
-      const seen = new Set(); // Deduplicates re-created branch names within the activity window.
+      const seen = new Set(); // Newest creation or deletion event for each branch takes precedence.
       for (let page = 1; page <= 3 && results.length < 15; page++) {
         const events = await getJson(apiRoot + "/events?per_page=100&page=" + page);
         for (const event of events) {
           const name = event && event.payload && event.payload.ref;
-          if (!event || !event.payload || event.type !== "CreateEvent" || event.payload.ref_type !== "branch"
-            || !validBranch(name) || seen.has(name)) continue;
-          seen.add(name);
-          results.push({ name: name, date: event.created_at });
+          if (!event || !event.payload || !["CreateEvent", "DeleteEvent"].includes(event.type)
+            || event.payload.ref_type !== "branch" || !validBranch(name) || seen.has(name)) continue;
+          seen.add(name); // A newer deletion excludes the older creation of that same branch.
+          if (event.type === "CreateEvent") results.push({ name: name, date: event.created_at });
         }
         if (events.length < 100) break;
       }
@@ -389,7 +389,8 @@
       const seen = new Set(); // Keeps a branch with multiple PRs from appearing multiple times.
       for (const pr of prs) {
         const name = pr && pr.head && pr.head.ref;
-        if (!pr.head || !pr.head.repo || pr.head.repo.full_name.toLowerCase() !== REPO.toLowerCase()
+        if (!pr || !pr.head || typeof pr.head.repo?.full_name !== "string"
+          || pr.head.repo.full_name.toLowerCase() !== REPO.toLowerCase()
           || !validBranch(name) || seen.has(name)) continue;
         seen.add(name);
         entries.push({ name: name, date: pr.created_at });
@@ -449,6 +450,8 @@
       return;
     }
     cancelLookup();
+    elements.commit.value = ""; // Discard the previous revision until this branch HEAD is confirmed.
+    renderLinks(); // Never offer an older pinned URL as the latest during refresh or after failure.
     const generation = requestGeneration;
     const controller = new AbortController(); // Bounds network waits and cancels obsolete branch lookups.
     requestController = controller;
@@ -539,7 +542,12 @@
 
   elements.branch.addEventListener("input", branchChanged);
   elements.recentBranches.addEventListener("change", function () {
-    if (!elements.recentBranches.value) return; // Custom option defers to the manual branch field.
+    if (!elements.recentBranches.value) {
+      elements.branch.value = ""; // Choosing custom clears the old selection before manual entry.
+      branchChanged();
+      elements.branch.focus();
+      return;
+    }
     elements.branch.value = elements.recentBranches.value;
     branchChanged();
     fetchLatest(); // Branch selection immediately resolves its latest SHA, not main's cached SHA.
