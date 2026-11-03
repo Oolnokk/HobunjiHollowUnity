@@ -1612,18 +1612,24 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
       let insertedAnimalFront = false; // The animal face sits over hood base but beneath furhood-trim even when base/trim use different source PNGs.
       const animalFront = animalParts.filter(part => part.pos === 'front');
+      const furData=profile?.bodyColors?.__hobunjiWovenClothing?.find(item=>item?.slot==='hood' && item?.furHood)?.furHood; // Current owner's hide, never another portrait's palette.
+      const tintForAnimalPart=part=>{
+        const naturalHex=window.FurHoodLeatherworking?.colorForRole?.(furData,part.role);
+        return naturalHex ? shadeFillTintForBodyColor({hex:naturalHex},_dyeReferenceHexForSlot(hood.tintSlot,_tintSpeciesId))
+          : tintFor(resolveLayerTintSlot(part.paletteColorKey,hood.tintSlot)); // Avoid assuming the inherited front color equals trim B.
+      };
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
         if (layer.pos !== 'back' && key === 'B' && !insertedAnimalFront) {
-          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
+          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
           insertedAnimalFront = true;
         }
         (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
       }
-      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
+      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
       for (const part of animalParts.filter(layer => layer.pos === 'back')) {
-        hoodBackLayers.push({ layer: part, tint: tintFor(resolveLayerTintSlot(part.paletteColorKey, hood.tintSlot)), group: hood, metalState: null });
+        hoodBackLayers.push({ layer: part, tint: tintForAnimalPart(part), group: hood, metalState: null });
       }
     }
     pushToTarget(pauldron, pauldronLayers);

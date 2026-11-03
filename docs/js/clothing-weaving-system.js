@@ -1965,7 +1965,8 @@
         maskCtx.drawImage(img, 0, 0);
         const pixels = maskCtx.getImageData(0, 0, mask.width, mask.height);
         for (let i = 0; i < pixels.data.length; i += 4) {
-          const eligible = patternGarmentPixelEligible(pixels.data[i + 3], Math.max(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]), false);
+          const eligible = patternGarmentPixelEligible(pixels.data[i + 3], Math.max(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]), false)
+            && !(furHood && window.FurHoodLeatherworking?.isProtectedSourcePixel?.(pixels.data,i)); // Excluded art details are not paintable fur.
           pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = pixels.data[i + 3] = eligible ? 255 : 0;
         }
         maskCtx.putImageData(pixels, 0, 0);
@@ -2006,7 +2007,9 @@
           const tintCtx = tintCanvas.getContext('2d');
           tintCtx.drawImage(img, 0, 0);
           const imageData = tintCtx.getImageData(0, 0, tintCanvas.width, tintCanvas.height);
+          const untouched=furHood ? new Uint8ClampedArray(imageData.data) : null; // Snapshot exact original source swatches before whole-layer dye.
           window.SpriteRecolor.recolorImageData(imageData.data, tintValue, 'direct');
+          if (untouched) furApi?.restoreProtectedPixels?.(imageData.data,untouched);
           tintCtx.putImageData(imageData, 0, 0);
           img = tintCanvas;
         } catch (_) {}
@@ -2032,7 +2035,7 @@
           'clothing-trim'
         ); // Second pass deliberately sits above ordinary patterns and builds its own black outline/unmerge boundary.
       }
-      rendered.push(img);
+      rendered.push(furHood ? (furApi?.preserveProtectedColors?.(shadingSource,img) || img) : img); // Exact source detail survives drawn motifs and regular reweaving.
     }
     if (!rendered.length) return { canvas: null, layers };
     const width = Math.max(...rendered.map(img => img.naturalWidth || img.width || 0));
@@ -2965,7 +2968,7 @@
     const trimColorHex = trimColorHexForDescriptor(descriptor); // Fixed trim independently reuses A, B, or C after the ordinary weave pass.
     const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : naturalHex ? portraitTintForHex(tint, naturalHex) : tint;
     const tinted = keyedAnimal || baseTintResolver(img, sourceKey, appliedTint); // Only the selective Grehlr part bypasses normal whole-layer portrait tint.
-    if (!patterns.length && !trimPattern && !naturalMarkings.length) return tinted;
+    if (!patterns.length && !trimPattern && !naturalMarkings.length) return descriptor?.furHood ? (furApi?.preserveProtectedColors?.(img,tinted) || tinted) : tinted;
     const tintKey = keyedAnimal ? `grehlr:${naturalHex || ''}:${furApi.patternColorFor?.(descriptor.furHood,'coloredstripe') || ''}`
       : appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
     const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`;
@@ -2999,6 +3002,7 @@
             'clothing-trim'
           ); // Trim goes last so it overlaps reusable motifs and receives its own independent black outline.
         }
+        if (descriptor?.furHood) decorated = furApi?.preserveProtectedColors?.(img,decorated) || decorated; // Last pass protects the immutable source swatches even from optional motifs.
         patternedCanvasCache.set(fullKey, decorated); // Cached natural+player passes are reused by the portrait's synchronous second render.
         return decorated;
       })()
@@ -3007,7 +3011,7 @@
       pendingPatternCanvasPromises.set(fullKey, pending);
     }
     onPatternPending?.(pending);
-    return tinted;
+    return descriptor?.furHood ? (furApi?.preserveProtectedColors?.(img,tinted) || tinted) : tinted;
   }
 
   function flushPortraitRenderGate() {
