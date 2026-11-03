@@ -21,7 +21,7 @@
     deps = injectedDeps;
     installHostedSampleHook();
     installMinimalPerformanceUiHook();
-    window.DynamicSurfaces?.addBeforeRenderClient?.(updateFlute); // The same world render cycle that updates other carried equipment tracks the flute at the mouth.
+    installFluteUpdater(); // The shared world-render hook drives the mouth attachment only while a flute session exists.
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
@@ -357,6 +357,12 @@
   }
 
   const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:''}; // Persistent, mobile-readable flute mount state.
+  let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
+  function installFluteUpdater() {
+    if (fluteUpdaterInstalled || typeof window.DynamicSurfaces?.addBeforeRenderClient !== 'function') return;
+    window.DynamicSurfaces.addBeforeRenderClient(updateFlute);
+    fluteUpdaterInstalled = true;
+  }
   function ensureFluteMount() {
     const THREE = deps?.THREE;
     if (!THREE || !window.SharedAttackPose?.createHeadFrame) return false;
@@ -436,6 +442,7 @@
     return true;
   }
   function beginFlute() {
+    installFluteUpdater();
     fluteState.active=true;
     ensureFluteMount();
     updateFlute();
@@ -446,7 +453,7 @@
   }
   function updateFlute() {
     if(!fluteState.active||!fluteState.root)return;
-    const avatar=window.Combat?.deps?.playerMesh; // Same live skinned player used by SharedAttackPose for blowgun reticle alignment.
+    const avatar=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // Live skinned player with the authored head/mouth rig.
     if(!avatar?.parent||!fluteState.root.children.length)return;
     if(fluteState.root.parent!==avatar.parent)avatar.parent.add(fluteState.root); // Follows the player between farm/town/ruin scenes without an orphaned prop.
     const pose=window.HeldActionAnimations?.blowgunReady?.poses?.strike; // Reuse the authored head-relative blowgun AIM, not a fabricated hand animation.
