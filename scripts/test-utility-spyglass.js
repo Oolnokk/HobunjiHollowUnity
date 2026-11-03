@@ -174,12 +174,12 @@ assert.match(arcScript, /selectedSpyglass && window\.Spyglass\?\.isEquipped\?\.\
 assert.match(indexHtml, /utility-spyglass\.css\?v=/, 'spyglass styling must load');
 assert.match(indexHtml, /js\/utility-spyglass\.js\?v=/, 'spyglass module must load');
 assert.ok(indexHtml.indexOf('js/utility-spyglass.js') < indexHtml.indexOf('src="game.js'), 'spyglass captures camera dependencies before gameplay initializes');
-assert.match(css, /#btnAction1\\.spyglass-action-visible/, 'Action 1 uses the standard action arch');
-assert.match(css, /#btnAction2\\.spyglass-action-visible/, 'Action 2 uses the standard action arch');
+assert.match(css, /#btnAction1\.spyglass-action-visible/, 'Action 1 uses the standard action arch');
+assert.match(css, /#btnAction2\.spyglass-action-visible/, 'Action 2 uses the standard action arch');
 assert.match(css, /spyglass-action-inactive/, 'Action 1 stays hidden until the lens is raised');
 assert.doesNotMatch(css, /#spyglassHud|Hold to Look|Put Away Spyglass/, 'the standalone footer and hold controls remain removed');
 assert.match(perceptionScript, /spyglass-enemy:/, 'close perception adds named hostile info lists');
-assert.match(perceptionScript, /creature\\.name \\|\\| creature\\.def\\?\\.label/, 'enemy labels prefer their individual name');
+assert.match(perceptionScript, /creature\.name \|\| creature\.def\?\.label/, 'enemy labels prefer their individual name');
 
 const game = environment(); // Action 2 toggles lens; Action 1 is held only for the closer view.
 assert.equal(game.api.equip(), true, 'utility spyglass equips');
