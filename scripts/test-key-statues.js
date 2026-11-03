@@ -85,10 +85,10 @@ class MockGroup {
  updateWorldMatrix(){}
 }
 const scene={isScene:true};
-const button=new MockGroup();
+const runtimeButton=new MockGroup();
 const root=new MockGroup();
 root.parent=scene;
-root.userData.meshById=new Map([['key_statue_button',button]]);
+root.userData.meshById=new Map([['key_statue_button',runtimeButton]]);
 let assetLoads=0;
 const registered=[];
 const takenTransitions=[];
@@ -116,7 +116,7 @@ assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,f
 runtimeWindow.KeyStatues.tick(.1);runtimeWindow.KeyStatues.tick(.1);
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,1,'the dispenser retries and registers the physical Key Statue');
-assert.equal(registered[0].group.parent,button,'the replacement is physically mounted on the moving button');
+assert.equal(registered[0].group.parent,runtimeButton,'the replacement is physically mounted on the moving runtimeButton');
 assert.equal(takenTransitions[0],false,'initially mounted payload leaves the plinth in its OFF/raised state');
 const first=registered[0];
 first.onLost(first,'hazard');
@@ -124,7 +124,7 @@ await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,2,'losing the statue spawns exactly one replacement');
 assert.notStrictEqual(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].payload,first.id,
  'the live payload reference changes to the replacement');
-assert.equal(registered[1].group.parent,button,'replacement is attached while the button animates back up');
+assert.equal(registered[1].group.parent,runtimeButton,'replacement is attached while the runtimeButton animates back up');
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,'successful replacement releases the respawn lock');
 
 console.log('Key Statue: authored statue/dispenser, inverted button transforms, mounted Burden, pickup channel, automatic loss cleanup and ON→OFF restoration checks passed.');
