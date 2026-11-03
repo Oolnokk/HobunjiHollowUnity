@@ -332,6 +332,7 @@
   function discoverIcedDoors(kit,context) {
     if(!world||world.theme!=='tothal')return 0;
     const candidates=iceDoorCandidates(kit,context); // Door-kind-neutral discovery is shared by authored, generated, and modular panels.
+    world.iceEligibleCount=candidates.length; // Mobile diagnostics distinguish missing door assets from a broken ice builder.
     let added=0; // Mobile snapshot exposes how many real doors acquired visual ice.
     for(const candidate of candidates){
       if(world.walls.length>=2)break; // Matches the existing maximum of two frozen doors per Tothal layout.
@@ -395,7 +396,7 @@
     if(!rooms.length)return;
     world={
       context,kit,theme:String(context.theme||'').toLowerCase(),
-      group:new THREE.Group(),records:[],walls:[],icedDoorIds:new Set(),iceScanTries:0,iceScanElapsed:0,source:null,
+      group:new THREE.Group(),records:[],walls:[],icedDoorIds:new Set(),iceEligibleCount:0,iceScanTries:0,iceScanElapsed:0,source:null,
       ceilingY:Number(context.ceilingY)||(Number(context.meta?.floorSurfaceY)||0)+(Number(context.meta?.wallHeight)||3),
       startedAt:performance.now(),
     };
@@ -421,6 +422,9 @@
       if(world.iceScanTries===0||world.iceScanElapsed>=.5){
         world.iceScanElapsed=0;world.iceScanTries++;
         discoverIcedDoors(world.kit,world.context); // Late build pass includes modules added after this composer ran.
+        if(world.iceScanTries===6&&!world.walls.length)lastEvent=world.iceEligibleCount
+          ?'Tothal ice unavailable: eligible door found but coverage could not be generated'
+          :'Tothal ice skipped: no ice-eligible physical doors in this layout'; // Visible on mobile without devtools.
       }
     }
     const fireState=window.DungeonFire?.debugSnapshot?.()||{};
@@ -458,6 +462,7 @@
       active:true,theme:world.theme,
       source:world.source?{id:world.source.id,armed:window.DungeonFire?.debugSnapshot?.().armed===true,at:world.source.point}:null,
       iceWalls:world.walls.map(wall=>({id:wall.id,doorType:wall.doorType,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2),growth:+(wall.icePlacement.iceLayer.userData.iceGrowthProgress??1).toFixed(3),spikes:wall.icePlacement.iceLayer.userData.surfaceGrowthStats?.spikes||0})), // No devtools required to inspect melting or generated ice.
+      iceDiscovery:{eligible:world.iceEligibleCount,attempts:world.iceScanTries,spawned:world.walls.length}, // Diagnoses scenes with no matching physical door.
       nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable})),
       icicles:world.records.filter(record=>record.kind==='icicle').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending})),
       cleansers:world.records.filter(record=>record.kind==='cleansingBrazier').map(record=>({id:record.id,cleansed:record.cleansed,radius:record.radius})),
