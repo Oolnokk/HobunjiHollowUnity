@@ -266,7 +266,7 @@
         <div class="sh-info">
           <div class="sh-name">${deps.esc(item.label)}</div>
           <div class="sh-desc">${deps.esc(item.desc || store.defaultDescription)}</div>
-          <div class="sh-price">${item.count} ${store.inPackText} · ${item.price}${store.eachText} · ${item.count * item.price}${store.stackValueText}</div>
+          <div class="sh-price">${item.count} ${store.inPackText} · ${item.price}${store.eachText} · ${item.totalPrice ?? item.count * item.price}${store.stackValueText}</div>
         </div>
         <div class="gs-sell-actions">
           <button class="shop-buy-btn gs-sell-one" type="button">${store.sellOneLabel}</button>
