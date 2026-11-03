@@ -1681,7 +1681,7 @@
           const paletteKey = role && paletteLayerMap ? paletteLayerMap[role] : null; // Stored only in the transient portrait descriptor; it is not garment save data.
           const variantKey = weavingHasOptionalTrim(descriptor.weaving) ? variantKeyForSourceUrl(cfg, url) : null; // Connects this raster to its exact species/gender trim authoring record.
           const trimPattern = variantKey ? authoredTrimPatternFromManifest(trimManifest, descriptor.baseCosmeticId, variantKey, view) : null;
-          if (!weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length && !trimPattern && !window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length) continue; // Unsupported trim variants render as ordinary clothing instead of forcing the expensive woven gate.
+          if (!descriptor.furHood && !weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length && !trimPattern && !window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length) continue; // Every natural fur layer enters the runtime tint map, even when no drawn motif exists.
           const entry = { ...descriptor, role, paletteKey, trimPattern };
           map.set(url, entry);
           for (const behindUrl of behindViewUrlsFor(url, descriptor.baseCosmeticId)) map.set(behindUrl, entry);
@@ -1690,7 +1690,7 @@
           const animalParts = window.FurHoodLeatherworking?.specialPartsFor?.(descriptor.furHood, wearer?.speciesId, wearer?.gender) || []; // The cosmetic JSON has no animal-specific sprites; resolve exactly the ones this wearer will draw.
           for (const part of animalParts) {
             const role = part.role; // Natural ink uses the animal-front/back role while player overweaves reuse the hood-base role.
-            if (!window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length && !weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length) continue;
+            // Even an unpatterned animal part may need genotype base/stripe/trim tint; don't gate this on a PNG motif.
             map.set(normalizeAssetPath(part.url), { ...descriptor, role, paletteKey: 'A', trimPattern: null }); // This per-portrait entry keeps other animals and other players' hoods isolated.
           }
         }
@@ -1985,7 +1985,8 @@
       const patterns = weavingPatternsForRole(weaving, naturalHoodWeavingRole(role, furHood)); // Custom base weaving also covers the matching hide-derived animal front and back.
       const pattern = patterns[0] || null; // Retained as the primary-pattern compatibility name used by color/swap code below.
       const swapPatternColors = !furHood && patterns.length > 0 && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and shared pattern dye.
-      const clothColorHex = furHood?.baseColor || (paletteKey === 'B' ? secondaryColorHex : primaryColorHex); // Original sprite dye retained as the pattern dye when swapping.
+      const furApi = window.FurHoodLeatherworking; // One shared species-specific pigment resolver controls the loom, icons and live equipped portraits.
+      const clothColorHex = furApi?.colorForRole?.(furHood, role) || (paletteKey === 'B' ? secondaryColorHex : primaryColorHex); // A natural trim follows an expressed gene even without a motif; special parts may choose base or pattern.
       const layerBaseHex = swapPatternColors ? patternHex : clothColorHex; // Whole sprite is dyed with the pattern color first when swapping.
       const layerPatternHex = swapPatternColors ? clothColorHex : patternHex; // Motif receives the original cloth dye when swapping.
       const tintValue = parseInt(String(layerBaseHex || '').replace('#', ''), 16);
@@ -1996,7 +1997,9 @@
       // this module hands it (silently, since the caller here only ever
       // saw the caught/swallowed rejection as "no recolor," i.e. every
       // layer rendering in its original authored placeholder color).
-      if (Number.isFinite(tintValue) && window.SpriteRecolor?.recolorImageData) {
+      const keyedAnimal = furApi?.recolorAnimalPart?.(img, furHood, role); // Grehlr's gray/white stripe and mint back each have their own HSV-preserving source key.
+      if (keyedAnimal) img = keyedAnimal; // Never wash out the untouched white stripe with the whole-sprite coat fill.
+      else if (Number.isFinite(tintValue) && window.SpriteRecolor?.recolorImageData) {
         try {
           const tintCanvas = Object.assign(document.createElement('canvas'), { width: img.naturalWidth || img.width || 1, height: img.naturalHeight || img.height || 1 });
           const tintCtx = tintCanvas.getContext('2d');
@@ -2013,10 +2016,11 @@
       // from, depend on which dye tinted it, not just its own url.
       const naturalMarkings = ['base', 'animalFront', 'animalBack'].includes(role) && Array.isArray(furHoodMarkingsOverride)
         ? furHoodMarkingsOverride : (window.FurHoodLeatherworking?.markingsFor?.(furHood, role) || []); // Tool preview may show an unsaved animal-pattern draft without changing the runtime manifest.
+      const naturalPartKey = keyedAnimal ? ':' + furApi.patternColorFor?.(furHood,'coloredstripe') : ''; // Otherwise identical Grehlr coats with different stripe genes must not share patterned preview caches.
       for (const mark of naturalMarkings) {
-        img = await applyPatternStackToTintedImage(img, [mark.pattern], mark.colorHex, `fur:${url}:${tintValue}:${mark.geneId}`, shadingSource, 'fur-hood-marking', { cache: !uncachedPatternPreview }); // Dev brush previews avoid retaining a new full-size canvas for every transient data-URL motif.
+        img = await applyPatternStackToTintedImage(img, [mark.pattern], mark.colorHex, `fur:${url}:${tintValue}${naturalPartKey}:${mark.geneId}`, shadingSource, 'fur-hood-marking', { cache: !uncachedPatternPreview }); // Dev brush previews avoid retaining a new full-size canvas for every transient data-URL motif.
       }
-      if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif', { cache: !uncachedPatternPreview });
+      if (patterns.length) img = await applyPatternStackToTintedImage(img, patterns, layerPatternHex, `layer:${url}:${tintValue}${naturalPartKey}:swap${swapPatternColors ? 1 : 0}`, shadingSource, 'woven-motif', { cache: !uncachedPatternPreview });
       if (trimPattern) {
         img = await applyPatternStackToTintedImage(
           img,
@@ -2947,17 +2951,22 @@
     // patterned like any layer; the luminous partition (the eyes) is never patterned.
     const descriptor = patternMap?.get(normalizeAssetPath(String(sourceKey).replace(/\|pixelDye\|false\|[^|]*$/, '')));
     const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(descriptor.role, descriptor.furHood)) : []; // User overweaves cover all hide pieces; each part still retains its own natural-marking role.
-    const naturalMarkings = window.FurHoodLeatherworking?.markingsFor?.(descriptor?.furHood, descriptor?.role) || []; // Independent animal genes retain independent inks under player weaving.
+    const furApi = window.FurHoodLeatherworking;
+    const naturalMarkings = furApi?.markingsFor?.(descriptor?.furHood, descriptor?.role) || []; // Independent animal genes retain independent inks under player weaving.
     const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
-    if (!patterns.length && !trimPattern && !naturalMarkings.length) return baseTintResolver(img, sourceKey, tint);
+    const naturalHex = furApi?.colorForRole?.(descriptor?.furHood, descriptor?.role) || null; // Base/trim/part colors are resolved directly from the saved hide, including motif-free genes.
+    const keyedAnimal = furApi?.recolorAnimalPart?.(img, descriptor?.furHood, descriptor?.role) || null; // Grehlr keeps white unless coloredstripe and tints mint back from base.
+    if (!patterns.length && !trimPattern && !naturalMarkings.length && !naturalHex) return baseTintResolver(img, sourceKey, tint);
     portraitPatternStats.patternedTintCalls++;
     const swapPatternColors = !descriptor?.furHood && patterns.length > 0 && weavingSwapsPatternColorsForRole(descriptor.weaving, descriptor.role); // Trim alone never swaps the underlying cloth/pattern colors.
     const patternColorHex = resolvePatternHex(descriptor.colorC); // Third dye slot is the ordinary woven-ink color and becomes the sprite color when swapped.
     const clothColorHex = portraitClothHex(descriptor); // Exact saved A/B dye becomes the motif color when this layer is swapped.
     const trimColorHex = trimColorHexForDescriptor(descriptor); // Fixed trim independently reuses A, B, or C after the ordinary weave pass.
-    const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : tint;
-    const tinted = baseTintResolver(img, sourceKey, appliedTint);
-    const tintKey = appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
+    const appliedTint = swapPatternColors ? portraitTintForHex(tint, patternColorHex) : naturalHex ? portraitTintForHex(tint, naturalHex) : tint;
+    const tinted = keyedAnimal || baseTintResolver(img, sourceKey, appliedTint); // Only the selective Grehlr part bypasses normal whole-layer portrait tint.
+    if (!patterns.length && !trimPattern && !naturalMarkings.length) return tinted;
+    const tintKey = keyedAnimal ? `grehlr:${naturalHex || ''}:${furApi.patternColorFor?.(descriptor.furHood,'coloredstripe') || ''}`
+      : appliedTint?.mode === 'shadeFill' ? `shade:${(appliedTint.rgb || []).join(',')}` : appliedTint?.mode === 'hueSatFill' ? `huesat:${appliedTint.hue}:${appliedTint.sat}` : 'none';
     const prefix = `runtime:${normalizeAssetPath(sourceKey)}:${tintKey}:swap${swapPatternColors ? 1 : 0}`;
     const colorHex = swapPatternColors ? clothColorHex : patternColorHex;
     const basePatternKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
