@@ -15,6 +15,7 @@
   label { display: block; margin: .35rem 0; }
   input, select, button { font: inherit; min-height: 2.4rem; box-sizing: border-box; }
   input[type=text], input[type=range] { display: block; width: 100%; }
+  label[hidden] { display: none; }
   #talonFields input { display: block; width: 5rem; }
   #talonFields strong { flex-basis: 100%; }
   output { float: right; color: #a7e6d8; }
@@ -64,6 +65,7 @@
           <option value="burden">Burden</option>
         </select>
       </label>
+      <label hidden>Game asset <select id="talonSource"></select></label>
       <p>Place the shared grip axes between the talons. Each payload has its own offset, rotation, and scale around its hold anchor.</p>
       <div id="talonFields" hidden></div>
       <p id="talonStatus" role="status"></p>
@@ -103,10 +105,18 @@
 <script src="../../js/perp-rotation.js?v=20261103flight1"></script>
 <script src="../../js/animal-shoulder-spline.js?v=20260917spline10"></script>
 <script src="../../js/flying-animal-rig.js?v=20261103talon1"></script>
-<script>window.__hobunjiFurnitureAssetBase = '../../assets/';</script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20261103talon2"></script>
+<script src="../../js/png-plane-avatar.js?v=20261103talon2"></script>
+<script>window.__hobunjiFurnitureConfigBase = '../../config/furniture-authored/'; window.__hobunjiFurnitureAssetBase = '../../assets/';</script>
 <script src="../../js/procedural-furniture.js?v=20261103talon1"></script>
 <script src="../../js/authored-furniture-runtime.js?v=20261103talon1"></script>
-<script src="talon-carry.js?v=20261103talon1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261103talon2"></script>
+<script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
+<script src="../../js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
+<script src="talon-carry.js?v=20261103talon2"></script>
 <script src="app.js?v=20261103talon1"></script>
 </body>
 </html>

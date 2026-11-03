@@ -3,7 +3,13 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
 
   const api = window.FlyingAnimalRig;
   const get = id => document.getElementById(id);
-  const type = get('talonType'), status = get('talonStatus'), fields = get('talonFields');
+  const type = get('talonType'), source = get('talonSource'), status = get('talonStatus'), fields = get('talonFields');
+  const catalog = { // Sample identities are preview-only. Exported poses still apply by payload type.
+    humanoid: [['garanki_gabu', 'Garanki Gabu'], ['aliri_ginju', 'Aliri Ginju'], ['kzubug', 'Kzubug']],
+    animal: [['gar-wolf', 'Gar-wolf'], ['puktuk', 'Puktuk']],
+    burden: [['hronalWitchBomb', 'Hronal Witch-bomb'], ['shattercaskBlasting', 'Blasting Shattercask'], ['keyStatue', 'Key Statue']],
+  };
+  let npcDatabase; // Load the NPC records once, when first needed.
   const guide = new THREE.Group(); // Reparented whenever the animal preview is rebuilt.
   const frame = new THREE.Group(); // Carries the sample and the aligned hold-anchor axes.
   const socket = new THREE.AxesHelper(.15);
@@ -14,41 +20,80 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
   frame.add(hold);
   guide.visible = false;
 
-  function previewHumanoid() {
-    const object = new THREE.Group(); // Neutral avatar stand-in with a shoulder mount.
-    const material = new THREE.MeshBasicMaterial({ color: 0x9db9d7 });
-    for (const [x,y,w,h] of [[0,.17,.16,.18],[0,-.08,.27,.3],[-.19,-.1,.08,.29],[.19,-.1,.08,.29],[-.07,-.36,.09,.26],[.07,-.36,.09,.26]]) {
-      const part = new THREE.Mesh(new THREE.BoxGeometry(w,h,.09),material);
-      part.position.set(x,y,0);
-      object.add(part);
+  async function previewHumanoid(id) {
+    npcDatabase ??= fetch('../../config/npcs/hobunji-starter-npc-database.json').then(response => {
+      if (!response.ok) throw new Error('Could not load the NPC database.');
+      return response.json();
+    }).catch(error => { npcDatabase = null; throw error; });
+    const { npcs } = await npcDatabase;
+    const npc = npcs.find(record => record.id === id);
+    if (!npc?.appearance) throw new Error('This NPC has no authored appearance.');
+    const portraits = window.NpcAvatarPreview;
+    await portraits.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
+    const profile = portraits.buildProfileFromNpcExport(npc);
+    if (!profile) throw new Error('Could not build the NPC portrait profile.');
+
+    async function render(portraitView) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 200;
+      await portraits.renderProfileToCanvas(canvas, profile, { portraitView });
+      if (!canvas.getContext('2d').getImageData(0, 0, 200, 200).data.some((value, index) => index % 4 === 3 && value)) {
+        throw new Error('The NPC portrait rendered blank. Check that its sprite assets are available.');
+      }
+      return canvas;
     }
-    return { object, anchor: { position: { x: 0, y: .07, z: 0 } } };
+    const front = await render('front'), back = await render('behind');
+    const { speciesId, gender } = npc.appearance;
+    const width = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.worldModelWidth ?? .9;
+    const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, front, {
+      backCanvas: back, profile, speciesId, gender, npcRecord: npc, modelWidth: width, modelHeight: width,
+    });
+    const object = new THREE.Group(); // Match the furniture preview's floor-relative portrait origin.
+    const height = model.userData.portraitModelHeight;
+    model.position.y = height / 2;
+    object.add(model);
+    const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters?.[`${speciesId}::${gender}`];
+    const posterior = rigProfile?.anchors?.posterior;
+    const y = window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(rigProfile?.posteriorRule, height, model.userData.handAttachY);
+    return { object, anchor: { position: { x: posterior?.position?.x ?? 0,
+      y: Number.isFinite(y) ? y : height / 2, z: posterior?.position?.z ?? 0 }, rotation: posterior?.rotationDeg } };
   }
 
-  async function previewAnimal() {
-    const image = new Image(); // Use a real side-profile animal sprite.
+  async function previewAnimal(id) {
+    const image = new Image();
     image.crossOrigin = 'anonymous';
-    image.src = '../../assets/creaturesprites/gar-wolf_idle.png';
+    image.src = `../../assets/creaturesprites/${id}_idle.png`;
     await image.decode();
-    const png = window.HobunjiSpritePngSurface;
-    const material = png.makeMaterial(THREE, png.makeCanvasTexture(THREE, image, 'talon-animal'), 'talon-animal', { side: THREE.DoubleSide });
-    const object = new THREE.Mesh(new THREE.PlaneGeometry(.55 * image.width / image.height, .55), material);
+    const model = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, image.src, {
+      name: id, modelWidth: .55 * image.width / image.height, modelHeight: .55,
+    });
+    const texture = model.frontPlane.material.map; // Seed the canonical shared map with the decoded image for a static Glide preview.
+    if (!texture.image) { texture.image = image; texture.needsUpdate = true; }
+    const object = new THREE.Group(); // Adapt the game's X-normal animal frame to the talon's Z-normal preview.
+    model.group.rotation.y = -Math.PI / 2;
+    object.add(model.group);
     return { object, anchor: { position: { x: 0, y: .09, z: 0 } } };
   }
 
-  async function previewBurden() {
-    const response = await fetch('../../config/furniture-authored/hronalWitchBomb.json');
-    if (!response.ok) throw new Error('Could not load the authored Witch-bomb.');
-    const data = await response.json();
-    const anchor = data.carryable?.billboardAnchor; // Same hold anchor shown in the Furniture Editor.
+  async function previewBurden(id) {
+    const data = await window.AuthoredFurniture.load(id);
+    if (!data) throw new Error('Could not load the authored furniture JSON.');
+    const anchor = data.carryable?.billboardAnchor;
     if (!anchor) throw new Error('The burden is missing its Furniture Editor hold anchor.');
-    return { object: window.AuthoredFurniture.buildGroup(data), anchor };
+    const object = window.AuthoredFurniture.buildGroup(data);
+    const patterns = []; // Wait for authored surface patterns before presenting the static sample.
+    object.traverse(node => {
+      if (node.userData.patternReady) patterns.push(node.userData.patternReady);
+    });
+    await Promise.all(patterns);
+    return { object, anchor };
   }
 
-  function sampleFor(key) {
+  function sampleFor(type, id) {
+    const key = `${type}:${id}`;
     if (!samples[key]) {
-      const load = { humanoid: previewHumanoid, animal: previewAnimal, burden: previewBurden }[key];
-      samples[key] = Promise.resolve().then(load).catch(error => { delete samples[key]; throw error; });
+      const load = { humanoid: previewHumanoid, animal: previewAnimal, burden: previewBurden }[type];
+      samples[key] = Promise.resolve().then(() => load(id)).catch(error => { delete samples[key]; throw error; });
     }
     return samples[key];
   }
@@ -102,7 +147,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     fields.append(row);
   }
 
-  type.addEventListener('change', async () => {
+  async function showSample() {
     const id = ++request, key = type.value;
     if (displayed) frame.remove(displayed.object);
     displayed = null;
@@ -112,18 +157,26 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     showFlying();
     status.textContent = 'Loading payload preview…';
     try {
-      const sample = await sampleFor(key);
+      const label = source.selectedOptions[0].textContent;
+      const sample = await sampleFor(key, source.value);
       if (id !== request) return;
       displayed = { ...sample, key };
       frame.add(sample.object);
-      status.textContent = key === 'burden' ? 'Hronal Witch-bomb · Furniture Editor hold anchor' :
-        key === 'humanoid' ? 'Player / NPC scale mannequin · shoulder mount' : 'Gar-wolf · back mount';
+      status.textContent = label + (key === 'burden' ? ' · Furniture Editor hold anchor' :
+        key === 'humanoid' ? ' · NPC portrait and posterior anchor' : ' · Animal portrait planes');
       refresh();
       changed(false);
     } catch (error) {
       if (id === request) status.textContent = error.message;
     }
+  }
+
+  type.addEventListener('change', () => {
+    source.replaceChildren(...(catalog[type.value] ?? []).map(([id, label]) => new Option(label, id)));
+    source.parentElement.hidden = !type.value;
+    showSample();
   });
+  source.addEventListener('change', showSample);
 
   return { refresh, setPerched(perched) { guide.visible = !perched && !!type.value && displayed?.key === type.value; } };
 };
