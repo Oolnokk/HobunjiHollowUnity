@@ -99,6 +99,14 @@ const THREE = {
   MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending: 2,
 };
 const window = { THREE };
+const fireStreams = []; // Captures authored particle emitter definitions for the palette/rise regression.
+let heldWeapon = null; // Simulated player-owned modular ranged weapon presented by the shared hand renderer.
+window.AuthoredFurniture = { createEmitterVisual(group, emitter, capacity) {
+  fireStreams.push({ group, emitter, capacity });
+  const points = new Object3D();
+  group.add(points);
+  return { points, update() {}, dispose() { group.remove(points); } };
+} };
 let metalMaskCalls = 0, opaqueCalls = 0, mappedIndices = [];
 window.WeaponEnchantmentVFX = {
   metalMaskForSprite: async () => {
@@ -114,6 +122,8 @@ window.WeaponEnchantmentVFX = {
     return { x: (index % mask.width) / 10, y: Math.floor(index / mask.width) / 10 };
   },
 };
+window.WeaponEnchantmentVFX.heldVisualForItem = key => key === 'test-bow' ? heldWeapon : null;
+window.WeaponEnchantmentVFX.sourceSpriteForWeapon = () => 'modular:bshuakauitl:fishing-mace:arsenicalBronze';
 window.RangedWeapons = { equippedRangedKey: () => 'test-bow' };
 const context = vm.createContext({
   window, THREE, Promise, Map, Set, Math, Number, String, Object, Array,
@@ -167,6 +177,12 @@ async function main() {
     'the flame starts at the projectile rather than flashing at scene origin before the image anchor resolves'
   );
 
+  assert.equal(thrown.projectile._dungeonFire.worldFlame.userData.fireEmitterVisuals.length, 3,
+    'projectiles use three actual authored particle emitters, not flame-shaped meshes');
+  assert.deepEqual(fireStreams.slice(0, 3).map(item => item.emitter.rate), [18, 15, 7],
+    'yellow increases 50%, red 25%, and orange absorbs their combined increase');
+  assert(fireStreams.every(item => item.emitter.speed > .7 && item.emitter.lifetime > .72),
+    'the emitter rises much higher than the ordinary campfire');
   const arrow = makeProjectile('arrow', 'assets/test-arrow.png');
   assert(api.attachProjectile(arrow.projectile), 'ordinary ranged projectile receives the shared flame');
   await settleAsync();
@@ -199,7 +215,26 @@ async function main() {
   api.disposeProjectile(thrown.projectile);
   api.disposeProjectile(arrow.projectile);
   assert.equal(api.debugSnapshot().activeVisuals, 0, 'projectile disposal releases every attached flame');
+  const scene = new Object3D();
+  const holder = new Object3D(), plane = new Object3D();
+  heldWeapon = new Object3D();
+  heldWeapon.userData.itemKey = 'test-bow';
+  heldWeapon.userData.toolPlane = plane;
+  heldWeapon.add(plane);
+  scene.add(holder);
+  holder.add(heldWeapon);
+  assert.equal(api.armNextProjectile(), true, 'charge can be armed for a visible modular weapon');
+  await settleAsync();
+  assert.equal(api.debugSnapshot().heldFire, true, 'fire is rendered on the charged weapon before release');
+  assert.equal(api.debugSnapshot().heldAnchorKind, 'metal', 'modular fishing mace uses its assembled metal mask');
+  assert.equal(api.debugSnapshot().heldWeaponKey, 'test-bow');
+  assert.equal(fireStreams.length, 9, 'held weapons use the same three-stream particle system as projectiles');
+  assert.equal(api.consumeNextProjectile(), true, 'firing transfers one charge away from the weapon');
+  assert.equal(api.debugSnapshot().heldFire, false, 'the in-hand fire disappears when consumed');
+  assert.equal(api.armNextProjectile(), true);
+  assert.equal(api.debugSnapshot().heldFire, true);
   api.clear();
+  assert.equal(api.debugSnapshot().heldFire, false, 'ruin cleanup removes held weapon fire too');
   assert.equal(api.debugSnapshot().reactiveTargets, 0, 'clear removes all fire-reactive targets');
 
   const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
