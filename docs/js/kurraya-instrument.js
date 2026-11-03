@@ -387,25 +387,42 @@
         const rgba = sourcePixels.data;
         // Old PNG exports sometimes bake an opaque black/white matte into otherwise transparent art.
         // Remove only matte-coloured areas connected to an image edge, preserving the flute's dark outlines and interior holes.
-        const pixelsCount = originalWidth * originalHeight; // One-time flood capacity, released after loading the sprite.
-        const visited = new Uint8Array(pixelsCount);
-        const queue = new Int32Array(pixelsCount);
-        const seeds = [0,originalWidth-1,(originalHeight-1)*originalWidth,pixelsCount-1];
-        for (let index=0;index<seeds.length;index++) {
-          const seed = seeds[index],offset=seed*4;
-          const base=[rgba[offset],rgba[offset+1],rgba[offset+2]]; // Each corner's matte colour, when it is opaque and nearly monochrome.
-          if (rgba[offset+3]<230 || Math.max(...base)-Math.min(...base)>12) continue;
-          const stamp=index+1;
-          let front=0,back=0;
-          queue[back++]=seed; visited[seed]=stamp;
-          while(front<back) {
-            const cell=queue[front++],at=cell*4,x=cell%originalWidth,y=(cell-x)/originalWidth;
-            if (rgba[at+3]<80 || Math.abs(rgba[at]-base[0])>14 || Math.abs(rgba[at+1]-base[1])>14 || Math.abs(rgba[at+2]-base[2])>14) continue;
-            rgba[at+3]=0;
-            if(x>0&&visited[cell-1]!==stamp) {visited[cell-1]=stamp;queue[back++]=cell-1;}
-            if(x+1<originalWidth&&visited[cell+1]!==stamp) {visited[cell+1]=stamp;queue[back++]=cell+1;}
-            if(y>0&&visited[cell-originalWidth]!==stamp) {visited[cell-originalWidth]=stamp;queue[back++]=cell-originalWidth;}
-            if(y+1<originalHeight&&visited[cell+originalWidth]!==stamp) {visited[cell+originalWidth]=stamp;queue[back++]=cell+originalWidth;}
+        const pixelsCount = originalWidth * originalHeight; // Opaque PNG black/white padding is flood-cleared only where it touches an image edge.
+        const before = rgba.slice(); // Keep original edge pixels for a one-pixel black stroke recovery around the painted flute.
+        const visited = new Uint8Array(pixelsCount); // Each background shade is scanned once, not one flood per perimeter pixel.
+        const queue = new Int32Array(pixelsCount); // Fixed storage prevents allocations in the large image flood.
+        for (let kind=1;kind<=2;kind++) {
+          let head=0,tail=0; // Current dark/white edge-connected matte region.
+          function enqueue(index) {
+            if(visited[index]===kind)return;
+            const offset=index*4;
+            if(rgba[offset+3]<230)return;
+            const r=rgba[offset],g=rgba[offset+1],b=rgba[offset+2];
+            const isMatte=kind===1 ? Math.max(r,g,b)<28 : Math.min(r,g,b)>232;
+            if(!isMatte)return;
+            visited[index]=kind;
+            queue[tail++]=index;
+            rgba[offset+3]=0;
+          }
+          for(let x=0;x<originalWidth;x++){enqueue(x);enqueue((originalHeight-1)*originalWidth+x);}
+          for(let y=1;y+1<originalHeight;y++){enqueue(y*originalWidth);enqueue(y*originalWidth+originalWidth-1);}
+          while(head<tail){
+            const cell=queue[head++],x=cell%originalWidth,y=(cell-x)/originalWidth;
+            if(x>0)enqueue(cell-1);
+            if(x+1<originalWidth)enqueue(cell+1);
+            if(y>0)enqueue(cell-originalWidth);
+            if(y+1<originalHeight)enqueue(cell+originalWidth);
+          }
+        }
+        // Preserve a fine, dark sprite outline adjacent to painted flute pixels even when the uploaded image used a solid black background.
+        for(let y=1;y+1<originalHeight;y++)for(let x=1;x+1<originalWidth;x++){
+          const i=y*originalWidth+x,offset=i*4;
+          if(visited[i]!==1||rgba[offset+3]!==0)continue;
+          for(const n of [i-1,i+1,i-originalWidth,i+originalWidth]){
+            const p=n*4;
+            if(before[p+3]>20&&Math.max(before[p],before[p+1],before[p+2])>45&&Math.min(before[p],before[p+1],before[p+2])<210){
+              rgba[offset+3]=before[offset+3];break;
+            }
           }
         }
         ctx.putImageData(sourcePixels,0,0);
