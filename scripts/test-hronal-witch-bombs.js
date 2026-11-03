@@ -60,6 +60,10 @@ assert(bombs.includes('BURNING_HEALTH'));
 assert(bombs.includes('triggerBurdenBlastAt'),'nearby burdens participate in chain reactions');
 assert(bombs.includes('registerBreakable'),'breakable props have an explicit, opt-in destruction registration');
 assert(bombs.includes('spawnCarriedByEnemy'));
+assert(bombs.includes('function clearEnemyGrip('),'enemy hand ownership has an explicit cleanup helper');
+assert(bombs.includes('bomb.onPickup=record=>{try{previousPickup?.(record);}finally{clearEnemyGrip(record);}}'),'player pickup clears the previous carrier hand target');
+assert(bombs.includes('bomb.onLost=(record,cause)=>{try{previousLost?.(record,cause);}finally{clearEnemyGrip(record);}}'),'burden loss clears the previous carrier hand target');
+assert(bombs.includes("clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target"),'detonation clears enemy hand state before removing the mesh');
 assert(bombs.includes("tileHazard(tileAt(mapId,position.x,position.z))"),'water, lava and void also destroy a dropped bomb');
 assert(bombs.includes("color:'#ff7417'"));
 
