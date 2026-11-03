@@ -71,7 +71,7 @@ assert.equal(specific.total, 117);
 assert.equal(H.groupsFor(key, 2).find(group => group.stars === 4).count, 1);
 const moved = H.transfer(key, 1, 'pack', 'shipping', 2, 26);
 assert.equal(moved.total, 26, 'sending hides ships lower-rarity stock first');
-assert.equal(H.getDebug().shipping[key], 0, 'a generic transfer contains no recorded coat only if the source truly has none');
+assert.equal(H.getDebug().shipping[key], 1, 'the shipped hide retains its exact plain-coat record until settlement');
 assert.equal(H.groupsFor(key, 1).length, 1);
 const remaining = H.groupsFor(key, 1)[0];
 assert.equal(remaining.stars, 4, 'rare hide stays in the bag while cheaper one ships');
