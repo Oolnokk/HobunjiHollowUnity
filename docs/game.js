@@ -17047,9 +17047,11 @@
         const count = stack ? stack.count : (inventory[key] || 0);
         const isHide = window.AnimalHides?.isHide?.(key) || false; // A selected hide stack represents one source coat, not an ordinary rolled-quality bucket.
         const hideRecord = isHide ? stack?.hideRecord : null; // Includes the original animal's inheritable coat colors, patterns, and painted overlays.
+        const quoteHideSale = amount => window.AnimalHides?.quote?.(key, amount, 'pack', def?.sellPrice || 1, inventory[key] || 0, stack?.variant || null); // Uses exact coat variants, including mixed unselected stacks.
         const unitPrice = isHide
-          ? (hideRecord?.sellPrice ?? def?.sellPrice ?? 0) // Existing animal valuation is already baked into a hide: never multiply it by stars again.
+          ? (quoteHideSale(1)?.total ?? def?.sellPrice ?? 0) // Animal rarity already determines the price; do not multiply it by stars again.
           : (stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0));
+        const fullStackPrice = isHide ? (quoteHideSale(count)?.total ?? count * unitPrice) : count * unitPrice; // Prevent mixed or controller-preview hides from being sold at one arbitrary coat price.
         function consumeSelected(amount) {
           if (isHide) {
             const beforeCount = Math.max(0, Number(inventory[key]) || 0); // Needed to distinguish recorded specimens from legacy generic hides.
@@ -17144,9 +17146,9 @@
             });
           }
           if (def.sellPrice > 0 && count > 0) {
-            mkBtn(`Sell Stack (${count} × ${unitPrice}g = ${count * unitPrice}g)`, 'sell', () => {
+            mkBtn(isHide ? `Sell Stack (${count} hides = ${fullStackPrice}g)` : `Sell Stack (${count} × ${unitPrice}g = ${fullStackPrice}g)`, 'sell', () => {
               if (!consumeSelected(count)) return;
-              const earned = count * unitPrice; // Only this quality stack is sold.
+              const earned = fullStackPrice; // Exact selected hide values or the existing quality-tier valuation.
               inventory.gold = (inventory.gold || 0) + earned;
               showToast(`Sold ${count} ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
