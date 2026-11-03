@@ -83,6 +83,10 @@
     assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedPendingNelk),true,'only the exact planned Nelk image is pending');
     assert.equal(window.FurHoodLeatherworking.isPendingAsset('assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png'),false,'uploaded Nelk front must not be silently skipped');
     assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedPendingNelk),true,'pending image lookup accepts docs-relative URLs');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedPendingNelk.replace(/^assets\//,'')),true,'actual loadImg path without assets/ resolves pending Nelk art');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedPendingNelk.replace(/^assets\//,'')),true,'relative stripped image path is permitted');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('https://example.test/docs/'+expectedPendingNelk),true,'absolute hosted asset URL is permitted');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png'),false,'existing Nelk artwork is never treated as pending');
     const tl = window.FurHoodLeatherworking.specialPartsFor(fur,'nuhongan','female');
     const mashtz = window.FurHoodLeatherworking.specialPartsFor(fur,'kenkari','male');
     assert.equal(tl.length,2,'inherited Tletingan head sees wolf front and back');

@@ -39,8 +39,11 @@
     return loading;
   }
   function isPendingAsset(assetPath) {
-    const normalized=String(assetPath||'').replace(/^\.\//,'').replace(/^(?:.*\/docs\/)?assets\//,'assets/'); // Compare the same repo-relative path in runtime and tool.
-    return Array.isArray(manifest.pendingAssets) && manifest.pendingAssets.includes(normalized); // Only artist-declared pending assets may be skipped before upload.
+    const value=String(assetPath||'').replace(/\\/g,'/').split(/[?#]/)[0]; // Normalize before comparing; runtime loadImg strips assets/ from its input.
+    const assetIndex=value.lastIndexOf('/assets/');
+    const normalized=(assetIndex>=0 ? value.slice(assetIndex+1) : value.replace(/^\.?\//,''))
+      .replace(/^docs\//,'').replace(/^(?!assets\/)/,'assets/'); // Accept manifest, docs-root, absolute and loadImg-relative paths.
+    return Array.isArray(manifest.pendingAssets) && manifest.pendingAssets.includes(normalized); // No wildcard exceptions for unexpectedly missing art.
   }
   function entryForKind(kind) {
     const normalized = normalizeKind(kind);
