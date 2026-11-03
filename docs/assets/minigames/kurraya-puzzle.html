@@ -139,13 +139,18 @@ summary{cursor:pointer;min-height:26px}
     scale.disabled = true; tonic.disabled = true; // Retuning midway would make the heard sequence and response incomparable.
     echoReplay.hidden = false;
     echoReplay.textContent = 'Hear sequence again';
+    resultEl.textContent = 'Press Hear sequence (or any note key/button) to listen, then copy the melody by ear.';
+    // Do not start AudioContext.resume() from iframe load: mobile browsers can leave its promise unresolved until a user gesture, deadlocking the disabled replay button.
     render();
-    replayEcho();
     return true;
   }
-  echoReplay.addEventListener('click',replayEcho);
+  echoReplay.addEventListener('click',replayEcho); // Explicit gesture is required for mobile Web Audio startup; the button remains keyboard accessible.
   function playNote(index) {
     if (!Number.isInteger(index) || index < 0 || index > 4) return false;
+    if (echoChallenge && echoChallenge.phase === 'retry') {
+      replayEcho(); // Controller and keyboard users can request the audio without needing a touchscreen tap.
+      return true;
+    }
     if (echoChallenge && echoChallenge.phase !== 'input') return false; // Never count notes accidentally struck while the example is sounding.
     const serial = ++playbackSerial;
     const button = notesEl.children[index];
