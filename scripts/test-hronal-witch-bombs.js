@@ -61,8 +61,8 @@ assert(bombs.includes('triggerBurdenBlastAt'),'nearby burdens participate in cha
 assert(bombs.includes('registerBreakable'),'breakable props have an explicit, opt-in destruction registration');
 assert(bombs.includes('spawnCarriedByEnemy'));
 const bandit=read('docs/js/combat/combat-bandit.js');
-assert(bandit.includes('|| !!c.mineWyrmWitchType'),'existing mine Wyrm-witches actually opt into spawning with the physical bomb');
-assert(bandit.includes('opts.carriesHronalWitchBomb === true'),'other enemy spawners can explicitly opt into the same carrier path');
+assert(!bandit.includes('|| !!c.mineWyrmWitchType'),'mine Wyrm-witches never receive ruin-specific Witch-bombs by default');
+assert(bandit.includes('opts.carriesHronalWitchBomb === true'),'a ruin-specific Harlyao skeleton spawner can explicitly opt into the carrier path');
 assert(bandit.includes('opts.extra?.witchBombFuseSeconds'),'spawn-specific fuse duration is forwarded to the carrier');
 assert(bandit.includes("c.carriesHronalWitchBomb === true"));
 assert(bandit.includes('spawnCarriedByEnemy?.(c'));
