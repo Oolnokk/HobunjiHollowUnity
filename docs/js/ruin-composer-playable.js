@@ -105,12 +105,26 @@
     }
     if (options.isCurrent?.()===false) throw new Error('Playable ruin generation was superseded.');
     const scope=String(options.scope||'composed-ruin-wing'); // Private terrain scope; it must be removed on exit/reroll.
-    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], controls:[], ropes:[], applied:null, disposed:false }; // Explicit IDs permit rollback even if apply() fails halfway through.
+    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], applied:null, disposed:false }; // Tracks authored collisions and restores original walkable tiles on rollback.
     let result=null;
     try {
       extendGrid(rec,origin,room,makeTile);
       registerTerrain(DS,scope,origin,room);
       owner.root=addGeometry(THREE,rec.scene,origin,room,owner);
+      function setPieceBlocked(record, blocked) {
+        // The legacy building grid is the common collision authority for player and ground enemies.
+        const baseZ=record.piece==='crackedPillar'?-2:0; // Authored pillar's upright foot sits two units behind its pivot, on the far bank.
+        const worldX=origin.x+record.x+Math.sin(record.rotY)*baseZ;
+        const worldZ=origin.z+record.z+Math.cos(record.rotY)*baseZ;
+        const col=Math.floor(worldX),row=Math.floor(worldZ),key=col+','+row;
+        const old=rec.grid[row]?.[col];
+        if(!old || old.bottomless) return; // Do not replace the gap's fall semantics with a solid tile.
+        if(!owner.blockerTiles.has(key))owner.blockerTiles.set(key,old);
+        const last=owner.blockerStates.get(key); // Suppress per-frame tile allocations during mechanism animation.
+        if(last===!!blocked)return;
+        owner.blockerStates.set(key,!!blocked);
+        rec.grid[row][col]=blocked?makeTile(false):owner.blockerTiles.get(key);
+      }
       const place = record => {
         const source=data.get(record.key);
         const group=A.buildGroup(source,PIECE_COLORS[record.piece]||0x80766a);
@@ -123,9 +137,11 @@
         if (group.userData?.furniturePuzzle) {
           const puzzleOverride = record.piece==='plinth' ? {channel:'Trial-Plinth-'+record.id,completionChannel:'Trial-Done-'+record.id}
             :record.piece==='bombDispenser'?{channel:'Trial-Bomb-'+record.id}:undefined; // Keeps this room's signals isolated from native V50 mechanisms.
-          if (!P.registerNode(mapId,{id:record.id,key:record.key,puzzle:puzzleOverride},group))
-            throw new Error('Could not register authored mechanism: '+record.id);
+          if (!P.registerNode(mapId,{id:record.id,key:record.key,puzzle:puzzleOverride},group,{
+            setBlocked:(_puzzleRecord,blocked)=>{if(record.piece==='crackedPillar')setPieceBlocked(record,blocked);},
+          })) throw new Error('Could not register authored mechanism: '+record.id);
         }
+        if(['plinth','statueDispenser','spawnerPillar'].includes(record.piece))setPieceBlocked(record,true); // Fixed fixtures obstruct walking before the encounter begins.
         if (record.piece==='ropeMount') {
           const dir=record.params?.strikeDir || {x:Math.sin(record.rotY),z:Math.cos(record.rotY)};
           const rope=G.HangingRopes.registerRope({
@@ -194,6 +210,10 @@
       if (owner.disposed) return;
       owner.disposed=true;
       if (owner.applied) C.dispose(owner.applied,{unplace:()=>{}});
+      for(const [key,tile] of owner.blockerTiles) {
+        const [col,row]=key.split(',').map(Number); // Restore original cells when a generation aborts after placement.
+        if(rec.grid[row]?.[col])rec.grid[row][col]=tile;
+      }
       for (const id of owner.placementIds) P.unregisterNode?.(mapId,id); // Releases surface listeners, active statue dispensers and pending motions.
       for (const id of owner.ropes) G.HangingRopes?.removeRope?.(id);
       for (const group of owner.placed) group.parent?.remove(group);
