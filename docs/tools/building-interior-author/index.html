@@ -948,8 +948,6 @@ function gridAction(e){
         if(tableChildCenterOnGrid(f))return true; // Removing an old origin tile must not delete a table-relative child.
         var info=furnGridInfo(f);
         for(var dc=0;dc<info.gridW;dc++) for(var dd=0;dd<info.gridD;dd++)
-
-//
           if(f.col+dc===c&&f.row+dd===r) return false;
         return true;
       }));
@@ -988,8 +986,13 @@ function gridAction(e){
     var f=furnAtPreferringSelected(c,r);
     if(f){
       selectFurn(f.id);
-      state.dragFurn=f;
-      state.dragOff={dc:c-f.col, dr:r-f.row};
+      if(tableChildCenterOnGrid(f)){
+        state.dragFurn=null; state.dragOff=null; // Attachment controls own this child's position, not grid dragging.
+        log('Use Spatial chair placement to reposition a table-attached chair.');
+      } else {
+        state.dragFurn=f;
+        state.dragOff={dc:c-f.col, dr:r-f.row};
+      }
     } else {
       selectFurn(null);
       state.dragFurn=null;
