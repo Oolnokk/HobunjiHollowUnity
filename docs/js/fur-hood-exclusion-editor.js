@@ -169,14 +169,16 @@
       if(token!==revision||closed)return;
       const path=spritePaths(config,selected.entry,selected.fit,selected.view)[roles.value];
       if(!path){status.textContent='No '+ROLES[roles.value].toLowerCase()+' sprite exists for '+selected.kind+' / '+selected.fit+'. Select another sprite role or fit.';renderList();return;}
-      if(manifest.pendingAssets?.includes(path)){status.textContent='Sprite referenced but not uploaded yet: '+path+'. You can still inspect existing layers; the art will be provided after merge.';renderList();return;}
+      // Pending Nelk artwork is still attempted: once the author uploads it, the tool must work without another code change.
       status.textContent='Loading untreated sprite: '+path;
       try{
         const source=await fetchSprite(path);if(token!==revision||closed)return;
         image=source;loadedPath=path;
         const drawn=sourcePixelsOf(source);rawBuffer=drawn.pixels;
         paintResult(raw,drawn.canvas);renderList();refreshPreview();
-      }catch(error){if(token===revision)status.textContent=error.message;}
+      }catch(error){if(token===revision)status.textContent=manifest.pendingAssets?.includes(path)
+        ? 'Sprite referenced but not uploaded yet: '+path+'. The inspector will load it automatically once the image is uploaded.'
+        : error.message;}
     }
     raw.onpointerdown=event=>{
       if(!rawBuffer||!image||closed)return;
@@ -185,7 +187,6 @@
       const offset=(y*raw.width+x)*4;
       if(!rawBuffer[offset+3]){picked.textContent='Transparent pixel ('+x+', '+y+') · select an opaque pixel';return;}
       const hex='#'+[...rawBuffer.slice(offset,offset+3)].map(v=>v.toString(16).padStart(2,'0')).join('');
-      const counts=rawBuffer.filter?null:null; // No approximate-color matching: sample one exact RGB tuple.
       pickedHex=hex;picked.textContent=hex.toUpperCase()+' at ('+x+', '+y+')';
       $('[data-ex-swatch]').style.background=hex;
       const selected=state(),values=lists();
