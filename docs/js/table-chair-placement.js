@@ -80,7 +80,7 @@
         : Math.abs(before.x - entry.root.position.x) + Math.abs(before.y - entry.root.position.y)
           + Math.abs(before.z - entry.root.position.z) > 1e-5;
       if (changed || Math.abs(priorYaw - entry.root.rotation.y) > 1e-5) {
-        window.HobunjiFurnitureTableAttachmentMoved?.(record);
+        if (!String(area).startsWith('preview:')) window.HobunjiFurnitureTableAttachmentMoved?.(record); // Editor previews never modify game NPC stations.
         moved++;
       }
     }
