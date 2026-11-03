@@ -1661,7 +1661,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
 
   if (renderBehindView) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
-    if (hoodBackLayers.length) hoodLayers.length = 0; // A hood with authored rear art (e.g. Ragged Hood) uses that rear piece alone from behind; drawing its front opening too would double-shade the cloth.
+    if (resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Only the actual hood's rear silhouette replaces its front; animal trophy backs alone must not erase the hood substrate.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
