@@ -229,6 +229,21 @@ async function main() {
   assert.equal(api.debugSnapshot().heldAnchorKind, 'metal', 'modular fishing mace uses its assembled metal mask');
   assert.equal(api.debugSnapshot().heldWeaponKey, 'test-bow');
   assert.equal(fireStreams.length, 9, 'held weapons use the same three-stream particle system as projectiles');
+  const formerFlame = scene.children.find(child => child.name === 'dungeonFire_chargedHeldWeapon'); // Captures room-owned fire before a simulated ruin-room transition.
+  const secondRoom = new Object3D(); // Tests an actual reparent instead of a stale Combat.deps.scene pointer.
+  secondRoom.add(holder);
+  assert.equal(api.updateHeldVisual(.016), true, 'a charged weapon resumes fire after changing scenes');
+  assert.equal(formerFlame.parent, null, 'changing rooms removes particles from the previous scene');
+  assert(secondRoom.children.some(child => child.name === 'dungeonFire_chargedHeldWeapon'),
+    'charged fire is created in the weapon\'s new scene');
+  holder.visible = false;
+  assert.equal(api.updateHeldVisual(.016), false, 'hidden holder suppresses charged fire');
+  assert.equal(api.debugSnapshot().heldFire, false, 'no floating fire remains while the weapon is hidden');
+  assert.equal(api.debugSnapshot().armed, true, 'a temporarily hidden weapon retains its one-shot charge');
+  holder.visible = true;
+  assert.equal(api.updateHeldVisual(.016), true, 'revealing the held weapon restores its fire');
+  assert.equal(api.debugSnapshot().heldFire, true);
+
   assert.equal(api.consumeNextProjectile(), true, 'firing transfers one charge away from the weapon');
   assert.equal(api.debugSnapshot().heldFire, false, 'the in-hand fire disappears when consumed');
   assert.equal(api.armNextProjectile(), true);
