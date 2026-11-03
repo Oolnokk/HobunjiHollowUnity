@@ -9,6 +9,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     animal: [['gar-wolf', 'Gar-wolf'], ['puktuk', 'Puktuk']],
     burden: [['hronalWitchBomb', 'Hronal Witch-bomb'], ['shattercaskBlasting', 'Blasting Shattercask'], ['keyStatue', 'Key Statue']],
   };
+  let bestiary; // Shared tool catalog for wildlife geometry dimensions.
   let npcDatabase; // Load the NPC records once, when first needed.
   const guide = new THREE.Group(); // Reparented whenever the animal preview is rebuilt.
   const frame = new THREE.Group(); // Carries the sample and the aligned hold-anchor axes.
@@ -55,7 +56,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     const rigProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters?.[`${speciesId}::${gender}`];
     const posterior = rigProfile?.anchors?.posterior;
     const y = window.HOBUNJI_ATTACHMENT_RIG_MATH.characterPosteriorY(rigProfile?.posteriorRule, height, model.userData.handAttachY);
-    return { object, anchor: { position: { x: posterior?.position?.x ?? 0,
+    return { object, sizeLabel: `game portrait plane ${model.userData.portraitModelWidth.toFixed(2)} × ${height.toFixed(2)}`, anchor: { position: { x: posterior?.position?.x ?? 0,
       y: Number.isFinite(y) ? y : height / 2, z: posterior?.position?.z ?? 0 }, rotation: posterior?.rotationDeg } };
   }
 
@@ -64,15 +65,28 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     image.crossOrigin = 'anonymous';
     image.src = `../../assets/creaturesprites/${id}_idle.png`;
     await image.decode();
+    bestiary ??= fetch('../../config/creatures/hobunji-creature-bestiary.json').then(response => {
+      if (!response.ok) throw new Error('Could not load game creature dimensions.');
+      return response.json();
+    }).catch(error => { bestiary = null; throw error; });
+    const { creatures } = await bestiary;
+    // Puktuk's runtime registration uses Gar-wolf's native 2.1-wide, legacy-aspect frame.
+    const definition = creatures.find(record => record.id === id) ??
+      (id === 'puktuk' ? creatures.find(record => record.id === 'gar-wolf') : null);
+    if (!definition?.modelWidth || !definition.spriteAspect) throw new Error('This animal has no game plane dimensions.');
+    const medium = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures?.[id]?.sizeScales?.medium;
+    const width = definition.modelWidth * (medium?.x ?? 1);
+    const height = definition.modelWidth * definition.spriteAspect * (medium?.y ?? 1);
     const model = window.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE, image.src, {
-      name: id, modelWidth: .55 * image.width / image.height, modelHeight: .55,
+      name: id, modelWidth: width, modelHeight: height,
     });
     const texture = model.frontPlane.material.map; // Seed the canonical shared map with the decoded image for a static Glide preview.
     if (!texture.image) { texture.image = image; texture.needsUpdate = true; }
     const object = new THREE.Group(); // Adapt the game's X-normal animal frame to the talon's Z-normal preview.
     model.group.rotation.y = -Math.PI / 2;
     object.add(model.group);
-    return { object, anchor: { position: { x: 0, y: .09, z: 0 } } };
+    return { object, sizeLabel: `medium game plane ${width.toFixed(2)} × ${height.toFixed(2)}`,
+      anchor: { position: { x: 0, y: .09 * height / .55, z: 0 } } };
   }
 
   async function previewBurden(id) {
@@ -86,7 +100,9 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       if (node.userData.patternReady) patterns.push(node.userData.patternReady);
     });
     await Promise.all(patterns);
-    return { object, anchor };
+    // The Furniture Editor guide's size is for fitting to a humanoid carrier.
+    // Keep the authored object's world dimensions when comparing it to the bird.
+    return { object, anchor: { position: anchor.position, rotation: anchor.rotation }, sizeLabel: 'authored world size' };
   }
 
   function sampleFor(type, id) {
@@ -96,6 +112,10 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       samples[key] = Promise.resolve().then(() => load(id)).catch(error => { delete samples[key]; throw error; });
     }
     return samples[key];
+  }
+
+  function showScaleSummary(carry) {
+    get('talonScales').textContent = `Bird scale · NPC ${carry.poses.humanoid.birdScale}× · Animal ${carry.poses.animal.birdScale}× · Burden ${carry.poses.burden.birdScale}×`;
   }
 
   function values(carry, group) {
@@ -108,9 +128,10 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
     const key = type.value;
     guide.visible = !!(bird && key && displayed?.key === key);
     fields.hidden = !key;
+    const carry = rig().talonCarry ?? api.normalizeTalonCarry();
+    showScaleSummary(carry);
     if (!bird || !key) return;
     if (guide.parent !== bird) bird.add(guide);
-    const carry = rig().talonCarry ?? api.normalizeTalonCarry();
     for (const { input, group, axis } of controls) input.value = values(carry, group)[axis];
     socket.position.set(carry.socket.x, carry.socket.y, carry.socket.z);
     if (guide.visible) api.placeTalonPayload(frame, displayed.object, carry, key, displayed.anchor);
@@ -163,7 +184,7 @@ window.createFlyingTalonEditor = function ({ root, rig, changed, showFlying }) {
       displayed = { ...sample, key };
       frame.add(sample.object);
       status.textContent = label + (key === 'burden' ? ' · Furniture Editor hold anchor' :
-        key === 'humanoid' ? ' · NPC portrait and posterior anchor' : ' · Animal portrait planes');
+        key === 'humanoid' ? ' · NPC portrait and posterior anchor' : ' · Animal portrait planes') + ' · ' + sample.sizeLabel;
       refresh();
       changed(false);
     } catch (error) {

@@ -66,7 +66,8 @@
         </select>
       </label>
       <label hidden>Game asset <select id="talonSource"></select></label>
-      <p>Place the shared grip axes between the talons. Each payload has its own offset and rotation around its hold anchor. Bird scale changes the size comparison indirectly while the payload stays at its reference size.</p>
+      <p>Place the shared grip axes between the talons. Each payload has its own offset and rotation around its hold anchor. Each payload type saves its own Bird scale. The preview keeps the payload at its game reference size.</p>
+      <p id="talonScales"></p>
       <div id="talonFields" hidden></div>
       <p id="talonStatus" role="status"></p>
     </section>
@@ -116,7 +117,7 @@
 <script src="../../js/clothing-weaving-system.js?v=20261103talon2"></script>
 <script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
 <script src="../../js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
-<script src="talon-carry.js?v=20261103talon3"></script>
+<script src="talon-carry.js?v=20261103talon4"></script>
 <script src="app.js?v=20261103talon3"></script>
 </body>
 </html>
