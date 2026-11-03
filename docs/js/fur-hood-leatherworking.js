@@ -106,7 +106,7 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(image, 0, 0);
     const frame = ctx.getImageData(0,0,canvas.width,canvas.height);
     const source = new Uint8ClampedArray(frame.data); // Both region masks sample original unpainted pixels.
-    const mintHue = fill.rgbToHsv(0xA3,0xC8,0x9F).h; // Mint source-key highlights and shaded companions in the authored Grehlr back.
+    const mintHue = fill.rgbToHsv(0x9B,0xC0,0x9A).h; // Actual Grehlr back source keys: light #9BC09A and shaded #6F896E share this mint hue.
     const isMint = i => {
       if (role !== 'animalBack' || !base || source[i+3] <= 8) return false;
       const hsv=fill.rgbToHsv(source[i],source[i+1],source[i+2]);

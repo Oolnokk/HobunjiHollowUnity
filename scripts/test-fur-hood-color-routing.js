@@ -32,13 +32,14 @@ active.genotype.coloredstripe={enabled:true,copies:1,color:'#bb33cc'};
 const none=JSON.parse(JSON.stringify(sample));none.genotype.mitts={enabled:false,copies:0,color:'#aa4422'};
 const sourcePixels=[
   255,255,255,255,  // Exact white stripe; must remain white without coloredstripe.
-  120,120,120,255,  // Neutral shadow of the same white stripe.
-  163,200,159,255,  // Authored Grehlr back's mint highlight.
-  72,101,68,255,    // Authored Grehlr back's mint shadow.
+  190,190,190,255,  // Grehlr back's actual predominant gray source shade (#BEBEBE).
+  249,255,249,255,  // Near-white tinted-neutral highlight also belongs to the white/gray stripe.
+  155,192,154,255,  // Grehlr back's actual mint highlight key (#9BC09A).
+  111,137,110,255,  // Grehlr back's actual mint shadow key (#6F896E).
   9,9,9,255,        // Near-black ink outline should not be recolored.
   200,200,200,0,    // Transparent pixels retain their alpha.
 ];
-const image={width:6,height:1,data:new Uint8ClampedArray(sourcePixels)};
+const image={width:7,height:1,data:new Uint8ClampedArray(sourcePixels)};
 const pixel=(cv,index)=>Array.from(cv.data.slice(index*4,index*4+4));
 async function main(){
   await api.ensureManifest();
@@ -50,20 +51,22 @@ async function main(){
   assert.equal(api.markingsFor(active,'trim').length,0,'natural trim tint does not generate a geometric motif');
   const plain=api.recolorAnimalPart(image,sample,'animalBack'),striped=api.recolorAnimalPart(image,active,'animalBack');
   assert.deepEqual(pixel(plain,0),[255,255,255,255],'white stays white without coloredstripe');
-  assert.deepEqual(pixel(plain,1),[120,120,120,255],'neutral shade stays gray without coloredstripe');
+  assert.deepEqual(pixel(plain,1),[190,190,190,255],'actual Grehlr gray shade stays unchanged without coloredstripe');
+  assert.deepEqual(pixel(plain,2),[249,255,249,255],'near-white highlight also stays original without coloredstripe');
   assert.notDeepEqual(pixel(striped,0).slice(0,3),[255,255,255],'coloredstripe repaints white');
-  assert.notDeepEqual(pixel(striped,1).slice(0,3),[120,120,120],'coloredstripe repaints its gray shade too');
+  assert.notDeepEqual(pixel(striped,1).slice(0,3),[190,190,190],'coloredstripe recolors the actual Grehlr gray shade');
+  assert.notDeepEqual(pixel(striped,2).slice(0,3),[249,255,249],'coloredstripe recolors the near-white authored highlight');
   assert(pixel(striped,0)[0]>pixel(striped,1)[0],'white and gray keep distinct HSV source values');
-  assert.deepEqual(pixel(striped,2),pixel(plain,2),'mint base region is independent of stripe genotype');
-  assert.notDeepEqual(pixel(plain,2).slice(0,3),[163,200,159],'mint highlight inherits base hue');
-  assert.notDeepEqual(pixel(plain,3).slice(0,3),[72,101,68],'mint shadow inherits base hue');
-  assert(pixel(plain,2)[2]>pixel(plain,3)[2],'mint retains highlight/shadow brightness');
-  assert.deepEqual(pixel(striped,4),[9,9,9,255],'near-black outlines stay unchanged');
-  assert.deepEqual(pixel(striped,5),[200,200,200,0],'transparent pixels are preserved');
+  assert.deepEqual(pixel(striped,3),pixel(plain,3),'mint base region is independent of stripe genotype');
+  assert.notDeepEqual(pixel(plain,3).slice(0,3),[155,192,154],'actual mint highlight inherits base hue');
+  assert.notDeepEqual(pixel(plain,4).slice(0,3),[111,137,110],'actual mint shadow inherits base hue');
+  assert(pixel(plain,3)[2]>pixel(plain,4)[2],'mint retains original highlight/shadow brightness');
+  assert.deepEqual(pixel(striped,5),[9,9,9,255],'near-black outlines stay unchanged');
+  assert.deepEqual(pixel(striped,6),[200,200,200,0],'transparent pixels are preserved');
   assert.deepEqual(Array.from(image.data),sourcePixels,'source sprite never mutates');
   assert.strictEqual(api.recolorAnimalPart(image,active,'animalBack'),striped,'per-sprite genotype tint cache is reused');
   const front=api.recolorAnimalPart(image,active,'animalFront');
-  assert.deepEqual(pixel(front,2),[163,200,159,255],'Grehlr front does not color a mint region as back base');
+  assert.deepEqual(pixel(front,3),[155,192,154,255],'Grehlr front does not color an unrelated mint region as back base');
   const wolf={kind:'gar-wolf',baseColor:'#886644',genotype:{base:{color:'#886644'},foxtail:{enabled:true,copies:1,color:'#ddbb33'}}};
   assert.equal(api.colorForRole(wolf,'animalFront'),'#886644','unconfigured animal parts preserve base by default');
   wolf.authoringPalette={partColors:{front:'pattern',back:'base'}};
