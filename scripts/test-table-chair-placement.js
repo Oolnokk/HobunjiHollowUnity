@@ -84,7 +84,7 @@ const child={id:'chair',itemKey:'chairSimpleFurniture',col:4,row:3,tableId:'tabl
 const parentTable={id:'table',itemKey:'tableRoundFurniture',col:4,row:2};
 const interiorGrid=window.InteriorFurnitureGrid;
 assert.equal(interiorGrid.isValidTableAttachment(child,[child,parentTable]),true);
-assert.deepEqual(JSON.parse(JSON.stringify(interiorGrid.mergedColliders({colliders:[],furniture:[child,parentTable]}).colliders)),[[4,2],[5,2],[4,3],[5,3]],
+assert.deepEqual(JSON.parse(JSON.stringify(interiorGrid.mergedColliders({colliders:[],furniture:[child,parentTable]}).colliders)),[[4,2],[4,3],[5,2],[5,3]],
  'attached chair must not add a separate occupied tile');
 const orphan={...child,tableId:'deleted-table'};
 assert.equal(interiorGrid.isValidTableAttachment(orphan,[orphan]),false);
