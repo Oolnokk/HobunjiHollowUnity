@@ -21,10 +21,11 @@ const document = {
 const player = { health: 0, maxHealth: 100, vx: 0, vy: 0, invulnUntil: 0 }; // The same player object survives voluntary respawn and Second Wind.
 const respawns = []; // Captures reasons handed to the canonical death callback.
 const crawlChanges = []; // Confirms give-up resets the crawl pose.
+let nowMs = 1000; // Monotonic wall-clock fake advanced independently of simulation dt.
 let dodgeLabel = 'B'; // Simulates the current controller binding; changed later to test live HUD refresh.
 let ordinaryDodges = 0; // Counts standing touch presses so the feature cannot eat normal Dodge.
 const context = {
-  document, performance: { now: () => 1000 }, Date, console,
+  document, performance: { now: () => nowMs }, Date, console,
   PlayerCrawl: { setActive(active) { crawlChanges.push(active); } },
   ActionPromptUI: { actionPromptGlyph(action, touch) {
     assert.equal(action, 'dodge');
@@ -44,46 +45,48 @@ PD.init({
   die(reason) { respawns.push(reason); },
 });
 
+const tick = (seconds, simulationDt = seconds) => { nowMs += seconds * 1000; PD.update(simulationDt); }; // Separates elapsed real time from simulation-frame time.
+
 assert.equal(PD.CONFIG.giveUpHoldSeconds, 1.5);
 assert.equal(PD.setGiveUpHeld(true), false, 'Dodge never starts a hold when standing');
 assert.equal(PD.tryDown('combat'), true);
-PD.update(0.01);
+tick(0.01);
 const root = document.body.children[0]; // References the existing downed overlay whose bottom child is the prompt.
 const promptWrap = root.children[1]; // The visible prompt is separate from the bleed-out panel.
 assert.equal(promptWrap.children[0].textContent, 'Hold B to respawn');
 assert.match(promptWrap.style.cssText, /KhymeryyanRomanLetters\+Numbers/, 'prompt uses the actual game font');
 assert.match(promptWrap.style.cssText, /bottom:/, 'the hint is anchored at the bottom');
 assert.equal(PD.setGiveUpHeld(true), true);
-PD.update(0.7);
+tick(0.7);
 assert.equal(respawns.length, 0, 'partial hold does not respawn');
 assert(PD.debugSnapshot().giveUpHoldS >= 0.7);
 PD.setGiveUpHeld(true);
-PD.update(0.3);
+tick(0.3);
 assert.equal(respawns.length, 0, 'repeated keydown does not restart or immediately finish a hold');
 PD.setGiveUpHeld(false);
 assert.equal(PD.debugSnapshot().giveUpHoldS, 0, 'button-up resets hold progress');
-PD.update(0.5);
+tick(0.5);
 assert.equal(respawns.length, 0, 'release cancels a would-be give up');
 dodgeLabel = 'R';
-PD.update(0.01);
+tick(0.01);
 assert.equal(promptWrap.children[0].textContent, 'Hold R to respawn', 'rebinding/device changes refresh the hint');
 PD.setGiveUpHeld(true);
-PD.update(1.49);
+tick(1.49, 0.04); // At low FPS only 40 ms of simulation time has elapsed; surrender must use real elapsed time.
 assert.equal(respawns.length, 0);
-PD.update(0.01);
+tick(0.01, 0.01);
 assert.deepEqual(respawns, ['give-up'], 'completion uses the existing death callback exactly once');
 assert.equal(player.health, 0);
 assert.equal(PD.isDowned(), false);
 assert.equal(root.style.display, 'none', 'respawn clears the entire downed overlay');
 assert.equal(crawlChanges.at(-1), false);
 assert.equal(PD.debugSnapshot().lastEvent.type, 'give-up', 'mobile diagnostics report voluntary respawn');
-PD.update(10);
+tick(10);
 assert.equal(respawns.length, 1, 'later frames never repeat the respawn');
 
 player.health = 0;
 PD.tryDown('damage');
 PD.setGiveUpHeld(true);
-PD.update(0.8);
+tick(0.8);
 handlers.get('window:blur')();
 assert.equal(PD.debugSnapshot().giveUpHeld, false, 'losing focus cancels hold');
 assert.equal(PD.debugSnapshot().giveUpHoldS, 0);
@@ -99,13 +102,25 @@ assert.equal(PD.setGiveUpHeld(true), false, 'a key held after revival cannot cau
 player.health = 0;
 PD.tryDown('damage');
 PD.setGiveUpHeld(true);
-PD.update(1);
+tick(1);
 PD.reset();
 assert.equal(PD.isDowned(), false, 'checkpoint/scripted reset clears surrender progress');
 player.health = 0;
 PD.tryDown('damage');
-PD.update(1);
+tick(1);
 assert.equal(PD.debugSnapshot().giveUpHoldS, 0, 'the next downed state starts with an empty hold');
+PD.reset();
+
+// Pausing must cancel the hold before the monotonic clock can advance while no game-frame updates run.
+const pauseGuard = 'if (paused) window.PlayerDowned?.setGiveUpHeld?.(false);'; // Exact game-loop statement to execute with a paused synthetic frame.
+assert(game.includes(pauseGuard), 'the gameplay frame cancels the surrender hold on pause');
+player.health = 0;
+PD.tryDown('combat');
+PD.setGiveUpHeld(true);
+vm.runInNewContext(pauseGuard, { paused: true, window: context });
+assert.equal(PD.debugSnapshot().giveUpHeld, false, 'pause drops the physical hold');
+tick(3, 0.04);
+assert.equal(respawns.length, 1, 'a long pause cannot retroactively finish the hold');
 PD.reset();
 
 // Execute the opening guard from the real keyboard/controller dispatcher. Its
