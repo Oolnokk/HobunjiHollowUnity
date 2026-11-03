@@ -19,7 +19,7 @@ const server = http.createServer((request, response) => {
   if (route === '/ice-test') {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end('<!doctype html><html><head><script src="/vendor-three.js"></script>' +
-      '<script src="/docs/js/ice-stalagmite-coverage.js"></script><script src="/docs/js/foliage-generator.js"></script>' +
+      '<script src="/docs/js/ice-stalagmite-coverage.js"></script><script src="/docs/js/foliage-generator.js"></script><script src="/docs/js/authored-furniture-runtime.js"></script>' +
       '</head><body><div id="tab-ice"></div><pre id="debugLog"></pre></body></html>');
     return;
   }
@@ -91,6 +91,25 @@ const server = http.createServer((request, response) => {
       foliage.applySurfaceGrowth(furniture, []);
       const cleaned = !getLayer() && furniture.children.length === 3 && furniture.children.every(child => child.isMesh);
       const selfTest = window.IceStalagmiteCoverage.selfTest(T); // Public mobile self-check uses the same implementation.
+      let readyCallbacks = 0; // Ensures a preexisting source-ready handler isn't lost to the ice lifecycle.
+      window.ProceduralFurniture = { buildPartMesh() {
+        const driver = new T.Mesh(new T.BoxGeometry(.001, .001, .001), new T.MeshBasicMaterial());
+        driver.userData.furnitureGlbPart = true;
+        driver.userData.onRockSourceReady = () => { readyCallbacks++; };
+        return driver;
+      } };
+      const glbData = { key: 'ice_glb_test', parts: [{kind: 'glb', id: 'loaded_fixture'}],
+        recognizedSurfaces: [], itemPlacements: [],
+        surfaceGrowth: [{...recipe, targetIds: ['loaded_fixture']}] };
+      const glbGroup = window.AuthoredFurniture.buildGroup(glbData, 0xffffff);
+      const glbDriver = glbGroup.userData.meshById.get('loaded_fixture');
+      const initialGlbEmpty = !glbGroup.children.some(child => child.userData.iceStalagmites && child.children.length);
+      const realChild = new T.Mesh(new T.BoxGeometry(1.5, 1, 1.5), new T.MeshBasicMaterial());
+      realChild.position.y = .5; glbDriver.add(realChild); // Mimics the real asynchronous GLTFLoader child insertion.
+      glbDriver.userData.onRockSourceReady(); // Runtime must rerun ice after GLB has real render geometry.
+      const glbAfterReady = glbGroup.children.some(child => child.userData.iceStalagmites &&
+        child.userData.surfaceGrowthStats?.spikes > 0);
+      const glbReadyPreservesCallback = readyCallbacks === 1;
       window.state = { surfaceGrowth: [foliage.normalizeSurfaceGrowth({ kind: 'roots', count: 1, length: .4, texture: '' })], parts: [{ id: 'left' }, { id: 'right' }], selectedType: 'part', selectedId: 'left' };
       window.root = furniture; // Simulates the canonical Furniture V58 state/root globals used by the sidecar.
       left.userData.surfaceFoliageId = 'left'; right.userData.surfaceFoliageId = 'right';
@@ -98,7 +117,7 @@ const server = http.createServer((request, response) => {
       window.rebuildSurfaceFoliage = () => foliage.applySurfaceGrowth(window.root, window.state.surfaceGrowth);
       window.queueUndoHistory = () => { window.undoCalls = (window.undoCalls || 0) + 1; };
       window.log = () => {};
-      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest};
+      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest, initialGlbEmpty, glbAfterReady, glbReadyPreservesCallback};
     });
     assert.equal(geometryResult.normalized.kind, 'iceStalagmites', 'Normalization must retain the ice kind');
     assert.equal(geometryResult.normalized.iceFacets, 6, 'Ice-only settings must survive the common JSON schema');
@@ -108,6 +127,7 @@ const server = http.createServer((request, response) => {
     assert(geometryResult.stable && geometryResult.persisted, 'Saved seed must regenerate identical geometry across JSON round-trip');
     assert(geometryResult.missingTargetEmpty && geometryResult.capped && geometryResult.cleaned, 'Empty targets, safety limits, and cleanup must work');
     assert.equal(geometryResult.selfTest.ok, true, 'In-editor mobile geometry self-check must succeed');
+    assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
     await page.addScriptTag({ url: '/docs/tools/furniture-avatar-author/ice-stalagmites.js' });
     const uiResult = await page.evaluate(() => {
