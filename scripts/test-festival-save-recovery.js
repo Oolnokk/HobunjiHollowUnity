@@ -49,7 +49,7 @@ const boot = {_selCharId:char.id,_selWorldId:world.id,_saveMeta:meta,_el:{classL
   document:{dispatchEvent(){}},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},
   setTimeout(){},removeOnboardingOverlay(){},saveSaveMeta(){},saveProfile(){},isWorldOwner:()=>true,getFarmhandPermissions:()=>({})};
 vm.createContext(boot);
-for (const name of ['worldsForCharacter','ensureWorldMember','_playSaveSelect'])
+for (const name of ['worldsForCharacter','ensureWorldMember','ensureCharacterStarterFlute','_playSaveSelect'])
   vm.runInContext(functionSource(onboarding,name,'  '),boot);
 boot._playSaveSelect();
 const playerData = boot.window.__hobunjiPlayerProfile;
