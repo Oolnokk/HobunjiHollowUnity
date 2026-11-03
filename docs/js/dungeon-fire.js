@@ -28,6 +28,7 @@
   ]); // 50% more yellow, 25% more red, orange reduced; still 40 particles/s.
   const PLUME_LIFETIME = 1.3; // Longer than regular campfire's .72 seconds.
   const PLUME_SPEED = 2.35; // World-up rise ~3 units, vs regular campfire's ~0.5.
+  const HELD_REPLAY_PADDING = PLUME_SPEED * PLUME_LIFETIME + .35; // Includes the whole tall plume in the existing scissored held-object x-ray redraw.
   function createWorldFlame() {
     const group = new THREE.Group();
     group.name='dungeonFire_worldUprightFlame';
@@ -157,10 +158,11 @@
   let heldVisualState=null; // One charged player-held weapon; no NPC/free-floating matching gear.
   let heldRequest=0; // Invalidate late modular mask promises on holster, swap, launch or cleanup.
   function disposeHeldVisual() {
-    heldRequest++;
-    if(!heldVisualState)return;
+    if (!heldVisualState) return;
+    heldRequest++; // Invalidate pending metal-mask resolutions only when an actual charged visual is retired.
+    if (heldVisualState.plane?.userData) delete heldVisualState.plane.userData.hobunjiDungeonFireVfxPadding; // Does not touch enchantment VFX padding.
     disposeWorldFlame(heldVisualState.worldFlame);
-    heldVisualState=null;
+    heldVisualState = null;
   }
   function heldRenderScene(visual) {
     let root = null; // Follows the actual hand/weapon ancestor chain to choose the scene rendered in this room.
@@ -219,6 +221,7 @@
     WORLD_POINT.set(state.anchor?.x || 0, state.anchor?.y || 0, 0);
     state.plane.localToWorld(WORLD_POINT);
     state.worldFlame.position.copy(WORLD_POINT);
+    if (state.plane.userData) state.plane.userData.hobunjiDungeonFireVfxPadding = HELD_REPLAY_PADDING; // Kept independent of other enchantment emitters.
     const step = Math.max(0, Math.min(.05, Number(dt) || 0)); // Stable particle simulation during stalls or UI pauses.
     state.age += step;
     tickWorldFlame(state.worldFlame, step, state.age);
