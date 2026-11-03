@@ -78,17 +78,21 @@
   function sampleOrigin(random, source, settings) {
     const box = source.bounds; // Eligible geometry defines which lower surfaces can be engulfed.
     const inner = random() < settings.iceEngulf; // Inner origins emerge through lower furniture; outer ones grip its perimeter.
-    const padding = inner ? -settings.iceFootprintPadding * .35 : settings.iceFootprintPadding;
-    const halfWidth = Math.max(.005, (box.max.x - box.min.x) * .5 + padding);
-    const halfDepth = Math.max(.005, (box.max.z - box.min.z) * .5 + padding);
+    const padding = settings.iceFootprintPadding; // Positive padding extends the frosted perimeter beyond the actual furniture.
+    const halfWidth = Math.max(.005, (box.max.x - box.min.x) * .5);
+    const halfDepth = Math.max(.005, (box.max.z - box.min.z) * .5);
     const cx = (box.min.x + box.max.x) * .5; // Furniture-local horizontal center for the selected part.
     const cz = (box.min.z + box.max.z) * .5; // Furniture-local depth center for the selected part.
+    if (inner) return { x: cx + (random() * 2 - 1) * Math.max(.005, halfWidth - padding * .15),
+      z: cz + (random() * 2 - 1) * Math.max(.005, halfDepth - padding * .15) }; // Engulf fills the actual door face, not just its edges.
+    const outerWidth = halfWidth + padding; // Remaining clusters spread around the projected furniture perimeter.
+    const outerDepth = halfDepth + padding; // The extra border gives upright crystals space outside the door.
     const along = random() * 2 - 1; // Spreads candidate locations along real projected lower edges.
     const side = Math.floor(random() * 4); // Repeated perimeter sampling avoids floating ice on upper surfaces.
-    if (side === 0) return { x: cx - halfWidth, z: cz + along * halfDepth };
-    if (side === 1) return { x: cx + halfWidth, z: cz + along * halfDepth };
-    if (side === 2) return { x: cx + along * halfWidth, z: cz - halfDepth };
-    return { x: cx + along * halfWidth, z: cz + halfDepth };
+    if (side === 0) return { x: cx - outerWidth, z: cz + along * outerDepth };
+    if (side === 1) return { x: cx + outerWidth, z: cz + along * outerDepth };
+    if (side === 2) return { x: cx + along * outerWidth, z: cz - outerDepth };
+    return { x: cx + along * outerWidth, z: cz + outerDepth };
   }
 
   function appendTriangle(T, position, color, anchors, a, b, c, tint, shade, origin) {
