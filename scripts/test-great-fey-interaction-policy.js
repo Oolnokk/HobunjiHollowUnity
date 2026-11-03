@@ -50,9 +50,15 @@ assert.equal(relationWrites, 0, 'rejected gifts must not alter social relationsh
 assert.equal(saveWrites, 0, 'rejected gifts must not modify saves');
 assert(window.NpcGifting.getNpcGiftOfferAction({ rec: { id: 'sloomi', name: 'Sloomi', gifts: {} } }), 'regular NPC still offers gifts');
 
+const loadedProfileConfig = JSON.parse(read('docs/config/dialogue/npc-reaction-profiles.json')); // Shared authored reactions fixture keeps this Great Fey test consistent with silent-until-loaded runtime behavior.
+context.URL = URL;
+context.document = { baseURI: 'https://example.test/docs/' };
+context.fetch = async url => ({ ok: true, json: async () => String(url).includes('npc-reaction-profiles.json') ? loadedProfileConfig : { greetingRadiusTiles: 2.6 } }); // Browser-style fetch serves the real profile JSON and greeting range.
+(async () => {
 let emittedSocialReactions = 0; // Counts actual reaction bubbles shown by the live NPC reaction runtime.
 window.AmbientDialogue = { show: () => { emittedSocialReactions++; return { startedAt: 0, durationMs: 1000 }; } };
 vm.runInContext(read('docs/js/npc-silliness-reaction-runtime.js'), context, { filename: 'npc-silliness-reaction-runtime.js' });
+await window.NpcReactionProfiles.reload(); // Successful config load is required before a normal NPC can speak; offline failures must remain silent.
 for (const id of excluded) {
   assert.equal(window.NpcSillinessReactions.react({ rec: { id }, root: { position: { x: 0, z: 0 } } }), false, `${id} cannot react to the player`);
 }
@@ -62,13 +68,13 @@ assert.equal(emittedSocialReactions, 1, 'normal NPC reactions still show');
 
 const greeting = read('docs/js/ambient-dialogue.js'); // Player/NPC proximity greeting and pending greeting priority checks.
 const social = read('docs/js/npc-silliness-reaction-runtime.js'); // Social stimuli and direct pet reactions.
-const stable = read('docs/js/stable-animal-progression.js'); // Auto pet greetings and one-off pet recognition conversations.
+const stable = read('docs/js/stable-animal-progression.js'); // Auto pet greetings and silent recognition memory.
 const petQueue = read('docs/js/stable-animal-perk-adjustments.js'); // Async pet reaction queue and Rapport side effects.
 assert.match(greeting, /function tryGreeting[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'proximity greetings reject the four Fey before dialogue selection');
 assert.match(social, /function react[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'social reactions reject the four Fey');
 assert.match(social, /function patchAnimalDialogueShow[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'direct pet reactions reject the four Fey');
 assert.match(stable, /function updateAnimalAmbient[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'ambient pet reactions reject the four Fey');
-assert.match(stable, /function recognitionCandidate[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'one-time recognition never displaces Great Fey quest/ordinary dialogue');
+assert.match(stable, /function recognitionCandidate[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'silent pet recognition excludes Great Fey without displacing quest/ordinary dialogue');
 assert.match(petQueue, /function stableAnimalGreetingRapportShow[\s\S]*?NpcInteractionPolicy\?\.isPassiveGreatFey/, 'pet greeting is skipped before any pending queue or Rapport grant');
 
 // Exercise the real AmbientDialogue renderer: the Great Fey must be refused
@@ -110,13 +116,14 @@ for (const order of ['perks-first', 'reactions-first']) {
   }; // Separate world for each order prevents installed hooks from masking integration failures.
   const sim = vm.createContext({
     window: simWindow, document: { baseURI: 'https://example.test/docs/' },
-    fetch: async () => ({ ok: false, status: 404 }), URL, console, performance: { now: () => 1000 },
+    fetch: async url => ({ ok: true, json: async () => String(url).includes('npc-reaction-profiles.json') ? loadedProfileConfig : { greetingRadiusTiles: 2.6 } }), URL, console, performance: { now: () => 1000 },
     setTimeout: () => 1, clearTimeout() {}, // Queues stay inspectable; no real timers run during this deterministic test.
-  }); // Missing remote JSON deliberately selects the runtime's own built-in personality fallback.
+  }); // Reactions stay silent until the fixture's authored profile JSON has loaded.
   const layers = order === 'perks-first'
     ? ['docs/js/stable-animal-perk-adjustments.js', 'docs/js/npc-silliness-reaction-runtime.js']
     : ['docs/js/npc-silliness-reaction-runtime.js', 'docs/js/stable-animal-perk-adjustments.js'];
   for (const filename of layers) vm.runInContext(read(filename), sim, { filename });
+  await simWindow.NpcReactionProfiles.reload(); // Both wrapper orders now use real authored pet copy rather than an obsolete offline fallback.
 
   for (const id of excluded) {
     const result = simWindow.AmbientDialogue.show({}, 'Hello, Pip!', {
@@ -140,3 +147,4 @@ assert.doesNotMatch(banubu, /<Something that indicates that I like receiving fis
 assert.match(banubu, /Three-Fish Pie/);
 assert.match(banubu, /Nine Leaf Tea/);
 console.log('Great Fey gift/action/reactivity policy passed (4 NPCs, 3 alternate IDs; Banubu quests preserved).');
+})().catch(error => { console.error(error); process.exitCode = 1; });

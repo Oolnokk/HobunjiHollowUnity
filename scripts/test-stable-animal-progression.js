@@ -197,9 +197,14 @@ assert.equal(rapportCalls.length, callsBeforeGreeting + 1, 'the same NPC/pet pai
 stable[0].animalPerks.rapportBond = 3;
 const rec = { id: 'friend1', name: 'Friend', dialogueTrees: [{ id: 'ordinary', trigger: 'interact', entryNode: 'x', nodes: [] }] };
 context.DialogueContent.beginNpcConversation(rec);
-assert.equal(originalDialogueTreeId, 'stable_animal_recognition_comp1', 'friend gets the one-off regular recognition dialogue before ordinary chat');
-assert.equal(rec.dialogueTrees[0].id, 'ordinary', 'temporary recognition tree does not mutate authored dialogue content');
-assert(dialogueStates.get('friend1').memory.some(m => m.event === 'stableAnimalRecognized:comp1'), 'recognition is stored in normal NPC memory');
+assert.equal(originalDialogueTreeId, 'ordinary', 'a recognized animal never interrupts the NPC\'s regular conversation');
+assert.equal(rec.dialogueTrees[0].id, 'ordinary', 'recognition does not mutate authored dialogue content');
+assert(dialogueStates.get('friend1').memory.some(m => m.event === 'stableAnimalRecognized:comp1'), 'recognition is stored silently in normal NPC memory');
+const recognitionMemories = dialogueStates.get('friend1').memory.filter(m => m.event === 'stableAnimalRecognized:comp1'); // Memory count confirms repeated conversations do not re-announce or re-record recognition.
+context.DialogueContent.beginNpcConversation(rec);
+assert.equal(originalDialogueTreeId, 'ordinary', 'subsequent conversations also use the authored dialogue tree');
+assert.equal(dialogueStates.get('friend1').memory.filter(m => m.event === 'stableAnimalRecognized:comp1').length, recognitionMemories.length, 'animal recognition is only recorded once');
+assert.doesNotMatch(fs.readFileSync('docs/js/stable-animal-progression.js', 'utf8'), /stable_animal_recognition_/, 'retired one-off recognition tree is no longer generated');
 
 assert(saveCount > 0, 'progression mutations persist through the existing stable save function');
 console.log('Stable animal progression regression tests passed.');

@@ -13,7 +13,7 @@
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
     { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261024naming3' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20261024naming1' },
-    { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261026h45d8963' },
+    { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261103crs2' },
     { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261021hdf1c0e2' },
     { globalKey: 'CompanionResilience', src: 'js/stable-companion-resilience.js?v=20261024resil1' }, // Appends offense/defense/revival perks to the tree perk-adjustments just replaced.
     { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
