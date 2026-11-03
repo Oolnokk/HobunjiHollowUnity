@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 const assert = require('assert');
+const fs = require('fs'); // Checks that every shipped ruin entry path invokes the proven composer.
 const G = require('../docs/js/cell-grid-3d.js');
 const H = require('../docs/js/shaft-hub.js');
 globalThis.window = globalThis; // the real DynamicSurfaces is a browser IIFE
 globalThis.document = globalThis.document || { createElement: () => ({}), addEventListener() {} };
 let DS = null; try { require('../docs/js/dynamic-surfaces.js'); DS = globalThis.DynamicSurfaces || null; } catch (e) { DS = null; }
 const CS = require('../docs/js/climb-surfaces.js');
+const entrySource = fs.readFileSync('docs/js/dev-random-ruin-interior-map.js', 'utf8'); // Keeps the universal generation contract covered in the fast Node suite.
+assert.match(entrySource,/attachShaftHub\(rec,candidateSeed\);/, 'ordinary and special generated ruins require a shaft hub');
+assert.match(entrySource,/attachShaftHub\(rec,0\);/, 'the fixed story vault also requires a shaft hub');
+assert(!entrySource.includes('const shaftRequested='), 'shaft hubs must not be gated by a theme, seed or opt-in');
 
 // ---- every rotation composes and proves itself
 for (const seed of [1, 4, 5, 6, 7, 11]) {
