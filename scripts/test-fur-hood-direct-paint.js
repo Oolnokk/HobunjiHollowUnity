@@ -41,6 +41,18 @@ assert(author.includes("canvas.style.left=-crop.x*scale"), 'paint and base canva
 assert(author.includes('result.width=crop.width'), 'result pane also frames the real hood');
 assert(author.includes('visibleBounds, open:'), 'framing helper is reused by the right viewport');
 assert(author.includes('visibleBounds(maskResult.canvas, 12)'), 'paintable fur mask, not opaque dark backgrounds, determines the hood editor framing');
+// The editor must crop transparent sprite margins without moving actual paint coordinates.
+const hoodEditorWindow = {};
+vm.runInNewContext(author, {window: hoodEditorWindow});
+const hoodPixels = new Uint8ClampedArray(64 * 40 * 4); // Mock painted natural fur: only one small shape is opaque.
+for (let y = 12; y <= 21; y++) for (let x = 22; x <= 35; x++) hoodPixels[(y*64+x)*4+3] = 255;
+const sampleMask = {width:64,height:40,getContext:()=>({getImageData:()=>({data:hoodPixels})})};
+const framed = hoodEditorWindow.FurHoodDirectPaintEditor.visibleBounds(sampleMask, 3);
+assert.equal(framed.x,19,'visible bounds move past unused horizontal padding');
+assert.equal(framed.y,9,'visible bounds move past unused vertical padding');
+assert.equal(framed.width,20,'visible bounds include consistent horizontal brush margin');
+assert.equal(framed.height,16,'visible bounds include consistent vertical brush margin');
+assert.throws(()=>hoodEditorWindow.FurHoodDirectPaintEditor.visibleBounds({width:1,height:1,getContext:()=>({getImageData:()=>({data:new Uint8ClampedArray(4)})})}),/completely transparent/,'a blank source exposes an actionable error');
 assert(author.includes('maskRle:encodePaintRuns()'), 'editor retains an exact re-editable pixel baseline');
 assert(author.includes('restorePaintRuns(authoring.maskRle)'), 'reopening restores the saved pixel baseline');
 assert(author.includes('api.garmentMotifToPaint(motif,settings,w,h)'), 'cross-view re-editing can reproject an existing motif');
