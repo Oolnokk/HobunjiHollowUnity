@@ -20,6 +20,21 @@
     yawDeadzone: [0, 45], pitchDeadzone: [0, 45],
   });
 
+  function normalizePerchSpline(input) {
+    const spline = window.AnimalShoulderSpline;
+    const guide = spline.linearPointsForGuide({ a: { x: .12, y: .42 }, b: { x: .9, y: .4 } });
+    function points(value, fallback) {
+      if (value === undefined) return fallback.map(point => ({ ...point }));
+      if (!Array.isArray(value) || value.length !== spline.POINT_COUNT ||
+          value.some(point => !Number.isFinite(point?.x) || !Number.isFinite(point?.y))) {
+        throw new Error('Perched body splines need seven finite x/y points per line.');
+      }
+      return value.map(({ x, y }) => ({ x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }));
+    }
+    const beforePoints = points(input?.beforePoints, guide);
+    return { beforePoints, afterPoints: points(input?.afterPoints, beforePoints) };
+  }
+
   function normalize(input = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Expected a flying animal rig object.');
     if (input.version !== undefined && input.version !== DEFAULT.version) throw new Error('Unsupported flying animal rig version.');
@@ -38,6 +53,7 @@
       rig[key] = Math.min(max, Math.max(min, input[key]));
     }
     rig.leftHinge = Math.min(rig.leftHinge, rig.rightHinge - 0.01);
+    if (input.perchSpline !== undefined) rig.perchSpline = normalizePerchSpline(input.perchSpline);
     return rig;
   }
 
@@ -64,13 +80,31 @@
 
     function body(key) {
       const image = images[key]; // Keep the original sprite aspect ratio.
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(image.width / image.height, 1), material(key));
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(image.width / image.height, 1, key === 'perched' ? 32 : 1, key === 'perched' ? 20 : 1), material(key));
       pitch.add(mesh);
       return mesh;
     }
 
     const flying = body('flying'); // Side profile while the wing rig is visible.
     const perched = body('perched'); // Folded-wing side profile.
+    function setPerchSpline(authored) {
+      const geometry = perched.geometry; // Deform the existing mesh without reloading any PNGs.
+      const { position, uv } = geometry.attributes;
+      const width = geometry.parameters.width;
+      const spline = window.AnimalShoulderSpline;
+      const moved = authored?.beforePoints.some((point, i) =>
+        point.x !== authored.afterPoints[i].x || point.y !== authored.afterPoints[i].y);
+      const rest = moved ? spline.normalizeRest({ ...authored, separatorAspect: width }) : null;
+      for (let i = 0; i < position.count; i++) {
+        const source = { x: uv.getX(i), y: 1 - uv.getY(i) };
+        const target = rest ? spline.deformNormalizedPoint(source, rest) : source;
+        position.setXYZ(i, (target.x - .5) * width, .5 - target.y, 0);
+      }
+      position.needsUpdate = true;
+      geometry.computeBoundingSphere();
+    }
+    if (rig.perchSpline) setPerchSpline(rig.perchSpline);
+
     const image = images.wings; // Top-down art, head toward the image's top edge.
     const span = image.width / image.height * rig.wingScale; // Width along local Z.
     const cuts = [0, rig.leftHinge, rig.rightHinge, 1]; // Insert a vertex column at each hinge.
@@ -137,8 +171,8 @@
       wings.skeleton.dispose();
     }
 
-    return { root, update, dispose, pitch, yaw };
+    return { root, update, dispose, pitch, yaw, setPerchSpline };
   }
 
-  window.FlyingAnimalRig = { defaults: DEFAULT, limits, normalize, flapAngle, create };
+  window.FlyingAnimalRig = { defaults: DEFAULT, limits, normalize, normalizePerchSpline, flapAngle, create };
 })();

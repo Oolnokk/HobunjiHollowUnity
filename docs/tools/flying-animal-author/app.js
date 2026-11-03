@@ -83,6 +83,38 @@
       }
     }
 
+    const perchCanvas = get('perchBody'), perchLine = get('perchLine'); // Perched sprite editing surface and active line.
+    const perchContext = perchCanvas.getContext('2d'); // Draw the unwarped source and both guides.
+    const splineAPI = window.AnimalShoulderSpline; // Shared curve evaluation for guides and mesh deformation.
+    let perchDrag = null, perchDirty = false; // Captured handle and pending mesh update.
+
+    function drawPerchSpline() {
+      const image = images.perched;
+      const { width, height } = perchCanvas;
+      perchContext.clearRect(0, 0, width, height);
+      perchContext.drawImage(image, 0, 0, width, height);
+      const lines = rig.perchSpline ?? rigAPI.normalizePerchSpline();
+      const active = perchLine.value;
+      const inactive = active === 'beforePoints' ? 'afterPoints' : 'beforePoints';
+      for (const key of [inactive, active]) {
+        const points = lines[key];
+        perchContext.strokeStyle = perchContext.fillStyle = key === 'beforePoints' ? '#6af0ff' : '#ff91d9';
+        perchContext.lineWidth = key === active ? 3 : 1;
+        perchContext.beginPath();
+        for (let i = 0; i <= 60; i++) {
+          const point = splineAPI.splinePoint(points, i / 60);
+          perchContext.lineTo(point.x * width, point.y * height);
+        }
+        perchContext.stroke();
+        if (key !== active) continue;
+        for (const point of points) {
+          perchContext.beginPath();
+          perchContext.arc(point.x * width, point.y * height, width * .012, 0, Math.PI * 2);
+          perchContext.fill();
+        }
+      }
+    }
+
     function rebuild(nextRig, nextImages) {
       const nextAssembly = rigAPI.create(nextRig, nextImages); // Keep the working preview if the replacement fails.
       assembly?.dispose();
@@ -91,6 +123,10 @@
       assembly = nextAssembly;
       scene.add(assembly.root);
       drawHinges();
+      perchCanvas.width = Math.min(800, images.perched.width);
+      perchCanvas.height = Math.max(1, Math.round(perchCanvas.width * images.perched.height / images.perched.width));
+      perchDirty = false;
+      drawPerchSpline();
       needsRender = true;
       get('save').disabled = false;
     }
@@ -193,6 +229,68 @@
     });
 
     const pose = get('pose'), orbit = get('orbit'), elevation = get('elevation'); // Independent camera and animation controls.
+    function showPerched() {
+      pose.value = 'perched';
+      viewChanged();
+    }
+
+    function editPerchSpline(spline) {
+      rig.perchSpline = spline;
+      perchDirty = true;
+      drawPerchSpline();
+      showPerched();
+    }
+
+    perchLine.addEventListener('change', () => {
+      if (!assembly) return;
+      drawPerchSpline();
+      showPerched();
+    });
+    get('previewPerch').addEventListener('click', showPerched);
+    get('copyPerchBind').addEventListener('click', () => {
+      if (!assembly || loading) return;
+      editPerchSpline(rigAPI.normalizePerchSpline({ beforePoints: rig.perchSpline?.beforePoints }));
+      saveDraft();
+    });
+
+    perchCanvas.addEventListener('pointerdown', event => {
+      if (!assembly || loading || perchDrag || event.button !== 0) return;
+      const bounds = perchCanvas.getBoundingClientRect();
+      const spline = rig.perchSpline ?? rigAPI.normalizePerchSpline();
+      const key = perchLine.value;
+      let distance = 23, index = -1; // Hit radius is in CSS pixels for touch.
+      spline[key].forEach((point, i) => {
+        const candidate = Math.hypot(bounds.left + point.x * bounds.width - event.clientX,
+          bounds.top + point.y * bounds.height - event.clientY);
+        if (candidate < distance) {
+          distance = candidate;
+          index = i;
+        }
+      });
+      if (index < 0) return;
+      const followBind = key === 'beforePoints' && spline.beforePoints.every((point, i) =>
+        point.x === spline.afterPoints[i].x && point.y === spline.afterPoints[i].y);
+      perchDrag = { pointerId: event.pointerId, index, key, spline, followBind };
+      perchCanvas.setPointerCapture(event.pointerId);
+      showPerched();
+    });
+    perchCanvas.addEventListener('pointermove', event => {
+      if (perchDrag?.pointerId !== event.pointerId || loading) return;
+      const { index, key, spline, followBind } = perchDrag;
+      const bounds = perchCanvas.getBoundingClientRect();
+      const unit = value => Math.max(0, Math.min(1, value));
+      const point = { x: unit((event.clientX - bounds.left) / bounds.width),
+        y: unit((event.clientY - bounds.top) / bounds.height) };
+      spline[key][index] = point;
+      if (followBind) spline.afterPoints[index] = { ...point };
+      editPerchSpline(spline);
+    });
+    perchCanvas.addEventListener('lostpointercapture', event => {
+      if (perchDrag?.pointerId !== event.pointerId) return;
+      perchDrag = null;
+      if (!loading) saveDraft();
+    });
+
     function viewChanged() {
       get('orbitValue').value = orbit.value + '°';
       get('elevationValue').value = elevation.value + '°';
@@ -223,9 +321,13 @@
         camera.lookAt(0, 0, 0);
         needsRender = false;
       }
+      if (perchDirty) {
+        assembly.setPerchSpline(rig.perchSpline);
+        perchDirty = false;
+      }
       assembly.update(camera, pose.value, ms / 1000);
       if (debug.parentElement.open) {
-        const message = `${pose.value} · yaw ${(assembly.yaw.rotation.y / radians).toFixed(1)}° · X correction ${(assembly.pitch.rotation.x / radians).toFixed(1)}° · two wing bones`;
+        const message = `${pose.value} · yaw ${(assembly.yaw.rotation.y / radians).toFixed(1)}° · X correction ${(assembly.pitch.rotation.x / radians).toFixed(1)}° · ${pose.value === 'perched' ? (rig.perchSpline ? '7 body spline points' : 'default body pose') : 'two wing bones'}`;
         if (debug.textContent !== message) debug.textContent = message;
       }
       renderer.render(scene, camera);
