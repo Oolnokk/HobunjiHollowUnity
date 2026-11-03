@@ -75,7 +75,7 @@
     const portrait = read('docs/js/portrait-utils.js');
     assert.match(weaving,/furHood: clone\(item\.furHood\)/,'portraits receive genotype apart from weaving');
     assert.match(weaving,/furHood: reweaveItem\?\.furHood/,'player reweave preview retains original natural markings');
-    assert.match(weaving,/applyPatternStackToTintedImage\(decorated, \[mark\.pattern\], mark\.colorHex/,'genotype patterns render under regular weaving');
+    assert.match(weaving,/applyPatternToTintedImage\(decorated, mark\.pattern, mark\.colorHex/,'genotype patterns render under regular weaving');
     assert.match(weaving,/buildPortraitPatternMap\(descriptors, options\?\.portraitView === 'behind' \? 'behind' : 'front', profile\?\.fighter\)/,'portrait animal part lookup must use the actual wearer species and gender');
     assert.match(weaving,/specialPartsFor\?\.\(descriptor\.furHood, wearer\?\.speciesId, wearer\?\.gender\)/,'dynamic animal sprite URLs must be mapped to the portrait tint and pattern pipeline');
     assert.match(weaving,/naturalHoodWeavingRole\(descriptor\.role, descriptor\.furHood\)/,'regular base weaving also follows animal sprites in worn portraits');
