@@ -1,0 +1,244 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "keyStatue",
+  "name": "Key Statue",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "Small carved stone statuette with a two-hand carry profile. It is a physical Burden, not an inventory icon.",
+  "parts": [
+    {
+      "id": "key_statue_base",
+      "kind": "box",
+      "name": "Key Statue base",
+      "color": "#625d52",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.065,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.31,
+        "sy": 0.13,
+        "sz": 0.31
+      }
+    },
+    {
+      "id": "key_statue_pedestal",
+      "kind": "cylinder",
+      "name": "Key Statue pedestal",
+      "color": "#736c5e",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.235,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.22,
+        "sy": 0.22,
+        "sz": 0.22
+      },
+      "segments": 12,
+      "topScaleX": 0.82,
+      "topScaleZ": 0.82
+    },
+    {
+      "id": "key_statue_body",
+      "kind": "sphere",
+      "name": "Key Statue body",
+      "color": "#817967",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.51,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.17,
+        "sy": 0.25,
+        "sz": 0.14
+      },
+      "segments": 12
+    },
+    {
+      "id": "key_statue_head",
+      "kind": "sphere",
+      "name": "Key Statue head",
+      "color": "#8d826d",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.77,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.14,
+        "sy": 0.15,
+        "sz": 0.135
+      },
+      "segments": 12
+    },
+    {
+      "id": "key_statue_key_shaft",
+      "kind": "box",
+      "name": "Key crest shaft",
+      "color": "#b08e52",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.98,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.055,
+        "sy": 0.13,
+        "sz": 0.045
+      }
+    },
+    {
+      "id": "key_statue_key_bow",
+      "kind": "cylinder",
+      "name": "Key crest bow",
+      "color": "#c5a15b",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 1.085,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.105,
+        "sy": 0.035,
+        "sz": 0.105
+      },
+      "segments": 10
+    },
+    {
+      "id": "key_statue_key_tooth",
+      "kind": "box",
+      "name": "Key crest tooth",
+      "color": "#b08e52",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0.065,
+        "y": 0.96,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.065,
+        "sy": 0.06,
+        "sz": 0.07
+      }
+    }
+  ],
+  "carryable": {
+    "enabled": true,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": 0,
+        "y": -0.24,
+        "z": -0.16
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": 1
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0,
+        "y": 0.53,
+        "z": 0
+      },
+      "size": {
+        "x": 0.38,
+        "y": 1.12,
+        "z": 0.37
+      }
+    },
+    "handTargets": {
+      "left": {
+        "x": 0.2,
+        "y": 0.42,
+        "z": 0.025,
+        "rotation": {
+          "x": 180,
+          "y": 0,
+          "z": -90
+        }
+      },
+      "right": {
+        "x": -0.2,
+        "y": 0.42,
+        "z": 0.025,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 90
+        }
+      }
+    },
+    "enemyHoldAnchor": {
+      "position": {
+        "x": 0,
+        "y": 0.02,
+        "z": -0.19
+      },
+      "scale": 0.82
+    }
+  }
+}
