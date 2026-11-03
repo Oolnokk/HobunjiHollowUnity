@@ -31,7 +31,7 @@
     if (!id) return null;
     object.userData.puzzleInstanceId = id;
     object.userData.puzzleMapId = String(mapId);
-    object.userData.puzzleActive = puzzle.behavior === 'burdenPlate' ? false : puzzle.startsActive;
+    object.userData.puzzleActive = ['burdenPlate','keyStatue'].includes(puzzle.behavior) ? false : puzzle.startsActive;
     object.userData.puzzleRestTransform ||= {
       position:object.position.clone(), quaternion:object.quaternion.clone(), scale:object.scale.clone(),
     };
@@ -52,13 +52,17 @@
       .filter(entry => entry.visual);
     const linkedLight = object.userData.mapEditorAux?.light;
     object.userData.puzzleLight = linkedLight ? { light:linkedLight, intensity:Number(linkedLight.intensity) || 0 } : null;
-    const initialProgress = puzzle.behavior === 'burdenPlate' ? 0 : puzzle.startsActive ? 1 : 0;
+    const initialProgress = ['burdenPlate','keyStatue'].includes(puzzle.behavior) ? 0 : puzzle.startsActive ? 1 : 0;
     object.userData.puzzleProgress = Number.isFinite(Number(object.userData.puzzleProgress))
       ? Number(object.userData.puzzleProgress) : initialProgress;
     if (puzzle.behavior === 'burdenPlate') {
       object.userData.burdenPlatePayload ||= null;
       object.userData.burdenPlateAnchor ||= null;
       object.userData.burdenPlateComplete = false;
+    }
+    if (puzzle.behavior === 'keyStatue') {
+      object.userData.keyStatuePayload ||= null;
+      object.userData.keyStatueTaken = false;
     }
     window.FurnitureDecalRuntime?.setGlowState?.(object, object.userData.puzzleProgress);
     applyMechanism(object, object.userData.puzzleProgress);
@@ -127,7 +131,7 @@
   function applyMechanism(object, progress) {
     const puzzle = object?.userData?.furniturePuzzle;
     const rest = object?.userData?.puzzleRestTransform;
-    const animatedActivator = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+    const animatedActivator = puzzle?.role === 'activator' && ['burdenPlate','keyStatue'].includes(puzzle.behavior);
     if (!object || !puzzle || (puzzle.role !== 'mechanism' && !animatedActivator) || !rest) return;
     const t = Math.max(0, Math.min(1, Number(progress) || 0));
     const off = puzzle.motion.off, on = puzzle.motion.on;
@@ -180,6 +184,12 @@
     object.userData.puzzleEmission = emission;
     if (object.userData.puzzleLight) object.userData.puzzleLight.light.intensity = object.userData.puzzleLight.intensity * emission.intensity;
     object.userData.puzzleProgress = t;
+    if (puzzle.role === 'mechanism' && puzzle.behavior === 'witchBombDispenser') {
+      if (t >= .999 && !object.userData.witchBombDispenseRequested) {
+        object.userData.witchBombDispenseRequested = true; // One dispense request per OFF→ON activation; the dispenser itself enforces its live-payload lock.
+        window.HronalWitchBombs?.dispenseFromMechanism?.(object);
+      } else if (t <= .001) object.userData.witchBombDispenseRequested = false;
+    }
     window.FurnitureDecalRuntime?.setGlowState?.(object, t);
     const blocked = puzzle.blocksMovement && t < puzzle.motion.collisionOpenProgress;
     object.userData.blocksMovement = blocked;
@@ -371,6 +381,40 @@
     return { ok:true, message:(payload.displayName || 'The Burden') + ' is seated on the plinth.' };
   }
 
+  function keyStatueButtons(mapId, id) {
+    const object = maps.get(String(mapId))?.nodes.get(String(id));
+    if (object?.userData?.furniturePuzzle?.role !== 'activator'
+      || object.userData.furniturePuzzle.behavior !== 'keyStatue') return [];
+    const payload = object.userData.keyStatuePayload;
+    const ready = !!payload && !payload.exploded && !!payload.group?.parent;
+    return [{ icon:'🗿', label:ready ? 'Take Key Statue' : 'The Key Statue is returning',
+      action:'obj_key_statue_'+id, style:'primary', allowed:ready }];
+  }
+
+  function interactKeyStatue(mapId, id, action) {
+    const object = maps.get(String(mapId))?.nodes.get(String(id));
+    if (object?.userData?.furniturePuzzle?.role !== 'activator'
+      || object.userData.furniturePuzzle.behavior !== 'keyStatue')
+      return {ok:false,message:'That statue mount is not responsive.'};
+    if (action && action !== 'obj_key_statue_'+id) return {ok:false,message:'Unknown Key Statue action.'};
+    const payload = object.userData.keyStatuePayload;
+    if (!payload || payload.exploded || !payload.group?.parent)
+      return {ok:false,message:'The Key Statue is being restored.'};
+    if (!window.Shattercasks?.pickUp?.(payload))
+      return {ok:false,message:'Stow the item you are carrying before taking the Key Statue.'};
+    return {ok:true,message:'You lift the Key Statue from its mount.'};
+  }
+
+  function setKeyStatueTaken(mapId, id, taken) {
+    const object = maps.get(String(mapId))?.nodes.get(String(id));
+    const puzzle = object?.userData?.furniturePuzzle;
+    if (puzzle?.role !== 'activator' || puzzle.behavior !== 'keyStatue') return false;
+    object.userData.keyStatueTaken = !!taken;
+    object.userData.puzzleActive = !!taken;
+    activate(mapId, id, !!taken); // Key Statues remain ordinary wired activators as well as their own animated dispenser.
+    return animate(object, taken ? 1 : 0, puzzle.motion.durationSeconds);
+  }
+
   function debug() {
     return [...maps].map(([mapId, graph]) => ({
       mapId, wires:graph.wiring.length,
@@ -380,12 +424,13 @@
         active:!!object.userData.puzzleActive, progress:Number(object.userData.puzzleProgress) || 0,
         blocked:!!object.userData.blocksMovement, payload:object.userData.burdenPlatePayload?.id || null,
         payloadComplete:!!object.userData.burdenPlateComplete,
+        keyStatueTaken:!!object.userData.keyStatueTaken,
       })),
     }));
   }
 
   window.FurniturePuzzleRuntime = Object.freeze({
     registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
-    setChannelSource, burdenPlateButtons, interactBurdenPlate, applyMechanism, debug,
+    setChannelSource, burdenPlateButtons, interactBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();
