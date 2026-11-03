@@ -110,7 +110,7 @@
       "rz": 0
     },
     "textureDataUrl": null,
-    "textureName": "actual GitHub Mao\u2019ao render",
+    "textureName": "actual GitHub Mao’ao render",
     "calculated": {
       "pxW": 200,
       "pxH": 200,
@@ -1838,7 +1838,12 @@
     "onPrompt": "Turn on",
     "directInteraction": false,
     "inputs": [
-      { "event": "blast", "withinTiles": 2.5, "action": "on", "once": true }
+      {
+        "event": "blast",
+        "withinTiles": 2.5,
+        "action": "on",
+        "once": true
+      }
     ],
     "motion": {
       "off": {
@@ -2012,6 +2017,11 @@
       "durationSeconds": 0.8,
       "reversalSeconds": 0.8,
       "collisionOpenProgress": 0.55
+    },
+    "standingSurface": {
+      "partId": "part_mvzye4ag_g0i3g",
+      "minProgress": 0.95,
+      "topOffset": 0.01
     }
   },
   "carryable": {
