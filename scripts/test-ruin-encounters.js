@@ -114,6 +114,17 @@ const run = async (seconds, step = 0.1) => { for (let t = 0; t < seconds - 1e-9;
   assert.equal(enc.stats.successes, 1);
   await run(1); assert.equal(enc.state, 'success', 'stays finished');
 
+  // ---- the plinth's own progress is the encounter's clock (a slow frame cannot let the press outrun the schedule)
+  reset();
+  enc = RE.create({ id: 'e1b', mapId: MAP, objective: { type: 'defend', plinthId: 'plinth' }, spawners, schedule: sched });
+  node.userData.furniturePuzzle = { motion: { durationSeconds: 30 } };
+  seat(); await run(0.2);
+  node.userData.puzzleProgress = 0.5; RE.tick(0.016); await flush();
+  assert(enc.clock >= 15 - 1e-9 && enc.clock < 15.1, 'clock follows press progress: ' + enc.clock);
+  assert.equal(made.length, 3, 'everything scheduled before that point has come out');
+  node.userData.puzzleProgress = 0.2; RE.tick(0.016); assert(enc.clock >= 15, 'the clock never runs backwards');
+  delete node.userData.furniturePuzzle; node.userData.puzzleProgress = 0;
+
   // ---- the player taking the statue back is not a failure
   reset(); events.length = 0;
   enc = RE.create({ id: 'e2', mapId: MAP, objective: { type: 'defend', plinthId: 'plinth' }, spawners, schedule: sched });

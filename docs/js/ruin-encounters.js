@@ -186,6 +186,10 @@
     }
     if (plinth.complete) { enc.stats.successes++; emit('encounter:success', { scope: enc.mapId, encounterId: enc.id, seconds: +enc.clock.toFixed(2) }); stop(enc, 'success'); return; }
     enc.clock += dt;
+    // The press IS the encounter: when the plinth reports how far along it is, the clock follows it (a long frame, a hitch or a
+    // slow device then cannot let the press finish ahead of the schedule). dt only fills in between, or stands in without a plinth clock.
+    const press = Number(plinth.node?.userData?.furniturePuzzle?.motion?.durationSeconds);
+    if (press > 0 && plinth.progress > 0) enc.clock = Math.max(enc.clock, Math.min(press, plinth.progress * press));
     const statue = enc.statuePoint(), t = TILE();
     if (statue) { enc.proxy.x = statue.x * t; enc.proxy.y = statue.z * t; }
     while (enc.next < enc.schedule.length && enc.schedule[enc.next].t <= enc.clock) { const entry = enc.schedule[enc.next++]; spawnEntry(enc, entry); }
