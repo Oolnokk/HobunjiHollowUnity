@@ -422,7 +422,7 @@
     const width=right-left+1,height=bottom-top+1; // Opaque aspect controls plane width while a consistent 0.76-world-unit tube length sets visual scale.
     const trimmed=document.createElement('canvas');
     trimmed.width=width;trimmed.height=height;
-    trimmed.getContext('2d').drawImage(source,left,top,width,height,0,0,width,height);
+    trimmed.getContext('2d').drawImage(canvas,left,top,width,height,0,0,width,height); // Draw the corrected alpha canvas, NOT the original opaque PNG.
     return trimmed; // Shared alpha-trimmed image for both live mouth sprite and permanent inventory icon.
   }
   function ensureFluteMount() {
