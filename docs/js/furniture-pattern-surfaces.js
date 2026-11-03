@@ -388,7 +388,14 @@
       mesh.add(overlay);
       let ownedTexture = null; // Material disposal releases exactly one reference to a shared GPU tile.
       let disposed = false; // Prevents asynchronous tile completion from reviving disposed preview/world objects.
-      material.addEventListener?.('dispose', () => { if (disposed) return; disposed = true; releaseTexture(ownedTexture); });
+      material.addEventListener?.('dispose', () => {
+        if (disposed) return;
+        disposed = true;
+        const glow=overlay.userData.engravingGlowMesh;
+        if (glow?.parent) overlay.remove(glow);
+        glow?.material?.dispose?.(); // The additive glyph pass owns a material, but borrows the base engraving geometry and tile texture.
+        releaseTexture(ownedTexture);
+      });
       let generation = 0; // Discard stale atlas loads if an instance is resized again before composition finishes.
       overlay.userData.refreshPatternAtlas = size => {
         const request = ++generation; // Each rescale owns one asynchronous atlas generation.
