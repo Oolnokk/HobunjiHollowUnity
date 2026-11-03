@@ -1284,10 +1284,10 @@
       const owned = Number(equipmentDeps?.inventory?.[material.itemKey]) || 0;
       const weight = isReweave ? itemWeightUnits(reweaveItem) : standardWeightFor(bp) * material.weightMul;
       const hasPattern = weavingHasAnyPattern(weaving); // Reusable motifs still own normal pattern-dye semantics.
-      const hasTrim = weavingHasOptionalTrim(weaving); // Fixed garment trim may independently require dye B or C.
+      const hasTrim = !reweaveItem?.furHood && weavingHasOptionalTrim(weaving); // Natural hood trim is genetic and cannot receive the optional dyed trim pass.
       const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
-      overlay.querySelector('[data-primary-field]').style.display = isReweave && !hybridCap ? 'none' : '';
-      overlay.querySelector('[data-trim-field]').style.display = ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B' && !hybridCap)) ? '' : 'none';
+      overlay.querySelector('[data-primary-field]').style.display = (reweaveItem?.furHood || (isReweave && !hybridCap)) ? 'none' : '';
+      overlay.querySelector('[data-trim-field]').style.display = !reweaveItem?.furHood && ((!isReweave && hasSecondary()) || (hasTrim && trimDyeSlot === 'B' && !hybridCap)) ? '' : 'none';
       overlay.querySelector('[data-pattern-dye-field]').style.display = (hasPattern || (hasTrim && trimDyeSlot === 'C')) ? '' : 'none';
       overlay.querySelector('[data-material-note]').textContent = `${material.label}: ${owned} owned · ${cost} required${isReweave ? ' to reweave' : ''}${weavingHasOverpass(weaving) ? ' (2× for overpass)' : (isReweave ? ' (half craft cost, rounded up)' : '')}.`;
       overlay.querySelector('[data-stats]').textContent = `Weight: ${weight.toFixed(1)} units\nDefense: +${Math.round(weight * TUNING.defensePerUnit * 100)}%\nFooting resistance: +${Math.round(weight * TUNING.footingResistancePerUnit * 100)}%\nDodge efficacy: −${Math.round(weight * TUNING.dodgePenaltyPerUnit * 100)}%\nCombat movement: −${Math.round(weight * TUNING.combatMovePenaltyPerUnit * 100)}%\nPattern: ${summarizePatterns(weaving)}\nAdded trim: ${hasTrim ? 'Dye ' + trimDyeSlot : 'None'}`;
@@ -1295,7 +1295,7 @@
       craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : `Craft · ${cost} ${material.label}`;
       craft.disabled = !state.layersReady || owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
-      const showBehindToggle = await hasBehindView(blueprintId);
+      const showBehindToggle = await hasBehindView(blueprintId) || !!window.FurHoodLeatherworking?.specialPartsFor?.(reweaveItem?.furHood)?.some(part => part.pos === 'back');
       if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId) return; // Closed or superseded while awaiting behind-view metadata.
       if (!showBehindToggle) state.previewView = 'front'; // No behind art for this garment — never leave the toggle stuck on.
       behindToggleBtn.style.display = showBehindToggle ? '' : 'none';
@@ -1309,6 +1309,7 @@
           secondaryHex,
           patternHex,
           weaving,
+          furHood: reweaveItem?.furHood || null, // Preview matches the permanent hide even when editing only regular custom weaving.
           view: state.previewView,
           metalItem: hybridCap ? reweaveItem : null, // Smith-facing preview retains real alloy/plating/verdigris on the nonwoven faceguard.
         });
@@ -1444,7 +1445,7 @@
       return false;
     }
     const hasPattern = weavingHasAnyPattern(weaving);
-    const hasTrim = weavingHasOptionalTrim(weaving);
+    const hasTrim = !item?.furHood && weavingHasOptionalTrim(weaving); // Fur hoods never acquire a second dyeable trim channel.
     const trimDyeSlot = normalizeTrimDyeSlot(weaving?.trim?.dyeSlot);
     const needsDyeC = hasPattern || (hasTrim && trimDyeSlot === 'C'); // Pattern ink and C-colored trim share the existing third garment dye.
     const needsDyeB = hasTrim && trimDyeSlot === 'B'; // Reweaving may introduce B solely for added trim on a single-color article.
@@ -1463,7 +1464,8 @@
     if (isReweavableClothComponent(item)) {
       item.colorA = window.DyeSystem.toClothingColor(primaryDye); // Faceguard has no dye channel; this changes only the cap's palette A.
     }
-    item.weaving = weavingHasAnyDecoration(weaving) ? clone(weaving) : null;
+    const safeWeaving = item?.furHood && weaving?.trim ? { ...weaving, trim: null } : weaving; // Preserve natural fur trim from accidental optional cloth-trim toggles.
+    item.weaving = weavingHasAnyDecoration(safeWeaving) ? clone(safeWeaving) : null;
     if (needsDyeB) item.colorB = window.DyeSystem.toClothingColor(secondaryDye);
     item.colorC = needsDyeC ? window.DyeSystem.toClothingColor(patternDye) : null;
     item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), primaryDye?.id, needsDyeB ? secondaryDye?.id : null, needsDyeC ? patternDye?.id : null].filter(Boolean))];
