@@ -374,7 +374,7 @@
         const events = await getJson(apiRoot + "/events?per_page=100&page=" + page);
         for (const event of events) {
           const name = event && event.payload && event.payload.ref;
-          if (event.type !== "CreateEvent" || event.payload.ref_type !== "branch"
+          if (!event || !event.payload || event.type !== "CreateEvent" || event.payload.ref_type !== "branch"
             || !validBranch(name) || seen.has(name)) continue;
           seen.add(name);
           results.push({ name: name, date: event.created_at });
