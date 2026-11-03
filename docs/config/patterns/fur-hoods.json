@@ -1,9 +1,18 @@
 {
   "schema": "hobunji_fur_hoods.v1",
-  "comment": "Author hide-species parts and expressed-genotype pattern motifs here. Sprite paths must be real docs-root relative assets. Empty entries render an unmarked hood. Each patterns[geneId] uses {motifPng,settings}; gene ink comes ONLY from the saved hide genotype. Base coat and custom weaving remain separate.",
+  "comment": "Animal fur-hood source assets are wearer-specific: `parts` maps authored headwear variants (tletingan_male / mashtzarr_male) to optional `front` and `back` sprite paths. `front` sits above furhood-base and below furhood-trim; `back` sits behind the skull. `patterns[genotypeGeneId]` stores {motifPng, settings} and uses that hide's own gene color, never item.weaving.",
   "species": {
     "gar-wolf": {
-      "parts": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_gar-wolf-front_tl_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_gar-wolf-back_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_gar-wolf-front_mashtz_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_gar-wolf-back_mashtz_m.png"
+        }
+      },
       "patterns": {}
     },
     "dabinggi-hound": {
@@ -11,20 +20,64 @@
       "patterns": {}
     },
     "grehlr": {
-      "parts": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_tl_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_grehlr-back_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_mashtz_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_grehlr-back_mashtz_m.png"
+        }
+      },
       "patterns": {}
     },
     "drenkirra": {
-      "parts": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_drenkirra-front_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_drenkirra-front_mashtz_m.png"
+        }
+      },
       "patterns": {}
     },
     "puktuk": {
-      "parts": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_puktuk-front_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_puktuk-front_mashtz_m.png"
+        }
+      },
       "patterns": {}
     },
     "voorg-ass": {
-      "parts": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_voorg-ass-front_tl_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_voorg-ass-back_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_voorg-ass-front_mashtz_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_voorg-ass-back_mashtz_m.png"
+        }
+      },
       "patterns": {}
+    },
+    "nelk": {
+      "patterns": {},
+      "parts": {
+        "tletingan_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png"
+        },
+        "mashtzarr_male": {
+          "front": "assets/cosmetics/clothes/hood/furhood_nelk-front_mashtz_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_nelk-behind_mashtz_m.png"
+        }
+      }
     }
   }
 }
