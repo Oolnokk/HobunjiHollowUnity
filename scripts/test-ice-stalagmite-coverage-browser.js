@@ -190,8 +190,13 @@ const server = http.createServer((request, response) => {
       contextRoot.add(stoneDoor);
       const transit = new T.Group(); // A second eligible door type demonstrates generic coverage discovery.
       transit.userData.transitDoor = true;
+      const transitFrame = new T.Mesh(new T.BoxGeometry(2.4,3.1,.4),new T.MeshStandardMaterial()); // Frame appears first in the hierarchy.
+      transitFrame.position.set(6,1.55,2);transit.add(transitFrame);
       const transitLeaf = new T.Mesh(new T.BoxGeometry(1.8, 1.9, .2), new T.MeshStandardMaterial());
-      transitLeaf.position.set(6, .95, 2); transit.add(transitLeaf); contextRoot.add(transit);
+      transitLeaf.position.set(6, .95, 2);transit.add(transitLeaf);
+      transit.userData.__devRuinTransitDoorState={panel:transitLeaf,open:0}; // Runtime-selected physical panel takes priority over the decorative frame.
+      const trackedTransitPanel = window.DungeonDoorIceCoverage.doorBounds(transit)?.source===transitLeaf;
+      contextRoot.add(transit);
       const modularDoor = new T.Mesh(new T.BoxGeometry(2, 1.9, .18), new T.MeshStandardMaterial());
       modularDoor.userData.devRandomRuinModularDoor = true; modularDoor.position.set(4, .95, 2);
       owner.add(modularDoor); // Modular doors are built by a different composer after dungeon fire buildRooms.
@@ -226,9 +231,10 @@ const server = http.createServer((request, response) => {
       const finished = melted?.phase==='melted' && melted?.growth===0 && !window.__iceFireTargets.has('dungeon-fire-ice-wall-0');
       composer.clear();
       const cleanup = window.DevRandomRuinDungeonFire.snapshot().active===false && window.__iceSolids.size===0;
-      return {frozen, noVisibleSheet, coverFitsIce, frozenBlocking, freed, halfGrowth, finished, cleanup};
+      return {frozen, noVisibleSheet, coverFitsIce, frozenBlocking, freed, halfGrowth, finished, cleanup, trackedTransitPanel};
     });
     assert.equal(dungeonResult.frozen.length, 2, 'Tothal should frost two real door objects, not arbitrary empty passageways');
+    assert(dungeonResult.trackedTransitPanel,'Transit-door ice must size from the actual moving panel even if decorative frames come first');
     assert(dungeonResult.frozen.some(wall=>wall.doorType==='stoneDoor') &&
       dungeonResult.frozen.some(wall=>wall.doorType==='modularDoor'),
       'Real generated and late-built modular door types must be eligible in the same room');
