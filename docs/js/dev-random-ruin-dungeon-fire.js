@@ -12,8 +12,8 @@
   let payloadKind = PAYLOAD_KIND; // Used by the next generated net/icicle payload; changed through the mobile-safe debug API.
   const CLEANSING_RADIUS = 2.4; // Kanthic cleansing radius in world tiles.
   const FIRE_CONTACT_PADDING = .2; // Slightly forgiving contact around mesh geometry, never through terrain/cover.
-  const ICE_WALL_HEIGHT = 2.05; // Full-height Tothal barrier; the solid footprint is removed immediately on ignition.
-  const MELT_SECONDS = .9; // Visible collapse time after the ice-wall collision blocker is removed.
+  // Ice collider height now comes from the actual door leaf. No visible rectangular ice barrier is constructed.
+  const MELT_SECONDS = 1.6; // Lerp duration to visibly reverse each crystal's upward growth after the fire breaks the ice blockade.
   let world = null; // Active composer; replaced on ruin reroll and disposed on exit.
   let lastEvent = 'idle'; // Visible in the mobile dungeon-fire snapshot.
 
@@ -250,37 +250,66 @@
     return released;
   }
 
-  function buildIceWall(kit,context,doorway,index) {
-    const support=kit.sampleSupport(doorway.x,doorway.z);
-    if(!support)return null;
-    const width=Math.max(1.25,Math.min(doorway.width*.86,3.4));
-    const thickness=.17;
-    const geometry=doorway.axis==='x'
-      ?new THREE.BoxGeometry(thickness,ICE_WALL_HEIGHT,width)
-      :new THREE.BoxGeometry(width,ICE_WALL_HEIGHT,thickness);
-    const iceMat=material(0x9ce8ff,{metalness:.1,roughness:.24,transparent:true,opacity:.74,emissive:0x287eac,emissiveIntensity:.28,depthWrite:false});
-    const mesh=new THREE.Mesh(geometry,iceMat);
-    mesh.name='tothal_dungeon_fire_ice_wall_'+index;
-    mesh.position.set(doorway.x,Number(support.y)+ICE_WALL_HEIGHT*.5,doorway.z);
+  function iceDoorCandidates(kit,context) {
+    const candidates=[]; // Actual authored/generated/modular doors, never bare room passageways.
+    const seen=new Set(); // Prevent nested roots or duplicate scene trees from frosting the same door twice.
+    for(const source of [context.root,kit.state?.group]){
+      source?.traverse?.(object=>{
+        if(!object?.isObject3D||seen.has(object.uuid))return;
+        const info=object.userData||{}; // Door eligibility is semantic, not based on one boss-door key.
+        if(info.dungeonFireIceEligible===false)return;
+        const type=info.previewMotion?.type==='stoneDoor'?'stoneDoor'
+          :info.transitDoor===true?'transitDoor'
+          :info.devRandomRuinModularDoor===true?'modularDoor'
+          :info.dungeonFireIceEligible===true?'markedDoor'
+          :/door/i.test(String(info.authoredFurnitureKey||''))&&info.authoredFurnitureData?.parts?'authoredDoor':null;
+        if(!type)return;
+        seen.add(object.uuid);
+        const module=kit.state?.lockDoors?.find(item=>item.panel===object); // Standalone locked doors can begin raised/open.
+        if(module && module.progress>.72)return; // Never freeze an already open doorway with a floating ice barrier.
+        if(info.__devRuinTransitDoorState?.open>.72)return;
+        const bounds=window.DungeonDoorIceCoverage?.doorBounds?.(object); // One geometry probe supports every door kind.
+        if(!bounds)return;
+        candidates.push({object,type,bounds});
+      });
+    }
+    candidates.sort((a,b)=>a.bounds.center.x-b.bounds.center.x||a.bounds.center.z-b.bounds.center.z||a.type.localeCompare(b.type)); // Deterministic Tothal seeding across identical layouts.
+    return candidates;
+  }
+
+  function buildIceWall(kit,context,door,index) {
+    const coverage=window.DungeonDoorIceCoverage; // Shared procedural recipe recreates the boss-door scale on any eligible door.
+    if(!coverage?.create)return null;
+    const {object,type,bounds}=door; // The actual door object/leaf replaces the former arbitrary wall across an opening.
+    const support=kit.sampleSupport(bounds.center.x,bounds.center.z); // All crystals anchor at the real floor, not at the door's animated midpoint.
+    const floorY=Number.isFinite(Number(support?.y))?Number(support.y):Number(context.meta?.floorSurfaceY)||bounds.box.min.y;
+    const placement=coverage.create({door:object,parent:world.group,groundY:floorY,
+      seed:'tothal-door:'+String(context.seed||'ruin')+':'+String(object.userData?.mechanismId||object.name||index)});
+    if(!placement)return null; // No invisible blocker is created if the coverage system fails to produce ice.
+    const height=Math.max(1.3,Math.min(5,bounds.size.y)); // The collider follows this door's physical leaf rather than a fixed sheet height.
+    const halfX=Math.max(.14,Math.min(3.5,bounds.size.x*.5+.08)); // Small tolerance makes fire hit the crystals even at the door edge.
+    const halfZ=Math.max(.14,Math.min(3.5,bounds.size.z*.5+.08)); // Thin door planes still have a usable projectile contact volume.
+    const collisionGeometry=new THREE.BoxGeometry(halfX*2,height,halfZ*2); // Collision-only proxy is not visible ice or an additional door slab.
+    const collisionMaterial=new THREE.MeshBasicMaterial({colorWrite:false,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}); // Projectile/fire raycasts still see the collider without any rendered sheet.
+    const mesh=new THREE.Mesh(collisionGeometry,collisionMaterial);
+    mesh.name='tothal_dungeon_fire_ice_door_hitbox_'+index;
+    mesh.position.set(bounds.center.x,floorY+height*.5,bounds.center.z);
     mesh.userData.dungeonFireMechanism='tothalIceWall';
-    mesh.userData.projectileCoverHeightTiles=ICE_WALL_HEIGHT;
-    mesh.userData.projectileCoverHalfXTiles=(doorway.axis==='x'?thickness:width)*.5;
-    mesh.userData.projectileCoverHalfZTiles=(doorway.axis==='x'?width:thickness)*.5;
-    mesh.userData.projectileCoverBottomOffsetTiles=-ICE_WALL_HEIGHT*.5;
-    mesh.userData.projectileCoverKind='tothal-ice-wall';
+    mesh.userData.devRuinFootprintManaged=true; // The existing on/off occupancy callback is authoritative for movement.
+    mesh.userData.projectileCoverHeightTiles=height;
+    mesh.userData.projectileCoverHalfXTiles=halfX;
+    mesh.userData.projectileCoverHalfZTiles=halfZ;
+    mesh.userData.projectileCoverBottomOffsetTiles=-height*.5;
+    mesh.userData.projectileCoverKind='tothal-ice-wall'; // Reuses Dungeon Fire and ranged-weapon collision semantics.
     world.group.add(mesh);
-    const wall={
-      id:'dungeon-fire-ice-wall-'+index,kind:'iceWall',group:mesh,mesh,iceMat,
-      point:{x:doorway.x,y:Number(support.y),z:doorway.z},
-      blocking:true,phase:'frozen',elapsed:0,
-      footprintId:'dungeon-fire-ice-wall-footprint-'+index,
+    const wall={ // Preserves the existing Dungeon Fire target/occupancy/clear lifecycle for all source door kinds.
+      id:'dungeon-fire-ice-wall-'+index,kind:'iceWall',group:placement.iceLayer,mesh,icePlacement:placement,
+      doorType:type,doorObject:object,point:{x:bounds.center.x,y:floorY,z:bounds.center.z},
+      blocking:true,phase:'frozen',elapsed:0,height,footprintId:'dungeon-fire-ice-wall-footprint-'+index,
     };
-    window.DevRandomRuinTileOccupancy?.addSolidBox?.(
-      wall.footprintId,
-      {cx:doorway.x,cz:doorway.z,halfX:doorway.axis==='x'?thickness*.5:width*.5,halfZ:doorway.axis==='x'?width*.5:thickness*.5},
-      ()=>wall.blocking,
-      'dungeon-fire-ice-walls'
-    );
+    window.DevRandomRuinTileOccupancy?.addSolidBox?.(wall.footprintId,
+      {cx:bounds.center.x,cz:bounds.center.z,halfX,halfZ},
+      ()=>wall.blocking,'dungeon-fire-ice-walls');
     world.walls.push(wall);world.records.push(wall);
     const target={id:wall.id,object:mesh,active:true,contactPadding:.16,onBurn:()=>{
       if(wall.phase!=='frozen')return false;
@@ -290,14 +319,29 @@
       delete mesh.userData.projectileCoverHalfZTiles;
       delete mesh.userData.projectileCoverBottomOffsetTiles;
       delete mesh.userData.projectileCoverKind;
-      window.NearbyVolumeCollision?.invalidate?.(); // Melted walls stop blocking later projectiles as soon as fire reaches them.
+      window.NearbyVolumeCollision?.invalidate?.(); // Fire unlocks the passage immediately; visible crystals then retract over time.
       window.DevRandomRuinTileOccupancy?.refresh?.();
-      lastEvent='Tothal ice wall melting';
+      lastEvent='Tothal ice on '+type+' melting';
       return true;
     }};
     wall.targetId=window.DungeonFire?.registerTarget?.(target)||null;
-    window.NearbyVolumeCollision?.invalidate?.(); // The new wall must join projectile cover even when the active scene is unchanged.
+    window.NearbyVolumeCollision?.invalidate?.(); // The new invisible collider receives projectile hits, not the old ice slab.
     return wall;
+  }
+
+  function discoverIcedDoors(kit,context) {
+    if(!world||world.theme!=='tothal')return 0;
+    const candidates=iceDoorCandidates(kit,context); // Door-kind-neutral discovery is shared by authored, generated, and modular panels.
+    let added=0; // Mobile snapshot exposes how many real doors acquired visual ice.
+    for(const candidate of candidates){
+      if(world.walls.length>=2)break; // Matches the existing maximum of two frozen doors per Tothal layout.
+      if(world.icedDoorIds.has(candidate.object.uuid))continue;
+      if(buildIceWall(kit,context,candidate,world.walls.length)){
+        world.icedDoorIds.add(candidate.object.uuid);
+        added++;
+      }
+    }
+    return added;
   }
 
   function buildCleansingBrazier(kit,point,index) {
@@ -322,14 +366,7 @@
   function buildThemeMechanisms(kit,context) {
     const theme=String(context.theme||'').toLowerCase();
     if(theme==='tothal'){
-      const doors=[];
-      for(const room of context.meta?.rooms||[]){
-        for(const entry of kit.roomDoorways(context,room)){
-          const doorway=kit.doorwayWorld(context.meta,entry.door,entry.index);
-          if(doorway&&!doors.some(item=>item.id===doorway.id))doors.push(doorway);
-        }
-      }
-      doors.slice(0,2).forEach((door,index)=>buildIceWall(kit,context,door,index));
+      // Door ice is populated after other composers finish building, so modular and transit doors are also eligible.
       const rooms=(context.meta?.rooms||[]).slice(-2);
       rooms.forEach((room,index)=>{
         const point=choosePoint(kit,context,room,index?'edge':'alternate');
@@ -358,7 +395,7 @@
     if(!rooms.length)return;
     world={
       context,kit,theme:String(context.theme||'').toLowerCase(),
-      group:new THREE.Group(),records:[],walls:[],source:null,
+      group:new THREE.Group(),records:[],walls:[],icedDoorIds:new Set(),iceScanTries:0,iceScanElapsed:0,source:null,
       ceilingY:Number(context.ceilingY)||(Number(context.meta?.floorSurfaceY)||0)+(Number(context.meta?.wallHeight)||3),
       startedAt:performance.now(),
     };
@@ -379,6 +416,13 @@
 
   function update(_kit,_now,dt) {
     if(!world||dt<=0)return;
+    if(world.theme==='tothal'&&world.walls.length<2&&world.iceScanTries<6){
+      world.iceScanElapsed+=dt;
+      if(world.iceScanTries===0||world.iceScanElapsed>=.5){
+        world.iceScanElapsed=0;world.iceScanTries++;
+        discoverIcedDoors(world.kit,world.context); // Late build pass includes modules added after this composer ran.
+      }
+    }
     const fireState=window.DungeonFire?.debugSnapshot?.()||{};
     if(world.source){
       const pilot=world.source.group.userData?.dungeonFireParts?.pilot;
@@ -388,9 +432,7 @@
       if(wall.phase!=='melting')continue;
       wall.elapsed+=dt;
       const t=clamp01(wall.elapsed/MELT_SECONDS);
-      wall.mesh.scale.y=Math.max(.02,1-t);
-      wall.mesh.position.y=wall.point.y+ICE_WALL_HEIGHT*.5-t*.3;
-      wall.iceMat.opacity=.74*(1-t);
+      window.DungeonDoorIceCoverage?.setGrowth?.(wall.icePlacement,1-t); // Each faceted spike lerps toward its own floor origin, rather than squashing/fading a box.
       if(t>=1){
         wall.mesh.visible=false;
         if(wall.targetId)window.DungeonFire?.unregisterTarget?.(wall.targetId);
@@ -415,7 +457,7 @@
     return {
       active:true,theme:world.theme,
       source:world.source?{id:world.source.id,armed:window.DungeonFire?.debugSnapshot?.().armed===true,at:world.source.point}:null,
-      iceWalls:world.walls.map(wall=>({id:wall.id,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2)})),
+      iceWalls:world.walls.map(wall=>({id:wall.id,doorType:wall.doorType,phase:wall.phase,blocking:wall.blocking,elapsed:+wall.elapsed.toFixed(2),growth:+(wall.icePlacement.iceLayer.userData.iceGrowthProgress??1).toFixed(3),spikes:wall.icePlacement.iceLayer.userData.surfaceGrowthStats?.spikes||0})), // No devtools required to inspect melting or generated ice.
       nets:world.records.filter(record=>record.kind==='net').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending,unavailable:!!record.payloadUnavailable})),
       icicles:world.records.filter(record=>record.kind==='icicle').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending})),
       cleansers:world.records.filter(record=>record.kind==='cleansingBrazier').map(record=>({id:record.id,cleansed:record.cleansed,radius:record.radius})),
@@ -433,6 +475,7 @@
     for(const wall of world.walls){
       if(wall.targetId)window.DungeonFire?.unregisterTarget?.(wall.targetId);
       wall.blocking=false;
+      window.DungeonDoorIceCoverage?.clear?.(wall.icePlacement); // Borrowed authored ice remains intact across rerolls/scene teardown.
     }
     window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-ice-walls');
     window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-mechanisms');
