@@ -33,6 +33,8 @@
     return Number.isFinite(hours) ? hours : null;
   }
   function isMember() { return story().member === true; }
+  function checkpointReferral() { return window.TownMagicCheckpoint?.hasCustody?.() === true; } // Confiscated magic provides a second route to Garanki, even before Jubmir's invitation.
+  function canMeet() { return story().invited === true || isMember() || checkpointReferral(); } // Once licensed, later trust/quest dialogue remains reachable without the original invitation.
   function hasStone() { return isMember() && (Number(inventoryDeps?.inventory?.delversStone) || 0) > 0; } // Both a live licensed membership and possession of its Stone are required at every ruin-entry gate.
   function canEnchant() { return isMember() && story().trusted === true; }
 
@@ -45,7 +47,7 @@
     const catalog = inventoryDeps?.inventoryItems;
     if (!defs || !Array.isArray(catalog)) return false;
     const items = [
-      { key: 'delversStone', label: "Delver's Stone", icon: '🔴', desc: "A stone-priest's enchanted Guild amulet. Unlocks sealed Harlyao ruins and detects uncatalogued magic. Its signal can be traced by the Guild.", important: true },
+      { key: 'delversStone', label: "Delver's Stone", icon: '🔴', desc: "A stone-priest's enchanted Guild amulet that proves your license and unlocks sealed Harlyao ruins. Imperial enforcement amulets, not this Stone, detect unregistered witchcraft.", important: true },
       { key: TALISMAN_KEY, label: 'Harlyao Key Talisman', icon: '🗝️', desc: 'The key-stones of Azgarlu, Nanahi and Imlao set together by Garanki. It pulses faster as its hidden vault draws near.', important: true },
       ...KEY_STONES.map(key => ({ key: key.id, label: key.label, icon: '🗝️', desc: 'One of three ancient stone keys recovered from a named Harlyao lich tomb.', important: true })),
     ]; // Used by inventory definitions only; no automatic grants for the three ancient keys.
@@ -216,16 +218,17 @@
     };
   }
   function introScene(rec) {
+    const feyLead = opening()?.getStory?.(profile())?.jubmirFeyComplete === true; // Preserve the original Great Fey exposition only if Jubmir has actually discussed it.
     return scene(rec, "Garanki Gabu — The Delver's Guild", [
-      talk('guild_intro_0', "Jubmir tells me you're searching for the Great Fey to convince them to turn aside the Ghost Army. A worthy concern, even if the premise is mistaken."),
-      talk('guild_intro_1', "Fey, you see, are not real. What people take for fey manifestations are illusions and mistakes of perception. Natural, mildly toxic gases and certain plants can produce quite extraordinary visions."),
-      talk('guild_intro_2', "This isn't mere conjecture. At the Tower of Learning in Kumapirra, where I'm a professor, we've reproduced these effects under controlled conditions and tested the old claims at length."),
+      talk('guild_intro_0', feyLead ? "Jubmir tells me you're searching for the Great Fey to convince them to turn aside the Ghost Army. A worthy concern, even if the premise is mistaken." : "Spearhead tells me he has confiscated some enchanted belongings of yours. He was right to bring them here rather than send you into an imperial investigation."),
+      talk('guild_intro_1', feyLead ? "Fey, you see, are not real. What people take for fey manifestations are illusions and mistakes of perception. Natural, mildly toxic gases and certain plants can produce quite extraordinary visions." : "I can keep the objects safe while we determine what they are and whether you can legally take possession of them again. There is no need to involve the authorities in Kumapirra."),
+      talk('guild_intro_2', feyLead ? "This isn't mere conjecture. At the Tower of Learning in Kumapirra, where I'm a professor, we've reproduced these effects under controlled conditions and tested the old claims at length." : "I am a professor at the Tower of Learning in Kumapirra. The recovery and study of dangerous old magic is part of my work here, though I have a rather more urgent purpose besides."),
       talk('guild_intro_3', "But ghosts? The Harlyao Ghost Army? No. Those are neither superstition nor trickery. They pose a material danger to this village, and they'll require a material solution."),
       talk('guild_intro_4', "I am looking for something very specific that could help us resolve this. What it is, I cannot yet disclose. I need a reliable assistant, and you seem determined to prove yourself."),
       talk('guild_intro_5', "There are rewards beyond the good you'll do Hobunji Hollow. I also happen to be a high-ranking member of the Delver's Guild, founded by King Khanibarr to recover and regulate dangerous magic."),
       talk('guild_intro_6', "A licensed Delver receives a stone-priest-made Delver's Stone. It can unlock sealed Harlyao ruins without the old illegal practice of smashing their doors with Shattercasks."),
-      talk('guild_intro_7', "It glows red and hums when you carry uncatalogued magical objects, and reports their location to the Guild. You must not discard one: take it to a Guild official for cataloguing. Harmless enough discoveries may be registered for you to keep and use legally; dangerous ones are purchased from you."),
-      talk('guild_intro_8', "If a sensed artifact suddenly disappears at close range, stone priests investigate. They might find a discarded contraband, or a Delver murdered for their discovery. Your movements in possession of such an item are recorded."),
+      talk('guild_intro_7', "The Stone proves that you are a licensed Delver, but a license does not automatically legalize everything you find. Imperial law requires magical discoveries to be registered with a Guild official. Harmless enough pieces may be returned to you legally; dangerous ones remain in custody."),
+      talk('guild_intro_8', "Senior law-enforcement officers carry imperial amulets that detect unregistered witchcraft nearby. Captain Spearhead has one. If he stops you at the town gate, he can send anything he confiscates directly to me, and I will keep it safe until we review its registration."),
       talk('guild_intro_9', "And there's another service my studies have prepared me to offer, once you've earned my trust. Shall I enroll you as a Delver and give you your Stone?"),
       { id: 'guild_join_choice', type: 'choice', speakerId: 'player', addressedActorId: 'garanki', text: 'Join the Delver\'s Guild?', options: [
         { text: "Yes. I'll join the Guild.", next: 'guild_join_final' },
@@ -385,7 +388,7 @@
     return npc;
   }
   async function run(kind) {
-    if (progress.running || !story().invited) return false;
+    if (progress.running || !canMeet()) return false;
     if (kind === 'intro' && isMember()) return false;
     if (kind === 'trust' && (!isMember() || canEnchant() || !window.ArtifactCollection?.unlocked?.('base'))) return false;
     progress.running = true;
@@ -423,22 +426,24 @@
   }
 
   function dialogueTree() {
-    if (!story().invited || progress.running) return null;
+    if (!canMeet() || progress.running) return null;
     const phase = vaultPhase(); // The hand-in and report must outrank the ordinary collection/store dialogue.
     if (phase === 'report' && hasTalisman()) return {
       id:'garanki_vault_report', trigger:'interact', priority:120, entryNode:'vault_report_choice', nodes:[
-        { id:'vault_report_choice', type:'choice', speakerId:'player', addressedActorId:'garanki', text:'What do you tell Garanki?', options:[
-          { text:'--explain what you saw--', next:'delvers_start_vault_report' },
-          { text:'Not yet.', next:null },
+        { id:'vault_report_choice', type:'choice', speakerId:'player', addressedActorId:'garanki', text:'What do you tell Garanki?', choices:[
+          { label:'--explain what you saw--', next:'delvers_start_vault_report' },
+          { label:'Review confiscated belongings.', actions:[{ type:'openShop', pool:'garankiEnchanting' }] },
+          { label:'Not yet.', next:null },
         ] },
         { id:'delvers_start_vault_report', type:'end' },
       ],
     };
     if (phase === 'keys' && canEnchant() && KEY_STONES.every(key => (Number(inventoryDeps?.inventory?.[key.id]) || 0) > 0)) return {
       id:'garanki_talisman_handoff', trigger:'interact', priority:120, entryNode:'vault_assemble_choice', nodes:[
-        { id:'vault_assemble_choice', type:'choice', speakerId:'player', addressedActorId:'garanki', text:'You have all three key-stones.', options:[
-          { text:'Give Garanki the three key-stones.', next:'delvers_start_vault_assemble' },
-          { text:'Keep them for now.', next:null },
+        { id:'vault_assemble_choice', type:'choice', speakerId:'player', addressedActorId:'garanki', text:'You have all three key-stones.', choices:[
+          { label:'Give Garanki the three key-stones.', next:'delvers_start_vault_assemble' },
+          { label:'Review confiscated belongings.', actions:[{ type:'openShop', pool:'garankiEnchanting' }] },
+          { label:'Keep them for now.', next:null },
         ] },
         { id:'delvers_start_vault_assemble', type:'end' },
       ],
@@ -448,7 +453,12 @@
     const entry = kind === 'intro' ? 'delvers_meeting_prompt' : 'delvers_trust_prompt';
     const launch = kind === 'intro' ? 'delvers_start_intro' : 'delvers_start_trust';
     return { id: 'garanki_' + kind + '_meeting', trigger: 'interact', priority: 110, entryNode: entry, nodes: [
-      { id: entry, type: 'text', text: kind === 'intro' ? "Ah, you came. Let's speak privately in the tent." : "I've been meaning to speak with you about the artifacts. There are things we must discuss in private.", next: launch },
+      { id: entry, type: 'choice', text: kind === 'intro' ? (story().invited ? "Ah, you came. Let's speak privately in the tent." : "Spearhead sent me your enchanted belongings. Let's discuss them privately in my tent.") : "I've been meaning to speak with you about the artifacts. There are things we must discuss in private.",
+        choices: [
+          { label: kind === 'intro' ? "Let's talk about joining the Guild." : "Let's talk privately.", next: launch },
+          { label: 'Review confiscated belongings.', actions: [{ type: 'openShop', pool: 'garankiEnchanting' }] },
+          { label: 'Another time.', next: null },
+        ] },
       { id: launch, type: 'end' },
     ] }; // The end node closes normal dialogue before the authored cutscene takes control.
   }
