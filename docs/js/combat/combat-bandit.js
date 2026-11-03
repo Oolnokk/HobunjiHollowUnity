@@ -3018,10 +3018,16 @@
     };
     window.ResourceSystem?.initEntity(c);
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
-    if (c.carriesHronalWitchBomb === true || c.carriesBurdenKind === 'hronalWitchBomb'
-      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb') {
-      // Either the authored enemy definition or its spawn instance can request the real two-hand physical Burden.
-      window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds:c.witchBombFuseSeconds??def.witchBombFuseSeconds})
+    const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
+      || c.carriesBurdenKind === 'hronalWitchBomb'
+      || opts.carriesHronalWitchBomb === true || opts.carriesBurdenKind === 'hronalWitchBomb'
+      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb'
+      || !!c.mineWyrmWitchType; // The existing Wyrm-witch archetype is the first ordinary spawn source for the physical bomb.
+    if (carriesHronalWitchBomb) {
+      // Explicit enemy flags and the existing mine Wyrm-witch variant share the real two-hand physical Burden path.
+      const fuseSeconds=c.witchBombFuseSeconds??opts.witchBombFuseSeconds
+        ??opts.extra?.witchBombFuseSeconds??def.witchBombFuseSeconds;
+      window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds})
         ?.catch?.(error=>console.warn('[HronalWitchBombs] enemy-carried spawn failed',error));
     }
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
