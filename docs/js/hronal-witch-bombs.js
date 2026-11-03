@@ -27,6 +27,7 @@
     return grid?.[row]?.[col] || null;
   };
   function tileHazard(tile) {
+    if (!currentGrid()) return ''; // Scene entry can precede the active tile-grid handoff; do not misclassify that brief gap as a bottomless pit.
     if (!tile) return 'void';
     const type=String(tile.type||'').toLowerCase();
     if (type==='lava'||Number(tile.lava)>0) return 'lava';
@@ -264,6 +265,13 @@
         if ((Number(carrier.health)||0)<=0 || !carrier.avatarRef?.group?.parent) dropEnemyBomb(bomb);
       }
       if (!bomb.group?.parent) {window.Shattercasks.discardBurden(bomb);continue;}
+      if (!bomb.carried && !bomb.flying) {
+        const position=bomb.group.getWorldPosition(new THREE.Vector3());
+        if (tileHazard(tileAt(mapId,position.x,position.z))) {
+          window.Shattercasks.discardBurden(bomb); // A dropped bomb is destroyed by water/lava/void even when it did not arrive through a ceiling fall.
+          continue;
+        }
+      }
       const fuse=Math.max(1,Number(bomb.fuseSeconds)||DEFAULT_FUSE_SECONDS);
       const remaining=Math.max(0,fuse-(now()-Number(bomb.spawnedAtMs||now()))/1000);
       const urgency=clamp((1-remaining/fuse-.52)/.48,0,1);
