@@ -8,6 +8,10 @@
   const manifest = JSON.parse(read('docs/config/patterns/fur-hoods.json'));
   const cosmetic = JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
   const index = JSON.parse(read('docs/config/cosmetics/index.json'));
+  const expectedPendingNelk='assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png'; // Artist will upload after merge, so the file reference is intentionally ahead of its bytes.
+  assert.deepEqual(manifest.pendingAssets,[expectedPendingNelk],'Only the explicitly deferred Nelk Tletingan back sprite can be absent');
+  assert.equal(manifest.species.nelk.parts.tletingan_male.back,expectedPendingNelk,'Nelk Tletingan back is connected to the future filename');
+  assert.equal(manifest.species.nelk.parts.mashtzarr_male.back,'assets/cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png','Mashtzarr keeps the renamed real art');
   assert(index.entries.some(entry => entry.id === 'fur_hood'), 'new wearable cosmetic is published in portrait registry');
   assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_male','tletingan_male']);
   for (const [key, suffix] of Object.entries({ tletingan_male:'tl_m', mashtzarr_male:'mashtz_m' })) {
@@ -23,6 +27,7 @@
       assert(['tletingan_male','mashtzarr_male'].includes(variant), 'unsupported wearer art key ' + variant);
       for (const [position, url] of Object.entries(parts)) {
         assert(['front','back'].includes(position), 'unexpected animal piece position');
+        if (url === expectedPendingNelk) continue; // Intentional pending art, never a general exemption for missing sprites.
         assert(fs.existsSync(path.join(root, 'docs', url)), 'missing animal '+kind+' '+position+' '+url);
       }
     }

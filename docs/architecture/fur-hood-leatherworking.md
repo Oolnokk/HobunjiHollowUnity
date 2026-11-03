@@ -58,3 +58,7 @@ node scripts/test-fur-hood-leatherworking.js
 ```
 
 The test checks the exact authored art filenames, manifest paths, genetic hue and allele persistence, nearest head-variant fallback, and the separation of natural/personal weaving data. The game also exposes `window.FurHoodLeatherworking.debugSnapshot()` and the normal ClothingWeavingSystem debug snapshot for mobile troubleshooting.
+
+## Pending Nelk artwork
+
+The existing Mashtzarr Nelk sprite was renamed from `furhood_nelk-behind_mashtz_m.png` to `furhood_nelk-back_mashtz_m.png` and its manifest path was corrected. The Tletingan `-front` sprite already exists. The manifest now references `assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png`, with that exact path in `pendingAssets` because its image **will be uploaded by the artist after the PR is merged**. No temporary or fabricated PNG is included; load errors for this single missing asset are expected until upload. The regression test permits only this explicitly deferred file to be missing.

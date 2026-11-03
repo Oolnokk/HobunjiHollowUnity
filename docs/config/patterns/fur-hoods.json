@@ -97,7 +97,8 @@
       "patterns": {},
       "parts": {
         "tletingan_male": {
-          "front": "assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png"
+          "front": "assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png",
+          "back": "assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png"
         },
         "mashtzarr_male": {
           "front": "assets/cosmetics/clothes/hood/furhood_nelk-front_mashtz_m.png",
@@ -113,5 +114,8 @@
   "excludedColors": [
     "#94858e",
     "#567372"
+  ],
+  "pendingAssets": [
+    "assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png"
   ]
 }

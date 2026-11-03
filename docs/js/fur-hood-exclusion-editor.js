@@ -169,6 +169,7 @@
       if(token!==revision||closed)return;
       const path=spritePaths(config,selected.entry,selected.fit,selected.view)[roles.value];
       if(!path){status.textContent='No '+ROLES[roles.value].toLowerCase()+' sprite exists for '+selected.kind+' / '+selected.fit+'. Select another sprite role or fit.';renderList();return;}
+      if(manifest.pendingAssets?.includes(path)){status.textContent='Sprite referenced but not uploaded yet: '+path+'. You can still inspect existing layers; the art will be provided after merge.';renderList();return;}
       status.textContent='Loading untreated sprite: '+path;
       try{
         const source=await fetchSprite(path);if(token!==revision||closed)return;
