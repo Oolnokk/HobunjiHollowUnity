@@ -440,6 +440,7 @@
       moveTo,
       refreshVisual() { syncVisualTransform(occupiedLift()); },
       getPendingSaleTotal: pendingSaleTotal,
+      getPendingSaleCountFor: key => Math.max(0, Number(pendingSaleCounts[key]) || 0), // Shipping preview matches the actual midnight-eligible withdrawal order.
       getMidnightCutoffDay: () => lastObservedDay,
       getButtons() {
         const item = deps.getActiveInventoryItem();
