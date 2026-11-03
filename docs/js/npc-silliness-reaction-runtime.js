@@ -22,30 +22,108 @@
   const RARE_SIZE_TIER_BY_DELTA = Object.freeze({ '-2': 'sizeTwoSmaller', '-1': 'sizeOneSmaller', 1: 'sizeOneLarger', 2: 'sizeTwoLarger' }); // Maps size-class distance to the authored rare-size reaction pool.
   const RARE_SIZE_TIERS = new Set(Object.values(RARE_SIZE_TIER_BY_DELTA)); // Used by animal pool lookup to distinguish role-independent rare-size reactions from role-specific tiers.
 
-  const FALLBACK_CONFIG = Object.freeze({ // Used only if the authored JSON cannot be loaded, so reactions never become fatal.
-    settings: Object.freeze({ reactionRadiusTiles: 4, cooldownMs: 9000, durationMs: 4400, directPetGreetingRank: 3 }),
-    defaultProfile: 'neighborly',
-    profiles: Object.freeze({
-      neighborly: Object.freeze({
-        label: 'Neighborly',
-        animal: Object.freeze({
-          recognized: Object.freeze(['Hello, {animalName}!']),
-          sizeTwoLarger: Object.freeze(['Dear Breath, that has to be the biggest {species} I have ever seen in my life.']),
-          sizeOneLarger: Object.freeze(['I think you might be overfeeding your {species}.']),
-          sizeOneSmaller: Object.freeze(['What a cute little fellow. Runt of the litter?']),
-          sizeTwoSmaller: Object.freeze(['Dear Breath, that has to be the tiniest {species} I have ever seen in my life.']),
-          trained: Object.freeze({ mount: Object.freeze(["That's a fine {species}." ]), companion: Object.freeze(['Good {species}.']), shoulderPet: Object.freeze(['Well, hello up there.']) }),
-          familiar: Object.freeze({ mount: Object.freeze(["They're settling in nicely."]), companion: Object.freeze(['{animalName} listens well.']), shoulderPet: Object.freeze(['{animalName} looks comfortable up there.']) }),
-          wary: Object.freeze({ mount: Object.freeze(['Easy with that {species}.']), companion: Object.freeze(['Keep {animalName} close, please.']), shoulderPet: Object.freeze(['Oh! I almost missed {animalName}.']) }),
-          recognition: Object.freeze({ mount: Object.freeze(["I've gotten used to seeing {animalName} with you."]), companion: Object.freeze(['I know {animalName} now.']), shoulderPet: Object.freeze(["I'd notice if {animalName} wasn't up there."]) }),
-        }),
-        silliness: Object.freeze({ positive: Object.freeze(['Ha! That was funny.']), negative: Object.freeze(["That's enough."]) }),
-        dance: Object.freeze({ positive: Object.freeze(['There you go!']), negative: Object.freeze(['Not with me, thanks.']) }),
-        music: Object.freeze({ positive: Object.freeze(["That's nice."]), negative: Object.freeze(['Not right now, please.']) }),
-      }),
-    }),
-    assignments: Object.freeze({}),
-  });
+  const FALLBACK_CONFIG = Object.freeze({
+  "settings": {
+    "reactionRadiusTiles": 4,
+    "cooldownMs": 9000,
+    "durationMs": 4400,
+    "directPetGreetingRank": 3
+  },
+  "defaultProfile": "neighborly",
+  "profiles": {
+    "neighborly": {
+      "label": "Neighborly",
+      "animal": {
+        "recognized": [
+          "Hello again, {animalName}.",
+          "There you are, {animalName}."
+        ],
+        "sizeTwoLarger": [
+          "I've never seen a {species} that big."
+        ],
+        "sizeOneLarger": [
+          "That {species} is bigger than most."
+        ],
+        "sizeOneSmaller": [
+          "That's a small {species}, isn't it?"
+        ],
+        "sizeTwoSmaller": [
+          "I didn't know a {species} could be that tiny."
+        ],
+        "trained": {
+          "mount": [
+            "You two look comfortable together.",
+            "That {species} follows your lead."
+          ],
+          "companion": [
+            "That's a well-mannered {species}.",
+            "{animalName} listens well."
+          ],
+          "shoulderPet": [
+            "{animalName} looks happy up there.",
+            "That's a good spot to ride along."
+          ]
+        },
+        "familiar": {
+          "mount": [
+            "That {species} seems more at ease now."
+          ],
+          "companion": [
+            "{animalName}'s getting used to people."
+          ],
+          "shoulderPet": [
+            "{animalName} looks settled up there."
+          ]
+        },
+        "wary": {
+          "mount": [
+            "Could you keep that {species} steady?",
+            "Mind giving us a little room?"
+          ],
+          "companion": [
+            "Is {animalName} friendly?",
+            "Could you keep {animalName} close?"
+          ],
+          "shoulderPet": [
+            "Oh, there's someone on your shoulder!",
+            "I nearly missed {animalName} up there."
+          ]
+        }
+      },
+      "silliness": {
+        "positive": [
+          "Ha! That caught me off guard.",
+          "All right, that was funny."
+        ],
+        "negative": [
+          "I'm not in the mood for jokes.",
+          "Please don't do that again."
+        ]
+      },
+      "dance": {
+        "positive": [
+          "That's the spirit!",
+          "You're keeping good time."
+        ],
+        "negative": [
+          "Please, not right beside me.",
+          "I'm not joining in."
+        ]
+      },
+      "music": {
+        "positive": [
+          "That's a lovely tune.",
+          "I could listen to that awhile."
+        ],
+        "negative": [
+          "Would you mind playing farther away?",
+          "I've heard enough for now."
+        ]
+      }
+    }
+  },
+  "assignments": {}
+}); // Used only if authored reaction JSON fails to load.
 
   const state = { // Shared mutable runtime state used by config loading, automatic social encounters, and mobile-friendly diagnostics.
     plannerDeps: null,
@@ -62,7 +140,6 @@
     reactionsByType: { silliness: 0, dance: 0, music: 0 },
     greetingReplacementEncounters: 0,
     animalLineReplacements: 0,
-    recognitionLineReplacements: 0,
   };
 
   const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()); // Used by cooldowns and debug timestamps independent of game clock speed.
@@ -91,14 +168,10 @@
     const profileId = profileIdForNpc(npcId); // Resolved ID returned with the profile for editor/debug visibility.
     return { id: profileId, profile: state.config?.profiles?.[profileId] || FALLBACK_CONFIG.profiles.neighborly };
   }
-  function defaultProfile() {
-    const id = String(state.config?.defaultProfile || FALLBACK_CONFIG.defaultProfile); // Author-selected inheritance source for blank personality sub-pools.
-    return state.config?.profiles?.[id] || FALLBACK_CONFIG.profiles.neighborly;
-  }
   function nestedPool(profile, category, options = {}) {
     if (!profile) return [];
     if (category === 'animal') {
-      const tier = String(options.tier || 'wary'); // Animal familiarity tier selects recognized/trained/familiar/wary/recognition authoring.
+      const tier = String(options.tier || 'wary'); // Animal familiarity tier selects recognized/trained/familiar/wary authoring.
       if (tier === 'recognized' || RARE_SIZE_TIERS.has(tier)) return cleanPool(profile.animal?.[tier]);
       const role = String(options.role || 'companion'); // Stable role selects the role-specific animal pool within the tier.
       return cleanPool(profile.animal?.[tier]?.[role]);
@@ -107,12 +180,8 @@
     return cleanPool(profile?.[category]?.[polarity]);
   }
   function poolFor(npcId, category, options = {}) {
-    const selected = profileForNpc(npcId); // NPC-specific personality profile checked before default-profile inheritance.
-    const ownPool = nestedPool(selected.profile, category, options); // Authored pool for the assigned personality.
-    if (ownPool.length) return ownPool;
-    const inherited = nestedPool(defaultProfile(), category, options); // Blank pool inherits from the configured default personality.
-    if (inherited.length) return inherited;
-    return nestedPool(FALLBACK_CONFIG.profiles.neighborly, category, options); // Hard fallback protects old saves/config mistakes.
+    const selected = profileForNpc(npcId); // The assigned personality alone owns the reaction; empty pools intentionally remain silent.
+    return nestedPool(selected.profile, category, options);
   }
   function templateLine(source, values = {}) {
     return String(source || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? String(values[key]) : token);
@@ -216,18 +285,6 @@
     return null;
   }
 
-  function animalByStableId(stableId) {
-    const progression = global.StableAnimalProgression; // Public active-role API used because recognition candidates are necessarily present animals.
-    if (!progression?.activeEntryForRole) return null;
-    for (const role of ROLE_IDS) {
-      const entry = progression.activeEntryForRole(role); // Active entry checked against the recognition tree's embedded stable ID.
-      if (!entry || String(entry.id) !== String(stableId)) continue;
-      const actor = stableRoleActor(role); // Live actor retained for parity with ambient animal diagnostics.
-      return { role, entry, actor, bondRank: Number(progression.perkRank?.(entry, 'rapportBond')) || 0 };
-    }
-    return null;
-  }
-
   function speciesLabel(entry) {
     const kind = String(entry?.kind || ''); // Stable species key used by both the live creature registry and genetics fallback.
     return global.CREATURE_DB?.[kind]?.label || global.CreatureGenetics?.defaultLivestockName?.(kind) || kind || 'animal';
@@ -272,7 +329,7 @@
   function animalLine(npcId, animal, tier = animalTier(npcId, animal)) {
     const animalName = animal.entry?.name || speciesLabel(animal.entry); // Placeholder value prefers the stable animal's player-given name.
     const species = speciesLabel(animal.entry); // Placeholder value exposes the creature species label for generic lines.
-    const rareSizeTier = tier === 'recognition' ? null : rareSizeTierForEntry(animal.entry, animal.role); // One-time recognition keeps its progression-specific copy; ordinary pet reactions may be replaced by a size quip.
+    const rareSizeTier = rareSizeTierForEntry(animal.entry, animal.role); // Rare bred size takes priority over ordinary familiarity tiers.
     const resolvedTier = rareSizeTier || tier; // Rare bred size takes priority over the ordinary familiarity tier for ambient pet copy.
     return resolve({
       npcId,
@@ -293,38 +350,14 @@
       if (animal && global.NpcInteractionPolicy?.isPassiveGreatFey?.(npcId)) return null; // No reactive pet speech for the Great Fey, even from direct show() callers.
       if (animal) {
         const replacement = animalLine(npcId, animal); // Personality line replaces only the old hardcoded stable-animal copy.
-        if (replacement) {
-          text = replacement;
-          state.animalLineReplacements++;
-        }
+        if (!replacement) return null; // Never show the legacy hardcoded pet line for an intentionally empty pool.
+        text = replacement;
+        state.animalLineReplacements++;
       }
       return originalShow(target, text, options);
     };
     wrappedShow.__npcReactionAnimalCopyWrapped = true;
     api.show = wrappedShow;
-  }
-
-  function patchRecognitionConversation(api) {
-    if (!api?.beginNpcConversation || api.beginNpcConversation.__npcReactionRecognitionWrapped) return;
-    const originalBegin = api.beginNpcConversation.bind(api); // Existing DialogueContent flow remains authoritative for UI, memory, and tree progression.
-    const wrappedBegin = function personalityRecognitionConversation(rec, ...args) {
-      const tree = (rec?.dialogueTrees || []).find(candidate => String(candidate?.id || '').startsWith('stable_animal_recognition_')); // StableAnimalProgression's temporary recognition tree is the only tree this wrapper edits.
-      const node = tree?.nodes?.find(candidate => candidate?.type === 'text'); // Single text node receives personality-authored recognition copy.
-      const stableId = tree ? String(tree.id).slice('stable_animal_recognition_'.length) : ''; // Embedded stable ID identifies the present animal and role.
-      const animal = stableId ? animalByStableId(stableId) : null; // Present stable animal supplies placeholders and role-specific pool selection.
-      const oldText = node?.text; // Original hardcoded text is restored after the underlying conversation starts.
-      if (node && animal) {
-        const replacement = animalLine(String(rec?.id || ''), animal, 'recognition'); // Personality recognition line replaces the old long generic sentence.
-        if (replacement) {
-          node.text = replacement;
-          state.recognitionLineReplacements++;
-        }
-      }
-      try { return originalBegin(rec, ...args); }
-      finally { if (node && oldText != null) node.text = oldText; }
-    };
-    wrappedBegin.__npcReactionRecognitionWrapped = true;
-    api.beginNpcConversation = wrappedBegin;
   }
 
   function patchPlanner(api) {
@@ -555,7 +588,6 @@
       negative: state.negative,
       reactionsByType: { ...state.reactionsByType },
       animalLineReplacements: state.animalLineReplacements,
-      recognitionLineReplacements: state.recognitionLineReplacements,
       greetingReplacementEncounters: state.greetingReplacementEncounters,
       greetingSuppressedNpcIds: [...state.greetingSuppressedNpcIds],
       activeAnimalSizes: ROLE_IDS.map(role => {
@@ -578,7 +610,6 @@
 
   chainGlobal('NpcActivityPlanner', patchPlanner);
   chainGlobal('AmbientDialogue', patchAmbientDialogue);
-  chainGlobal('DialogueContent', patchRecognitionConversation);
   loadConfig();
   loadAmbientGreetingRadius();
   global.setInterval?.(update, 180);
@@ -586,6 +617,7 @@
   const profileApi = Object.freeze({ // Public resolver/debug API used by diagnostics and future reaction-producing systems without duplicating profile logic.
     installed: true,
     resolve,
+    animalLineFor: (npcId, animal) => state.configLoaded ? animalLine(String(npcId || ''), animal) : null, // Stable progression requests authored animal lines directly and skips speech if configuration is not ready.
     profileForNpc: npcId => ({ ...profileForNpc(String(npcId || '')) }),
     rareSizeTierForEntry: (entry, role = null) => rareSizeTierForEntry(entry, role),
     reload: loadConfig,
