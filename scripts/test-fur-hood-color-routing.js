@@ -79,6 +79,21 @@ async function main(){
   assert.deepEqual(pixel(protectedComposite,8),[86,115,114,255],'final garment compositor restores second protected swatch');
   assert.deepEqual(pixel(protectedComposite,3),[31,31,31,31],'final garment compositor leaves other recolored fur alone');
   assert.strictEqual(api.preserveProtectedColors(image,wholeTint),protectedComposite,'protected final compositing reuses cached canvas');
+  assert.deepEqual(Array.from(api.protectedColorsFor(active,'animalBack')),['#94858e','#567372'],'manifest initializes both previously excluded pixels');
+  registry.species.grehlr.excludedColorsByRole={animalBack:['#bebebe']}; // An eyedropper-saved species/role exclusion should not change unrelated sprite roles.
+  assert(api.protectedColorsFor(active,'animalBack').includes('#bebebe'),'per-back-sprite exclusion extends global palette');
+  assert(!api.protectedColorsFor(active,'animalFront').includes('#bebebe'),'other Grehlr sprite role does not inherit per-back exclusion');
+  const roleProtected=api.recolorAnimalPart(image,active,'animalBack');
+  assert.deepEqual(pixel(roleProtected,1),[190,190,190,255],'newly excluded real gray is untouched in Grehlr back');
+  assert.notStrictEqual(roleProtected,striped,'changing exclusion list invalidates cached Grehlr recoloring');
+  delete registry.species.grehlr.excludedColorsByRole;
+  registry.excludedColors.push('#9bc09a'); // A sampled global mint color protects every fur part, not just one species.
+  const globallyProtected=api.recolorAnimalPart(image,active,'animalBack');
+  assert.deepEqual(pixel(globallyProtected,3),[155,192,154,255],'sampled global mint highlight stays original');
+  const noExclusions={...active,authoringPalette:{exclusionOverrides:{global:[],byRole:{animalBack:[]}}}}; // Editor-only live preview can compare both sides without mutating real game data.
+  assert.equal(api.protectedColorsFor(noExclusions,'animalBack').length,0,'comparison without exclusions ignores manifest defaults');
+  assert.equal(api.isProtectedSourcePixel(new Uint8ClampedArray([148,133,142,255]),0,noExclusions,'animalBack'),false,'authoring overrides work in exact-pixel predicate');
+  registry.excludedColors.pop();
   assert.deepEqual(Array.from(image.data),sourcePixels,'source sprite never mutates');
   assert.strictEqual(api.recolorAnimalPart(image,active,'animalBack'),striped,'per-sprite genotype tint cache is reused');
   const front=api.recolorAnimalPart(image,active,'animalFront');
@@ -115,9 +130,9 @@ async function main(){
   assert.match(loom,/colorForRole\?\.\(furHood, role\)/,'loom/icon uses canonical natural color resolver');
   assert.match(loom,/recolorAnimalPart\?\.\(img, furHood, role\)/,'loom/icon handles Grehlr keyed regions');
   assert.match(loom,/recolorAnimalPart\?\.\(img, descriptor\?\.furHood, descriptor\?\.role\)/,'equipped portrait uses same selective source');
-  assert.match(loom,/preserveProtectedColors\?\.\(shadingSource,img\)/,'icon and loom images protect authored source swatches after motifs');
-  assert.match(loom,/preserveProtectedColors\?\.\(img,decorated\)/,'final worn-portrait patterned pass protects source swatches');
-  assert.match(loom,/isProtectedSourcePixel\?\.\(pixels\.data,i\)/,'garment-space paint masks protect exact swatches');
+  assert.match(loom,/preserveProtectedColors\?\.\(shadingSource,img,furHood,role\)/,'loom/icon source exclusions are role aware');
+  assert.match(loom,/preserveProtectedColors\?\.\(img,decorated,descriptor\.furHood,descriptor\.role\)/,'worn-portrait motif exclusions are role aware');
+  assert.match(loom,/isProtectedSourcePixel\?\.\(pixels\.data,i,excludedSet\)/,'direct-paint masks use exact role exclusion set');
   assert.match(loom,/if \(!descriptor\.furHood && !weavingPatternsForRole/,'motif-free fur layers still enter portrait tint resolver');
   assert.match(loom,/if \(furHood\) await window\.FurHoodLeatherworking\?\.ensureManifest/,'fur-hood icon rendering waits for species routing before caching');
   const portrait=read('docs/js/portrait-utils.js');

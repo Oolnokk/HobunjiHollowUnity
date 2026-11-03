@@ -15,6 +15,10 @@ const inline = [...editor.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1); // 
 assert(inline, 'Pattern Editor inline initialization exists');
 new vm.Script(inline[1]);
 assert(editor.includes('id="furPaintBtn"'), 'Paint on hood is available in the existing fur authoring section');
+assert(editor.includes('id="furSampleExclusionsBtn"'), 'raw sprite eyedropper is available in the fur hood authoring section');
+assert(editor.includes('id="furExportExclusionsBtn"'), 'full export includes portable global and per-species swatch lists');
+assert(editor.includes('fur-hood-exclusion-editor.js'), 'standalone inspector module is loaded by the Pattern Editor');
+assert(editor.includes('exclusionOverridesForPreview()'), 'full hood preview responds to unsaved exclusion sets');
 assert(editor.includes('id="furMainViewportBtn"'), 'main right viewport toggle is exposed in animal authoring');
 assert(editor.includes("openHoodPainter($('preview').parentElement,exitRightPainter)"), 'the main viewport embeds the editable painter rather than showing a passive hood image');
 assert(editor.includes("furRightPainterActive=()=>openingRightPainter||!!rightPainter?.isOpen?.()"), 'the main preview does not overwrite an active paint session');
