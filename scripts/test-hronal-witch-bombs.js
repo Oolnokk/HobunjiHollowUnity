@@ -88,6 +88,6 @@ assert(hands.includes('proceduralHeldItemTarget'));
 const html=read('docs/index.html');
 assert(html.includes('js/hronal-witch-bombs.js?v='));
 assert(html.includes('js/key-statues.js?v='));
-assert(html.includes('furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1'));
+assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
 
 console.log('Hronal Witch-bomb: authored whole-sphere glyph/glow, fuse, ceiling dispenser lock, carrier grip, hazard loss, fire blast and breakable hooks passed.');

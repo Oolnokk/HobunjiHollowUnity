@@ -61,7 +61,7 @@ const document={createElement(tag){if(tag==='div')return new Control();const res
 let compositeCount=0; // Proves repeated instances reuse one pending tile build.
 const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
   ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;stacks.push(patterns);sizes.push([canvas.width,canvas.height]);assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
-  HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
+  HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}}),carveCanvas:canvas=>canvas}};
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,Option,performance:{now:()=>1000},console});
 const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
 function box(){const geo=new Geometry();geo.setAttribute('position',new Attribute([-1,.05,-1.5, 1,.05,1.5, 1,.05,-1.5, -1,.05,-1.5, -1,.05,1.5, 1,.05,1.5, -1,-.05,1.5, 1,-.05,1.5, 1,.05,1.5],3));return new Mesh(geo,new Material({}));}
