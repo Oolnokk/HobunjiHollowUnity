@@ -8,7 +8,7 @@
     "w": 1,
     "d": 5
   },
-  "notes": "Blast-triggered falling pillar for a chasm puzzle. Its upper shaft settles as a walkable bridge after the topple animation; it does not respond to ordinary direct interaction.",
+  "notes": "Blast-toppled bridge pillar. The upper shaft falls toward the near bank of a 3.4-tile chasm, forming a genuinely walkable crossing after settling; its body is not directly interactive.",
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
   "fireHazard": false,
@@ -185,7 +185,7 @@
       "transform": {
         "x": 0,
         "y": -0.1442,
-        "z": 2.3436,
+        "z": 3.7793,
         "rx": 97.015,
         "ry": 0,
         "rz": 0,
@@ -283,7 +283,7 @@
       "transform": {
         "x": 0,
         "y": 0.0472,
-        "z": 0.2159,
+        "z": 1.6516,
         "rx": 97.015,
         "ry": 0,
         "rz": 0,
@@ -1932,7 +1932,7 @@
           "on": {
             "x": 0,
             "y": 0.1246,
-            "z": 0.6143,
+            "z": 2.05,
             "rx": 97.015,
             "ry": 0,
             "rz": 0,
@@ -1956,7 +1956,7 @@
           "on": {
             "x": 0,
             "y": -0.1442,
-            "z": 2.6227,
+            "z": 4.0584,
             "rx": 97.015,
             "ry": 0,
             "rz": 0,
