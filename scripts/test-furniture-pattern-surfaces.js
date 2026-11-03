@@ -111,6 +111,16 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.debug(mesh)[0].scale,2);assert.equal(part.patternSurfaces[0].scale,1);
   const cold=box();cold.userData.authoredPart=part;api.applyOverrides(cold,JSON.parse(JSON.stringify(mesh.userData.patternOverrides)));
   assert.equal(api.debug(cold)[0].scale,2,'serialized overrides survive cold restoration');
+  const wholeSphere=box();
+  api.applyPart(wholeSphere,{kind:'sphere',patternSurfaces:[{...pattern,selector:'all'}]});
+  const wholeSphereLayer=wholeSphere.children[0];
+  assert.equal(wholeSphereLayer.geometry.getAttribute('position').count,
+    wholeSphere.geometry.getAttribute('position').count,
+    'selector all must include every sphere face, not only its upward triangles');
+  const sphereAxes=wholeSphereLayer.geometry.userData.patternUvAxes;
+  assert([...sphereAxes].filter((_,index)=>index%2===0).every(axis=>axis===3)
+    &&[...sphereAxes].filter((_,index)=>index%2===1).every(axis=>axis===4),
+    'whole-sphere glyphs use continuous longitude/latitude UVs with separate equator and vertical scale');
   const glowSource=box();
   const glowRecord={...pattern,mode:'engraving',selector:'all',glowColor:'#ff7818',glowIntensity:.8,glowPulseSpeed:2};
   api.applyPart(glowSource,{kind:'sphere',patternSurfaces:[glowRecord]});
