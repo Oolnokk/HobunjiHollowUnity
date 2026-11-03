@@ -4,7 +4,7 @@
 // broadens the runtime to one authoring source for:
 //   - player silliness, dance, and music reactions
 //   - mount / companion / shoulder-pet ambient reactions
-//   - the one-time stable-animal recognition conversation
+//   - familiar-animal greetings (recognition is remembered silently)
 //
 // All authored copy lives in config/dialogue/npc-reaction-profiles.json and is
 // edited from the Ambient Dialogue Editor. Gameplay systems still decide WHEN
@@ -22,108 +22,12 @@
   const RARE_SIZE_TIER_BY_DELTA = Object.freeze({ '-2': 'sizeTwoSmaller', '-1': 'sizeOneSmaller', 1: 'sizeOneLarger', 2: 'sizeTwoLarger' }); // Maps size-class distance to the authored rare-size reaction pool.
   const RARE_SIZE_TIERS = new Set(Object.values(RARE_SIZE_TIER_BY_DELTA)); // Used by animal pool lookup to distinguish role-independent rare-size reactions from role-specific tiers.
 
-  const FALLBACK_CONFIG = Object.freeze({
-  "settings": {
-    "reactionRadiusTiles": 4,
-    "cooldownMs": 9000,
-    "durationMs": 4400,
-    "directPetGreetingRank": 3
-  },
-  "defaultProfile": "neighborly",
-  "profiles": {
-    "neighborly": {
-      "label": "Neighborly",
-      "animal": {
-        "recognized": [
-          "Hello again, {animalName}.",
-          "There you are, {animalName}."
-        ],
-        "sizeTwoLarger": [
-          "I've never seen a {species} that big."
-        ],
-        "sizeOneLarger": [
-          "That {species} is bigger than most."
-        ],
-        "sizeOneSmaller": [
-          "That's a small {species}, isn't it?"
-        ],
-        "sizeTwoSmaller": [
-          "I didn't know a {species} could be that tiny."
-        ],
-        "trained": {
-          "mount": [
-            "You two look comfortable together.",
-            "That {species} follows your lead."
-          ],
-          "companion": [
-            "That's a well-mannered {species}.",
-            "{animalName} listens well."
-          ],
-          "shoulderPet": [
-            "{animalName} looks happy up there.",
-            "That's a good spot to ride along."
-          ]
-        },
-        "familiar": {
-          "mount": [
-            "That {species} seems more at ease now."
-          ],
-          "companion": [
-            "{animalName}'s getting used to people."
-          ],
-          "shoulderPet": [
-            "{animalName} looks settled up there."
-          ]
-        },
-        "wary": {
-          "mount": [
-            "Could you keep that {species} steady?",
-            "Mind giving us a little room?"
-          ],
-          "companion": [
-            "Is {animalName} friendly?",
-            "Could you keep {animalName} close?"
-          ],
-          "shoulderPet": [
-            "Oh, there's someone on your shoulder!",
-            "I nearly missed {animalName} up there."
-          ]
-        }
-      },
-      "silliness": {
-        "positive": [
-          "Ha! That caught me off guard.",
-          "All right, that was funny."
-        ],
-        "negative": [
-          "I'm not in the mood for jokes.",
-          "Please don't do that again."
-        ]
-      },
-      "dance": {
-        "positive": [
-          "That's the spirit!",
-          "You're keeping good time."
-        ],
-        "negative": [
-          "Please, not right beside me.",
-          "I'm not joining in."
-        ]
-      },
-      "music": {
-        "positive": [
-          "That's a lovely tune.",
-          "I could listen to that awhile."
-        ],
-        "negative": [
-          "Would you mind playing farther away?",
-          "I've heard enough for now."
-        ]
-      }
-    }
-  },
-  "assignments": {}
-}); // Used only if authored reaction JSON fails to load.
+  const FALLBACK_CONFIG = Object.freeze({ // Minimal safe configuration used only when authored JSON is unavailable; never invent NPC reaction copy.
+    settings: { reactionRadiusTiles: 4, cooldownMs: 9000, durationMs: 4400, directPetGreetingRank: 3 },
+    defaultProfile: 'neighborly',
+    profiles: { neighborly: { label: 'Neighborly', animal: {} } },
+    assignments: {},
+  });
 
   const state = { // Shared mutable runtime state used by config loading, automatic social encounters, and mobile-friendly diagnostics.
     plannerDeps: null,
@@ -187,6 +91,7 @@
     return String(source || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (token, key) => key in values ? String(values[key]) : token);
   }
   function resolve(options = {}) {
+    if (!state.configLoaded) return null; // A missing or still-loading authored config must never resurrect retired fallback dialogue.
     const npcId = String(options.npcId || ''); // Speaker ID selects the assigned personality profile.
     const category = String(options.category || 'silliness'); // Reaction category selects animal/silliness/dance/music authoring.
     const pool = poolFor(npcId, category, options); // Final inherited pool used for deterministic selection.
@@ -548,7 +453,7 @@
         encounter.serial++;
         if (now - encounter.lastReactionAt >= cooldownMs) {
           const emitted = react(walker, { stimulus, serial: encounter.serial }); // Existing public reaction path handles polarity, facing, rendering, and profile copy.
-          if (!emitted) encounter.inside = false;
+          if (!emitted && poolFor(id, stimulus.type, { polarity: heartsFor(id) < 0 ? 'negative' : 'positive' }).length) encounter.inside = false; // Intentionally empty entries stay silent until the NPC leaves and re-enters, instead of retrying every frame.
         }
       } else if (!inside) encounter.inside = false;
       refreshGreetingSuppressionFor(walker, encounter);
