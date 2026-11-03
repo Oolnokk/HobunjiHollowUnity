@@ -76,8 +76,14 @@
     return results;
   }
 
-  function specialPartsFor(furHood) {
-    const parts = entryForKind(furHood?.kind)?.parts || {};
+  function specialPartsFor(furHood, wearerSpecies = null, wearerGender = 'male') {
+    const partsByVariant = entryForKind(furHood?.kind)?.parts || {}; // One animal can supply distinct sprite geometry for the two authored hood head-shape groups.
+    const species = normalizeKind(wearerSpecies || 'tletingan');
+    const fatHead = new Set(['kenkari','rakakoan','mashtzarr','mammakhbuur']); // Mirrors cosmetic-fallback-groups.json for use before the portrait registry finishes loading.
+    const defaultVariant = fatHead.has(species) ? 'mashtzarr_male' : 'tletingan_male';
+    const fallbackKeys = window.portraitVariantKeysForFighter?.({ speciesId: species, gender: wearerGender }, { slot: 'hood' }) || [];
+    const chosenVariant = [...fallbackKeys, defaultVariant].find(key => partsByVariant[key] && typeof partsByVariant[key] === 'object') || null;
+    const parts = chosenVariant ? partsByVariant[chosenVariant] : partsByVariant; // Compatibility with early manifests that authored front/back paths without wearer variants.
     return ['back', 'front'].flatMap(pos => {
       const url = parts[pos];
       if (typeof url !== 'string' || !/^(?:\.\/)?assets\/[a-z0-9_./-]+\.(?:png|webp)$/i.test(url)) return [];
