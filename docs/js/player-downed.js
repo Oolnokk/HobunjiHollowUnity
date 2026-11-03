@@ -30,7 +30,7 @@
   const SOFT_DEATH_REASONS = new Set(['resource-tick']); // handlePlayerDeath reasons that go down instead of dying (bleeding/burning/poison).
 
   let deps = null; // { player, showToast, die, forceRangedTool }
-  let state = null; // { remainingS, totalS, focus } while down.
+  let state = null; // { remainingS, totalS, focus, giveUpHeld, giveUpHoldS, giveUpStartedAtMs } while down.
   let hud = null; // { root, text, fill, hint, giveUpFill }
   let hudKey = ''; // Last HUD text, binding, and percentages written, so idle frames make no DOM writes.
   let focusGuardsInstalled = false; // init() installs blur/visibility hold-cancel listeners exactly once.
@@ -54,7 +54,7 @@
     if (!deps) return false;
     if (state) return true;
     if (window.CombatTutorial?.active?.()) return false; // The tutorial has its own reset path in respawnPlayer.
-    state = { remainingS: CONFIG.bleedOutSeconds, totalS: CONFIG.bleedOutSeconds, focus: null, giveUpHeld: false, giveUpHoldS: 0 };
+    state = { remainingS: CONFIG.bleedOutSeconds, totalS: CONFIG.bleedOutSeconds, focus: null, giveUpHeld: false, giveUpHoldS: 0, giveUpStartedAtMs: null };
     window.PlayerCrawl?.setActive(true);
     const player = deps.player;
     player.health = CONFIG.downedHealth;
@@ -100,6 +100,7 @@
     const nextHeld = held === true; // Used to avoid re-arming the hold on repeated keydown/controller poll.
     if (state.giveUpHeld === nextHeld) return true;
     state.giveUpHeld = nextHeld;
+    state.giveUpStartedAtMs = nextHeld ? now() : null; // Wall-clock start avoids stretching a 1.5 s hold when mobile game-frame dt is capped.
     if (!nextHeld) state.giveUpHoldS = 0;
     refreshHud();
     return true;
@@ -245,8 +246,8 @@
     player.health = CONFIG.downedHealth; // Regeneration and damage-over-time cannot move it while down.
     state.remainingS -= dt;
     if (state.remainingS <= 0) { bleedOut(); return; }
-    if (state.giveUpHeld) {
-      state.giveUpHoldS = Math.min(CONFIG.giveUpHoldSeconds, state.giveUpHoldS + Math.max(0, dt));
+    if (state.giveUpHeld && state.giveUpStartedAtMs !== null) {
+      state.giveUpHoldS = Math.min(CONFIG.giveUpHoldSeconds, Math.max(0, (now() - state.giveUpStartedAtMs) / 1000));
       if (state.giveUpHoldS >= CONFIG.giveUpHoldSeconds) { giveUp(); return; }
     }
     refreshHud();
