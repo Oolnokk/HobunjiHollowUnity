@@ -118,7 +118,11 @@
     elapsed=0;
     for(const state of dispensers.values()) {
       if(state.disposed||!state.root?.parent)continue;
-      if(state.payload&&(state.payload.exploded||!state.payload.group?.parent))lostStatue(state,state.payload,'detached');
+      if(state.payload&&(state.payload.exploded||!state.payload.group?.parent)) {
+        const lost=state.payload;
+        if(!lost.exploded)window.Shattercasks?.discardBurden?.(lost); // Drop orphaned map records as well as restoring the visible dispenser.
+        if(state.payload===lost)lostStatue(state,lost,'detached');
+      }
       if(!state.payload&&!state.respawning)queueRespawn(state,'missing');
     }
   }
