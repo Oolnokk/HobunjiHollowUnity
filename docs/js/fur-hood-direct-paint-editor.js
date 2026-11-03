@@ -17,7 +17,7 @@
     return { x, y, width: Math.min(w, right + gap + 1) - x, height: Math.min(h, bottom + gap + 1) - y };
   }
 
-  window.FurHoodDirectPaintEditor = Object.freeze({ visibleBounds, open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,sourcePattern,authoring,onSave}) {
+  window.FurHoodDirectPaintEditor = Object.freeze({ visibleBounds, open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,sourcePattern,authoring,onSave,mountTarget=null,onClose=null}) {
   const api=window.ClothingWeavingSystem;
   if (!api?.garmentPaintToMotif || !api?.renderClothingLayers) throw Error('Updated garment motif compositor is missing.');
   if (!kind || !gene) throw Error('Choose an animal and genotype gene first.');
@@ -64,7 +64,13 @@
       </div>
       <div class="trimPaintFoot"><div class="muted" data-fur-status>Ready to paint.</div><div class="row"><button data-fur-action="cancel" class="secondary">Cancel</button><button data-fur-action="save">Save motif</button></div></div>
     </section>`;
-  document.body.appendChild(overlay);
+  if(mountTarget) {
+    overlay.style.cssText='position:relative;inset:auto;z-index:auto;display:block;width:100%;height:auto;padding:0;background:transparent'; // Embeds the SAME editor into the existing right-side preview instead of opening a second editor.
+    overlay.querySelector('.trimPaintPanel').style.cssText='width:100%;max-height:none;overflow:visible;box-shadow:none';
+    overlay.querySelector('.trimPaintBody').style.gridTemplateColumns='minmax(0,1fr)'; // The editor must also fit narrow/mobile right-hand viewports.
+    overlay.querySelector('.trimPaintScroller').style.maxHeight='52vh';
+    mountTarget.appendChild(overlay);
+  } else document.body.appendChild(overlay);
   const $=s=>overlay.querySelector(s);
   const baseCanvas=$('[data-fur-base]'),paint=$('[data-fur-ink]'),result=$('[data-fur-result]'); // Visible garment, editable mask, and authoritative production result.
   const stage=$('[data-fur-stage]'),scroller=$('[data-fur-scroller]'); // Zoomable stage and manual touch-pan viewport.
@@ -79,7 +85,7 @@
   let mode='paint',brush=4,drawing=false,last=null,stroke=null,pan=null,closed=false,revision=0; // Per-overlay brush and async preview lifecycle.
   const undo=[],redo=[]; // Bounded raster+operation history for one mobile authoring session.
   const deep=value=>JSON.parse(JSON.stringify(value));
-  const close=()=>{closed=true;revision++;overlay.remove();};
+  const close=()=>{if(closed)return;closed=true;revision++;overlay.remove();onClose?.();}; // Shared cleanup for modal and right-panel embedding; parent restores its original preview.
   $('[data-fur-action="close"]').onclick=close;$('[data-fur-action="cancel"]').onclick=close;
   overlay.addEventListener('pointerdown',event=>{if(event.target===overlay)close();});
   function normalize() {
@@ -234,5 +240,6 @@
   zoomInput.max='16';
   zoomInput.value=String(Math.max(1,Math.min(16,Math.floor(520/Math.max(crop.width,crop.height)))));
   zoom();buttons();await preview();
+  return Object.freeze({ close, isOpen:()=>!closed }); // Tool Hub can close an embedded editor without fabricating pointer events.
 } });
 })();

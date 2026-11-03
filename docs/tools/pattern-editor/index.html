@@ -68,7 +68,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
         </div>
         <div class="row" style="margin:9px 0">
           <button id="furPaintBtn">Paint directly on hood…</button>
-          <button id="furMainViewportBtn" class="secondary" type="button">Show hood in right preview</button>
+          <button id="furMainViewportBtn" class="secondary" type="button">Paint hood in right viewport</button>
           <label style="min-width:120px">Paint / preview view<select id="furPaintView"><option value="front">Front</option><option value="behind">Behind</option></select></label>
         </div>
         <div class="row">
@@ -190,6 +190,7 @@ Overpass → not set</div>
   let overpassLoadedRepoId = null; // Repo provenance for the dev-only overpass slot while it remains unmodified.
   let drawFurMainPreview = null; // Installed by fur authoring; refreshPreview delegates its right-hand hood viewport to the real garment renderer.
   let syncFurViewportButton = null; // Keeps the fur authoring toggle accurate when the main preview dropdown changes directly.
+  let furRightPainterActive = () => false; // Right-panel painter owns that viewport while editing; the main preview renderer checks before drawing.
   const debugState = { lastAction: 'init', lastError: null }; // Exposed below so mobile/tool debugging can inspect the most recent dual-pattern editor action.
   let trimManifest = { schema: 'hobunji_clothing_trim.v1', garments: {} }; // Mutable dev-tool copy exported as config/patterns/clothing-trims.json; runtime never receives motif data URLs.
   const trimCosmetics = new Map(); // cosmeticId -> { entry, config }; populated from the repo index so variants come from real clothing metadata rather than a hard-coded species list.
@@ -1899,6 +1900,7 @@ Overpass → not set</div>
     }
     window.PatternFurniturePreview.dispose();
     if (mode === 'furHood') {
+      if (furRightPainterActive()) return; // The right panel is occupied by the interactive hood painter; never overwrite it with passive preview renders.
       if (drawFurMainPreview) await drawFurMainPreview(); // Uses the same exact preview as the fur authoring pane, including when no motif is saved.
       else { ctx.clearRect(0,0,canvas.width,canvas.height); $('status').textContent='Loading the fur-hood preview…'; }
       return;
@@ -2305,56 +2307,90 @@ function setupFurAuthoring() {
       if(request!==furPreviewRevision)return;
       if(!result?.canvas)throw new Error('The hood returned no sprite. Verify the selected fur_hood cosmetic variant and asset paths.');
       const bounds=showFramedHood(result.canvas,previewCanvas);
-      if($('previewMode').value==='furHood')showFramedHood(result.canvas,$('preview')); // Main right viewport follows this same render instead of using a separate approximation.
+      if($('previewMode').value==='furHood' && !furRightPainterActive())showFramedHood(result.canvas,$('preview')); // Inline painting owns the right viewport until explicitly closed.
       status.textContent=kind+' · '+(gene||'no gene')+' · '+(motif?'genetic markings':'plain coat (paint to create a marking)')+' · '+bounds.width+'×'+bounds.height+'px visible';
       lastFurAuthorError=null;
     }catch(error){
       if(request!==furPreviewRevision)return;
       lastFurAuthorError=String(error?.message||error);
       status.textContent='Animal hood preview failed: '+lastFurAuthorError;
-      const main=$('preview');if($('previewMode').value==='furHood'){main.width=384;main.height=160;main.getContext('2d').clearRect(0,0,main.width,main.height);}
+      const main=$('preview');if($('previewMode').value==='furHood' && !furRightPainterActive()){main.width=384;main.height=160;main.getContext('2d').clearRect(0,0,main.width,main.height);}
     }
   }
-  drawFurMainPreview=preview; // refreshPreview calls this only when the main viewport mode is the fur hood.
+  drawFurMainPreview=preview; // The passive main hood option and smaller authoring preview share the actual garment compositor.
   const mainButton=field('furMainViewportBtn');
-  syncFurViewportButton=()=>{const active=$('previewMode').value==='furHood';mainButton.textContent=active?'Return to pattern preview':'Show hood in right preview';mainButton.classList.toggle('active',active);};
-  mainButton.onclick=()=>{
-    $('previewMode').value=$('previewMode').value==='furHood'?'weaving':'furHood';
-    refreshPreview(); // Reuses the right panel's existing viewport, not a second competing preview element.
+  let rightPainter=null,openingRightPainter=false; // One embedded painting session at a time; ordinary full-screen editor remains separate.
+  furRightPainterActive=()=>openingRightPainter||!!rightPainter?.isOpen?.();
+  const lockedFields=['furAnimalSpecies','furWearerVariant','furGeneId','furPaintView','furTestCoat','furTestInk']; // Save targets cannot change while the embedded painter edits one exact animal/gene/fit.
+  function lockRightPaintSelection(value){for(const id of lockedFields)field(id).disabled=value;}
+  syncFurViewportButton=()=>{
+    const active=furRightPainterActive();
+    mainButton.textContent=active?'Return to pattern preview':'Paint hood in right viewport';
+    mainButton.classList.toggle('active',active);
+    mainButton.disabled=openingRightPainter;
+  };
+  function exitRightPainter(){
+    rightPainter=null;openingRightPainter=false;
+    lockRightPaintSelection(false);
+    $('preview').hidden=false;
+    $('previewMode').value='weaving'; // Original pattern editor is immediately usable after a Save, Cancel, or close.
+    syncPreviewModeControls();
+    refreshPreview();
+  }
+  mainButton.onclick=async()=>{
+    if(rightPainter?.isOpen?.()){rightPainter.close();return;}
+    if(openingRightPainter)return;
+    openingRightPainter=true;
+    lockRightPaintSelection(true);
+    $('previewMode').value='furHood';
+    $('preview').hidden=true; // The painter is mounted INSIDE the old preview container, not on top of the whole page.
+    syncPreviewModeControls();
+    status.textContent='Opening a paintable hood in the right viewport…';
+    try {
+      rightPainter=await openHoodPainter($('preview').parentElement,exitRightPainter);
+      if(!rightPainter?.isOpen?.())throw new Error('The embedded hood paint session closed during loading.');
+    }catch(error){
+      lastFurAuthorError=String(error?.message||error);
+      status.textContent='Could not open right-panel hood painter: '+lastFurAuthorError;
+      exitRightPainter();
+    }finally{
+      openingRightPainter=false;
+      syncFurViewportButton?.();
+    }
   };
   field('furPreviewBtn').onclick = preview;
   field('furTestCoat').oninput=()=>preview(); // Natural coat recolor is visible before any motif has been authored.
   field('furTestInk').oninput=()=>preview(); // Only the selected genotype gene is recolored in preview.
   field('furPaintView').onchange = () => preview(); // Front and back authoring use the same exported gene motif, but show the actual selected sprite stack.
-  field('furPaintBtn').onclick = async () => {
-    const kind = speciesSelect.value, gene = safeGene(geneInput.value), entry = selectedEntry();
-    if (!entry || !gene) { status.textContent = 'Choose an animal species and exact genotype gene before painting.'; return; }
-    const current = entry.patterns?.[gene] || null; // Existing normal motif data and saved editor-only paint operations for this gene.
-    const unsaved = newMotifPixels.get(kind + ':' + gene); // The in-session direct-paint PNG is a more recent source than the committed manifest.
-    const sourcePattern = unsaved ? { ...(unsaved.settings || current?.settings || {}), motifDataUrl: unsaved.dataUrl }
-      : current?.motifPng ? { ...(current.settings || {}), motifUrl: current.motifPng } : null;
-    const button = field('furPaintBtn');
-    button.disabled = true;
-    status.textContent = 'Resolving the hood and eligible natural-fur pixels…';
-    try {
-      await window.FurHoodDirectPaintEditor.open({
-        kind, gene, wearerVariant: wearerSelect.value, view: field('furPaintView').value,
-        coat: field('furTestCoat').value, ink: field('furTestInk').value,
-        sourcePattern, authoring: unsaved?.authoring || current?.authoring || null,
-        onSave: async ({ motifDataUrl, settings, authoring }) => {
-          const path = 'assets/patterns/fur-hoods/' + kind + '__' + gene + '.png'; // Natural motif asset path is independent of the player weaving pattern library.
-          entry.patterns ||= {};
-          entry.patterns[gene] = { motifPng: path, settings, authoring }; // Game runtime consumes only the motif and ordinary weaving settings; editing operations are dev-only.
-          newMotifPixels.set(kind + ':' + gene, { path, dataUrl: motifDataUrl, settings, authoring });
-          status.textContent = 'Painted gene saved for ' + kind + '/' + gene + '. Export its PNG and fur-hoods.json to publish.';
-          updateAssignments();
-          await preview();
-        },
-      });
-    } catch (error) {
-      lastFurAuthorError = String(error?.message || error);
-      status.textContent = 'Direct hood painting failed: ' + lastFurAuthorError;
-    } finally { button.disabled = false; }
+  async function openHoodPainter(mountTarget=null,onClose=null) {
+    const kind=speciesSelect.value,gene=safeGene(geneInput.value),entry=selectedEntry();
+    if(!entry||!gene)throw new Error('Select an animal and one of its real inherited pattern genes first.');
+    const current=entry.patterns?.[gene]||null; // Reopening retrieves the same gene's saved motif and editable paint journal.
+    const unsaved=newMotifPixels.get(kind+':'+gene); // Session edits take priority over the repo export until explicitly downloaded.
+    const sourcePattern=unsaved?{...(unsaved.settings||current?.settings||{}),motifDataUrl:unsaved.dataUrl}
+      :current?.motifPng?{...(current.settings||{}),motifUrl:current.motifPng}:null;
+    status.textContent='Resolving the hood and eligible natural-fur pixels…';
+    return window.FurHoodDirectPaintEditor.open({
+      kind,gene,wearerVariant:wearerSelect.value,view:field('furPaintView').value,
+      coat:field('furTestCoat').value,ink:field('furTestInk').value,
+      sourcePattern,authoring:unsaved?.authoring||current?.authoring||null,mountTarget,onClose,
+      onSave:async({motifDataUrl,settings,authoring})=>{
+        const path='assets/patterns/fur-hoods/'+kind+'__'+gene+'.png'; // Natural motif asset remains independent of player weaving even when authored inline.
+        entry.patterns||={};
+        entry.patterns[gene]={motifPng:path,settings,authoring};
+        newMotifPixels.set(kind+':'+gene,{path,dataUrl:motifDataUrl,settings,authoring});
+        status.textContent='Painted gene saved for '+kind+'/'+gene+'. Export its PNG and fur-hoods.json to publish.';
+        updateAssignments();
+        await preview();
+      },
+    });
+  }
+  field('furPaintBtn').onclick=async()=>{
+    const button=field('furPaintBtn');
+    button.disabled=true;
+    try{await openHoodPainter();}
+    catch(error){lastFurAuthorError=String(error?.message||error);status.textContent='Direct hood painting failed: '+lastFurAuthorError;}
+    finally{button.disabled=false;}
   };
   field('furAssignBtn').onclick = () => {
     const kind = speciesSelect.value, gene = safeGene(geneInput.value);
