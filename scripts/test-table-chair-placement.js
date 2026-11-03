@@ -35,14 +35,14 @@ assert.match(tableSystem,/seat\.furnitureId/);
 const game=fs.readFileSync('docs/game.js','utf8');
 assert.match(game,/stationId = null/);
 assert.match(game,/HobunjiFurnitureTableAttachmentMoved/);
-assert.match(game,/Removing a parent table turns its children into ordinary free-standing chairs/);
+assert.match(game,/const linkedChairs =/);
 const grid=fs.readFileSync('docs/js/interior-furniture-grid.js','utf8');
-assert.match(grid,/if \(!piece \|\| piece\.tableAttachment\) return \[\]/);
+assert.match(grid,/isValidTableAttachment/);
 const mapEditor=fs.readFileSync('docs/tools/map-editor/index.html','utf8');
 assert.match(mapEditor,/id="propTableMode"/);
-assert.match(mapEditor,/record\.tableAttachment=normalized/);
+assert.match(mapEditor,/if\(tableAttachment\) record\.tableAttachment=tableAttachment/);
 const interiorAuthor=fs.readFileSync('docs/tools/building-interior-author/index.html','utf8');
-assert.match(interiorAuthor,/f\.tableAttachment=normalized/);
+assert.match(interiorAuthor,/if\(tableAttachment\)f\.tableAttachment=tableAttachment/);
 assert.match(interiorAuthor,/TableChairPlacement\?\.apply/);
 // Physical collision is independent of tile occupancy.
 const collisionA={x:0,z:0,width:1,depth:1,yaw:0};
@@ -84,20 +84,20 @@ const child={id:'chair',itemKey:'chairSimpleFurniture',col:4,row:3,tableId:'tabl
 const parentTable={id:'table',itemKey:'tableRoundFurniture',col:4,row:2};
 const interiorGrid=window.InteriorFurnitureGrid;
 assert.equal(interiorGrid.isValidTableAttachment(child,[child,parentTable]),true);
-assert.deepEqual(interiorGrid.mergedColliders({colliders:[],furniture:[child,parentTable]}).colliders,[[4,2],[5,2],[4,3],[5,3]],
+assert.deepEqual(JSON.parse(JSON.stringify(interiorGrid.mergedColliders({colliders:[],furniture:[child,parentTable]}).colliders)),[[4,2],[5,2],[4,3],[5,3]],
  'attached chair must not add a separate occupied tile');
 const orphan={...child,tableId:'deleted-table'};
 assert.equal(interiorGrid.isValidTableAttachment(orphan,[orphan]),false);
-assert.deepEqual(interiorGrid.mergedColliders({colliders:[],furniture:[orphan]}).colliders,[[4,3]],
+assert.deepEqual(JSON.parse(JSON.stringify(interiorGrid.mergedColliders({colliders:[],furniture:[orphan]}).colliders)),[[4,3]],
  'orphaned chair must regain its tile collision');
-assert.match(game,/Math\\.floor\\(col\\), tileRow = Math\\.floor\\(row\\)/,'NPC station navigation uses integer tile indices');
-assert.match(game,/furnitureId \\? \`furniture_chair_/,'NPC station ids are unique by furniture instance');
+assert.ok(game.includes('Math.floor(col), tileRow = Math.floor(row)'), 'NPC navigation uses integer tiles');
+assert.ok(game.includes('return furnitureId ?'), 'NPC station ids are unique by furniture instance');
 assert.match(game,/nearestDetachedChairTile/,'table removal preserves attached chairs');
 assert.match(game,/canKeepAttachedChairHere/,'gameplay validates attachment bounds');
 const mapEditorCode=fs.readFileSync('docs/tools/map-editor/index.html','utf8');
-assert.match(mapEditorCode,/const previewRecord = \\{ \\.\\.\\.record/,'3D preview uses a copy of authoring records');
+assert.ok(mapEditorCode.includes('const previewRecord = { ...record'), 'preview uses copies');
 assert.match(mapEditorCode,/id="propTableChoice"/,'Map Editor offers a native table selector');
 const index=fs.readFileSync('docs/index.html','utf8');
-assert.match(index,/js\\/table-chair-placement\\.js\\?v=/,'shared placement module loads in the game');
+assert.ok(index.includes('js/table-chair-placement.js?v='), 'shared module loads in game');
 
 console.log('table-chair-placement: geometry, parent refresh, collision, NPC identity, save/restore and editor integration tests passed');
