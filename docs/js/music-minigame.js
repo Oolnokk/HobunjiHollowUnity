@@ -33,7 +33,7 @@
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
   const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261022npcpatternroots3';
-  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261103puzzleReview4'; // The default five-note puzzle surface, independent of the performance engine.
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261103fluteEcho1'; // The default five-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
