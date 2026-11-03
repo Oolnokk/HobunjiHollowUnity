@@ -1,6 +1,7 @@
 // Runtime graph for furniture-authored activators and mechanisms.
 (() => {
   'use strict';
+  const burdenKindLabel = kind => (kind === 'soursap' ? 'Soursap Fruit' : kind === 'keyStatue' ? 'Key Statue' : 'Shattercask');
   const maps = new Map(); // mapId -> { nodes, wiring, bulkRegisteredIds, channelSources }
   const api = window.FurniturePuzzleProperties;
   const DEG = Math.PI / 180;
@@ -374,7 +375,7 @@
     const held = window.Shattercasks?.heldBurdenInfo?.() || null;
     const label = inserted ? 'Retrieve Burden'
       : held?.kind === puzzle.requiredBurdenKind ? 'Insert ' + held.displayName
-      : 'Requires ' + (puzzle.requiredBurdenKind === 'soursap' ? 'Soursap Fruit' : 'Shattercask');
+      : 'Requires ' + burdenKindLabel(puzzle.requiredBurdenKind);
     return [{ icon:inserted ? '↗' : '⬇', label, action:'obj_burden_plate_' + id, style:'primary', allowed:true }];
   }
 
@@ -419,7 +420,7 @@
     const held = window.Shattercasks?.heldBurdenInfo?.();
     if (!held) return { ok:false, message:'You must be carrying a Burden to operate this plinth.' };
     if (held.kind !== puzzle.requiredBurdenKind) {
-      const required = puzzle.requiredBurdenKind === 'soursap' ? 'Soursap Fruit' : 'Shattercask';
+      const required = burdenKindLabel(puzzle.requiredBurdenKind);
       return { ok:false, message:'This plinth requires a ' + required + '.' };
     }
     const attachment = window.AuthoredFurniture?.createSurfaceAnchor?.(object, puzzle.payloadSurfaceId, .012);

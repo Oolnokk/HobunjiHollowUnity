@@ -312,6 +312,10 @@
     {
       "key": "ruinRopeMount",
       "file": "config/furniture-authored/ruinRopeMount.json"
+    },
+    {
+      "key": "ruinDefensePlinth",
+      "file": "config/furniture-authored/ruinDefensePlinth.json"
     }
   ]
 }

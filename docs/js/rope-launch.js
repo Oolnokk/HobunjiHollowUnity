@@ -77,11 +77,12 @@
 
   // How forgiving it is to land within `radius` of `target`: the widest contiguous range of lunge fractions whose
   // landing is within it (a skill window; 0 = impossible, 1 = any strike works), plus the best single miss distance.
-  function window(options, target, radius, { steps = 48, strike = STRIKE } = {}) {
+// options.accept(landing) lets the caller disqualify strengths that would land somewhere unacceptable.
+  function window(options, target, radius, { steps = 48, strike = STRIKE, accept = null } = {}) {
     const pts = sweep(options, { steps, strike });
     let best = 0, run = 0, runStart = null, bestRange = null, bestMiss = Infinity;
     for (let i = 0; i < pts.length; i++) {
-      const p = pts[i], miss = p.landing ? Math.hypot(p.landing.x - target.x, p.landing.z - target.z) : Infinity;
+      const p = pts[i], miss = p.landing && (!accept || accept(p.landing)) ? Math.hypot(p.landing.x - target.x, p.landing.z - target.z) : Infinity; // `accept` filters out landings the caller can't allow (e.g. on top of the striker)
       bestMiss = Math.min(bestMiss, miss);
       if (miss <= radius) { if (run === 0) runStart = pts[i].fraction; run++; const width = (pts[i].fraction - runStart) + 1 / steps; if (width > best) { best = width; bestRange = [runStart, pts[i].fraction]; } }
       else run = 0;

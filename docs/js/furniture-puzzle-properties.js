@@ -96,7 +96,7 @@
       behavior,
       channel: text(raw.channel, 'A') || 'A',
       completionChannel: text(raw.completionChannel, 'B') || 'B',
-      requiredBurdenKind: ['shattercask','soursap'].includes(text(raw.requiredBurdenKind, 'shattercask'))
+      requiredBurdenKind: ['shattercask','soursap','keyStatue'].includes(text(raw.requiredBurdenKind, 'shattercask'))
         ? text(raw.requiredBurdenKind, 'shattercask') : 'shattercask',
       payloadSurfaceId: text(raw.payloadSurfaceId),
       payloadPartId: text(raw.payloadPartId),

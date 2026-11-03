@@ -17,7 +17,7 @@
 //   blast   ──thrownBomb───▶ bombDispenser + strikeStand              (the player throws it)
 //   defend  ──plinthDefense▶ plinth + statueDispenser + spawnerPillars + a pressure schedule
 //
-// The room is abstract on purpose: { bounds, floorY, ceilingY, zones:{name:{x,z,r}}, gaps:[...], groundAt?, solid? }.
+// The room is abstract on purpose: { bounds, floorY, ceilingY, zones:{name:{x,z,r}}, gaps:[...], groundAt?, solid?, reachable?(a,b) }.
 // Pure logic; runs under node and in the browser.
 (function (root, factory) {
   const isCjs = typeof module === 'object' && module.exports;
@@ -121,16 +121,17 @@
           const dir = norm(goal.at.x - mount.x, goal.at.z - mount.z), anchorY = (room.ceilingY ?? ((room.floorY || 0) + 3)) - 0.035;
           if (anchorY - length < (room.floorY || 0) + 0.3) continue; // the bomb would rest on the floor
           const opts = { anchor: { x: mount.x, y: anchorY, z: mount.z }, length, dirX: dir.x, dirZ: dir.z, groundAt: ground, restHeight: BOMB.restHeight };
-          const win = RL.window(opts, goal.at, radius, { steps: 24 });
-          if (win.width < ctx.minWindow) continue;
           const stand = { x: mount.x - dir.x * ROPE.standOff, z: mount.z - dir.z * ROPE.standOff };
+          // only strike strengths that put the bomb outside its own blast radius from the striker count toward the skill window
+          const win = RL.window(opts, goal.at, radius, { steps: 24, accept: l => dist(stand, l) > BOMB.blastRadius + 0.5 });
+          if (win.width < ctx.minWindow || !win.range) continue;
           const mid = RL.predict({ ...opts, speed: RL.strikeSpeedForFraction((win.range[0] + win.range[1]) / 2) });
           if (!mid.landing) continue;
           const checks = [
             check('skillWindow', win.width >= ctx.minWindow, `${(win.width * 100).toFixed(0)}% of lunge strengths land within ${radius} of the target`),
             check('strikeStandOpen', inBounds(room.bounds, stand, 0.4) && !isSolid(room, stand.x, stand.z), 'there is floor to stand on behind the bomb'),
             check('playerOutsideBlast', dist(stand, mid.landing) > BOMB.blastRadius + 0.5, `${dist(stand, mid.landing).toFixed(2)} from the landing vs blast ${BOMB.blastRadius}`),
-            check('swingClear', swingClear(room, opts, mid), 'the swing and the flight do not pass through solids'),
+            check('swingClear', swingClear(room, opts, mid.landing), 'the swing and the flight do not pass through solids'),
           ];
           out.push({
             rule: 'ropeBomb', score: 2 + win.width * 2 + ctx.rng() * 0.3, difficulty: 1 - win.width,
@@ -191,9 +192,11 @@
         const a = phase + (i / count) * Math.PI * 2 + (ctx.rng() - 0.5) * 0.3;
         let placed = null;
         const rMin = minLead * speed + 0.5; // the nearest ring that still gives the player their lead time, then outward
-        for (const r of [rMin, rMin + 1, rMin + 2, rMin + 3, rMin - 1]) {
-          const p = { x: goal.at.x + Math.cos(a) * r, z: goal.at.z + Math.sin(a) * r };
-          if (inBounds(room.bounds, p, 0.8) && !isSolid(room, p.x, p.z)) { placed = p; break; }
+        search: for (const turn of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.3, -1.3, 1.8, -1.8]) { // if the ring is blocked at this angle, swing round to one that is open
+          for (const r of [rMin, rMin + 1, rMin + 2, rMin + 3]) {
+            const p = { x: goal.at.x + Math.cos(a + turn) * r, z: goal.at.z + Math.sin(a + turn) * r };
+            if (inBounds(room.bounds, p, 0.8) && !isSolid(room, p.x, p.z) && (typeof room.reachable !== 'function' || room.reachable(p, goal.at)) && spots.every(q => dist(q, p) >= 2.4)) { placed = p; break search; } // room.reachable(a,b): walkable from a to b without crossing a gap
+          }
         }
         if (placed) spots.push(placed);
       }
@@ -227,7 +230,8 @@
   function swingClear(room, opts, landing) { // sample the swing arc and the flight for solids
     if (typeof room.solid !== 'function') return true;
     for (let i = 0; i <= 12; i++) { const a = (opts.length > 0 ? 0.85 : 0.5) * (i / 12); const x = opts.anchor.x + opts.dirX * Math.sin(a) * opts.length, z = opts.anchor.z + opts.dirZ * Math.sin(a) * opts.length; if (isSolid(room, x, z)) return false; }
-    for (let i = 1; i <= 10; i++) { const t = i / 10, x = opts.anchor.x + (landing.x - opts.anchor.x) * t, z = opts.anchor.z + (landing.z - opts.anchor.z) * t; if (isSolid(room, x, z)) return false; }
+    const len = Math.hypot(landing.x - opts.anchor.x, landing.z - opts.anchor.z), n = Math.max(10, Math.ceil(len / 0.15)); // denser than any wall is thin
+    for (let i = 1; i <= n; i++) { const t = i / n, x = opts.anchor.x + (landing.x - opts.anchor.x) * t, z = opts.anchor.z + (landing.z - opts.anchor.z) * t; if (isSolid(room, x, z)) return false; }
     return true;
   }
 

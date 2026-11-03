@@ -32,7 +32,7 @@
     <div class="g2" style="margin-top:6px"><div><label>Lerp duration seconds</label><input id="puzzleDuration" type="number" min=".05" step=".05"></div><div><label>Collision opens at progress</label><input id="puzzleCollision" type="number" min="0" max="1" step=".05"></div></div>
     <div id="puzzleBurdenFields" style="display:none;margin-top:8px;padding:8px;border:1px solid rgba(148,163,184,.3);border-radius:8px">
       <b>Burden Plate</b>
-      <div class="g2" style="margin-top:5px"><div><label>Required Burden</label><select id="puzzleRequiredBurden"><option value="shattercask">Shattercask</option><option value="soursap">Soursap Fruit</option></select></div><div><label>Completion channel</label><input id="puzzleCompletionChannel" value="B"></div></div>
+      <div class="g2" style="margin-top:5px"><div><label>Required Burden</label><select id="puzzleRequiredBurden"><option value="shattercask">Shattercask</option><option value="soursap">Soursap Fruit</option><option value="keyStatue">Key Statue</option></select></div><div><label>Completion channel</label><input id="puzzleCompletionChannel" value="B"></div></div>
       <label style="margin-top:5px">Payload attachment surface ID</label><input id="puzzlePayloadSurface" placeholder="Recognized surface ID">
       <label style="margin-top:5px">Reverse duration at 100% progress · seconds</label><input id="puzzleReverseDuration" type="number" min="0" step=".05">
       <p class="muted">The primary channel fires on payload placement. The completion channel fires only after the OFF → ON motion finishes. Removing the payload reverses from the current progress over reverse duration × progress.</p>
