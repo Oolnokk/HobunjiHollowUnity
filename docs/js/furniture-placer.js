@@ -306,7 +306,73 @@
         close({ keepArmed: true });
       });
       row.appendChild(btn);
-      list.appendChild(row);
+      const tablesForNewChair = placed.filter(candidate =>
+        candidate.placementKind === 'decorative' && /table|desk|counter/i.test(candidate.key)
+        && candidate.area === 'interior'); // Direct children need only a parent table, never their own free tile.
+      if (def.sit && deps.getCurrentArea() === 'interior' && tablesForNewChair.length) {
+        const attachButton = document.createElement('button');
+        attachButton.className = 'settings-small-btn';
+        attachButton.textContent = 'Place at Table';
+        attachButton.setAttribute('aria-label', 'Place ' + def.name + ' directly at a table');
+        row.appendChild(attachButton);
+        const panel = document.createElement('div');
+        panel.className = 'farm-row';
+        panel.hidden = true;
+        panel.style.cssText = 'flex-wrap:wrap;gap:6px;padding-left:12px';
+        const tableChoice = document.createElement('select');
+        tableChoice.className = 'settings-small-btn';
+        tableChoice.setAttribute('aria-label', 'Parent table for new ' + def.name);
+        for (const table of tablesForNewChair) tableChoice.add(new Option(
+          (deps.getDecorativeFurnitureDefs()[table.key]?.name || table.key) + ' (' + table.id + ')', table.id));
+        const position = document.createElement('input');
+        position.type = 'number'; position.step = '1'; position.min = '0';
+        position.className = 'settings-small-btn'; position.style.width = '5em';
+        const side = document.createElement('select');
+        side.className = 'settings-small-btn'; side.setAttribute('aria-label', 'Flat table side');
+        for (const name of ['front', 'back', 'left', 'right']) side.add(new Option(name, name));
+        const distance = document.createElement('input');
+        distance.type = 'number'; distance.step = '.05'; distance.min = '0'; distance.max = '4';
+        distance.value = '.65'; distance.style.width = '5em'; distance.className = 'settings-small-btn';
+        distance.setAttribute('aria-label', 'Distance from table edge in tiles');
+        const confirm = document.createElement('button');
+        confirm.className = 'settings-small-btn'; confirm.textContent = 'Attach New Chair';
+        function updateForm() {
+          const selected = tablesForNewChair.find(table => table.id === tableChoice.value);
+          const orbit = window.TableChairPlacement?.modeForTable?.(selected?.key) === 'orbit';
+          position.max = orbit ? '359' : '100';
+          position.value = orbit ? '0' : '50';
+          position.setAttribute('aria-label', orbit ? 'Orbit angle in degrees' : 'Position along table edge in percent');
+          position.title = position.getAttribute('aria-label');
+          side.hidden = orbit;
+        }
+        tableChoice.addEventListener('change', updateForm);
+        updateForm();
+        confirm.addEventListener('click', () => {
+          const table = tablesForNewChair.find(entry => entry.id === tableChoice.value);
+          const placement = Number(position.value), clearance = Number(distance.value);
+          const mode = window.TableChairPlacement?.modeForTable?.(table?.key);
+          if (!table || !position.value.trim() || !distance.value.trim()
+            || !Number.isFinite(placement) || !Number.isFinite(clearance)
+            || clearance < 0 || clearance > 4 || placement < 0
+            || placement > (mode === 'orbit' ? 359 : 100)) {
+            deps.showToast('Enter a valid table position and clearance.', false); return;
+          }
+          const descriptor = {
+            tableId: table.id, mode, distance: clearance,
+            ...(mode === 'orbit' ? { angleDeg: placement } : { side: side.value, along: placement / 100 }),
+          };
+          const result = deps.placeTableAttachedChair(def.itemKey, descriptor);
+          deps.showToast(result.message, result.ok);
+          if (result.ok) render();
+        });
+        panel.append(tableChoice, position, side, distance, confirm);
+        attachButton.addEventListener('click', () => { panel.hidden = !panel.hidden; panel.style.display = panel.hidden ? 'none' : 'flex'; });
+        panel.style.display = 'none';
+        list.appendChild(row);
+        list.appendChild(panel);
+      } else {
+        list.appendChild(row);
+      }
     });
     if (placed.length) {
       const title = document.createElement('div');
