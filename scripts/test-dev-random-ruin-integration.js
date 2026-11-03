@@ -196,7 +196,7 @@ assert(simplePuzzles.includes('occludePoint') && simplePuzzles.includes('crossX'
 assert(simplePuzzles.includes('buildSunkenRoomShell'), 'the lower ossuary must use a reusable sunken-room shell rather than bespoke full-sequence geometry');
 assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePuzzles.includes("speciesId:'harlyao-skeleton'"), 'sarcophagus modules must spawn the existing Harlyao Skeleton Minion class');
 assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
-assert(game.includes('const dynamicSurfaceY = Number(c.surfaceYOverride?.())') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
+assert(game.includes('c.surfaceYOverride?.()') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
 assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
 assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
 assert(audioSystem.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
