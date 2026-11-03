@@ -36,6 +36,21 @@
     if (!config || !part || !DS?.registerSurface || !Three?.Box3 || !Three?.Raycaster) return false;
     const box = new Three.Box3(), ray = new Three.Raycaster(); // Reused to sample the animated part without allocating on each support query.
     const origin = new Three.Vector3(), down = new Three.Vector3(0, -1, 0); // Raycast straight down from the surface's moving world bounds.
+    const a = new Three.Vector3(), b = new Three.Vector3(), c = new Three.Vector3(), hitPoint = new Three.Vector3(); // Double-sided geometry fallback uses the actual triangles, independent of decorative material culling.
+    function triangleSupportY(mesh) {
+      const geometry = mesh.geometry, positions = geometry?.getAttribute?.('position');
+      if (!positions || !mesh.isMesh) return null;
+      const index = geometry.index, count = index ? index.count : positions.count;
+      let highest = null; // The topmost real triangle hit is the only height the actor can stand on.
+      for (let i = 0; i + 2 < count; i += 3) {
+        const i0 = index ? index.getX(i) : i, i1 = index ? index.getX(i+1) : i+1, i2 = index ? index.getX(i+2) : i+2;
+        a.fromBufferAttribute(positions,i0).applyMatrix4(mesh.matrixWorld);
+        b.fromBufferAttribute(positions,i1).applyMatrix4(mesh.matrixWorld);
+        c.fromBufferAttribute(positions,i2).applyMatrix4(mesh.matrixWorld);
+        if (ray.ray.intersectTriangle(a,b,c,false,hitPoint) && (highest == null || hitPoint.y > highest)) highest = hitPoint.y;
+      }
+      return highest;
+    }
     const id = 'furniture-puzzle-standing-' + (++standingSurfaceSerial); // Unique identity prevents a replacement from accidentally removing its successor.
     let hitY = null; // The supports predicate resolves the exact height read by topY in the same sampleSupport call.
     const bounds = () => {
@@ -55,8 +70,9 @@
         ray.set(origin.set(x,box.max.y + .2,z), down);
         ray.far = Math.max(1,box.max.y-box.min.y+1);
         const hit = ray.intersectObject(part,true).find(entry=>Number.isFinite(entry.point?.y));
-        if (!hit) return false;
-        hitY = hit.point.y + config.topOffset;
+        const height = hit ? hit.point.y : triangleSupportY(part); // Authored stone can be single-sided or textured; material culling must not erase physical support.
+        if (!Number.isFinite(height)) return false;
+        hitY = height + config.topOffset;
         return true;
       },
       topY:() => hitY,
