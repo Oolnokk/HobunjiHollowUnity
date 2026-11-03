@@ -93,4 +93,63 @@ assert(html.includes('js/hronal-witch-bombs.js?v='));
 assert(html.includes('js/key-statues.js?v='));
 assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
 
+(async()=>{
+ class RuntimeVector3 {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);}
+  set(x,y,z){Object.assign(this,{x,y,z});return this;}
+  add(other){this.x+=other.x;this.y+=other.y;this.z+=other.z;return this;}
+ }
+ class RuntimeGroup {
+  constructor(){this.isObject3D=true;this.position=new RuntimeVector3();this.userData={};this.parent=null;}
+ }
+ const scene={isScene:true,add(group){group.parent=this;},remove(group){group.parent=null;}};
+ const burdens=new Map(),factories=new Map(),glowStates=[];
+ let clock=1000,spawns=0,releases=0;
+ const tube={isObject3D:true,id:'tube-fixture',parent:scene,
+  userData:{puzzleInstanceId:'tube-fixture',authoredFurnitureData:{bombTubeExit:{x:0,y:-.88,z:0}}},
+  updateWorldMatrix(){},localToWorld(point){return point.add(new RuntimeVector3(2,3,4));}};
+ const runtimeWindow={
+  THREE:{Vector3:RuntimeVector3},
+  GridTileAccessors:{getCurrentArea:()=> 'map_witch_bomb_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+  Shattercasks:{
+   registerBurdenFactory(kind,factory){factories.set(kind,factory);return true;},
+   async createHangingBurden(options){
+    spawns++;
+    const group=new RuntimeGroup();group.position.set(options.x,options.y,options.z);scene.add(group);
+    const burden={...options,group,data:{carryable:{}},exploded:false,carried:false,flying:false};
+    burdens.set(burden.id,burden);return burden;
+   },
+   releaseBurdenDownward(burden){releases++;burden.flying=true;return true;},
+   getBurden(id){return burdens.get(id)||null;},
+   discardBurden(burden){burden.exploded=true;burden.group.parent?.remove(burden.group);burden.onLost?.(burden,'discarded');return true;},
+   activeBurdenRecords:()=>[...burdens.values()],
+   applyBlast(){},triggerBurdenBlastAt(){},
+  },
+  FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
+  AudioSystem:{playObjectSfxKey(){}},
+ };
+ runtimeWindow.window=runtimeWindow;
+ vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
+  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},
+ });
+ runtimeWindow.HronalWitchBombs.registerDispenser('map_witch_bomb_runtime','tube-fixture',tube,{bombFuseSeconds:7});
+ const first=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(first,'ceiling tube releases a physical Witch-bomb');
+ assert.deepEqual([first.group.position.x,first.group.position.y,first.group.position.z],[2,2.12,4],
+  'tube exit transform is converted from local furniture space into world space');
+ assert.equal(first.fuseSeconds,7,'per-dispenser fuse duration reaches the live Burden');
+ const blocked=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert.equal(blocked,false,'one live bomb locks its ceiling tube');
+ runtimeWindow.HronalWitchBombs.tick(.016);
+ const initialPulse=glowStates.at(-1)?.pulseSpeed;
+ clock=7000;runtimeWindow.HronalWitchBombs.tick(.016);
+ assert(glowStates.at(-1).pulseSpeed>initialPulse,'the glyph pulse accelerates as the spawn-time fuse runs down');
+ assert(first.group.userData.hronalFuse.remainingSeconds<2,'live fuse debug data tracks elapsed spawn time');
+ runtimeWindow.Shattercasks.discardBurden(first);
+ const replacement=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(replacement&&replacement.id!==first.id,'losing the first payload releases the dispenser for a replacement');
+ assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
+ console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and loss/unlock/re-dispense PASS');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
 console.log('Hronal Witch-bomb: authored whole-sphere glyph/glow, fuse, ceiling dispenser lock, carrier grip, hazard loss, fire blast and breakable hooks passed.');
