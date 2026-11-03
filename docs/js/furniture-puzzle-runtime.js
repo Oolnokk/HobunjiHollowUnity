@@ -120,6 +120,10 @@
         setChannelSource(mapId, puzzle.channel, 'burden:' + id + ':placement', false);
         setChannelSource(mapId, puzzle.completionChannel, 'burden:' + id + ':completion', false);
       }
+      if (object.userData.furniturePuzzle?.behavior === 'keyStatue')
+        window.KeyStatues?.unregisterDispenser?.(mapId,id);
+      if (object.userData.furniturePuzzle?.behavior === 'witchBombDispenser')
+        window.HronalWitchBombs?.unregisterDispenser?.(mapId,id);
       for (const entry of object.userData.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       graph.nodes.delete(id);
       graph.bulkRegisteredIds.delete(id);
