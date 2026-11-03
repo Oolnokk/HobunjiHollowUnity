@@ -66,7 +66,7 @@ const files = [
   'js/combat/combat-bandit.js?v=20261102h76b95e1',
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
-  'js/combat/combat-minion.js?v=20261028a',
+  'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
   'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261031headtaker2', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261101h47c5427', // One owner for attach/detach, dodge interruption and victim targeting.
@@ -83,7 +83,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261028a',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261028a',
-  'tools/enemy-loadout-editor/source-data.js?v=20261031headtakersource6',
+  'tools/enemy-loadout-editor/source-data.js?v=20261103harlyaoDemolitionistSource1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
