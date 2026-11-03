@@ -183,6 +183,18 @@
     return results;
   }
 
+  const FUR_HOOD_LAYER_ORDER = Object.freeze({
+    front: Object.freeze(['animalBack','base','animalFront','trim']), // Front plane, back-to-front: animal back behind hood, face piece, trim.
+    behind: Object.freeze(['trim','animalFront','base','animalBack']), // Rear plane, back-to-front: trim, animal front, furhood-behind, animal back.
+  });
+  function orderLayersForView(layers, view = 'front') {
+    const order=FUR_HOOD_LAYER_ORDER[view === 'behind' ? 'behind' : 'front']; // One order for portrait, icons and the garment-space authoring preview.
+    return (layers || []).map((layer,index)=>({layer,index})).sort((a,b)=>{
+      const ai=order.indexOf(a.layer?.role),bi=order.indexOf(b.layer?.role);
+      return (ai<0?order.length:ai)-(bi<0?order.length:bi)||a.index-b.index; // Unknown layers keep authored relative order after known roles.
+    }).map(entry=>entry.layer);
+  }
+
   function specialPartsFor(furHood, wearerSpecies = null, wearerGender = 'male') {
     const kindEntry=entryForKind(furHood?.kind); // Read species tint routing next to original authoring manifest parts.
     const partsByVariant = kindEntry?.parts || {}; // One animal can supply distinct sprite geometry for the two authored hood head-shape groups.
@@ -358,7 +370,7 @@
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, hideChoices, openLoom, closePanel, debugSnapshot,
+    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
   });
   ensureManifest();
 })();
