@@ -343,6 +343,13 @@
     if (playerSession.instrumentMode === 'puzzle') {
       // The puzzle iframe owns its five single-note buttons and audio; never boot the chord/timing bridge here.
       startPuzzleInputs();
+      if (playerSession.echoChallenge) {
+        const challenge = playerSession.echoChallenge; // The ruin owns the generated melody; the iframe owns playback and the five-note touch/keyboard/controller UI.
+        if (!frameEl?.contentWindow?.HobunjiPuzzleInstrument?.startEchoChallenge?.(challenge.id,challenge.notes)) {
+          window.__farmLog?.('Ruin echo challenge could not start in the music iframe.', 'warn');
+          deps?.showToast?.('Melody playback failed to initialize. Step on the trigger again.',false);
+        }
+      }
       return;
     }
     const bridge = bridgeOf(frameEl);
@@ -364,6 +371,7 @@
   function switchInstrumentMode(view) {
     if (!playerSession || !frameEl) return false;
     const next = view === 'performance' ? 'performance' : 'puzzle';
+    if (next === 'performance' && playerSession.echoChallenge) return false; // A ruin challenge cannot be bypassed by swapping to the unrelated chord/timing minigame.
     if (playerSession.instrumentMode === next) return true;
     teardownEdgeControls();
     stopPuzzleInputs();
@@ -396,7 +404,9 @@
     if (modeBtnEl) modeBtnEl.textContent = next === 'puzzle' ? 'Performance Mode' : 'Puzzle Mode';
     modeBtnEl?.setAttribute('aria-label','Switch to ' + (next === 'puzzle' ? 'Performance' : 'Puzzle') + ' Mode');
     frameEl.title = next === 'puzzle' ? 'Five-note melody puzzle' : 'Instrument performance';
-    frameEl.src = next === 'puzzle' ? PUZZLE_MINIGAME_SRC : MUSIC_MINIGAME_SRC;
+    frameEl.src = next === 'puzzle'
+      ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '')
+      : MUSIC_MINIGAME_SRC; // The flute sample is resolved inside the same five-note iframe; other instruments retain Kurraya audio.
     return true;
   }
   modeBtnEl?.addEventListener('click',event => {
@@ -404,13 +414,17 @@
     switchInstrumentMode(playerSession?.instrumentMode === 'puzzle' ? 'performance' : 'puzzle');
   });
 
-  function beginPlayerSession() {
+  function beginPlayerSession(options = {}) {
     if (playerSession || !overlayEl || !frameEl || !deps) return false;
+    const proposedEcho = options?.echoChallenge; // Optional, ephemeral encounter melody; no songbook writes or global music-mode changes.
+    if (proposedEcho && (!proposedEcho.id || !Array.isArray(proposedEcho.notes) || proposedEcho.notes.length < 3 ||
+        proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < 5))) return false;
     const instrumentKey = deps.getEquippedInstrument?.(); // Carries through both modes for the held Kurraya renderer.
     if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.',false); return false; }
     playerSession = {
       active:true,mode:'puzzle',instrumentMode:'initializing',area:deps.getCurrentArea(),
-      instrumentKey:instrumentKey,instrumentItem:{key:instrumentKey}
+      instrumentKey:instrumentKey,instrumentItem:{key:instrumentKey},
+      echoChallenge:proposedEcho ? {id:String(proposedEcho.id),notes:proposedEcho.notes.slice()} : null
     };
     overlayEl.classList.add('open');
     switchInstrumentMode('puzzle'); // Puzzle is always the default; switching back never loses Performance mode.
@@ -453,6 +467,14 @@
     const data = event.data;
     if (data?.source !== 'hobunji-music-minigame') return;
     if (data.type === 'exit-requested') close();
+    if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
+        playerSession.echoChallenge?.id === data.id) {
+      const detail = {id:data.id,solved:data.solved === true,
+        progress:Number(data.progress)||0,mistakes:Number(data.mistakes)||0}; // Only the active iframe and current ruin challenge may report a result.
+      window.dispatchEvent(new CustomEvent('hobunji-ruin-melody-result',{detail}));
+      window.__farmLog?.('Ruin echo ' + detail.id + ': ' + (detail.solved ? 'solved' : 'retry'), 'input');
+      if (detail.solved) close();
+    }
     if (data.type === 'puzzle-song-recognized' && playerSession?.instrumentMode === 'puzzle') {
       const song = window.KurrayaPuzzle?.normalizeSong?.(data.song) || data.song;
       if (!song || typeof song.id !== 'string' || !Array.isArray(song.notes)) return;
@@ -1377,7 +1399,7 @@
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
     diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
-      player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,npcId:playerSession.npcId||null}:null,
+      player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
