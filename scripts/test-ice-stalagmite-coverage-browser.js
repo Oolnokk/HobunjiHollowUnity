@@ -115,7 +115,7 @@ const server = http.createServer((request, response) => {
       const smallIce = window.DungeonDoorIceCoverage.create({ door: shorterDoor, parent: new T.Group(), groundY: 0, seed: 'short-door' });
       const scaledSmallDoor = smallIce?.recipe?.iceHeightMax < placement?.recipe?.iceHeightMax &&
         smallIce?.recipe?.radius < placement?.recipe?.radius; // The same builder supports full and ordinary-sized door leaves.
-      const coveringDoorFace = anchors && anchors.some((value, i) => i % 3 === 0 && Math.abs(value - 4) < 1); // Engulf must place crystals on the leaf face, not only its outer corners.
+      const coveringDoorFace = anchors && anchors.some((value, i) => i % 3 === 0 && Math.abs(value) < 1); // Geometry anchors are door-local; engulf must cover the leaf face, not only its outer corners.
 
       let readyCallbacks = 0; // Ensures a preexisting source-ready handler isn't lost to the ice lifecycle.
       window.ProceduralFurniture = { buildPartMesh() {
