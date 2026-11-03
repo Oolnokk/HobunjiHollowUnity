@@ -3249,6 +3249,20 @@
         return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
       }
 
+      function decorativeFurnitureClaimsInteriorCell(obj, c, r) {
+        if (obj.tableAttachment) {
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          return !!(def && obj.mesh && window.TableChairPlacement?.overlapsFootprints?.(
+            { x: c + 0.5, z: r + 0.5, width: 1, depth: 1, yaw: 0 },
+            { x: obj.mesh.position.x, z: obj.mesh.position.z, width: def.fw || 1,
+              depth: def.fd || 1, yaw: obj.mesh.rotation.y }
+          ));
+        }
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+        return c >= obj.col && r >= obj.row
+          && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
+      }
+
       function furnitureBlocksMovementAt(area, x, z) {
         if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
         if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
@@ -31249,16 +31263,12 @@
       window.FarmhouseRoomPlanner?.init({
         interiorCols: INTERIOR_COLS, interiorRows: INTERIOR_ROWS, // Fallback gap corridors cannot exceed the live indoor grid.
         canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
-        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o => o.area === 'interior'
-          && c >= o.col && r >= o.row
-          && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
-          && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd), // Door relocation never discards an owned decoration.
+        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o =>
+          o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r)), // Attached chairs guard their actual positions.
         canBlockCell: (c, r) => {
           const occupiedByPlayer = Math.floor(player.x / TILE) === c && Math.floor(player.y / TILE) === r; // Never build a wall through the player.
-          const occupiedByFurniture = interiorFurnitureObjects.some(o => o.area === 'interior'
-            && c >= o.col && r >= o.row
-            && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
-            && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd);
+          const occupiedByFurniture = interiorFurnitureObjects.some(o =>
+            o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r));
           return !occupiedByPlayer && !occupiedByFurniture; // Prevent new walls from trapping owned furniture or people.
         },
         rebuild: () => rebuildInteriorGeometry(),
