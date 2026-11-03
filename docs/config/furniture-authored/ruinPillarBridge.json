@@ -1,6 +1,13 @@
 {
-  "schema": "hobunji_furniture_surface_author.v58",
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinPillarBridge",
   "id": "ruinPillarBridge",
+  "name": "Ruin Pillar Bridge",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 5
+  },
   "notes": "Projectile activator. The glyph on the front face glows OFF (orange) until struck, then ON (green). Every target pillar at a ruin site must be struck to open its entrance door.",
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
@@ -103,7 +110,7 @@
       "rz": 0
     },
     "textureDataUrl": null,
-    "textureName": "actual GitHub Mao’ao render",
+    "textureName": "actual GitHub Mao\u2019ao render",
     "calculated": {
       "pxW": 200,
       "pxH": 200,

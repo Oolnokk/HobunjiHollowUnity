@@ -1,6 +1,13 @@
 {
-  "schema": "hobunji_furniture_surface_author.v58",
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinSanctumCoffin",
   "id": "ruinSanctumCoffin",
+  "name": "Ruin Coffin",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
   "notes": "Lich-room coffin. The Lid part slides off when its skeleton rises (animated by the sanctum runtime from the lid rest position).",
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
@@ -103,7 +110,7 @@
       "rz": -90
     },
     "textureDataUrl": null,
-    "textureName": "actual GitHub Mao’ao portrait + behind",
+    "textureName": "actual GitHub Mao\u2019ao portrait + behind",
     "calculated": {
       "pxW": 200,
       "pxH": 200,
