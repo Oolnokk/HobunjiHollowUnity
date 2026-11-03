@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261103harlyaoDemolitionist1';
+import { EnemyPreview } from './preview.js?v=20261103h97b442a';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {

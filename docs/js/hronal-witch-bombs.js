@@ -151,6 +151,7 @@
     const x=position.x,z=position.z,y=position.y,mapId=bomb.mapId;
     const scene=bomb.group.parent?.isScene?bomb.group.parent:currentScene();
     window.Shattercasks?.applyBlast?.(mapId,x,z,{
+      y,sourceId:bomb.id,
       radius:BLAST_RADIUS,damage:BLAST_DAMAGE,minimumDamage:5,
       knockbackPxS:BLAST_KNOCKBACK_PX_S,tag:'fire',
       reason:'Hronal Witch-bomb',burningHealth:BURNING_HEALTH,

@@ -1,0 +1,809 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "ruinDefensePlinth",
+  "id": "ruinDefensePlinth",
+  "name": "Ruin Defense Plinth",
+  "sourceSchema": "hobunji_furniture_surface_author.v58",
+  "notes": "Defense plinth. Takes a Key Statue and presses slowly (30 s default); the press is the length of a defend encounter. Set puzzle.motion.durationSeconds to change it.",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "tileBase": {
+    "visible": true,
+    "tileSize": 1,
+    "footprintW": 1,
+    "footprintD": 1,
+    "y": 0,
+    "gridOpacity": 0.55
+  },
+  "parts": [
+    {
+      "id": "burden_plinth_base",
+      "kind": "box",
+      "name": "Heavy Footing",
+      "transform": {
+        "x": 0,
+        "y": 0.08,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.9,
+        "sy": 0.16,
+        "sz": 0.9
+      },
+      "color": "#625c52",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.96,
+      "topScaleZ": 0.96,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.008,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    },
+    {
+      "id": "burden_plinth_lower",
+      "kind": "box",
+      "name": "Heavy Lower Block",
+      "transform": {
+        "x": 0,
+        "y": 0.25,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.72,
+        "sy": 0.4758,
+        "sz": 0.72
+      },
+      "color": "#7b7466",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.85,
+      "topScaleZ": 0.85,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.009,
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1
+    }
+  ],
+  "recognizedSurfaces": [
+    {
+      "id": "burden_plinth_base:surface:0",
+      "partId": "burden_plinth_base",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.8230785979331345,
+      "localCentroid": [
+        -0.000694,
+        -0.078187,
+        0.003782
+      ],
+      "localNormal": [
+        0.005704,
+        -0.999969,
+        0.00548
+      ],
+      "basisU": [
+        0,
+        -0.00548,
+        -0.999985
+      ],
+      "basisV": [
+        0.999984,
+        0.005704,
+        -3.1e-05
+      ],
+      "bounds": {
+        "minU": -0.4548835799883258,
+        "maxU": 0.44875026111705935,
+        "minV": -0.45800977928159686,
+        "maxV": 0.45509888237357476
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_base:surface:2",
+      "partId": "burden_plinth_base",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.7362400733484129,
+      "localCentroid": [
+        -0.000923,
+        0.082997,
+        0.001252
+      ],
+      "localNormal": [
+        0.005066,
+        0.999986,
+        -0.001462
+      ],
+      "basisU": [
+        0,
+        0.001462,
+        0.999999
+      ],
+      "basisV": [
+        0.999987,
+        -0.005066,
+        7e-06
+      ],
+      "bounds": {
+        "minU": -0.4284346081596758,
+        "maxU": 0.4331073979306384,
+        "minV": -0.4302020258048073,
+        "maxV": 0.4288599879998882
+      },
+      "label": "Upward Top",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_base:surface:4",
+      "partId": "burden_plinth_base",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.1444073370963032,
+      "localCentroid": [
+        -0.007794,
+        0.000284,
+        -0.43745
+      ],
+      "localNormal": [
+        -0.001503,
+        0.114852,
+        -0.993381
+      ],
+      "basisU": [
+        -0.999999,
+        0,
+        0.001513
+      ],
+      "basisV": [
+        0.000174,
+        0.993383,
+        0.114852
+      ],
+      "bounds": {
+        "minU": -0.45619695152486506,
+        "maxU": 0.4568717663051738,
+        "minV": -0.1356078193881849,
+        "maxV": 0.03489453227044239
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_base:surface:6",
+      "partId": "burden_plinth_base",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.13894735430282162,
+      "localCentroid": [
+        0.442034,
+        0.002328,
+        0.002406
+      ],
+      "localNormal": [
+        0.984979,
+        0.172668,
+        -0.001332
+      ],
+      "basisU": [
+        -0.001352,
+        0,
+        -0.999999
+      ],
+      "basisV": [
+        -0.172667,
+        0.98498,
+        0.000233
+      ],
+      "bounds": {
+        "minU": -0.455914712313661,
+        "maxU": 0.44773078208818207,
+        "minV": -0.1524462914492953,
+        "maxV": 0.006403612893351127
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_base:surface:8",
+      "partId": "burden_plinth_base",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.14180667265637198,
+      "localCentroid": [
+        -0.001726,
+        0.003575,
+        0.443407
+      ],
+      "localNormal": [
+        0.00236,
+        0.150809,
+        0.98856
+      ],
+      "basisU": [
+        0.999997,
+        0,
+        -0.002387
+      ],
+      "basisV": [
+        -0.00036,
+        0.988563,
+        -0.150808
+      ],
+      "bounds": {
+        "minU": -0.45798053660448734,
+        "maxU": 0.45392374085874154,
+        "minV": -0.14270999733514037,
+        "maxV": 0.019254393302629652
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_base:surface:10",
+      "partId": "burden_plinth_base",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.14750556643191573,
+      "localCentroid": [
+        -0.443427,
+        0.001948,
+        -0.000552
+      ],
+      "localNormal": [
+        -0.985713,
+        0.168431,
+        0.000209
+      ],
+      "basisU": [
+        0.000212,
+        0,
+        1
+      ],
+      "basisV": [
+        0.168431,
+        0.985713,
+        -3.6e-05
+      ],
+      "bounds": {
+        "minU": -0.4459568042795905,
+        "maxU": 0.45432030185314104,
+        "minV": -0.1607186258485235,
+        "maxV": 0.012005001828158751
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#625c52",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:0",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "underside",
+      "faceIndices": [
+        0,
+        1
+      ],
+      "area": 0.5197056258401952,
+      "localCentroid": [
+        -0.001487,
+        -0.242919,
+        0.000375
+      ],
+      "localNormal": [
+        0.007928,
+        -0.999965,
+        -0.00282
+      ],
+      "basisU": [
+        0,
+        0.00282,
+        -0.999996
+      ],
+      "basisV": [
+        0.999969,
+        0.007928,
+        2.2e-05
+      ],
+      "bounds": {
+        "minU": -0.35906527115790415,
+        "maxU": 0.3572295286606047,
+        "minV": -0.36925944468937066,
+        "maxV": 0.36550363521815926
+      },
+      "label": "Underside",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:2",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "upward top",
+      "faceIndices": [
+        2,
+        3
+      ],
+      "area": 0.37758206330106514,
+      "localCentroid": [
+        -0.001098,
+        0.233721,
+        0.002943
+      ],
+      "localNormal": [
+        -0.000931,
+        0.999998,
+        -0.001501
+      ],
+      "basisU": [
+        0,
+        0.001501,
+        0.999999
+      ],
+      "basisV": [
+        1,
+        0.000931,
+        -1e-06
+      ],
+      "bounds": {
+        "minU": -0.3074537447397956,
+        "maxU": 0.3137248072379643,
+        "minV": -0.3139245004467522,
+        "maxV": 0.30703902854385823
+      },
+      "label": "Payload Attachment Surface",
+      "role": "decorTop",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:4",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        4,
+        5
+      ],
+      "area": 0.31725082772669516,
+      "localCentroid": [
+        -0.003869,
+        -0.011801,
+        -0.332357
+      ],
+      "localNormal": [
+        -0.003977,
+        0.106092,
+        -0.994348
+      ],
+      "basisU": [
+        -0.999992,
+        0,
+        0.004
+      ],
+      "basisV": [
+        0.000424,
+        0.994356,
+        0.106091
+      ],
+      "bounds": {
+        "minU": -0.35869067055159287,
+        "maxU": 0.3658957884055586,
+        "minV": -0.28136222700384705,
+        "maxV": 0.2007175987382066
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:6",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        6,
+        7
+      ],
+      "area": 0.31885920063281437,
+      "localCentroid": [
+        0.333853,
+        -0.009038,
+        0.002452
+      ],
+      "localNormal": [
+        0.992566,
+        0.121197,
+        -0.011178
+      ],
+      "basisU": [
+        -0.011261,
+        0,
+        -0.999937
+      ],
+      "basisV": [
+        -0.121189,
+        0.992629,
+        0.001365
+      ],
+      "bounds": {
+        "minU": -0.3625016611684251,
+        "maxU": 0.35385928090386987,
+        "minV": -0.2832871425300599,
+        "maxV": 0.1974998699570749
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:8",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        8,
+        9
+      ],
+      "area": 0.32469165655129895,
+      "localCentroid": [
+        -0.001288,
+        -0.011848,
+        0.333168
+      ],
+      "localNormal": [
+        -0.009555,
+        0.097395,
+        0.9952
+      ],
+      "basisU": [
+        0.999954,
+        0,
+        0.009601
+      ],
+      "basisV": [
+        0.000935,
+        0.995246,
+        -0.097391
+      ],
+      "bounds": {
+        "minU": -0.36205098545305553,
+        "maxU": 0.37084179678648643,
+        "minV": -0.2804195581099943,
+        "maxV": 0.20464051065877148
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    },
+    {
+      "id": "burden_plinth_lower:surface:10",
+      "partId": "burden_plinth_lower",
+      "recognizedType": "vertical side",
+      "faceIndices": [
+        10,
+        11
+      ],
+      "area": 0.31824563391464944,
+      "localCentroid": [
+        -0.337083,
+        -0.012703,
+        -0.000628
+      ],
+      "localNormal": [
+        -0.992746,
+        0.120056,
+        -0.006517
+      ],
+      "basisU": [
+        -0.006565,
+        0,
+        0.999978
+      ],
+      "basisV": [
+        0.120054,
+        0.992767,
+        0.000788
+      ],
+      "bounds": {
+        "minU": -0.35341797678351,
+        "maxU": 0.35655253535911985,
+        "minV": -0.28857090509124866,
+        "maxV": 0.1961943693836421
+      },
+      "label": "Vertical Side",
+      "role": "none",
+      "texture": {
+        "source": "../../assets/textures/carved_smooth.png",
+        "name": "carved_smooth.png",
+        "fillEnabled": false,
+        "fillColor": "#7b7466",
+        "mapping": "stretch",
+        "rotationDeg": 0,
+        "tileSize": 1,
+        "transparent": true
+      }
+    }
+  ],
+  "decals": [],
+  "decalAuthoring": {
+    "version": 4,
+    "coordinateSpace": "recognized-surface-local",
+    "sizeUnits": "surface-fraction",
+    "offsetUnits": "half-surface-span",
+    "sourceTypes": [
+      "image",
+      "tankanText"
+    ],
+    "tankanLayout": "vertical-word-columns",
+    "tankanSizing": "container-fit-down-v1"
+  },
+  "particleEmitters": [],
+  "surfaceGrowth": [],
+  "itemPlacements": [],
+  "puzzle": {
+    "version": 3,
+    "role": "activator",
+    "behavior": "burdenPlate",
+    "channel": "A",
+    "completionChannel": "B",
+    "requiredBurdenKind": "keyStatue",
+    "payloadSurfaceId": "burden_plinth_lower:surface:2",
+    "startsActive": false,
+    "blocksMovement": false,
+    "interactionRange": 1.65,
+    "activationSeconds": 0,
+    "resetSeconds": 0,
+    "prompt": "Place the Key Statue",
+    "offPrompt": "Place the Key Statue",
+    "onPrompt": "Retrieve the Key Statue",
+    "directInteraction": false,
+    "motion": {
+      "off": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "on": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 1,
+          "opacity": 1
+        }
+      },
+      "parts": {
+        "burden_plinth_lower": {
+          "off": {
+            "x": 0,
+            "y": 0.25,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 0.72,
+            "sy": 0.4758,
+            "sz": 0.72
+          },
+          "on": {
+            "x": 0,
+            "y": 0.1823,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 0.72,
+            "sy": 0.0324,
+            "sz": 0.72
+          }
+        }
+      },
+      "durationSeconds": 30,
+      "collisionOpenProgress": 0,
+      "reversalSeconds": 0.9
+    }
+  },
+  "globalCharacterDeadzoneDeg": 40,
+  "pieceAnimationAuthoring": {
+    "version": 2,
+    "model": "rigid-piece-relative",
+    "separateFromProcessingWarps": true,
+    "windDirection": "furniture-local horizontal degrees",
+    "windAxisBias": true
+  }
+}
