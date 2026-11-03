@@ -103,6 +103,11 @@
       bombFuseSeconds: Math.max(1, Math.min(120, number(raw.bombFuseSeconds, 10))), // Per-generated-tube fuse duration in seconds; consumed by HronalWitchBombs.
       startsActive: !!raw.startsActive,
       blocksMovement: role === 'mechanism' && raw.blocksMovement !== false,
+      // Used by FurniturePuzzleRuntime to expose the top face of a fully settled, animated furniture part as walkable terrain.
+      standingSurface: role === 'mechanism' && text(raw.standingSurface?.partId)
+        ? { partId:text(raw.standingSurface.partId), minProgress:Math.max(0,Math.min(1,number(raw.standingSurface.minProgress,.95))),
+            topOffset:Math.max(-.1,Math.min(.1,number(raw.standingSurface.topOffset,0))) }
+        : null,
       interactionRange: Math.max(.25, number(raw.interactionRange, 1.65)),
       activationSeconds: Math.max(0, number(raw.activationSeconds, 0)),
       resetSeconds: Math.max(0, number(raw.resetSeconds, 0)),

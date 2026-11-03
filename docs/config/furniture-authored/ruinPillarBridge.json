@@ -8,7 +8,7 @@
     "w": 1,
     "d": 5
   },
-  "notes": "Projectile activator. The glyph on the front face glows OFF (orange) until struck, then ON (green). Every target pillar at a ruin site must be struck to open its entrance door.",
+  "notes": "Blast-toppled bridge pillar. The upper shaft falls toward the near bank of a 3.4-tile chasm, forming a genuinely walkable crossing after settling; its body is not directly interactive.",
   "portraitFogMaskHidden": false,
   "bladedHazard": false,
   "fireHazard": false,
@@ -110,7 +110,7 @@
       "rz": 0
     },
     "textureDataUrl": null,
-    "textureName": "actual GitHub Mao\u2019ao render",
+    "textureName": "actual GitHub Mao’ao render",
     "calculated": {
       "pxW": 200,
       "pxH": 200,
@@ -185,7 +185,7 @@
       "transform": {
         "x": 0,
         "y": -0.1442,
-        "z": 2.3436,
+        "z": 3.7793,
         "rx": 97.015,
         "ry": 0,
         "rz": 0,
@@ -283,7 +283,7 @@
       "transform": {
         "x": 0,
         "y": 0.0472,
-        "z": 0.2159,
+        "z": 1.6516,
         "rx": 97.015,
         "ry": 0,
         "rz": 0,
@@ -1824,7 +1824,7 @@
     "version": 3,
     "role": "mechanism",
     "behavior": "toggle",
-    "channel": "A",
+    "channel": "PillarBridge",
     "completionChannel": "B",
     "requiredBurdenKind": "shattercask",
     "payloadSurfaceId": "",
@@ -1837,6 +1837,14 @@
     "offPrompt": "Turn off",
     "onPrompt": "Turn on",
     "directInteraction": false,
+    "inputs": [
+      {
+        "event": "blast",
+        "withinTiles": 2.5,
+        "action": "on",
+        "once": true
+      }
+    ],
     "motion": {
       "off": {
         "position": {
@@ -1924,7 +1932,7 @@
           "on": {
             "x": 0,
             "y": 0.1246,
-            "z": 0.6143,
+            "z": 2.05,
             "rx": 97.015,
             "ry": 0,
             "rz": 0,
@@ -1948,7 +1956,7 @@
           "on": {
             "x": 0,
             "y": -0.1442,
-            "z": 2.6227,
+            "z": 4.0584,
             "rx": 97.015,
             "ry": 0,
             "rz": 0,
@@ -2009,6 +2017,11 @@
       "durationSeconds": 0.8,
       "reversalSeconds": 0.8,
       "collisionOpenProgress": 0.55
+    },
+    "standingSurface": {
+      "partId": "part_mvzye4ag_g0i3g",
+      "minProgress": 0.95,
+      "topOffset": 0.01
     }
   },
   "carryable": {

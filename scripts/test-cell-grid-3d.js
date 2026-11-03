@@ -132,4 +132,22 @@ assert(Math.abs(lifted.maxQuantizationError - 0.42) < 1e-9, 'the lost 0.42 is re
 assert.equal(lifted.grid.get(3, 0, 0), KIND.AIR, 'void columns are untouched');
 assert(lifted.grid.canStand(2, 0, 1));
 
+// An entire intervening wall can be crossed within one projectile update.
+{
+  const shaft = G.create({ cols: 5, rows: 1, levels: 5, originX: 10, baseY: 3 });
+  shaft.set(2, 0, 0, KIND.SOLID);
+  shaft.set(2, 0, 3, KIND.SOLID);
+  const horizontalHit = (start, end, {box}, radius) => {
+    if (start.y < box.min.y - radius || start.y > box.max.y + radius) return null;
+    const enter = (box.min.x - radius - start.x) / (end.x - start.x);
+    return enter >= 0 && enter <= 1 ? {enter} : null;
+  };
+  const sweep = (y, radius = 0) => shaft.solidSegmentHit(
+    {x:10.5,y,z:.5}, {x:14.5,y,z:.5}, radius, horizontalHit);
+  assert.equal(sweep(3.5), .375, 'a ground-level shot hits the intervening solid');
+  assert.equal(sweep(5), null, 'a higher shot passes through open air in the same column');
+  assert.equal(sweep(6.5), .375, 'the ceiling-level solid also blocks');
+  assert(Math.abs(sweep(4.1, .2) - .325) < 1e-9, 'the projectile radius catches the wall edge');
+}
+
 console.log('cell-grid-3d: ok');

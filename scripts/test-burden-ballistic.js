@@ -17,6 +17,7 @@ class Vector3 {
   add(v) { this.x += v.x; this.y += v.y; this.z += v.z; return this; }
   addScaledVector(v, k) { this.x += v.x * k; this.y += v.y * k; this.z += v.z * k; return this; }
   setScalar(k) { return this.set(k, k, k); }
+  multiply(v) { return this.set(this.x * v.x, this.y * v.y, this.z * v.z); }
   multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; }
   lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
   length() { return Math.sqrt(this.lengthSq()); }
@@ -24,7 +25,7 @@ class Vector3 {
   crossVectors(a, b) { return this.set(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
   distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
 }
-class Quaternion { copy() { return this; } identity() { return this; } clone() { return new Quaternion(); } }
+class Quaternion { setFromUnitVectors() { return this; } setFromEuler() { return this; } multiply() { return this; } copy() { return this; } identity() { return this; } clone() { return new Quaternion(); } }
 class Node {
   constructor() { this.quaternion = new Quaternion(); this.children = []; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.userData = {}; this.parent = null; this.isObject3D = true; }
   add(o) { this.children.push(o); o.parent = this; }
@@ -39,7 +40,8 @@ class Mesh extends Node { constructor(g, m) { super(); this.geometry = g; this.m
 class Geometry { dispose() {} }
 class Material { constructor(o) { Object.assign(this, o); } clone() { return new Material({ ...this }); } dispose() {} }
 class Raycaster { constructor() { this.near = 0; this.far = Infinity; this.ray = { origin: new Vector3(), direction: new Vector3() }; } intersectObjects() { return []; } }
-const THREE = { Quaternion, Group: Node, Mesh, SkinnedMesh: Mesh, InstancedMesh: Mesh, Object3D: Node, Vector3, Raycaster, RingGeometry: Geometry,
+const THREE = { MathUtils: { lerp: (a, b, t) => a + (b - a) * t },
+  Euler: class {}, Color: class { lerp() { return this; } }, Quaternion, Group: Node, Mesh, SkinnedMesh: Mesh, InstancedMesh: Mesh, Object3D: Node, Vector3, Raycaster, RingGeometry: Geometry,
   TetrahedronGeometry: Geometry, SphereGeometry: Geometry, CylinderGeometry: Geometry, DodecahedronGeometry: Geometry,
   MeshBasicMaterial: Material, MeshLambertMaterial: Material, DoubleSide: 2, AdditiveBlending: 3, TextureLoader: class { load() { return { dispose() {} }; } } };
 
@@ -148,4 +150,42 @@ assert.equal(Sh.detachHeldBurden(), null, 'nothing left to take');
 game.__ropeTicks = 0; Sh.tick(0.05); Sh.tick(0.05);
 assert.equal(game.__ropeTicks, 2, 'Shattercasks.tick calls HangingRopes.tick every frame');
 assert.equal(typeof Sh.refreshBurdenBounds, 'function');
+// Launch a real fused Witch-bomb from a real rope. The fixture mechanism stands
+// in for the missing authored pillar, so this verifies every link up to its input.
+for (const f of ['js/rope-core.js', 'js/hanging-ropes.js', 'js/hronal-witch-bombs.js',
+  'js/furniture-puzzle-properties.js', 'js/furniture-puzzle-runtime.js']) {
+  vm.runInContext(read(f), game, { filename: f });
+}
+game.requestAnimationFrame = () => {}; // This fixture tests immediate activation, without animation frames.
+const bomb = burden('bridge-bomb', {x:8,y:.45,z:10}, {kind:game.HronalWitchBombs.KIND});
+bomb.fuseSeconds = 10;
+bomb.spawnedAtMs = performance.now();
+const rope = game.HangingRopes.registerRope({id:'bridge-rope',mapId:area,scene,x:8,y:3.9,z:10,length:2.4});
+player.x = 7 * 64; player.y = 10 * 64;
+player.lungeOriginX = player.x - 1.6 * 64;
+player.lungeOriginY = player.y;
+player.lungeOriginMs = performance.now();
+assert(Sh.pickUp(bomb));
+assert(Sh.interact());
+assert.equal(bomb.rope, rope);
+collider = {origin:new Vector3(7,.5,10),yaw:0,horizontalRangeWorld:3,verticalRiseWorld:0,
+  halfConeRad:.6,halfHeightWorld:.6,direction:new Vector3(1,0,0)};
+Sh.sweepMelee({actor:player,rangePx:3*64,halfConeRad:.6,yaw:0,pitch:0});
+tick(3, 1/60);
+assert(!bomb.rope, "the strike releases the bomb");
+assert.equal(bomb.flying, false);
+assert(bomb.group.position.x > 13, 'the real rope launch carries the bomb away from the attacker');
+assert.equal(bomb.exploded, false, 'melee and landing preserve the fuse');
+const bridge = new Node();
+bridge.position.copy(bomb.group.position);
+const puzzle = {role:'mechanism',behavior:'toggle',inputs:[{event:'blast',tag:'fire',withinTiles:1,once:true}]};
+assert(game.FurniturePuzzleRuntime.registerNode(area,{id:'bridge-test-fixture',puzzle},bridge));
+assert.equal(Boolean(bridge.userData.puzzleActive),false);
+bomb.spawnedAtMs = performance.now() - 11_000;
+// Headless fixture has no burst renderer. The gameplay blast and event still run.
+game.GridTileAccessors.getActiveScene = () => null;
+deps.getActiveScene = () => null;
+game.HronalWitchBombs.tick(0);
+assert.equal(Boolean(bridge.userData.puzzleActive),true);
+assert.equal(bomb.exploded,true);
 console.log('burden-ballistic: ok');

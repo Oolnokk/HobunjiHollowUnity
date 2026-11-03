@@ -310,6 +310,10 @@
       "file": "config/furniture-authored/witchBombCeilingTube.json"
     },
     {
+      "key": "ruinPillarBridge",
+      "file": "config/furniture-authored/ruinPillarBridge.json"
+    },
+    {
       "key": "ruinRopeMount",
       "file": "config/furniture-authored/ruinRopeMount.json"
     },

@@ -5906,7 +5906,7 @@
       // already does axis-separated movement, so a creature blocked here
       // slides along the obstacle's edge instead of freezing, exactly like
       // the player's own wall collision.
-      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN) {
+      function creatureCanEnterTile(def, wx, wy, fromX = NaN, fromY = NaN, actor = null, walkingPath = false) {
         // A NaN/Infinite coordinate compares false against every bound
         // check below (NaN is never < or >= anything), so without this it
         // would silently pass through as "allowed" and let a corrupted
@@ -5917,6 +5917,7 @@
         if (!Number.isFinite(wx) || !Number.isFinite(wy)) return false;
         const aC = window.GridTileAccessors.getActiveCols(), aR = window.GridTileAccessors.getActiveRows();
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
+        if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
@@ -5995,9 +5996,9 @@
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
         const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
-        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
+        const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
-        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
+        const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY, c); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
         if (canMoveY) c.y = desiredY;
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
@@ -6015,7 +6016,10 @@
           c._collisionRepositionDebug.active = false;
         }
         c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
-        if (moved > 0) tickCreatureFootsteps(c, moved);
+        if (moved > 0) {
+          window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
+          tickCreatureFootsteps(c, moved);
+        }
         return moved > 0;
       }
 
@@ -6023,8 +6027,8 @@
       // coordinates — reuses creatureCanEnterTile at the tile's center so
       // the pathfinder's notion of "blocked" always matches what actual
       // movement will (and won't) let a creature step onto.
-      function creatureTileWalkable(col, row) {
-        return creatureCanEnterTile(null, (col + 0.5) * TILE, (row + 0.5) * TILE);
+      function creatureTileWalkable(col, row, actor = null) {
+        return creatureCanEnterTile(actor?.def, (col + 0.5) * TILE, (row + 0.5) * TILE, NaN, NaN, actor, true);
       }
 
       const CREATURE_STUCK_THRESHOLD_S = 0.6;
@@ -6068,7 +6072,7 @@
         c._travelStuckT = 0;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, creatureTileWalkable, {
+        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
           bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
         });
         if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
@@ -6131,7 +6135,7 @@
         // climbSurfaceY exists: it's mid-crossing through impassable incline
         // tiles, so a raw tile lookup would pop between the cliff base and
         // landing the instant the crossing tile flips underneath it.
-        const dynamicSurfaceY = Number(c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
+        const dynamicSurfaceY = Number(c.shaftSupportY ?? c.surfaceYOverride?.()); // Optional per-entity world-height authority for generated/moving interiors whose 2D gameplay grid intentionally has no elevation tiers.
         const ordinarySurfY = c.onBranch ? c.branchSurfaceY
           : c._climbLeap ? c._climbLeap.surfaceY
           : c._cliffClimb ? c._cliffClimb.surfaceY

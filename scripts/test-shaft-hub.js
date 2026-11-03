@@ -54,17 +54,42 @@ for (const seed of [1, 4, 5, 6, 7, 11]) {
   const one = H.compose({ seed: 3, balconies: 1 }); assert(one.ok && one.balconies.length === 1 && one.levels === 7);
 }
 
+// ---- Enclosed balcony landings also work off the integer world origin.
+{
+  const hub = H.compose({ seed: 4, landings: true, originX: .3, originZ: .7 });
+  assert(hub.ok, JSON.stringify(hub.checks.filter(check => !check.ok)));
+  const reach = H.reachable(hub);
+  for (const door of hub.doors) {
+    assert(reach.has(door.col, door.row, door.level));
+    assert(hub.grid.isSolid(door.col + door.outward.c, door.row + door.outward.r, door.level));
+    assert(hub.grid.canStand(door.col + door.outward.r, door.row + door.outward.c, door.level));
+    assert(!hub.grid.canStand(door.col, door.row, 0));
+  }
+}
+
+// ---- A seeded wing reserves enclosed chambers without opening the ground slice.
+for (let seed = 1; seed <= 12; seed++) {
+  const wing = H.compose({seed,chambers:true,originX:1,originZ:40});
+  assert(wing.ok, JSON.stringify(wing.checks.filter(check => !check.ok)));
+  for (const door of wing.doors) {
+    assert(door.chamber.length >= 6);
+    assert(door.chamber.every(cell => wing.grid.canStand(cell.col,cell.row,door.level)));
+    assert(door.chamber.every(cell => !wing.grid.canStand(cell.col,cell.row,0)));
+  }
+}
+
 // ---- mount: surfaces registered into ClimbSurfaces and DynamicSurfaces, then cleared
 {
   const r = H.compose({ seed: 1, originX: 20, originZ: 30 });
   const reg = []; const fakeDS = { registerSurface: d => reg.push(d), clearScope(s) { for (let i = reg.length - 1; i >= 0; i--) if (reg[i].scope === s) reg.splice(i, 1); } };
-  const calls = []; const fakeRuin = { setLevelRelativeSupport: v => calls.push(v) };
+  const calls = []; const fakeRuin = { registerShaftGrid: (scope, grid, dispose) => calls.push({scope,grid,dispose}), unregisterShaftGrid: scope => calls.push(scope) };
   CS.clearScope('hub');
   const m = H.mount(r, { ClimbSurfaces: CS, DynamicSurfaces: fakeDS, DevRandomRuin: fakeRuin, scope: 'hub' });
-  assert.equal(m.surfaces, 3); assert(m.floors > 30, 'standable cells became support surfaces: ' + m.floors); assert.deepEqual(calls, [true], 'stacked floors switch support sampling to level-relative');
+  assert.equal(m.surfaces, 3); assert(m.floors > 30, 'standable cells became support surfaces: ' + m.floors); assert.equal(calls[0].scope, 'hub'); assert.equal(calls[0].grid, r.grid);
   assert.equal(CS.list().filter(s => s.scope === 'hub').length, 3);
   assert(reg.some(s => s.topY === 12), 'the top balcony is a support surface at y = 12');
-  H.unmount({ ClimbSurfaces: CS, DynamicSurfaces: fakeDS, scope: 'hub' });
+  calls[0].dispose();
+  assert.equal(calls[1], 'hub');
   assert.equal(CS.list().filter(s => s.scope === 'hub').length, 0); assert.equal(reg.length, 0);
 }
 

@@ -151,6 +151,34 @@
       return n;
     }
 
+    // Sweep world-space cover using the caller's segment/box intersection.
+    function solidSegmentHit(start, end, radius, intersect) {
+      const minC = Math.max(0, xToCol(Math.min(start.x, end.x) - radius));
+      const maxC = Math.min(cols - 1, xToCol(Math.max(start.x, end.x) + radius));
+      const minR = Math.max(0, zToRow(Math.min(start.z, end.z) - radius));
+      const maxR = Math.min(rows - 1, zToRow(Math.max(start.z, end.z) + radius));
+      const minL = Math.max(-1, yToLevel(Math.min(start.y, end.y) - radius)); // The implicit bedrock supplies the bottom face.
+      const maxL = Math.min(levels - 1, yToLevel(Math.max(start.y, end.y) + radius));
+      if (minC > maxC || minR > maxR || minL > maxL) return null;
+      const box = { min: {}, max: {} }; // Reuse across cells within this sweep.
+      const hitbox = { box };
+      let first = null;
+      for (let l = minL; l <= maxL; l++) {
+        box.min.y = levelToY(l); box.max.y = levelToY(l + 1);
+        for (let r = minR; r <= maxR; r++) {
+          box.min.z = rowToZ(r); box.max.z = rowToZ(r + 1);
+          for (let c = minC; c <= maxC; c++) {
+            if (!isSolid(c, r, l)) continue;
+            box.min.x = colToX(c); box.max.x = colToX(c + 1);
+            const interval = intersect(start, end, hitbox, radius);
+            if (interval && (first === null || interval.enter < first)) first = interval.enter;
+            if (first === 0) return first;
+          }
+        }
+      }
+      return first;
+    }
+
     // ------------------------------------------------------- standing
 
     function hasHeadroom(c, r, l, clearance = UNITS.CLEARANCE_CELLS) {
@@ -267,7 +295,7 @@
 
     return Object.freeze({
       cols, rows, levels, cellSize, cellHeight, originX, originZ, baseY, cells,
-      inBounds, get, set, isSolid, fillBox,
+      inBounds, get, set, isSolid, fillBox, solidSegmentHit,
       levelToY, yToLevel, colToX, rowToZ, xToCol, zToRow,
       hasHeadroom, canStand, floorLevelAt, walkDestinationLevel,
       projectSlice, sliceToTileGrid, standingSurfaces, registerWith,

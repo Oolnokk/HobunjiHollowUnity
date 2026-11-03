@@ -175,9 +175,9 @@
   const detach = (rope, reason = 'detached') => detachInternal(rope, reason);
 
   // The player is carrying a burden and pressed the carry-release action: hang it on a free hook in reach.
-  function tryHang(held) {
+  function findHook(held) {
     const player = window.Combat?.deps?.player;
-    if (!player || !held) return false;
+    if (!player || !held) return null;
     const t = tile(), px = player.x / t, pz = player.y / t, mapId = area();
     let best = null, bestDist = CONFIG.hangReach;
     for (const rope of ropes.values()) {
@@ -185,6 +185,11 @@
       const bob = rope.bob || RC.bobAt(rope), d = Math.hypot(px - bob.x, pz - bob.z); // to the hook
       if (d <= bestDist) { best = rope; bestDist = d; }
     }
+    return best;
+  }
+
+  function tryHang(held) {
+    const best = findHook(held); // Use the same eligibility as the action label.
     if (!best) return false;
     const burden = window.Shattercasks?.detachHeldBurden?.();
     if (!burden) return false;
@@ -265,5 +270,5 @@
     ropes: [...ropes.values()].map(r => ({ id: r.id, mapId: r.mapId, external: !!r.external, burden: r.burden?.id || null, armed: r.armed, angle: +r.angle.toFixed(3), omega: +r.omega.toFixed(3) })),
   });
 
-  window.HangingRopes = Object.freeze({ installed: true, CONFIG, strikeSpeed, registerRope, adoptRope, removeRope, clearScope, attach, detach, canAttach, tryHang, onStruck, applyStrike, tick, configure, debugSnapshot, get ropes() { return [...ropes.values()]; } });
+  window.HangingRopes = Object.freeze({ installed: true, CONFIG, strikeSpeed, registerRope, adoptRope, removeRope, clearScope, attach, detach, canAttach, findHook, tryHang, onStruck, applyStrike, tick, configure, debugSnapshot, get ropes() { return [...ropes.values()]; } });
 })();

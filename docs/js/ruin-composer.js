@@ -30,7 +30,7 @@
     statueDispenser: { key: 'keyStatueDispenser', footprint: 0.6 },
     bombDispenser:   { key: 'witchBombCeilingTube', overhead: true, clearRadius: 0.5 },
     ropeMount:       { key: 'ruinRopeMount', overhead: true, clearRadius: 0.6 },
-    crackedPillar:   { key: 'ruinPillarBridge', footprint: 0.6, authored: false }, // the pillar-bridge piece lives in the author's own file
+    crackedPillar:   { key: 'ruinPillarBridge', footprint: 0.6 },
     spawnerPillar:   { key: 'ruinPillarBroken', footprint: 0.9 },
     strikeStand:     { key: null, clearRadius: 0.55 },                              // a marker for the planner: where to stand to strike
   };
@@ -98,7 +98,7 @@
   }
 
   // ---------------------------------------------------------------- composition -> data
-  const rotYFor = f => Math.atan2((f && f.x) || 0, (f && f.z) || 1); // facing +z is rotation 0
+  const rotYFor = f => Math.atan2(Number(f?.x) || 0, Number.isFinite(Number(f?.z)) ? Number(f.z) : 1); // Preserve cardinal z=0: +z is rotation 0, -x is -90 degrees.
   function toRecords(goalId, placements, taken) {
     const out = [];
     placements.forEach((p, i) => {

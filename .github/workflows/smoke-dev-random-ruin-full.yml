@@ -15,6 +15,10 @@ on:
       - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
+      - 'docs/js/ruin-composer*.js'
+      - 'docs/config/furniture-authored/ruinPillarBridge.json'
+      - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   pull_request:
     paths:
@@ -29,6 +33,10 @@ on:
       - 'scripts/test-grapple-dodge-payment.js'
       - 'docs/js/root-snare-player-tear.js'
       - 'docs/js/dynamic-surfaces.js'
+      - 'docs/js/ruin-composer*.js'
+      - 'docs/config/furniture-authored/ruinPillarBridge.json'
+      - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   workflow_dispatch:
 
@@ -50,6 +58,10 @@ jobs:
           node scripts/test-hachutu-rooted-ruins.js
           node scripts/test-hachutu-root-tear.js
           node scripts/test-grapple-dodge-payment.js
+          node scripts/test-ruin-composer.js
+          node scripts/test-ruin-composer-playable.js
+          node --check docs/js/ruin-composer-playable.js
+          node --check scripts/test-ruin-construction-browser.js
           node --check docs/js/root-snare-player-tear.js
           node --check docs/js/dev-hachutu-ruin.js
           node --check docs/js/hachutu-relics.js
@@ -70,6 +82,8 @@ jobs:
         run: node scripts/test-hachutu-root-ruin-browser.js
       - name: Verify shared occupancy and puzzle visibility
         run: node scripts/test-dev-random-ruin-collision-browser.js
+      - name: Verify playable composed trial and shaft wing in the real game
+        run: node scripts/test-ruin-construction-browser.js
       - name: Isolate previously failing seed
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'

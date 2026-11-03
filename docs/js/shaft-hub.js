@@ -38,6 +38,8 @@
     depth: 2,        // how far a balcony reaches into the shaft
     length: 3,       // how wide a balcony is (odd)
     climbStyle: 'holds',
+    landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
+    chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
     originX: 0, originZ: 0, baseY: 0,
   });
@@ -68,6 +70,8 @@
 
   function compose(options = {}) {
     const o = { ...DEFAULTS, ...options };
+    if (o.chambers) o.landings = true;
+    o.wall = Math.max(o.chambers ? 8 : o.landings ? 5 : 1, o.wall | 0);
     o.shaft = Math.max(5, o.shaft | 0 | 1);             // odd, at least 5
     o.length = Math.min(o.shaft - 2, Math.max(1, o.length | 0 | 1)); // odd and leaving open corners
     o.balconies = Math.max(1, Math.min(3, o.balconies | 0));
@@ -86,12 +90,25 @@
       const level = o.spacing * (k + 1), geo = sideGeometry(side, o, cols, rows);
       for (const cell of geo.buttress) grid.fillBox(cell.c, cell.r, 0, cell.c, cell.r, level - 1, KIND.SOLID);
       for (const cell of geo.front) grid.paintClimbFaces(cell.c, cell.r, 0, cell.c, cell.r, level - 1, OPPOSITE_DIR[side], o.climbStyle);
-      for (const cell of geo.tunnel) { // door: 1 wide, 2 high, from the wall-adjacent row out
+      const tunnel = o.landings ? geo.tunnel.slice(0,-1) : geo.tunnel; // Keep the outermost wall intact behind a landing.
+      for (const cell of tunnel) { // door: 1 wide, 2 high, from the wall-adjacent row out
         if (geo.buttress.some(b => b.c === cell.c && b.r === cell.r && !b.wallRow)) continue;
         grid.fillBox(cell.c, cell.r, level, cell.c, cell.r, level + 1, KIND.AIR);
       }
+      const destination = tunnel[tunnel.length-1]; // Last walkable cell of the corridor.
+      const chamber = []; // Keep the floor and ceiling solid around the generated room volume.
+      if (o.landings) {
+        const out = OUTWARD[side];
+        const depth = o.chambers ? 2 + Math.floor(random() * 3) : 1;
+        const halfWidth = o.chambers && random() < .5 ? 2 : 1;
+        for (let d=0;d<depth;d++) for (let offset=-halfWidth;offset<=halfWidth;offset++) {
+          const c=destination.c-d*out.c+offset*out.r,r=destination.r-d*out.r+offset*out.c;
+          grid.fillBox(c,r,level,c,r,level+1,KIND.AIR);
+          chamber.push({col:c,row:r});
+        }
+      }
       balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
-      doors.push({ balcony: k, side, level, col: geo.edge.c, row: geo.edge.r, tunnel: geo.tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side] });
+      doors.push({ balcony: k, side, level, col: destination.c, row: destination.r, tunnel: tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side], chamber });
     });
     // ground entrance: same tunnel, level 0
     const eg = sideGeometry(entranceSide, { ...o, depth: 1 }, cols, rows);
@@ -121,7 +138,7 @@
       const bottomLevel = grid.yToLevel(s.y0), topLevel = grid.yToLevel(s.y1);
       if (grid.canStand(front.c, front.r, bottomLevel) && grid.canStand(onTop.c, onTop.r, topLevel)) {
         // every column of the wall rectangle works the same way: it spans u0..u1
-        for (let u = Math.ceil(s.u0 + 0.5 - 1e-9); u <= s.u1 - 0.5 + 1e-9; u += 1) {
+        for (let u = s.u0 + grid.cellSize / 2; u < s.u1; u += grid.cellSize) {
           const wx2 = s.axis === 'x' ? u : s.plane, wz2 = s.axis === 'x' ? s.plane : u;
           const f2 = { c: grid.xToCol(wx2 + n.x * 0.5), r: grid.zToRow(wz2 + n.z * 0.5) }, t2 = { c: grid.xToCol(wx2 - n.x * 0.5), r: grid.zToRow(wz2 - n.z * 0.5) };
           if (grid.canStand(f2.c, f2.r, bottomLevel) && grid.canStand(t2.c, t2.r, topLevel)) climbEdges.push({ from: [f2.c, f2.r, bottomLevel], to: [t2.c, t2.r, topLevel] });
@@ -155,25 +172,69 @@
     }
     for (const d of doors) {
       add(`door${d.balcony}Reachable`, reach.has(d.col, d.row, d.level), 'the door’s outer end is reachable from the entrance');
+      if (d.chamber.length) add(`door${d.balcony}ChamberReachable`, d.chamber.every(cell => reach.has(cell.col,cell.row,d.level)), 'all chamber cells are reachable at balcony height');
       add(`door${d.balcony}Clear`, d.tunnel.every(t => !grid.isSolid(t.col, t.row, d.level) && !grid.isSolid(t.col, t.row, d.level + 1)), 'the tunnel is open 2 cells high from the balcony to the outside');
     }
-    add('doorsOutside', doors.every(d => d.col === 0 || d.row === 0 || d.col === result.cols - 1 || d.row === result.rows - 1), 'every door ends at the edge of the hub, where a corridor can attach');
+    if (o.landings) add('landingsEnclosed', doors.every(d => grid.isSolid(d.col+d.outward.c,d.row+d.outward.r,d.level)), 'each corridor terminates inside the shaft shell');
+    else add('doorsOutside', doors.every(d => d.col === 0 || d.row === 0 || d.col === result.cols - 1 || d.row === result.rows - 1), 'every door ends at the edge of the hub, where a corridor can attach');
     return checks;
   }
 
   // ---------------------------------------------------------------- game glue
-  // deps: { ClimbSurfaces, DynamicSurfaces, DevRandomRuin?, scope }
+  const mounts = new Map(); // Owns mounted geometry, support and climb registrations by scope.
+
+  function buildVisual(result, THREE, climb) {
+    const { grid } = result;
+    const shell = new THREE.Group(); // Owns the shaft shell, bedrock floor and climb markings.
+    shell.name = 'shaft-hub';
+    const exposed = []; // Only surface cells contribute meshes, including the inside of the tunnels.
+    const faces = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    for (let l = 0; l < grid.levels; l++) for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
+      if (grid.isSolid(c,r,l) && faces.some(([dc,dr,dl]) =>
+        !grid.inBounds(c+dc,r+dr,l+dl) || !grid.isSolid(c+dc,r+dr,l+dl))) exposed.push([c,r,l]);
+    }
+    const material = new THREE.MeshBasicMaterial({ color: 0x57534d });
+    const blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(grid.cellSize,grid.cellHeight,grid.cellSize),material,exposed.length);
+    const matrix = new THREE.Matrix4(); // Reused across all exposed solid cells.
+    exposed.forEach(([c,r,l],i) => blocks.setMatrixAt(i,matrix.makeTranslation(
+      grid.colToX(c+.5),grid.levelToY(l+.5),grid.rowToZ(r+.5))));
+    shell.add(blocks);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(grid.cols*grid.cellSize,.1,grid.rows*grid.cellSize),material);
+    floor.position.set(grid.colToX(grid.cols/2),grid.baseY-.05,grid.rowToZ(grid.rows/2));
+    shell.add(floor);
+    if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,surface));
+    return shell;
+  }
+
   function mount(result, deps = {}) {
     const scope = deps.scope || 'shaft-hub', out = { surfaces: 0, floors: 0 };
+    if (!result?.ok) return out;
+    unmount(deps);
+    const runtime = deps.DevRandomRuin?.getRuntimeContext?.(); // Use the current ruin scene when no explicit parent is supplied.
+    const parent = deps.parent || runtime?.scene;
+    const THREE = deps.THREE || globalThis.THREE;
+    const visual = parent && THREE ? buildVisual(result,THREE,deps.ClimbSurfaces) : null;
+    if (visual) parent.add(visual);
     if (deps.ClimbSurfaces) out.surfaces = deps.ClimbSurfaces.registerGrid(result.grid, { scope, idPrefix: scope });
-    if (deps.DynamicSurfaces) out.floors = result.grid.registerWith(deps.DynamicSurfaces, { scope, idPrefix: scope });
-    if (deps.DevRandomRuin && deps.DevRandomRuin.setLevelRelativeSupport) deps.DevRandomRuin.setLevelRelativeSupport(true); // stacked floors: sample support relative to the player
+    if (deps.DynamicSurfaces) out.floors = result.grid.registerWith(deps.DynamicSurfaces, { scope, idPrefix: scope, clearance: 2 });
+    mounts.set(scope,{ deps, visual });
+    deps.DevRandomRuin?.registerShaftGrid?.(scope,result.grid,() => unmount(deps));
     return out;
   }
   function unmount(deps = {}) {
-    const scope = deps.scope || 'shaft-hub';
-    deps.ClimbSurfaces && deps.ClimbSurfaces.clearScope && deps.ClimbSurfaces.clearScope(scope);
-    deps.DynamicSurfaces && deps.DynamicSurfaces.clearScope && deps.DynamicSurfaces.clearScope(scope);
+    const scope = deps.scope || 'shaft-hub', mounted = mounts.get(scope);
+    if (!mounted) return;
+    mounts.delete(scope);
+    mounted.deps.DevRandomRuin?.unregisterShaftGrid?.(scope);
+    mounted.deps.ClimbSurfaces?.clearScope?.(scope);
+    mounted.deps.DynamicSurfaces?.clearScope?.(scope);
+    mounted.visual?.parent?.remove(mounted.visual);
+    const materials = new Set(); // Shared by the wall/floor and individual climb markings.
+    mounted.visual?.traverse(node => {
+      node.geometry?.dispose();
+      if (node.material) materials.add(node.material);
+    });
+    for (const material of materials) material.dispose();
   }
 
   // The abstract room (RuinComposer's input) for one standing level of the hub: the walkable footprint at that level.
