@@ -9,11 +9,15 @@
   };
   function normalize(descriptor) {
     if (!descriptor || typeof descriptor !== 'object') return null;
+    const numeric = value => value == null || value === '' || Number.isFinite(Number(value));
+    if (!numeric(descriptor.distance)) return null;
     const distance = Math.max(0, Math.min(4, finite(descriptor.distance, 0.65)));
     if (descriptor.mode === 'orbit') {
+      if (!numeric(descriptor.angleDeg)) return null;
       return { mode: 'orbit', angleDeg: ((finite(descriptor.angleDeg, 0) % 360) + 360) % 360, distance };
     }
     if (descriptor.mode === 'edge' && ['front', 'back', 'left', 'right'].includes(descriptor.side)) {
+      if (!numeric(descriptor.along)) return null;
       return { mode: 'edge', side: descriptor.side, along: Math.max(0, Math.min(1, finite(descriptor.along, 0.5))), distance };
     }
     return null;
