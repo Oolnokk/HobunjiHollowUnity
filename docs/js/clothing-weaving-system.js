@@ -1296,7 +1296,7 @@
       craft.textContent = isReweave ? `Reweave · ${cost} ${material.label}` : `Craft · ${cost} ${material.label}`;
       craft.disabled = !state.layersReady || owned < cost;
       const behindToggleBtn = overlay.querySelector('[data-act="toggleBehindView"]');
-      const showBehindToggle = await hasBehindView(blueprintId) || !!window.FurHoodLeatherworking?.specialPartsFor?.(reweaveItem?.furHood)?.some(part => part.pos === 'back');
+      const showBehindToggle = await hasBehindView(blueprintId) || !!window.FurHoodLeatherworking?.specialPartsFor?.(reweaveItem?.furHood, playerSpeciesGender().speciesId, playerSpeciesGender().gender)?.some(part => part.pos === 'back');
       if (!loomOverlay || revision !== state.previewRevision || state.blueprintId !== blueprintId) return; // Closed or superseded while awaiting behind-view metadata.
       if (!showBehindToggle) state.previewView = 'front'; // No behind art for this garment — never leave the toggle stuck on.
       behindToggleBtn.style.display = showBehindToggle ? '' : 'none';
@@ -1912,7 +1912,7 @@
     const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
     const resolvedLayers = await resolveIconLayers(baseCosmeticIdValue, resolvedSpeciesId, resolvedGender); // Keeps all authored sprites available so view selection can distinguish an explicit hood rear layer from an ordinary layered garment.
     const iconBaseLayers = iconLayersForView(resolvedLayers, view); // Base garment artwork remains authored by wearer species and view.
-    const furParts = furHood ? (window.FurHoodLeatherworking?.specialPartsFor?.(furHood) || []) : []; // Extra animal trophy sprites are optional, independently authored.
+    const furParts = furHood ? (window.FurHoodLeatherworking?.specialPartsFor?.(furHood, resolvedSpeciesId, resolvedGender) || []) : []; // Extra animal trophy sprites are optional, independently authored.
     const extraLayers = furParts.map(part => ({ ...part, url: normalizeAssetPath(part.url), paletteKey: 'A', slot: 'hood', layerName: part.pos }));
     const layers = []; // Used by this compositor to put the animal front between fur base and trim, and animal back behind the hood in rear preview.
     if (view === 'behind') layers.push(...extraLayers.filter(layer => layer.pos === 'back'));
