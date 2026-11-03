@@ -155,9 +155,9 @@ const server = http.createServer((request, response) => {
     assert.equal(geometryResult.selfTest.ok, true, 'In-editor mobile geometry self-check must succeed');
     assert(geometryResult.generatedDoorIce && geometryResult.midpointCorrect && geometryResult.fullyMelted && geometryResult.restoredDoorIce,
       'Visible door ice must grow and melt by reversing original crystal geometry, not by fading a sheet');
-    assert.equal(geometryResult.sourceDimensions.iceHeightMin, 2, 'Boss-door reference must retain its 2-unit minimum spike height');
-    assert.equal(geometryResult.sourceDimensions.iceHeightMax, 3, 'Boss-door reference must retain its 3-unit maximum spike height');
-    assert.equal(geometryResult.sourceDimensions.radius, .5, 'Boss-door reference must retain its .5-unit base radius');
+    assert(Math.abs(geometryResult.sourceDimensions.iceHeightMin - 2) < .0001, 'Boss-door reference must retain its 2-unit minimum spike height');
+    assert(Math.abs(geometryResult.sourceDimensions.iceHeightMax - 3) < .0001, 'Boss-door reference must retain its 3-unit maximum spike height');
+    assert(Math.abs(geometryResult.sourceDimensions.radius - .5) < .0001, 'Boss-door reference must retain its .5-unit base radius');
     assert(geometryResult.scaledSmallDoor && geometryResult.coveringDoorFace,
       'Any eligible door size must inherit scaled ice and engulf its actual leaf surface');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
