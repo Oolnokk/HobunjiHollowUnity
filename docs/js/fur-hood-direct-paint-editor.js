@@ -17,13 +17,13 @@
     return { x, y, width: Math.min(w, right + gap + 1) - x, height: Math.min(h, bottom + gap + 1) - y };
   }
 
-  window.FurHoodDirectPaintEditor = Object.freeze({ visibleBounds, open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,sourcePattern,authoring,onSave,mountTarget=null,onClose=null}) {
+  window.FurHoodDirectPaintEditor = Object.freeze({ visibleBounds, open: async function openFurHoodDirectPaint({kind,gene,wearerVariant,view,coat,ink,paletteOverride=null,sourcePattern,authoring,onSave,mountTarget=null,onClose=null}) {
   const api=window.ClothingWeavingSystem;
   if (!api?.garmentPaintToMotif || !api?.renderClothingLayers) throw Error('Updated garment motif compositor is missing.');
   if (!kind || !gene) throw Error('Choose an animal and genotype gene first.');
   const split=wearerVariant.lastIndexOf('_');
   const speciesId=wearerVariant.slice(0,split), gender=wearerVariant.slice(split+1); // Reuses the selected hood-fit sprite's exact species/gender.
-  const furHood={kind,genotype:{base:{color:coat},[gene]:{color:ink,enabled:true,copies:2}},baseColor:coat,appearance:{patterns:[{id:gene,color:ink,enabled:true}]}}; // Editor sample, never persisted as a hide.
+  const furHood={kind,genotype:{base:{color:coat},[gene]:{color:ink,enabled:true,copies:2}},baseColor:coat,appearance:{patterns:[{id:gene,color:ink,enabled:true}]},authoringPalette:paletteOverride}; // Dev-only sample with prospective tint routing.
   const args={furHood,primaryHex:coat,secondaryHex:coat,speciesId,gender,view,furHoodMarkingsOverride:[]}; // Production preview and editable pixel eligibility share one exact hood.
   const [baseResult,maskResult]=await Promise.all([api.renderClothingLayers('fur_hood',args),api.renderClothingLayers('fur_hood',{...args,furPaintMaskOnly:true})]);
   if(!baseResult?.canvas||!maskResult?.canvas) throw Error('Hood base or fur-substrate mask did not resolve.');
