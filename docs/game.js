@@ -3987,6 +3987,58 @@
         }
       }
 
+      function placeTableAttachedChair(itemKey, requested, source = 'bag') {
+        if (currentArea !== 'interior') return { ok: false, message: 'Table-child placement is available inside your house.' };
+        const key = getDecorativeFurnitureKeyByItemKey(itemKey) || itemKey;
+        const def = DECORATIVE_FURNITURE_DEFS[key];
+        if (!def?.sit) return { ok: false, message: 'Choose a chair, stool, or other sitting furniture.' };
+        const table = interiorFurnitureObjects.find(obj =>
+          obj.area === 'interior' && obj.id === requested?.tableId && /table|desk|counter/i.test(obj.key));
+        if (!table) return { ok: false, message: 'Select an existing table.' };
+        const descriptor = window.TableChairPlacement?.normalize?.(requested);
+        if (!descriptor || descriptor.mode !== window.TableChairPlacement.modeForTable(table.key)) {
+          return { ok: false, message: 'Choose orbit placement for round tables or a side for flat tables.' };
+        }
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) {
+          return { ok: false, message: 'You do not have permission or an available chair.' };
+        }
+        // The new chair exists as a mesh first, not a grid occupant: this permits table-child placement in a full room.
+        const result = makeDecorativeFurnitureMesh(table.col, table.row, key, interiorScene, 'interior');
+        if (!result) return { ok: false, message: 'Could not build chair furniture.' };
+        const chair = {
+          id: 'decor_' + Math.random().toString(36).slice(2, 10),
+          key, col: table.col, row: table.row, mesh: result.mesh, light: result.light,
+          sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, tableId: table.id,
+          tableAttachment: descriptor, npcStationId: null,
+        }; // Candidate is persisted only after the complete relative placement passes collision validation.
+        const discard = () => {
+          chair.npcStationId = 'unregistered_' + chair.id; // Cleanup must never remove another chair's legacy tile-based station.
+          disposeDecorativeFurniture(chair, false);
+        };
+        const tableDef = DECORATIVE_FURNITURE_DEFS[table.key];
+        if (!window.TableChairPlacement?.apply?.(chair.mesh, table.mesh, descriptor,
+          { width: tableDef?.fw || 1, depth: tableDef?.fd || 1 })
+          || !canKeepAttachedChairHere(chair, table)) {
+          discard();
+          return { ok: false, message: 'The attached chair would overlap a wall, doorway, or another object.' };
+        }
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          discard();
+          return { ok: false, message: 'Could not consume chair inventory.' };
+        }
+        interiorFurnitureObjects.push(chair);
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        if (chair.light) chair.light.position.set(chair.mesh.position.x,
+          chair.mesh.position.y + (def.light?.height || 0.6), chair.mesh.position.z);
+        window.Music?.unregisterFurnitureSfxSource(chair.sfxSource);
+        chair.sfxSource = window.Music?.registerFurnitureSfxSource(chair.area,
+          chair.mesh.position.x, chair.mesh.position.z, window.Music?.resolveFurnitureSfx(def));
+        window.FurnitureTableSystem?.registerPlacement('interior', chair, chair.mesh, def);
+        window.HudUpdate.refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Chair placed directly at the table without occupying its own grid tile.' };
+      }
+
       function setFurnitureTableAttachment(id, requested) {
         const chair = interiorFurnitureObjects.find(obj => obj.id === id && obj.area === currentArea);
         const def = chair && DECORATIVE_FURNITURE_DEFS[chair.key];
@@ -31227,6 +31279,7 @@
         armFurnitureMove,
         getArmedFurnitureMoveId,
         setTableAttachment: setFurnitureTableAttachment,
+        placeTableAttachedChair,
         getPlacedFurniture: () => [
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),
