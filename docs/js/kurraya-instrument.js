@@ -21,6 +21,7 @@
     deps = injectedDeps;
     installHostedSampleHook();
     installMinimalPerformanceUiHook();
+    window.DynamicSurfaces?.addBeforeRenderClient?.(updateFlute); // The same world render cycle that updates other carried equipment tracks the flute at the mouth.
   }
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
@@ -355,5 +356,87 @@
     group.rotation[axis] = twitchState.base + offset;
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch };
+  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:''}; // Persistent, mobile-readable flute mount state.
+  function ensureFluteMount() {
+    const THREE = deps?.THREE;
+    if (!THREE || !window.SharedAttackPose?.createHeadFrame) return false;
+    if (fluteState.root) return true;
+    const root = new THREE.Group();
+    root.name = 'player_flute_mouth_mount';
+    const frame = window.SharedAttackPose.createHeadFrame(THREE); // Shared blowgun head-attachment scratch, reused every frame.
+    fluteState.root = root;
+    fluteState.frame = frame;
+    const loader = deps.toolTexLoader || new THREE.TextureLoader();
+    loader.load('assets/toolsprites/flute.png', texture => {
+      // The authored PNG has substantial transparent padding; trim it once so the physical tube stays visible at the intended scale.
+      try {
+        const source = texture.image;
+        const canvas = document.createElement('canvas');
+        const originalWidth = source.naturalWidth || source.width;
+        const originalHeight = source.naturalHeight || source.height;
+        canvas.width = originalWidth; canvas.height = originalHeight;
+        const ctx = canvas.getContext('2d',{willReadFrequently:true});
+        ctx.drawImage(source,0,0);
+        const rgba = ctx.getImageData(0,0,originalWidth,originalHeight).data;
+        let left = originalWidth, right = -1, top = originalHeight, bottom = -1; // Tight bounds of opaque pixels, used to preserve the PNG's actual proportions.
+        for (let y=0;y<originalHeight;y++) for(let x=0;x<originalWidth;x++){
+          if(rgba[(y*originalWidth+x)*4+3]<16)continue;
+          left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y);
+        }
+        if(right<left)throw new Error('Flute sprite is transparent');
+        const width=right-left+1,height=bottom-top+1; // Opaque aspect controls plane width while a consistent 0.76-world-unit tube length sets visual scale.
+        const trimmed=document.createElement('canvas');
+        trimmed.width=width;trimmed.height=height;
+        trimmed.getContext('2d').drawImage(source,left,top,width,height,0,0,width,height);
+        const map=new THREE.CanvasTexture(trimmed);
+        map.magFilter=THREE.NearestFilter; map.minFilter=THREE.NearestFilter;
+        const worldHeight=.76;
+        const material=new THREE.MeshBasicMaterial({map,transparent:true,alphaTest:.05,side:THREE.DoubleSide});
+        const mesh=new THREE.Mesh(new THREE.PlaneGeometry(worldHeight*width/height,worldHeight),material);
+        mesh.rotation.x=Math.PI/2; // The image's top/open mouthpiece points along the +Z aperture axis used by blowgunReady.
+        mesh.position.z=-worldHeight/2; // Place that aperture at the holder origin; the body extends outward along -Z.
+        mesh.renderOrder=deps.heldObjectRenderOrder;
+        root.add(mesh);
+        fluteState.texture=map;
+        fluteState.loads++;
+        texture.dispose?.();
+      }catch(error){
+        fluteState.failures++;
+        fluteState.lastError=String(error.message||error);
+        window.__farmLog?.('[flute] sprite mount failed: '+fluteState.lastError,'warn');
+      }
+    },undefined,error=>{
+      fluteState.failures++;
+      fluteState.lastError=String(error?.message||'flute sprite load failed');
+      window.__farmLog?.('[flute] '+fluteState.lastError,'warn');
+    });
+    return true;
+  }
+  function beginFlute() {
+    fluteState.active=true;
+    ensureFluteMount();
+    updateFlute();
+  }
+  function endFlute() {
+    fluteState.active=false;
+    if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
+  }
+  function updateFlute() {
+    if(!fluteState.active||!fluteState.root)return;
+    const avatar=window.Combat?.deps?.playerMesh; // Same live skinned player used by SharedAttackPose for blowgun reticle alignment.
+    if(!avatar?.parent||!fluteState.root.children.length)return;
+    if(fluteState.root.parent!==avatar.parent)avatar.parent.add(fluteState.root); // Follows the player between farm/town/ruin scenes without an orphaned prop.
+    const pose=window.HeldActionAnimations?.blowgunReady?.poses?.strike; // Reuse the authored head-relative blowgun AIM, not a fabricated hand animation.
+    if(!pose||!window.SharedAttackPose?.headFrame?.(fluteState.frame,avatar)){
+      fluteState.root.visible=false;
+      return;
+    }
+    window.SharedAttackPose.placeAtMouth(fluteState.root,fluteState.frame,pose,Number(pose.scale)||1,null);
+    fluteState.root.visible=true;
+  }
+  function fluteDiagnostics() {
+    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,error:fluteState.lastError};
+  }
+
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, endFlute, fluteDiagnostics };
 })();
