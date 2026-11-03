@@ -15,6 +15,8 @@
 
   function physicalLeaf(root) {
     if (!root?.traverse) return root;
+    const livePanel = root.userData?.__devRuinTransitDoorState?.panel; // Runtime already tracks the actual moving panel of hallway transit doors.
+    if (livePanel?.isMesh && livePanel.geometry) return livePanel; // Never let a similarly named decorative mesh override that authority.
     let preferred = null; // Choose the actual moving leaf over an outer arch/ornament whenever an author supplies one.
     root.traverse(child => {
       if (preferred || !child.isMesh || !child.geometry || child.userData?.surfaceFoliage) return;
@@ -22,8 +24,6 @@
       if (/(?:^|[_\s-])leaf(?:$|[_\s-])|door[\s_-]*(?:leaf|panel|slab)/.test(id)) preferred = child;
     });
     if (preferred) return preferred;
-    const livePanel = root.userData?.__devRuinTransitDoorState?.panel; // Runtime owns the authoritative retracting panel for hallway transit doors.
-    if (livePanel?.isMesh && livePanel.geometry) return livePanel; // Avoid frosting a stationary decorative frame when panel order differs.
     if (root.userData?.transitDoor || root.userData?.previewMotion?.type === 'stoneDoor') {
       // Match the actual interior runtime's first-render-mesh panel selection; a stone arch is not the movable door leaf.
       return (root.children || []).find(child => child.isMesh && child.geometry && !child.userData?.surfaceFoliage) || root;
