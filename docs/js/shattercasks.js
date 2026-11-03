@@ -1306,7 +1306,11 @@
       }
       c.group.rotation.set(f.t*8,0,f.t*5);
       // There is no heldHandTarget after launch: hands stay on the player.
-      if(ratio>=1){flight=null;detonate(c,'throw-impact');}
+      if(ratio>=1) {
+        flight=null;
+        detonate(c,'throw-impact'); // Custom Burdens resolve their own impact and may remain intact on ordinary ground.
+        if(!c.exploded){c.flying=false;refreshMeshBounds(c);}
+      }
     }
   }
   // Existing tool/item Action 1 and 2 slots are the only carried controls.
@@ -1805,6 +1809,10 @@
   }
   function detonate(cask,cause='weapon') {
     if(!cask||cask.exploded)return false;
+    if(cask.kind!=='soursap'&&cask.kind!=='shattercask') {
+      const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
+      return typeof handler==='function'?handler(cask,cause)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
+    }
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
     cask.exploded=true;
     window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
