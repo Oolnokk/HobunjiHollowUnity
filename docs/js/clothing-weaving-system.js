@@ -1918,7 +1918,7 @@
   // one flat canvas. This is what actually lets a garment's base and trim
   // carry two different colors/motifs instead of one dye and one pattern
   // stamped uniformly across the whole merged silhouette.
-  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null, furHood = null, furHoodMarkingsOverride = null } = {}) {
+  async function renderClothingLayers(baseCosmeticIdValue, { primaryHex = null, secondaryHex = null, patternHex = '#ffffff', weaving = null, view = 'front', speciesId = null, gender = null, trimPatternOverride = undefined, trimDyeSlotOverride = undefined, metalItem = null, furHood = null, furHoodMarkingsOverride = null, furPaintMaskOnly = false } = {}) {
     const playerVariant = playerSpeciesGender();
     const resolvedSpeciesId = speciesId || playerVariant.speciesId; // Pattern Editor passes an explicit species so authored trim can be positioned against every variant.
     const resolvedGender = gender || playerVariant.gender; // Pattern Editor passes an explicit gender alongside the species override.
@@ -1945,6 +1945,7 @@
     const trimColorHex = trimDyeSlot === 'A' ? primaryColorHex : (trimDyeSlot === 'C' ? patternHex : secondaryColorHex); // Fixed trim reuses an existing garment dye; no fourth color channel is introduced.
     const rendered = [];
     for (const { url: frontUrl, behindUrl, role, paletteKey, materialKind, imageLayout } of layers) {
+      if (furPaintMaskOnly && !['base', 'animalFront', 'animalBack'].includes(role)) continue; // Dev paint eligibility excludes the non-patterned trim and any other garment parts.
       // Some layers swap to a dedicated "-back" sprite for the rear view,
       // some are hidden entirely from the back (a hood's front-only face
       // trim), and others just reuse their front sprite — same three
@@ -1957,6 +1958,19 @@
       }
       let img = alignLayerImage(await loadImageUrl(url), imageLayout);
       if (!img) continue;
+      if (furPaintMaskOnly) {
+        const mask = Object.assign(document.createElement('canvas'), { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height }); // Dev-only eligible-pixel surface is taken from untreated sprite pixels, not the potentially dark natural coat tint.
+        const maskCtx = mask.getContext('2d', { willReadFrequently: true });
+        maskCtx.drawImage(img, 0, 0);
+        const pixels = maskCtx.getImageData(0, 0, mask.width, mask.height);
+        for (let i = 0; i < pixels.data.length; i += 4) {
+          const eligible = patternGarmentPixelEligible(pixels.data[i + 3], Math.max(pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]), false);
+          pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = pixels.data[i + 3] = eligible ? 255 : 0;
+        }
+        maskCtx.putImageData(pixels, 0, 0);
+        rendered.push(mask); // Same resolved sprite positioning as the runtime preview; no second head-fit resolver or handmade mask geometry.
+        continue;
+      }
       if (materialKind === 'metal') {
         const metal = window.MetalArmorSystem; // The normal clothing compositor defers only explicitly forged pixels to the metal renderer.
         const state = metalItem ? metal?.portraitStateForItem?.(metalItem) : metal?.defaultPortraitState?.(baseCosmeticIdValue);
@@ -2041,6 +2055,60 @@
     const resolvedGender = gender || playerSpeciesGender().gender;
     return behindLayers.some(({ url, behindUrl }) => behindViewResultFor(url, baseCosmeticIdValue, resolvedGender, behindUrl).changed);
   }
+
+
+  // Garment-space editing compiles into ordinary non-tiling weaving motifs. The
+  // renderer above still owns motif fill, outline, masks, and saved genotype ink.
+  // The fixed source frame/disabled per-cell phase prevents the ink's changing
+  // bounding box from unexpectedly moving a brush stroke after export.
+  function garmentPaintSettings(raw = {}) {
+    const scale = clamp(finite(raw.meshScale, 1), PATTERN_SCALE_MIN, PATTERN_SCALE_MAX); // Controls the standard normalized weaving mesh scale for hood-space authored motifs.
+    return {
+      tiling: false, garmentFixed: true, frameShape: 'square', frameScale: 1, frameX: 0, frameY: 0,
+      motifScale: 1, motifRotationDeg: 0, frameRotationDeg: 0, motifThinPx: 0, invert: false,
+      meshScale: scale, usageScaleMultiplier: 4, renderRasterScale: 1,
+      meshRotationDeg: clamp(finite(raw.meshRotationDeg), -180, 180),
+      usageOffsetX: clamp(finite(raw.usageOffsetX), -4096, 4096),
+      usageOffsetY: clamp(finite(raw.usageOffsetY), -4096, 4096),
+      usageStretchX: clamp(finite(raw.usageStretchX, 1), 0.1, 10),
+      usageStretchY: clamp(finite(raw.usageStretchY, 1), 0.1, 10),
+      usageFlipX: raw.usageFlipX === true,
+      usageFlipY: raw.usageFlipY === true,
+    }; // These are the SAME settings buildPatternMask uses; full source bounds remain stable as paint is added.
+  }
+
+  function garmentPaintProjectionTransform(ctx, settings, width, height, invert) {
+    const p = garmentPaintSettings(settings); // Canonicalized once before forward/inverse canvas projection.
+    const rotation = p.meshRotationDeg * Math.PI / 180;
+    const sx = resolvedPatternMeshScale(p) * p.usageStretchX * (p.usageFlipX ? -1 : 1);
+    const sy = resolvedPatternMeshScale(p) * p.usageStretchY * (p.usageFlipY ? -1 : 1);
+    if (invert) {
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(1 / sx, 1 / sy);
+      ctx.rotate(-rotation);
+      ctx.translate(-width / 2 - p.usageOffsetX, -height / 2 - p.usageOffsetY);
+    } else {
+      ctx.translate(width / 2 + p.usageOffsetX, height / 2 + p.usageOffsetY);
+      ctx.rotate(rotation);
+      ctx.scale(sx, sy);
+      ctx.translate(-width / 2, -height / 2);
+    }
+    return p;
+  }
+
+  function garmentPaintTransformCanvas(sourceCanvas, settings, invert) {
+    if (!sourceCanvas?.width || !sourceCanvas?.height || sourceCanvas.width > 4096 || sourceCanvas.height > 4096) return null;
+    const canvas = Object.assign(document.createElement('canvas'), { width: sourceCanvas.width, height: sourceCanvas.height }); // Source and result retain one fixed hood-space raster size for pixel-accurate export and restoration.
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.save();
+    garmentPaintProjectionTransform(ctx, settings, canvas.width, canvas.height, invert);
+    ctx.drawImage(sourceCanvas, 0, 0);
+    ctx.restore();
+    return canvas;
+  }
+  function garmentPaintToMotif(canvas, settings) { return garmentPaintTransformCanvas(canvas, settings, true); }
+  function garmentMotifToPaint(canvas, settings) { return garmentPaintTransformCanvas(canvas, settings, false); }
 
   function hexRgb(hex) {
     const match = String(hex || '').trim().match(/^#?([0-9a-f]{6})$/i);
@@ -2273,7 +2341,9 @@
     srcCtx.drawImage(motifImg, -naturalW / 2, -naturalH / 2, naturalW, naturalH);
     const srcData = srcCtx.getImageData(0, 0, srcSize, srcSize).data, srcMask = new Uint8Array(srcSize * srcSize);
     for (let p = 0, i = 0; i < srcData.length; i += 4, p++) if (srcData[i + 3] > 16) srcMask[p] = 1;
-    const bbox = findOpaqueBounds(srcMask, srcSize, srcSize); // Frame geometry intentionally stays based on the original authored ink, not the thickness-adjusted ink.
+    const bbox = patternDef?.garmentFixed === true && patternDef?.tiling === false
+      ? { x0: 0, y0: 0, w: srcSize, h: srcSize } // Direct hood painting uses a fixed full-canvas source frame so adding/removing ink cannot recenter the motif.
+      : findOpaqueBounds(srcMask, srcSize, srcSize); // Ordinary patterns retain their authored ink-bound crop geometry.
     const sourceClusterSeparatorMask = patternDef?.invert ? null : buildMotifClusterSeparatorMask(srcMask, srcSize, srcSize); // Inverted patterns treat transparency as ink, so source-ink island separation does not apply.
     const sourceAllowedMask = new Uint8Array(srcMask.length); sourceAllowedMask.fill(1); // Source-space thickening may expand anywhere inside the rotated motif work canvas; the frame clip still decides what finally prints.
     const sourceSignedThickness = (patternDef?.invert ? -1 : 1) * (Number(patternDef?.motifThinPx) || 0); // Inversion flips foreground/background, so reverse the source operation to preserve positive=visibly thinner semantics.
@@ -2725,7 +2795,8 @@
     await window.PixelWorkYield?.maybeYield();
     const sampledMasks = []; // Used below to apply the Celtic-knot-style overpass before any visible black outline is generated.
     const sampledSeparators = [];
-    for (const patternCanvas of patternCanvases) {
+    for (let patternIndex = 0; patternIndex < patternCanvases.length; patternIndex++) {
+      const patternCanvas = patternCanvases[patternIndex]; // Used to preserve ordinary cell stagger while garment-fixed, non-tiling motifs remain stationary across separate fur pieces.
       const paddedMaskData = patternCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data;
       const separatorCanvas = patternCanvas.__motifClusterSeparatorCanvas;
       const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data : null;
@@ -2734,7 +2805,8 @@
       for (let p = 0; p < pixelCount; p++) {
         if (!garmentMask[p]) continue;
         const x = p % width, y = (p / width) | 0;
-        const off = patternCellOffset(cellLabels[p], directMaskPass);
+        const anchored = active[patternIndex]?.pattern?.garmentFixed === true && active[patternIndex]?.pattern?.tiling === false; // One authored image should not shift by five pixels on each disconnected hood region.
+        const off = patternCellOffset(cellLabels[p], directMaskPass || anchored);
         const mx = x + pad - off, my = y + pad - off; // Direct masks sample the exact authored (x,y); only reusable motifs receive per-cell visual variation.
         const mi = (my * maskWidth + mx) * 4;
         if (paddedMaskData[mi + 3] > 16) mask[p] = 1;
@@ -3117,6 +3189,9 @@
     combatActive,
     learnOwnedBlueprints,
     renderClothingLayers,
+    garmentPaintSettings, // Shared canonical non-tiling weaving settings for direct hood paint and future garment-space author tools.
+    garmentPaintToMotif, // Inverts the exact mesh scale/rotation/offsets before a normal motif PNG is exported.
+    garmentMotifToPaint, // Restores a saved full-canvas motif to the direct-paint surface using the same transform.
     applyPatternToTintedImage, // Save-compatible single-pattern wrapper.
     applyPatternStackToTintedImage, // Shared primary+overpass compositor; slot 2 punches an authored 3×..12×-outline-width invisible clearance through slot 1 before black outlining.
     renderProfileWithWovenPatterns, // Stable adapter used by NpcAvatarPreview when later runtime wrappers replace the initially wrapped global renderer.
