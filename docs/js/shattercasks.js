@@ -1689,6 +1689,7 @@
   }
   function applyBlast(mapId,x,z,options={}) {
     const radius=Math.max(.1,Number(options.radius)||RADIUS);
+    window.WorldEvents?.emit('blast',{scope:String(mapId),x,z,y:Number.isFinite(Number(options.y))?Number(options.y):undefined,radius,tag:options.tag||'blunt',sourceId:options.sourceId||null}); // Every explosion passes here, so subscribers (cracked props, mechanisms) see them all.
     const blastDamage=Math.max(0,Number(options.damage??DAMAGE)||0);
     const minimumDamage=Math.max(0,Number(options.minimumDamage??8)||0);
     const knockback=Math.max(0,Number(options.knockbackPxS??220)||0);
@@ -1859,6 +1860,7 @@
       if(delta>(collider.halfConeRad||.5)+.10)continue;
       const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
       if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      window.WorldEvents?.emit('struck',{scope:vase.mapId,targetId:vase.id,targetKind:'burden',burdenKind:vase.kind,source:'melee',attackerId:opts.actor?.id||null,x:cx,y:centerY,z:cz});
       detonate(vase,'melee');break;
     }
   }
@@ -2120,6 +2122,38 @@
   // dispatcher, while ControllerSelectionUI suppresses the entire held
   // selector gesture. A separate frame subscriber here would race that
   // dispatcher and accidentally recall equipment after pickup.
+  // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
+  // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
+  // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
+  const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb']);
+  const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
+  function targetableFor(burden) {
+    let entry=targetableEntries.get(burden);
+    if(entry)return entry;
+    entry={
+      id:burden.id,scope:burden.mapId,owner:burden,_actor:null,
+      position:()=>({x:burden.col+.5,z:burden.row+.5}),
+      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
+      hitbox:()=>{
+        const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
+        if(!box||!targetableCenter)return null;
+        box.getCenter(targetableCenter);
+        return {box,center:targetableCenter};
+      },
+      toActor(){return this._actor||(this._actor=window.Targetables.makeActor(this));},
+    };
+    targetableEntries.set(burden,entry);
+    return entry;
+  }
+  window.Targetables?.addSource?.('shattercasks',scope=>{
+    const out=[];
+    for(const burden of records.get(String(scope))?.vases?.values()||[]){
+      if(!burden||burden.exploded||burden.carried||!burden.group?.parent)continue; // Exploded or held burdens are not targets.
+      out.push(targetableFor(burden));
+    }
+    return out;
+  });
+
   window.Shattercasks=Object.freeze({
     init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,

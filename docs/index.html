@@ -366,7 +366,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261102dungeonfire1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261103h5734f57"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -866,8 +866,12 @@
   <script src="js/cave-site-system.js?v=20261029hguild2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
-  <script src="js/shattercasks.js?v=20261102witchBombKeyStatue1"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261102witchBomb2"></script>
+  <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
+       dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
+  <script src="js/world-events.js?v=1"></script>
+  <script src="js/targetables.js?v=1"></script>
+  <script src="js/shattercasks.js?v=20261103h713a0b2"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261103h2d90617"></script>
   <script src="js/key-statues.js?v=20261102keyStatues1"></script>
   <script src="js/dungeon-fire.js?v=20261102dungeonfire4"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
@@ -2885,7 +2889,8 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261102-animalhides2"></script>
+  <script src="js/lunge-targeting.js?v=1"></script>
+  <script src="game.js?v=20261103ha27397d"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

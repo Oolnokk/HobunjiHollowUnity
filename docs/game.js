@@ -10008,19 +10008,9 @@
       // True if any live hostile in the current area is already inside the
       // given hit cone from the player's current position/facing — used to
       // cut a combat lunge short (see beginCombatLunge/updateMovement).
-      function isHostileInLungeCone(hitTest) {
-        if (!hitTest) return false;
-        for (const c of hostileObjects) {
-          if (c.health <= 0 || c.areaId !== currentArea || c._denHidden) continue;
-          if (window.Combat?.meleeHit?.(player, c, {
-            rangePx: hitTest.rangePx,
-            halfConeRad: hitTest.halfConeRad,
-            yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
-            pitch: player.lungeAimPitch || 0,
-          })) return true;
-        }
-        return false;
-      }
+      // The lunge-stop target test (hostiles plus any Targetable with the 'lungeStop'
+      // capability) now lives in js/lunge-targeting.js.
+      function isHostileInLungeCone(hitTest) { return window.LungeTargeting.hasTargetInCone(hitTest); }
 
       // ── World travel: transition spots + shared NPC routes (map editor data) ─
       // Authored in docs/tools/map-editor and carried in hobunji_farm_layout_v3
@@ -31446,6 +31436,8 @@
         getActiveCols: window.GridTileAccessors.getActiveCols,
         getActiveRows: window.GridTileAccessors.getActiveRows,
       });
+
+      window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
 
       window.ClimbSystem?.init({
         _isZoneArea,
