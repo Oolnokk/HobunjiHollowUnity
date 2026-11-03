@@ -912,6 +912,7 @@
     }
     const dyes = ownedGlobalDyes();
     if (!dyes.length) {
+      if (!reweaveUid && window.FurHoodLeatherworking?.openLoom) return window.FurHoodLeatherworking.openLoom(equipmentDeps, { advanced }); // Natural hides need no dyes or prior dye unlocks.
       equipmentDeps?.showToast?.('No unlocked dyes are available.', false);
       return false;
     }
