@@ -123,6 +123,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
       <button data-left-tab="placement">Placement</button>
       <button data-left-tab="effects">Effects</button>
       <button data-left-tab="foliage">Foliage</button>
+      <button data-left-tab="ice">Ice Stalagmites</button>
       <button data-left-tab="repo">Repo</button>
       <button data-left-tab="avatar">Avatar</button>
       <button data-left-tab="base">Tile Base</button>
@@ -130,6 +131,7 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
     </div>
 
     <div id="tab-foliage" class="hidden"></div>
+    <div id="tab-ice" class="hidden"></div>
     <div id="tab-parts">
       <div class="section">
         <h2>Add pre-made piece</h2>
@@ -626,10 +628,11 @@ window.HOBUNJI_PNG_PLANE_AVATAR_FALLBACK = {
 <script src="../../config/hand-model-profiles.js" onerror="window.__hobunjiThreeLoadError.push('hand-model-profiles failed to load')"></script>
 <script src="../../js/leg-bones.js?v=20261013hb53d07e" onerror="window.__hobunjiThreeLoadError.push('leg-bones failed to load')"></script>
 <script>window.__hobunjiFurnitureConfigBase = "../../config/furniture-authored/"; window.__hobunjiFurnitureAssetBase = "../../assets/";</script>
-<script src="../../js/foliage-generator.js?v=20261031h87aa596"></script>
+<script src="../../js/ice-stalagmite-coverage.js?v=20261103ice2"></script>
+<script src="../../js/foliage-generator.js?v=20261103ice1"></script>
 <script src="../../config/natural-surface-materials.js?v=20261027h1fb8ced"></script>
 <script src="../../js/natural-surface-materials.js?v=20261027h1fb8ced"></script>
-<script src="../../js/authored-furniture-runtime.js?v=20261030hbbf6776"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261103ice2"></script>
 <script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
 <script src="../../js/procedural-furniture.js?v=20261030h4437e5e" onerror="window.__hobunjiThreeLoadError.push('procedural-furniture failed to load')"></script>
 <script src="../../js/runtime-frame-scheduler.js?v=organic-surfaces-1"></script>
@@ -1200,6 +1203,17 @@ function rebuildFurnitureMeshes() {
   }
   if(state.lastSelectedSurfaceId&&!surfaceGroups.has(state.lastSelectedSurfaceId))state.lastSelectedSurfaceId=remapSurfaceId(state.lastSelectedSurfaceId);
   state.particleEmitters=(state.particleEmitters||[]).map(normalizeEmitter);state.processingWarps=(state.processingWarps||[]).map(normalizeWarp).filter(warp=>warp.partIds.length);state.processTimelines=(state.processTimelines||[]).map(normalizeProcessTimeline);if(!selectedProcessTimelineId||!state.processTimelines.some(item=>item.id===selectedProcessTimelineId))selectedProcessTimelineId=state.processTimelines[0]?.id||null;rebuildItemPreviews();normalizeSeatedAvatarRecords();rebuildSeatGrid();rebuildSeatedAvatars();if(state.selectedType==='partGroup'){state.selectedPartIds=activePartIds();if(state.selectedPartIds.length<2){state.selectedType=state.selectedPartIds.length?'part':null;state.selectedId=state.selectedPartIds[0]||null;}else syncPartGroupTransformProxy();}if(selectedPart()?.kind==='liquidSurface')syncLiquidTransformProxy(selectedPart());updateLists();updateStats();refreshSelectionUI();refreshSurfaceHighlights();
+  for (const part of state.parts) if (part.kind === 'glb') {
+    const driver = meshes.get(part.id); // The procedural GLB wrapper is only a tiny invisible driver while the mesh downloads.
+    if (!driver) continue;
+    const previousReady = driver.userData.onRockSourceReady; // Preserve existing rock-contact and source-ready handling.
+    driver.userData.onRockSourceReady = () => {
+      previousReady?.();
+      if (driver.parent !== root || !state.surfaceGrowth.some(recipe => recipe.kind === 'iceStalagmites')) return; // Covers ice added while an imported GLB is still loading.
+      const report = rebuildSurfaceFoliage(); // Re-sample visible child geometry for furniture ice after the GLB arrives.
+      log('[Ice Stalagmites] Imported GLB ready. ' + report);
+    };
+  }
   rebuildSurfaceFoliage();
 }
 function scheduleSurfaceRebuild() { if(surfaceRebuildFrame)cancelAnimationFrame(surfaceRebuildFrame);surfaceRebuildFrame=requestAnimationFrame(()=>{surfaceRebuildFrame=0;rebuildFurnitureMeshes();}); }
@@ -2115,15 +2129,16 @@ function selectedPartGroup() { return state.selectedType==='partGroup'?selectedP
 function selectedPlacement() { return state.selectedType==='placement'?placementRecord():null; }
 function selectedSeatAnchor() { return state.selectedType==='seatAnchor'?(state.seatAnchors||[]).find(anchor=>anchor.id===state.selectedId):null; }
 function objectForSelection() { if(state.selectedType==='partGroup')return partGroupTransformProxy;if(state.selectedType==='part'){const part=selectedPart();return part?.kind==='liquidSurface'?liquidTransformProxy:meshes.get(state.selectedId);}if(state.selectedType==='placement')return itemPreviewMeshes.get(state.selectedId);if(state.selectedType==='seatAnchor')return selectedSeatAnchor()?seatAnchorTransformProxy:null;if(state.selectedType==='emitter')return selectedEmitter()?emitterTransformProxy:null;return null; }
-function selectionTypeForMode(mode=activeEditorMode) { return (mode==='parts'||mode==='foliage')?'part':mode==='surfaces'?'surface':mode==='placement'?'placement':mode==='avatar'?'seatAnchor':mode==='effects'?'emitter':null; }
+function selectionTypeForMode(mode=activeEditorMode) { return (mode==='parts'||mode==='foliage'||mode==='ice')?'part':mode==='surfaces'?'surface':mode==='placement'?'placement':mode==='avatar'?'seatAnchor':mode==='effects'?'emitter':null; }
 function selectionAllowed(type,force=false) { const allowed=selectionTypeForMode();return !!force||allowed===type||(type==='partGroup'&&allowed==='part'); }
 function clearCurrentSelection() { state.selectedSurfaceIds=[];state.selectedPartIds=[];state.selectedType=null;state.selectedId=null;partGroupTransformBaseline=null;liquidTransformBaseline=null;transform.detach();refreshSelectionUI();updateLists();refreshSurfaceHighlights();refreshPartHighlights();updateEmitterMarkerStyles();rebuildPlacementGrid();renderSeatingUI(); }
 function setEditorMode(mode) {
   if(mode==='effects'&&['part','partGroup'].includes(state.selectedType))state.effectTargetPartIds=activePartIds();
   activeEditorMode=mode;
   document.querySelectorAll('[data-left-tab]').forEach(button=>button.classList.toggle('active',button.dataset.leftTab===mode));
-  ['parts','presets','surfaces','placement','effects','foliage','repo','avatar','base','io'].forEach(tab=>$('tab-'+tab).classList.toggle('hidden',tab!==mode));
+  ['parts','presets','surfaces','placement','effects','foliage','ice','repo','avatar','base','io'].forEach(tab=>$('tab-'+tab).classList.toggle('hidden',tab!==mode));
   emitterMarkerRoot.visible=mode==='effects';stompAttachMarkerRoot.visible=mode==='effects';
+  if(mode==='ice')window.IceStalagmiteAuthoring?.refresh?.(); // Reflect imported/saved layers when the dedicated ice tab opens.
   const allowed=selectionTypeForMode(mode);
   if(state.selectedType&&state.selectedType!==allowed&&!(state.selectedType==='partGroup'&&allowed==='part')&&!(['warp','stompAttach'].includes(state.selectedType)&&mode==='effects'))clearCurrentSelection();
   else{transform.detach();if(state.selectedType==='partGroup')syncPartGroupTransformProxy();if(selectedPart()?.kind==='liquidSurface')syncLiquidTransformProxy(selectedPart());if(selectedEmitter())syncEmitterTransformProxy(selectedEmitter());const object=objectForSelection();if(allowed==='seatAnchor'){transform.setSpace?.('local');if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');if(selectedSeatAnchor())syncSeatAnchorTransformProxy(selectedSeatAnchor());}else if(allowed==='emitter'){transform.setSpace?.('local');if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');}else transform.setSpace?.('world');configureTransformAxesForSelection();if(object&&allowed!=='surface')transform.attach(object);refreshSelectionUI();updateLists();refreshSurfaceHighlights();rebuildPlacementGrid();}
@@ -2302,7 +2317,7 @@ function setupEvents(){
 function resize(){const rect=canvas.getBoundingClientRect(),width=Math.max(1,rect.width),height=Math.max(1,rect.height);camera.aspect=width/height;camera.updateProjectionMatrix();renderer.setSize(width,height,false);if(activeStandingComparisonRecord()){const comparisonRect=comparisonCanvas.getBoundingClientRect(),comparisonWidth=Math.max(1,comparisonRect.width),comparisonHeight=Math.max(1,comparisonRect.height);comparisonCamera.aspect=comparisonWidth/comparisonHeight;comparisonCamera.updateProjectionMatrix();comparisonRenderer.setSize(comparisonWidth,comparisonHeight,false);frameStandingComparison();}renderPosteriorAdjustmentCanvas();}
 function animate(){requestAnimationFrame(animate);const now=performance.now()/1000;orbit?.update();updateProcessTimelines(now);applyProcessingWarps(now);updateStompAttachVisuals(now);updateParticleEffects(now);updateAllSeatedLegRigs();updateCameraRelativePlacements();renderer.render(scene,camera);if(activeStandingComparisonRecord()&&comparisonStandingState){updateLinkedComparisonCamera();comparisonRenderer.render(comparisonScene,comparisonCamera);updateStandingComparisonLabels();}}
 
-SurfaceFoliageAuthoring.mount($('tab-foliage'),{targets:[['all','All furniture pieces'],['selected','Selected pieces']],read:()=>state.surfaceGrowth,selectedIds:()=>activePartIds(),write:recipes=>{state.surfaceGrowth=recipes;const report=rebuildSurfaceFoliage();queueUndoHistory('surface foliage');log('Latest change: surface roots/vines regenerated. '+report);return report;},log});
+SurfaceFoliageAuthoring.mount($('tab-foliage'),{targets:[['all','All furniture pieces'],['selected','Selected pieces']],read:()=>state.surfaceGrowth.filter(recipe=>recipe.kind!=='iceStalagmites'),selectedIds:()=>activePartIds(),write:recipes=>{const iceLayers=state.surfaceGrowth.filter(recipe=>recipe.kind==='iceStalagmites');if(recipes.length+iceLayers.length>32)throw new Error('Maximum 32 combined roots, vines, and ice layers. Remove a layer first.');state.surfaceGrowth=[...recipes,...iceLayers];const report=rebuildSurfaceFoliage();queueUndoHistory('surface foliage');log('Latest change: surface roots/vines regenerated. '+report);return report;},log});
 furnitureDatabase=normalizeFurnitureDatabase(makeDefaultFurnitureDatabase());setupEvents();syncFurnitureDatabaseUI();syncControlsFromState();presetTable();syncMaoaoAvatarConfigFromRuntime();renderSeatingUI();rebuildSeatGrid();rebuildSeatedAvatars();updateAvatarModeDiagnostics(true);refreshRepoFurnitureCatalog();loadRepoItemDatabase();frameFurniture();resize();animate();resetUndoBaseline();log(`Ready. Latest change: festival structures and serving furniture import with their house PNG materials; viewport framing fits narrow screens. Review fixes preserve arch span during map edits and release removed festival visuals. V58 keeps the adjustedchair2.json chair/stool calibration, preserves full bench width, uses editable per-anchor seat-normal offsets with the adjusted-chair-derived 0.01 default, and shortens seat backrests to about 1.10 times seat depth. Seated thighs remain flush to the averaged seat plane. Each calf now stays perfectly straight while its knee projects over the actual seat face, then drops exactly 90 degrees only after the knee clears the edge.`);
 
 
@@ -2317,6 +2332,7 @@ furnitureDatabase=normalizeFurnitureDatabase(makeDefaultFurnitureDatabase());set
 <script src="../../js/climb-wall-tiles.js?v=1"></script>
 <script src="climb-wall-properties.js?v=1"></script>
 <script src="foliage-furniture-mode.js?v=20261103he655c5a"></script>
+<script src="ice-stalagmites.js?v=20261103ice1"></script>
 <script src="carryable-objects.js?v=20261020shatterhitbox1"></script>
 </body>
 </html>
