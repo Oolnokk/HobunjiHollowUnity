@@ -162,6 +162,73 @@ const server = http.createServer((request, response) => {
       'Any eligible door size must inherit scaled ice and engulf its actual leaf surface');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
+    await page.evaluate(() => {
+      window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
+      window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.
+      window.DungeonFire = {
+        registerTarget: record => { window.__iceFireTargets.set(record.id, record); return record.id; },
+        unregisterTarget: id => { window.__iceFireTargets.delete(id); },
+        debugSnapshot: () => ({ armed: false }), clear: () => window.__iceFireTargets.clear()
+      };
+      window.DevRandomRuinTileOccupancy = {
+        blocksAt: () => false, addSolidBox: (id, box, enabled) => window.__iceSolids.set(id, {box, enabled}),
+        clearSolids: () => window.__iceSolids.clear(), refresh: () => {}
+      };
+      window.NearbyVolumeCollision = { invalidate: () => {} };
+      window.DevRandomRuinSimplePuzzles = {
+        registerComposer: composer => { window.__iceComposer = composer; return true; }
+      }; // Registers production buildRooms/update/clear without any dummy scene implementation.
+    });
+    await page.addScriptTag({ url: '/docs/js/dev-random-ruin-dungeon-fire.js' });
+    const dungeonResult = await page.evaluate(() => {
+      const T = THREE, composer = window.__iceComposer; // Actual Three materials, collider and fire-trigger lifecycle.
+      const scene = new T.Group(), contextRoot = new T.Group(), owner = new T.Group();
+      const stoneDoor = new T.Group(); // Existing generator stone-door mechanism rather than a dummy sheet.
+      stoneDoor.userData.previewMotion = {type:'stoneDoor'};
+      const stoneLeaf = new T.Mesh(new T.BoxGeometry(3.16, 3.1, .26), new T.MeshStandardMaterial());
+      stoneLeaf.name = 'Door Leaf'; stoneLeaf.position.set(2, 1.55, 2); stoneDoor.add(stoneLeaf);
+      contextRoot.add(stoneDoor);
+      const transit = new T.Group(); // A second eligible door type demonstrates generic coverage discovery.
+      transit.userData.transitDoor = true;
+      const transitLeaf = new T.Mesh(new T.BoxGeometry(1.8, 1.9, .2), new T.MeshStandardMaterial());
+      transitLeaf.position.set(6, .95, 2); transit.add(transitLeaf); contextRoot.add(transit);
+      const modularDoor = new T.Mesh(new T.BoxGeometry(2, 1.9, .18), new T.MeshStandardMaterial());
+      modularDoor.userData.devRandomRuinModularDoor = true; modularDoor.position.set(4, .95, 2);
+      owner.add(modularDoor); // Modular doors are built by a different composer after dungeon fire buildRooms.
+      scene.add(contextRoot);scene.add(owner);
+      const rooms=[{id:'a',col:0,row:0,w:4,h:4},{id:'b',col:4,row:0,w:4,h:4}]; // Enough ground for source braziers and hanging Burdens.
+      const floorSet=new Set();for(let x=0;x<8;x++)for(let z=0;z<4;z++)floorSet.add(x+','+z);
+      const context={scene,root:contextRoot,theme:'tothal',seed:123,meta:{rooms,floorSurfaceY:0,wallHeight:3.3},floorSet,ceilingY:3.4};
+      const kit={state:{group:owner,lockDoors:[{panel:modularDoor,progress:0}]},group:()=>owner,
+        sampleSupport:()=>({y:0}),roomBounds:(_meta,room)=>({minX:room.col,maxX:room.col+room.w,minZ:room.row,maxZ:room.row+room.h})};
+      composer.buildRooms(kit,context);
+      composer.update(kit,0,.016); // Discover real doors once subsequent composers have finished.
+      const frozen = window.DevRandomRuinDungeonFire.snapshot().iceWalls;
+      const coverage = []; owner.traverse(child=>{if(child.userData?.dungeonDoorIce)coverage.push(child);});
+      const noVisibleSheet = owner.children.some(child=>child.name==='dev_random_ruin_dungeon_fire') &&
+        coverage.length===2 && !owner.children.some(child=>child.name.startsWith('tothal_dungeon_fire_ice_wall_'));
+      const targets = [...window.__iceFireTargets.values()].filter(value => value.id.startsWith('dungeon-fire-ice-wall-'));
+      const fire = targets[0]?.onBurn?.();
+      const freed = frozen.length === 2 && fire===true && window.__iceSolids.get('dungeon-fire-ice-wall-footprint-0')?.enabled() === false;
+      composer.update(kit,0,.8); // Halfway through the actual 1.6-second melt lerp.
+      const halfway = window.DevRandomRuinDungeonFire.snapshot().iceWalls[0];
+      const halfGrowth = halfway?.phase==='melting' && Math.abs(halfway.growth-.5)<.00001;
+      composer.update(kit,0,.8);
+      const melted = window.DevRandomRuinDungeonFire.snapshot().iceWalls[0];
+      const finished = melted?.phase==='melted' && melted?.growth===0 && !window.__iceFireTargets.has('dungeon-fire-ice-wall-0');
+      composer.clear();
+      const cleanup = window.DevRandomRuinDungeonFire.snapshot().active===false && window.__iceSolids.size===0;
+      return {frozen, noVisibleSheet, freed, halfGrowth, finished, cleanup};
+    });
+    assert.equal(dungeonResult.frozen.length, 2, 'Tothal should frost two real door objects, not arbitrary empty passageways');
+    assert(dungeonResult.frozen.some(wall=>wall.doorType==='stoneDoor') &&
+      dungeonResult.frozen.some(wall=>wall.doorType==='modularDoor'),
+      'Real generated and late-built modular door types must be eligible in the same room');
+    assert(dungeonResult.noVisibleSheet && dungeonResult.freed,
+      'Invisible projectile and tile blockers must coexist with visible procedural ice, then unlock on fire');
+    assert(dungeonResult.halfGrowth && dungeonResult.finished && dungeonResult.cleanup,
+      'Dungeon Fire must reverse ice growth continuously, unregister hits, and clear its owned meshes');
+
     await page.addScriptTag({ url: '/docs/tools/furniture-avatar-author/ice-stalagmites.js' });
     const uiResult = await page.evaluate(() => {
       const target = document.getElementById('ice-target'); // Controls are the real separate tab, not test-only copies.
