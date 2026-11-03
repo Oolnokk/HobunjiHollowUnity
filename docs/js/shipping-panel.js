@@ -285,7 +285,9 @@
       const price = Number(getShipPrice(key));
       const def = deps.ITEM_DEFS[key];
       if (count < 1 || !Number.isFinite(price) || price < 0 || !def) return [];
-      return [{ key, count, price: saleValue(price), icon: deps.itemIconForKey?.(key) || def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
+      const hideQuote = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.quote(key, count, 'pack', price, count) : null; // Shows a real mixed-hide sale total rather than count × one arbitrary price.
+      const lowestHide = hideQuote?.ok ? window.AnimalHides.quote(key, 1, 'pack', price, count) : null;
+      return [{ key, count, price: saleValue(lowestHide?.ok ? lowestHide.total : price), totalPrice: hideQuote?.ok ? saleValue(hideQuote.total) : undefined, icon: deps.itemIconForKey?.(key) || def.icon || fallbackIcon, label: def.label || key, desc: def.desc || '', cat: def.cat || '' }];
     });
   }
 
@@ -299,8 +301,10 @@
     // Sells the player's worst-quality stock first so a stray sale can't
     // quietly liquidate a prize-quality unit, and prices each consumed
     // quality tier separately so star quality is actually worth something.
-    const consumed = window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
-    const earned = saleValue(consumed
+    const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, moved, 'pack', price, available) : null; // Individual rarity prices are already final: do not apply a second star multiplier.
+    if (hideSale && !hideSale.ok) return { moved: 0, earned: 0 };
+    const consumed = hideSale ? null : window.CookingSystem?.consumeQualityByPolicy?.(key, moved, 'lowest');
+    const earned = saleValue(hideSale ? hideSale.total : consumed
       ? consumed.groups.reduce((sum, group) => sum + Math.round(group.amount * price * window.CookingSystem.valueMultiplierForStars(group.stars)), 0)
       : moved * price);
     if (!consumed) {
@@ -329,6 +333,7 @@
       selectedSide: shippingSelected.side,
       selectedKey: shippingSelected.key,
       selectedAmount: shippingAmount,
+      animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
   }
