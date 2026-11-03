@@ -724,8 +724,15 @@
       displayNameOverride:options.displayName||null,
       col:Math.floor(position.x),row:Math.floor(position.z),
       meshColliders:collectMeshColliders(group),meshBounds:THREE.Box3?new THREE.Box3():null,
-      emitters:null,exploded:false,carried:false,hanging:true,flying:false,
+      emitters:null,exploded:false,carried:false,hanging:options.hanging!==false,flying:false,
       impactHandler:typeof options.onImpact==='function'?options.onImpact:null,
+      onPickup:typeof options.onPickup==='function'?options.onPickup:null,
+      onDrop:typeof options.onDrop==='function'?options.onDrop:null,
+      onLost:typeof options.onLost==='function'?options.onLost:null,
+      lostNotified:false,
+      fuseSeconds:Number.isFinite(Number(options.fuseSeconds))?Math.max(.5,Number(options.fuseSeconds)):null,
+      spawnedAtMs:performance.now(),
+      fallGroundY:typeof options.fallGroundY==='function'?options.fallGroundY:null,
       hangingMechanismId:options.mechanismId||null,
     });
     group.userData.shattercaskId=id;
@@ -783,6 +790,12 @@
       displayName:built?.displayName||options.displayName||kind,
       mechanismId:options.mechanismId,
       onImpact:built?.onImpact||options.onImpact,
+      onPickup:built?.onPickup||options.onPickup,
+      onDrop:built?.onDrop||options.onDrop,
+      onLost:built?.onLost||options.onLost,
+      hanging:options.hanging!==false,
+      fuseSeconds:options.fuseSeconds??built?.fuseSeconds,
+      fallGroundY:options.fallGroundY||built?.fallGroundY,
     });
   }
   async function createHangingShattercask(options={}) {
@@ -801,6 +814,7 @@
     for(const fx of burden.emitters||[])fx.dispose?.();
     burden.group.parent?.remove(burden.group);
     lastEvent='discarded ceiling Burden '+burden.id;
+    if(!burden.lostNotified){burden.lostNotified=true;try{burden.onLost?.(burden,'discarded');}catch(error){console.warn('[burden] loss callback failed',error);}}
     return true;
   }
   function releaseBurdenDownward(burdenOrId,cause='dungeon-fire') {
@@ -822,7 +836,8 @@
     burden.col=Math.floor(position.x);burden.row=Math.floor(position.z);
     burden.carried=false;burden.hanging=false;burden.flying=true;burden.hangingMechanismId=null;
     burden.plinthAttached=false;burden.plinthAnchor=null;burden.plinthSurfaceId=null;
-    const groundY=thrownGround(position.x,position.z)+.30; // Matches the authored Shattercask throw-impact centre height, not the floor plane.
+    const resolvedGroundY=burden.fallGroundY?.({x:position.x,z:position.z,mapId:burden.mapId,cause});
+    const groundY=Number.isFinite(Number(resolvedGroundY))?Number(resolvedGroundY):thrownGround(position.x,position.z)+.30; // Special Burdens can fall through void tiles; ordinary ceiling payloads keep the Shattercask landing height.
     downwardFalls.set(burden.id,{burden,velocity:0,cause:String(cause||'dungeon-fire'),groundY});
     refreshMeshBounds(burden);
     lastEvent='ceiling Burden released vertically '+burden.id+' via '+cause;
@@ -1011,6 +1026,7 @@
     held=cask;cask.carried=true;
     alignHeldVase(cask);
     setHeldRearXray(cask);
+    try{cask.onPickup?.(cask);}catch(error){console.warn('[burden] pickup callback failed',error);}
     Object.assign(lastEquipment,switchEquipment());
     lastEvent='picked up '+cask.id;
     prompt(); // Claim Action 1/2 immediately after the Tool Select pickup.
@@ -1081,6 +1097,7 @@
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     refreshMeshBounds(cask);
     cask.carried=false;held=null;
+    try{cask.onDrop?.(cask);}catch(error){console.warn('[burden] drop callback failed',error);}
     prompt(); // Immediately restore nearby normal world interactions.
     deps()?.refreshActionBar?.();
     lastEvent='dropped '+cask.id;
@@ -1666,7 +1683,11 @@
       else window.ZoneRegrowth?.refreshZoneGroundVisuals?.(mapId);
     }
   }
-  function applyBlast(mapId,x,z) {
+  function applyBlast(mapId,x,z,options={}) {
+    const radius=Math.max(.1,Number(options.radius)||RADIUS);
+    const blastDamage=Math.max(0,Number(options.damage??DAMAGE)||0);
+    const minimumDamage=Math.max(0,Number(options.minimumDamage??8)||0);
+    const knockback=Math.max(0,Number(options.knockbackPxS??220)||0);
     const d=deps(),t=tileSize(),players=d?.player,targets=[];
     if(players)targets.push(players);
     for(const actor of d?.hostileObjects||[])targets.push(actor);
@@ -1678,14 +1699,16 @@
       const ax=Number(actor.x)/t, az=Number(actor.y)/t;
       if(!Number.isFinite(ax)||!Number.isFinite(az))continue;
       const dist=Math.hypot(ax-x,az-z);
-      if(dist>RADIUS)continue;
-      const damage=Math.max(8,DAMAGE*(1-.55*dist/RADIUS));
-      const effects={bleedingHealth:.24,bruisedHealth:.18,woundedStamina:.22,shatteredStamina:.20};
-      const opts={tag:'blunt',environmental:true,reason:'Shattercask blast',afflictionBonuses:effects,footingDamageMultiplier:1.5};
-      if(actor===players)d?.damagePlayer?.(damage,x*t,z*t,220,opts);
-      else if(d?.hostileObjects?.has?.(actor))d?.damageCreature?.(actor,damage,x*t,z*t,220,opts);
+      if(dist>radius)continue;
+      const damage=Math.max(minimumDamage,blastDamage*(1-.55*dist/radius));
+      const effects=options.afflictionBonuses||{bleedingHealth:.24,bruisedHealth:.18,woundedStamina:.22,shatteredStamina:.20};
+      const reason=String(options.reason||'Shattercask blast');
+      const opts={tag:options.tag||'blunt',environmental:true,reason,afflictionBonuses:effects,footingDamageMultiplier:Number(options.footingDamageMultiplier??1.5)};
+      if(actor===players)d?.damagePlayer?.(damage,x*t,z*t,knockback,opts);
+      else if(d?.hostileObjects?.has?.(actor))d?.damageCreature?.(actor,damage,x*t,z*t,knockback,opts);
       else window.ResourceSystem?.applyDamage?.(actor,damage,opts);
-      window.ResourceSystem?.spendFooting?.(actor,Math.max(8,24*(1-dist/RADIUS)),'Shattercask blast');
+      if(Number(options.burningHealth)>0)window.ResourceSystem?.addAffliction?.(actor,'burningHealth',Number(options.burningHealth));
+      window.ResourceSystem?.spendFooting?.(actor,Math.max(0,Number(options.footingDamage??24)*(1-dist/radius)),reason);
     }
   }
   function applyFruitBlast(mapId,x,z) {
@@ -2067,7 +2090,10 @@
     init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
-    registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
+    registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
+    getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
+    activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
+    applyBlast,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
