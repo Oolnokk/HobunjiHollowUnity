@@ -532,6 +532,18 @@
     };
   }
 
+  function ensureCharacterStarterFlute(character) {
+    if (!character) return false;
+    const gear = character.gearInventory || (character.gearInventory = makeDefaultGear()); // Authoritative character gear saved with the character, before any game instance starts.
+    if (gear.starterFluteGranted) return false;
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    character.equipmentSlots ||= {};
+    if (!character.equipmentSlots.instrument) character.equipmentSlots.instrument = 'flute'; // Preserve an older player's existing choice.
+    return true;
+  }
+
   function makeClothingItem(catalogItem, colorA, colorB) {
     const usesB = CLOTHING_USES_B.has(catalogItem.id);
     const dyeLabel = usesB && colorB ? (colorA.label + ' & ' + colorB.label) : colorA.label;
@@ -1436,6 +1448,7 @@
     }
     const memberState = ensureWorldMember(world, char.id);
     char.lastPlayed = Date.now();
+    ensureCharacterStarterFlute(char); // Persist the flute before constructing the live player snapshot; no dependency on Gear UI opening.
     saveSaveMeta(_saveMeta);
 
     const playerData = {
