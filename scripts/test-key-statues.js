@@ -117,15 +117,15 @@ assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,f
 runtimeWindow.KeyStatues.tick(.1);runtimeWindow.KeyStatues.tick(.1);
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,1,'the dispenser retries and registers the physical Key Statue');
-assert.equal(registered[0].group.parent,runtimeButton,'the replacement is physically mounted on the moving runtimeButton');
+assert.equal(registered[0].group.parent?.parent,runtimeButton,'the replacement is physically mounted on the moving runtimeButton');
 assert.equal(takenTransitions[0],false,'initially mounted payload leaves the plinth in its OFF/raised state');
 const first=registered[0];
-first.onLost(first,'hazard');
+runtimeWindow.Shattercasks.discardBurden(first);
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,2,'losing the statue spawns exactly one replacement');
 assert.notStrictEqual(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].payload,first.id,
  'the live payload reference changes to the replacement');
-assert.equal(registered[1].group.parent,runtimeButton,'replacement is attached while the runtimeButton animates back up');
+assert.equal(registered[1].group.parent?.parent,runtimeButton,'replacement is attached while the runtimeButton animates back up');
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,'successful replacement releases the respawn lock');
 
 console.log('Key Statue: authored statue/dispenser, inverted button transforms, mounted Burden, pickup channel, automatic loss cleanup and ON→OFF restoration checks passed.');
