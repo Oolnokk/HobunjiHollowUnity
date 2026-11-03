@@ -20,14 +20,15 @@
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
   const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
 
-  function squareToolIcon(source) {
-    const width = source.width; // Source dimensions bound the alpha scan.
-    const height = source.height; // Source dimensions bound the alpha scan.
+  function squareToolIcon(source, options = {}) {
+    const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
+    const width = image.width; // Source dimensions bound the alpha scan.
+    const height = image.height; // Source dimensions bound the alpha scan.
     const canvas = document.createElement('canvas'); // Reads the already loaded sprite without changing held/world art.
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext('2d'); // Used only once for each cached sprite source.
-    context.drawImage(source, 0, 0);
+    context.drawImage(image, 0, 0);
     const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
     let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
     for (let y = 0; y < height; y++) {
@@ -43,6 +44,13 @@
     const output = document.createElement('canvas'); // A small square limits retained thumbnail memory.
     output.width = output.height = 128;
     const outputContext = output.getContext('2d'); // Draws an undistorted crop anchored to the opaque bottom edge.
+    if (options.flute) {
+      const inkWidth = right - left + 1, inkHeight = bottom - top + 1; // Keep the entire slender flute, unlike a bottom-cropped melee-weapon thumbnail.
+      const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
+      const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
+      outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
+      return output.toDataURL('image/png');
+    }
     outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
       0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
     toolIconDebug.lastFrame = { left, top, right, bottom, side };
@@ -50,7 +58,8 @@
   }
 
   function renderToolIcon(parent, def) {
-    const source = deps.metalToolImgSrc?.(def) || def?.sprite; // Metal tools keep their authored finish; the nonmetal flute uses its uploaded sprite.
+    const isFlute = def?.sprite === 'assets/toolsprites/flute.png'; // Routes only this slender, matte-backed PNG through the special full-height icon renderer.
+    const source = isFlute ? def.sprite : (deps.metalToolImgSrc?.(def) || def?.sprite); // Metal tools keep their authored finish.
     const image = document.createElement('img'); // Preserves existing inventory sizing and accessibility.
     image.className = 'ies-sprite'; image.alt = def.label;
     image.crossOrigin = 'anonymous';
@@ -62,7 +71,7 @@
         const loader = new Image(); // Separate loader prevents thumbnail src updates from retriggering the scan.
         loader.crossOrigin = 'anonymous';
         loader.onload = () => {
-          try { const url = squareToolIcon(loader); toolIconDebug.ready++; resolve(url); }
+          try { const url = squareToolIcon(loader,{flute:isFlute}); toolIconDebug.ready++; resolve(url); }
           catch (error) { toolIconDebug.failed++; window.__farmLog?.(`[inventory-icon] ${def.label}: ${error.message}`, 'warn'); resolve(source); }
         };
         loader.onerror = () => { toolIconDebug.failed++; resolve(null); };
