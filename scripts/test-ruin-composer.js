@@ -68,6 +68,17 @@ for (const [name, room] of [['vaultHall', C.rooms.hall()], ['chasmHall', C.rooms
   const pillar = by(r, 'crackedPillar')[0], mount = by(r, 'ropeMount')[0], stand = by(r, 'strikeStand')[0], dispenser = by(r, 'bombDispenser')[0];
   assert.deepEqual(pillar.params.input, { event: 'blast', withinTiles: 2.5, once: true });
   assert(pillar.x > 9.5 + 3.4 - .5, 'the pillar is at the far edge of the gap'); assert.equal(pillar.authored, true, 'the bridge uses the authored pillar');
+  near(pillar.rotY, -Math.PI / 2, 1e-3, 'the upper shaft faces straight across the gap, not diagonally');
+  const authored = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'docs/config/furniture-authored/ruinPillarBridge.json'),'utf8'));
+  const motion = authored.puzzle.motion; // The authored *rendered* shaft must actually reach both banks.
+  const top = motion.parts.part_mvzye4ag_g0i3g.on;
+  const halfSpan = top.sy * Math.abs(Math.sin(top.rx * Math.PI / 180)) / 2;
+  const worldNearEnd = pillar.x - (motion.on.position.z + top.z + halfSpan);
+  const worldFarEnd = pillar.x - (motion.on.position.z + top.z - halfSpan);
+  assert(worldNearEnd <= room.gaps[0].start - .28, 'the collapsed shaft overlaps the near shore by a player radius: ' + worldNearEnd);
+  assert(worldFarEnd >= room.gaps[0].end + .28, 'the collapsed shaft remains anchored on the far shore: ' + worldFarEnd);
+  assert(authored.puzzle.standingSurface?.partId === 'part_mvzye4ag_g0i3g', 'the actual fallen upper shaft is the walking support');
+  assert.equal(authored.puzzle.channel, 'PillarBridge', 'bridge activation is isolated from channel A');
   assert(mount.x < 9.5 && stand.x < 9.5 && dispenser.x < 9.5, 'the tools are on the near side');
   assert(dist(dispenser, mount) < 4, 'the bomb dispenser is near the rope');
   // physics: sweep every lunge strength along the rope's strike line
