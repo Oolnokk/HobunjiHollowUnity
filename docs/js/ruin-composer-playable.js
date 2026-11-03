@@ -105,7 +105,7 @@
     }
     if (options.isCurrent?.()===false) throw new Error('Playable ruin generation was superseded.');
     const scope=String(options.scope||'composed-ruin-wing'); // Private terrain scope; it must be removed on exit/reroll.
-    const owner={ root:null, generated:[], materials:[], placed:[], controls:[], ropes:[], applied:null, disposed:false };
+    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], controls:[], ropes:[], applied:null, disposed:false }; // Explicit IDs permit rollback even if apply() fails halfway through.
     let result=null;
     try {
       extendGrid(rec,origin,room,makeTile);
@@ -119,6 +119,7 @@
         group.rotation.y=record.rotY;
         owner.root.add(group);
         owner.placed.push(group);
+        owner.placementIds.push(record.id);
         if (group.userData?.furniturePuzzle) {
           const puzzleOverride = record.piece==='plinth' ? {channel:'Trial-Plinth-'+record.id,completionChannel:'Trial-Done-'+record.id}
             :record.piece==='bombDispenser'?{channel:'Trial-Bomb-'+record.id}:undefined; // Keeps this room's signals isolated from native V50 mechanisms.
@@ -154,6 +155,7 @@
               return buttons?.[0]?.label || (record.piece==='bombDispenser'?'Release Witch-bomb':'Use '+record.piece);
             },
             onPress:async() => {
+              if (owner.disposed) return {ok:false,message:'This ruin trial is no longer active.'};
               let response;
               if (record.piece==='bombDispenser') {
                 const bomb=await G.HronalWitchBombs?.dispenseFromMechanism?.(group);
@@ -191,7 +193,8 @@
     function dispose() {
       if (owner.disposed) return;
       owner.disposed=true;
-      if (owner.applied) C.dispose(owner.applied,{unplace:(_id,node)=>node?.parent?.remove(node)});
+      if (owner.applied) C.dispose(owner.applied,{unplace:()=>{}});
+      for (const id of owner.placementIds) P.unregisterNode?.(mapId,id); // Releases surface listeners, active statue dispensers and pending motions.
       for (const id of owner.ropes) G.HangingRopes?.removeRope?.(id);
       for (const group of owner.placed) group.parent?.remove(group);
       owner.root?.parent?.remove(owner.root);
