@@ -215,6 +215,20 @@ async function main() {
   fire.updateHeldVisual(1 / 60);
   closeVector(heldEffect.position, heldPlane.localToWorld(new THREE.Vector3(.25, .5, 0)),
     'charged fire follows the transformed source-metal pixel on the modular weapon');
+  const otherRoom = new THREE.Scene(); // Real scene change must not leave fire behind in the old ruin.
+  otherRoom.add(handHolder);
+  assert.equal(fire.updateHeldVisual(1 / 60), true);
+  assert.equal(heldEffect.parent, null, 'the old scene no longer owns the charged particles');
+  const movedFlame = otherRoom.getObjectByName('dungeonFire_chargedHeldWeapon');
+  assert(movedFlame, 'held fire respawns in the room containing the actual rendered weapon');
+  handHolder.visible = false;
+  assert.equal(fire.updateHeldVisual(1 / 60), false, 'hidden hand holder suspends fire');
+  assert.equal(movedFlame.parent, null, 'the hidden weapon does not leave an unowned fire plume');
+  assert.equal(fire.debugSnapshot().armed, true, 'temporary invisibility does not consume the shot');
+  handHolder.visible = true;
+  assert.equal(fire.updateHeldVisual(1 / 60), true);
+  assert(otherRoom.getObjectByName('dungeonFire_chargedHeldWeapon'),
+    'restoring weapon visibility creates a new world-upright plume');
   assert.equal(fire.consumeNextProjectile(), true);
   assert.equal(fire.debugSnapshot().heldFire, false, 'release instantly clears the charged weapon flame');
   assert.equal(heldEffect.parent, null, 'weapon fire does not persist as a ghost after launch');
@@ -224,7 +238,7 @@ async function main() {
   assert.equal(fire.disposeProjectile(arrow.projectile), true);
   assert.equal(fire.debugSnapshot().activeVisuals, 0, 'all projectile-owned visuals are released');
   fire.clear();
-  assert.equal(emittedDisposed, 9, 'all three particle streams on each flame are freed');
+  assert.equal(emittedDisposed, 15, 'particle buffers are disposed for projectiles, room swaps, hiding and firing');
   assert.equal(fire.debugSnapshot().reactiveTargets, 0, 'composer cleanup clears registered fire targets');
 
   console.log('Dungeon Fire real Three.js r128 transforms, plume contact, cutoff and cleanup passed.');
