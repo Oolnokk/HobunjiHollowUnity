@@ -21,7 +21,12 @@
       const id = String(child.userData?.authoredPartId || child.userData?.id || child.name || '').toLowerCase();
       if (/(?:^|[_\s-])leaf(?:$|[_\s-])|door[\s_-]*(?:leaf|panel|slab)/.test(id)) preferred = child;
     });
-    return preferred || root;
+    if (preferred) return preferred;
+    if (root.userData?.transitDoor || root.userData?.previewMotion?.type === 'stoneDoor') {
+      // Match the actual interior runtime's first-render-mesh panel selection; a stone arch is not the movable door leaf.
+      return (root.children || []).find(child => child.isMesh && child.geometry && !child.userData?.surfaceFoliage) || root;
+    }
+    return root;
   }
 
   function doorBounds(door) {
