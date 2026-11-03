@@ -18,7 +18,7 @@
   <script src="js/tap-reliability.js?v=20261010a"></script>
   <!-- Bag stack sizing (99 per box, overflow spills into another box).
        Must load before every module that grants inventory items. -->
-  <script src="js/inventory-stacks.js?v=20261015hd2c5d66"></script>
+  <script src="js/inventory-stacks.js?v=20261102-animalhides1"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
@@ -227,6 +227,7 @@
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/creature-genetics.js?v=20261029h86f0973"></script>
+  <script src="js/animal-hides.js?v=20261102-animalhides1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
   <script src="js/creature-genetics-render.js?v=20261031honey3d1"></script>
@@ -494,7 +495,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20261029supplypersist3"></script>
+  <script src="js/farm-crates.js?v=20261102-animalhides1"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -596,7 +597,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20261028clothstack1"></script>
+  <script src="js/general-store.js?v=20261102-animalhides1"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
@@ -769,7 +770,7 @@
        load before game.js, which calls window.ShippingPanel.init(...)
        during its own setup, and also wires boot-time shipping-tab button
        listeners through window.ShippingPanel.* directly. -->
-  <script src="js/shipping-panel.js?v=20261024hdf26b1d"></script>
+  <script src="js/shipping-panel.js?v=20261102-animalhides1"></script>
   <!-- Settings tab's input-binding rows (window.InputSettingsPanel) — pure
        DOM/state, no other window.* system reads; must load before game.js,
        which calls window.InputSettingsPanel.init(...) and an immediate
@@ -2882,7 +2883,7 @@
   <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
-  <script src="game.js?v=20261102h2aaf127"></script>
+  <script src="game.js?v=20261102-animalhides1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
