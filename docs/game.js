@@ -4236,18 +4236,9 @@
         if (!toRemove.length) return 0;
         const store = _loadWorldStorage();
         toRemove.forEach(obj => {
-          interiorScene.remove(obj.mesh);
-          obj.mesh.traverse && obj.mesh.traverse(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-          });
-          if (obj.light) interiorScene.remove(obj.light);
-          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          disposeDecorativeFurniture(obj, false); // Also detaches surviving chairs, unregisters surface/NPC state and disposes meshes.
           if (itemKey) store[itemKey] = (store[itemKey] || 0) + 1;
-          const idx = interiorFurnitureObjects.indexOf(obj);
-          if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
         });
         _saveWorldStorage(store);
         return toRemove.length;
