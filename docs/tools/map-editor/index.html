@@ -4463,7 +4463,8 @@ function spawnPreviewPlacements(group, merged) {
     mesh.userData.placementRef = ref;
     mesh.userData.placementBase = { x: cx, y: baseY, z: cz };
     group.add(mesh);
-    window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, record, mesh, info); // Instance surface arrangements use the same shared composer as gameplay.
+    const previewRecord = { ...record, key, area: 'preview:' + map.id, mesh }; // Avoid mutating the authoring record when applying parent-relative geometry.
+    window.FurnitureTableSystem?.registerPlacement('preview:'+map.id, previewRecord, mesh, info); // Preview-only area never registers gameplay NPC stations.
     three3d.placementMeshes.set(`${kind}:${record.id}`, mesh);
   };
   for (const record of map.furniture || []) add('furniture', record);
