@@ -1178,6 +1178,14 @@ function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
   return hasPortraitTag(eyes, eyeAccessoryAboveUnderHoodHatTag);
 }
 
+function furHoodProfileLayers(profile) {
+  const descriptors = profile?.bodyColors?.__hobunjiWovenClothing; // Item-specific decoration metadata shared by saved player and NPC portrait builders.
+  const furHood = Array.isArray(descriptors) ? descriptors.find(item => item?.slot === 'hood' && item?.furHood)?.furHood : null;
+  return (window.FurHoodLeatherworking?.specialPartsFor?.(furHood) || []).map(layer => ({
+    ...layer, url: portraitRelPath('./' + layer.url), // Portrait loaders use docs/assets-relative sprite names, unlike the authoring manifest's docs-root paths.
+  }));
+}
+
 function getProfileSpriteXforms(profile) {
   if (!profile) return [];
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
@@ -1235,6 +1243,9 @@ function getProfileSpriteXforms(profile) {
     // Left-side hair and authored hood-back pieces belong behind the skull.
     pushGroupRecords(hairSideL);
     pushGroupRecords(hood, layer => layer.pos === 'back');
+    for (const layer of furHoodProfileLayers(profile).filter(layer => layer.pos === 'back')) {
+      records.push(toRecord('cosmetic', layer, { group: hood?.id || null, pos: 'back' })); // Animal trophy backs are behind the wearer's skull.
+    }
     // Head
     if (headUrl) records.push({ part: 'head', url: headUrl, xform: getPortraitXformPreset('B') });
     // Facial hair and standard eyes after head, before ur-head. Tagged eye accessories
@@ -1252,7 +1263,17 @@ function getProfileSpriteXforms(profile) {
     if (hatIsUnderHood) pushGroupRecords(hat);
     if (eyesLayerAboveUnderHoodHat) pushGroupRecords(eyes);
     pushGroupRecords(mask);
-    pushGroupRecords(hood, layer => layer.pos !== 'back');
+    const hoodFront = resolveOptionLayers(hood, resolvedFighter).filter(layer => layer.pos !== 'back'); // Preserves the specific wearer's cloth fit.
+    const animalFront = furHoodProfileLayers(profile).filter(layer => layer.pos === 'front'); // Only front trophy pieces sit between fur base and trim.
+    let insertedAnimalFront = false;
+    for (const layer of hoodFront) {
+      if (!insertedAnimalFront && layer.paletteColorKey === 'B') {
+        for (const part of animalFront) records.push(toRecord('cosmetic', part, { group: hood?.id || null, pos: 'front' }));
+        insertedAnimalFront = true;
+      }
+      records.push(toRecord('cosmetic', layer, { group: hood?.id || null, pos: 'front' }));
+    }
+    if (!insertedAnimalFront) for (const part of animalFront) records.push(toRecord('cosmetic', part, { group: hood?.id || null, pos: 'front' }));
     pushGroupRecords(pauldron);
     if (!hatIsUnderHood) pushGroupRecords(hat);
   } else {
@@ -1585,13 +1606,24 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     }
     if (hood) {
+      const animalParts = furHoodProfileLayers(profile); // Render-local physical hide parts never alter the reusable fur-hood cosmetic definition.
       const groupLayers = resolveOptionLayers(hood, resolvedFighter); // Split authored back/front hood art so rear cloth cannot cover the face opening.
       const metalState = metalStateForGroup(hood); // Shared material state retained for both halves of the same hood.
       window.MetalArmorSystem?.reportResolvedPortraitGroup?.(hood, metalState, groupLayers.length);
+      let insertedAnimalFront = false; // The animal face sits over hood base but beneath furhood-trim even when base/trim use different source PNGs.
+      const animalFront = animalParts.filter(part => part.pos === 'front');
       for (const layer of groupLayers) {
         const key = layer.paletteColorKey;
         const layerTintSlot = resolveLayerTintSlot(key, hood.tintSlot);
+        if (layer.pos !== 'back' && key === 'B' && !insertedAnimalFront) {
+          for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
+          insertedAnimalFront = true;
+        }
         (layer.pos === 'back' ? hoodBackLayers : hoodLayers).push({ layer, tint: tintFor(layerTintSlot), group: hood, metalState });
+      }
+      if (!insertedAnimalFront) for (const part of animalFront) hoodLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
+      for (const part of animalParts.filter(layer => layer.pos === 'back')) {
+        hoodBackLayers.push({ layer: part, tint: tintFor(hood.tintSlot), group: hood, metalState: null });
       }
     }
     pushToTarget(pauldron, pauldronLayers);
