@@ -42,6 +42,41 @@ function testStarterGrant() {
   assert.match(read('docs/onboarding-core.js'),/equipmentSlots:\s*\{ instrument: 'flute' \}/,'new characters start assigned');
 }
 
+function testFluteSpriteMatte() {
+  const createCanvas=()=>{ // Minimal alpha-preserving 2D canvas verifies the real shared PNG preprocessing instead of merely checking its source text.
+    const canvas={width:0,height:0,data:null};
+    canvas.getContext=()=>({
+      drawImage(...args) {
+        const [image]=args;
+        const sw=image.width,sh=image.height;
+        const [sx,sy,cropW,cropH,dx,dy]=args.length===3 ? [0,0,sw,sh,0,0] : args.slice(1,7);
+        canvas.data=new Uint8ClampedArray(canvas.width*canvas.height*4);
+        for(let y=0;y<cropH;y++)for(let x=0;x<cropW;x++){
+          const target=((dy+y)*canvas.width+dx+x)*4;
+          const source=((sy+y)*sw+sx+x)*4;
+          canvas.data.set(image.data.slice(source,source+4),target);
+        }
+      },
+      getImageData:()=>({data:canvas.data.slice()}),
+      putImageData:image=>{canvas.data=image.data.slice();},
+    });
+    return canvas;
+  };
+  const image={width:10,height:12,data:new Uint8ClampedArray(10*12*4)}; // White perimeter, opaque black rectangle touching the left image edge.
+  for(let y=0;y<12;y++)for(let x=0;x<10;x++){
+    const at=(y*10+x)*4,black=y>=2&&y<=9&&x<8;
+    image.data.set(black?[0,0,0,255]:[255,255,255,255],at);
+  }
+  for(let y=3;y<=8;y++)for(let x=4;x<=5;x++)image.data.set([155,141,72,255],(y*10+x)*4);
+  const win={};
+  vm.runInNewContext(read('docs/js/kurraya-instrument.js'),{window:win,document:{createElement:createCanvas}});
+  const cropped=win.KurrayaInstrument.prepareFluteCanvas(image);
+  assert(cropped.width<image.width && cropped.height<image.height,'flute must crop away opaque black/white margins');
+  assert(cropped.data.some((a,i)=>i%4===3&&a===0),'cropped flute must have actual transparent pixels');
+  assert(cropped.data.some((a,i)=>i%4===0&&a===155),'gold instrument pixels survive the matte flood');
+  assert.equal(cropped.data[3],0,'the upper-left pixel must no longer be the original opaque matte');
+}
+
 async function testMidiFallback() {
   const played=[]; // Captures oscillator frequencies for MIDI-pitch verification.
   class MockAudioContext {
@@ -101,6 +136,7 @@ function testChallengeHandoff() {
 
 (async()=>{
   testStarterGrant();
+  testFluteSpriteMatte();
   await testMidiFallback();
   testChallengeHandoff();
   const ruin=read('docs/js/dev-random-ruin-simple-puzzles.js');
