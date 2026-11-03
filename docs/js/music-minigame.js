@@ -428,6 +428,7 @@
       echoChallenge:proposedEcho ? {id:String(proposedEcho.id),notes:proposedEcho.notes.slice()} : null
     };
     overlayEl.classList.add('open');
+    if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
     switchInstrumentMode('puzzle'); // Puzzle is always the default; switching back never loses Performance mode.
     if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // Shares the authored blowgun mouth-aim pose for every sounded note.
     deps.beginMusicCamera?.(null);
@@ -442,6 +443,7 @@
     playerSession = null;
     window.KurrayaInstrument?.endFlute?.(); // Stops the head-mounted flute without disturbing Kurraya or any other equipped gear.
     overlayEl?.classList.remove('open');
+    if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
     stopPuzzleInputs();
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
