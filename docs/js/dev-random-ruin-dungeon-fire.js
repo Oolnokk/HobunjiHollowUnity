@@ -262,7 +262,9 @@
           :info.transitDoor===true?'transitDoor'
           :info.devRandomRuinModularDoor===true?'modularDoor'
           :info.dungeonFireIceEligible===true?'markedDoor'
-          :/door/i.test(String(info.authoredFurnitureKey||''))&&info.authoredFurnitureData?.parts?'authoredDoor':null;
+          :(/door/i.test(String(info.authoredFurnitureKey||info.ruinFurnitureKey||'')) &&
+            !/seal|glyph|decal|handle|knob|frame|ornament|plaque/i.test(String(info.authoredFurnitureKey||info.ruinFurnitureKey||'')) &&
+            info.authoredFurnitureData?.parts)?'authoredDoor':null; // Sanctum re-labels furniture to ruinFurnitureKey; door seals are ornamental, never independent doors.
         if(!type)return;
         for(let parent=object.parent;parent&&parent!==source;parent=parent.parent)if(seen.has(parent.uuid))return; // A tagged door's inner panel must not receive a duplicate ice layer.
         seen.add(object.uuid);
