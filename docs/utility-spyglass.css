@@ -1,4 +1,4 @@
-/* Spyglass lens and the normal action-arch prompt; no separate HUD or instructional footer. */
+/* Spyglass lens and ordinary action-arch slots: Action 2 toggles, Action 1 holds close-look. */
 #spyglassLens {
   position: fixed;
   inset: 0;
@@ -34,17 +34,27 @@
   box-shadow: inset 0 0 10px rgba(16, 32, 40, .25);
 }
 #actionStack.spyglass-active { visibility: visible !important; }
-#btnAction1.spyglass-action-visible {
+#btnAction1.spyglass-action-visible,
+#btnAction2.spyglass-action-visible {
   visibility: visible !important;
   opacity: 1 !important;
 }
-#btnAction1.spyglass-action-visible > :not(.spyglass-action-icon):not(.spyglass-action-label):not(.arch-meaning-label):not(.arch-input-binding):not(.abt-key) {
+#btnAction1.spyglass-action-inactive {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+#btnAction1.spyglass-action-visible > :not(.spyglass-action-icon):not(.spyglass-action-label):not(.arch-meaning-label):not(.arch-input-binding):not(.abt-key),
+#btnAction2.spyglass-action-visible > :not(.spyglass-action-icon):not(.spyglass-action-label):not(.arch-meaning-label):not(.arch-input-binding):not(.abt-key) {
   visibility: hidden !important;
 }
 #btnAction1 .spyglass-action-icon,
-#btnAction1 .spyglass-action-label {
+#btnAction1 .spyglass-action-label,
+#btnAction2 .spyglass-action-icon,
+#btnAction2 .spyglass-action-label {
   visibility: visible !important;
   pointer-events: none;
 }
-#btnAction1 .spyglass-action-icon { display: block; }
-#btnAction1 .spyglass-action-label { display: none !important; }
+#btnAction1 .spyglass-action-icon,
+#btnAction2 .spyglass-action-icon { display: block; }
+#btnAction1 .spyglass-action-label,
+#btnAction2 .spyglass-action-label { display: none !important; }
