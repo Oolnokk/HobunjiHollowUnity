@@ -1102,7 +1102,7 @@
         const currentLayer = base.layers?.[roleKey] || {}; // Used to retain Advanced Loom pattern stack slot 2 while previewing edits to slot 1.
         const currentStack = normalizePatternStack(currentLayer.patterns?.length ? currentLayer.patterns : currentLayer.pattern);
         const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patternData, patterns: currentStack[1] ? [patternData, currentStack[1]] : [patternData], swapPatternColors: !!swapPatternColors } } };
-        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view, metalItem: hybridCap ? reweaveItem : null }).then(r => r.canvas); // Cap pattern authoring must keep the real alloy/patina/plating on its faceguard.
+        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view, furHood: reweaveItem?.furHood || null, metalItem: hybridCap ? reweaveItem : null }).then(r => r.canvas); // Cap pattern authoring must keep the real alloy/patina/plating on its faceguard.
       };
       const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
       window.PatternAuthoring?.openEditor?.({
@@ -1157,7 +1157,7 @@
       const clothRoles = hybridCap ? window.MetalArmorSystem.blueprintForItem(reweaveItem).clothLayerRoles : null; // Only cap roles are offered in the loom; faceguard remains exclusively smith-treatable.
       state.layers = layers.length ? (clothRoles ? layers.filter(layer => clothRoles.includes(layer.role)) : layers) : [{ url: bp.sprite || null, role: null }];
       if (!state.layers.length) { patternLayersEl.textContent = 'No cloth-cap art is mapped for this appearance.'; return; } // Falls back to a single unlabeled slot so pattern authoring still works even if layer resolution comes up empty.
-      state.trimAvailable = !!authoredTrim || (isReweave && weavingHasOptionalTrim(reweaveItem?.weaving)); // Never silently drop a saved trim if its authored asset is temporarily unavailable.
+      state.trimAvailable = !reweaveItem?.furHood && (!!authoredTrim || (isReweave && weavingHasOptionalTrim(reweaveItem?.weaving))); // Natural fur trim cannot be overlaid with the separate dyed-trim editor. // Never silently drop a saved trim if its authored asset is temporarily unavailable.
       optionalTrimCard.style.display = state.trimAvailable ? '' : 'none';
       trimEnabledInput.checked = state.trimAvailable && !!state.trimEnabled;
       trimDyeSlotSelect.value = normalizeTrimDyeSlot(state.trimDyeSlot);
