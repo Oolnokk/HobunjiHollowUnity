@@ -593,6 +593,27 @@
       if (attachmentControls) list.appendChild(attachmentControls);
     });
 
+    const attached = placed.filter(obj => obj.tableAttachment);
+    if (attached.length) {
+      const debugButton = document.createElement('button');
+      debugButton.className = 'settings-small-btn';
+      debugButton.textContent = 'Show Table Chair Debug';
+      const output = document.createElement('pre');
+      output.hidden = true;
+      output.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;font-size:11px';
+      debugButton.addEventListener('click', () => {
+        output.hidden = !output.hidden;
+        if (!output.hidden) output.textContent = JSON.stringify(attached.map(obj => ({
+          chairId: obj.id, key: obj.key, tableId: obj.tableId,
+          parentExists: placed.some(parent => parent.id === obj.tableId),
+          attachment: obj.tableAttachment, npcStationId: obj.npcStationId,
+          center: { x: obj.mesh?.position.x, z: obj.mesh?.position.z },
+          rotationDegrees: obj.rotYDeg, ownerPieceId: obj.ownerPieceId,
+        })), null, 2);
+      });
+      list.append(debugButton, output); // On-screen diagnostics also work on mobile without a console.
+    }
+
   }
 
   if (typeof document !== 'undefined' && document.addEventListener) {
