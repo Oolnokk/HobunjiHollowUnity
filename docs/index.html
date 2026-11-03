@@ -166,7 +166,7 @@
   <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261031layoutCursor1">
+  <link rel="stylesheet" href="style.css?v=20261103kurrayaPuzzle2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -2232,7 +2232,7 @@
               <div class="settings-name">Editor Hub</div>
               <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
             </div>
-            <a href="tools/index.html" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+            <a href="tools/index.html?v=20261103puzzleReview4" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
           </div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -2677,6 +2677,7 @@
     <iframe id="musicMinigameFrame" title="Lyre performance" allow="autoplay" allowtransparency="true"></iframe>
     <div id="leftMusicControls" aria-label="Left-hand performance controls"></div>
     <div id="rightMusicControls" aria-label="Right-hand performance controls"></div>
+    <button id="musicMinigameModeBtn" type="button" aria-label="Switch to Performance Mode">Performance Mode</button>
     <button id="musicMinigameCloseBtn" type="button" aria-label="Stop playing">✕</button>
   </div>
 
@@ -2774,11 +2775,12 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261031hc1298e8"></script>
+  <script src="js/kurraya-instrument.js?v=20261103puzzleMode2"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/music-minigame.js?v=20261029maskSlots2"></script>
+  <script src="js/kurraya-puzzle.js?v=20261103puzzleReview4"></script>
+  <script src="js/music-minigame.js?v=20261103puzzleReview4"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an

@@ -33,6 +33,7 @@
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
   const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261022npcpatternroots3';
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261103puzzleReview4'; // The default five-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -206,6 +207,7 @@
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
   const closeBtnEl = document.getElementById('musicMinigameCloseBtn');
+  const modeBtnEl = document.getElementById('musicMinigameModeBtn'); // In-world switch between default Puzzle and legacy Performance modes.
   const menuBtnEl = document.getElementById('menuBtn');
 
   // While the overlay is open, the menu button becomes the minigame's own
@@ -246,6 +248,75 @@
   let playerSession = null; // { mode:'lead'|'backup', area, npcId, songId } while the overlay is open, else null.
   const leaderByArea = new Map(); // area -> { type:'player'|'npc', id, songId, startedAt }
   const ambientFrames = new Map(); // npcId -> hidden <iframe>, for each NPC currently the ambient audio source in their area.
+  let unsubscribePuzzleController = null; // Shared music-priority controller subscription, retired when the puzzle closes or changes mode.
+  const puzzleHeldActions = new Set(); // Edge-tracks controller buttons so holding a note cannot produce repeats.
+  let lastPuzzleSong = null; // Kept for in-game diagnostics and future puzzle/ruin mechanisms.
+  function silenceAmbientForPuzzle() {
+    // Puzzle input is strictly monophonic; any nearby NPC backing track must
+    // also go quiet until Performance mode or normal overworld playback resumes.
+    const area = playerSession?.area;
+    if (!area || playerSession?.instrumentMode !== 'puzzle') return;
+    for (const performer of deps?.listInstrumentPerformers?.() || []) {
+      if (performer.area !== area || !ambientFrames.has(performer.npcId)) continue;
+      if (!playerSession.suspendedNpcSong || playerSession.suspendedNpcSong.npcId !== performer.npcId) {
+        playerSession.suspendedNpcSong = {
+          npcId:performer.npcId,
+          songSnapshot:ambientSongSnapshotForNpc(performer.npcId)
+        }; // Reuse the exact procedural song if the player switches to Performance.
+      }
+      stopAmbientForNpc(performer.npcId);
+    }
+  }
+  function puzzleNote(index) {
+    if (playerSession?.instrumentMode !== 'puzzle') return;
+    try { frameEl?.contentWindow?.HobunjiPuzzleInstrument?.playNote(index); } catch (error) {
+      window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
+    }
+  }
+  function puzzleKeyboard(event) {
+    if (playerSession?.instrumentMode !== 'puzzle' || event.repeat) return;
+    if (event.code === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      close(); // Escape exits the five-note instrument instead of opening the game menu.
+      return;
+    }
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')) return;
+    const index = ['KeyA','KeyS','KeyD','KeyF','KeyG'].indexOf(event.code); // Single-note keyboard map, with no modifier/bank combinations.
+    if (index < 0) return;
+    event.preventDefault();
+    event.stopImmediatePropagation(); // Stops A/S/D/F from also moving the player while the instrument is open.
+    puzzleNote(index);
+  }
+  function stopPuzzleInputs() {
+    window.removeEventListener?.('keydown', puzzleKeyboard, true);
+    unsubscribePuzzleController?.();
+    unsubscribePuzzleController = null;
+    puzzleHeldActions.clear();
+  }
+  function startPuzzleInputs() {
+    stopPuzzleInputs();
+    window.addEventListener('keydown',puzzleKeyboard,true);
+    const actions = ['musicNote1','musicNote2','musicNote3','musicNote4','musicBank1']; // Four existing face-note actions plus LT for the fifth note.
+    unsubscribePuzzleController = window.ControllerInput?.subscribe?.('music-puzzle', frame => {
+      if (!playerSession || playerSession.instrumentMode !== 'puzzle') return;
+      const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
+      const defaults = window.InputBindings?.getDefaultBindings?.('controller') || {};
+      const exitCode = Object.prototype.hasOwnProperty.call(bindings,'musicPause') ? bindings.musicPause : defaults.musicPause;
+      const exitDown = Boolean(exitCode && frame.pad && frame.isDown(exitCode,{buttonThreshold:0.55,triggerThreshold:0.3}));
+      if (exitDown) {
+        if (!puzzleHeldActions.has('musicPause')) { close(); return; } // Pause/Start exits the puzzle.
+      } else puzzleHeldActions.delete('musicPause');
+      actions.forEach((action,index) => {
+        const code = Object.prototype.hasOwnProperty.call(bindings,action) ? bindings[action] : defaults[action];
+        const down = Boolean(code && frame.pad && frame.isDown(code,{triggerThreshold:0.3,buttonThreshold:0.55,stickThreshold:0.55}));
+        if (down && !puzzleHeldActions.has(action)) puzzleNote(index);
+        if (down) puzzleHeldActions.add(action);
+        else puzzleHeldActions.delete(action);
+      });
+    },window.ControllerInput.PRIORITY.music) || null;
+  }
 
   function bridgeOf(frame) {
     try { return frame?.contentWindow?.HobunjiMusicControlBridge || null; }
@@ -269,6 +340,11 @@
   // ── Player session (the visible overlay) ────────────────────────────
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
+    if (playerSession.instrumentMode === 'puzzle') {
+      // The puzzle iframe owns its five single-note buttons and audio; never boot the chord/timing bridge here.
+      startPuzzleInputs();
+      return;
+    }
     const bridge = bridgeOf(frameEl);
     if (!bridge) { window.__farmLog?.('music minigame: control bridge missing after load', 'warn'); return; }
     if (playerSession.mode === 'backup') {
@@ -285,31 +361,63 @@
   }
   frameEl?.addEventListener('load', onPlayerFrameLoaded);
 
-  function beginPlayerSession() {
-    if (playerSession || !overlayEl || !frameEl || !deps) return;
-    const instrumentKey = deps.getEquippedInstrument?.(); // Captured for the performance prop and ownership validation.
-    if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.', false); return false; }
-    const area = deps.getCurrentArea();
-    const nearbyPerformer = deps.listInstrumentPerformers().find(p => p.area === area);
-    if (nearbyPerformer) {
-      // Someone's already leading here — capture the live procedural composition before stopping
-      // their standalone ambient iframe. The player's visible iframe then restarts that SAME
-      // generated song as backup accompaniment instead of reverting to the static authored melody.
-      const songSnapshot = ambientSongSnapshotForNpc(nearbyPerformer.npcId);
-      stopAmbientForNpc(nearbyPerformer.npcId);
-      playerSession = { active: true, mode: 'backup', area, npcId: nearbyPerformer.npcId, songId: nearbyPerformer.songId, songSnapshot };
-      deps.showToast?.(`Playing along with ${nearbyPerformer.name}.`, true);
+  function switchInstrumentMode(view) {
+    if (!playerSession || !frameEl) return false;
+    const next = view === 'performance' ? 'performance' : 'puzzle';
+    if (playerSession.instrumentMode === next) return true;
+    teardownEdgeControls();
+    stopPuzzleInputs();
+    const area = playerSession.area;
+    if (next === 'performance') {
+      const performer = deps.listInstrumentPerformers?.().find(person => person.area === area);
+      if (performer) {
+        // Legacy backup/accompaniment stays intact when explicitly entering Performance.
+        const songSnapshot = ambientSongSnapshotForNpc(performer.npcId) ||
+          (playerSession.suspendedNpcSong?.npcId === performer.npcId ? playerSession.suspendedNpcSong.songSnapshot : null);
+        stopAmbientForNpc(performer.npcId);
+        Object.assign(playerSession,{mode:'backup',npcId:performer.npcId,songId:performer.songId,songSnapshot});
+        deps.showToast?.('Playing along with ' + performer.name + '.',true);
+      } else {
+        leaderByArea.set(area,{type:'player',id:'player',startedAt:Date.now()});
+        Object.assign(playerSession,{mode:'lead',npcId:null,songId:null,songSnapshot:null});
+      }
     } else {
-      leaderByArea.set(area, { type: 'player', id: 'player', startedAt: Date.now() });
-      playerSession = { active: true, mode: 'lead', area };
+      if (playerSession.mode === 'backup' && playerSession.npcId) {
+        playerSession.suspendedNpcSong = {npcId:playerSession.npcId,songSnapshot:playerSession.songSnapshot};
+      }
+      if (playerSession.mode === 'lead' && leaderByArea.get(area)?.type === 'player') leaderByArea.delete(area);
+      playerSession.mode = 'puzzle'; // Nearby NPC audio is suspended to keep puzzle notes strictly monophonic.
+      playerSession.npcId = null;
+      playerSession.songSnapshot = null;
     }
-    playerSession.instrumentKey = instrumentKey;
-    playerSession.instrumentItem = { key: instrumentKey }; // Reused by the held-instrument renderer for the whole session.
+    playerSession.instrumentMode = next;
+    if (next === 'puzzle') silenceAmbientForPuzzle();
+    if (overlayEl.dataset) overlayEl.dataset.instrumentMode = next; // Real DOM dataset controls Kurraya's presentation and responsive CSS.
+    if (modeBtnEl) modeBtnEl.textContent = next === 'puzzle' ? 'Performance Mode' : 'Puzzle Mode';
+    modeBtnEl?.setAttribute('aria-label','Switch to ' + (next === 'puzzle' ? 'Performance' : 'Puzzle') + ' Mode');
+    frameEl.title = next === 'puzzle' ? 'Five-note melody puzzle' : 'Instrument performance';
+    frameEl.src = next === 'puzzle' ? PUZZLE_MINIGAME_SRC : MUSIC_MINIGAME_SRC;
+    return true;
+  }
+  modeBtnEl?.addEventListener('click',event => {
+    event.stopPropagation();
+    switchInstrumentMode(playerSession?.instrumentMode === 'puzzle' ? 'performance' : 'puzzle');
+  });
+
+  function beginPlayerSession() {
+    if (playerSession || !overlayEl || !frameEl || !deps) return false;
+    const instrumentKey = deps.getEquippedInstrument?.(); // Carries through both modes for the held Kurraya renderer.
+    if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.',false); return false; }
+    playerSession = {
+      active:true,mode:'puzzle',instrumentMode:'initializing',area:deps.getCurrentArea(),
+      instrumentKey:instrumentKey,instrumentItem:{key:instrumentKey}
+    };
     overlayEl.classList.add('open');
-    frameEl.src = MUSIC_MINIGAME_SRC;
-    deps.beginMusicCamera?.(playerSession.npcId || null);
+    switchInstrumentMode('puzzle'); // Puzzle is always the default; switching back never loses Performance mode.
+    deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
     setHostChromeSuppressed(true);
+    return true;
   }
 
   function close() {
@@ -317,6 +425,8 @@
     const { area, mode } = playerSession;
     playerSession = null;
     overlayEl?.classList.remove('open');
+    if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
+    stopPuzzleInputs();
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
     teardownEdgeControls();
     if (mode === 'lead') {
@@ -341,7 +451,17 @@
   window.addEventListener('message', (event) => {
     if (event.source !== frameEl?.contentWindow) return;
     const data = event.data;
-    if (data?.source === 'hobunji-music-minigame' && data.type === 'exit-requested') close();
+    if (data?.source !== 'hobunji-music-minigame') return;
+    if (data.type === 'exit-requested') close();
+    if (data.type === 'puzzle-song-recognized' && playerSession?.instrumentMode === 'puzzle') {
+      const song = window.KurrayaPuzzle?.normalizeSong?.(data.song) || data.song;
+      if (!song || typeof song.id !== 'string' || !Array.isArray(song.notes)) return;
+      lastPuzzleSong = {id:song.id,title:song.title,scale:data.scale,tonicMidi:data.tonicMidi};
+      const detail = {songId:song.id,title:song.title,notes:song.notes.slice(),scale:data.scale,tonicMidi:data.tonicMidi};
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-song',{detail}));
+      window.HobunjiActivityEvents?.emit?.('kurraya_puzzle_song_recognized',detail);
+      window.__farmLog?.('Kurraya puzzle recognized: ' + song.title,'input');
+    }
   });
 
   // Drives each performer's Kurraya twitch (see js/kurraya-instrument.js via
@@ -385,6 +505,10 @@
   }
 
   function teardownEdgeControls() {
+    window.__hobunjiHostedMusicResizeCleanup?.();
+    window.__hobunjiHostedMusicResizeCleanup = null; // The retired performance picker must not hold a window resize listener.
+    if (typeof clearInterval === 'function') clearInterval(window.__hobunjiModeLabelTimer); // Retire legacy performance HUD polling on puzzle switch/exit.
+    window.__hobunjiModeLabelTimer = null;
     const leftMount = document.getElementById('leftMusicControls');
     const rightMount = document.getElementById('rightMusicControls');
     if (leftMount) leftMount.innerHTML = '';
@@ -586,6 +710,7 @@
       requestAnimationFrame(positionCompactSongPicker);
       setTimeout(positionCompactSongPicker, 120);
       window.addEventListener('resize', positionCompactSongPicker, { passive: true });
+      window.__hobunjiHostedMusicResizeCleanup = () => window.removeEventListener('resize',positionCompactSongPicker);
       renderCompactSongPicker();
     }
 
@@ -1204,6 +1329,7 @@
     if (!deps) return;
     const performers = deps.listInstrumentPerformers();
     const performingIds = new Set(performers.map(p => p.npcId));
+    if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
     // The hidden ambient <iframe> plays through the browser's normal (non-
     // positional) audio output, so it's audible everywhere regardless of
     // which map it's attached to — only ever start/keep one sounding for
@@ -1223,6 +1349,7 @@
 
     for (const performer of performers) {
       if (performer.area !== currentArea) continue; // Not audible from here — don't even start it.
+      if (playerSession?.instrumentMode === 'puzzle' && playerSession.area === performer.area) continue; // Puzzle mode never has an NPC chord or root-pad backing track.
       if (ambientFrames.has(performer.npcId)) continue; // Already sounding.
       if (playerSession?.mode === 'backup' && playerSession.area === performer.area && playerSession.npcId === performer.npcId) continue; // The player's own overlay is standing in as this NPC's audio right now.
       const leader = leaderByArea.get(performer.area);
@@ -1237,6 +1364,8 @@
     beginPlayerSession,
     getEquippedInstrument: () => deps?.getEquippedInstrument?.() || null,
     close,
+    switchInstrumentMode, // Lets other gameplay systems open the legacy performance controls without rewriting the puzzle path.
+    get lastPuzzleSong() { return lastPuzzleSong; },
     tick,
     renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
     renderPatternLoadoutSettings,
@@ -1248,7 +1377,8 @@
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
     diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
-      player:playerSession?{mode:playerSession.mode,npcId:playerSession.npcId||null}:null,
+      player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,npcId:playerSession.npcId||null}:null,
+      lastPuzzleSong:lastPuzzleSong,
       npcPerformances:[...ambientFrames].map(([npcId,frame])=>({npcId,...bridgeOf(frame)?.ambientPerformanceState?.()}))}),
   };
 })();

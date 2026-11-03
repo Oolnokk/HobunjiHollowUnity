@@ -282,8 +282,8 @@ assert.match(
 
 assert.match(
   hostSource,
-  /function beginPlayerSession\(\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(nearbyPerformer\.npcId\)[\s\S]*?playerSession = \{ active: true, mode: 'backup'[\s\S]*?songSnapshot \}/,
-  'joining Foroji in the actual game must carry the captured procedural composition into the backup session state'
+  /function switchInstrumentMode\(view\)[\s\S]*?const songSnapshot = ambientSongSnapshotForNpc\(performer\.npcId\)[\s\S]*?Object\.assign\(playerSession,\{mode:'backup'[\s\S]*?songSnapshot\}\)/,
+  'explicit Performance mode must still carry the NPC\'s procedural composition into the backup session state'
 );
 
 assert.match(musicLab, /HobunjiMusicControlBridge/, 'the standalone tool must use the shared Kurraya bridge');
