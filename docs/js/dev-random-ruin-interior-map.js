@@ -1314,6 +1314,7 @@
     ruin?.composedWing?.dispose?.(); // Removes the composed room's independent scene objects and support registration.
     window.HangingRopes?.clearScope?.(MAP_ID); // Disarm attached bombs and remove hanging rope visuals.
     window.FurniturePuzzleRuntime?.clearMap?.(MAP_ID); // The map ID is reused on reroll: release authored support, inputs and pending animations before scene disposal.
+    for(const burden of window.Shattercasks?.activeBurdenRecords?.(MAP_ID)||[])window.Shattercasks?.discardBurden?.(burden); // The reusable map must never inherit loose bombs or statues from an old scene.
     for(const shaft of ruin?.shaftGrids?.values()||[])shaft.dispose();
     ruin?.rootGrowthAbort?.abort();for(const binding of ruin?.rootGrowthBindings||[])binding.dispose();
     ruin?.stoneAgeAbort?.abort();ruin?.stoneAgeScenery?.cover?.dispose();ruin?.stoneAgeScenery?.dispose(); // Restore native V50 visibility before the hidden generator reclaims its preview roots.
