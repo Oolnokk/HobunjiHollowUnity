@@ -22,6 +22,8 @@
       if (/(?:^|[_\s-])leaf(?:$|[_\s-])|door[\s_-]*(?:leaf|panel|slab)/.test(id)) preferred = child;
     });
     if (preferred) return preferred;
+    const livePanel = root.userData?.__devRuinTransitDoorState?.panel; // Runtime owns the authoritative retracting panel for hallway transit doors.
+    if (livePanel?.isMesh && livePanel.geometry) return livePanel; // Avoid frosting a stationary decorative frame when panel order differs.
     if (root.userData?.transitDoor || root.userData?.previewMotion?.type === 'stoneDoor') {
       // Match the actual interior runtime's first-render-mesh panel selection; a stone arch is not the movable door leaf.
       return (root.children || []).find(child => child.isMesh && child.geometry && !child.userData?.surfaceFoliage) || root;
