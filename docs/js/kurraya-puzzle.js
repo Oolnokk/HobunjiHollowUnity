@@ -141,6 +141,18 @@
     let sampleRootMidi = 60; // Recorded fundamental used by the same pitch-shift formula as the legacy Kurraya sampler.
     let sampleName = 'Bundled Kurraya pluck'; // Visible when the imported Music Lab sample is restored.
     let lastError = ''; // Readable in the tool and puzzle diagnostics when audio cannot start.
+    function configuredGain() {
+      // Music Lab persists the shared Kurraya and master levels in the existing
+      // performance settings. Puzzle uses those two levels, never pad/metronome mix.
+      try {
+        const saved = JSON.parse(storage()?.getItem('musicSystemDemoSettingsV13') || 'null');
+        const masterRaw = Number(saved?.masterVolume);
+        const kurrayaRaw = Number(saved?.kurrayaMixLevel);
+        const master = Number.isFinite(masterRaw) ? Math.max(0,Math.min(1,masterRaw)) : 0.78;
+        const kurraya = Number.isFinite(kurrayaRaw) ? Math.max(0,Math.min(2,kurrayaRaw)) : 1;
+        return Math.min(1,0.7 * master * kurraya);
+      } catch (_) { return 0.7 * 0.78; }
+    }
     async function restoreImportedKurrayaSample() {
       // The performance instrument already stores normalized PCM at this exact IndexedDB key.
       // Reusing it keeps Puzzle Mode faithful to a Music Lab custom-pluck choice.
@@ -199,7 +211,7 @@
       source.buffer = buffer;
       // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
       source.playbackRate.value = Math.pow(2,(Number(midi) - sampleRootMidi) / 12);
-      gain.gain.value = 0.7;
+      gain.gain.value = configuredGain(); // Respects saved master/instrument levels while remaining strictly monophonic.
       source.connect(gain); gain.connect(ctx.destination);
       voice = source;
       source.onended = () => { if (voice === source) voice = null; source.disconnect(); gain.disconnect(); };

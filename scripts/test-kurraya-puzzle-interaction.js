@@ -99,18 +99,20 @@ function makeHost() {
   assert.equal(game.ambientCounts().created,2,'the NPC resumes normal ambient music after the player exits');
 
   const sounds = []; // Fake voice creation and stop events for validating monophonic playback.
+  const gains = []; // Records instrument output levels without decoding actual media in Node.
   class AudioContext {
     constructor(){this.state='running';this.destination={};}
     createBufferSource(){
       const voice={playbackRate:{value:1},connect:noop,disconnect:noop,start(){this.started=true},stop(){this.stopped=true}};
       sounds.push(voice);return voice;
     }
-    createGain(){return {gain:{value:0},connect:noop,disconnect:noop};}
+    createGain(){const node={gain:{value:0},connect:noop,disconnect:noop};gains.push(node);return node;}
     async decodeAudioData(){return {duration:1,sampleRate:44100};}
   }
   let releaseFetch = null; // Holds the first sample decode until two overlapping note requests have arrived.
   const deferred = new Promise(resolve=>{releaseFetch=resolve;});
-  const sampleWindow={AudioContext,fetch:async()=>({ok:true,arrayBuffer:()=>deferred}),localStorage:{getItem:()=>null}};
+  const sampleWindow={AudioContext,fetch:async()=>({ok:true,arrayBuffer:()=>deferred}),
+    localStorage:{getItem:key=>key==='musicSystemDemoSettingsV13' ? JSON.stringify({masterVolume:0.8,kurrayaMixLevel:0.5}) : null}};
   const mod={exports:{}};
   vm.runInNewContext(read('docs/js/kurraya-puzzle.js'),{window:sampleWindow,module:mod});
   const sampler=mod.exports.createSampler('bundle.m4a');
@@ -119,6 +121,7 @@ function makeHost() {
   assert.deepEqual(await Promise.all([first,second]),[false,true],'older pending note may not sound after a later one');
   assert.equal(sounds.length,1);
   assert.equal(sounds[0].playbackRate.value,Math.pow(2,4/12));
+  assert.equal(gains[0].gain.value,0.7*0.8*0.5,'puzzle volume follows saved Music Lab Kurraya/master levels');
   assert.equal(await sampler.play(65),true);
   assert.equal(sounds[0].stopped,true,'each new note stops the preceding voice, so chords cannot form');
   sampler.stop();
