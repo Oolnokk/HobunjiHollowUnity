@@ -1268,7 +1268,7 @@
       state.ropeElevatorComposers.push(module);
       recordModulePlacement('balconyRopeElevatorComposer','room',module.id,{
         roomId:String(room.id),
-        wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator'].concat(ossuary?['sunkenRoomShell','lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']:[]),
+        wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator'].concat(ossuary?['sunkenRoomShell','lockableStoneDoor','sarcophagusSpawner','melodyEchoTrigger']:[]),
         opensUpstairsMechanism:nextDoorMechanismId||null,
       });
       return rope;
@@ -1855,9 +1855,9 @@
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
     const ossuaryIndex=freeRooms.findIndex(room=>roomDoorways(context,room).length===1); // A lock-in composer only claims a cul-de-sac room; standalone modules remain valid in rooms with arbitrary connectivity.
     if(ossuaryIndex>=0&&rng()<cfg('moduleChances.ossuaryChord',.55)){
-      const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
+      const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and melody-echo trigger remains an independently recorded module.
     }else if(freeRooms.length&&rng()<cfg('moduleChances.chordPlates',.5)){
-      const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // Same four-note module can appear by itself with no skeleton encounter at all.
+      const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // The same melody-echo module can appear by itself with no skeleton encounter at all.
     }
     if(freeRooms.length&&rng()<cfg('moduleChances.standaloneCanopy',.35)){
       const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
