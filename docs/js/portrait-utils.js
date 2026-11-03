@@ -1181,7 +1181,7 @@ function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
 function furHoodProfileLayers(profile) {
   const descriptors = profile?.bodyColors?.__hobunjiWovenClothing; // Item-specific decoration metadata shared by saved player and NPC portrait builders.
   const furHood = Array.isArray(descriptors) ? descriptors.find(item => item?.slot === 'hood' && item?.furHood)?.furHood : null;
-  return (window.FurHoodLeatherworking?.specialPartsFor?.(furHood) || []).map(layer => ({
+  return (window.FurHoodLeatherworking?.specialPartsFor?.(furHood, profile?.fighter?.speciesId, profile?.fighter?.gender) || []).map(layer => ({
     ...layer, url: portraitRelPath('./' + layer.url), // Portrait loaders use docs/assets-relative sprite names, unlike the authoring manifest's docs-root paths.
   }));
 }
