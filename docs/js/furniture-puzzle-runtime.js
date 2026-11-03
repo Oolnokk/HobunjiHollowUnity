@@ -1,6 +1,7 @@
 // Runtime graph for furniture-authored activators and mechanisms.
 (() => {
   'use strict';
+  const burdenKindLabel = kind => (kind === 'soursap' ? 'Soursap Fruit' : kind === 'keyStatue' ? 'Key Statue' : 'Shattercask');
   const maps = new Map(); // mapId -> { nodes, wiring, bulkRegisteredIds, channelSources }
   const api = window.FurniturePuzzleProperties;
   const DEG = Math.PI / 180;
@@ -74,6 +75,7 @@
     const graph = graphFor(key);
     for (const id of graph.bulkRegisteredIds) {
       const old = graph.nodes.get(id);
+      releaseInputs(old);
       for (const entry of old?.userData?.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       graph.nodes.delete(id);
     }
@@ -85,6 +87,7 @@
       if (!initializedId) continue;
       graph.nodes.set(initializedId, object);
       graph.bulkRegisteredIds.add(initializedId);
+      bindInputs(key, initializedId, object);
     }
     graph.wiring = api?.normalizeWiring(wiring) || [];
     maps.set(key, graph); // Individually registered furniture nodes survive bulk interior-door registration.
@@ -99,6 +102,7 @@
     const id = initializeNode(key, record, object, options);
     if (!id) return false;
     graph.nodes.set(id, object);
+    bindInputs(key, id, object);
     if (object.userData.furniturePuzzle?.role === 'mechanism') {
       const sources = graph.channelSources.get(String(object.userData.furniturePuzzle.channel || 'A'));
       if (sources?.size) {
@@ -124,12 +128,65 @@
         window.KeyStatues?.unregisterDispenser?.(mapId,id);
       if (object.userData.furniturePuzzle?.behavior === 'witchBombDispenser')
         window.HronalWitchBombs?.unregisterDispenser?.(mapId,id);
+      releaseInputs(object);
       for (const entry of object.userData.puzzleEmitterVisuals || []) entry.visual.dispose?.();
       graph.nodes.delete(id);
       graph.bulkRegisteredIds.delete(id);
       return true;
     }
     return false;
+  }
+
+  // ── Event inputs (puzzle.inputs) ─────────────────────────────────────────
+  // A node subscribes to WorldEvents (scoped to its map) and acts when an event matches its
+  // conditions, with no activator wire needed: a cracked pillar that falls when a blast reaches it,
+  // a door that opens when struck. Mechanisms run setMechanism; activators run activate (so their
+  // wired mechanisms follow). Subscriptions are released when the node is unregistered or replaced.
+  let inputScratch = null;
+  function nodePoint(object) {
+    inputScratch ||= (window.THREE?.Vector3 ? new window.THREE.Vector3() : { x:0, y:0, z:0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } });
+    object.updateWorldMatrix?.(true, false);
+    return object.getWorldPosition ? object.getWorldPosition(inputScratch) : inputScratch.set(object.position.x, object.position.y, object.position.z);
+  }
+  function releaseInputs(object) {
+    const subs = object?.userData?.puzzleInputUnsubs;
+    if (subs) for (const off of subs) off();
+    if (object?.userData) object.userData.puzzleInputUnsubs = null;
+  }
+  function inputMatches(input, payload, id, object) {
+    if (input.tag && String(payload.tag || '') !== input.tag) return false;
+    if (input.targetId && String(payload.targetId || '') !== (input.targetId === 'self' ? id : input.targetId)) return false;
+    const limit = input.withinTiles ?? (Number.isFinite(Number(payload.radius)) ? Number(payload.radius) : null);
+    if (limit != null) {
+      if (!Number.isFinite(Number(payload.x)) || !Number.isFinite(Number(payload.z))) return false; // A distance condition needs a located event.
+      const p = nodePoint(object);
+      if (Math.hypot(p.x - Number(payload.x), p.z - Number(payload.z)) > limit) return false;
+    }
+    return true;
+  }
+  function runInput(mapId, id, object, input) {
+    const role = object.userData.furniturePuzzle?.role;
+    const apply = () => {
+      const target = input.action === 'toggle' ? !object.userData.puzzleActive : input.action === 'on';
+      return role === 'mechanism' ? setMechanism(mapId, id, target) : activate(mapId, id, target);
+    };
+    if (input.delaySeconds > 0) setTimeout(apply, input.delaySeconds * 1000); else apply();
+  }
+  function bindInputs(mapId, id, object) {
+    releaseInputs(object); // Re-registering the same node never stacks duplicate listeners.
+    const inputs = object?.userData?.furniturePuzzle?.inputs;
+    if (!inputs?.length || !window.WorldEvents) return 0;
+    const subs = object.userData.puzzleInputUnsubs = [];
+    for (const input of inputs) {
+      let off = () => {};
+      off = window.WorldEvents.on(input.event, payload => {
+        if (!inputMatches(input, payload, id, object)) return;
+        if (input.once) off();
+        runInput(mapId, id, object, input);
+      }, { scope: String(mapId) });
+      subs.push(() => off());
+    }
+    return subs.length;
   }
 
   function applyMechanism(object, progress) {
@@ -318,7 +375,7 @@
     const held = window.Shattercasks?.heldBurdenInfo?.() || null;
     const label = inserted ? 'Retrieve Burden'
       : held?.kind === puzzle.requiredBurdenKind ? 'Insert ' + held.displayName
-      : 'Requires ' + (puzzle.requiredBurdenKind === 'soursap' ? 'Soursap Fruit' : 'Shattercask');
+      : 'Requires ' + burdenKindLabel(puzzle.requiredBurdenKind);
     return [{ icon:inserted ? '↗' : '⬇', label, action:'obj_burden_plate_' + id, style:'primary', allowed:true }];
   }
 
@@ -363,7 +420,7 @@
     const held = window.Shattercasks?.heldBurdenInfo?.();
     if (!held) return { ok:false, message:'You must be carrying a Burden to operate this plinth.' };
     if (held.kind !== puzzle.requiredBurdenKind) {
-      const required = puzzle.requiredBurdenKind === 'soursap' ? 'Soursap Fruit' : 'Shattercask';
+      const required = burdenKindLabel(puzzle.requiredBurdenKind);
       return { ok:false, message:'This plinth requires a ' + required + '.' };
     }
     const attachment = window.AuthoredFurniture?.createSurfaceAnchor?.(object, puzzle.payloadSurfaceId, .012);
@@ -426,6 +483,7 @@
       nodes:[...graph.nodes].map(([id, object]) => ({
         id, role:object.userData.furniturePuzzle?.role, behavior:object.userData.furniturePuzzle?.behavior,
         active:!!object.userData.puzzleActive, progress:Number(object.userData.puzzleProgress) || 0,
+        inputs:object.userData.furniturePuzzle?.inputs?.length || 0,
         blocked:!!object.userData.blocksMovement, payload:object.userData.burdenPlatePayload?.id || null,
         payloadComplete:!!object.userData.burdenPlateComplete,
         keyStatueTaken:!!object.userData.keyStatueTaken,
@@ -433,8 +491,10 @@
     }));
   }
 
+  const getNode = (mapId, id) => maps.get(String(mapId))?.nodes.get(String(id)) || null;
+
   window.FurniturePuzzleRuntime = Object.freeze({
-    registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
+    getNode, registerMap, registerNode, unregisterNode, activate, toggle, setMechanism, toggleMechanism,
     setChannelSource, burdenPlateButtons, interactBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();

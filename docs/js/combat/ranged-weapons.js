@@ -1043,6 +1043,7 @@
 
   function actorHitbox(actor) {
     if (!deps || !actor) return null;
+    if (typeof actor.__targetableHitbox === 'function') return actor.__targetableHitbox(); // Stand-in actors from js/targetables.js (burdens, props) share this one melee/lunge geometry.
     const now = performance.now();
     const cached = actorHitboxCache.get(actor);
     if (cached && now - cached.at < ACTOR_HITBOX_CACHE_MS) return cached.value;
