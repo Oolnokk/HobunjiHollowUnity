@@ -151,7 +151,7 @@
       {
         id: 'spyglass', icon: '🔭', label: window.Spyglass?.isEquipped?.() ? 'Put Away Spyglass' : 'Spyglass',
         active: window.Spyglass?.isEquipped?.() === true,
-        onSelect: () => window.Spyglass?.equip?.(), // Toggle persistent equipment; Action 1 raises the lens while held.
+        onSelect: () => window.Spyglass?.equip?.(), // Select the utility; Action 2 toggles the lens and holding Action 1 looks closer.
       },
       {
         id: 'furniture-placement', icon: '🪑', label: furniturePlacementAvailable ? 'Furniture Placement' : 'Furniture Placement Unavailable',
