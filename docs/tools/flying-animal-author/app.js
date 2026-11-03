@@ -88,11 +88,25 @@
     const splineAPI = window.AnimalShoulderSpline; // Shared curve evaluation for guides and mesh deformation.
     let perchDrag = null, perchDirty = false; // Captured handle and pending mesh update.
 
+    function perchPadding() { return perchLine.value === 'afterPoints' ? rigAPI.perchPosePadding : 0; }
+
     function drawPerchSpline() {
       const image = images.perched;
-      const { width, height } = perchCanvas;
-      perchContext.clearRect(0, 0, width, height);
-      perchContext.drawImage(image, 0, 0, width, height);
+      const width = perchCanvas.width;
+      const sourceHeight = width * image.height / image.width;
+      const padding = perchPadding();
+      const workspaceHeight = Math.ceil(sourceHeight * (1 + 2 * padding));
+      if (perchCanvas.height !== workspaceHeight) perchCanvas.height = workspaceHeight;
+      perchContext.clearRect(0, 0, width, workspaceHeight);
+      perchContext.drawImage(image, 0, padding * sourceHeight, width, sourceHeight);
+      if (padding) {
+        perchContext.strokeStyle = '#788b9f';
+        perchContext.lineWidth = 1;
+        perchContext.setLineDash([5, 5]);
+        perchContext.strokeRect(.5, padding * sourceHeight, width - 1, sourceHeight);
+        perchContext.setLineDash([]);
+      }
+      const displayY = y => (y + padding) * sourceHeight;
       const lines = rig.perchSpline ?? rigAPI.normalizePerchSpline();
       const active = perchLine.value;
       const inactive = active === 'beforePoints' ? 'afterPoints' : 'beforePoints';
@@ -103,13 +117,13 @@
         perchContext.beginPath();
         for (let i = 0; i <= 60; i++) {
           const point = splineAPI.splinePoint(points, i / 60);
-          perchContext.lineTo(point.x * width, point.y * height);
+          perchContext.lineTo(point.x * width, displayY(point.y));
         }
         perchContext.stroke();
         if (key !== active) continue;
         for (const point of points) {
           perchContext.beginPath();
-          perchContext.arc(point.x * width, point.y * height, width * .012, 0, Math.PI * 2);
+          perchContext.arc(point.x * width, displayY(point.y), width * .012, 0, Math.PI * 2);
           perchContext.fill();
         }
       }
@@ -124,7 +138,6 @@
       scene.add(assembly.root);
       drawHinges();
       perchCanvas.width = Math.min(800, images.perched.width);
-      perchCanvas.height = Math.max(1, Math.round(perchCanvas.width * images.perched.height / images.perched.width));
       perchDirty = false;
       drawPerchSpline();
       needsRender = true;
@@ -258,10 +271,12 @@
       const bounds = perchCanvas.getBoundingClientRect();
       const spline = rig.perchSpline ?? rigAPI.normalizePerchSpline();
       const key = perchLine.value;
+      const padding = perchPadding();
+      const sourceHeight = bounds.width * images.perched.height / images.perched.width;
       let distance = 23, index = -1; // Hit radius is in CSS pixels for touch.
       spline[key].forEach((point, i) => {
         const candidate = Math.hypot(bounds.left + point.x * bounds.width - event.clientX,
-          bounds.top + point.y * bounds.height - event.clientY);
+          bounds.top + (point.y + padding) * sourceHeight - event.clientY);
         if (candidate < distance) {
           distance = candidate;
           index = i;
@@ -279,8 +294,11 @@
       const { index, key, spline, followBind } = perchDrag;
       const bounds = perchCanvas.getBoundingClientRect();
       const unit = value => Math.max(0, Math.min(1, value));
+      const padding = perchPadding();
+      const sourceHeight = bounds.width * images.perched.height / images.perched.width;
+      const y = (event.clientY - bounds.top) / sourceHeight - padding;
       const point = { x: unit((event.clientX - bounds.left) / bounds.width),
-        y: unit((event.clientY - bounds.top) / bounds.height) };
+        y: Math.max(-padding, Math.min(1 + padding, y)) };
       spline[key][index] = point;
       if (followBind) spline.afterPoints[index] = { ...point };
       editPerchSpline(spline);
@@ -306,6 +324,10 @@
 
     renderer.setAnimationLoop(ms => {
       if (!assembly || !canvas.clientWidth || !canvas.clientHeight || document.hidden || (!needsRender && pose.value !== 'flap')) return;
+      if (perchDirty) {
+        assembly.setPerchSpline(rig.perchSpline);
+        perchDirty = false;
+      }
       if (needsRender) {
         const width = canvas.clientWidth, height = canvas.clientHeight;
         renderer.setSize(width, height, false);
@@ -313,17 +335,15 @@
         const bodyHalfWidth = Math.max(images.flying.width / images.flying.height, images.perched.width / images.perched.height) / 2;
         const wingHalfSpan = images.wings.width / images.wings.height * rig.wingScale * Math.max(rig.wingCenter, 1 - rig.wingCenter);
         const wingReach = Math.hypot(wingHalfSpan, rig.wingScale / 2 + Math.abs(rig.wingOffset), rig.wingHeight);
-        const extent = Math.max(Math.hypot(bodyHalfWidth, 0.5), wingReach); // Keep wide or offset wings inside the orbit view.
+        const posedBounds = pose.value === 'perched' ? assembly.perched.geometry.boundingSphere : null;
+        const posedExtent = posedBounds ? posedBounds.center.length() + posedBounds.radius : 0;
+        const extent = Math.max(Math.hypot(bodyHalfWidth, 0.5), wingReach, posedExtent); // Keep wide or offset wings inside the orbit view.
         const radius = Math.max(3.4, extent / Math.sin(camera.fov * radians / 2) * 1.12) * Math.max(1, 1 / camera.aspect);
         const azimuth = orbit.valueAsNumber * radians, altitude = elevation.valueAsNumber * radians;
         camera.position.set(radius * Math.sin(azimuth) * Math.cos(altitude), radius * Math.sin(altitude), radius * Math.cos(azimuth) * Math.cos(altitude));
         camera.up.set(-Math.sin(azimuth) * Math.sin(altitude), Math.cos(altitude), -Math.cos(azimuth) * Math.sin(altitude));
         camera.lookAt(0, 0, 0);
         needsRender = false;
-      }
-      if (perchDirty) {
-        assembly.setPerchSpline(rig.perchSpline);
-        perchDirty = false;
       }
       assembly.update(camera, pose.value, ms / 1000);
       if (debug.parentElement.open) {

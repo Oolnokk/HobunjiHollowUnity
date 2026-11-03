@@ -20,19 +20,21 @@
     yawDeadzone: [0, 45], pitchDeadzone: [0, 45],
   });
 
+  const PERCH_POSE_PADDING = .75; // Extra pose workspace above and below the source image.
+
   function normalizePerchSpline(input) {
     const spline = window.AnimalShoulderSpline;
     const guide = spline.linearPointsForGuide({ a: { x: .12, y: .42 }, b: { x: .9, y: .4 } });
-    function points(value, fallback) {
+    function points(value, fallback, padding = 0) {
       if (value === undefined) return fallback.map(point => ({ ...point }));
       if (!Array.isArray(value) || value.length !== spline.POINT_COUNT ||
           value.some(point => !Number.isFinite(point?.x) || !Number.isFinite(point?.y))) {
         throw new Error('Perched body splines need seven finite x/y points per line.');
       }
-      return value.map(({ x, y }) => ({ x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }));
+      return value.map(({ x, y }) => ({ x: Math.max(0, Math.min(1, x)), y: Math.max(-padding, Math.min(1 + padding, y)) }));
     }
     const beforePoints = points(input?.beforePoints, guide);
-    return { beforePoints, afterPoints: points(input?.afterPoints, beforePoints) };
+    return { beforePoints, afterPoints: points(input?.afterPoints, beforePoints, PERCH_POSE_PADDING) };
   }
 
   function normalize(input = {}) {
@@ -171,8 +173,8 @@
       wings.skeleton.dispose();
     }
 
-    return { root, update, dispose, pitch, yaw, setPerchSpline };
+    return { root, update, dispose, pitch, yaw, setPerchSpline, perched };
   }
 
-  window.FlyingAnimalRig = { defaults: DEFAULT, limits, normalize, normalizePerchSpline, flapAngle, create };
+  window.FlyingAnimalRig = { defaults: DEFAULT, limits, perchPosePadding: PERCH_POSE_PADDING, normalize, normalizePerchSpline, flapAngle, create };
 })();
