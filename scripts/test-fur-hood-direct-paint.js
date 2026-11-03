@@ -11,7 +11,7 @@ const author = read('docs/js/fur-hood-direct-paint-editor.js');
 const editor = read('docs/tools/pattern-editor/index.html');
 new vm.Script(source); // Both the game compositor and its garment paint inverse must parse normally.
 new vm.Script(author);
-const inline = editor.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);
+const inline = [...editor.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1); // This tool has an early portrait asset-root bootstrap plus its main final inline script.
 assert(inline, 'Pattern Editor inline initialization exists');
 new vm.Script(inline[1]);
 assert(editor.includes('id="furPaintBtn"'), 'Paint on hood is available in the existing fur authoring section');
