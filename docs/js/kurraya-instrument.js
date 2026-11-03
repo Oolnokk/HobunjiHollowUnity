@@ -363,6 +363,68 @@
     window.DynamicSurfaces.addBeforeRenderClient(updateFlute);
     fluteUpdaterInstalled = true;
   }
+  function prepareFluteCanvas(source) {
+    const canvas = document.createElement('canvas');
+    const originalWidth = source.naturalWidth || source.width;
+    const originalHeight = source.naturalHeight || source.height;
+    canvas.width = originalWidth; canvas.height = originalHeight;
+    const ctx = canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(source,0,0);
+    const sourcePixels = ctx.getImageData(0,0,originalWidth,originalHeight);
+    const rgba = sourcePixels.data;
+    // Old PNG exports sometimes bake an opaque black/white matte into otherwise transparent art.
+    // Remove only matte-coloured areas connected to an image edge, preserving the flute's dark outlines and interior holes.
+    const pixelsCount = originalWidth * originalHeight; // Opaque PNG black/white padding is flood-cleared only where it touches an image edge.
+    const before = rgba.slice(); // Keep original edge pixels for a one-pixel black stroke recovery around the painted flute.
+    const visited = new Uint8Array(pixelsCount); // Each background shade is scanned once, not one flood per perimeter pixel.
+    const queue = new Int32Array(pixelsCount); // Fixed storage prevents allocations in the large image flood.
+    for (let kind=1;kind<=2;kind++) {
+      let head=0,tail=0; // Current dark/white edge-connected matte region.
+      function enqueue(index) {
+        if(visited[index]===kind)return;
+        const offset=index*4;
+        if(rgba[offset+3]<230)return;
+        const r=rgba[offset],g=rgba[offset+1],b=rgba[offset+2];
+        const isMatte=kind===1 ? Math.max(r,g,b)<28 : Math.min(r,g,b)>232;
+        if(!isMatte)return;
+        visited[index]=kind;
+        queue[tail++]=index;
+        rgba[offset+3]=0;
+      }
+      for(let x=0;x<originalWidth;x++){enqueue(x);enqueue((originalHeight-1)*originalWidth+x);}
+      for(let y=1;y+1<originalHeight;y++){enqueue(y*originalWidth);enqueue(y*originalWidth+originalWidth-1);}
+      while(head<tail){
+        const cell=queue[head++],x=cell%originalWidth,y=(cell-x)/originalWidth;
+        if(x>0)enqueue(cell-1);
+        if(x+1<originalWidth)enqueue(cell+1);
+        if(y>0)enqueue(cell-originalWidth);
+        if(y+1<originalHeight)enqueue(cell+originalWidth);
+      }
+    }
+    // Preserve a fine, dark sprite outline adjacent to painted flute pixels even when the uploaded image used a solid black background.
+    for(let y=1;y+1<originalHeight;y++)for(let x=1;x+1<originalWidth;x++){
+      const i=y*originalWidth+x,offset=i*4;
+      if(visited[i]!==1||rgba[offset+3]!==0)continue;
+      for(const n of [i-1,i+1,i-originalWidth,i+originalWidth]){
+        const p=n*4;
+        if(before[p+3]>20&&Math.max(before[p],before[p+1],before[p+2])>45&&Math.min(before[p],before[p+1],before[p+2])<210){
+          rgba[offset+3]=before[offset+3];break;
+        }
+      }
+    }
+    ctx.putImageData(sourcePixels,0,0);
+    let left = originalWidth, right = -1, top = originalHeight, bottom = -1; // Tight bounds of opaque pixels, used to preserve the PNG's actual proportions.
+    for (let y=0;y<originalHeight;y++) for(let x=0;x<originalWidth;x++){
+      if(rgba[(y*originalWidth+x)*4+3]<16)continue;
+      left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y);
+    }
+    if(right<left)throw new Error('Flute sprite is transparent');
+    const width=right-left+1,height=bottom-top+1; // Opaque aspect controls plane width while a consistent 0.76-world-unit tube length sets visual scale.
+    const trimmed=document.createElement('canvas');
+    trimmed.width=width;trimmed.height=height;
+    trimmed.getContext('2d').drawImage(source,left,top,width,height,0,0,width,height);
+    return trimmed; // Shared alpha-trimmed image for both live mouth sprite and permanent inventory icon.
+  }
   function ensureFluteMount() {
     const THREE = deps?.THREE;
     if (!THREE || !window.SharedAttackPose?.createHeadFrame) return false;
@@ -376,66 +438,8 @@
     loader.load('assets/toolsprites/flute.png', texture => {
       // The authored PNG has substantial transparent padding; trim it once so the physical tube stays visible at the intended scale.
       try {
-        const source = texture.image;
-        const canvas = document.createElement('canvas');
-        const originalWidth = source.naturalWidth || source.width;
-        const originalHeight = source.naturalHeight || source.height;
-        canvas.width = originalWidth; canvas.height = originalHeight;
-        const ctx = canvas.getContext('2d',{willReadFrequently:true});
-        ctx.drawImage(source,0,0);
-        const sourcePixels = ctx.getImageData(0,0,originalWidth,originalHeight);
-        const rgba = sourcePixels.data;
-        // Old PNG exports sometimes bake an opaque black/white matte into otherwise transparent art.
-        // Remove only matte-coloured areas connected to an image edge, preserving the flute's dark outlines and interior holes.
-        const pixelsCount = originalWidth * originalHeight; // Opaque PNG black/white padding is flood-cleared only where it touches an image edge.
-        const before = rgba.slice(); // Keep original edge pixels for a one-pixel black stroke recovery around the painted flute.
-        const visited = new Uint8Array(pixelsCount); // Each background shade is scanned once, not one flood per perimeter pixel.
-        const queue = new Int32Array(pixelsCount); // Fixed storage prevents allocations in the large image flood.
-        for (let kind=1;kind<=2;kind++) {
-          let head=0,tail=0; // Current dark/white edge-connected matte region.
-          function enqueue(index) {
-            if(visited[index]===kind)return;
-            const offset=index*4;
-            if(rgba[offset+3]<230)return;
-            const r=rgba[offset],g=rgba[offset+1],b=rgba[offset+2];
-            const isMatte=kind===1 ? Math.max(r,g,b)<28 : Math.min(r,g,b)>232;
-            if(!isMatte)return;
-            visited[index]=kind;
-            queue[tail++]=index;
-            rgba[offset+3]=0;
-          }
-          for(let x=0;x<originalWidth;x++){enqueue(x);enqueue((originalHeight-1)*originalWidth+x);}
-          for(let y=1;y+1<originalHeight;y++){enqueue(y*originalWidth);enqueue(y*originalWidth+originalWidth-1);}
-          while(head<tail){
-            const cell=queue[head++],x=cell%originalWidth,y=(cell-x)/originalWidth;
-            if(x>0)enqueue(cell-1);
-            if(x+1<originalWidth)enqueue(cell+1);
-            if(y>0)enqueue(cell-originalWidth);
-            if(y+1<originalHeight)enqueue(cell+originalWidth);
-          }
-        }
-        // Preserve a fine, dark sprite outline adjacent to painted flute pixels even when the uploaded image used a solid black background.
-        for(let y=1;y+1<originalHeight;y++)for(let x=1;x+1<originalWidth;x++){
-          const i=y*originalWidth+x,offset=i*4;
-          if(visited[i]!==1||rgba[offset+3]!==0)continue;
-          for(const n of [i-1,i+1,i-originalWidth,i+originalWidth]){
-            const p=n*4;
-            if(before[p+3]>20&&Math.max(before[p],before[p+1],before[p+2])>45&&Math.min(before[p],before[p+1],before[p+2])<210){
-              rgba[offset+3]=before[offset+3];break;
-            }
-          }
-        }
-        ctx.putImageData(sourcePixels,0,0);
-        let left = originalWidth, right = -1, top = originalHeight, bottom = -1; // Tight bounds of opaque pixels, used to preserve the PNG's actual proportions.
-        for (let y=0;y<originalHeight;y++) for(let x=0;x<originalWidth;x++){
-          if(rgba[(y*originalWidth+x)*4+3]<16)continue;
-          left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y);
-        }
-        if(right<left)throw new Error('Flute sprite is transparent');
-        const width=right-left+1,height=bottom-top+1; // Opaque aspect controls plane width while a consistent 0.76-world-unit tube length sets visual scale.
-        const trimmed=document.createElement('canvas');
-        trimmed.width=width;trimmed.height=height;
-        trimmed.getContext('2d').drawImage(source,left,top,width,height,0,0,width,height);
+        const trimmed=prepareFluteCanvas(texture.image);
+        const width=trimmed.width,height=trimmed.height; // Texture plane proportions match the opaque flute art, not its matte border.
         const map=new THREE.CanvasTexture(trimmed);
         map.magFilter=THREE.NearestFilter; map.minFilter=THREE.NearestFilter;
         const worldHeight=.76;
@@ -487,5 +491,5 @@
     return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,error:fluteState.lastError};
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, endFlute, fluteDiagnostics };
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, endFlute, fluteDiagnostics, prepareFluteCanvas };
 })();
