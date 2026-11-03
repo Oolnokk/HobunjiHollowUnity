@@ -146,11 +146,7 @@
     bomb.fuseSeconds=clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120);
     bomb.spawnedAtMs=now(); // Fuse starts when the physical sphere is first registered in the world.
     bomb.impactRadius=.22;
-    if (typeof options.onLost==='function') {
-      const previous=bomb.onLost;
-      bomb.onLost=(record,reason)=>{previous?.(record,reason);options.onLost(record,reason);};
-    }
-    return bomb;
+    return bomb; // createHangingBurden already installed the exact onLost callback; wrapping it again would release a tube twice.
   }
   function registerDispenser(mapId,id,root,puzzle={}) {
     if (!root?.isObject3D) return false;
