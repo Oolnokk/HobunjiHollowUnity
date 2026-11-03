@@ -20,12 +20,25 @@ class Vector3 {
 class Quaternion { clone() { return new Quaternion(); } copy() { return this; } multiply() { return this; } setFromEuler() { return this; } }
 class Euler { constructor(x, y, z) { this.x = x; this.y = y; this.z = z; } }
 class Color { constructor(v) { this.v = v; } lerp() { return this; } copy() { return this; } }
-const THREE = { Vector3, Quaternion, Euler, Color, MathUtils: { lerp: (a, b, t) => a + (b - a) * t } };
+class Box3 {
+  constructor() { this.min = new Vector3(); this.max = new Vector3(); }
+  setFromObject(mesh) { this.min.copy(mesh.testBox.min); this.max.copy(mesh.testBox.max); return this; }
+}
+class Raycaster {
+  set(origin) { this.origin = origin.clone(); }
+  intersectObject(mesh) { return mesh.testHitY == null ? [] : [{point:{x:this.origin.x,y:mesh.testHitY,z:this.origin.z}}]; }
+}
+const THREE = { Vector3, Quaternion, Euler, Color, Box3, Raycaster, MathUtils: { lerp: (a, b, t) => a + (b - a) * t } };
 
 const timers = [], frames = [];
 // requestAnimationFrame only queues: the runtime's emitter loop re-arms itself every frame, and zero-duration motions need no frames.
 const context = { console, THREE, performance, requestAnimationFrame: fn => frames.push(fn), setTimeout: (fn, ms) => timers.push({ fn, ms }) };
 context.window = context;
+const registeredSurfaces = new Map(); // A narrow DynamicSurfaces spy validates registration, queries and cleanup without rendering.
+context.DynamicSurfaces = {
+  registerSurface(definition) { registeredSurfaces.set(definition.id, definition); },
+  remove(id) { return registeredSurfaces.delete(id); },
+};
 vm.createContext(context);
 for (const f of ['js/world-events.js', 'js/furniture-puzzle-properties.js', 'js/furniture-puzzle-runtime.js']) vm.runInContext(read(f), context, { filename: f });
 const { WorldEvents, FurniturePuzzleProperties: P, FurniturePuzzleRuntime: R } = context;
@@ -63,7 +76,18 @@ const flush = () => { for (let i = 0; i < 3; i++) for (const f of frames.splice(
 // ---------------------------------------------------------------- a blast topples a cracked pillar
 const bridge = JSON.parse(read('config/furniture-authored/ruinPillarBridge.json')); // Exercise the authored blast input and motion.
 const pillar = node('pillar', bridge.puzzle);
+const bridgePart = bridge.parts.find(part => part.id === bridge.puzzle.standingSurface.partId); // The same rendered upper shaft that falls into the gap.
+assert(bridgePart && bridge.puzzle.standingSurface.minProgress >= .9, 'the bridge opts into standing on its settled upper shaft');
+const partMesh = {
+  position:new Vector3(), rotation:{set(){}}, scale:new Vector3(1,1,1), updateMatrixWorld(){}, updateWorldMatrix(){},
+  testBox:{min:new Vector3(9.6,0,9.6),max:new Vector3(10.4,1,10.4)}, testHitY:.32,
+};
+pillar.userData.meshById = new Map([[bridgePart.id, partMesh]]);
+pillar.userData.partById = new Map([[bridgePart.id, bridgePart]]);
 assert.equal(register(pillar), true);
+const bridgeSupportId = pillar.userData.puzzleStandingSurfaceId; // Must remain attached to this exact pillar instance until it is unregistered.
+const bridgeSurface = registeredSurfaces.get(bridgeSupportId);
+assert(bridgeSurface && !bridgeSurface.enabled(), 'upright pillar is not already a floor over the chasm');
 assert.equal(WorldEvents.listenerCount('blast'), 1, 'one subscription for one input');
 assert.equal(on(pillar), false);
 
@@ -76,6 +100,10 @@ assert.equal(on(pillar), true, 'a blast whose radius reaches the node turns the 
 flush();
 assert.equal(pillar.userData.puzzleProgress, 1); assert(Math.abs(y(pillar) - bridge.puzzle.motion.on.position.y) < 1e-9, 'the authored on-keyframe plays through the real runtime');
 assert.equal(pillar.userData.blocksMovement, false, 'the toppled pillar clears its upright blocker');
+assert(bridgeSurface.enabled(), 'after the fall the real upper-shaft mesh becomes walkable');
+assert(bridgeSurface.supports(10,10), 'vertical ray intersects the fallen authored bridge');
+assert(Math.abs(bridgeSurface.topY()- .33) < 1e-9, 'standing height comes from the surface hit plus authored offset');
+assert(!bridgeSurface.supports(100,100), 'outside the actual bridge bounds has no support');
 assert.equal(WorldEvents.listenerCount('blast'), 0, 'once: the subscription is released after it fires');
 
 // ---------------------------------------------------------------- conditions
@@ -139,6 +167,8 @@ WorldEvents.emit('blast', { scope: MAP, x: 10, z: 10, radius: 1 });
 assert.equal(on(oldObject), false, 'replaced object never receives the blast');
 assert.equal(on(newObject), true, 'replacement object alone receives the blast');
 R.unregisterNode(MAP, 'swapped');
+R.unregisterNode(MAP, 'pillar');
+assert(!registeredSurfaces.has(bridgeSupportId), 'removing the bridge also removes its dynamic standing surface');
 
 // ---------------------------------------------------------------- activators drive their wired mechanisms
 const sensor = node('sensor', { role: 'activator', behavior: 'interact', inputs: [{ event: 'blast' }] });
