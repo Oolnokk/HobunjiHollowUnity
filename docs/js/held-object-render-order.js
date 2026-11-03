@@ -1007,7 +1007,7 @@
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
       scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
-      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Live sprite growth/drift can reach outside this plane's geometric rectangle.
+      const vfxPadding = Math.max(Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0, Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0); // Both enchantment motes and Dungeon Fire independently expand the held replay bounds.
       if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * mesh.matrixWorld.getMaxScaleOnAxis());
       const { min, max } = scissorBox;
       for (let corner = 0; corner < 8; corner++) {
@@ -1032,7 +1032,7 @@
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
       let valid = true; // Used to conservatively disable scissoring if a child emitter has unreliable bounds.
       mesh.traverseVisible(child => {
-        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0)) return;
+        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0)) return;
         if (!includeBounds(child)) valid = false;
       });
       if (!valid) return false;
