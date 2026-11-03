@@ -3969,7 +3969,8 @@
           const centerZ = other.tableAttachment ? other.mesh.position.z : other.row + size.fd / 2;
           return !!window.TableChairPlacement?.overlapsFootprints?.(
             { x: position.x, z: position.z, width: def.fw || 1, depth: def.fd || 1, yaw },
-            { x: centerX, z: centerZ, width: otherDef.fw || 1, depth: otherDef.fd || 1, yaw: (other.rotYDeg || 0) * Math.PI / 180 }
+            { x: centerX, z: centerZ, width: otherDef.fw || 1, depth: otherDef.fd || 1,
+              yaw: other.tableAttachment ? other.mesh.rotation.y : (other.rotYDeg || 0) * Math.PI / 180 }
           );
         });
       }
