@@ -54,7 +54,9 @@ function element(tag = 'div') {
   return node;
 }
 
-function environment() {
+function environment({ deferredArch = false } = {}) {
+  let domReady = !deferredArch; // Reproduces the head-loaded spyglass script before action-arch markup exists.
+  let actionObserver = null; // Captures the MutationObserver callback for action-bar rebuild regressions.
   const browserEvents = {}; // Captures window blur/scene transitions.
   const documentEvents = {}; // Captures keyboard, pointer and visibility listeners.
   const body = element('body');
@@ -74,12 +76,12 @@ function environment() {
   const bindings = { desktop: { action1: 'Mouse0', action2: 'Mouse2' }, controller: { action1: 'RightTrigger', action2: 'LeftTrigger', uiOpenMenu: 'Button8' } };
   let controllerHandler = null;
   const document = {
-    readyState: 'complete', body, activeElement: null, hidden: false, createElement: element,
+    readyState: deferredArch ? 'loading' : 'complete', body, activeElement: null, hidden: false, createElement: element,
     getElementById(id) {
       if (id === 'threeContainer') return canvas;
-      if (id === 'actionStack') return stack;
-      if (id === 'btnAction1') return actionButton;
-      if (id === 'btnAction2') return action2Button;
+      if (id === 'actionStack') return domReady ? stack : null;
+      if (id === 'btnAction1') return domReady ? actionButton : null;
+      if (id === 'btnAction2') return domReady ? action2Button : null;
       if (id === 'menuPanel') return { classList: { contains: () => menuOpen } };
       return null;
     },
@@ -147,12 +149,21 @@ function environment() {
     characterViewMode: { get enabled() { return characterView; } },
     setCharacterViewMode(value) { characterView = !!value; },
   };
-  vm.runInNewContext(spyglassScript, { window, document, performance: { now: () => clock } });
+  class FakeMutationObserver {
+    constructor(callback) { this.callback = callback; }
+    observe(target) { if (target === stack) actionObserver = this; }
+  }
+  vm.runInNewContext(spyglassScript, { window, document, MutationObserver: FakeMutationObserver, performance: { now: () => clock } });
   fishing.init(cameraDeps);
   actionArc.init(viewDeps);
   return {
     api: window.Spyglass, window, document, body, stack, actionButton, action2Button, canvas, browserEvents, documentEvents,
-    emitDocument(name, event) { for (const fn of documentEvents[name] || []) fn(event); },
+    emitDocument(name, event) {
+      if (name === 'DOMContentLoaded') domReady = true;
+      for (const fn of documentEvents[name] || []) fn(event);
+    },
+    fireActionMutation() { actionObserver?.callback(); },
+    get observedArch() { return !!actionObserver; },
     controllerFrame(frame) { controllerHandler?.(frame); },
     setBinding(device, code, actionId = 'action1') { bindings[device][actionId] = code; },
     setMenuOpen(value) { menuOpen = value; },
@@ -180,6 +191,21 @@ assert.match(css, /spyglass-action-inactive/, 'Action 1 stays hidden until the l
 assert.doesNotMatch(css, /#spyglassHud|Hold to Look|Put Away Spyglass/, 'the standalone footer and hold controls remain removed');
 assert.match(perceptionScript, /spyglass-enemy:/, 'close perception adds named hostile info lists');
 assert.match(perceptionScript, /creature\.name \|\| creature\.def\?\.label/, 'enemy labels prefer their individual name');
+
+const deferred = environment({ deferredArch: true }); // Regression: spyglass loads in <head>, before the action arch is parsed.
+assert.equal(deferred.observedArch, false, 'observer cannot attach to a not-yet-created action arch');
+deferred.emitDocument('DOMContentLoaded');
+assert.equal(deferred.observedArch, true, 'observer attaches after DOMContentLoaded');
+assert.equal(deferred.api.getDebug().actionObserverActive, true, 'mobile diagnostics report observer state');
+deferred.api.equip();
+deferred.actionButton.dataset.action = 'attack'; // Simulate a normal refreshActionBar overwriting spyglass presentation.
+deferred.action2Button.dataset.action = 'alternate';
+deferred.fireActionMutation();
+assert.equal(deferred.actionButton.dataset.action, 'spyglass', 'Action 1 prompt is restored after ordinary action-bar refresh');
+assert.equal(deferred.action2Button.dataset.action, 'spyglass', 'Action 2 prompt is restored after ordinary action-bar refresh');
+deferred.api.stow();
+assert.equal(deferred.actionButton.dataset.action, 'attack', 'newly assigned Action 1 context survives stow');
+assert.equal(deferred.action2Button.dataset.action, 'alternate', 'newly assigned Action 2 context survives stow');
 
 const game = environment(); // Action 2 toggles lens; Action 1 is held only for the closer view.
 assert.equal(game.api.equip(), true, 'utility spyglass equips');
