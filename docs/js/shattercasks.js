@@ -1351,7 +1351,15 @@
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shares action IDs; only burden-specific labels and impact payload change.
-  function actionButtons(){return held?(held.kind==='soursap'?CARRIED_FRUIT_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS):null;}
+  const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
+  const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  function actionButtons(){
+    if(!held)return null;
+    const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
+    if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
+    return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
+  }
   function grantLoot(items) {
     if(typeof audioDeps?.grantLoot==='function')return audioDeps.grantLoot(items);
     const inv=gameDeps?.inventory||deps()?.inventory;
@@ -1496,12 +1504,13 @@
     // intact cask claims Interact; rubble is an ordinary arch button instead
     // (see contextButtons) so touch players can collect it too.
     const vase=nearVase();
-    const claim=held?'carried:'+held.id:vase?'vase:'+vase.id:'';
+    const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
+    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
         {actionId:'action1',label:'Throw ' + held.displayName,priority:810,
           onPress:startShatterAim,onRelease:detail=>detail?.canceled?cancelShatterAim():releaseShatterAim()},
-        {actionId:'action2',label:'Drop ' + held.displayName,priority:810,onPress:drop},
+        {actionId:'action2',label:hang?'Hang on Rope':'Drop ' + held.displayName,priority:810,onPress:interact},
       ]);
       else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label:'Pick up ' + vase.displayName,priority:410,onPress:interact}]);
@@ -2101,7 +2110,7 @@
       const id=actionButton(event);
       if(id!=='btnAction1'&&id!=='btnAction2')return;
       event.preventDefault?.();event.stopImmediatePropagation?.();
-      if(id==='btnAction2'){dropPointers.add(event.pointerId);drop();return;}
+      if(id==='btnAction2'){dropPointers.add(event.pointerId);interact();return;}
       throwPointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
       startShatterAim();
     },true);
@@ -2199,7 +2208,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Soursap uses Shattercask-authored carry/throw alignment and a shared PNG rind; original burst and Sticky behavior preserved.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Carried burdens show Hang on Rope when Action 2 can attach them to a free hook.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

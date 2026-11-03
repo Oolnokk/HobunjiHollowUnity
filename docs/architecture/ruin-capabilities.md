@@ -60,7 +60,7 @@ Release rules while swinging after a strike: **drop** at the forward apex (just 
 
 The two example combinations decompose into pieces that exist: *dispenser → bomb → rope furniture → melee → release → blast → pillar input → bridge* is all real code.
 
-Known limits: no on-screen "Hang" prompt (the carry-release action hangs when a rope is in reach); riding a furniture rope outside the ruin is not wired; the ruin runtime's ropes do not yet carry `RopeCore`'s rider logic into other hosts; a furniture rope's length is in world units (it does not scale with the piece).
+Action 2 displays **Hang on Rope** while carrying a burden within reach of a free hook. Keyboard, controller and touch use the same carry-release action. Known limits: riding a furniture rope outside the ruin is not wired; the ruin runtime's ropes do not yet carry `RopeCore`'s rider logic into other hosts; a furniture rope's length is in world units (it does not scale with the piece).
 
 ## What step 1 changed (behaviour-preserving)
 
@@ -77,7 +77,7 @@ Known limits: no on-screen "Hang" prompt (the carry-release action hangs when a 
 
 1. *(this step)* Targetables, WorldEvents, lunge targeting.
 2. *(done)* Mechanism inputs that subscribe to events: `puzzle.inputs`, see below. Still to do: a capabilities block in the Furniture Author (e.g. marking furniture `breakable`/`targetable`) once furniture emits and receives strikes.
-3. *(done)* Ropes: one shared rope behavior (`RopeCore`, the original rope's arithmetic), ropes as authored furniture, burdens hanging from any rope, strike and release into the shared throw arc. See below. Still to do: a "Hang" prompt, and riding furniture ropes outside the ruin.
+3. *(done)* Ropes: one shared rope behavior (`RopeCore`, the original rope's arithmetic), ropes as authored furniture, burdens hanging from any rope, strike and release into the shared throw arc. See below. Still to do: riding furniture ropes outside the ruin.
 4. *(done)* Goals, a solver, encounters and a whole-room composer. See "Composing rooms" below.
 
 ## Composing rooms (step 4)

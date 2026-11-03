@@ -1,6 +1,6 @@
 # Vertical grid (cubic cells) and climbable surfaces
 
-Status: **steps 1–4 landed** (step 4 with the collision caveat below). `js/cell-grid-3d.js` (step 1) is still not called by gameplay; `js/climb-surfaces.js` (step 2) is wired into the player loop but no area registers any wall yet, so nothing is climbable in normal play until step 4 (or the console recipe below).
+Status: **steps 1–4 landed**. Dev Mode → Random Test Ruin → **Shaft Hub** opens a playable standalone shaft with rendered masonry and climb holds.
 
 ## The idea
 
@@ -34,7 +34,7 @@ Unlike the scripted ladder/ledge/cliff climbs (hop to the top), a climbable surf
 
 Verified: `scripts/test-climb-surfaces.js` (pure math, every facing, glue); a headless run of the real game (see `headless-game-test`) that grabbed a wall, climbed with `w`, slid with `a`/`d`, descended with `s`, held the stand-off distance, released, and resumed walking, with no page errors; overlay placement for 3 styles × 4 facings against real three.js.
 
-Not done / known gaps: nothing yet calls `buildVisual` in-game (it is checked but not mounted); no fall animation or damage on release mid-wall (the ruin just re-seats the player on the floor); no climbing pose; mobile has only the forward-dodge attach.
+Not done / known gaps: no fall animation or damage on release mid-wall (the ruin just re-seats the player on the floor); no climbing pose; mobile has only the forward-dodge attach.
 
 ## Furniture metadata and wall tiles (step 3)
 
@@ -47,7 +47,7 @@ Two optional blocks on authored furniture JSON, edited in the Furniture Author's
 - Shipped set: `ruinClimbHoldsMid / EndLeft / EndRight / Single` (style `holds`) in `config/furniture-authored/`.
 - `CellGrid3D.mergeClimbFaces(faces, geom)` is now shared by grid walls and furniture tiles; faces take an `inset` for panels that sit inside their cell.
 
-Not done: inner/outer **corner** variants (a run currently ends at a corner with end caps on both walls); the Author has no 3D preview of a run; nothing places the tiles in a ruin yet (step 4); tiles are visual + climb surface only, with no collision of their own.
+Not done: inner/outer **corner** variants (a run currently ends at a corner with end caps on both walls); the Author has no 3D preview of a run; authored wall-tile runs have no automatic V50 placement; tiles are visual + climb surface only, with no collision of their own.
 
 ## Decision: shaft hubs are a post-generation composer (step 4)
 
@@ -56,7 +56,7 @@ The shaft hub will be a composer that operates on a `CellGrid3D` after generatio
 ## Steps
 
 1. `CellGrid3D`: cubic units, standing/walking/slice, DynamicSurfaces bridge, climb-face merge. *(done)*
-2. `ClimbSurfaces` runtime: attach/move/detach, style registry, player-loop and ruin-reconcile wiring. *(done; visuals not yet mounted)*
+2. `ClimbSurfaces` runtime: attach/move/detach, style registry, player-loop and ruin-reconcile wiring. *(done; visuals mount in shaft hubs)*
 3. Furniture Author: auto-measured `elevation` block on every export, and climbable `climbWall` tiles with end variants. *(done)*
 4. Shaft-hub composer (`js/shaft-hub.js`) and level-relative support sampling. *(done; see below)*
 
@@ -68,8 +68,10 @@ A balcony is the flat top of a solid **buttress** whose shaft-facing side is a c
 
 `compose` *proves* the hub before returning it (`result.checks`, `result.ok`): every balcony cell has a floor and headroom; each balcony has a wall rectangle from the ground to its floor; each balcony and each door's outer end is reachable from the entrance in a graph of walking (CellGrid3D's rules, one-cell drops allowed) and climbing (one edge per column of every merged wall rectangle); tunnels are clear; doors end at the hub's edge. The tests break a hub three ways (no climb faces, a blocked tunnel, a blocked entrance) and confirm the checks catch each. Narrow shafts overlapped neighbouring buttresses until the proof caught it, so `depth` is clamped to keep neighbours apart.
 
-`ShaftHub.mount(result, { ClimbSurfaces, DynamicSurfaces, DevRandomRuin, scope })` registers the walls and the standable cells as support surfaces and switches the ruin to **level-relative support** (`DevRandomRuin.setLevelRelativeSupport(true)`): `positionInfo` then samples support in `[supportY - 8, supportY + 0.42 + 0.02]` before falling back to the old fixed band. Without it a balcony 12 up is outside the fixed `[-4, 5]` band, so the player would be treated as falling; and with stacked floors the highest-surface rule would pick the overhead one. Ordinary ruins are unchanged (the flag is off). `unmount` clears the scopes. `levelRoom(result, level)` returns the hub's walkable footprint at a level as an abstract room for `RuinComposer` (see `ruin-capabilities.md`).
+`ShaftHub.mount(result, { ClimbSurfaces, DynamicSurfaces, DevRandomRuin, scope, parent, THREE })` registers standable cells and climb faces, mounts shell and climb geometry, and hands the grid to ruin movement. The player checks body clearance at their current level. A drop of more than one cell animates down to the landing and spends footing. The hub's scope owns its registrations and scene objects, which are removed together on unmount, reroll or exit.
+
+The standalone shaft uses `landings: true`, which extends each balcony tunnel into an enclosed landing. The walk/climb proof also checks reachability to each landing and verifies the wall behind it. `levelRoom(result, level)` exposes the walkable footprint to `RuinComposer`.
 
 Verified: `scripts/test-shaft-hub.js` (including the real `DynamicSurfaces` showing the fixed band cannot see the top balcony and the level-relative one can). In a real generated ruin: the hub was composed and mounted, the player grabbed the lowest balcony's wall, held *down* (into the wall for the default camera) and climbed from y = 0.06 to 4.06, mantled onto the balcony, and stood there at support y = 4.06 with no fall or rejection, full health and no page errors.
 
-**Not done / known gap (important):** movement collision is still the legacy 2D grid, which has no idea the buttresses exist, so in a real ruin you can currently walk through a buttress at ground level and, on a balcony, collision is whatever the 2D grid says at that spot. The design intent (see "The idea") is that whatever owns an entity asks for `sliceToTileGrid(level)` at that entity's level; wiring the ruin's collision to a per-level slice (and dropping off a balcony as a fall with a footing cost) is the next step. Doors lead to nothing yet (no corridor generator attaches to the tunnel ends), the shaft has no rendered walls (it needs the wall renderer to read the grid), and `ClimbSurfaces.buildVisual` still is not mounted in-game.
+**Remaining integration:** V50 does not insert these hubs or attach adjacent procedural rooms to the upper corridors. The legacy 2D navigation and projectile grids still do not follow the shaft's levels.
