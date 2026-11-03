@@ -459,6 +459,19 @@ const ruinConfig = JSON.parse(read('docs/config/random-ruin/ruin-config.json'));
 assert(ruinConfig.schema === 'hobunji_random_ruin_config.v1' && ruinConfig.sanctum?.boss && ruinConfig.moduleChances, 'ruin tuning lives in docs/config/random-ruin/ruin-config.json');
 new vm.Script(read('docs/js/dev-random-ruin-config.js'), { filename: 'dev-random-ruin-config.js' });
 assert(interactions.includes('registerWorldClimbProvider') && !interactions.includes("label:'Climb Up'"), 'ruin ledges climb from a forward dodge (ClimbSystem world-climb provider), not a listed prompt');
+// Composed challenges must be reached from the actual game, not a disconnected preview/editor.
+{
+  const html=read('docs/index.html'); // Exact startup order for ordinary wilderness and mobile players.
+  const playable=read('docs/js/ruin-composer-playable.js'); // Shared native placement, support and enemy integration.
+  const worldInputs=read('docs/js/dev-random-ruin-interactions.js'); // Location passages must not require reticle focus.
+  assert(html.includes('js/ruin-composer-playable.js')&&html.indexOf('js/ruin-composer-playable.js')<html.indexOf('js/dev-random-ruin-bootstrap.js'),'the gameplay page loads the playable composer before the ruin bootstrap');
+  assert(interior.includes('await attachComposedTrialWing(rec,candidateSeed)')&&interior.includes("opts.site===true&&theme==='hronal'"),'seeded Hronal wilderness sites actually attach the composed room');
+  assert(interior.includes('window.RuinComposerPlayable.mount')&&interior.includes('ruin?.composedWing?.dispose?.()'),'real map generation must mount and tear down authored trials');
+  assert(interior.includes("composedButton.textContent='V50 + Composed Trial'"),'mobile Dev Mode exposes a reproducible trial entry');
+  assert(playable.includes('C.apply(composition')&&playable.includes('G.HangingRopes.registerRope')&&playable.includes('G.RuinEncounters.create'),'composition is consumed by gameplay furniture, rope and enemy runtimes');
+  assert(playable.includes('DS.registerPit')&&playable.includes('P.registerNode')&&playable.includes('P.unregisterNode'),'chasm collision and authored puzzles have lifecycle ownership');
+  assert(worldInputs.includes("'shaft-passage', 'composed-passage'"),'shaft and trial entry actions work without needing to aim at invisible portal meshes');
+}
 console.log('Random Test Ruin integration static audit passed.');
 const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
 assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');
