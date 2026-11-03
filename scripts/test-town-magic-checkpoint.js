@@ -115,6 +115,7 @@ assert(!guildSource.includes('It glows red and hums when you carry uncatalogued 
   api.onTownEntered({ fromArea: 'farm', col: 8, row: 15 }); await flush();
   assert.equal(scenes.length, 2);
   assert(scenes[1].stages.some(stage => stage.id === 'magic_repeat_greeting'));
+  assert.deepEqual(Array.from(scenes[1].actors, actor => actor.id), ['player', 'spearhead'], 'Oddclaw accompanies the initial armed interception, not routine repeat checks');
   assert(!scenes[1].stages.some(stage => stage.id === 'magic_explain_garanki'));
   assert.equal(custody().length, 3);
 
