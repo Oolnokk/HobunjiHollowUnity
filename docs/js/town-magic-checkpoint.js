@@ -362,7 +362,9 @@
       actors: [
         { id: 'player', name, isPlayer: true, worldC: c, worldR: r, rotation: approach.facing, pose: 'standing' },
         { id: 'spearhead', name: 'Spearhead', npcId: WATCHMEN[0], npcRecord: records[0], worldC: spearheadTile.c, worldR: spearheadTile.r, rotation: facePlayer(spearheadTile), pose: 'standing', lookAtActorId: 'player' },
-        { id: 'oddclaw', name: 'Oddclaw', npcId: WATCHMEN[1], npcRecord: records[1], worldC: oddclawTile.c, worldR: oddclawTile.r, rotation: facePlayer(oddclawTile), pose: 'standing', lookAtActorId: 'player' },
+        ...(!ledger.explained ? [
+          { id: 'oddclaw', name: 'Oddclaw', npcId: WATCHMEN[1], npcRecord: records[1], worldC: oddclawTile.c, worldR: oddclawTile.r, rotation: facePlayer(oddclawTile), pose: 'standing', lookAtActorId: 'player' },
+        ] : []), // Oddclaw joins the tense first interception only; later inspections are Spearhead's routine duty.
       ],
       stages,
     };
