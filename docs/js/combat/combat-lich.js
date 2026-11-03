@@ -1814,7 +1814,10 @@
   function updateLichAI(lich, dt, target, distToTarget) {
     if (!isArena() || !isLiveActor(lich)) return { aimAngle: lich.facing || 0, moving: false, handled: true };
     target = target && Number(target.health) > 0 ? target : deps.player; // Shared hostile loop normally passes player; fallback keeps arena-spawned liches deterministic.
-    if (!isLiveActor(target)) return { aimAngle: lich.facing || 0, moving: false, handled: true };
+    if (!isLiveActor(target)) {
+      window.SpecialHarlyaoLiches?.handleAI?.(lich, dt, null, deps, lich.facing || 0, Infinity); // Cancel Nanahi's tracked icicle emitter when no living opponent remains.
+      return { aimAngle: lich.facing || 0, moving: false, handled: true };
+    }
     const def = typeDef(lich.lichType); // Tradition tuning supplies preferred combat ring and cast cadence.
     const dx = target.x - lich.x; // Horizontal vector to target used for facing/movement.
     const dy = target.y - lich.y; // Z-plane vector to target used for facing/movement.

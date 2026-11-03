@@ -31,6 +31,30 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   load('docs/js/npc-wardrobe.js'); // The same standalone adapter now ships with the Enemy Workshop.
   load('docs/tools/enemy-loadout-editor/source-data.js');
   const rules=window.EnemyLoadoutRules, liches=window.SpecialHarlyaoLiches;
+  const bossCalls=[]; // Verify the real boss AI tracks her chosen target and emits one drop at each authored interval.
+  window.DevRandomRuinLichThemes={
+    trackBossBlizzard:(...args)=>bossCalls.push(['track',...args]),
+    triggerBossBlizzard:(...args)=>bossCalls.push(['drop',...args]),
+    stopBossBlizzard:(...args)=>bossCalls.push(['stop',...args]),
+  };
+  const nanahi={isSpecialLich:true,lichType:'tothal',_specialCooldown:0,_specialStage:{kind:'kneel',time:1.2,wave:0}};
+  const chosen={x:384,y:448,health:100};
+  liches.handleAI(nanahi,.1,chosen,{},0,0);
+  assert.equal(bossCalls.filter(call=>call[0]==='track').length,1,'Each kneeling tick updates the one emitter');
+  assert.equal(bossCalls.filter(call=>call[0]==='drop').length,1,'An interval releases only one icicle');
+  assert.equal(bossCalls[0][2],chosen,'The actual current AI target is followed, never the whole room');
+  bossCalls.length=0;
+  liches.handleAI(nanahi,.1,{x:512,y:448,health:100},{},0,0);
+  assert.equal(bossCalls.filter(call=>call[0]==='track').length,1,'Target movement updates the emitter even between drops');
+  assert.equal(bossCalls.filter(call=>call[0]==='drop').length,0,'No new icicle before the next interval');
+  liches.handleAI(nanahi,1.5,chosen,{},0,0);
+  assert.equal(bossCalls.filter(call=>call[0]==='stop').length,1,'The tracking origin is cancelled when her kneel ends');
+  nanahi._specialStage={kind:'kneel',time:1,wave:0}; // Losing the selected target mid-attack must remove its tracked source.
+  bossCalls.length=0;
+  liches.handleAI(nanahi,.1,null,{},0,0);
+  assert.equal(nanahi._specialStage,null,'Target loss cancels the kneeling barrage');
+  assert.equal(bossCalls.filter(call=>call[0]==='stop').length,1,'Target loss cancels the single emitter');
+  assert.equal(bossCalls.filter(call=>call[0]==='drop').length,0,'Target loss never causes an extra drop');
   assert.deepEqual(Object.keys(liches.DATA).sort(),['hronal','kanthic','tothal']);
   assert.equal(liches.kindFor('hronal'),'lich:hronal:azgarlu');
   assert.equal(liches.kindFor('tothal'),'lich:tothal:nanahi');
@@ -120,6 +144,8 @@ function load(file) {vm.runInContext(read(file),context,{filename:file});}
   assert.ok(preview.includes('js/combat/combat-special-liches.js'),'Workshop preview must load actual named-boss runtime');
   assert.ok(preview.includes('js/npc-wardrobe.js'),'Workshop must load the NPC forced-overpass adapter for patterned clothing');
   assert.ok(preview.includes("key === 'warhammer_nativeCopper' ? 'assets/toolsprites/warhammer.png'"),'Workshop retains a concrete canonical warhammer sprite fallback');
+  const lichCombat=read('docs/js/combat/combat-lich.js'); // Verify the shared combat adapter forwards lost targets to the boss cancellation logic.
+  assert.ok(lichCombat.includes('handleAI?.(lich, dt, null, deps,'),'The live lich AI must cancel Nanahi when no valid combat target remains');
   const hostileRenderer=read('docs/js/combat/combat-bandit.js');
   assert.ok(hostileRenderer.includes("roster.specialLichId === 'imlao'"),'Imlao alpha-mask must be in the shared hostile portrait builder');
   assert.ok(hostileRenderer.includes('skipHeadSprite: true') && !hostileRenderer.includes("'destination-out'"),'Imlao re-renders without the head sprite instead of erasing a hole, so what the skull hid shows through');
