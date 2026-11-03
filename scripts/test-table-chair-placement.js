@@ -155,4 +155,8 @@ const authorCode=fs.readFileSync('docs/tools/building-interior-author/index.html
 assert.match(authorCode,/function tableChildCenterOnGrid\(/);
 assert.match(authorCode,/var childCenter=tableChildCenterOnGrid\(f\)/);
 
+assert.match(game,/function decorativeFurnitureClaimsInteriorCell\(/,'Partition edit checks physical child positions');
+assert.match(game,/other\.tableAttachment \? other\.mesh\.rotation\.y/,'Collision uses live child rotation during table moves');
+assert.match(placerCode,/Show Table Chair Debug/,'On-screen table-child diagnostics exist');
+assert.match(authorCode,/if\(tableChildCenterOnGrid\(f\)\)return true/,'Old editor origin tiles no longer delete attached chairs');
 console.log('table-chair-placement: scale-aware geometry, atomic table moves, direct placement, collision, save/restore and editor integration tests passed');
