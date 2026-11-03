@@ -168,6 +168,12 @@
     });
     return true;
   }
+  function unregisterDispenser(mapId,id) {
+    const dispenser=dispensers.get(String(id));
+    if(!dispenser||dispenser.mapId!==String(mapId))return false;
+    dispensers.delete(String(id));
+    return true; // A released bomb remains independent after its ceiling tube is removed.
+  }
   async function dispenseFromMechanism(root) {
     if (!root?.isObject3D) return false;
     const key=String(root.userData?.puzzleInstanceId||root.userData?.authoredFurnitureKey||root.id);
@@ -296,7 +302,7 @@
   createGroupFactory();
   window.HronalWitchBombs=Object.freeze({
     installed:true,KIND,DEFAULT_FUSE_SECONDS,BLAST_RADIUS,
-    spawn,registerDispenser,dispenseFromMechanism,spawnCarriedByEnemy,
+    spawn,registerDispenser,unregisterDispenser,dispenseFromMechanism,spawnCarriedByEnemy,
     registerBreakable,dropEnemyBomb,tick,debugSnapshot,
   });
 })();
