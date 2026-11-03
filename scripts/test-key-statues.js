@@ -77,4 +77,54 @@ assert(carry.includes('onLost:typeof options.onLost'));
 assert(carry.includes('function pickUp(cask)'));
 assert(carry.includes('cask.onPickup?.(cask)'));
 
+// Runtime lifecycle regression: a late/missing furniture asset must not permanently block respawn.
+class MockGroup {
+ constructor(){this.isObject3D=true;this.children=[];this.parent=null;this.userData={};this.position={set(x,y,z){Object.assign(this,{x,y,z});}};this.quaternion={identity(){}};this.scale={setScalar(value){this.x=this.y=this.z=value;}};}
+ add(child){child.parent=this;this.children.push(child);}
+ remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
+ updateWorldMatrix(){}
+}
+const scene={isScene:true};
+const button=new MockGroup();
+const root=new MockGroup();
+root.parent=scene;
+root.userData.meshById=new Map([['key_statue_button',button]]);
+let assetLoads=0;
+const registered=[];
+const takenTransitions=[];
+const runtimeWindow={
+ THREE:{Group:MockGroup,Vector3:class{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}},
+ GridTileAccessors:{getCurrentArea:()=> 'map_key_statue_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+ AuthoredFurniture:{
+  async load(){assetLoads++;return assetLoads===1?null:{key:'keyStatue'};},
+  buildGroup(){return new MockGroup();},
+ },
+ Shattercasks:{
+  registerBurden(options){const burden={...options,exploded:false,carried:false,flying:false};registered.push(burden);return burden;},
+  discardBurden(burden){burden.exploded=true;burden.group.parent?.remove(burden.group);burden.onLost?.(burden,'discarded');return true;},
+  pickUp(){return true;},
+ },
+ FurniturePuzzleRuntime:{setKeyStatueTaken(_map,_id,taken){takenTransitions.push(taken);return true;}},
+};
+runtimeWindow.window=runtimeWindow;
+vm.runInNewContext(read('docs/js/key-statues.js'),{window:runtimeWindow,console});
+assert(runtimeWindow.KeyStatues.registerDispenser('map_key_statue_runtime','fixture',root,{payloadPartId:'key_statue_button'}));
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(assetLoads,1,'initial missing authored data is observed');
+assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,
+ 'failed asset lookup clears the respawn lock instead of wedging the dispenser');
+runtimeWindow.KeyStatues.tick(.1);runtimeWindow.KeyStatues.tick(.1);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(registered.length,1,'the dispenser retries and registers the physical Key Statue');
+assert.equal(registered[0].group.parent,button,'the replacement is physically mounted on the moving button');
+assert.equal(takenTransitions[0],false,'initially mounted payload leaves the plinth in its OFF/raised state');
+const first=registered[0];
+first.onLost(first,'hazard');
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(registered.length,2,'losing the statue spawns exactly one replacement');
+assert.notStrictEqual(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].payload,first.id,
+ 'the live payload reference changes to the replacement');
+assert.equal(registered[1].group.parent,button,'replacement is attached while the button animates back up');
+assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,'successful replacement releases the respawn lock');
+
 console.log('Key Statue: authored statue/dispenser, inverted button transforms, mounted Burden, pickup channel, automatic loss cleanup and ON→OFF restoration checks passed.');
