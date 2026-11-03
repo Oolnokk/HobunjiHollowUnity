@@ -188,8 +188,12 @@
     const count = indices ? indices.count : position.count;
     const vertices = [], uvs = [], axes = [], weights = [], baseUvs = [], materialIds = []; // Temporary arrays exist only during construction, never per frame.
     const allowRegions = record.allowRegions ? new Set(record.allowRegions) : null; // Optional planar-region whitelist (ruin rules).
-    const bounds = {x:0,z:0}; // Dimensions of the actual source geometry anchor the continuous side unwrap.
-    for (let i=0;i<position.count;i++) { bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3])); bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2])); }
+    const bounds = {x:0,y:0,z:0}; // Dimensions of the actual source geometry anchor the curved unwrap in all three axes.
+    for (let i=0;i<position.count;i++) {
+      bounds.x=Math.max(bounds.x,Math.abs(position.array[i*3]));
+      bounds.y=Math.max(bounds.y,Math.abs(position.array[i*3+1]));
+      bounds.z=Math.max(bounds.z,Math.abs(position.array[i*3+2]));
+    }
     const curved = ['cylinder','disc','legRound','barrel','cup','sphere'].includes(part.kind); // Curved side groups use angular coordinates rather than switching box planes.
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); // Reused triangle scratch vectors.
     const edge = new THREE.Vector3(), normal = new THREE.Vector3(); // Reused normal computation for selection and offset.
@@ -216,11 +220,26 @@
         vertices.push(point.x, point.y, point.z); // Polygon offset prevents z-fighting without opening cracks between neighboring triangle planes.
         let u = axis === 'x' ? point.z : point.x; // Default planar mapping is continuous across the selected face.
         let ux=axis === 'x' ? 0 : point.x, uz=axis === 'x' ? point.z : 0; // Linear coordinates let non-uniform resizing preserve the side perimeter.
-        if (record.selector === 'sides' && curved) u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
-        else if (record.selector === 'sides') { ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x; uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z; u=ux+uz; } // One perimeter coordinate continues around rectangular pillars.
-        uvs.push(u / record.scale, (axis === 'y' ? -point.z : point.y) / record.scale);
+        let v = axis === 'y' ? -point.z : point.y;
+        let uAxis = axis === 'x' ? 2 : 0, vAxis = axis === 'y' ? 2 : 1;
+        if (part.kind === 'sphere') {
+          const equatorialRadius=Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
+          const verticalRadius=Math.max(.001,bounds.y);
+          const latitude=Math.asin(Math.max(-1,Math.min(1,point.y/verticalRadius)));
+          u=angles[vertex]*equatorialRadius;
+          v=(latitude+Math.PI/2)*verticalRadius;
+          uAxis=3;vAxis=4; // Longitude scales with equatorial X/Z; latitude scales with vertical Y.
+        } else if (record.selector === 'sides' && curved) {
+          u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
+          uAxis=3;
+        } else if (record.selector === 'sides') {
+          ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x;
+          uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z;
+          u=ux+uz;
+        } // One perimeter coordinate continues around rectangular pillars.
+        uvs.push(u / record.scale, v / record.scale);
         vertex++;
-        axes.push(record.selector === 'sides' && curved ? 3 : axis === 'x' ? 2 : 0, axis === 'y' ? 2 : 1);
+        axes.push(uAxis,vAxis);
         weights.push(ux/record.scale,uz/record.scale); // U axis may depend on both X and Z for a continuous box-side unwrap.
       }
     }
@@ -428,7 +447,7 @@
 
   function retainPatternScale(mesh, record = {}) {
     const base = mesh.geometry.userData.patternBaseUvs, axes = mesh.geometry.userData.patternUvAxes; // Rest UVs retain authored coordinates without cumulative drift.
-    const previous = [-1, -1, -1], lengths = [1, 1, 1]; // Reused scale scratch; no per-frame vector allocations.
+    const previous = [-1, -1, -1], lengths = [1, 1, 1, 1, 1]; // Reused scale scratch; axes 3/4 are curved equator/latitude scale channels.
     const beforeRender = mesh.onBeforeRender; // Preserve the banner's existing time update.
     mesh.onBeforeRender = function (renderer, scene, camera, geometry, material, group) {
       beforeRender?.call(this, renderer, scene, camera, geometry, material, group);
@@ -438,6 +457,7 @@
       const uv = mesh.geometry.getAttribute('uv'); // Resample only when the furniture was resized; ordinary frames do no buffer writes.
       const weights=mesh.geometry.userData.patternUvWeights,radii=mesh.geometry.userData.patternSideRadii; // Source unwrap metadata is immutable across resizes.
       lengths[3]=Math.hypot(radii[0]*lengths[0],radii[1]*lengths[2])/Math.max(.001,Math.hypot(...radii)); // Elliptical side mapping retains one consistent circumference scale.
+      lengths[4]=lengths[1]; // Spherical latitude tracks the source mesh's independent vertical scale.
       const atlas=mesh.geometry.userData.patternAtlas || mesh.geometry.userData; // Partitions share the original full selected-surface extent.
       let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity;
       for(let i=0;i<atlas.patternBaseUvs.length;i++) {
