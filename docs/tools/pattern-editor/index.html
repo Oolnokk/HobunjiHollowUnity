@@ -2327,7 +2327,10 @@ function setupFurAuthoring() {
   let rightPainter=null,openingRightPainter=false; // One embedded painting session at a time; ordinary full-screen editor remains separate.
   furRightPainterActive=()=>openingRightPainter||!!rightPainter?.isOpen?.();
   const lockedFields=['furAnimalSpecies','furWearerVariant','furGeneId','furPaintView','furTestCoat','furTestInk']; // Save targets cannot change while the embedded painter edits one exact animal/gene/fit.
-  function lockRightPaintSelection(value){for(const id of lockedFields)field(id).disabled=value;}
+  function lockRightPaintSelection(value){
+    for(const id of lockedFields)field(id).disabled=value;
+    $('previewMode').disabled=value; // Prevent switching to an unrelated preview while its canvas has been replaced by the live painter.
+  }
   syncFurViewportButton=()=>{
     const active=furRightPainterActive();
     mainButton.textContent=active?'Return to pattern preview':'Paint hood in right viewport';
@@ -2348,6 +2351,9 @@ function setupFurAuthoring() {
     openingRightPainter=true;
     lockRightPaintSelection(true);
     $('previewMode').value='furHood';
+    $('furniturePreview').hidden=true; // The former right viewport may have been a 3D banner; restore the normal canvas container first.
+    $('preview').parentElement.hidden=false;
+    window.PatternFurniturePreview.dispose();
     $('preview').hidden=true; // The painter is mounted INSIDE the old preview container, not on top of the whole page.
     syncPreviewModeControls();
     status.textContent='Opening a paintable hood in the right viewport…';

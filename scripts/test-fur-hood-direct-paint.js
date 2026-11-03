@@ -18,6 +18,8 @@ assert(editor.includes('id="furPaintBtn"'), 'Paint on hood is available in the e
 assert(editor.includes('id="furMainViewportBtn"'), 'main right viewport toggle is exposed in animal authoring');
 assert(editor.includes("openHoodPainter($('preview').parentElement,exitRightPainter)"), 'the main viewport embeds the editable painter rather than showing a passive hood image');
 assert(editor.includes("furRightPainterActive=()=>openingRightPainter||!!rightPainter?.isOpen?.()"), 'the main preview does not overwrite an active paint session');
+assert(editor.includes("window.PatternFurniturePreview.dispose();"), 'the embedded painter replaces a previously active 3D viewport too');
+assert(editor.includes("previewMode').disabled=value"), 'main preview mode cannot replace the painter during an edit');
 assert(author.includes("mountTarget.appendChild(overlay)"), 'paint tools render within the main right-hand viewport when requested');
 assert(author.includes("return Object.freeze({ close, isOpen:()=>!closed })"), 'right panel can close an existing shared painting session cleanly');
 assert(editor.includes('<option value="furHood">Animal fur hood</option>'), 'main right preview mode supports the hood');
@@ -29,7 +31,7 @@ assert(editor.includes("furHoodMarkingsOverride:motif&&gene?[{geneId:gene,patter
 assert(editor.includes('id="furPaintView"'), 'front and behind authoring can be selected');
 assert(editor.includes('fur-hood-direct-paint-editor.js'), 'editor loads its dedicated paint module');
 assert(editor.includes('FurHoodDirectPaintEditor.open'), 'button is wired to the real editor');
-assert(editor.includes('entry.patterns[gene] = { motifPng: path, settings, authoring }'), 'runtime motif/setting fields remain unchanged while authoring is dev-only');
+assert.match(editor,/entry\.patterns\[gene\]\s*=\s*\{\s*motifPng:\s*path,\s*settings,\s*authoring\s*\}/,'runtime motif/setting fields remain unchanged while authoring is dev-only');
 assert(source.includes("patternDef?.garmentFixed === true && patternDef?.tiling === false"), 'non-tiling authored motifs use a fixed source frame');
 assert(source.includes('directMaskPass || anchored'), 'fixed garment motifs do not inherit the general weaving per-cell phase offset');
 assert(source.includes("['base', 'animalFront', 'animalBack'].includes(role)"), 'eligible fur mask excludes normal trim');
