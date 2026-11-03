@@ -87,8 +87,8 @@ assert(rect.x > 450 && rect.x + rect.z < 550, 'without live child particles the 
 // enchantment particle updates cannot overwrite its clipping bounds.
 main.userData.hobunjiDungeonFireVfxPadding = 0.75; // Independent live plume size for the player-held weapon.
 assert.strictEqual(projection(renderer, camera, [source], rect), true);
-assert(rect.x < 450 && rect.x + rect.z > 900,
-  'tall Dungeon Fire still renders outside the blade even with no enchantment aura');
+assert(rect.x > 450 && rect.x + rect.z > 900 && rect.y + rect.w > 850,
+  'world-up Dungeon Fire extends above the blade without widening the replay over the whole screen');
 main.userData.hobunjiDungeonFireVfxPadding = 0; // Extinguishing Dungeon Fire must restore the original scissor budget.
 assert.strictEqual(projection(renderer, camera, [source], rect), true);
 assert(rect.x > 450 && rect.x + rect.z < 550,
