@@ -194,7 +194,14 @@
     setText('shipRightFooter', isBoxSide(shippingSelected.side) && def ? `${def.label} ×${count}` : panel.text.rightFooter);
     setText('shipDetailIcon', def ? (deps.itemIconForKey?.(key) || def.icon || panel.iconFallback) : panel.iconFallback);
     setText('shipDetailName', def ? def.label : panel.text.detailName);
-    setText('shipDetailValue', def && canShipKey(key) ? `${saleValue(getShipPrice(key))}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue));
+    const hideScope = isBoxSide(shippingSelected.side) ? 'shipping' : 'pack'; // Quote the actual origin inventory when the user previews a transfer.
+    const hidePrice = def && count > 0 && window.AnimalHides?.isHide?.(key)
+      ? window.AnimalHides.quote(key, shippingAmount, hideScope, getShipPrice(key), count, null,
+        { pendingFirst: hideScope === 'shipping' ? shippingBoxObject?.getPendingSaleCountFor?.(key) || 0 : 0 })
+      : null; // Quoting the selected units reflects rare coats and respects midnight cutoff order.
+    setText('shipDetailValue', hidePrice?.ok
+      ? `${saleValue(hidePrice.total)}g for ${shippingAmount} selected (mixed coat values)`
+      : (def && canShipKey(key) ? `${saleValue(getShipPrice(key))}${panel.text.valueEachSuffix}` : (def ? panel.text.notSellable : panel.emptyValue)));
     setText('shipDetailDesc', def ? `${def.desc}${blocked ? panel.text.blockedSuffix : ''}` : panel.text.detailEmpty);
     const tags = document.getElementById('shipDetailTags');
     if (tags) tags.innerHTML = def
