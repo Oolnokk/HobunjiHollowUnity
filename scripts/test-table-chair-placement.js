@@ -44,4 +44,60 @@ assert.match(mapEditor,/record\.tableAttachment=normalized/);
 const interiorAuthor=fs.readFileSync('docs/tools/building-interior-author/index.html','utf8');
 assert.match(interiorAuthor,/f\.tableAttachment=normalized/);
 assert.match(interiorAuthor,/TableChairPlacement\?\.apply/);
-console.log('table-chair-placement: geometry, rotation, facing, save/restore, occupancy and editor integration tests passed');
+// Physical collision is independent of tile occupancy.
+const collisionA={x:0,z:0,width:1,depth:1,yaw:0};
+assert.equal(api.overlapsFootprints(collisionA,{x:.5,z:0,width:1,depth:1,yaw:0}),true);
+assert.equal(api.overlapsFootprints(collisionA,{x:1,z:0,width:1,depth:1,yaw:0}),false);
+assert.equal(api.overlapsFootprints(collisionA,{x:.5,z:0,width:1,depth:1,yaw:Math.PI/4}),true);
+assert.equal(api.modeForTable('tableRound'),'orbit');
+assert.equal(api.modeForTable('tableLong'),'edge');
+
+// Parent changes update only its children, never NPCs belonging to unrelated furniture.
+const refreshChair={
+  position:new Vector3(0,0,0),rotation:{y:0},parent:{},
+  getWorldPosition(){return this.position.clone();},updateWorldMatrix(){},
+};
+refreshChair.position.set=function(x,y,z){this.x=x;this.y=y;this.z=z;};
+refreshChair.position.distanceToSquared=function(v){return (this.x-v.x)**2+(this.y-v.y)**2+(this.z-v.z)**2;};
+table.parent={};
+let npcMoved=0;
+window.HobunjiFurnitureTableAttachmentMoved=()=>npcMoved++;
+const entries=[
+ {id:'table',root:table,def:{fw:2,fd:2},record:{id:'table'}},
+ {id:'chair',root:refreshChair,def:{fw:1,fd:1},record:{id:'chair',tableId:'table',tableAttachment:{mode:'orbit',angleDeg:0,distance:.5}}},
+];
+assert.equal(api.refreshArea('interior',entries,'unrelated'),0);
+assert.equal(api.refreshArea('interior',entries,'table'),1);
+assert.equal(api.refreshArea('interior',entries,'table'),0);
+assert.equal(npcMoved,1);
+table.rotation.y+=Math.PI/2;
+assert.equal(api.refreshArea('interior',entries,'table'),1);
+assert.equal(npcMoved,2);
+assert.equal(api.refreshArea('preview:map',entries,'table'),0);
+table.rotation.y+=Math.PI/2;
+assert.equal(api.refreshArea('preview:map',entries,'table'),1);
+assert.equal(npcMoved,2,'preview must not touch NPC station registry');
+
+vm.runInNewContext(fs.readFileSync('docs/js/interior-furniture-grid.js','utf8'),{window,Map,Math,Number,Object,Array,Set});
+const child={id:'chair',itemKey:'chairSimpleFurniture',col:4,row:3,tableId:'table',
+ tableAttachment:{mode:'orbit',angleDeg:0,distance:.5}};
+const parentTable={id:'table',itemKey:'tableRoundFurniture',col:4,row:2};
+const interiorGrid=window.InteriorFurnitureGrid;
+assert.equal(interiorGrid.isValidTableAttachment(child,[child,parentTable]),true);
+assert.deepEqual(interiorGrid.mergedColliders({colliders:[],furniture:[child,parentTable]}).colliders,[[4,2],[5,2],[4,3],[5,3]],
+ 'attached chair must not add a separate occupied tile');
+const orphan={...child,tableId:'deleted-table'};
+assert.equal(interiorGrid.isValidTableAttachment(orphan,[orphan]),false);
+assert.deepEqual(interiorGrid.mergedColliders({colliders:[],furniture:[orphan]}).colliders,[[4,3]],
+ 'orphaned chair must regain its tile collision');
+assert.match(game,/Math\\.floor\\(col\\), tileRow = Math\\.floor\\(row\\)/,'NPC station navigation uses integer tile indices');
+assert.match(game,/furnitureId \\? \`furniture_chair_/,'NPC station ids are unique by furniture instance');
+assert.match(game,/nearestDetachedChairTile/,'table removal preserves attached chairs');
+assert.match(game,/canKeepAttachedChairHere/,'gameplay validates attachment bounds');
+const mapEditorCode=fs.readFileSync('docs/tools/map-editor/index.html','utf8');
+assert.match(mapEditorCode,/const previewRecord = \\{ \\.\\.\\.record/,'3D preview uses a copy of authoring records');
+assert.match(mapEditorCode,/id="propTableChoice"/,'Map Editor offers a native table selector');
+const index=fs.readFileSync('docs/index.html','utf8');
+assert.match(index,/js\\/table-chair-placement\\.js\\?v=/,'shared placement module loads in the game');
+
+console.log('table-chair-placement: geometry, parent refresh, collision, NPC identity, save/restore and editor integration tests passed');
