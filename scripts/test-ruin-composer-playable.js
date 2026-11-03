@@ -43,10 +43,12 @@ globalThis.AuthoredFurniture={
   },
 };
 globalThis.FurniturePuzzleRuntime={
-  registerNode(mapId,record,group){
+  registerNode(mapId,record,group,options={}){
     if(!group.userData.furniturePuzzle)return false;
     group.userData.furniturePuzzle={...group.userData.furniturePuzzle,...record.puzzle};
-    nodes.set(record.id,{mapId,record,group});
+    nodes.set(record.id,{mapId,record,group,setBlocked:options.setBlocked});
+    if(group.userData.furniturePuzzle.role==='mechanism')
+      options.setBlocked?.(record,group.userData.furniturePuzzle.blocksMovement!==false);
     return true;
   },
   unregisterNode(_mapId,id){return nodes.delete(id);},
@@ -98,6 +100,11 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert(pillarNode,'pillar is registered as a blast-reactive puzzle mechanism');
   assert.equal(pillarNode.group.position.x,3+pillar.x);
   assert(Math.abs(pillarNode.group.rotation.y+Math.PI/2)<.001,'the falling shaft faces straight across the chasm');
+  const footCol=Math.floor(3+pillar.x+2),footRow=Math.floor(24+pillar.z); // The upright base occupies the far bank, never the abyss.
+  const originalFoot=rec.grid[footRow][footCol];
+  assert.equal(originalFoot.type,'rock','an upright pillar blocks native walking and ground enemy paths');
+  pillarNode.setBlocked(pillarNode.record,false); // Real FurniturePuzzleRuntime does this at collisionOpenProgress.
+  assert.equal(rec.grid[footRow][footCol].type,'grass','a toppled pillar releases the far-bank collision tile');
   assert.equal(pillarNode.group.userData.furniturePuzzle.standingSurface?.partId,'part_mvzye4ag_g0i3g');
   assert(ropes.size>0 && [...ropes.values()].every(r=>r.mapId==='map_i_dev_random_ruin'),'rope mounts become real hanging rope records');
   assert.equal(tubes.size,1,'Witch-bomb tubes are registered with the live factory');
@@ -115,6 +122,7 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   }
   assert.equal(toast.length,3,'action messages use the existing toast surface');
   wing.dispose();
+  assert.equal(rec.grid[footRow][footCol].type,'grass','undoing the wing restores the original V50 tile instead of leaving a phantom obstacle');
   assert.equal(nodes.size,0,'furniture puzzle graph is cleaned up on exit');
   assert.equal(ropes.size,0,'the rope runtime is cleaned up');
   assert.equal(encounters.size,0,'the defence encounter is cleaned up');
