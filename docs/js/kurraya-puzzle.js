@@ -218,24 +218,23 @@
       if (voice) { try { voice.stop(); } catch (_) {} voice = null; }
       const source = usingMidiFallback ? ctx.createOscillator() : ctx.createBufferSource();
       const gain = ctx.createGain();
+      const start = ctx.currentTime + 0.001; // Connect the voice before scheduling its start, including on Safari's stricter Web Audio pipeline.
       if (usingMidiFallback) {
         // A simple MIDI-pitched sine flute with breathlike attack/release; no audio asset or external synth library is required.
-        const start = ctx.currentTime;
         source.type = 'sine';
         source.frequency.value = 440 * Math.pow(2, (Number(midi) - 69) / 12);
         gain.gain.setValueAtTime(0.0001,start);
         gain.gain.exponentialRampToValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + 0.045);
         gain.gain.exponentialRampToValueAtTime(0.0001,start + 0.42);
-        source.start(start);
-        source.stop(start + 0.44);
       } else {
         source.buffer = buffer;
         // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
         source.playbackRate.value = Math.pow(2,(Number(midi) - sampleRootMidi) / 12);
         gain.gain.value = configuredGain();
-        source.start(ctx.currentTime + 0.001);
       }
       source.connect(gain); gain.connect(ctx.destination);
+      source.start(start);
+      if (usingMidiFallback) source.stop(start + 0.44);
       voice = source;
       source.onended = () => { if (voice === source) voice = null; source.disconnect(); gain.disconnect(); };
       lastError = '';
