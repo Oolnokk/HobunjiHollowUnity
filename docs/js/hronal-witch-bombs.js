@@ -71,15 +71,40 @@
   }
   function buildEffect(targetScene,x,y,z) {
     if (!targetScene) return;
+    const group=new THREE.Group(); // One scene root owns the expanding flash and instanced flame tongues.
+    group.name='hronal_witch_bomb_fire_burst';
+    group.position.set(x,y,z);
+    targetScene.add(group);
     const flash=new THREE.Mesh(
       new THREE.SphereGeometry(.22,12,8),
       new THREE.MeshBasicMaterial({color:0xff6b17,transparent:true,opacity:.92,depthWrite:false,blending:THREE.AdditiveBlending})
     );
     flash.name='hronal_witch_bomb_fire_flash';
-    flash.position.set(x,y,z);
     flash.renderOrder=12;
-    targetScene.add(flash);
-    bursts.push({flash,age:0,duration:.42});
+    group.add(flash);
+    const count=32,geometry=new THREE.ConeGeometry(.075,.34,5,1);
+    const material=new THREE.MeshBasicMaterial({color:0xff7a1b,transparent:true,opacity:.94,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide});
+    const flames=new THREE.InstancedMesh(geometry,material,count);
+    flames.name='hronal_witch_bomb_fire_tongues';
+    flames.frustumCulled=false;
+    group.add(flames);
+    const parts=[];
+    for(let i=0;i<count;i++){
+      const angle=i*2.399963229728653,speed=1.15+(i%6)*.28;
+      parts.push({x:0,y:0,z:0,vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,vy:1.0+(i%5)*.34});
+    }
+    const dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0),direction=new THREE.Vector3();
+    for(let i=0;i<count;i++){
+      const part=parts[i];
+      direction.set(part.vx,part.vy,part.vz).normalize();
+      dummy.position.set(0,0,0);
+      dummy.quaternion.setFromUnitVectors(up,direction);
+      dummy.scale.setScalar(.72+(i%4)*.12);
+      dummy.updateMatrix();
+      flames.setMatrixAt(i,dummy.matrix);
+    }
+    flames.instanceMatrix.needsUpdate=true;
+    bursts.push({group,flash,flames,geometry,material,parts,dummy,up,direction,age:0,duration:.72});
   }
   function breakNearby(mapId,x,z,radius) {
     for (const [id,record] of [...breakables]) {
@@ -289,9 +314,27 @@
     for(let i=bursts.length-1;i>=0;i--) {
       const state=bursts[i];state.age+=step;
       const t=clamp(state.age/state.duration,0,1);
-      state.flash.scale.setScalar(.22+BLAST_RADIUS*.22*t);
-      state.flash.material.opacity=.92*(1-t);
-      if(t>=1){state.flash.parent?.remove(state.flash);state.flash.geometry.dispose();state.flash.material.dispose();bursts.splice(i,1);}
+      state.flash.scale.setScalar(.22+BLAST_RADIUS*.22*Math.min(1,t/.35));
+      state.flash.material.opacity=.92*Math.max(0,1-t/.34);
+      for(let j=0;j<state.parts.length;j++){
+        const part=state.parts[j];
+        part.x+=part.vx*step;part.y+=part.vy*step;part.z+=part.vz*step;
+        part.vy-=2.3*step;
+        state.dummy.position.set(part.x,part.y,part.z);
+        state.direction.set(part.vx,part.vy,part.vz).normalize();
+        state.dummy.quaternion.setFromUnitVectors(state.up,state.direction);
+        state.dummy.scale.setScalar(Math.max(.001,(1-t)*(.72+(j%4)*.12)));
+        state.dummy.updateMatrix();
+        state.flames.setMatrixAt(j,state.dummy.matrix);
+      }
+      state.flames.instanceMatrix.needsUpdate=true;
+      state.material.opacity=.94*(1-t);
+      if(t>=1){
+        state.group.parent?.remove(state.group);
+        state.geometry.dispose();state.material.dispose();
+        state.flash.geometry.dispose();state.flash.material.dispose();
+        bursts.splice(i,1);
+      }
     }
   }
   function debugSnapshot() {
