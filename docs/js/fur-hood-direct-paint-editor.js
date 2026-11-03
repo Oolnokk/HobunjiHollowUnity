@@ -140,7 +140,7 @@
       const settings=currentSettings(),mask=api.garmentPaintToMotif(paint,settings);
       if(!mask)throw Error('Could not invert the paint transform.');
       const pattern={...settings,motifDataUrl:mask.toDataURL('image/png')}; // Runtime receives a normal motif + non-tiling settings, not a direct garment mask.
-      const rendered=await api.renderClothingLayers('fur_hood',{...args,furHoodMarkingsOverride:[{geneId:gene,pattern,colorHex:ink}]});
+      const rendered=await api.renderClothingLayers('fur_hood',{...args,furHoodMarkingsOverride:[{geneId:gene,pattern,colorHex:ink}],uncachedPatternPreview:true}); // Per-stroke transient PNGs are never stored in persistent patterned-sprite caches.
       if(closed||token!==revision||!rendered?.canvas)return;
       result.width=rendered.canvas.width;result.height=rendered.canvas.height;rctx.imageSmoothingEnabled=false;rctx.drawImage(rendered.canvas,0,0);
       previewStatus.textContent='Exact in-game preview · '+settings.meshScale.toFixed(2)+'× mesh · '+settings.meshRotationDeg+'° · non-tiling. Generated outline included.';
