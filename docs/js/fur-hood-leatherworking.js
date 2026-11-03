@@ -15,7 +15,9 @@
   const copy = value => value == null ? null : JSON.parse(JSON.stringify(value));
 
   function normalizeKind(value) {
-    return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-').replace(/[’']/g, '');
+    const name = String(value || '').trim(); // Hide producers use canonical creature keys; aliases share the same animal coat motifs.
+    const alias = window.CreatureGenetics?.SPECIES_ALIAS?.[name] || name;
+    return String(alias).replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[_\s]+/g, '-').replace(/[’']/g, '');
   }
   function colorHex(value) {
     const match = String(value || '').trim().match(/^#?([a-f0-9]{6})$/i);
