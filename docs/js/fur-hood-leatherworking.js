@@ -84,12 +84,54 @@
     if (!furHood) return null;
     const base = colorHex(furHood.baseColor || furHood.genotype?.base?.color);
     const entry = { ...(entryForKind(furHood.kind) || {}), ...(furHood.authoringPalette || {}) }; // Editor-only preview override never enters crafted furHood saves.
-    const mode = role === 'trim' ? 'pattern' : role === 'animalFront' ? entry.partColors?.front || 'base'
+    const mode = role === 'trim' ? (entry.trimColor === 'base' ? 'base' : 'pattern') : role === 'animalFront' ? entry.partColors?.front || 'base'
       : role === 'animalBack' ? entry.partColors?.back || 'base' : 'base';
     const gene = role === 'trim' ? entry.trimGene : role === 'animalFront' ? entry.partGenes?.front : role === 'animalBack' ? entry.partGenes?.back : null;
     const expressed = expressedGenes(furHood); // Previewed priority overrides and runtime manifest preferences use the same ordered genotype set.
     const pigment = gene ? expressed.find(g => g.geneId === gene)?.colorHex : expressed[0]?.colorHex;
     return mode === 'pattern' ? (pigment || (role === 'trim' ? expressed[0]?.colorHex : null) || base) : base; // Trim chooses another expressed gene if its preference is absent.
+  }
+  const protectedSourceColors = new Set([0x94858e,0x567372]); // Authored fur detail colors; they cannot be recolored by coat, stripe, trim or woven motifs.
+  function isProtectedSourcePixel(data, i) {
+    return !!data && i >= 0 && i + 3 < data.length && data[i + 3] !== 0
+      && protectedSourceColors.has((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]); // Exact source RGB, not a fuzzy color family.
+  }
+  function restoreProtectedPixels(target, source) {
+    if (!target || !source || target.length !== source.length) return 0;
+    let restored = 0; // Per-pass count of restored original-color detail pixels.
+    for (let i=0;i<source.length;i+=4) {
+      if (!isProtectedSourcePixel(source,i)) continue;
+      target[i]=source[i];target[i+1]=source[i+1];target[i+2]=source[i+2];target[i+3]=source[i+3];
+      restored++;
+    }
+    return restored;
+  }
+  const protectedSourceMaskCache = new WeakMap(); // Original sprite -> exact detail offsets, captured once for subsequent portrait renders.
+  const protectedCompositeCache = new WeakMap(); // Original sprite -> output-canvas cache; avoids repeated restoration every animation frame.
+  function preserveProtectedColors(sourceImage, outputImage) {
+    if (!sourceImage || !outputImage || sourceImage === outputImage) return outputImage;
+    const width=sourceImage.naturalWidth||sourceImage.width,height=sourceImage.naturalHeight||sourceImage.height;
+    if (!width || !height || width!==(outputImage.naturalWidth||outputImage.width) || height!==(outputImage.naturalHeight||outputImage.height)) return outputImage;
+    let saved=protectedSourceMaskCache.get(sourceImage);
+    if (!saved) {
+      const sample=document.createElement('canvas');sample.width=width;sample.height=height;
+      const sourceContext=sample.getContext('2d',{willReadFrequently:true});sourceContext.drawImage(sourceImage,0,0);
+      const rgba=sourceContext.getImageData(0,0,width,height).data;
+      saved=[]; // Store only exact protected RGBA, leaving other source pixels out of the extra compositing pass.
+      for(let i=0;i<rgba.length;i+=4)if(isProtectedSourcePixel(rgba,i))saved.push([i,rgba[i],rgba[i+1],rgba[i+2],rgba[i+3]]);
+      protectedSourceMaskCache.set(sourceImage,saved);
+    }
+    if (!saved.length) return outputImage;
+    let variants=protectedCompositeCache.get(sourceImage);
+    if (variants?.has(outputImage)) return variants.get(outputImage);
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(outputImage,0,0);
+    const frame=ctx.getImageData(0,0,width,height);
+    for(const [i,r,g,b,a] of saved){frame.data[i]=r;frame.data[i+1]=g;frame.data[i+2]=b;frame.data[i+3]=a;}
+    ctx.putImageData(frame,0,0);
+    if(!variants){variants=new WeakMap();protectedCompositeCache.set(sourceImage,variants);}
+    variants.set(outputImage,canvas);
+    return canvas;
   }
   const recoloredPartCache = new WeakMap(); // Cache small keyed Grehlr canvases against their original PNG, base shade and stripe color.
   function recolorAnimalPart(image, furHood, role) {
@@ -121,6 +163,7 @@
     const rgb=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
     if (role==='animalBack' && base) fill.hsvValueFillPixels(frame.data,rgb(base),{sourceData:source,applyPredicate:isMint});
     if (stripe) fill.hsvValueFillPixels(frame.data,rgb(stripe),{sourceData:source,applyPredicate:isStripe});
+    restoreProtectedPixels(frame.data,source); // Exact exceptions override Grehlr's white/gray and mint source-key fills.
     ctx.putImageData(frame,0,0);
     if(!cache){cache=new Map();recoloredPartCache.set(image,cache);}
     if(cache.size>=12)cache.clear();
@@ -315,7 +358,7 @@
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, recolorAnimalPart, markingsFor, specialPartsFor, hideChoices, openLoom, closePanel, debugSnapshot,
+    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, hideChoices, openLoom, closePanel, debugSnapshot,
   });
   ensureManifest();
 })();

@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_fur_hoods.v1",
-  "comment": "An expressed pattern recolors the furhood-trim automatically, even without an authored motif PNG. Species partColors.{front,back} can route natural front/back sprite pixels to base or pattern pigment (pattern falls back to base). Grehlr front/back are special: white neutral stripe pixels stay unchanged until coloredstripe is expressed, then hue/saturation follows coloredstripe; mint pixels in back follow base coat. patterns[geneId] adds optional dev-painted motif geometry, distinct from normal player weaving.",
+  "comment": "An expressed pattern recolors the furhood-trim automatically, even without an authored motif PNG. Species partColors.{front,back} can route natural front/back sprite pixels to base or pattern pigment (pattern falls back to base). Grehlr front/back are special: white neutral stripe pixels stay unchanged until coloredstripe is expressed, then hue/saturation follows coloredstripe; mint pixels in back follow base coat. patterns[geneId] adds optional dev-painted motif geometry, distinct from normal player weaving. Fur details with exact RGB #94858E or #567372 never recolor. Optional trimColor: base or pattern; Drenkirra uses base for trim and pattern for front.",
   "species": {
     "gar-wolf": {
       "parts": {
@@ -56,9 +56,10 @@
       },
       "patterns": {},
       "partColors": {
-        "front": "base",
+        "front": "pattern",
         "back": "base"
-      }
+      },
+      "trimColor": "base"
     },
     "puktuk": {
       "parts": {
