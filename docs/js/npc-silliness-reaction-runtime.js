@@ -81,7 +81,8 @@
     return Array.isArray(value) ? value.map(line => String(line || '').trim()).filter(Boolean) : [];
   }
   function profileIdForNpc(npcId) {
-    const requested = String(state.config?.assignments?.[npcId] || ''); // Per-NPC profile assignment used before the config default.
+    const generatedChildId = /^child_[a-z0-9]+$/i.test(String(npcId || '')); // RomanceFamily generates stable child_ IDs, so player children share the authored child profile without per-save assignments.
+    const requested = String(state.config?.assignments?.[npcId] || (generatedChildId ? 'child' : '')); // Explicit NPC assignments win; otherwise generated children use the child personality.
     if (requested && state.config?.profiles?.[requested]) return requested;
     const fallback = String(state.config?.defaultProfile || FALLBACK_CONFIG.defaultProfile); // Default profile ID used when the NPC has no valid assignment.
     return state.config?.profiles?.[fallback] ? fallback : Object.keys(state.config?.profiles || {})[0] || 'neighborly';
