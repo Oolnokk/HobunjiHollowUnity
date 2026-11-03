@@ -9088,9 +9088,13 @@
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
-          if (!meta) return;
+          if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
-        } catch {}
+          return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
+        } catch (error) {
+          window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
+          return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
+        }
       }
 
       // ── Owner/farmhand content visibility ─────────────────────────────
@@ -15817,6 +15821,7 @@
       }
 
       function enterTown(col, row) {
+        const fromArea = currentArea; // Used to distinguish a genuine exterior-to-town gate crossing from other town spawns.
         const fromScene = window.GridTileAccessors.getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
@@ -15847,6 +15852,7 @@
           townScene.add(reticleWavyGroup);
         }
         refreshActionBar();
+        window.TownMagicCheckpoint?.onTownEntered?.({ fromArea, col, row }); // The imperial perimeter is checked only after canonical town travel completes.
       }
 
       // Processing-station recipe resolution, berry/dew/alcohol key & color
@@ -31579,6 +31585,12 @@
       window.ArtifactCollection?.init({
         ITEM_DEFS, inventoryItems, inventory, tothalWorldId: _tothalWorldId,
         saveMemberWorldData, buildInventoryGrid, showToast,
+        getCurrentArea: () => currentArea, // Used to cancel checkpoint cutscenes when the player leaves town.
+        isExteriorArrival: area => area === 'farm' || _isZoneArea(area), // Town shops, homes and the temple never trigger an imperial gate inspection.
+        getTownGrid: () => townGrid, // Watchmen stage on actual walkable gate tiles.
+        isSolidTile: tile => isSolid(tile?.type), // Uses the same collision classifier as gameplay.
+        getPackClothing: () => packClothing, // Shares the live cursed-clothing array with EquipmentPanel.
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(), // Updates garments after custody transfer or return.
         showUnlockDialogue: () => {
           const walker = npcWalkers.find(w => w.rec?.id === 'garanki_gabu'); // Reuse the real NPC dialogue camera, portrait and input handling.
           if (walker) { closeMenu(); openNpcDialogue(walker); }

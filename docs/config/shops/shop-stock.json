@@ -431,9 +431,9 @@
       ]
     },
     "garankiEnchanting": {
-      "label": "Garanki Gabu's Artifacts & Enchanting",
+      "label": "Garanki Gabu's Artifacts, Custody & Enchanting",
       "menuId": "garankiEnchanter",
-      "accessLabel": "Artifacts & Enchanting",
+      "accessLabel": "Artifacts, Custody & Enchanting",
       "dialogueAccess": {
         "sellerIds": [
           "garanki_gabu"

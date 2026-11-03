@@ -65,7 +65,8 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   assert.equal(guild.investigateVault(),true);
   assert.equal(guild.vaultPhase(),'report');
   assert.match(quests[guild.QUEST_ID].progress.objective,/Return to Garanki/);
-  assert.equal(guild.dialogueTree().nodes[0].options[0].text,'--explain what you saw--');
+  assert.equal(guild.dialogueTree().nodes[0].choices[0].label,'--explain what you saw--'); // Ordinary NPC dialogue uses choices/label; options/text is reserved for authored cutscenes.
+  assert.equal(guild.dialogueTree().nodes[0].choices[1].actions[0].pool,'garankiEnchanting','vault report dialogue keeps the confiscated-items inventory accessible');
   assert.equal(await guild.runHandoff('report'),true);
   assert.equal(inventory[guild.TALISMAN_KEY],0);
   assert.equal(guild.vaultPhase(),'complete');

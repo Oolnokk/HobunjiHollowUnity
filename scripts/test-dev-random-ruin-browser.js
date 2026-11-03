@@ -510,7 +510,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
         'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
     }
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','chordPressurePlates','hallwayGlyphGate'].includes(module.type));
+    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');

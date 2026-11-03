@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flying Animal Author</title>
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<style>
+  :root { color-scheme: dark; font: 16px system-ui; background: #151b24; color: #edf0f5; }
+  body { margin: 0; padding: 1rem; }
+  h1, h2, p { margin: 0 0 .65rem; }
+  h2 { font-size: 1.05rem; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 23rem); gap: .85rem; }
+  section, fieldset { min-width: 0; padding: .8rem; margin: 0 0 .8rem; border: 1px solid #465364; border-radius: .55rem; }
+  label { display: block; margin: .35rem 0; }
+  input, select, button { font: inherit; min-height: 2.4rem; box-sizing: border-box; }
+  input[type=text], input[type=range] { display: block; width: 100%; }
+  label[hidden] { display: none; }
+  #talonFields input { display: block; width: 5rem; }
+  #talonFields strong { flex-basis: 100%; }
+  output { float: right; color: #a7e6d8; }
+  canvas { display: block; width: 100%; }
+  #viewport { height: clamp(14rem, 42vh, 28rem); }
+  #wings, #perchBody { background: #253140; touch-action: none; }
+  .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  #status { overflow-wrap: anywhere; }
+  @media (max-width: 680px) { main { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<h1>Flying Animal Author</h1>
+<p>Fit a side-profile body through a horizontal wing sprite, then pose one hinge per wing.</p>
+<main>
+  <div>
+    <section>
+      <h2>3D preview</h2>
+      <div class="row">
+        <label>Pose <select id="pose"><option value="flap">Flap</option><option value="glide">Glide</option><option value="perched">Perched</option></select></label>
+        <button type="button" data-view="0">Level</button>
+        <button type="button" data-view="90">Above</button>
+        <button type="button" data-view="-90">Below</button>
+      </div>
+      <canvas id="viewport" aria-label="Flying animal preview"></canvas>
+      <label>Camera orbit <output id="orbitValue"></output><input id="orbit" type="range" min="-180" max="180" value="20"></label>
+      <label>Camera elevation <output id="elevationValue"></output><input id="elevation" type="range" min="-90" max="90" value="24"></label>
+      <details><summary>Preview diagnostics</summary><p id="debug"></p></details>
+    </section>
+    <section>
+      <h2>Perched body spline</h2>
+      <p>Fit the cyan Bind line to the resting body in the PNG. Then move the pink Pose points to bend the body in the 3D preview. The dashed border marks the source PNG. Pose points can move above and below it.</p>
+      <div class="row">
+        <label>Edit <select id="perchLine"><option value="beforePoints">Bind</option><option value="afterPoints">Pose</option></select></label>
+        <button type="button" id="copyPerchBind">Copy Bind to Pose</button>
+        <button type="button" id="previewPerch">Preview Perched</button>
+      </div>
+      <canvas id="perchBody" aria-label="Perched body sprite with draggable bind and pose spline points"></canvas>
+    </section>
+    <section>
+      <h2>Talon carry</h2>
+      <label>Preview payload
+        <select id="talonType">
+          <option value="">None</option>
+          <option value="humanoid">Player / NPC</option>
+          <option value="animal">Animal</option>
+          <option value="burden">Burden</option>
+        </select>
+      </label>
+      <label hidden>Game asset <select id="talonSource"></select></label>
+      <p>Place the shared grip axes between the talons. Each payload has its own offset and rotation around its hold anchor. Bird scale applies to every view. Payloads keep their game reference sizes.</p>
+      <label>Bird scale <input id="talonBirdScale" type="number" min=".25" max="10" step=".01" value="1"></label>
+      <div id="talonFields" hidden></div>
+      <p id="talonStatus" role="status"></p>
+    </section>
+    <section>
+      <h2>Wing hinges</h2>
+      <p>Drag the two colored roots sideways. Each wing bends along its fore-aft hinge line. The white line marks where the body crosses the wings. The top of the PNG faces the bird’s head.</p>
+      <canvas id="wings" aria-label="Wing sprite with draggable left and right hinges"></canvas>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2>Sprite paths</h2>
+      <p>Use PNG paths relative to <code>docs/assets/</code>.</p>
+      <form id="sprites">
+        <label>Flying body<input id="flying" type="text" required></label>
+        <label>Perched body<input id="perched" type="text" required></label>
+        <label>Wings<input id="wingPath" type="text" required></label>
+        <button>Load sprites</button>
+      </form>
+    </section>
+    <fieldset><legend>Rig settings</legend><div id="settings"></div></fieldset>
+    <section>
+      <h2>Rig file</h2>
+      <div class="row">
+        <button type="button" id="save" disabled>Export JSON</button>
+        <button type="button" id="open">Import JSON</button>
+        <button type="button" id="reset">Reset to Tzatzul</button>
+        <input id="file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <p id="status" role="status">Loading preview…</p>
+    </section>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../../js/portrait-utils.js?v=20261030headMask1"></script>
+<script src="../../js/perp-rotation.js?v=20261103flight1"></script>
+<script src="../../js/animal-shoulder-spline.js?v=20260917spline10"></script>
+<script src="../../js/flying-animal-rig.js?v=20261103tzatzul9"></script>
+<script src="../../config/scratchbones-config.js"></script>
+<script src="../../config/attachment-rig-profiles.js"></script>
+<script src="../../js/color-fill.js?v=20260923colorfill7"></script>
+<script src="../../js/npc-avatar-preview-utils.js?v=20261103talon2"></script>
+<script src="../../js/png-plane-avatar.js?v=20261103talon2"></script>
+<script>window.__hobunjiFurnitureConfigBase = '../../config/furniture-authored/'; window.__hobunjiFurnitureAssetBase = '../../assets/';</script>
+<script src="../../js/procedural-furniture.js?v=20261103talon1"></script>
+<script src="../../js/authored-furniture-runtime.js?v=20261103talon1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261103talon2"></script>
+<script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
+<script src="../../js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
+<script src="talon-carry.js?v=20261103talon6"></script>
+<script src="app.js?v=20261103talon6"></script>
+</body>
+</html>

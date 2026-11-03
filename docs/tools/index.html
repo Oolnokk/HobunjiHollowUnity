@@ -38,6 +38,7 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 .tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}.tab.active .tab-dot{background:var(--ok)}
 #frames{flex:1;position:relative;min-height:0}.frame-wrap{position:absolute;inset:0;display:none}.frame-wrap.active{display:block}
 iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+@media (max-width:680px){#body:has(#fw-flying-animal-author.active)>#npc-sidebar{display:none}}
 </style>
 </head>
 <body>
@@ -77,6 +78,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
          <button class="tab" data-target="live-root-growth"><span class="tab-dot"></span>🌳 Live Root Growth</button>
         <button class="tab" data-target="fish-editor"><span class="tab-dot"></span>🐟 Fish Editor</button>
         <button class="tab" data-target="animal-head-rig"><span class="tab-dot"></span>🐾 Animal Head Rig</button>
+        <button class="tab" data-target="flying-animal-author"><span class="tab-dot"></span>Flying Animal Author</button>
         <button class="tab" data-target="pattern-editor"><span class="tab-dot"></span>🧵 Pattern Editor</button>
         <button class="tab" data-target="tree-asset-exporter"><span class="tab-dot"></span>🌲 Tree Assets</button>
         <span class="tab-group">World</span>
@@ -114,6 +116,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
          <div class="frame-wrap" id="fw-live-root-growth"><iframe src="live-root-growth/index.html" title="Live Root Growth Author" id="if-live-root-growth" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-fish-editor"><iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-animal-head-rig"><iframe src="animal-head-rig/index.html" title="Animal Head Rig Author" id="if-animal-head-rig" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-flying-animal-author"><iframe src="flying-animal-author/index.html?v=20261103tzatzul9" title="Flying Animal Author" id="if-flying-animal-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-pattern-editor"><iframe src="pattern-editor/index.html" title="Pattern Editor" id="if-pattern-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-tree-asset-exporter"><iframe src="tree-asset-exporter/index.html" title="Tree Asset Exporter" id="if-tree-asset-exporter" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-wilderness-generation-lab"><iframe src="wilderness-generation-lab/index.html" title="Wilderness + Surface Lab" id="if-wilderness-generation-lab" loading="lazy"></iframe></div>

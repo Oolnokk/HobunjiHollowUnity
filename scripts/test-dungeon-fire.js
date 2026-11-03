@@ -12,6 +12,7 @@ const mechanismCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-d
 const rangedCode = fs.readFileSync(path.join(root, 'docs/js/combat/ranged-weapons.js'), 'utf8');
 const burdenCode = fs.readFileSync(path.join(root, 'docs/js/shattercasks.js'), 'utf8');
 const themeCode = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-lich-themes.js'), 'utf8');
+const weaponVfxCode = fs.readFileSync(path.join(root, 'docs/js/combat/weapon-enchantment-vfx.js'), 'utf8'); // Verifies the production held-plane and modular source adapters are exported.
 
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
@@ -99,6 +100,14 @@ const THREE = {
   MeshBasicMaterial: Material, DoubleSide: 2, AdditiveBlending: 2,
 };
 const window = { THREE };
+const fireStreams = []; // Captures authored particle emitter definitions for the palette/rise regression.
+let heldWeapon = null; // Simulated player-owned modular ranged weapon presented by the shared hand renderer.
+window.AuthoredFurniture = { createEmitterVisual(group, emitter, capacity) {
+  fireStreams.push({ group, emitter, capacity });
+  const points = new Object3D();
+  group.add(points);
+  return { points, update() {}, dispose() { group.remove(points); } };
+} };
 let metalMaskCalls = 0, opaqueCalls = 0, mappedIndices = [];
 window.WeaponEnchantmentVFX = {
   metalMaskForSprite: async () => {
@@ -114,6 +123,8 @@ window.WeaponEnchantmentVFX = {
     return { x: (index % mask.width) / 10, y: Math.floor(index / mask.width) / 10 };
   },
 };
+window.WeaponEnchantmentVFX.heldVisualForItem = key => key === 'test-bow' ? heldWeapon : null;
+window.WeaponEnchantmentVFX.sourceSpriteForWeapon = () => 'modular:bshuakauitl:fishing-mace:arsenicalBronze';
 window.RangedWeapons = { equippedRangedKey: () => 'test-bow' };
 const context = vm.createContext({
   window, THREE, Promise, Map, Set, Math, Number, String, Object, Array,
@@ -167,6 +178,12 @@ async function main() {
     'the flame starts at the projectile rather than flashing at scene origin before the image anchor resolves'
   );
 
+  assert.equal(thrown.projectile._dungeonFire.worldFlame.userData.fireEmitterVisuals.length, 3,
+    'projectiles use three actual authored particle emitters, not flame-shaped meshes');
+  assert.deepEqual(fireStreams.slice(0, 3).map(item => item.emitter.rate), [18, 15, 7],
+    'yellow increases 50%, red 25%, and orange absorbs their combined increase');
+  assert(fireStreams.every(item => item.emitter.speed > .7 && item.emitter.lifetime > .72),
+    'the emitter rises much higher than the ordinary campfire');
   const arrow = makeProjectile('arrow', 'assets/test-arrow.png');
   assert(api.attachProjectile(arrow.projectile), 'ordinary ranged projectile receives the shared flame');
   await settleAsync();
@@ -199,7 +216,41 @@ async function main() {
   api.disposeProjectile(thrown.projectile);
   api.disposeProjectile(arrow.projectile);
   assert.equal(api.debugSnapshot().activeVisuals, 0, 'projectile disposal releases every attached flame');
+  const scene = new Object3D();
+  const holder = new Object3D(), plane = new Object3D();
+  heldWeapon = new Object3D();
+  heldWeapon.userData.itemKey = 'test-bow';
+  heldWeapon.userData.toolPlane = plane;
+  heldWeapon.add(plane);
+  scene.add(holder);
+  holder.add(heldWeapon);
+  assert.equal(api.armNextProjectile(), true, 'charge can be armed for a visible modular weapon');
+  await settleAsync();
+  assert.equal(api.debugSnapshot().heldFire, true, 'fire is rendered on the charged weapon before release');
+  assert.equal(api.debugSnapshot().heldAnchorKind, 'metal', 'modular fishing mace uses its assembled metal mask');
+  assert.equal(api.debugSnapshot().heldWeaponKey, 'test-bow');
+  assert.equal(fireStreams.length, 9, 'held weapons use the same three-stream particle system as projectiles');
+  const formerFlame = scene.children.find(child => child.name === 'dungeonFire_chargedHeldWeapon'); // Captures room-owned fire before a simulated ruin-room transition.
+  const secondRoom = new Object3D(); // Tests an actual reparent instead of a stale Combat.deps.scene pointer.
+  secondRoom.add(holder);
+  assert.equal(api.updateHeldVisual(.016), true, 'a charged weapon resumes fire after changing scenes');
+  assert.equal(formerFlame.parent, null, 'changing rooms removes particles from the previous scene');
+  assert(secondRoom.children.some(child => child.name === 'dungeonFire_chargedHeldWeapon'),
+    'charged fire is created in the weapon\'s new scene');
+  holder.visible = false;
+  assert.equal(api.updateHeldVisual(.016), false, 'hidden holder suppresses charged fire');
+  assert.equal(api.debugSnapshot().heldFire, false, 'no floating fire remains while the weapon is hidden');
+  assert.equal(api.debugSnapshot().armed, true, 'a temporarily hidden weapon retains its one-shot charge');
+  holder.visible = true;
+  assert.equal(api.updateHeldVisual(.016), true, 'revealing the held weapon restores its fire');
+  assert.equal(api.debugSnapshot().heldFire, true);
+
+  assert.equal(api.consumeNextProjectile(), true, 'firing transfers one charge away from the weapon');
+  assert.equal(api.debugSnapshot().heldFire, false, 'the in-hand fire disappears when consumed');
+  assert.equal(api.armNextProjectile(), true);
+  assert.equal(api.debugSnapshot().heldFire, true);
   api.clear();
+  assert.equal(api.debugSnapshot().heldFire, false, 'ruin cleanup removes held weapon fire too');
   assert.equal(api.debugSnapshot().reactiveTargets, 0, 'clear removes all fire-reactive targets');
 
   const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
@@ -244,6 +295,15 @@ async function main() {
     burdenCode.includes('BURDEN_IMPACT_HANDLERS') &&
     burdenCode.includes('registerBurdenFactory,registerBurdenImpactHandler'),
     'ceiling mechanisms support future modular Burden factories and impact handlers');
+  assert(weaponVfxCode.includes('heldVisualForItem: directHeldVisual') &&
+    weaponVfxCode.includes('sourceSpriteForWeapon,'),
+    'the charged fire uses production player-held plane and assembled modular source exports');
+  assert(rangedCode.includes('window.DungeonFire?.updateHeldVisual?.(dt)'),
+    'the regular ranged frame must animate the already-armed held weapon before firing');
+  const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
+  assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
+    fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8').includes('20261103dungeonplumepadding2'),
+    'the authored flame padding is supported and its dynamic loader cache token updated');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
     rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
     'only one player projectile in a volley consumes the one-shot fire charge');

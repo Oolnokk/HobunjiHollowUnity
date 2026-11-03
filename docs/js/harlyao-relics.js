@@ -467,6 +467,7 @@
     const es = ES();
     const defs = es?.DEFINITIONS || {};
 
+    window.TownMagicCheckpoint?.renderCustody?.(list, { heading, note, row, button, esc }); // Confiscated items stay visible first on small screens; Garanki owns the legal registration UI.
     window.ArtifactCollection?.render?.(list, { heading, note, row, button });
     // Bound relics
     list.appendChild(heading('Bound Harlyao relics'));
