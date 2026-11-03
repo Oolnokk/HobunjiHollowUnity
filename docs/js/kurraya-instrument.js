@@ -435,15 +435,20 @@
     fluteState.root = root;
     fluteState.frame = frame;
     const loader = deps.toolTexLoader || new THREE.TextureLoader();
+    loader.setCrossOrigin?.('anonymous'); // Canvas alpha reads and WebGL uploads must stay origin-clean even under CDN/GitHack redirects.
     loader.load('assets/toolsprites/flute.png', texture => {
       // The authored PNG has substantial transparent padding; trim it once so the physical tube stays visible at the intended scale.
       try {
         const trimmed=prepareFluteCanvas(texture.image);
         const width=trimmed.width,height=trimmed.height; // Texture plane proportions match the opaque flute art, not its matte border.
-        const map=new THREE.CanvasTexture(trimmed);
-        map.magFilter=THREE.NearestFilter; map.minFilter=THREE.NearestFilter;
+        const spriteSurface=window.HobunjiSpritePngSurface; // The same PNG-plane texture/material authority used by portraits and held tools.
+        const map=spriteSurface?.makeCanvasTexture
+          ? spriteSurface.makeCanvasTexture(THREE,trimmed,'player_flute_sprite')
+          : new THREE.CanvasTexture(trimmed);
         const worldHeight=.76;
-        const material=new THREE.MeshBasicMaterial({map,transparent:true,alphaTest:.05,side:THREE.DoubleSide});
+        const material=spriteSurface?.makeMaterial
+          ? spriteSurface.makeMaterial(THREE,map,'player_flute_sprite',{side:THREE.DoubleSide})
+          : new THREE.MeshBasicMaterial({map,transparent:true,alphaTest:.05,side:THREE.DoubleSide}); // Compatibility only if portrait-utils is unavailable.
         const mesh=new THREE.Mesh(new THREE.PlaneGeometry(worldHeight*width/height,worldHeight),material);
         mesh.rotation.x=Math.PI/2; // The image's top/open mouthpiece points along the +Z aperture axis used by blowgunReady.
         mesh.position.z=-worldHeight/2; // Place that aperture at the holder origin; the body extends outward along -Z.
