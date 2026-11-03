@@ -9900,6 +9900,7 @@
       }
 
       function performContextAction() {
+        if (window.PlayerDowned?.isDowned?.()) return; // While down, only the held Dodge input may cause a respawn; never climb/travel on a tap.
         // During a Headtaker grip, dodge must take priority over nearby doors,
         // climbing, fishing panels and other context actions: it is the only escape.
         if (window.Combat?.attach?.attachersOf?.(player)?.some(attacker => attacker._attachment?.id === 'maskbound-headtaker')) {
@@ -25640,6 +25641,7 @@
         window.Music?.logAudioTickDiagnostics();
         window.PerfProfiler?.end(prePausePerf);
 
+        if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
@@ -27578,13 +27580,30 @@
       joystickZone.addEventListener('pointerup', window.VirtualJoystick.handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
-      // Dodge button: a plain tap, dodging in the current facing direction.
-      // Always visible on touch (see #dodgeBtn in style.css);
-      // while fishing it dismisses the cast or catch view.
+      // Touch Dodge keeps its normal press-to-dodge behavior while standing.
+      // Downed uses this same physical button as a cancellable held input.
+      let downedDodgePointerId = null; // Tracks the single pointer allowed to own the voluntary-respawn hold.
+      function finishDownedDodgePointer(event) {
+        if (downedDodgePointerId === null || (event && event.pointerId !== downedDodgePointerId)) return;
+        downedDodgePointerId = null;
+        window.PlayerDowned?.setGiveUpHeld?.(false);
+      }
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
+        if (window.PlayerDowned?.isDowned?.()) {
+          if (downedDodgePointerId !== null) return; // A second finger cannot restart or steal an active hold.
+          downedDodgePointerId = ev.pointerId;
+          try { dodgeBtn.setPointerCapture?.(ev.pointerId); } catch (_) {}
+          window.PlayerDowned.setGiveUpHeld(true);
+          return;
+        }
         performContextAction();
       });
+      dodgeBtn?.addEventListener('pointerup', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('pointercancel', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('lostpointercapture', finishDownedDodgePointer);
+      window.addEventListener('blur', () => finishDownedDodgePointer());
+      document.addEventListener('visibilitychange', () => { if (document.hidden) finishDownedDodgePointer(); });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
       // weapon tool slot (see toggleQuickWeaponSwitch) — this is how you
@@ -27927,6 +27946,10 @@
       }
       function runInputAction(actionId, phase = 'press') {
         if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
+        if (actionId === 'dodge' && window.PlayerDowned?.isDowned?.()) {
+          window.PlayerDowned.setGiveUpHeld(phase === 'press'); // Keyboard and controller share the same downed hold, respecting remapped physical inputs.
+          return; // Never let a downed Dodge press reach travel, climb, placement, or an ordinary evade.
+        }
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;

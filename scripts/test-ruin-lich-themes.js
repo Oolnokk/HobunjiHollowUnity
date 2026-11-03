@@ -73,6 +73,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     KnockbackCollisionImpact:{resolveStrength() { impactCount++; }},
     ResourceSystem:{addAffliction() { afflictionCount++; }, spendFooting() { afflictionCount++; }},
     DevRandomRuin:{syncPlayerPresentationHeight(y) {presentationHeights.push(y);}},
+    DevRandomRuinSanctum:{getState:()=>options.arena ? {layout:{arena:options.arena}} : null}, // Only the boss-emitter tests opt into a real sanctum boundary.
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
     CloudForestFog:{getKanthicLanternRadiusTiles:()=>options.lanternRadius??.9}, // Default: 2.4 × .375. Cap stress tests may suppress visibility without changing production logic.
     HobunjiSurfaceStretchUV:{
@@ -234,6 +235,49 @@ function assertPlasmSeams(t) {
   assert.match(themeSource,/pitchRockWithoutSpeedChange\(decoded,audioContext,1\.5\)/,'Supported WebAudio uses an offline 1.5x pitch transform at the original duration');
   t.composer.clear();
   assert.equal(t.api.snapshot().active, false);
+}
+{
+  const arena={minX:2,maxX:12,minZ:2,maxZ:12}; // Boss-only chamber bounds cannot be inferred from ordinary Tothal rooms.
+  const t=setup('tothal',3,3,{arena});
+  const boss={isSpecialLich:true,lichType:'tothal',health:100}; // Actual special-boss identity is mandatory to arm the emitter.
+  const target={x:4*64,y:4*64,health:100}; // Selected target is expressed in the native pixel-space combat coordinates.
+  assert.equal(t.api.triggerBossBlizzard(boss),0,'No icicles fall before Nanahi acquires a tracked target');
+  assert.equal(t.api.trackBossBlizzard(boss,target,.016),true);
+  assert.equal(t.api.snapshot().bossIcicleEmitter.x,4);
+  assert.equal(t.api.triggerBossBlizzard(boss),1,'One boss release creates exactly one falling icicle');
+  const bossMeshes=[];
+  t.kit.root.traverse(node=>{if(node.name==='tothal_boss_falling_icicle')bossMeshes.push(node);});
+  assert.equal(bossMeshes.length,1,'A trigger never builds the old 32-icicle room barrage');
+  assert.equal(bossMeshes[0].geometry.attributes.position.count,7*3,'One drop has a single seven-triangle needle, not a batched cluster');
+  assert.equal(bossMeshes[0].position.x,4,'The first icicle starts above Nanahi’s target');
+  target.x=9*64;target.y=8*64;
+  t.api.trackBossBlizzard(boss,target,.1);
+  const pursuing=t.api.snapshot().bossIcicleEmitter;
+  assert.ok(pursuing.x>4 && pursuing.x<5 && pursuing.z>4 && pursuing.z<5,'One spawn point moves toward a changing target at a bounded speed');
+  assert.equal(t.api.triggerBossBlizzard(boss),1,'The next interval emits only one more icicle at the moved origin');
+  const followup=[];
+  t.kit.root.traverse(node=>{if(node.name==='tothal_boss_falling_icicle')followup.push(node);});
+  assert.equal(followup.length,2);
+  assert.equal(followup[0].position.x,4,'Previously released icicles must not home after being dropped');
+  assert.equal(followup[1].position.x,pursuing.x,'Later icicles use the current tracked position');
+  assert.equal(t.api.snapshot().activeBossIcicles,2);
+  assert.equal(followup[1].geometry.attributes.position.count,7*3,'Later drops also remain single needles');
+  t.tick(30,.25);
+  assert.equal(t.api.snapshot().activeBossIcicles,0,'Completed boss icicles are removed without keeping invisible mesh instances');
+  assert.equal(followup[0].parent,null,'Shared-geometry icicle cleanup detaches the first temporary mesh');
+  t.api.stopBossBlizzard(boss);
+  assert.equal(t.api.triggerBossBlizzard(boss),0,'A stopped kneeling attack cannot emit without a new tracked target');
+  const bossShape=followup[0].geometry; // Verify the reusable boss-only geometry is disposed on ruin exit.
+  t.composer.clear();
+  assert.equal(bossShape.disposed,true,'Ruin teardown releases shared single-icicle geometry');
+  assert.equal(t.api.snapshot().active,false,'Exiting the ruin destroys the tracker and its drop state');
+}
+{
+  const t=setup('tothal'); // Ordinary Tothal rooms have no boss arena.
+  const boss={isSpecialLich:true,lichType:'tothal'};
+  assert.equal(t.api.trackBossBlizzard(boss,{x:4*64,y:4*64},.1),false,'No sanctum means no boss-wide icicle attack');
+  assert.equal(t.api.triggerBossBlizzard(boss),0);
+  t.composer.clear();
 }
 {
   const t = setup('kanthic');

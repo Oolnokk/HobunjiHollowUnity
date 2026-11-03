@@ -332,7 +332,15 @@
     return {aimAngle:angle,moving:false,handled:true};
   }
   function handleAI(actor,dt,target,deps,angle,dist) {
-    if(!actor?.isSpecialLich || !target || Number(target.health)<=0)return null;
+    if(!actor?.isSpecialLich)return null;
+    if(!target || !(Number(target.health)>0)) {
+      if(actor.lichType==='tothal' && actor._specialStage?.kind==='kneel') {
+        window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor);
+        actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL); // Cancel an interrupted barrage without orphaning its emitter.
+        lastEvent='nanahi:target-lost';
+      }
+      return null;
+    }
     if(actor.lichType==='hronal') {
       if (ruleFor('hronal').specialAttacks?.melee === false) {actor._specialMode='magic';return null;} // Disable boss-specific melee without affecting the underlying Hronal spell.
       actor._specialModeClock+=dt;
@@ -345,16 +353,26 @@
     }
     actor._specialCooldown=Math.max(0,actor._specialCooldown-dt);
     if(actor.lichType==='tothal') {
-      if (ruleFor('tothal').specialAttacks?.blizzard === false) return null; // Workshop toggle excludes Nanahi's barrage without switching off other Tothal spells.
+      if (ruleFor('tothal').specialAttacks?.blizzard === false) {
+        window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor); // Disabling this Workshop ability cancels its active tracking point.
+        actor._specialStage=null;
+        return null; // Other Tothal spells remain enabled.
+      }
       if(actor._specialStage?.kind==='kneel') {
         const stage=actor._specialStage;
-        stage.time-=dt;stage.wave-=dt;
-        if(stage.wave<=0) {
-          stage.wave=setting(actor,'barrageIntervalSeconds',.62);
-          window.DevRandomRuinLichThemes?.triggerBossBlizzard?.(actor);
-          lastEvent='nanahi:ceiling-barrage';
+        stage.time-=dt;
+        if(stage.time>0) {
+          window.DevRandomRuinLichThemes?.trackBossBlizzard?.(actor,target,dt); // The one ceiling origin pursues her selected target throughout the kneel.
+          stage.wave-=dt;
+          if(stage.wave<=0) {
+            stage.wave=setting(actor,'barrageIntervalSeconds',.62);
+            window.DevRandomRuinLichThemes?.triggerBossBlizzard?.(actor); // One individual falling icicle per interval; no room-wide pattern.
+            lastEvent='nanahi:targeted-icicle';
+          }
+        } else {
+          window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor);
+          actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL);lastEvent='nanahi:stand';
         }
-        if(stage.time<=0) {actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL);lastEvent='nanahi:stand';}
         return {aimAngle:angle,moving:false,handled:true};
       }
       if(actor._specialCooldown<=0&&!actor._banditAction) {
@@ -569,7 +587,11 @@
   window.SpecialHarlyaoLiches=Object.freeze({
     DATA,BOSS_DEFAULTS,patternFor,inverseRobeColor,kindFor,defFor,settingsFor,rigScaleFor,bodyColor3For,applyBodyColor3ToRoster,decoratePortraitProfile,prepareHeadFire,ordinaryLichPatterns,colorInFamily,specialRoster,init,handleAI,tick,updateEffects,applyPlasmSkin,clear, // Workshop consumes the same readable defaults and battle stage constructors.
     releaseWarhammer, // Original weapon material is restored before scene teardown, without disposing shared art assets.
-    onDefeat: actor => actor?.isSpecialLich ? window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true : false,
+    onDefeat: actor => { // Named guardian defeat keeps key-stone rewards while cancelling Nanahi's ceiling emitter.
+      if (!actor?.isSpecialLich) return false;
+      if (actor.lichType==='tothal') window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor);
+      return window.DelversGuild?.grantKeyStone?.(actor.specialLichId)===true;
+    },
     snapshot:()=>({event:lastEvent,plasmPatches:activePatches.size,drips:droplets.size}),
   });
 })();

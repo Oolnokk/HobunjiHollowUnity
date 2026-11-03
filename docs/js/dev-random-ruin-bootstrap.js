@@ -52,7 +52,7 @@
   document.write('<script src="js/root-snare-player-tear.js?v=20261101fullbody4"></scr' + 'ipt>'); // Full skinned character silhouette, dynamic cinematic view and insta-death.
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261102hachuturoots1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
-  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261102dungeonfire1"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
+  document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261103nanahi-target1"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261103spritenet3"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261103h3ebe449"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261101h812c302"></scr' + 'ipt>');
