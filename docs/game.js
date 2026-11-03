@@ -5381,12 +5381,17 @@
             const gained = window.LootRolling.rollLootPool(c.def.lootPool, { entity: c });
             const parts = [];
             Object.entries(gained).forEach(([key, qty]) => {
-              inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[key] || 0) + qty);
-              // Meat gets a quality roll same as fish/crops; hides and other
-              // butchering byproducts don't.
-              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null;
-              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, qty);
-              parts.push((meatStars ? window.LootRolling.starRatingText(meatStars) + ' ' : '') + itemIconForKey(key) + '×' + qty);
+              const previousCount = Math.max(0, Number(inventory[key]) || 0); // The accepted amount, not the rolled amount, determines how many hides retain provenance.
+              inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, previousCount + qty);
+              const received = inventory[key] - previousCount; // Full bag stacks must not create phantom coat records or quality units.
+              if (received < 1) return;
+              const hideRecord = window.AnimalHides?.isHide?.(key)
+                ? window.AnimalHides.recordFromCreature(key, c, received, ITEM_DEFS[key]?.sellPrice)
+                : null; // Uses this exact dead animal's existing coat-rarity calculation and genetic colors/patterns.
+              const meatStars = /meat/i.test(key) ? window.LootRolling.rollItemStars('combat') : null; // Meat retains the existing independent Combat quality roll.
+              if (meatStars) window.CookingSystem.recordItemQuality(key, meatStars, received);
+              const stars = hideRecord?.stars || meatStars;
+              parts.push((stars ? window.LootRolling.starRatingText(stars) + ' ' : '') + itemIconForKey(key) + '×' + received);
             });
             const carriedBabyKey = c.carriedBabyItemKey; // Herd-Mothers expose their carried young only through the corpse interaction, never while alive.
             const carriedBabyCount = Math.max(0, Math.floor(Number(c.carriedBabyCount) || 0));
@@ -9303,6 +9308,7 @@
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
         member.cookingState = window.CookingSystem.serialize();
+        member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
         member.wildernessChunkState = serializeWildernessChunkState();
@@ -17294,8 +17300,22 @@
         const def   = ITEM_DEFS[key];
         const stack = selectedStack || (invSelectedKey === key ? invSelectedStack : null); // Closure pins actions to the selected variant.
         const count = stack ? stack.count : (inventory[key] || 0);
-        const unitPrice = stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0); // Same shared quality multipliers as other sales.
+        const isHide = window.AnimalHides?.isHide?.(key) || false; // A selected hide stack represents one source coat, not an ordinary rolled-quality bucket.
+        const hideRecord = isHide ? stack?.hideRecord : null; // Includes the original animal's inheritable coat colors, patterns, and painted overlays.
+        const quoteHideSale = amount => window.AnimalHides?.quote?.(key, amount, 'pack', def?.sellPrice || 1, inventory[key] || 0, stack?.variant || null); // Uses exact coat variants, including mixed unselected stacks.
+        const unitPrice = isHide
+          ? (quoteHideSale(1)?.total ?? def?.sellPrice ?? 0) // Animal rarity already determines the price; do not multiply it by stars again.
+          : (stack?.stars ? Math.max(1, Math.round((def?.sellPrice || 0) * window.CookingSystem.valueMultiplierForStars(stack.stars))) : (def?.sellPrice || 0));
+        const fullStackPrice = isHide ? (quoteHideSale(count)?.total ?? count * unitPrice) : count * unitPrice; // Prevent mixed or controller-preview hides from being sold at one arbitrary coat price.
         function consumeSelected(amount) {
+          if (isHide) {
+            const beforeCount = Math.max(0, Number(inventory[key]) || 0); // Needed to distinguish recorded specimens from legacy generic hides.
+            const consumed = window.AnimalHides.consume(key, amount, 'pack', def?.sellPrice || 1, beforeCount, stack?.variant || null);
+            if (!consumed.ok) return false;
+            inventory[key] = beforeCount - amount;
+            clampInventoryStack(key);
+            return true;
+          }
           if (stack?.stars) return window.CookingSystem.consumeQuality(key, stack.stars, amount);
           if ((inventory[key] || 0) < amount) return false;
           inventory[key] -= amount;
@@ -17325,9 +17345,12 @@
         window.InventoryStacks.applyHeadIcon(iiIconEl, LIVESTOCK_ITEM_KINDS[key], stack?.genotype, stack?.variant);
         set('iiName',  `${def.label} ×${count}`);
         set('iiPrice', def.sellPrice > 0 ? `${unitPrice}g each` : '');
-        set('iiQuality', stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def));
+        set('iiQuality', isHide
+          ? (hideRecord ? `${starGlyphs(hideRecord.stars)} ${hideRecord.rarity?.tier || 'Common'} coat rarity` : 'Unrecorded hide (legacy stock)')
+          : (stack?.stars ? `${starGlyphs(stack.stars)} ${QUALITY_DESCRIPTORS[stack.stars]}` : qualityDisplayForItem(key, def)));
         set('iiTags',  def.tags.map(t => `<span class="ii-tag">${t}</span>`).join(''));
-        set('iiDesc',  itemDescriptionWithFlavor(key, def));
+        if (isHide) set('iiDesc', [itemDescriptionWithFlavor(key, def), window.AnimalHides.describe(hideRecord)].filter(Boolean).join(' · ')); // Mobile Pack details expose the actual fur colors/patterns.
+        else set('iiDesc', itemDescriptionWithFlavor(key, def)); // All non-hide items retain their established cooking-buff-aware description path.
 
         const actEl = document.getElementById('iiActions');
         if (actEl) {
@@ -17378,9 +17401,9 @@
             });
           }
           if (def.sellPrice > 0 && count > 0) {
-            mkBtn(`Sell Stack (${count} × ${unitPrice}g = ${count * unitPrice}g)`, 'sell', () => {
+            mkBtn(isHide ? `Sell Stack (${count} hides = ${fullStackPrice}g)` : `Sell Stack (${count} × ${unitPrice}g = ${fullStackPrice}g)`, 'sell', () => {
               if (!consumeSelected(count)) return;
-              const earned = count * unitPrice; // Only this quality stack is sold.
+              const earned = fullStackPrice; // Exact selected hide values or the existing quality-tier valuation.
               inventory.gold = (inventory.gold || 0) + earned;
               showToast(`Sold ${count} ${def.label} for ${earned}g`, true);
               if (spGoldAmount) spGoldAmount.textContent = inventory.gold;
@@ -32480,6 +32503,7 @@
         window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
+        window.AnimalHides?.restore?.(playerData.isNewWorld ? null : playerData.animalHides, inventory); // Restore coat records only after the authoritative bag counts load.
         window.SkillSystem.restore(playerData);
         window.PerkSystem?.restore(playerData);
 

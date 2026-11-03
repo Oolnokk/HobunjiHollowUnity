@@ -19,6 +19,9 @@ assert.equal(asset.parts.length,3,'two-necked furniture retains all three author
 assert(asset.recognizedSurfaces.length>0,'all original surface definitions survive import');
 assert(html.includes('src="js/shattercasks.js?v='),'shattercask runtime is loaded');
 assert(ranged.includes('Shattercasks?.projectileHit'),'ranged projectile segment detects shattercasks');
+assert(code.includes('const burdenHitFirst=!!otherHit&&(!volumeHit||otherHit.t<=volumeHit.t);') &&
+  code.includes('if(burdenHitFirst)hitProjectile(otherHit);'),
+  'a falling Burden only invokes another Burden impact when that target is the earliest collision, never through a nearer solid blocker');
 assert(flaskRuntime.includes("emitSfx('impact'"),'flask flight emits its semantic impact cue at landing');
 assert(audioSystem.includes("document.addEventListener('hobunji-flask-sfx'") &&
   audioSystem.includes('cueMap[detail.cue]') &&
@@ -34,9 +37,11 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  code.includes("return detonate(candidate.vase,'projectile')") &&
-  code.includes("detonate(vase,'melee')"),
-  'one guarded detonation boundary plays the blast cue for thrown, projectile-hit, and melee-hit paths');
+  code.includes("detonate(vase,'melee')") &&
+  code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
+  code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
+  code.includes("return detonate(burden,'projectile');"),
+  'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
@@ -387,7 +392,7 @@ async function scenario(reloading=false) {
     'looting changes only instance count, not per-tile mesh ownership');
   // A second blast must reuse the first blast's geometry/textures.
   const phantom=new Node();phantom.position.set(4.5,0,3.5);
-  const phantomCask={id:'performance-repeat',mapId:area,col:4,row:3,
+  const phantomCask={id:'performance-repeat',kind:'shattercask',mapId:area,col:4,row:3,
     group:phantom,exploded:false,carried:false};
   assert(game.Shattercasks.detonate(phantomCask,'regression'));
   assert.equal(playedSfx.length,2,'each separate explosion requests one sound');

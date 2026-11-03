@@ -46,6 +46,10 @@
       "file": "config/furniture-authored/bulletinBoard.json"
     },
     {
+      "key": "burdenPlinth",
+      "file": "config/furniture-authored/burdenPlinth.json"
+    },
+    {
       "key": "butterChurn",
       "file": "config/furniture-authored/butterChurn.json"
     },
@@ -288,6 +292,22 @@
     {
       "key": "honeyfuzzleHouse",
       "file": "config/furniture-authored/honeyfuzzleHouse.json"
+    },
+    {
+      "key": "hronalWitchBomb",
+      "file": "config/furniture-authored/hronalWitchBomb.json"
+    },
+    {
+      "key": "keyStatue",
+      "file": "config/furniture-authored/keyStatue.json"
+    },
+    {
+      "key": "keyStatueDispenser",
+      "file": "config/furniture-authored/keyStatueDispenser.json"
+    },
+    {
+      "key": "witchBombCeilingTube",
+      "file": "config/furniture-authored/witchBombCeilingTube.json"
     }
   ]
 }

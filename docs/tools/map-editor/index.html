@@ -88,7 +88,7 @@ label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
 #qhelpPopover .qhelp-close:hover{color:#edf5ff}
 </style>
 <script src="../../js/panel-ui.js?v=20261102furnsurface4"></script>
-<script src="../../js/furniture-puzzle-properties.js?v=20260922perpiece1"></script>
+<script src="../../js/furniture-puzzle-properties.js?v=20261102burdenplinth1"></script>
 <script src="../../js/table-chair-placement.js?v=20261102chairreview3"></script>
 <script src="../../js/map-live-preview.js?v=20261029maskSlots2"></script>
 </head>
@@ -596,6 +596,10 @@ const DECOR = {
   mineLadder:{icon:'🪜',label:'Mine Ladder',fw:1,fd:1,area:'interior'}, campfire:{icon:'🔥',label:'Campfire',fw:1,fd:1,area:'any'},
   feedGrinder:{icon:'⚙️',label:'Feed Grinder',fw:1,fd:1,area:'interior'}, trough:{icon:'🪣',label:'Feed Trough',fw:1,fd:1,area:'interior'},
   generalStoreSign:{icon:'🪧',label:'General Store Sign',fw:1,fd:1,area:'any'}, innSign:{icon:'🪧',label:'Inn Sign',fw:1,fd:1,area:'any'},
+  burdenPlinth:{icon:'⚖️',label:'Burden Plinth',fw:1,fd:1,area:'interior',puzzle:{
+    role:'activator',behavior:'burdenPlate',channel:'A',completionChannel:'B',
+    requiredBurdenKind:'shattercask',payloadSurfaceId:'burden_plinth_lower:surface:2'
+  }},
   door:{icon:'🚪',label:'Interior Door',fw:1,fd:1,area:'interior',puzzle:{role:'mechanism',behavior:'toggle',directInteraction:true,blocksMovement:true}}
 };
 

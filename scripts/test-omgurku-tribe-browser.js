@@ -101,7 +101,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         }
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
-      const omg=await spawn('omgurku',-0.25),pora=await spawn('porakaneki',0.25);
+      const omg=await spawn('omgurku',-0.4),pora=await spawn('porakaneki',0.4); // Start within hatchet reach so the smoke tests attack dispatch, not arena navigation.
       window.__tribeQa={omg,pora};
       const ref=omg.avatarRef;
       for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.

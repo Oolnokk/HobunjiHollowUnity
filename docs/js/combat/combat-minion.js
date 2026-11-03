@@ -122,6 +122,33 @@
     return entity;
   }
 
+  async function makeDemolitionist(options = {}) {
+    if (options.ruinEncounter !== true) {
+      window.__farmLog?.('[minion] Harlyao Demolitionist spawn rejected outside an explicitly authored ruin encounter.', 'info', 'combat');
+      return null; // Bomb carriers are a ruin-challenge archetype, never a mine or wilderness replacement for ordinary Minions.
+    }
+    const name = options.name || 'Harlyao Demolitionist'; // Display name used by the hostile nameplate and corpse record.
+    const roster = options.roster || rollRoster('harlyao-skeleton', name, { gender:options.gender }); // The Demolitionist keeps the existing Harlyao Skeleton wardrobe, dye and armor pipeline.
+    if (roster?.appearance?.speciesId !== 'harlyao-skeleton') return null; // Do not let a caller silently turn this Harlyao-only class into another species.
+    const fuseSeconds = Number(options.witchBombFuseSeconds);
+    return makeEntity({
+      ...options,
+      speciesId:'harlyao-skeleton',
+      name,
+      roster,
+      enemyClass:'harlyao-demolitionist',
+      defOverride:{ ...(options.defOverride || {}), weaponKey:null, rangedWeaponKey:null }, // Both hands belong to the physical Witch-bomb; no invisible backup weapon competes for the grip.
+      extra:{
+        ...(options.extra || {}),
+        enemyClass:'harlyao-demolitionist',
+        enemyLoadoutKind:'harlyao-demolitionist',
+        isHarlyaoDemolitionist:true,
+        carriesHronalWitchBomb:true, // BanditCombat creates the physical sphere and publishes its two-hand attachment target.
+        ...(Number.isFinite(fuseSeconds) && fuseSeconds > 0 ? { witchBombFuseSeconds:fuseSeconds } : {}),
+      },
+    });
+  }
+
   window.MinionCombat = Object.freeze({
     classId: CLASS_ID,
     defaultWeaponShapes: DEFAULT_WEAPON_SHAPES,
@@ -133,5 +160,6 @@
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
     makeEntity,
+    makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });
 })();

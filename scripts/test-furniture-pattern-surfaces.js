@@ -42,7 +42,7 @@ class Mesh {
 }
 class Matrix3 {constructor(){this.elements=[1,0,0,0,1,0,0,0,1];}copy(other){this.elements=[...other.elements];return this;}} // Shader uniforms borrow the source PNG's real transform.
 class Vector2 {constructor(x=0,y=0){this.set(x,y);}set(x,y){this.x=x;this.y=y;return this;}}
-const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000}; // Enough Three API to execute actual triangle selection and instance lifecycle.
+const THREE={Matrix3,Vector2,Vector3,BufferGeometry:Geometry,Float32BufferAttribute:Attribute,Mesh,MeshBasicMaterial:Material,DoubleSide:2,RepeatWrapping:1000,AdditiveBlending:2}; // Enough Three API to execute actual triangle selection and instance lifecycle.
 const definitions=[{id:'rune-a',pattern:{motifDataUrl:'data:a'}},{id:'rune-b',pattern:{motifDataUrl:'data:b'}}]; // Deterministic unlockable catalog fixture.
 const owned=new Set(); // Tracks actual unlock calls; entering/decorating cannot change it.
 const stacks=[]; // Captures the production primary/overpass pair passed to the compositor.
@@ -61,7 +61,7 @@ const document={createElement(tag){if(tag==='div')return new Control();const res
 let compositeCount=0; // Proves repeated instances reuse one pending tile build.
 const window={THREE,PatternLibrary:{getById:id=>definitions.find(d=>d.id===id)?.pattern,getCatalog:()=>definitions,unlock:id=>{if(owned.has(id))return false;owned.add(id);return true;}},
   ClothingWeavingSystem:{async applyPatternStackToTintedImage(canvas,patterns,dye,key,shade){compositeCount++;stacks.push(patterns);sizes.push([canvas.width,canvas.height]);assert.equal(shade.fill,'#c0c0c0','authored white must not be used as the shade-fill source');return canvas;}},
-  HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}})}};
+  HobunjiSpritePngSurface:{makeMaterial:(_T,_tex,_name,options)=>new Material(options),makeCanvasTexture:(_T,canvas)=>({canvas,dispose(){this.disposed=true;}}),carveCanvas:canvas=>canvas}};
 vm.runInNewContext(fs.readFileSync('docs/js/furniture-pattern-surfaces.js','utf8'),{window,document,Option,performance:{now:()=>1000},console});
 const api=window.FurniturePatternSurfaces; // Public production API used by furniture, ruin generation, and editor preview.
 function box(){const geo=new Geometry();geo.setAttribute('position',new Attribute([-1,.05,-1.5, 1,.05,1.5, 1,.05,-1.5, -1,.05,-1.5, -1,.05,1.5, 1,.05,1.5, -1,-.05,1.5, 1,-.05,1.5, 1,.05,1.5],3));return new Mesh(geo,new Material({}));}
@@ -71,6 +71,8 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.normalize({mode:"engraving",opacity:0}).engravingCoreOpacity,0,"zero opacity must still hide the entire carving");
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
+  assert.equal(api.normalize({mode:'engraving',glowIntensity:1.4,glowColor:'#ff6a10'}).glowIntensity,1.4);
+  assert.equal(api.normalize({mode:'engraving',selector:'all'}).selector,'all');
   assert.equal(api.normalize({palette:['invalid']}).palette[0],'#b7a185');
   const curvedGeo=new Geometry(),ring=[]; // Eight connected cylinder panels expose projection discontinuities at changing face directions.
   for(let segment=0;segment<8;segment++) {
@@ -109,7 +111,31 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   assert.equal(api.debug(mesh)[0].scale,2);assert.equal(part.patternSurfaces[0].scale,1);
   const cold=box();cold.userData.authoredPart=part;api.applyOverrides(cold,JSON.parse(JSON.stringify(mesh.userData.patternOverrides)));
   assert.equal(api.debug(cold)[0].scale,2,'serialized overrides survive cold restoration');
-  const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
+  const wholeSphere=box();
+  api.applyPart(wholeSphere,{kind:'sphere',patternSurfaces:[{...pattern,selector:'all'}]});
+  const wholeSphereLayer=wholeSphere.children[0];
+  assert.equal(wholeSphereLayer.geometry.getAttribute('position').count,
+    wholeSphere.geometry.getAttribute('position').count,
+    'selector all must include every sphere face, not only its upward triangles');
+  const sphereAxes=wholeSphereLayer.geometry.userData.patternUvAxes;
+  assert([...sphereAxes].filter((_,index)=>index%2===0).every(axis=>axis===3)
+    &&[...sphereAxes].filter((_,index)=>index%2===1).every(axis=>axis===4),
+    'whole-sphere glyphs use continuous longitude/latitude UVs with separate equator and vertical scale');
+  const glowSource=box();
+  const glowRecord={...pattern,mode:'engraving',selector:'all',glowColor:'#ff7818',glowIntensity:.8,glowPulseSpeed:2};
+  api.applyPart(glowSource,{kind:'sphere',patternSurfaces:[glowRecord]});
+  const glowOverlay=glowSource.children[0];
+  assert.equal(glowOverlay.userData.furniturePattern.slot,'carpet');
+  await Promise.resolve();await new Promise(resolve=>setImmediate(resolve));
+  assert(glowOverlay.userData.engravingGlowMesh,'an authored glowing engraving must create a distinct glyph-only additive layer');
+  assert.equal(glowOverlay.userData.engravingGlowMesh.material.blending,THREE.AdditiveBlending);
+  api.setGlowState(glowSource,{intensity:1.2,pulseSpeed:8,pulseDepth:.9,color:'#ff9a28'});
+  assert.equal(glowSource.userData.furniturePatternGlowState.intensity,1.2,'fuse runtime can raise glyph glow intensity');
+  assert.equal(glowSource.userData.furniturePatternGlowState.pulseSpeed,8,'fuse runtime can accelerate glyph pulses');
+  const oldGlow=glowOverlay.userData.engravingGlowMesh;
+  glowOverlay.material.dispose();
+  assert.equal(oldGlow.material.disposed,true,'disposing the engraving also disposes its additive glow material');
+    const banner=box();api.applyPart(banner,{kind:'banner',transform:{sy:2},patternSurfaces:[{...pattern,selector:'all'}]});
   const shader={uniforms:{},vertexShader:'#include <begin_vertex>',fragmentShader:'#include <alphatest_fragment>'};banner.children[0].material.onBeforeCompile(shader);banner.children[0].onBeforeRender();
   assert(shader.vertexShader.includes('hanging'));assert.equal(shader.uniforms.bannerTime.value,1);
   for(const mode of ['cloth','glass','engraving']) {

@@ -568,6 +568,7 @@
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
+      animalHides: { version: 1, pack: {} }, // Exact coat/genotype records for the count-based world-member hide inventory.
       // A brand-new member has no legacy favor to fix, so it starts already
       // "migrated" — see game.js's DialogueContent.loadNpcRelationships/
       // _applyLegacyFavorRescale. A member saved before this field existed
@@ -1482,6 +1483,7 @@
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
       cookingState:      { ...(memberState.cookingState || {}) },
+      animalHides:       memberState.animalHides || { version: 1, pack: {} }, // Pass saved per-hide genetics from the world member into game.js restore.
       // These were being saved by game.js's saveMemberWorldData() but never
       // actually read back out here — every one of them silently reset on
       // a real browser close+reopen (a fresh page load re-runs this whole
@@ -1864,6 +1866,7 @@
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];
       playerData.cookingState = { ...(memberState.cookingState || {}) };
+      playerData.animalHides = memberState.animalHides || { version: 1, pack: {} }; // New characters use the same saved-hide payload shape.
       // Same fields as the returning-player branch above, for consistency —
       // memberState here is always freshly empty (a brand-new world/member),
       // so these are no-ops today, but keep the two branches' playerData

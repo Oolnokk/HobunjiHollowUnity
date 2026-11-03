@@ -5,8 +5,8 @@
   'use strict';
 
   const ROLES = Object.freeze(['none', 'activator', 'mechanism']);
-  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars']);
-  const MECHANISMS = Object.freeze(['toggle', 'stoneDoor', 'bridge', 'bridgeSequence', 'movingDais', 'collapsingStairs', 'pushPuzzleBlock', 'elevatorPushBlock', 'pressurePlate', 'torch', 'brazier', 'signalObelisk', 'rotatingObelisk', 'linkedCubePair']);
+  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'burdenPlate', 'keyStatue', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars']);
+  const MECHANISMS = Object.freeze(['toggle', 'stoneDoor', 'bridge', 'bridgeSequence', 'movingDais', 'collapsingStairs', 'pushPuzzleBlock', 'elevatorPushBlock', 'pressurePlate', 'witchBombDispenser', 'torch', 'brazier', 'signalObelisk', 'rotatingObelisk', 'linkedCubePair']);
 
   function text(value, fallback = '') { return String(value ?? fallback).trim(); }
   function number(value, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
@@ -51,9 +51,11 @@
     legacyOn.position[axis] = signedDistance;
     const off = transitionState(motion.off, { emission:{ color:'#000000', intensity:0, particleRateScale:0, opacity:1 } });
     const on = transitionState(motion.on, legacyOn);
+    const durationSeconds = Math.max(.05, number(motion.durationSeconds, .8));
     return {
       off, on, parts:partTransitions(motion.parts),
-      durationSeconds:Math.max(.05, number(motion.durationSeconds, .8)),
+      durationSeconds,
+      reversalSeconds:Math.max(0, number(motion.reversalSeconds, durationSeconds)),
       collisionOpenProgress:Math.max(0, Math.min(1, number(motion.collisionOpenProgress, .55))),
     };
   }
@@ -68,6 +70,12 @@
       role,
       behavior,
       channel: text(raw.channel, 'A') || 'A',
+      completionChannel: text(raw.completionChannel, 'B') || 'B',
+      requiredBurdenKind: ['shattercask','soursap'].includes(text(raw.requiredBurdenKind, 'shattercask'))
+        ? text(raw.requiredBurdenKind, 'shattercask') : 'shattercask',
+      payloadSurfaceId: text(raw.payloadSurfaceId),
+      payloadPartId: text(raw.payloadPartId),
+      bombFuseSeconds: Math.max(1, Math.min(120, number(raw.bombFuseSeconds, 10))), // Per-generated-tube fuse duration in seconds; consumed by HronalWitchBombs.
       startsActive: !!raw.startsActive,
       blocksMovement: role === 'mechanism' && raw.blocksMovement !== false,
       interactionRange: Math.max(.25, number(raw.interactionRange, 1.65)),

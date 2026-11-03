@@ -52,6 +52,7 @@
   let textureState = 'not-requested';
   let snowTexture = null;
   const materials = {}; // mode -> THREE.Material, built lazily and reused.
+  const snowMaterialConsumers = new Set(); // Background-only snow material clones waiting for the shared snow texture to finish loading.
   let builtTiles = 0;
   let exposedEdges = 0;
   let chunkCount = 0;
@@ -183,6 +184,11 @@
         materials.snow.map = snowTexture;
         materials.snow.needsUpdate = true;
       }
+      for (const consumer of snowMaterialConsumers) {
+        consumer.map = snowTexture;
+        consumer.needsUpdate = true;
+      }
+      snowMaterialConsumers.clear();
     }, undefined, error => {
       textureState = `load-failed:${String(error?.message || 'unknown')}`;
     });
@@ -639,7 +645,7 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt });
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, getSnowMaterial: () => material('snow'), bindSnowTexture(target) { if (!target) return false; target.map = snowTexture; if (snowTexture) target.needsUpdate = true; else if (textureState === 'loading') snowMaterialConsumers.add(target); return true; }, unbindSnowTexture(target) { return snowMaterialConsumers.delete(target); }, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative Western Slope snow caps reuse this exact material and its asynchronously loaded canvas texture.
   ensureTexture();
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone

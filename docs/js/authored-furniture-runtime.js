@@ -51,6 +51,7 @@
     group.userData.surfaceAncestry = [...ancestors, data.key]; // Passed to nested authored furniture builds, including asynchronous loads.
     group.name = `authored_furniture_${data.key || 'unknown'}`;
     group.userData.authoredFurnitureKey = data.key || null; // Used by Pixel Probe/runtime diagnostics to identify authored furniture instances.
+    group.userData.authoredFurnitureData = data; // Recognized-surface definitions drive live payload attachment anchors.
     if (data.puzzle) window.FurniturePuzzleProperties?.applyToObject3D?.(group, data.puzzle, data.key); // Authored activators/mechanisms carry the same metadata into gameplay that the editors wire per instance.
     const meshById = new Map();
     const partById = new Map(); // Used by timeline liquid geometry, linked-container warps, and stomp anchors.
@@ -94,6 +95,37 @@
     }
     window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth);
     return group;
+  }
+
+
+  function createSurfaceAnchor(group, surfaceId, normalOffset = .012) {
+    if (!group || !window.THREE || !surfaceId) return null;
+    const surfaces = group.userData.authoredFurnitureData?.recognizedSurfaces || [];
+    const surface = surfaces.find(entry => entry.id === String(surfaceId));
+    const partMesh = surface && group.userData.meshById?.get?.(surface.partId);
+    if (!surface || !partMesh || !Array.isArray(surface.localCentroid)
+      || !Array.isArray(surface.localNormal) || !Array.isArray(surface.basisU)) return null;
+    const anchors = group.userData.payloadAttachmentAnchors ||= new Map();
+    const existing = anchors.get(String(surfaceId));
+    if (existing?.parent === partMesh) return existing;
+    existing?.parent?.remove?.(existing);
+    const center = new THREE.Vector3().fromArray(surface.localCentroid);
+    const normal = new THREE.Vector3().fromArray(surface.localNormal).normalize();
+    const u = new THREE.Vector3().fromArray(surface.basisU).normalize();
+    const z = new THREE.Vector3().crossVectors(u, normal).normalize(); // Right-handed local frame: payload Y points out of the recognized face.
+    if (z.lengthSq() < .5 || normal.lengthSq() < .5) return null;
+    const anchor = new THREE.Group();
+    anchor.name = 'payload_attachment_' + String(surfaceId).replace(/[^a-z0-9_-]/gi,'_');
+    anchor.position.copy(center).addScaledVector(normal, Math.max(0, Number(normalOffset) || 0));
+    anchor.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(u, normal, z));
+    anchor.scale.set(
+      1 / Math.max(.001, Math.abs(partMesh.scale.x)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.y)),
+      1 / Math.max(.001, Math.abs(partMesh.scale.z))); // Follow the surface position/orientation without inheriting the host part's animated compression.
+    anchor.userData.payloadAttachmentSurfaceId = String(surfaceId);
+    partMesh.add(anchor); // A child of the detected part, so animated mechanisms carry the inserted burden with the surface.
+    anchors.set(String(surfaceId), anchor);
+    return anchor;
   }
 
   // Furniture Author's recognizedSurfaces + itemPlacements are the authority
@@ -622,6 +654,7 @@
     buildGroup,
     setItemPlacements,
     addFurniturePlacement,
+    createSurfaceAnchor,
     seatAnchorFor,
     seatCount,
     seatedKneeReach,

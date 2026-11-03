@@ -596,11 +596,13 @@
       const pitch = aim?.pitch ?? deps.getPlayerAimPitch?.() ?? 0;
       const ammoPayload = playerAmmoPayload(action.itemKey);
       const heldTexture = action.def.rangedType === 'thrown' ? deps.getHeldRangedTexture?.(action.itemKey) || null : null;
+      const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true; // One brazier charge follows exactly one projectile, even for multi-shot volleys.
       const volley = spawnVolley(action.itemKey, deps.player.x, deps.player.y, angle, 'player', deps.player, ammoPayload, pitch, {
         damageScale: action.damageScale,
         textureSource: heldTexture,
         sourceTransform: heldTransform,
         preserveSourceOrientation: action.def.rangedType === 'thrown',
+        dungeonFire,
       });
       if (action.def.rangedType === 'thrown' && volley.some(Boolean)) {
         // The projectile now owns the visible weapon copy. Hide the in-hand
@@ -679,6 +681,7 @@
     plane.renderOrder = deps.heldObjectRenderOrder || 1.5;
     facePivot.add(plane);
     root.add(visual);
+    root.userData.projectilePlane = plane; // Dungeon Fire reads the exact authored PNG plane for pixel-anchored fire visuals.
     root.userData.collider = collider;
     root.userData.visual = visual;
     root.userData.facePivot = facePivot;
@@ -960,6 +963,7 @@
     const p = {
       itemKey, def, team, owner, mesh,
       visual: mesh.userData.visual, facePivot: mesh.userData.facePivot,
+      dungeonFire: shotOptions?.dungeonFire === true, // Only the first projectile in a player volley receives this one-shot enchantment.
       x: spawnX, y: spawnY, prevX: spawnX, prevY: spawnY, worldY, prevWorldY: worldY,
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (projectileSpeedPxS / deps.TILE),
@@ -995,6 +999,7 @@
       trailMeshes: createProjectileTrails(scene, trailColors, def.projectileRadiusPx),
     };
     projectiles.push(p);
+    if (p.dungeonFire) window.DungeonFire?.attachProjectile?.(p); // Visual and collision zone are owned by this projectile until disposal.
     if (p.embedOnTerrain) enforceEmbeddedProjectileCap(p, true); // "More than three fired": reserve a visual slot at launch, fading the oldest embedded copy immediately when needed.
     return p;
   }
@@ -1007,7 +1012,10 @@
     const made = [];
     for (let i = 0; i < count; i++) {
       const u = count === 1 ? 0.5 : i / (count - 1);
-      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload, pitch, shotOptions));
+      const projectileOptions = shotOptions?.dungeonFire === true && i > 0
+        ? { ...shotOptions, dungeonFire:false }
+        : shotOptions; // A spread volley consumes one brazier charge, not one charge per arrow/dart.
+      made.push(spawnProjectile(itemKey, x, y, angle + (u - 0.5) * spread, team, owner, ammoPayload, pitch, projectileOptions));
     }
     lastEvent = `${team}:${itemKey}:volley-${count}`;
     return made;
@@ -1387,6 +1395,8 @@
     if (p.team === 'player') {
       let nearest = nearestHostileHit(start, end, projectileRadius, p.areaId);
       if (nearest && nearest.interval.enter > segmentLimit + AIM_EPSILON) nearest = null;
+      const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
+      window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Fire-reactive mechanisms obey the same swept, occlusion-capped projectile path.
       if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
         playProjectileImpactSfx(p, coverHit.t);
         return { kind: 'cover', t: coverHit.t, coverHit };
@@ -1417,6 +1427,8 @@
     if (friendly && (!nearest || friendly.interval.enter < nearest.interval.enter)) {
       nearest = { kind: 'hostile', interval: friendly.interval, actor: friendly.creature };
     }
+    const fireLimit = Math.min(segmentLimit, coverHit?.t ?? segmentLimit, shatterHit?.t ?? segmentLimit, nearest?.interval.enter ?? segmentLimit);
+    window.DungeonFire?.contactProjectile?.(p, start, end, fireLimit, projectileRadius); // Enemy-held Dungeon Fire remains visual-only; the module rejects non-player projectiles.
     if (coverHit && (!nearest || coverHit.t <= nearest.interval.enter) && (!shatterHit || coverHit.t <= shatterHit.t)) {
       playProjectileImpactSfx(p, coverHit.t);
       return { kind: 'cover', t: coverHit.t, coverHit };
@@ -1491,6 +1503,7 @@
 
   function disposeProjectile(p) {
     if (!p || p.dead) return;
+    window.DungeonFire?.disposeProjectile?.(p); // Remove attached embers and detached flame zones before projectile geometry is released.
     p.dead = true;
     p.mesh.parent?.remove(p.mesh);
     p.mesh.traverse(child => {
@@ -1507,6 +1520,7 @@
       if (p.areaId !== deps.getCurrentArea()) { disposeProjectile(p); continue; }
 
       if (p.embedded) {
+        window.DungeonFire?.updateProjectile?.(p, dt); // Embedded burning weapons retain a short-lived flame until their normal fade/disposal.
         p.embeddedAgeS += dt;
         const normalFadeDurationS = Math.min(p.projectileFadeS, p.projectilePersistS);
         if (!p.fading && p.embeddedAgeS >= Math.max(0, p.projectilePersistS - normalFadeDurationS)) {
@@ -1538,6 +1552,7 @@
 
       p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
       updateProjectileVisual(p, dt);
+      window.DungeonFire?.updateProjectile?.(p, dt); // Keeps thrown metal-pixel embers and upright arrow flames attached to the live trajectory.
 
       const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx, p.worldY);
       const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;

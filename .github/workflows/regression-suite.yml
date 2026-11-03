@@ -45,7 +45,12 @@ jobs:
       - name: Install browser
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
-          npx playwright install --with-deps chromium
+      - name: Substance Cover Shell against real Three.js r128
+        run: node scripts/test-substance-cover-shell.js
+      - name: Dungeon Fire projectile transforms and contact against real Three.js
+        run: node scripts/verify-dungeon-fire-three.js
+      - name: Install Chromium for browser regressions
+        run: npx playwright install --with-deps chromium
       - name: Camera occlusion bounded-ray parity against real three
         run: node scripts/test-camera-occlusion-bounded-rays.js
       - name: Interior Editor floorless exit mouse and touch browser regression

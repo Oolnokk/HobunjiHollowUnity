@@ -1135,7 +1135,7 @@
       || target.isPorakanekiHunter === true
       || target.banditCompanion === true
       || typeof target.creatureKey === 'string'
-    ); // Staged swings keep the actor classification even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
+    ); // Staged swings retain actor identity even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
     if (actorTarget && typeof deps.damageCreature === 'function') {
       return deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
         ...opts,
@@ -2118,12 +2118,16 @@
     if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
-    // Unconditional now (was only called from the engaged branch below,
-    // skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
+    // For player targets, unconditional now (was only called from the engaged
+    // branch below, skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
     // Covers the retreat/busy states below too: a stationary swinging
     // bandit should still get pushed off if the player walks into it,
     // even though it isn't the one closing the distance.
-    enforceBanditPlayerCollision(c, targetPlayer);
+    const actorTarget = targetPlayer.isBandit === true
+      || targetPlayer.isPorakanekiHunter === true
+      || targetPlayer.banditCompanion === true
+      || typeof targetPlayer.creatureKey === 'string';
+    if (!actorTarget) enforceBanditPlayerCollision(c, targetPlayer);
     if (updateBanditLunge(c, dt, targetPlayer)) return { aimAngle: c.facing, moving: true };
     if (c.retreatT > 0) {
       c.retreatT = Math.max(0, c.retreatT - dt);
@@ -3014,6 +3018,17 @@
     };
     window.ResourceSystem?.initEntity(c);
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
+    const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
+      || c.carriesBurdenKind === 'hronalWitchBomb'
+      || opts.carriesHronalWitchBomb === true || opts.carriesBurdenKind === 'hronalWitchBomb'
+      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb';
+    if (carriesHronalWitchBomb) {
+      // Only explicitly authored enemy types may carry this ruin-specific Burden; unrelated mine Wyrm-witches do not.
+      const fuseSeconds=c.witchBombFuseSeconds??opts.witchBombFuseSeconds
+        ??opts.extra?.witchBombFuseSeconds??def.witchBombFuseSeconds;
+      window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds})
+        ?.catch?.(error=>console.warn('[HronalWitchBombs] enemy-carried spawn failed',error));
+    }
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }

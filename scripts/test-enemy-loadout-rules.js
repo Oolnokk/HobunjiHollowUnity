@@ -174,7 +174,8 @@ const read = (p) => fs.readFileSync(p, 'utf8');
     context,
   );
   const source = context.window.EnemyLoadoutSourceData;
-  assert.equal(source.types.length, 23); // Additional unarmed Headtaker troop, keeping every previously listed kind.
+  assert.equal(new Set(source.types.map(type => type.id)).size, source.types.length, 'enemy workshop kinds must be unique');
+  assert(source.types.some(type => type.id === 'harlyao-demolitionist'), 'Harlyao Demolitionist exists as a distinct ruin-only troop');
   assert(source.types.some(type => type.id === 'maskbound:headtaker'),'Headtaker exists as a distinct workshop troop');
   const game = read('docs/game.js');
   const shapes = source.declaration(game, 'MELEE_WEAPON_SHAPE_DEFS');
