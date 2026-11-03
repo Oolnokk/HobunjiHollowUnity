@@ -122,7 +122,7 @@ async function testIframeEchoInput() {
     document:{getElementById:id=>ids[id],createElement:()=>makeNode(),activeElement:{tagName:'BODY'}},
     parent:{postMessage:data=>messages.push(data)},
     location:{search:'?instrument=flute'},URLSearchParams,
-    setTimeout:fn=>{timers.push(fn);queueMicrotask(fn);return timers.length;},
+    setTimeout:(fn,ms)=>{timers.push(fn);if(ms!==850&&ms!==1800)queueMicrotask(fn);return timers.length;}, // Watchdog timeouts must not fire before an immediately ready audio context in this test.
   };
   vm.runInNewContext(embedded,sandbox,{filename:'kurraya-puzzle.html inline'});
   const api=sandbox.window.HobunjiPuzzleInstrument;
