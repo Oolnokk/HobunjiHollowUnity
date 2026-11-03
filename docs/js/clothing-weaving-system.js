@@ -1664,7 +1664,11 @@
     return { url: normalized, changed: normalized !== url };
   }
 
-  async function buildPortraitPatternMap(descriptors, view = 'front') {
+  function naturalHoodWeavingRole(role, furHood) {
+    return furHood && (role === 'animalFront' || role === 'animalBack') ? 'base' : role; // Player-authored overweaves on fur substrate also cover the matching trophy hide sprites.
+  }
+
+  async function buildPortraitPatternMap(descriptors, view = 'front', wearer = null) {
     const map = new Map();
     const needsAuthoredTrim = (descriptors || []).some(descriptor => weavingHasOptionalTrim(descriptor?.weaving)); // Avoids the manifest fetch entirely for ordinary woven-only portraits.
     const trimManifest = needsAuthoredTrim ? await clothingTrimConfig() : null;
@@ -1677,10 +1681,18 @@
           const paletteKey = role && paletteLayerMap ? paletteLayerMap[role] : null; // Stored only in the transient portrait descriptor; it is not garment save data.
           const variantKey = weavingHasOptionalTrim(descriptor.weaving) ? variantKeyForSourceUrl(cfg, url) : null; // Connects this raster to its exact species/gender trim authoring record.
           const trimPattern = variantKey ? authoredTrimPatternFromManifest(trimManifest, descriptor.baseCosmeticId, variantKey, view) : null;
-          if (!weavingPatternsForRole(descriptor.weaving, role).length && !trimPattern && !window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length) continue; // Unsupported trim variants render as ordinary clothing instead of forcing the expensive woven gate.
+          if (!weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length && !trimPattern && !window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length) continue; // Unsupported trim variants render as ordinary clothing instead of forcing the expensive woven gate.
           const entry = { ...descriptor, role, paletteKey, trimPattern };
           map.set(url, entry);
           for (const behindUrl of behindViewUrlsFor(url, descriptor.baseCosmeticId)) map.set(behindUrl, entry);
+        }
+        if (descriptor.furHood) {
+          const animalParts = window.FurHoodLeatherworking?.specialPartsFor?.(descriptor.furHood, wearer?.speciesId, wearer?.gender) || []; // The cosmetic JSON has no animal-specific sprites; resolve exactly the ones this wearer will draw.
+          for (const part of animalParts) {
+            const role = part.role; // Natural ink uses the animal-front/back role while player overweaves reuse the hood-base role.
+            if (!window.FurHoodLeatherworking?.markingsFor?.(descriptor.furHood, role)?.length && !weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(role, descriptor.furHood)).length) continue;
+            map.set(normalizeAssetPath(part.url), { ...descriptor, role, paletteKey: 'A', trimPattern: null }); // This per-portrait entry keeps other animals and other players' hoods isolated.
+          }
         }
       } catch (error) {
         lastError = String(error?.message || error);
@@ -1938,7 +1950,7 @@
       // trim), and others just reuse their front sprite — same three
       // outcomes the real 3D avatar's rear render picks between.
       let url = frontUrl;
-      if (behindGender) {
+      if (behindGender && role !== 'animalBack') { // An authored animal back is already rear-facing; never apply a generic hood hide/replacement rule.
         const behind = behindViewResultFor(frontUrl, baseCosmeticIdValue, behindGender, behindUrl);
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
@@ -1956,7 +1968,7 @@
         continue;
       }
       const shadingSource = img; // Original authored raster; pattern ink samples this light/shadow field even after the base dye is applied.
-      const patterns = weavingPatternsForRole(weaving, role); // Determines the primary + optional overpass motifs for this exact base/trim layer.
+      const patterns = weavingPatternsForRole(weaving, naturalHoodWeavingRole(role, furHood)); // Custom base weaving also covers the matching hide-derived animal front and back.
       const pattern = patterns[0] || null; // Retained as the primary-pattern compatibility name used by color/swap code below.
       const swapPatternColors = !furHood && patterns.length > 0 && weavingSwapsPatternColorsForRole(weaving, role); // Swaps only this garment layer's cloth and shared pattern dye.
       const clothColorHex = furHood?.baseColor || (paletteKey === 'B' ? secondaryColorHex : primaryColorHex); // Original sprite dye retained as the pattern dye when swapping.
@@ -1985,7 +1997,7 @@
       // hook's tintKey does (see installPortraitHooks) — this layer's `img`
       // pixels, which the pattern's shade-fill reads its light/dark variation
       // from, depend on which dye tinted it, not just its own url.
-      const naturalMarkings = role === 'base' && Array.isArray(furHoodMarkingsOverride)
+      const naturalMarkings = ['base', 'animalFront', 'animalBack'].includes(role) && Array.isArray(furHoodMarkingsOverride)
         ? furHoodMarkingsOverride : (window.FurHoodLeatherworking?.markingsFor?.(furHood, role) || []); // Tool preview may show an unsaved animal-pattern draft without changing the runtime manifest.
       for (const mark of naturalMarkings) {
         img = await applyPatternToTintedImage(img, mark.pattern, mark.colorHex, `fur:${url}:${tintValue}:${mark.geneId}`, shadingSource, 'fur-hood-marking'); // Genetically colored motifs render before dyed player overweaves.
@@ -2838,7 +2850,7 @@
     // Pixel-dye layers (the mask) extend their tint key with '|pixelDye|<glowOnly>|<rgb>'. The cloth/wood partition (glowOnly=false) is
     // patterned like any layer; the luminous partition (the eyes) is never patterned.
     const descriptor = patternMap?.get(normalizeAssetPath(String(sourceKey).replace(/\|pixelDye\|false\|[^|]*$/, '')));
-    const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, descriptor.role) : []; // Render-local lookup: this map belongs only to the portrait currently being drawn.
+    const patterns = descriptor ? weavingPatternsForRole(descriptor.weaving, naturalHoodWeavingRole(descriptor.role, descriptor.furHood)) : []; // User overweaves cover all hide pieces; each part still retains its own natural-marking role.
     const naturalMarkings = window.FurHoodLeatherworking?.markingsFor?.(descriptor?.furHood, descriptor?.role) || []; // Independent animal genes retain independent inks under player weaving.
     const trimPattern = descriptor?.trimPattern && weavingHasOptionalTrim(descriptor.weaving) ? { ...descriptor.trimPattern, tiling: false } : null; // Repo trim geometry is fixed and is intentionally not a third reusable pattern slot.
     if (!patterns.length && !trimPattern && !naturalMarkings.length) return baseTintResolver(img, sourceKey, tint);
@@ -2961,7 +2973,7 @@
     const descriptors = profile?.bodyColors?.[CLOTHING_MARKER_KEY]; // Woven garment descriptors embedded into this portrait's transient bodyColors payload.
     if (Array.isArray(descriptors) && descriptors.some(item => item?.furHood)) await window.FurHoodLeatherworking?.ensureManifest?.(); // Load animal motifs before taking a render gate, including cold save selection.
     const patternMap = Array.isArray(descriptors) && descriptors.length
-      ? await buildPortraitPatternMap(descriptors, options?.portraitView === 'behind' ? 'behind' : 'front')
+      ? await buildPortraitPatternMap(descriptors, options?.portraitView === 'behind' ? 'behind' : 'front', profile?.fighter)
       : null; // Config/image lookup can overlap freely before any global compatibility ownership is needed; trim picks the matching authored front/rear mask.
     if (!patternMap?.size) {
       const releaseRead = await acquirePortraitReadGate(); // Ordinary portraits remain concurrent with each other, but never overlap a woven global-compatibility writer.

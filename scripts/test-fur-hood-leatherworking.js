@@ -58,6 +58,9 @@
     assert.equal(fur.genotype.stripes.enabled,false);
     assert.equal(window.FurHoodLeatherworking.fromHide({kind:'gar-wolf'}),null,'legacy hides cannot invent genotype');
     assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'trim').length,0,'natural markings never recolor the decorative rim');
+    assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'animalFront').length,1,'natural gene marks color the animal face');
+    assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'animalBack').length,1,'natural gene marks color the hide behind the head');
+    assert.equal(window.FurHoodLeatherworking.markingsFor(fur,'unknown').length,0,'non-fur layers remain untouched');
     const marks = window.FurHoodLeatherworking.markingsFor(fur,'base');
     assert.equal(marks.length,1,'only expressed authored genes are painted');
     assert.equal(marks[0].colorHex,'#eeddcc','genetic color is used instead of Dye C');
@@ -73,6 +76,11 @@
     assert.match(weaving,/furHood: clone\(item\.furHood\)/,'portraits receive genotype apart from weaving');
     assert.match(weaving,/furHood: reweaveItem\?\.furHood/,'player reweave preview retains original natural markings');
     assert.match(weaving,/applyPatternToTintedImage\(decorated, mark\.pattern, mark\.colorHex/,'genotype patterns render under regular weaving');
+    assert.match(weaving,/buildPortraitPatternMap\(descriptors, options\?\.portraitView === 'behind' \? 'behind' : 'front', profile\?\.fighter\)/,'portrait animal part lookup must use the actual wearer species and gender');
+    assert.match(weaving,/specialPartsFor\?\.\(descriptor\.furHood, wearer\?\.speciesId, wearer\?\.gender\)/,'dynamic animal sprite URLs must be mapped to the portrait tint and pattern pipeline');
+    assert.match(weaving,/naturalHoodWeavingRole\(descriptor\.role, descriptor\.furHood\)/,'regular base weaving also follows animal sprites in worn portraits');
+    assert.match(weaving,/naturalHoodWeavingRole\(role, furHood\)/,'regular base weaving also follows animal sprites in preview icons');
+    assert.match(weaving,/behindGender && role !== 'animalBack'/,'explicit animal back images must not be filtered by generic hood replacement rules');
     assert.match(portrait,/animalParts\.filter\(part => part\.pos === 'front'\)/,'animal face layered between base and trim');
     assert.match(portrait,/animalParts\.filter\(layer => layer\.pos === 'back'\)/,'animal back remains behind skull');
     assert.match(read('docs/js/equipment-panel.js'),/furHood: item\.furHood \? JSON\.parse/,'Pack to Gear transfer preserves the literal hide');

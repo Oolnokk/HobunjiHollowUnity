@@ -59,7 +59,7 @@
   }
 
   function markingsFor(furHood, role = 'base') {
-    if (!furHood || role !== 'base') return []; // Markings belong to the fur substrate; trim and optional trophies do not inherit them.
+    if (!furHood || !['base', 'animalFront', 'animalBack'].includes(role)) return []; // The hood base and both hide-derived animal pieces share genetic markings; the separate trim does not.
     const kindEntry = entryForKind(furHood.kind);
     const genes = kindEntry?.patterns || {};
     const genotype = furHood.genotype || {};
