@@ -14,6 +14,7 @@
   let equipped = false; // True while selected from the Utility Arch.
   let aiming = false; // True while the spyglass lens is raised.
   let lookingCloser = false; // True only while Action 1 is held with the lens raised.
+  let action1Held = false; // Tracks the physical hold independently of whether the lens is currently raised.
   let perceptionWasActive = null; // Preserves the player's perception state across the spyglass close-look mode.
   let lens = null; // Reused circular lens mask; contains no WebGL surfaces.
   let actionObserver = null; // Reapplies the normal action-arch prompt if the game rebuilds its buttons.
@@ -186,6 +187,7 @@
     if (aiming) return true;
     aiming = true;
     lastReason = reason;
+    if (action1Held) setLookingCloser(true); // Raising the lens while Action 1 is already held immediately enables close-look.
     syncHud();
     log('lens raised');
     return true;
@@ -202,6 +204,7 @@
 
   function action1Press(reason = 'held action 1') {
     if (!equipped || !ownsCamera() || blockedByOtherActivity()) return false;
+    action1Held = true; // A press before raising still counts as a live hold when Action 2 later toggles the lens.
     if (aiming) {
       lastReason = reason;
       setLookingCloser(true);
@@ -210,6 +213,7 @@
   }
 
   function action1Release(reason = 'action 1 released') {
+    action1Held = false;
     if (lookingCloser) {
       lastReason = reason;
       setLookingCloser(false); // Release restores the base spyglass FOV without lowering the lens.
@@ -239,6 +243,7 @@
   function stow(reason = 'put away', options = {}) {
     if (!equipped) return false;
     endAim(reason);
+    action1Held = false;
     controllerAction1Down = false;
     controllerAction2Down = false;
     closePointers.clear();
@@ -295,6 +300,7 @@
     closePointers.clear();
     aiming = false;
     lookingCloser = false;
+    action1Held = false;
     perceptionWasActive = null;
     lastReason = 'equipped';
     window.WorldActionInputClaims.setClaims(CLAIM_OWNER, [{
@@ -467,7 +473,7 @@
     isAiming: () => equipped && aiming,
     isLookingCloser: () => equipped && aiming && lookingCloser,
     getDebug: () => ({
-      equipped, aiming, lookingCloser, lastReason,
+      equipped, aiming, lookingCloser, action1Held, lastReason,
       cameraReady: !!cameraDeps,
       viewReady: !!viewDeps,
       currentCameraMode: cameraDeps?.getCameraMode?.() ?? null,
