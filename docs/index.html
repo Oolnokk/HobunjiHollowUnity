@@ -577,6 +577,10 @@
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/climb-system.js?v=20261027soursap1"></script>
   <script src="js/creature-cliff-climb.js?v=1"></script>
+  <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
+       Pure data/math with no dependencies, so load order doesn't matter.
+       See docs/architecture/vertical-grid.md. -->
+  <script src="js/cell-grid-3d.js?v=1"></script>
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
