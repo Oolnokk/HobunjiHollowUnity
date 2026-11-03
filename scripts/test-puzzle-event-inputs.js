@@ -156,6 +156,16 @@ assert.equal(on(fresh), false, 'an old delayed event cannot activate a fresh nod
 assert.equal(on(stale), false, 'the removed node stays inactive');
 R.unregisterNode(MAP, 'reused');
 
+timers.length = 0;
+const reRegistered = node('reRegistered', mech([{event:'blast',delaySeconds:2}]));
+register(reRegistered);
+WorldEvents.emit('blast', {scope:MAP,x:10,z:10,radius:1});
+assert.equal(timers.length,1);
+register(reRegistered); // Same rendered object, but a new puzzle registration and generation.
+timers[0].fn();
+assert.equal(on(reRegistered),false,'a queued input cannot cross even a same-object re-registration');
+R.unregisterNode(MAP, 'reRegistered');
+
 // Registering a new object under the same id must replace its subscriptions, not stack them.
 const oldObject = node('swapped', mech([{ event: 'blast' }]));
 register(oldObject);
@@ -179,6 +189,21 @@ WorldEvents.emit('blast', { scope: MAP + '_wired', x: 10, z: 10, radius: 1 });
 assert.equal(on(sensor), true, 'an activator with an event input fires');
 assert.equal(on(gate), true, 'and its wired mechanism follows');
 R.unregisterNode(MAP, 'sensor'); R.unregisterNode(MAP, 'gate');
+
+// Delayed wiring must not start an animation after the entire ruin map was cleared.
+timers.length = 0;
+const delayedMap = MAP + '_delayed_wire';
+const delayedSource = node('source', {role:'activator',behavior:'interact'});
+const delayedGate = node('target', mech([]));
+R.registerMap(delayedMap, [
+  {id:'source',puzzle:delayedSource._puzzle},
+  {id:'target',puzzle:delayedGate._puzzle},
+],new Map([['source',delayedSource],['target',delayedGate]]),[{fromId:'source',toId:'target',delaySeconds:2}]);
+R.activate(delayedMap,'source',true);
+assert.equal(timers.length,1);
+R.clearMap(delayedMap);
+timers[0].fn();
+assert.equal(on(delayedGate),false,'a delayed wire cannot animate an already removed mechanism');
 
 // ---------------------------------------------------------------- lifecycle: no leaks, no duplicates
 const base = WorldEvents.listenerCount('blast') + WorldEvents.listenerCount('struck');
