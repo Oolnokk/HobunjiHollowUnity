@@ -3018,6 +3018,11 @@
     };
     window.ResourceSystem?.initEntity(c);
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
+    if (c.carriesHronalWitchBomb === true || c.carriesBurdenKind === 'hronalWitchBomb') {
+      // Optional spawn metadata lets authored Hronal witches carry the real physical Burden in both hands.
+      window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds:c.witchBombFuseSeconds})
+        ?.catch?.(error=>console.warn('[HronalWitchBombs] enemy-carried spawn failed',error));
+    }
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }
