@@ -25,6 +25,21 @@ The same expressed genetic motifs and inherited ink colors are applied to `furho
 
 The manifest's `patterns[geneId] = {motifPng,settings}` is dev-authored geometry/placement only. At render time `FurHoodLeatherworking.markingsFor` checks whether the saved hide expresses each gene, reads the color from `genotype[geneId].color`, and produces independent motif/color passes on the base layer before optional player `weaving` motifs. Animal motifs do **not** occupy either normal player weaving slot and are not saved in a garment's `weaving` field.
 
+### Paint directly on the hood (developer tool)
+
+In **Tool Hub → Pattern Editor → Animal fur-hood markings**, select the hide species, exact gene ID, head-fit variant, and Front/Behind. Press **Paint directly on hood…**. Paint and erase on the real hood sprite, with touch-friendly zoom/pan, undo/redo, and individual pixel brushes. Only the fur-eligible substrate (hood base and species-specific front/back pieces) is writable; the decorative trim is excluded. The editor shows a separate **Actual in-game result** preview produced by the production clothing/genotype compositor, including the normal colored motif and black outline.
+
+The author can control the ordinary weaving mesh **scale, rotation, X/Y offsets, X/Y stretch, and flips**. A shared inverse canvas transform converts the garment-space strokes into a **regular non-tiling motif PNG**. The runtime still consumes the standard `{ motifPng, settings }` record; no painted garment mask or new weaving slot is required for game logic. A narrowly scoped `garmentFixed: true` setting keeps the ordinary non-tiling pattern's source-frame center independent of ink bounds and disables the unrelated per-cell weave staggering. Because the same code supplies the inverse transformation and runtime mask projection, editing the pattern does not silently recenter it. The generated motif canvas expands to retain brush strokes even with rotation, offsets, or reduced scale; extreme projections are rejected with a visible error rather than cropped.
+
+Press **Save motif** inside the paint overlay, then export **New animal motif PNGs** and **fur-hoods.json** from the existing authoring panel. Editor-only `authoring: { mode: 'hood-paint', width, height, view, operations, maskRle }` is saved under each species/gene manifest entry so the drawing can be reopened exactly, even after a clear or erase; it is ignored by the game. Switching to a different view can reproject the existing exported motif onto that hood, so you do not need to redraw it from scratch. This is still **one motif per animal gene** applied to all eligible fur pieces and wearer fits, not a separate pattern per view/head fit.
+
+Transient brush previews use the ordinary compositor without inserting each temporary motif PNG into persistent sprite caches. For verification, run the dedicated regression test as well as the original fur-hood test:
+
+```sh
+node scripts/test-fur-hood-direct-paint.js
+node scripts/test-fur-hood-leatherworking.js
+```
+
 **Known authoring prerequisite:** No actual genotype motif PNGs were uploaded as part of the hood-sprite batches. The shipped manifest's `patterns` entries are empty until the dev exports those motifs; the hood still shows the accurate base coat and real animal head/trophy sprites.
 
 ## Quick verification
