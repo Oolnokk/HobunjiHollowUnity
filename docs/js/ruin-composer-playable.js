@@ -15,7 +15,7 @@
     const composer = G.RuinComposer; // Owns focal-goal solving, spatial claims and encounter schedules.
     if (!composer?.compose) throw new Error('RuinComposer is not loaded.');
     const room = composer.rooms.chasm(SIZE); // Shared authored chasm proportions validated by the solver.
-    const composition = composer.compose(room, { archetype, seed:Number(seed) >>> 0 });
+    const composition = composer.compose(room, { archetype, seed:Number(seed) >>> 0, pressSeconds:30 }); // The authored defence plinth takes 30 real seconds; enemy waves share that deadline.
     if (!composition.ok) throw new Error('Ruin composition rejected: ' + composition.reason);
     return { room, composition };
   }
@@ -120,7 +120,9 @@
         owner.root.add(group);
         owner.placed.push(group);
         if (group.userData?.furniturePuzzle) {
-          if (!P.registerNode(mapId,{id:record.id,key:record.key},group))
+          const puzzleOverride = record.piece==='plinth' ? {channel:'Trial-Plinth-'+record.id,completionChannel:'Trial-Done-'+record.id}
+            :record.piece==='bombDispenser'?{channel:'Trial-Bomb-'+record.id}:undefined; // Keeps this room's signals isolated from native V50 mechanisms.
+          if (!P.registerNode(mapId,{id:record.id,key:record.key,puzzle:puzzleOverride},group))
             throw new Error('Could not register authored mechanism: '+record.id);
         }
         if (record.piece==='ropeMount') {
