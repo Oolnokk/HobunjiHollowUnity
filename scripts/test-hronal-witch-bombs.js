@@ -1,0 +1,203 @@
+'use strict';
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const vm=require('node:vm');
+const read=path=>fs.readFileSync(path,'utf8');
+const json=path=>JSON.parse(read(path));
+const bomb=json('docs/config/furniture-authored/hronalWitchBomb.json');
+const tube=json('docs/config/furniture-authored/witchBombCeilingTube.json');
+const index=json('docs/config/furniture-authored/index.json');
+
+assert.equal(bomb.key,'hronalWitchBomb');
+assert.equal(bomb.parts.length,1,'the Witch-bomb remains the authored single stone sphere');
+const sphere=bomb.parts[0];
+assert.equal(sphere.kind,'sphere');
+assert.deepEqual([sphere.transform.sx,sphere.transform.sy,sphere.transform.sz],[.45,.45,.45]);
+assert.equal(sphere.patternSurfaces.length,1);
+const glyph=sphere.patternSurfaces[0];
+assert.equal(glyph.mode,'engraving');
+assert.equal(glyph.selector,'all','all sphere triangles must receive the Harlyao engraving');
+assert.equal(glyph.patternId,'harlyao_glyph_entropy');
+assert.equal(glyph.glowColor,'#ff7417');
+assert(glyph.glowIntensity>0,'the rune has a non-zero orange emissive pass');
+assert(glyph.glowPulseSpeed>0,'the glyph can pulse');
+assert(bomb.carryable.enabled);
+assert(bomb.carryable.handTargets.left&&bomb.carryable.handTargets.right,'player and enemy hands use the authored two-hand grip');
+assert.equal(bomb.carryable.enemyHoldAnchor.scale,.82);
+
+assert.equal(tube.puzzle.role,'mechanism');
+assert.equal(tube.puzzle.behavior,'witchBombDispenser');
+assert.equal(tube.puzzle.bombFuseSeconds,10);
+assert(tube.bombTubeExit,'the bomb spawns at an authored point below the ceiling tube');
+for(const key of ['hronalWitchBomb','witchBombCeilingTube'])
+  assert(index.furniture.some(item=>item.key===key),key+' is in the canonical furniture index');
+
+const window={};
+vm.runInNewContext(read('docs/js/furniture-puzzle-properties.js'),{window});
+const api=window.FurniturePuzzleProperties;
+assert(api.MECHANISMS.includes('witchBombDispenser'));
+const normalized=api.normalizePuzzle(tube.puzzle);
+assert.equal(normalized.behavior,'witchBombDispenser');
+assert.equal(normalized.bombFuseSeconds,10);
+assert.equal(api.normalizePuzzle({...tube.puzzle,bombFuseSeconds:999}).bombFuseSeconds,120);
+assert.equal(api.normalizePuzzle({...tube.puzzle,bombFuseSeconds:-3}).bombFuseSeconds,1);
+
+const runtime=read('docs/js/furniture-puzzle-runtime.js');
+assert(runtime.includes("puzzle.behavior === 'witchBombDispenser'"));
+assert(runtime.includes('window.HronalWitchBombs?.dispenseFromMechanism?.(object)'));
+assert(runtime.includes('witchBombDispenseRequested'),'each activation requests one dispense, not one per animation frame');
+
+const bombs=read('docs/js/hronal-witch-bombs.js');
+assert(bombs.includes('function registerDispenser('));
+assert(bombs.includes('function unregisterDispenser('));
+assert(bombs.includes('if (active&&!active.exploded) return false'),'each ceiling tube must reject a second live payload');
+assert(bombs.includes('dispenser.dispensing=true'),'concurrent activator signals cannot start overlapping async spawns');
+assert(bombs.includes('fuseSeconds:clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120)'));
+assert(bombs.includes('bomb.spawnedAtMs=now()'),'the fuse begins at physical spawn time');
+assert(bombs.includes('pulseSpeed:1.25+10*Math.pow(urgency,2.1)'),'glyph pulse frequency accelerates close to detonation');
+assert(bombs.includes('BLAST_KNOCKBACK_PX_S'));
+assert(bombs.includes('BURNING_HEALTH'));
+assert(bombs.includes('triggerBurdenBlastAt'),'nearby burdens participate in chain reactions');
+assert(bombs.includes('registerBreakable'),'breakable props have an explicit, opt-in destruction registration');
+assert(bombs.includes('spawnCarriedByEnemy'));
+const bandit=read('docs/js/combat/combat-bandit.js');
+assert(!bandit.includes('|| !!c.mineWyrmWitchType'),'mine Wyrm-witches never receive ruin-specific Witch-bombs by default');
+const demolitionist=read('docs/js/combat/combat-minion.js');
+assert(demolitionist.includes('async function makeDemolitionist(options = {})'),'Harlyao Demolitionist is a separate explicit Minion archetype');
+assert(demolitionist.includes("if (options.ruinEncounter !== true)"),'Demolitionists cannot be spawned through the normal non-ruin Minion path');
+assert(demolitionist.includes("enemyClass:'harlyao-demolitionist'"));
+assert(demolitionist.includes('carriesHronalWitchBomb:true'),'the Demolitionist receives the real authored Witch-bomb');
+assert(demolitionist.includes('weaponKey:null, rangedWeaponKey:null'),'the Demolitionist has no competing weapon while carrying the bomb');
+assert(demolitionist.includes('makeDemolitionist,'));
+const sourceData=read('docs/tools/enemy-loadout-editor/source-data.js');
+assert(sourceData.includes("['harlyao-demolitionist', 'Harlyao Demolitionist', 'Undead']"));
+assert(bandit.includes('opts.carriesHronalWitchBomb === true'),'a ruin-specific Harlyao skeleton spawner can explicitly opt into the carrier path');
+assert(bandit.includes('opts.extra?.witchBombFuseSeconds'),'spawn-specific fuse duration is forwarded to the carrier');
+assert(bandit.includes("c.carriesHronalWitchBomb === true"));
+assert(bandit.includes('spawnCarriedByEnemy?.(c'));
+assert(bombs.includes('function clearEnemyGrip('),'enemy hand ownership has an explicit cleanup helper');
+assert(bombs.includes('bomb.onPickup=record=>{try{previousPickup?.(record);}finally{clearEnemyGrip(record);}}'),'player pickup clears the previous carrier hand target');
+assert(bombs.includes('bomb.onLost=(record,cause)=>{try{previousLost?.(record,cause);}finally{clearEnemyGrip(record);}}'),'burden loss clears the previous carrier hand target');
+assert(bombs.includes("clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target"),'detonation clears enemy hand state before removing the mesh');
+assert(bombs.includes("tileHazard(tileAt(mapId,position.x,position.z))"),'water, lava and void also destroy a dropped bomb');
+assert(bombs.includes("color:'#ff7417'"));
+
+const carry=read('docs/js/shattercasks.js');
+assert(carry.includes('onPickup:typeof options.onPickup'));
+assert(carry.includes('onDrop:typeof options.onDrop'));
+assert(carry.includes('onLost:typeof options.onLost'));
+assert(carry.includes('fallGroundY:typeof options.fallGroundY'));
+assert(carry.includes('function triggerBurdenBlastAt'));
+assert(carry.includes('function activeBurdenRecords')===false,'the existing Burden registry API is exposed without introducing a duplicate implementation');
+assert(carry.includes('activeBurdenRecords:(mapId=area())=>'));
+const blast=carry.slice(carry.indexOf('  function applyBlast('),carry.indexOf('  function triggerBurdenBlastAt('));
+assert(blast.includes('options.burningHealth'));
+assert(blast.includes('options.knockbackPxS'));
+assert(blast.includes('Math.max(8,24*(1-dist/radius))'),'ordinary Shattercask Footing loss keeps its old minimum');
+
+const hands=read('docs/js/procedural-hand-frame-driver.js');
+assert(hands.includes('proceduralHeldItemTarget'));
+const html=read('docs/index.html');
+assert(html.includes('js/hronal-witch-bombs.js?v='));
+assert(html.includes('js/key-statues.js?v='));
+assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
+
+(async()=>{
+ class RuntimeVector3 {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);}
+  set(x,y,z){Object.assign(this,{x,y,z});return this;}
+  add(other){this.x+=other.x;this.y+=other.y;this.z+=other.z;return this;}
+  normalize(){return this;}
+ }
+ class RuntimeGroup {
+  constructor(geometry,material){
+   this.isObject3D=true;this.position=new RuntimeVector3();this.userData={};this.parent=null;this.children=[];
+   this.scale={setScalar(){}};this.quaternion={setFromUnitVectors(){}};
+   this.geometry=geometry;this.material=material;this.instanceMatrix={};
+  }
+  add(child){child.parent=this;this.children.push(child);}
+  remove(child){this.children.splice(this.children.indexOf(child),1);child.parent=null;}
+  traverse(visit){
+   visit(this);
+   // Like Three.js r128, traversal captures the child count before visiting children.
+   for(let i=0,count=this.children.length;i<count;i++)this.children[i].traverse(visit);
+  }
+  getWorldPosition(target){return target.add(this.position);}
+  updateMatrix(){}
+  setMatrixAt(){}
+ }
+ class RuntimeDisposable {
+  constructor(options){Object.assign(this,options);}
+  dispose(){}
+ }
+ const scene=new RuntimeGroup();
+ scene.isScene=true;
+ const burdens=new Map(),factories=new Map(),glowStates=[];
+ let clock=1000,spawns=0,releases=0;
+ const tube={isObject3D:true,id:'tube-fixture',parent:scene,
+  userData:{puzzleInstanceId:'tube-fixture',authoredFurnitureData:{bombTubeExit:{x:0,y:-.88,z:0}}},
+  updateWorldMatrix(){},localToWorld(point){return point.add(new RuntimeVector3(2,3,4));}};
+ const runtimeWindow={
+  THREE:{
+   Vector3:RuntimeVector3,Group:RuntimeGroup,Mesh:RuntimeGroup,
+   InstancedMesh:RuntimeGroup,Object3D:RuntimeGroup,
+   SphereGeometry:RuntimeDisposable,ConeGeometry:RuntimeDisposable,MeshBasicMaterial:RuntimeDisposable,
+  },
+  GridTileAccessors:{getCurrentArea:()=> 'map_witch_bomb_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+  Shattercasks:{
+   registerBurdenFactory(kind,factory){factories.set(kind,factory);return true;},
+   async createHangingBurden(options){
+    spawns++;
+    const group=new RuntimeGroup();group.position.set(options.x,options.y,options.z);scene.add(group);
+    const burden={...options,group,data:{carryable:{}},exploded:false,carried:false,flying:false};
+    burdens.set(burden.id,burden);return burden;
+   },
+   releaseBurdenDownward(burden){releases++;burden.flying=true;return true;},
+   getBurden(id){return burdens.get(id)||null;},
+   discardBurden(burden){burden.exploded=true;burden.group.parent?.remove(burden.group);burden.onLost?.(burden,'discarded');return true;},
+   activeBurdenRecords:()=>[...burdens.values()],
+   applyBlast(){},triggerBurdenBlastAt(){},
+  },
+  FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
+  AudioSystem:{playObjectSfxKey(){}},
+ };
+ runtimeWindow.window=runtimeWindow;
+ vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
+  window:runtimeWindow,performance:{now:()=>clock},console:{warn(){}},
+ });
+ runtimeWindow.HronalWitchBombs.registerDispenser('map_witch_bomb_runtime','tube-fixture',tube,{bombFuseSeconds:7});
+ const first=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(first,'ceiling tube releases a physical Witch-bomb');
+ assert.deepEqual([first.group.position.x,first.group.position.y,first.group.position.z],[2,2.12,4],
+  'tube exit transform is converted from local furniture space into world space');
+ assert.equal(first.fuseSeconds,7,'per-dispenser fuse duration reaches the live Burden');
+ const blocked=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert.equal(blocked,false,'one live bomb locks its ceiling tube');
+ runtimeWindow.HronalWitchBombs.tick(.016);
+ const initialPulse=glowStates.at(-1)?.pulseSpeed;
+ clock=7000;runtimeWindow.HronalWitchBombs.tick(.016);
+ assert(glowStates.at(-1).pulseSpeed>initialPulse,'the glyph pulse accelerates as the spawn-time fuse runs down');
+ assert(first.group.userData.hronalFuse.remainingSeconds<2,'live fuse debug data tracks elapsed spawn time');
+ const broken=[];
+ for(const name of ['throwing callback','adjacent prop']){
+  const prop=new RuntimeGroup();
+  prop.position.set(2,0,4);
+  prop.userData.hronalBombBreakable=true;
+  prop.userData.onHronalBombBreak=()=>{
+   broken.push(name);
+   if(name==='throwing callback')throw new Error('fixture callback failed');
+  };
+  scene.add(prop);
+ }
+ clock=8100;runtimeWindow.HronalWitchBombs.tick(.016);
+ assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
+ assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
+ assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().dispensers[0].activeBombId,null,'detonation frees the ceiling tube');
+ const replacement=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
+ assert(replacement&&replacement.id!==first.id,'detonating the first payload releases the dispenser for a replacement');
+ assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
+ console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+console.log('Hronal Witch-bomb: authored whole-sphere glyph/glow, fuse, ceiling dispenser lock, carrier grip, hazard loss, fire blast and breakable hooks passed.');

@@ -147,7 +147,25 @@ townValue = 0;
   assert.equal(captured.opts.defOverride.rangedWeaponKey, null);
   assert.equal(captured.opts.enemyClass, 'minion');
   assert(!captured.opts.rosterOverride.equippedCosmetics.some(id => /hood|facewrap|headband/i.test(id)));
-  console.log('Minion enemy class and Town Value armor regression checks passed.');
+
+  const rejectedDemolitionist = await api.makeDemolitionist({ x:30, y:40, zoneId:'map_i_town_mine_41' });
+  assert.equal(rejectedDemolitionist, null, 'Harlyao Demolitionists require an explicitly authored ruin encounter');
+  const demolitionist = await api.makeDemolitionist({
+    ruinEncounter:true, x:30, y:40, zoneId:'map_i_dev_random_ruin', tier:3,
+    witchBombFuseSeconds:8.5,
+  });
+  assert.equal(demolitionist.enemyClass, 'harlyao-demolitionist');
+  assert.equal(demolitionist.isHarlyaoDemolitionist, true);
+  assert.equal(demolitionist.carriesHronalWitchBomb, true);
+  assert.equal(demolitionist.enemyLoadoutKind, 'harlyao-demolitionist');
+  assert.equal(captured.opts.enemyClass, 'harlyao-demolitionist');
+  assert.equal(captured.opts.extra.carriesHronalWitchBomb, true, 'BanditCombat is explicitly instructed to attach the physical Witch-bomb');
+  assert.equal(captured.opts.extra.isHarlyaoDemolitionist, true);
+  assert.equal(captured.opts.extra.witchBombFuseSeconds, 8.5, 'challenge-specific fuse tuning reaches the bomb carrier');
+  assert.equal(captured.opts.defOverride.weaponKey, null, 'the Demolitionist does not generate a competing weapon holder');
+  assert.equal(captured.opts.defOverride.rangedWeaponKey, null);
+  assert.equal(captured.opts.rosterOverride.appearance.speciesId, 'harlyao-skeleton');
+  console.log('Minion enemy, Town Value armor and ruin-only Harlyao Demolitionist regression checks passed.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

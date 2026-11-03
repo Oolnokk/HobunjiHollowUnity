@@ -5,8 +5,8 @@
   'use strict';
 
   const ROLES = Object.freeze(['none', 'activator', 'mechanism']);
-  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'burdenPlate', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars']);
-  const MECHANISMS = Object.freeze(['toggle', 'stoneDoor', 'bridge', 'bridgeSequence', 'movingDais', 'collapsingStairs', 'pushPuzzleBlock', 'elevatorPushBlock', 'pressurePlate', 'torch', 'brazier', 'signalObelisk', 'rotatingObelisk', 'linkedCubePair']);
+  const ACTIVATORS = Object.freeze(['interact', 'projectile', 'pressurePlate', 'burdenPlate', 'keyStatue', 'torch', 'brazier', 'glyphObelisk', 'stackedObelisk', 'linkedCubePillars']);
+  const MECHANISMS = Object.freeze(['toggle', 'stoneDoor', 'bridge', 'bridgeSequence', 'movingDais', 'collapsingStairs', 'pushPuzzleBlock', 'elevatorPushBlock', 'pressurePlate', 'witchBombDispenser', 'torch', 'brazier', 'signalObelisk', 'rotatingObelisk', 'linkedCubePair']);
 
   function text(value, fallback = '') { return String(value ?? fallback).trim(); }
   function number(value, fallback = 0) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
@@ -74,6 +74,8 @@
       requiredBurdenKind: ['shattercask','soursap'].includes(text(raw.requiredBurdenKind, 'shattercask'))
         ? text(raw.requiredBurdenKind, 'shattercask') : 'shattercask',
       payloadSurfaceId: text(raw.payloadSurfaceId),
+      payloadPartId: text(raw.payloadPartId),
+      bombFuseSeconds: Math.max(1, Math.min(120, number(raw.bombFuseSeconds, 10))), // Per-generated-tube fuse duration in seconds; consumed by HronalWitchBombs.
       startsActive: !!raw.startsActive,
       blocksMovement: role === 'mechanism' && raw.blocksMovement !== false,
       interactionRange: Math.max(.25, number(raw.interactionRange, 1.65)),

@@ -39,8 +39,14 @@
     window.AuthoredFurniture?.load?.(record.key)?.then(data => {
       if (!data || !window.THREE?.Box3 || !root.parent || entries.get(id)!==entry) return;
       surfaceProbe.valid=false; // Asset readiness invalidates camera proximity even while the player remains stationary.
-      if (data.puzzle || root.userData?.furniturePuzzle)
+      if (data.puzzle || root.userData?.furniturePuzzle) {
         window.FurniturePuzzleRuntime?.registerNode?.(area, { id, key:record.key, puzzle:record.puzzle || data.puzzle }, root);
+        const puzzle = root.userData?.furniturePuzzle || data.puzzle;
+        if (puzzle?.behavior === 'keyStatue')
+          window.KeyStatues?.registerDispenser?.(area, id, root, puzzle);
+        if (puzzle?.behavior === 'witchBombDispenser')
+          window.HronalWitchBombs?.registerDispenser?.(area, id, root, puzzle);
+      }
       const bounds = new window.THREE.Box3().setFromObject(root); // One asset-readiness measurement, never scene traversal during interaction queries.
       if (!bounds.isEmpty()) entry.height=(bounds.max.y-bounds.min.y)/Math.max(.001,Math.abs(root.scale?.y||1));
       if(record.walkableElevation)window.HobunjiWalkableElevation?.registerObject?.(root,{id:`placed-furniture:${area}:${id}`,kind:'placed-furniture',area,sourceId:id,sourceKey:record.key}); // Reuses the inn-stage/porch support registry for both player and NPC elevation.
@@ -217,14 +223,19 @@
   }
   function puzzleObject(area, entry) {
     const puzzle = entry.root?.userData?.furniturePuzzle;
-    if (puzzle?.role !== 'activator' || puzzle.behavior !== 'burdenPlate') return null;
+    if (puzzle?.role !== 'activator' || !['burdenPlate','keyStatue'].includes(puzzle.behavior)) return null;
     const id = entry.id;
     return {
       id:`burden-plate:${id}`, promptRoot:entry.root,
-      getButtons:() => (window.FurniturePuzzleRuntime?.burdenPlateButtons?.(area, id) || [])
-        .map(button => ({ ...button, worldInteraction:true, promptRoot:entry.root })),
-      onAction:action => window.FurniturePuzzleRuntime?.interactBurdenPlate?.(area, id, action)
-        || { ok:false, message:'The Burden Plinth is unresponsive.' },
+      getButtons:() => {
+        const buttons = puzzle.behavior === 'keyStatue'
+          ? window.FurniturePuzzleRuntime?.keyStatueButtons?.(area, id)
+          : window.FurniturePuzzleRuntime?.burdenPlateButtons?.(area, id);
+        return (buttons || []).map(button => ({ ...button, worldInteraction:true, promptRoot:entry.root }));
+      },
+      onAction:action => puzzle.behavior === 'keyStatue'
+        ? (window.FurniturePuzzleRuntime?.interactKeyStatue?.(area, id, action) || {ok:false,message:'The Key Statue mount is unresponsive.'})
+        : (window.FurniturePuzzleRuntime?.interactBurdenPlate?.(area, id, action) || {ok:false,message:'The Burden Plinth is unresponsive.'}),
     };
   }
   function objectAt(area, col, row) {
@@ -244,7 +255,7 @@
     for (const entry of entries(area).values()) {
       const wardrobe = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record);
       const puzzle = entry.root?.userData?.furniturePuzzle;
-      const isBurdenPlate = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+      const isBurdenPlate = puzzle?.role === 'activator' && ['burdenPlate','keyStatue'].includes(puzzle.behavior);
       if ((!entry.def.sit && !wardrobe && !isBurdenPlate) || !entry.root?.parent) continue;
       const x = entry.record.col, z = entry.record.row; // Preserve actual rotation, scale and offsets for exterior benches and storage furniture.
       entry.root.updateWorldMatrix?.(true, false);
@@ -412,7 +423,7 @@
       if(!entry.root?.parent)continue;
       const f=placementFrame(entry);
       const puzzle = entry.root.userData?.furniturePuzzle;
-      const isBurdenPlate = puzzle?.role === 'activator' && puzzle.behavior === 'burdenPlate';
+      const isBurdenPlate = puzzle?.role === 'activator' && ['burdenPlate','keyStatue'].includes(puzzle.behavior);
       const reach = isBurdenPlate
         ? Math.max(.25, Number(puzzle.interactionRange) || 1.65) + Math.hypot(f.w,f.d)/2
         : 3 + Math.max(f.w,f.d);

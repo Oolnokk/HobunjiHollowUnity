@@ -392,7 +392,7 @@ async function scenario(reloading=false) {
     'looting changes only instance count, not per-tile mesh ownership');
   // A second blast must reuse the first blast's geometry/textures.
   const phantom=new Node();phantom.position.set(4.5,0,3.5);
-  const phantomCask={id:'performance-repeat',mapId:area,col:4,row:3,
+  const phantomCask={id:'performance-repeat',kind:'shattercask',mapId:area,col:4,row:3,
     group:phantom,exploded:false,carried:false};
   assert(game.Shattercasks.detonate(phantomCask,'regression'));
   assert.equal(playedSfx.length,2,'each separate explosion requests one sound');

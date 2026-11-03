@@ -1,0 +1,188 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "keyStatueDispenser",
+  "name": "Key Statue Dispenser",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "Inverted timed-pressure-plate geometry. The button starts halfway raised with the statue mounted; removal sinks the button and reveals the black cavity square. A replacement statue is reseated while sunk, then the button returns to its initial height.",
+  "parts": [
+    {
+      "id": "key_statue_dispenser_base",
+      "kind": "box",
+      "name": "Dispenser footing",
+      "color": "#4e4b43",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.1,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.91,
+        "sy": 0.2,
+        "sz": 0.91
+      }
+    },
+    {
+      "id": "key_statue_dispenser_rim",
+      "kind": "box",
+      "name": "Dispenser rim",
+      "color": "#777062",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.245,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.76,
+        "sy": 0.11,
+        "sz": 0.76
+      }
+    },
+    {
+      "id": "key_statue_button",
+      "kind": "box",
+      "name": "Sunken statue button",
+      "color": "#928875",
+      "materialRole": "stone",
+      "materialTexture": "carved_smooth.png",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch",
+      "materialUvMaxPatchWorldSize": 6,
+      "wonkiness": 0.008,
+      "transform": {
+        "x": 0,
+        "y": 0.49,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.55,
+        "sy": 0.1,
+        "sz": 0.55
+      }
+    },
+    {
+      "id": "key_statue_cavity",
+      "kind": "box",
+      "name": "Hidden black cavity",
+      "transform": {
+        "x": 0,
+        "y": 0.325,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.43,
+        "sy": 0.008,
+        "sz": 0.43
+      },
+      "color": "#050505",
+      "materialRole": "stone",
+      "materialLighting": "unlit",
+      "materialUvMapping": "connected-surface-stretch"
+    }
+  ],
+  "puzzle": {
+    "version": 3,
+    "role": "activator",
+    "behavior": "keyStatue",
+    "channel": "A",
+    "completionChannel": "B",
+    "startsActive": false,
+    "payloadPartId": "key_statue_button",
+    "prompt": "Take the Key Statue",
+    "motion": {
+      "durationSeconds": 0.72,
+      "reversalSeconds": 0.72,
+      "collisionOpenProgress": 1,
+      "off": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "on": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "emission": {
+          "color": "#000000",
+          "intensity": 0,
+          "particleRateScale": 0,
+          "opacity": 1
+        }
+      },
+      "parts": {
+        "key_statue_button": {
+          "off": {
+            "x": 0,
+            "y": 0.49,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 0.55,
+            "sy": 0.1,
+            "sz": 0.55
+          },
+          "on": {
+            "x": 0,
+            "y": 0.255,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0,
+            "sx": 0.55,
+            "sy": 0.1,
+            "sz": 0.55
+          }
+        }
+      }
+    }
+  }
+}

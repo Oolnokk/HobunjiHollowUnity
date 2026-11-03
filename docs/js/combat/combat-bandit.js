@@ -3018,6 +3018,17 @@
     };
     window.ResourceSystem?.initEntity(c);
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
+    const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
+      || c.carriesBurdenKind === 'hronalWitchBomb'
+      || opts.carriesHronalWitchBomb === true || opts.carriesBurdenKind === 'hronalWitchBomb'
+      || def.carriesHronalWitchBomb === true || def.carriesBurdenKind === 'hronalWitchBomb';
+    if (carriesHronalWitchBomb) {
+      // Only explicitly authored enemy types may carry this ruin-specific Burden; unrelated mine Wyrm-witches do not.
+      const fuseSeconds=c.witchBombFuseSeconds??opts.witchBombFuseSeconds
+        ??opts.extra?.witchBombFuseSeconds??def.witchBombFuseSeconds;
+      window.HronalWitchBombs?.spawnCarriedByEnemy?.(c,{fuseSeconds})
+        ?.catch?.(error=>console.warn('[HronalWitchBombs] enemy-carried spawn failed',error));
+    }
     if (def.rangedWeaponKey) window.RangedWeapons?.setLoaded?.(def.rangedWeaponKey, true, c);
     return c;
   }

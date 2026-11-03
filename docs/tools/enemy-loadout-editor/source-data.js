@@ -12,6 +12,7 @@
     ['porakaneki:avenger', 'Porakaneki Avenger', 'Tribes'],
     ['mao-ao-skeleton', 'Mao’ao Skeleton', 'Undead'],
     ['harlyao-skeleton', 'Harlyao Skeleton', 'Undead'],
+    ['harlyao-demolitionist', 'Harlyao Demolitionist', 'Undead'], // Ruin-only bomb carrier; future challenge encounters opt in through MinionCombat.makeDemolitionist.
     ['ghoul', 'Ghoul', 'Undead'],
     ['ghoul:shadowknight', 'Ghoul Shadowknight', 'Special Ghouls'], // Mine variants share the ghoul wardrobe/species; each can carry its own rule on top of the base Ghoul's.
     ['ghoul:wyrm-witch:shadow-wind', 'Shadow-wind Wyrm-witch', 'Special Ghouls'],

@@ -160,7 +160,10 @@
   // Bag items (potions, flasks, large carried objects) live on game.js's heldItemHolder, not
   // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
   function heldItemTarget(record) {
-    if (inAttackEditor() || record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
+    if (inAttackEditor()) return null;
+    const authoredHostileItem = record?.avatarRoot?.userData?.proceduralHeldItemTarget; // Enemy-carried physical Burdens use the same authored two-hand grip as player carryables.
+    if (authoredHostileItem?.holder?.parent) return authoredHostileItem;
+    if (record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
     const npcTarget = global.NpcDrinkInteraction?.heldItemTarget?.(record.rig?.parent); // Meals and ambient bottles share the existing world-space held-item grip solve.
     if (npcTarget) return npcTarget;
     if (!gameDeps?.playerMesh || record.rig?.parent !== gameDeps.playerMesh) return null;
