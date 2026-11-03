@@ -60,7 +60,7 @@ assert(keyRuntime.includes("onPickup:record=>"));
 assert(keyRuntime.includes("onLost:(record,cause)=>lostStatue"));
 assert(keyRuntime.includes("setKeyStatueTaken?.(state.mapId,state.id,false)"),'a replacement begins its ON→OFF reset animation');
 assert(keyRuntime.includes('queueRespawn(state,reason)'));
-assert(keyRuntime.includes("discardBurden?.(state.payload)"),'orphaned Burdens are removed from the shared registry');
+assert(keyRuntime.includes("discardBurden?.(lost)"),'orphaned Burdens are removed from the shared registry');
 assert(keyRuntime.includes('keyStatueMounted'),'the floor hazard check excludes the mounted initial payload');
 
 const table=read('docs/js/furniture-table-system.js');
@@ -68,7 +68,8 @@ assert(table.includes("['burdenPlate','keyStatue'].includes(puzzle.behavior)"));
 assert(table.includes('keyStatueButtons?.(area, id)'));
 assert(table.includes('interactKeyStatue?.(area, id, action)'));
 assert(table.includes('KeyStatues?.registerDispenser?.(area, id, root, puzzle)'));
-assert(table.includes('KeyStatues?.unregisterDispenser?.(mapId,id)'));
+const puzzleRuntime=read('docs/js/furniture-puzzle-runtime.js');
+assert(puzzleRuntime.includes('KeyStatues?.unregisterDispenser?.(mapId,id)'));
 
 const carry=read('docs/js/shattercasks.js');
 assert(carry.includes('onPickup:typeof options.onPickup'));
