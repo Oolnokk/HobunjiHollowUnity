@@ -114,9 +114,12 @@
         const qty = Math.max(0, Math.min(Number(pending) || 0, Number(bin[key]) || 0));
         delete pendingSaleCounts[key];
         if (qty < 1) continue;
+        const hideSale = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.consume(key, qty, 'shipping', shipPrice(key) || 1, bin[key]) : null; // The actual deposited coats determine the sale price.
+        if (hideSale && !hideSale.ok) continue;
         bin[key] -= qty;
         sold += qty;
-        earned += window.TownMine?.applySaleBonus?.(qty * (shipPrice(key) || 0)) ?? qty * (shipPrice(key) || 0); // Town Value sale bonus.
+        const subtotal = hideSale ? hideSale.total : qty * (shipPrice(key) || 0);
+        earned += window.TownMine?.applySaleBonus?.(subtotal) ?? subtotal; // Town Value sale bonus after individual valuation.
         soldParts.push((deps.itemIconForKey(key) || key) + '×' + qty);
       }
       if (sold < 1) return { sold: 0, earned: 0 };
@@ -467,6 +470,9 @@
           if (!item || shipPrice(item.key) === undefined) return { ok: false, message: labels.cannotDeposit };
           const qty = deps.inventory[item.key] || 0;
           if (qty < 1) return { ok: false, message: messages.noItemPrefix + item.label + messages.noItemSuffix };
+          const originalCount = deps.inventory[item.key]; // Used to transfer exact coat metadata before the bag count changes.
+          const hideMove = window.AnimalHides?.isHide?.(item.key) ? window.AnimalHides.transfer(item.key, 1, 'pack', 'shipping', originalCount, shipPrice(item.key)) : null;
+          if (hideMove && !hideMove.ok) return { ok: false, message: 'This hide is no longer available.' };
           deps.inventory[item.key]--;
           deps.clampInventoryStack(item.key);
           bin[item.key] = (bin[item.key] || 0) + 1;
@@ -486,6 +492,9 @@
         if (shipPrice(key) === undefined) return 0;
         const moved = Math.max(0, Math.min(qty, deps.inventory[key] || 0));
         if (moved < 1) return 0;
+        const originalCount = deps.inventory[key]; // Source count must include the units being moved for legacy/untracked hide handling.
+        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'pack', 'shipping', originalCount, shipPrice(key)) : null;
+        if (hideMove && !hideMove.ok) return 0;
         deps.inventory[key] -= moved;
         bin[key] = (bin[key] || 0) + moved;
         syncVisualTransform(Number(object.lidLiftWhenOccupied));
@@ -502,6 +511,9 @@
         const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 99 the pack shows another stack (js/inventory-stacks.js).
         const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
+        const originalCount = bin[key]; // The Shipping Box owns the source counts until the return succeeds.
+        const hideMove = window.AnimalHides?.isHide?.(key) ? window.AnimalHides.transfer(key, moved, 'shipping', 'pack', originalCount, shipPrice(key)) : null;
+        if (hideMove && !hideMove.ok) return 0;
         bin[key] -= moved;
         if ((pendingSaleCounts[key] || 0) > 0) {
           pendingSaleCounts[key] = Math.max(0, pendingSaleCounts[key] - moved);
@@ -518,6 +530,7 @@
       reset() {
         Object.keys(bin).forEach(key => { bin[key] = 0; });
         clearPendingSales();
+        window.AnimalHides?.clearShipping?.(); // Reset the transit records whenever the in-memory Shipping Box resets.
         lastObservedDay = currentCalendarDay();
         syncVisualTransform();
       },
