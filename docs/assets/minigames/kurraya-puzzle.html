@@ -120,6 +120,7 @@ summary{cursor:pointer;min-height:26px}
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
         await sampler.play(music.pitchFor(note)); // The same configured five-note scale is used for both examples and player input.
         await delay(510);
+        if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
         sampler.stop();
         await delay(110);
       }
