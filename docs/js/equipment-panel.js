@@ -432,6 +432,7 @@
   // A patterned or decorated garment is a physical collectible, not just another dye swatch of its base clothing.
   // Plain dyed copies still intentionally merge and teach the owned garment additional dye colors.
   function hasIndividualClothingPattern(item) {
+    if (item?.furHood) return true; // A crafted hide is always a unique physical garment even with no optional dyed weaving.
     const weaving = item?.weaving; // Reads saved visual state without relying on when the renderer initializes.
     if (!weaving || typeof weaving !== 'object') return false;
     if (weaving.forcedOverpassPattern || weaving.pattern || weaving.patternLibraryId || weaving.trim?.enabled) return true;
