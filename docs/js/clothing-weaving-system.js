@@ -1956,7 +1956,13 @@
         if (behind.changed && behind.url === null) continue; // Hidden from the back entirely.
         url = behind.url || frontUrl;
       }
-      let img = alignLayerImage(await loadImageUrl(url), imageLayout);
+      let loadedImage=null; // One unuploaded artist asset should not prevent previewing other valid hood layers.
+      try{loadedImage=await loadImageUrl(url);}
+      catch(error){
+        if(furHood && furApi?.isPendingAsset?.(url))continue; // The planned Nelk Tletingan back appears automatically as soon as its PNG is uploaded.
+        throw error; // Do not silently hide misspelled or unexpectedly missing committed sprites.
+      }
+      let img = alignLayerImage(loadedImage, imageLayout);
       if (!img) continue;
       if (furPaintMaskOnly) {
         const mask = Object.assign(document.createElement('canvas'), { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height }); // Dev-only eligible-pixel surface is taken from untreated sprite pixels, not the potentially dark natural coat tint.

@@ -38,6 +38,10 @@
     });
     return loading;
   }
+  function isPendingAsset(assetPath) {
+    const normalized=String(assetPath||'').replace(/^\.\//,'').replace(/^(?:.*\/docs\/)?assets\//,'assets/'); // Compare the same repo-relative path in runtime and tool.
+    return Array.isArray(manifest.pendingAssets) && manifest.pendingAssets.includes(normalized); // Only artist-declared pending assets may be skipped before upload.
+  }
   function entryForKind(kind) {
     const normalized = normalizeKind(kind);
     return manifest.species?.[normalized] || manifest.species?.[kind] || null;
@@ -386,7 +390,7 @@
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    ensureManifest, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
+    ensureManifest, isPendingAsset, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
   });
   ensureManifest();
 })();

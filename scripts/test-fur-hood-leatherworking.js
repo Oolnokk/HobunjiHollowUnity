@@ -80,6 +80,9 @@
       assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');
       assert(fs.existsSync(path.join(root,'docs',layers.front.behindImage.url)),'rear hood art must be bundled in the feature branch');
     }
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedPendingNelk),true,'only the exact planned Nelk image is pending');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png'),false,'uploaded Nelk front must not be silently skipped');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedPendingNelk),true,'pending image lookup accepts docs-relative URLs');
     const tl = window.FurHoodLeatherworking.specialPartsFor(fur,'nuhongan','female');
     const mashtz = window.FurHoodLeatherworking.specialPartsFor(fur,'kenkari','male');
     assert.equal(tl.length,2,'inherited Tletingan head sees wolf front and back');
@@ -96,6 +99,7 @@
     assert.match(weaving,/naturalHoodWeavingRole\(descriptor\.role, descriptor\.furHood\)/,'regular base weaving also follows animal sprites in worn portraits');
     assert.match(weaving,/naturalHoodWeavingRole\(role, furHood\)/,'regular base weaving also follows animal sprites in preview icons');
     assert.match(weaving,/behindGender && role !== 'animalBack' && role !== 'animalFront'/,'both species sprites survive backplane generic hood replacements');
+    assert.match(weaving,/if\(furHood && furApi\?\.isPendingAsset\?\.\(url\)\)continue/,'an explicitly pending piece does not break the rest of the hood preview');
     assert.match(weaving,/orderLayersForView\?\.\(\[\.\.\.iconBaseLayers,\.\.\.extraLayers\],view\)/,'loom and authoring preview share the source-defined view order');
     assert.match(portrait,/orderLayersForView\?\.\(stack,renderBehindView\?'behind':'front'\)/,'both world-avatar planes use the shared layer order');
     assert.match(portrait,/hoodLayers\.push\(\.\.\.\(window\.FurHoodLeatherworking/,'species back is in visible hood layers instead of pre-head rear layers');
