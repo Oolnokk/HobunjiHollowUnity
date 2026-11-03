@@ -242,7 +242,7 @@
       return true;
     }
     function stop() { ++requestSerial; if (voice) { try { voice.stop(); } catch (_) {} voice = null; } }
-    return {ready:ready,play:play,stop:stop,get diagnostics() { return {ready:!!buffer,playing:!!voice,sampleName:sampleName,sampleRootMidi:sampleRootMidi,midiFallback:usingMidiFallback,error:lastError}; }};
+    return {ready:ready,play:play,stop:stop,get diagnostics() { return {ready:!!buffer||usingMidiFallback,playing:!!voice,sampleName:sampleName,sampleRootMidi:sampleRootMidi,midiFallback:usingMidiFallback,error:lastError}; }};
   }
   const api = Object.freeze({SONGS_KEY:SONGS_KEY,SETTINGS_KEY:SETTINGS_KEY,SCALES:SCALES,NOTE_CODES:NOTE_CODES,
     normalizeSong:normalizeSong,listSongs:listSongs,saveSong:saveSong,deleteSong:deleteSong,importSongs:importSongs,
