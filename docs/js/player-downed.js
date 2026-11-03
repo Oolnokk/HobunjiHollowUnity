@@ -25,16 +25,26 @@
     killCreditWindowMs: 8000,   // A kill counts if the player/companion last hit the enemy this recently.
     dotKillCreditWindowMs: 60000, // Longer window for a death from a lingering burn/bleed/poison tick (afflictions don't record their source).
     downedHealth: 1,            // Health held while down so vitals never see a "dead" player.
+    giveUpHoldSeconds: 1.5,     // Continuous held Dodge time required to voluntarily respawn.
   });
   const SOFT_DEATH_REASONS = new Set(['resource-tick']); // handlePlayerDeath reasons that go down instead of dying (bleeding/burning/poison).
 
   let deps = null; // { player, showToast, die, forceRangedTool }
   let state = null; // { remainingS, totalS, focus } while down.
-  let hud = null; // { root, text, fill }
-  let hudKey = ''; // Last HUD text + percent written, so idle frames make no DOM writes.
+  let hud = null; // { root, text, fill, hint, giveUpFill }
+  let hudKey = ''; // Last HUD text, binding, and percentages written, so idle frames make no DOM writes.
+  let focusGuardsInstalled = false; // init() installs blur/visibility hold-cancel listeners exactly once.
   let lastEvent = null; // Diagnostics.
 
-  function init(injected) { deps = injected; }
+  function init(injected) {
+    deps = injected;
+    if (focusGuardsInstalled || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('blur', () => setGiveUpHeld(false));
+    if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
+      if (document.hidden) setGiveUpHeld(false);
+    });
+    focusGuardsInstalled = true;
+  }
 
   function isDowned() { return !!state; }
 
@@ -44,7 +54,7 @@
     if (!deps) return false;
     if (state) return true;
     if (window.CombatTutorial?.active?.()) return false; // The tutorial has its own reset path in respawnPlayer.
-    state = { remainingS: CONFIG.bleedOutSeconds, totalS: CONFIG.bleedOutSeconds, focus: null };
+    state = { remainingS: CONFIG.bleedOutSeconds, totalS: CONFIG.bleedOutSeconds, focus: null, giveUpHeld: false, giveUpHoldS: 0 };
     window.PlayerCrawl?.setActive(true);
     const player = deps.player;
     player.health = CONFIG.downedHealth;
@@ -80,6 +90,29 @@
     lastEvent = { type: 'second-wind', reason, at: Date.now() };
     deps.showToast?.('💨 Second Wind! You get back up.', true);
     refreshHud();
+    return true;
+  }
+
+  // The shared Dodge press/release dispatcher (and touch Dodge pointer) own
+  // the hold. A release, focus loss, or input cancellation must start over.
+  function setGiveUpHeld(held) {
+    if (!state) return false;
+    const nextHeld = held === true; // Used to avoid re-arming the hold on repeated keydown/controller poll.
+    if (state.giveUpHeld === nextHeld) return true;
+    state.giveUpHeld = nextHeld;
+    if (!nextHeld) state.giveUpHoldS = 0;
+    refreshHud();
+    return true;
+  }
+
+  function giveUp() {
+    if (!state) return false;
+    state = null;
+    window.PlayerCrawl?.setActive(false);
+    lastEvent = { type: 'give-up', at: Date.now() }; // Mobile diagnostics distinguish voluntary respawn from bleed-out.
+    refreshHud();
+    deps.player.health = 0;
+    deps.die?.('give-up'); // Preserve the existing checkpoint/farm respawn logic.
     return true;
   }
 
@@ -167,23 +200,42 @@
     panel.appendChild(text);
     panel.appendChild(track);
     root.appendChild(panel);
+    const hintWrap = document.createElement('div'); // Bottom-center prompt remains visible throughout the downed state.
+    hintWrap.style.cssText = 'position:absolute;bottom:max(18px,env(safe-area-inset-bottom));left:var(--play-center,50%);transform:translateX(-50%);max-width:calc(100vw - 24px);width:max-content;text-align:center;color:#fff;font:700 clamp(16px,2.3vw,23px)/1.25 "KhymeryyanRomanLetters+Numbers","DM Mono",monospace;text-shadow:0 2px 5px #000,0 0 14px #000;letter-spacing:.03em;';
+    const hint = document.createElement('div'); // Binding-aware "Hold <input> to respawn" text, updated on device/binding changes.
+    const giveUpTrack = document.createElement('div'); // Visible hold progress separate from the existing bleed-out timer.
+    giveUpTrack.style.cssText = 'height:4px;margin:8px auto 0;max-width:240px;border-radius:3px;background:rgba(255,255,255,.23);overflow:hidden;';
+    const giveUpFill = document.createElement('div'); // Fills only while Dodge stays continuously pressed.
+    giveUpFill.style.cssText = 'height:100%;width:0%;background:#ffe3bb;';
+    giveUpTrack.appendChild(giveUpFill);
+    hintWrap.appendChild(hint);
+    hintWrap.appendChild(giveUpTrack);
+    root.appendChild(hintWrap);
     document.body?.appendChild(root);
-    hud = { root, text, fill };
+    hud = { root, text, fill, hint, giveUpFill };
     return hud;
   }
 
   function refreshHud() {
     const secs = state ? Math.max(0, Math.ceil(state.remainingS)) : 0;
     const pct = state ? Math.round((state.remainingS / state.totalS) * 100) : 0;
-    const key = state ? `${secs}|${pct}` : '';
+    const holdPct = state ? Math.round(100 * state.giveUpHoldS / CONFIG.giveUpHoldSeconds) : 0; // Quantized hold progress avoids redundant per-frame DOM writes.
+    const dodgeLabel = state ? (window.ActionPromptUI?.actionPromptGlyph?.('dodge', 'Dodge') || 'Dodge') : ''; // Uses live desktop/controller bindings and touch device state.
+    const key = state ? `${secs}|${pct}|${holdPct}|${dodgeLabel}` : '';
     if (key === hudKey) return;
     hudKey = key;
     const els = hudEls();
     if (!els) return;
     els.root.style.display = state ? 'block' : 'none';
     if (!state) return;
-    els.text.textContent = `DOWN — get a kill to rise (${secs}s)`;
-    els.fill.style.width = pct + '%';
+    const downText = `DOWN — get a kill to rise (${secs}s)`;
+    const hintText = `Hold ${dodgeLabel} to respawn`;
+    if (els.text.textContent !== downText) els.text.textContent = downText;
+    if (els.hint.textContent !== hintText) els.hint.textContent = hintText;
+    const bleedWidth = pct + '%';
+    const holdWidth = holdPct + '%';
+    if (els.fill.style.width !== bleedWidth) els.fill.style.width = bleedWidth;
+    if (els.giveUpFill.style.width !== holdWidth) els.giveUpFill.style.width = holdWidth;
   }
 
   // Once per un-paused frame.
@@ -193,6 +245,10 @@
     player.health = CONFIG.downedHealth; // Regeneration and damage-over-time cannot move it while down.
     state.remainingS -= dt;
     if (state.remainingS <= 0) { bleedOut(); return; }
+    if (state.giveUpHeld) {
+      state.giveUpHoldS = Math.min(CONFIG.giveUpHoldSeconds, state.giveUpHoldS + Math.max(0, dt));
+      if (state.giveUpHoldS >= CONFIG.giveUpHoldSeconds) { giveUp(); return; }
+    }
     refreshHud();
   }
 
@@ -209,6 +265,7 @@
     update,
     isDowned,
     tryDown,
+    setGiveUpHeld,
     dieImmediately,
     interceptDeath,
     secondWind,
@@ -219,6 +276,6 @@
     getFocusTarget,
     allowsAction,
     reset,
-    debugSnapshot: () => ({ downed: !!state, remainingS: state?.remainingS ?? 0, focus: state?.focus?.id || null, lastEvent }),
+    debugSnapshot: () => ({ downed: !!state, remainingS: state?.remainingS ?? 0, giveUpHeld: state?.giveUpHeld || false, giveUpHoldS: state?.giveUpHoldS ?? 0, focus: state?.focus?.id || null, lastEvent }),
   });
 })();
