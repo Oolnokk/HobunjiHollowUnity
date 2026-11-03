@@ -39,6 +39,7 @@
     length: 3,       // how wide a balcony is (odd)
     climbStyle: 'holds',
     landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
+    chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
     originX: 0, originZ: 0, baseY: 0,
   });
@@ -69,7 +70,8 @@
 
   function compose(options = {}) {
     const o = { ...DEFAULTS, ...options };
-    o.wall = Math.max(o.landings ? 5 : 1, o.wall | 0);
+    if (o.chambers) o.landings = true;
+    o.wall = Math.max(o.chambers ? 8 : o.landings ? 5 : 1, o.wall | 0);
     o.shaft = Math.max(5, o.shaft | 0 | 1);             // odd, at least 5
     o.length = Math.min(o.shaft - 2, Math.max(1, o.length | 0 | 1)); // odd and leaving open corners
     o.balconies = Math.max(1, Math.min(3, o.balconies | 0));
@@ -94,15 +96,19 @@
         grid.fillBox(cell.c, cell.r, level, cell.c, cell.r, level + 1, KIND.AIR);
       }
       const destination = tunnel[tunnel.length-1]; // Last walkable cell of the corridor.
+      const chamber = []; // Keep the floor and ceiling solid around the generated room volume.
       if (o.landings) {
         const out = OUTWARD[side];
-        for (let offset=-1;offset<=1;offset++) {
-          const c=destination.c+offset*out.r,r=destination.r+offset*out.c;
+        const depth = o.chambers ? 2 + Math.floor(random() * 3) : 1;
+        const halfWidth = o.chambers && random() < .5 ? 2 : 1;
+        for (let d=0;d<depth;d++) for (let offset=-halfWidth;offset<=halfWidth;offset++) {
+          const c=destination.c-d*out.c+offset*out.r,r=destination.r-d*out.r+offset*out.c;
           grid.fillBox(c,r,level,c,r,level+1,KIND.AIR);
+          chamber.push({col:c,row:r});
         }
       }
       balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
-      doors.push({ balcony: k, side, level, col: destination.c, row: destination.r, tunnel: tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side] });
+      doors.push({ balcony: k, side, level, col: destination.c, row: destination.r, tunnel: tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side], chamber });
     });
     // ground entrance: same tunnel, level 0
     const eg = sideGeometry(entranceSide, { ...o, depth: 1 }, cols, rows);
@@ -166,6 +172,7 @@
     }
     for (const d of doors) {
       add(`door${d.balcony}Reachable`, reach.has(d.col, d.row, d.level), 'the door’s outer end is reachable from the entrance');
+      if (d.chamber.length) add(`door${d.balcony}ChamberReachable`, d.chamber.every(cell => reach.has(cell.col,cell.row,d.level)), 'all chamber cells are reachable at balcony height');
       add(`door${d.balcony}Clear`, d.tunnel.every(t => !grid.isSolid(t.col, t.row, d.level) && !grid.isSolid(t.col, t.row, d.level + 1)), 'the tunnel is open 2 cells high from the balcony to the outside');
     }
     if (o.landings) add('landingsEnclosed', doors.every(d => grid.isSolid(d.col+d.outward.c,d.row+d.outward.r,d.level)), 'each corridor terminates inside the shaft shell');

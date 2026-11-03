@@ -1130,7 +1130,8 @@
   // The live grid's size already includes the reserved wing; the V50 base
   // size is recovered by subtracting the wing's fixed width.
   function reservedLayout(context) {
-    const cols = Number(context?.cols) || 0, rows = Number(context?.rows) || 0;
+    const size = context?.sanctumMapSize || context; // Shaft wing appends rows after the sanctum reserves its tiles.
+    const cols = Number(size?.cols) || 0, rows = Number(size?.rows) || 0;
     const wing = planLayout(0, rows).cols; // Width the wing adds (base 0).
     return planLayout(cols - wing, rows);
   }

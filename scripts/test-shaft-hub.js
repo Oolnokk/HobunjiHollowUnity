@@ -67,6 +67,17 @@ for (const seed of [1, 4, 5, 6, 7, 11]) {
   }
 }
 
+// ---- A seeded wing reserves enclosed chambers without opening the ground slice.
+for (let seed = 1; seed <= 12; seed++) {
+  const wing = H.compose({seed,chambers:true,originX:1,originZ:40});
+  assert(wing.ok, JSON.stringify(wing.checks.filter(check => !check.ok)));
+  for (const door of wing.doors) {
+    assert(door.chamber.length >= 6);
+    assert(door.chamber.every(cell => wing.grid.canStand(cell.col,cell.row,door.level)));
+    assert(door.chamber.every(cell => !wing.grid.canStand(cell.col,cell.row,0)));
+  }
+}
+
 // ---- mount: surfaces registered into ClimbSurfaces and DynamicSurfaces, then cleared
 {
   const r = H.compose({ seed: 1, originX: 20, originZ: 30 });
