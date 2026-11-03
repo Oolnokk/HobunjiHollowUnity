@@ -288,16 +288,22 @@
     const placement=coverage.create({door:object,parent:world.group,groundY:floorY,
       seed:'tothal-door:'+String(context.seed||'ruin')+':'+String(object.userData?.mechanismId||object.name||index)});
     if(!placement)return null; // No invisible blocker is created if the coverage system fails to produce ice.
-    const height=Math.max(1.3,Math.min(5,bounds.size.y)); // The collider follows this door's physical leaf rather than a fixed sheet height.
-    const halfX=Math.max(.14,Math.min(3.5,bounds.size.x*.5+.08)); // Small tolerance makes fire hit the crystals even at the door edge.
-    const halfZ=Math.max(.14,Math.min(3.5,bounds.size.z*.5+.08)); // Thin door planes still have a usable projectile contact volume.
+    placement.iceLayer.userData.devRuinFootprintIgnore=true; // Faceted ice is visual-only; the timed box below is the sole gameplay blocker.
+    const coverBounds=bounds.box.clone(); // Include both the physical panel and the ice that visibly protrudes from it.
+    const iceBounds=new THREE.Box3().setFromObject(placement.iceLayer); // Crystal tips and bases can extend well beyond a narrow door leaf.
+    if(!iceBounds.isEmpty())coverBounds.union(iceBounds);
+    const coverCenter=coverBounds.getCenter(new THREE.Vector3()); // Bounds follow generated crystals, including asymmetric seeded clusters.
+    const height=Math.max(1.3,Math.min(5,coverBounds.max.y-floorY)); // Players may shoot any visible ice facet, not merely the stone behind it.
+    const halfX=Math.max(.14,Math.min(3.5,(coverBounds.max.x-coverBounds.min.x)*.5+.03)); // Contact reaches outer crystals while remaining bounded.
+    const halfZ=Math.max(.14,Math.min(3.5,(coverBounds.max.z-coverBounds.min.z)*.5+.03)); // Thin leaves still receive a usable fire-contact volume.
     const collisionGeometry=new THREE.BoxGeometry(halfX*2,height,halfZ*2); // Collision-only proxy is not visible ice or an additional door slab.
     const collisionMaterial=new THREE.MeshBasicMaterial({colorWrite:false,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}); // Projectile/fire raycasts still see the collider without any rendered sheet.
     const mesh=new THREE.Mesh(collisionGeometry,collisionMaterial);
     mesh.name='tothal_dungeon_fire_ice_door_hitbox_'+index;
-    mesh.position.set(bounds.center.x,floorY+height*.5,bounds.center.z);
+    mesh.position.set(coverCenter.x,floorY+height*.5,coverCenter.z);
     mesh.userData.dungeonFireMechanism='tothalIceWall';
     mesh.userData.devRuinFootprintManaged=true; // The existing on/off occupancy callback is authoritative for movement.
+    mesh.userData.devRuinFootprintIgnore=true; // Excludes the contact-only mesh from any later static-prop scan.
     mesh.userData.projectileCoverHeightTiles=height;
     mesh.userData.projectileCoverHalfXTiles=halfX;
     mesh.userData.projectileCoverHalfZTiles=halfZ;
@@ -306,11 +312,11 @@
     world.group.add(mesh);
     const wall={ // Preserves the existing Dungeon Fire target/occupancy/clear lifecycle for all source door kinds.
       id:'dungeon-fire-ice-wall-'+index,kind:'iceWall',group:placement.iceLayer,mesh,icePlacement:placement,
-      doorType:type,doorObject:object,point:{x:bounds.center.x,y:floorY,z:bounds.center.z},
+      doorType:type,doorObject:object,doorCenter:{x:bounds.center.x,z:bounds.center.z},point:{x:coverCenter.x,y:floorY,z:coverCenter.z},
       blocking:true,phase:'frozen',elapsed:0,height,footprintId:'dungeon-fire-ice-wall-footprint-'+index,
     };
     window.DevRandomRuinTileOccupancy?.addSolidBox?.(wall.footprintId,
-      {cx:bounds.center.x,cz:bounds.center.z,halfX,halfZ},
+      {cx:coverCenter.x,cz:coverCenter.z,halfX,halfZ},
       ()=>wall.blocking,'dungeon-fire-ice-walls');
     world.walls.push(wall);world.records.push(wall);
     const target={id:wall.id,object:mesh,active:true,contactPadding:.16,onBurn:()=>{
@@ -339,6 +345,7 @@
     for(const candidate of candidates){
       if(world.walls.length>=2)break; // Matches the existing maximum of two frozen doors per Tothal layout.
       if(world.icedDoorIds.has(candidate.object.uuid))continue;
+      if(world.walls.some(wall=>Math.hypot(wall.doorCenter.x-candidate.bounds.center.x,wall.doorCenter.z-candidate.bounds.center.z)<.22))continue; // Different door systems can point to the same physical doorway; avoid double-frosting it.
       if(buildIceWall(kit,context,candidate,world.walls.length)){
         world.icedDoorIds.add(candidate.object.uuid);
         added++;
