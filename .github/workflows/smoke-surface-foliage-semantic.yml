@@ -8,6 +8,9 @@ on:
     paths:
       - 'docs/js/foliage-generator.js'
       - 'docs/js/ice-stalagmite-coverage.js'
+      - 'docs/js/dungeon-door-ice-coverage.js'
+      - 'docs/js/dev-random-ruin-dungeon-fire.js'
+      - 'scripts/test-dungeon-fire.js'
       - 'docs/js/HousePieceGen.js'
       - 'docs/js/authored-furniture-runtime.js'
       - 'docs/tools/house-piece-author/index.html'
@@ -39,6 +42,9 @@ jobs:
         run: |
           node --check docs/js/foliage-generator.js
           node --check docs/js/ice-stalagmite-coverage.js
+          node --check docs/js/dungeon-door-ice-coverage.js
+          node --check docs/js/dev-random-ruin-dungeon-fire.js
+          node --check scripts/test-dungeon-fire.js
           node --check docs/tools/furniture-avatar-author/ice-stalagmites.js
           node --check scripts/test-ice-stalagmite-coverage-browser.js
           node --check docs/js/HousePieceGen.js
@@ -56,3 +62,5 @@ jobs:
         run: node scripts/test-surface-foliage-styles-browser.js
       - name: Ground ice geometry, furniture editor tab and recipe persistence
         run: node scripts/test-ice-stalagmite-coverage-browser.js
+      - name: Dungeon fire contact, Tothal ice doors and ceiling Burden contracts
+        run: node scripts/test-dungeon-fire.js

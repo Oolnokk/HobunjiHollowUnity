@@ -20,14 +20,15 @@
   const toolIconFrames = new Map(); // Reuses one opaque-pixel scan and square thumbnail per resolved metal/pattern source.
   const toolIconDebug = { ready: 0, failed: 0, lastFrame: null, latestChange: 'Tool icons trim transparent margins and square from the bottom edge.' }; // Readable through EquipmentPanel on mobile.
 
-  function squareToolIcon(source) {
-    const width = source.width; // Source dimensions bound the alpha scan.
-    const height = source.height; // Source dimensions bound the alpha scan.
+  function squareToolIcon(source, options = {}) {
+    const image = options.flute ? (window.KurrayaInstrument?.prepareFluteCanvas?.(source) || source) : source; // Nonmetal flute art uses the same matte-free pixels as its world mesh.
+    const width = image.width; // Source dimensions bound the alpha scan.
+    const height = image.height; // Source dimensions bound the alpha scan.
     const canvas = document.createElement('canvas'); // Reads the already loaded sprite without changing held/world art.
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext('2d'); // Used only once for each cached sprite source.
-    context.drawImage(source, 0, 0);
+    context.drawImage(image, 0, 0);
     const pixels = context.getImageData(0, 0, width, height).data; // Alpha bytes identify the visible frame.
     let left = width, right = -1, top = height, bottom = -1; // Inclusive bounds of all nontransparent pixels.
     for (let y = 0; y < height; y++) {
@@ -43,6 +44,13 @@
     const output = document.createElement('canvas'); // A small square limits retained thumbnail memory.
     output.width = output.height = 128;
     const outputContext = output.getContext('2d'); // Draws an undistorted crop anchored to the opaque bottom edge.
+    if (options.flute) {
+      const inkWidth = right - left + 1, inkHeight = bottom - top + 1; // Keep the entire slender flute, unlike a bottom-cropped melee-weapon thumbnail.
+      const scale = 112 / Math.max(inkWidth, inkHeight); // Leave eight transparent pixels around the long instrument on every side.
+      const drawWidth = inkWidth * scale, drawHeight = inkHeight * scale;
+      outputContext.drawImage(canvas, left, top, inkWidth, inkHeight, (128-drawWidth)/2, (128-drawHeight)/2, drawWidth, drawHeight);
+      return output.toDataURL('image/png');
+    }
     outputContext.drawImage(canvas, left, bottom - visibleHeight + 1, side, visibleHeight,
       0, (side - visibleHeight) * 128 / side, 128, visibleHeight * 128 / side);
     toolIconDebug.lastFrame = { left, top, right, bottom, side };
@@ -50,7 +58,8 @@
   }
 
   function renderToolIcon(parent, def) {
-    const source = deps.metalToolImgSrc(def); // Includes the authoritative metal, plating and verdigris finish.
+    const isFlute = def?.sprite === 'assets/toolsprites/flute.png'; // Routes only this slender, matte-backed PNG through the special full-height icon renderer.
+    const source = isFlute ? def.sprite : (deps.metalToolImgSrc?.(def) || def?.sprite); // Metal tools keep their authored finish.
     const image = document.createElement('img'); // Preserves existing inventory sizing and accessibility.
     image.className = 'ies-sprite'; image.alt = def.label;
     image.crossOrigin = 'anonymous';
@@ -62,7 +71,7 @@
         const loader = new Image(); // Separate loader prevents thumbnail src updates from retriggering the scan.
         loader.crossOrigin = 'anonymous';
         loader.onload = () => {
-          try { const url = squareToolIcon(loader); toolIconDebug.ready++; resolve(url); }
+          try { const url = squareToolIcon(loader,{flute:isFlute}); toolIconDebug.ready++; resolve(url); }
           catch (error) { toolIconDebug.failed++; window.__farmLog?.(`[inventory-icon] ${def.label}: ${error.message}`, 'warn'); resolve(source); }
         };
         loader.onerror = () => { toolIconDebug.failed++; resolve(null); };
@@ -79,6 +88,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    registerFluteDefinition();
+    // Existing characters receive the same starter instrument after their saved character data is loaded.
+    document?.addEventListener?.('hobunjiPlayerReady', () => ensureStarterFlute());
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -94,6 +106,33 @@
     });
     installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function registerFluteDefinition() {
+    if (!deps?.TOOL_ITEM_DEFS) return false;
+    deps.TOOL_ITEM_DEFS.flute ||= {
+      label:'Flute', icon:'🎶', sprite:'assets/toolsprites/flute.png', slots:['instrument'],
+      isInstrument:true, heldAnimationKey:'blowgunReady',
+      description:'A simple mouth-played flute. Its five notes can echo melodies heard in ancient ruins.',
+    }; // The canonical item registry drives equipment/ownership and the existing tool sprite renderer.
+    return true;
+  }
+
+  function ensureStarterFlute() {
+    const gear = deps?.getGearInventory?.(); // Current character-owned gear, never a global once-per-browser entitlement.
+    if (!gear || !registerFluteDefinition()) return false;
+    if (gear.starterFluteGranted) return false; // Never reassign after the player deliberately unequips or replaces it.
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    deps.saveGearInventory?.();
+    if (!deps.equipmentSlots?.instrument) {
+      deps.equipmentSlots.instrument = 'flute';
+      deps.saveEquipmentSlots?.();
+    }
+    deps.rebuildToolMeshes?.(); // A migrated flute becomes available to the live held-tool renderer, not just the Inventory UI.
+    window.__farmLog?.('[starter-flute] granted once to current character; instrument=' + deps.equipmentSlots?.instrument,'input');
+    return true;
   }
 
   function installInventorySelectionBridge() {
@@ -1184,7 +1223,7 @@
 
   // Build the equipment slots panel inside #invEquipSection
   function buildEquipmentSlots() {
-    const sec = document.getElementById('invEquipSection');
+    const sec = document.getElementById('invEquipSection'); // Rendering must never grant gear or write a save; migration happens at character load.
     if (!sec) return;
     sec.innerHTML = '';
     const gearInventory = deps.getGearInventory();
@@ -1385,6 +1424,7 @@
 
   window.EquipmentPanel = {
     init,
+    ensureStarterFlute,
     dispelCurse,
     getEquippedWeaponPreviewPlane,
     squareToolIcon,

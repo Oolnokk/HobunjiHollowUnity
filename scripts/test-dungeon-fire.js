@@ -256,8 +256,13 @@ async function main() {
   const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
   assert(sourceBuilder.includes('world.group.add(group)'),
     'the source brazier belongs to the composer-owned group and is removed on clear/reroll');
-  assert(mechanismCode.includes('!doors.some(item=>item.id===doorway.id)'),
-    'Tothal shared room doorways are deduplicated before ice walls are generated');
+  assert(mechanismCode.includes('const candidates=iceDoorCandidates(kit,context)') &&
+    mechanismCode.includes("info.previewMotion?.type==='stoneDoor'") &&
+    mechanismCode.includes('info.transitDoor===true') &&
+    mechanismCode.includes('info.devRandomRuinModularDoor===true') &&
+    mechanismCode.includes("info.dungeonFireIceEligible===true") &&
+    !mechanismCode.includes('new THREE.Mesh(geometry,iceMat)'),
+    'Tothal ice covers actual generated, transit, modular and explicitly eligible doors instead of visible doorway sheets');
   assert(/dev-random-ruin-dungeon-fire\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root,'docs/js/dev-random-ruin-bootstrap.js'),'utf8')),
     'the dungeon-fire mechanism loader has a cache-busting token');
   assert(mechanismCode.includes("registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear})"),
@@ -266,12 +271,14 @@ async function main() {
     mechanismCode.includes('brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;') &&
     !mechanismCode.includes('brazer=>'),
     'Kanthic cleansing callback consistently uses its brazier record');
-  assert(mechanismCode.includes('mesh.userData.projectileCoverHeightTiles=ICE_WALL_HEIGHT') &&
-    mechanismCode.includes('mesh.userData.projectileCoverHalfXTiles=') &&
+  assert(mechanismCode.includes('mesh.userData.projectileCoverHeightTiles=height') &&
+    mechanismCode.includes('mesh.userData.projectileCoverHalfXTiles=halfX') &&
     mechanismCode.includes('delete mesh.userData.projectileCoverHeightTiles') &&
     mechanismCode.includes('NearbyVolumeCollision?.invalidate?.()') &&
-    mechanismCode.includes('projectileCoverBottomOffsetTiles=-ICE_WALL_HEIGHT*.5'),
-    'Tothal ice walls block projectiles while frozen and invalidate cached cover when melting or removed');
+    mechanismCode.includes('projectileCoverBottomOffsetTiles=-height*.5') &&
+    mechanismCode.includes('world.iceScanTries<6') &&
+    mechanismCode.includes('DungeonDoorIceCoverage?.setGrowth?.(wall.icePlacement,1-t)'),
+    'Dynamic door ice preserves projectile/occupancy blocking and reverses generated growth during melting');
   assert(mechanismCode.includes('buildNet(point,world.ceilingY,index)') &&
     mechanismCode.includes('buildIcicle(point,Number(context.ceilingY)||point.y+3.15,index)') &&
     mechanismCode.includes('buildThemeMechanisms(kit,context)'),
