@@ -96,8 +96,15 @@
     const normalized=normalizeAuthorConfig(config||readAuthorConfig());
     const sizes=ASSET_URLS.map((_,i)=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:layerGroup?.userData?.sourceWidth||SOURCE_SIZES[i].width,height:layerGroup?.userData?.sourceHeight||SOURCE_SIZES[i].height};});
     const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER});
-    for(const layer of layout)applyLayer(group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer),layer);
-    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],defaultPosition:[...l.defaultPosition],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:(l.width/ROCKS_PER_LAYER)*l.scale[0],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:ROCKS_PER_LAYER,snowCapped:true};});
+    for(const layer of layout){
+      const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer);
+      const record=activeByMap.get(WESTERN_SLOPE_ID); // An omitted runtime ridge can still be materialized if a later author config enables it.
+      if(layer.visible&&layerGroup&&!layerGroup.children.length&&record?.root===group){
+        addRockRidge(layer,layerGroup,record,record.snowMaterial,record.snowBoundaryMaterial);
+      }
+      applyLayer(layerGroup,layer);
+    }
+    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],defaultPosition:[...l.defaultPosition],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:(l.width/ROCKS_PER_LAYER)*l.scale[0],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:layerGroup?.children?.length??0,snowCapped:true};});
     return layout;
   }
 
@@ -335,10 +342,11 @@
     const previous=activeByMap.get(mapId);
     if(previous?.scene===scene&&!previous.cancelled)return previous.promise||Promise.resolve(previous.root||null);
     if(previous)disposeRecord(previous);
-    const record={mapId,scene,root:null,meshes:[],materials:[],textures:[],cancelled:false,disposed:false,promise:null}; // Owns geometry and cloned materials for one map's decorative ridges.
+    const record={mapId,scene,root:null,meshes:[],materials:[],textures:[],snowMaterial:null,snowBoundaryMaterial:null,cancelled:false,disposed:false,promise:null}; // Owns geometry and cloned materials for one map's decorative ridges.
     activeByMap.set(mapId,record);stats.buildRequests++;
     try{
       const T=window.THREE,layout=resolveLayoutFromSizes(SOURCE_SIZES,cols,rows,config),root=new T.Group(),snowMaterial=createSnowCapMaterial(record),snowBoundaryMaterial=createSnowBoundaryMaterial(record);
+      record.snowMaterial=snowMaterial;record.snowBoundaryMaterial=snowBoundaryMaterial; // Reused if an initially omitted layer is enabled later without rebuilding the zone.
       root.name=GROUP_NAME;
       root.visible=config.enabled!==false;
       Object.assign(root.userData,{backgroundScenery:true,skipOcclusionFade:true,westernSlopeMountainBackdrops:true,decorativeRockRidges:true,snowCappedRockRidges:true,visualOnly:true,mapId,rocksPerLayer:ROCKS_PER_LAYER,authorConfig:config});
@@ -347,7 +355,7 @@
         layerGroup.name=GROUP_NAME+'_Layer'+layer.layer;
         Object.assign(layerGroup.userData,{layer:layer.layer,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,decorativeRockRidge:true,visualOnly:true});
         applyLayer(layerGroup,layer);
-        addRockRidge(layer,layerGroup,record,snowMaterial,snowBoundaryMaterial);
+        if(layer.visible||options?.buildHiddenLayers===true) addRockRidge(layer,layerGroup,record,snowMaterial,snowBoundaryMaterial); // Gameplay skips invisible rocks entirely; the author preview can keep them ready for live visibility toggles.
         root.add(layerGroup);
       }
       record.root=root;
@@ -355,7 +363,8 @@
       if(Array.isArray(scene.items)&&!scene.items.includes(root))scene.items.push(root);
       stats.completedBuilds++;
       applyAuthorConfigToGroup(root,cols,rows,config);
-      log('attached '+layout.length+' Western Slope snow-capped rock ridges ('+(layout.length*ROCKS_PER_LAYER)+' decorative rocks, '+(Math.max(1,Number(rows)||1)*RIDGE_LENGTH_MAP_MULTIPLIER).toFixed(1)+'u north-south length each); west X='+layout.map(l=>l.position[0].toFixed(1)).join(', '));
+      const builtRockCount=root.children.reduce((total,layerGroup)=>total+layerGroup.children.length,0); // Log the number actually built, excluding omitted runtime layers.
+      log('attached '+layout.filter(l=>l.visible).length+' visible Western Slope snow-capped rock ridges ('+builtRockCount+' built rocks, '+(Math.max(1,Number(rows)||1)*RIDGE_LENGTH_MAP_MULTIPLIER).toFixed(1)+'u baseline north-south length each); west X='+layout.filter(l=>l.visible).map(l=>l.position[0].toFixed(1)).join(', '));
       record.promise=Promise.resolve(root);
     }catch(error){
       stats.lastError=error?.message||String(error);
@@ -387,7 +396,7 @@
   }
   function debug(){
     const active=activeByMap.get(WESTERN_SLOPE_ID);
-    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],rocksPerLayer:ROCKS_PER_LAYER,totalDecorativeRocks:ROCKS_PER_LAYER*ASSET_URLS.length,ridgeLengthMapMultiplier:RIDGE_LENGTH_MAP_MULTIPLIER,snowCapHeightFraction:SNOW_CAP_HEIGHT_FRACTION,visualOnly:true,active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
+    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],rocksPerLayer:ROCKS_PER_LAYER,totalDecorativeRocks:ROCKS_PER_LAYER*ASSET_URLS.length,builtDecorativeRocks:active?.root?.children?.reduce((total,l)=>total+l.children.length,0)??0,ridgeLengthMapMultiplier:RIDGE_LENGTH_MAP_MULTIPLIER,snowCapHeightFraction:SNOW_CAP_HEIGHT_FRACTION,visualOnly:true,active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
   }
 
   window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,ROCKS_PER_LAYER,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER,WEST_STACK_SHIFT_MULTIPLIER,RIDGE_LENGTH_MAP_MULTIPLIER,SNOW_CAP_HEIGHT_FRACTION})});
