@@ -8,10 +8,15 @@
   const SNOW_CAP_HEIGHT_FRACTION = 2 / 3; // Snow covers the upper two-thirds of every rock's own vertical bounds.
   const SNOW_BOUNDARY_LIFT = 0.00015; // Tiny local lift keeps the cap outline visible without changing either surface's geometry.
   const GROUP_NAME = 'WesternSlopeMountainBackdrops'; // Kept stable for scene duplicate detection and editor lookup.
-  const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v1'; // Shared by the background author and live runtime.
+  const AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops.v2'; // The uploaded November 2026 defaults supersede obsolete v1 browser overrides; subsequent author edits persist under v2.
   const ASSET_URLS = Object.freeze(['assets/backdrops/bd_mountains_1.png','assets/backdrops/bd_mountains_2.png','assets/backdrops/bd_mountains_3.png']); // Original layer dimensions preserve the authored scenery footprint.
   const SOURCE_SIZES = Object.freeze([{width:1200,height:500},{width:900,height:650},{width:1400,height:700}]); // Original PNG dimensions keep each replacement ridge's overall span.
   const ROCKS_PER_LAYER = 8; // Each former mountain PNG becomes one row of eight decorative mine-style rocks.
+  const DEFAULT_RIDGE_SETTINGS = Object.freeze([
+    {visible:true, position:[-134,140,100], rotationDeg:[0,0,0], scale:[2.25,0.5,3]},
+    {visible:true, position:[-159,188,175], rotationDeg:[0,0,0], scale:[3,0.6,3]},
+    {visible:false,position:[null,null,null], rotationDeg:[0,0,0], scale:[1,1,1]},
+  ]); // Exact layer visibility/transforms from the approved map_western_slope.background-scenery.json export; shared by gameplay and the scenery author.
   const ROCK_SEED_BASE = 1731; // Used to create deterministic but visibly different rock silhouettes.
   const ROCK_HEIGHT_FRACTION = 0.72; // Typical peak height in the generated one-tile mine-rock geometry.
   const ignoreRaycast = () => {}; // Decorative rocks must never intercept tool targeting or pointer queries.
@@ -34,19 +39,22 @@
   }
   function finiteOr(value,fallback=null){ if(value==null||value==='')return fallback;const n=Number(value);return Number.isFinite(n)?n:fallback; }
   function vector(raw,fallback,{positive=false,allowNull=false}={}) {
-    const src=Array.isArray(raw)?raw:[];
-    return fallback.map((fb,i)=>{if(allowNull&&(src[i]==null||src[i]===''))return fb;const v=finiteOr(src[i],fb);return positive&&!(v>0)?fb:v;});
+    const src=Array.isArray(raw)?raw:null;
+    return fallback.map((fb,i)=>{if(allowNull&&src&&i<src.length&&(src[i]==null||src[i]===''))return null;const v=finiteOr(src?.[i],fb);return positive&&!(v>0)?fb:v;});
   }
   function defaultAuthorConfig(){
-    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:true,layers:ASSET_URLS.map((asset,i)=>({layer:i+1,asset,visible:true,transform:{position:[null,null,null],rotationDeg:[0,0,0],scale:[1,1,1]}}))};
+    return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:true,layers:ASSET_URLS.map((asset,i)=>{
+      const settings=DEFAULT_RIDGE_SETTINGS[i]; // Each layer's approved preset is copied so editor changes never mutate the game's defaults.
+      return {layer:i+1,asset,visible:settings.visible,transform:{position:[...settings.position],rotationDeg:[...settings.rotationDeg],scale:[...settings.scale]}};
+    })};
   }
   function normalizeAuthorConfig(raw){
-    const src=raw&&typeof raw==='object'?raw:{}, layers=Array.isArray(src.layers)?src.layers:[];
+    const src=raw&&typeof raw==='object'?raw:{}, layers=Array.isArray(src.layers)?src.layers:[], defaults=defaultAuthorConfig();
     return {schema:'hobunji_western_slope_mountain_backdrops.v1',enabled:src.enabled!==false,layers:ASSET_URLS.map((asset,i)=>{
-      const layer=layers[i]&&typeof layers[i]==='object'?layers[i]:{}, t=layer.transform&&typeof layer.transform==='object'?layer.transform:{};
-      const rotationDeg=vector(t.rotationDeg,[0,0,0]); // New rock rows already stand upright; no PNG-facing rotation is needed.
+      const layer=layers[i]&&typeof layers[i]==='object'?layers[i]:{}, t=layer.transform&&typeof layer.transform==='object'?layer.transform:{}, fallback=defaults.layers[i];
+      const rotationDeg=vector(t.rotationDeg,fallback.transform.rotationDeg); // New rock rows already stand upright; no PNG-facing rotation is needed.
       if(rotationDeg[0]===0&&rotationDeg[1]===90&&rotationDeg[2]===0)rotationDeg[1]=0; // Migrate the old untouched PNG default so saved author settings do not turn rocks sideways.
-      return {layer:i+1,asset,visible:layer.visible!==false,transform:{position:vector(t.position,[null,null,null],{allowNull:true}),rotationDeg,scale:vector(t.scale,[1,1,1],{positive:true})}};
+      return {layer:i+1,asset,visible:layer.visible==null?fallback.visible:layer.visible!==false,transform:{position:vector(t.position,fallback.transform.position,{allowNull:true}),rotationDeg,scale:vector(t.scale,fallback.transform.scale,{positive:true})}};
     })};
   }
   function readAuthorConfig(){try{const raw=window.localStorage?.getItem?.(AUTHOR_STORAGE_KEY);return normalizeAuthorConfig(raw?JSON.parse(raw):null);}catch(error){log('author override read failed: '+(error?.message||error),'warn');return defaultAuthorConfig();}}
