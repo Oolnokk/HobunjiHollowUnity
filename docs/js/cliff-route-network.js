@@ -307,17 +307,21 @@
     if (!areaStates.has(id)) areaStates.set(id, { revealed: false, claimed: false });
     return areaStates.get(id);
   }
+  function syncRewardMeshes(area, id, state) {
+    // The scene's instanced reward bodies are owned by render(), but both
+    // interactive changes and save restores must update them immediately.
+    for (const handle of rewardMeshesByArea.get(area)?.get(id) || []) {
+      const visible = !state.claimed && (handle.kind === 'oreRock' || state.revealed);
+      handle.mesh.setMatrixAt(handle.index, visible ? handle.matrix : handle.hidden);
+      handle.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
   function setRewardStage(area, id, stage) {
     const state = getRewardState(area, id);
     if (stage === 'revealed') state.revealed = true;
     else if (stage === 'claimed') { state.revealed = true; state.claimed = true; }
     else return false;
-    const handles = rewardMeshesByArea.get(area)?.get(id) || [];
-    for (const handle of handles) {
-      const visible = !state.claimed && (handle.kind === 'oreRock' || state.revealed);
-      handle.mesh.setMatrixAt(handle.index, visible ? handle.matrix : handle.hidden);
-      handle.mesh.instanceMatrix.needsUpdate = true;
-    }
+    syncRewardMeshes(area, id, state);
     return true;
   }
   function serializeRewards() {
@@ -335,6 +339,17 @@
       for (const [id, value] of Object.entries(entries || {})) states.set(id, { revealed: !!value.revealed, claimed: !!value.claimed });
       rewardStateByArea.set(area, states);
     }
+    // Saves may restore while the current wilderness scene is already built.
+    // Synchronize its visible ore/chest instances without rebuilding terrain.
+    for (const [area, meshes] of rewardMeshesByArea)
+      for (const id of meshes.keys())
+        syncRewardMeshes(area, id, rewardStateByArea.get(area)?.get(id) || { revealed: false, claimed: false });
+  }
+  function releaseArea(area) {
+    const id = String(area), network = activeByArea.get(id);
+    if (network) cache.delete(network.grid); // Unload retires this area's topology, not persistent reward state.
+    activeByArea.delete(id);
+    rewardMeshesByArea.delete(id); // No retained references to disposed THREE instances.
   }
   function highestBelow(network, x, z, fromY, baseY = -Infinity) {
     // Prefer the exact height-bounded DynamicSurfaces support query, as in
@@ -354,6 +369,8 @@
 
   let _holdMaterial = null; // Shared by all zone decals to avoid duplicate texture downloads and shader programs.
   let _stoneMaterial = null; // Shared rock material for actual stacked mini-cliff geometry.
+  let _chestWoodMaterial = null; // Shared by all scenery rebuilds; old per-render allocations leaked GPU materials.
+  let _chestLidMaterial = null; // Same lifecycle as the stone and decal materials.
   function render(THREE, scene, network) {
     if (!THREE || !scene || !network) return [];
     if (!_holdMaterial) {
@@ -361,6 +378,8 @@
       if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
       _holdMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide });
       _stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x77766e, roughness: 1 });
+      _chestWoodMaterial = new THREE.MeshStandardMaterial({ color: 0x6a4625, roughness: 0.82 });
+      _chestLidMaterial = new THREE.MeshStandardMaterial({ color: 0xbe993b, roughness: 0.62 });
     }
     const vertices = [], uvs = [];
     const uvSteps = [0, 0.32, 0.68, 1]; // Nine-slice margins preserve the carved border when each hold is stretched.
@@ -420,9 +439,9 @@
     const chests = shelves.filter(s => s.reward !== 'oreRock');
     const oreMesh = makeInstanced(new THREE.DodecahedronGeometry(1, 0), _stoneMaterial, ores.length, 'cliff-balcony-ores');
     const chestWood = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x6a4625, roughness: 0.82 }), chests.length, 'cliff-balcony-chest-bodies');
+      _chestWoodMaterial, chests.length, 'cliff-balcony-chest-bodies');
     const chestLid = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0xbe993b, roughness: 0.62 }), chests.length, 'cliff-balcony-chest-lids');
+      _chestLidMaterial, chests.length, 'cliff-balcony-chest-lids');
     const transform = (mesh, index, x, y, z, sx, sy, sz, yaw, visible, kind, shelfId) => {
       if (!mesh) return;
       const o = new THREE.Object3D();
@@ -457,7 +476,7 @@
   }
   return Object.freeze({
     build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render,
-    getRewardState, setRewardStage, serializeRewards, restoreRewards,
+    getRewardState, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,
