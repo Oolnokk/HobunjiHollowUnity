@@ -248,7 +248,7 @@ assert(game.includes("function respawnPlayer(reason = 'death')") && game.include
 assert(simplePuzzles.includes("if(!inRuin()||!state?.checkpoints?.active||!deps?.player)return false"), 'ruin checkpoint override must refuse deaths after the player has left the ruin');
 assert(!simplePuzzles.includes('Combat.init.__devRandomRuinCheckpointWrapped') && !simplePuzzles.includes('PlayerVitals.init.__devRandomRuinCheckpointWrapped'), 'simple checkpointing must not stack fragile death-init wrappers around canonical respawn');
 assert(simplePuzzles.includes("removeAffliction(player,id") && simplePuzzles.includes("player.health=Math.max(1,Math.round"), 'checkpoint respawn must clear lethal buildup and restore half Health');
-assert(simplePuzzles.includes('HALL_SHOT_PERIOD') && simplePuzzles.includes('station.side *= -1'), 'hallway traps must fire in a steady alternating repeating pattern');
+assert(!simplePuzzles.includes('HALL_SHOT_PERIOD') && !simplePuzzles.includes('station.side *= -1'), 'the rejected repeating projectile obstacle course must not remain in the simulation');
 assert(simplePuzzles.includes('DS.addBeforeRenderClient(update)'), 'simple puzzles must share the game frame authority instead of starting their own RAF loop');
 assert(interior.includes('TileOccupancy.create'), 'ruin must create the shared tile occupancy snapshot');
 assert(interior.includes('getOccupancySnapshot'), 'ruin must expose the exact gameplay snapshot to diagnostics');
