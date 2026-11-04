@@ -987,5 +987,103 @@
     return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   }
 
+  // Instance-only pattern placement tweaks. Crafting menus keep the motif/library source intact.
+  const QUICK_TRANSFORMS = Object.freeze([
+    { key: 'meshScale', label: 'Pattern scale', min: .4, max: 3.2, step: .05, fallback: 1, unit: '×' },
+    { key: 'motifScale', label: 'Motif scale', min: .1, max: 3, step: .05, fallback: 1, unit: '×' },
+    { key: 'usageOffsetY', label: 'Translate pattern Y', min: -512, max: 512, step: 4, fallback: 0, unit: 'px' },
+    { key: 'usageOffsetX', label: 'Translate pattern X', min: -512, max: 512, step: 4, fallback: 0, unit: 'px' },
+    { key: 'meshRotationDeg', label: 'Rotate pattern', min: -180, max: 180, step: 5, fallback: 0, unit: '°' },
+  ]);
+  const quickClamp = (value, spec) => Math.min(spec.max, Math.max(spec.min, Number.isFinite(Number(value)) ? Number(value) : spec.fallback)); // Shared numeric validation for text and controller inputs.
+
+  function addArrowButtons(host) {
+    if (!host) return;
+    for (const input of host.querySelectorAll('input[type="range"]')) {
+      if (input.dataset.arrowButtons === 'yes') continue;
+      input.dataset.arrowButtons = 'yes';
+      const wrap = document.createElement('span'); // Keeps the existing range slider between two controller-focusable step buttons.
+      wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;max-width:100%;';
+      input.before(wrap); wrap.appendChild(input);
+      for (const direction of [-1, 1]) {
+        const button = document.createElement('button'); // Native buttons participate in controller/keyboard focus navigation.
+        button.type = 'button'; button.textContent = direction < 0 ? '‹' : '›';
+        button.setAttribute('aria-label', (direction < 0 ? 'Decrease ' : 'Increase ') + (input.getAttribute('aria-label') || 'pattern setting'));
+        button.style.cssText = 'min-width:30px;min-height:30px;padding:2px 6px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff;cursor:pointer;';
+        button.addEventListener('click', () => {
+          if (input.disabled) return;
+          const step = Number(input.step) > 0 ? Number(input.step) : .1; // Re-read step and limits because editors update range bounds on selection.
+          const min = Number.isFinite(Number(input.min)) && input.min !== '' ? Number(input.min) : -Infinity;
+          const max = Number.isFinite(Number(input.max)) && input.max !== '' ? Number(input.max) : Infinity;
+          const next = Math.min(max, Math.max(min, Number((Number(input.value) + direction * step).toFixed(5))));
+          input.value = String(next);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        if (direction < 0) wrap.prepend(button); else wrap.appendChild(button);
+      }
+    }
+  }
+
+  function mountQuickControls(host, options = {}) {
+    if (!host || typeof options.getPattern !== 'function' || typeof options.onChange !== 'function') return null;
+    const details = document.createElement('details'); // Visible outside Author Pattern; expandable without losing controller focus.
+    details.open = true;
+    details.className = 'pattern-quick-controls';
+    details.style.cssText = 'margin:7px 0;padding:7px;border:1px solid #627d78;border-radius:8px;color:inherit;';
+    const summary = document.createElement('summary'); // A normal focusable disclosure for compact/mobile menus.
+    summary.textContent = options.title || 'Pattern placement';
+    summary.style.cssText = 'cursor:pointer;font-weight:650;margin-bottom:6px;';
+    details.appendChild(summary);
+    const inputs = new Map(); // Keyed controls are refreshed after a source pattern is selected or an editor save completes.
+    for (const spec of QUICK_TRANSFORMS) {
+      const row = document.createElement('div'); // Every quick setting is individually keyboard/controller accessible.
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:5px;margin:5px 0;';
+      const label = document.createElement('label');
+      label.textContent = spec.label;
+      label.style.cssText = 'font-size:12px;flex:1 1 115px;';
+      const group = document.createElement('span');
+      group.style.cssText = 'display:inline-flex;align-items:center;gap:3px;';
+      const input = document.createElement('input'); // Numeric entry allows precise adjustments on touch/desktop as well as buttons.
+      input.type = 'number'; input.min = spec.min; input.max = spec.max; input.step = spec.step;
+      input.setAttribute('aria-label', spec.label);
+      input.style.cssText = 'box-sizing:border-box;width:70px;min-height:30px;padding:3px;background:#182625;color:#fff;border:1px solid #718d87;border-radius:5px;';
+      inputs.set(spec.key, input);
+      const change = value => {
+        const pattern = options.getPattern();
+        if (!pattern) return;
+        const updated = { ...pattern, [spec.key]: quickClamp(value, spec) }; // Snapshot override, never mutating a library definition.
+        options.onChange(updated);
+        refresh();
+      };
+      input.addEventListener('change', () => change(input.value));
+      for (const direction of [-1, 1]) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.textContent = direction < 0 ? '‹' : '›';
+        button.setAttribute('aria-label', (direction < 0 ? 'Decrease ' : 'Increase ') + spec.label);
+        button.style.cssText = 'min-width:30px;min-height:30px;padding:2px 6px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff;cursor:pointer;';
+        button.addEventListener('click', () => change(quickClamp(inputs.get(spec.key).value, spec) + direction * spec.step));
+        if (direction < 0) group.appendChild(button);
+        else { group.appendChild(input); group.appendChild(button); }
+      }
+      const unit = document.createElement('span'); unit.textContent = spec.unit; unit.style.fontSize = '11px';
+      group.appendChild(unit); row.append(label, group); details.appendChild(row);
+    }
+    host.appendChild(details);
+    function refresh() {
+      const pattern = options.getPattern();
+      details.hidden = !pattern;
+      for (const spec of QUICK_TRANSFORMS) {
+        const input = inputs.get(spec.key);
+        input.disabled = !pattern;
+        if (pattern && document.activeElement !== input) input.value = String(quickClamp(pattern[spec.key] ?? spec.fallback, spec));
+      }
+    }
+    refresh();
+    return { element: details, refresh };
+  }
+
+  window.PatternQuickControls = Object.freeze({ mount: mountQuickControls, addArrowButtons });
+
   window.PatternAuthoring = { openEditor };
 })();
