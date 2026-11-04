@@ -14,12 +14,15 @@ const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical pr
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
-assert(runtime.includes('attachShaftHub(rec,candidateSeed);'),'every generated ruin retains a shaft');
+assert(runtime.includes('attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});'),
+  'a V50 ruin must mount the pre-reserved native multi-floor plan, not compose a fresh shaft after V50');
+assert(runtime.indexOf('const planned=window.RuinLayerPlan')<runtime.indexOf('await api.generateInteriorLocale({seed:'),
+  'the shared V50 shaft reservation must exist BEFORE generating the original entrance floor');
 assert(runtime.includes('attachShaftHub(rec,0);'),'story vault retains the shaft');
 assert(runtime.includes('window.RuinShaftConnector'),'runtime must use physical hallway module');
 assert(!runtime.includes("passage('Enter Shaft Hub'"),'no gameplay teleporter into the shaft');
 assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out of the shaft');
-for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js'])
+for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js','ruin-v50-native-floors.js'])
   assert(index.includes(file),'game page must load '+file);
 
 // Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
