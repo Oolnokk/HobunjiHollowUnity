@@ -424,6 +424,82 @@
     return found;
   }
 
+  // One batched rock shell for every inverted mini-plateau in the zone:
+  // a walkable overhanging top, a smaller footprint buried in the higher
+  // parent plateau, and an underside that tapers into that parent. Base
+  // tiles are VISUAL ONLY; only shelf.footprint is gameplay registered.
+  function makeMiniCliffRockMesh(THREE, scene, network, material) {
+    const shelves = network.balconies.filter(s => s.base?.footprint?.length);
+    if (!shelves.length) return null;
+    const positions = []; // One draw call's top caps and tapered undersides.
+    const ringCorners = [
+      [-1, -1], [0, -1], [1, -1], [1, 0],
+      [1, 1], [0, 1], [-1, 1], [-1, 0],
+    ];
+    const pushFace = (a, b, c) => positions.push(...a, ...b, ...c);
+    const mix = (a, b, t) => a + (b - a) * t;
+    for (const shelf of shelves) {
+      const base = shelf.base;
+      const minC = Math.min(...base.footprint.map(tile => tile.c));
+      const maxC = Math.max(...base.footprint.map(tile => tile.c));
+      const minR = Math.min(...base.footprint.map(tile => tile.r));
+      const maxR = Math.max(...base.footprint.map(tile => tile.r));
+      // Inset every side of the bottom profile INTO its parent-owned tile
+      // cells. An axis-aligned contiguous pair is a convex union of tiles.
+      const loX = minC + base.inset, hiX = maxC + 1 - base.inset;
+      const loZ = minR + base.inset, hiZ = maxR + 1 - base.inset;
+      const top = ringCorners.map(([u, v]) => [
+        shelf.x + shelf.tangent.x * u * shelf.width / 2 + shelf.normal.x * v * shelf.depth / 2,
+        shelf.y,
+        shelf.z + shelf.tangent.z * u * shelf.width / 2 + shelf.normal.z * v * shelf.depth / 2,
+      ]);
+      const bottom = ringCorners.map(([u, v]) => {
+        const x = mix(loX, hiX, (u + 1) / 2), z = mix(loZ, hiZ, (v + 1) / 2);
+        // Read the base tile's OWN elevation. Later authored underside
+        // shapes can adjust tile elevations without affecting collision.
+        const owner = base.footprint.find(tile =>
+          x >= tile.c - 0.001 && x <= tile.c + 1.001 &&
+          z >= tile.r - 0.001 && z <= tile.r + 1.001);
+        return [x, owner?.elevation ?? base.y, z];
+      });
+      // The interior ring gives the underside a gradual, irregular return
+      // into the parent plateau rather than a flat hanging box slab.
+      const middle = top.map((point, i) => {
+        const inner = bottom[i];
+        const ripple = ((hash(Math.floor(shelf.x * 71), Math.floor(shelf.z * 73), i + 11) % 9) - 4) * 0.012;
+        return [
+          mix(point[0], inner[0], 0.50) + ripple,
+          mix(point[1], inner[1], 0.40),
+          mix(point[2], inner[2], 0.50) - ripple,
+        ];
+      });
+      const center = [shelf.x, shelf.y, shelf.z];
+      for (let i = 0; i < top.length; i++) {
+        const j = (i + 1) % top.length;
+        // The walkable cap has its ORIGINAL precise XZ and Y. The
+        // underside's inner base cannot become a second landing surface.
+        pushFace(center, top[j], top[i]);
+        pushFace(top[i], top[j], middle[j]);
+        pushFace(top[i], middle[j], middle[i]);
+        pushFace(middle[i], middle[j], bottom[j]);
+        pushFace(middle[i], bottom[j], bottom[i]);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = network.area + '-cliff-balconies';
+    mesh.userData.hobunjiGroundSurface = true; // Same camera/occlusion tags as the former flat caps.
+    mesh.userData.cameraObstacle = true;
+    mesh.userData.cliffGenerated = true; // Do not feed the tapered shell into unrelated plateau mesh batching.
+    mesh.userData.terrainJigsawIgnore = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
   let _holdMaterial = null; // Shared by all zone decals to avoid duplicate texture downloads and shader programs.
   let _stoneMaterial = null; // Shared rock material for actual stacked mini-cliff geometry.
   let _chestWoodMaterial = null; // Shared by all scenery rebuilds; old per-render allocations leaked GPU materials.
@@ -487,11 +563,8 @@
       scene.add(inst); meshes.push(inst);
       return inst;
     };
-    const cap = makeInstanced(new THREE.BoxGeometry(1, 1, 1), _stoneMaterial, shelves.length, 'cliff-balconies');
-    if (cap) {
-      cap.userData.hobunjiGroundSurface = true;
-      cap.userData.cameraObstacle = true;
-    }
+    const cap = makeMiniCliffRockMesh(THREE, scene, network, _stoneMaterial);
+    if (cap) meshes.push(cap); // Already generated as one fused mesh across all inverted profiles.
     const ores = shelves.filter(s => s.reward === 'oreRock');
     const chests = shelves.filter(s => s.reward !== 'oreRock');
     const oreMesh = makeInstanced(new THREE.DodecahedronGeometry(1, 0), _stoneMaterial, ores.length, 'cliff-balcony-ores');
@@ -514,7 +587,6 @@
     let oi = 0, ci = 0;
     for (let i = 0; i < shelves.length; i++) {
       const s = shelves[i], yaw = Math.atan2(-s.tangent.z, s.tangent.x);
-      transform(cap, i, s.x, s.y - 0.08, s.z, s.width, 0.16, s.depth, yaw, true);
       const state = getRewardState(network.area, s.id);
       const visible = !state.claimed && (s.reward === 'oreRock' || state.revealed);
       if (s.reward === 'oreRock') {
@@ -525,7 +597,7 @@
         ci++;
       }
     }
-    for (const mesh of [cap, oreMesh, chestWood, chestLid]) if (mesh) {
+    for (const mesh of [oreMesh, chestWood, chestLid]) if (mesh) {
       mesh.instanceMatrix.needsUpdate = true;
       mesh.computeBoundingSphere?.(); // Correct frustum culling across discontiguous balcony instances.
     }
