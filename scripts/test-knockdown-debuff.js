@@ -58,6 +58,15 @@ function run() {
   assert.equal(resources.getProneAttackMultiplier(actor), 1.75);
   actor._temporaryKnockdownProne = false;
   assert.equal(resources.getProneAttackMultiplier(actor), 2.5, '0-Footing ragdoll is stronger even while Footing refills');
+
+  for (const [state, expected] of [['standing', 4], ['temporary', 7], ['footing-broken', 10]]) {
+    const victim = { health: 100, maxHealth: 100, stamina: 100, maxStamina: 100, footing: 75, maxFooting: 100 }; // Separate targets keep fixed buildup results independent.
+    resources.initEntity(victim);
+    victim.prone = state !== 'standing';
+    victim._temporaryKnockdownProne = state === 'temporary';
+    resources.applyDamage(victim, 2, { fixedAfflictionBuildup: { rentHealth: 4 }, reason: 'Wyrm-witch attack' });
+    assert.equal(resources.getAffliction(victim, 'rentHealth'), expected, state + ' flat attack effects match prone vulnerability once');
+  }
   assert.equal(resources.applyTimedDebuff({ health: 0 }, 'knockdown', 1), null, 'dead victims are not knocked down');
   assert.equal(resources.applyTimedDebuff({ health: 1, _downed: true }, 'knockdown', 1), null, 'downed victims are protected');
 
