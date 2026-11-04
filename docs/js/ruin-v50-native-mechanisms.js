@@ -93,9 +93,13 @@
         const panel=(object.children||[]).find(child=>child.isMesh&&child.geometry)||object;
         trackBlocker(scope+'-stone-door-'+id,panel,()=>state.progress<.88);
       }else if(motion==='bridge'||motion==='bridgeSequence'){
-        const bridgeExtended=()=>motion==='bridgeSequence'
-          ?(state.progress<.22?state.progress/.22:state.progress<.76?1:(1-state.progress)/.24)>.75
-          :state.progress>.55; // V50's sequence retracts again at the end of its activation curve.
+        const bridgeExtended=()=>{
+          const range=object.userData.previewRange||object.userData.previewMotion?.previewRange;
+          const p=range?.length===2?clamp((state.progress-range[0])/Math.max(.0001,range[1]-range[0]),0,1):state.progress; // Use the exact local motion curve that V50 draws, including nested puzzle preview ranges.
+          const extension=motion==='bridgeSequence'
+            ?(p<.22?p/.22:p<.76?1:(1-p)/.24):p;
+          return extension>.75; // Floor support is never granted under a visually retracted bridge.
+        };
         trackSurface(scope+'-moving-bridge-'+id,object,12,bridgeExtended);
       }else if(motion==='movingDais'){
         trackSurface(scope+'-moving-dais-'+id,object.userData.movingDaisPlatform||object,14);
@@ -177,7 +181,10 @@
           const pushDot=(pToBlock.x*dx+pToBlock.z*dz)/(magnitude*length);
           if(pushDot<.45){showToast?.('Stand behind the stone block to push it.',false);return;}
           if(elevator){
-            const progress=(step+1)/(route.length-1);
+            const routeFraction=(step+1)/(route.length-1);
+            const localProgress=.45+.55*routeFraction; // V50's original lift curve reserves 0–.45 for raising the block, then .45–1 for its authored route.
+            const range=block.userData.previewRange||block.userData.previewMotion?.previewRange;
+            const progress=range?.length===2?range[0]+(range[1]-range[0])*localProgress:localProgress;
             api.applyProgress(block,progress);
           }else{
             block.position.set(Number(next.x),Number(next.y)||0,Number(next.z));
