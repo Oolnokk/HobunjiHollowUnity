@@ -215,6 +215,7 @@ assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'dislike
 assert(!awarded.some(e=>e.reason==='festival_potluck_win'),'entering a dish does not prematurely grant the seven-day championship reward');
 assert.equal(api.feastMenu().length,7,'the seven pots remain after donation');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','seventh serving pot permanently holds the contest entry');
+assert.equal(api.claimed('potluck').favorRewardVersion,1,'newly donated entries keep their championship eligibility in the annual claim ledger');
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingHours>0,'meal remaining in-game hours are portable');
 api.restore(state);
@@ -333,4 +334,22 @@ realMs += 1000; api.update();
 assert.equal(awarded.filter(event=>event.reason==='festival_potluck_win').length,awardCount,'finished contest can never reward twice');
 assert.equal(api.serialize().potluckContests[championKey].favorAwarded,true,'judging persists across saves');
 
+// A new entry can be donated while the NPC database is still hydrating. Rebuilding it from
+// the persistent claim must not make this year's legitimate champion a legacy, ineligible winner.
+const claimOnlyEvent = championKey; // Same festival year, but an independent restored member/contest state.
+const allResidents = residents.splice(0); // Simulates world load before any NPC record has arrived.
+api.restore({claims:{[claimOnlyEvent]:{potluck:{key:'meal',stars:5,day:1156*336+120,favorRewardVersion:1}}},potluckContests:{}});
+realMs += 3100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent],undefined,'new entry cannot be judged while the resident roster is empty');
+residents.push(...allResidents);
+itemDefs.meal.festivalContestScore = 999999; // The recovered donation is a clear winner against every opponent.
+const favorAdjust = W.DialogueContent.adjustNpcFavor; // An incomplete dialogue loader must not consume the championship either.
+W.DialogueContent.adjustNpcFavor = undefined;
+realMs += 3100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent].favorAwarded,false,'an unready Favor service does not permanently consume a restored championship');
+const earlierWins = awarded.filter(entry => entry.reason === 'festival_potluck_win').length;
+W.DialogueContent.adjustNpcFavor = favorAdjust;
+realMs += 1100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent].favorAwarded,true,'recovered new entry gets judged after services become ready');
+assert(awarded.filter(entry => entry.reason === 'festival_potluck_win').length > earlierWins,'recovered champion receives Favor once NPCs and dialogue services load');
 console.log('Gorkunash locale placement, schedule shifts, seven-pot contest food, potluck, save, and heart conversion passed.');
