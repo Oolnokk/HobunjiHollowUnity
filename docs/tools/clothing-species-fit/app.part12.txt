@@ -146,7 +146,11 @@ function changeStartingSprite(){
   refreshAssets();
 }
 E.sourceSpecies.onchange=changeStartingSprite;E.sourceGender.onchange=changeStartingSprite;
-E.showBody.onchange=render;E.showGarment.onchange=render;E.showMeshes.onchange=render;E.opacity.oninput=render;
+E.showBody.onchange=()=>render(false); // Hiding the 2D body is an editing aid, not a change to the game's 3D character.
+E.showGarment.onchange=render;
+E.showMeshes.onchange=()=>render(false); // Grid visibility never needs to rebuild the runtime rig.
+E.match3D.onchange=()=>render(false); // Toggle between synchronized front portrait pixels and raw PNG inspection.
+E.opacity.oninput=render;
 E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;
 E.extTorsoFile.onchange=()=>importExtendedRole('torso',E.extTorsoFile.files?.[0]||null);
 E.extTorsoClothingFile.onchange=()=>importExtendedRole('torsoClothing',E.extTorsoClothingFile.files?.[0]||null);
