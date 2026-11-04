@@ -731,7 +731,7 @@
     const player=playerWorld();
     if(!player)return;
     for(const chain of state.ropeChains)for(const side of ['start','end']){
-      const point=chain[side],id=chain.checkpointIds[side];
+      const point=side==='start'?chain.entry:chain.exit,id=chain.checkpointIds[side];
       if(state.checkpoints.active?.id===id)continue;
       const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
       const pointAlong=chain.axis==='x'?point.x:point.z;
