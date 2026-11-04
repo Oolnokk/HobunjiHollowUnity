@@ -11,6 +11,8 @@
   let serial = 0; // Identity used by detached burdens and one-time loot drops.
   let lastEvent = 'ready'; // Shown in the mobile Pixel Probe debug snapshot.
   let shardArt = null; // Single crate-texture upload reused by every broken box.
+  let decalPlane = null; // Shared square mesh geometry for all rotated, ground-hugging loot decals.
+  const decalMaterials = new Map(); // One reusable item-sprite material per inventory key.
 
   const key = (mapId,id) => String(mapId) + '::' + String(id);
   const currentArea = () => String(window.GridTileAccessors?.getCurrentArea?.() || window.Combat?.deps?.getCurrentArea?.() || '');
@@ -38,6 +40,11 @@
     const count = Math.max(0,Math.min(3,Math.floor(Number(options.count ?? 3))));
     const pile = { id:String(options.id),mapId:String(options.mapId),scene:options.scene,
       group:options.group,count,lootable:true,busy:false,onChange:options.onChange||null };
+    if(existing?.scene!==options.scene){
+      for(const [dropId,drop] of junk)if(drop.mapId===pile.mapId && drop.scene!==pile.scene){
+        drop.group.parent?.remove(drop.group);junk.delete(dropId);
+      }
+    }
     piles.set(id,pile);
     window.AuthoredFurniture?.setRuntimeValues?.(pile.group,{crateCount:count});
     return pile;
@@ -83,6 +90,7 @@
       pile.busy = false;
       reducePile(pile);
       lastEvent = 'removed crate from '+pile.id+' ('+pile.count+' remaining)';
+    window.__farmLog?.('[crates] '+lastEvent,'world');
       return true;
     } catch(error) {
       console.warn('[crate-piles] pickup failed',error);
@@ -109,12 +117,15 @@
     return sprites[item] || null;
   }
   function decalMaterial(item) {
+    if(decalMaterials.has(item))return decalMaterials.get(item);
     const file=itemDecalSource(item);
     if (file) {
       const loader = decalMaterial.loader ||= new THREE.TextureLoader(); // Shared loader for item decals only.
       const cache = decalMaterial.cache ||= new Map(); // One GPU texture per concrete inventory sprite path.
       if (!cache.has(file)) cache.set(file,loader.load(file));
-      return new THREE.MeshBasicMaterial({map:cache.get(file),transparent:true,side:THREE.DoubleSide,depthWrite:false});
+      const material=new THREE.MeshBasicMaterial({map:cache.get(file),transparent:true,side:THREE.DoubleSide,depthWrite:false});
+      decalMaterials.set(item,material);
+      return material;
     }
     // Generic item-index icon fallback is rendered into a genuine transparent PNG-style decal plane.
     const icons = {puktukWool:'🧶',uumkaoiiEgg:'🥚',cloudHerbs:'🌿',mireHerbs:'🌿',blackberries:'🫐'};
@@ -123,7 +134,9 @@
     const ctx=canvas.getContext('2d');ctx.clearRect(0,0,96,96);ctx.font='66px sans-serif';
     ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(icon,48,48);
     const texture=new THREE.CanvasTexture(canvas);texture.needsUpdate=true;
-    return new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide,depthWrite:false});
+    const material=new THREE.MeshBasicMaterial({map:texture,transparent:true,side:THREE.DoubleSide,depthWrite:false});
+    decalMaterials.set(item,material);
+    return material;
   }
   function scatterJunk(mapId,scene,x,z,y,loot) {
     if (!scene || !THREE.PlaneGeometry || !THREE.Mesh) return null;
@@ -131,11 +144,14 @@
     const group=new THREE.Group();
     const entry=Object.entries(loot).filter(([,amount])=>Number(amount)>0);
     let index=0;
+    decalPlane ||= new THREE.PlaneGeometry(1,1);
     for (const [item,count] of entry) {
       const decals=Math.min(6,Math.max(2,Number(count)||1));
       const material=decalMaterial(item);
       for(let i=0;i<decals;i++) {
-        const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.19+Math.random()*.10,.19+Math.random()*.10),material);
+        const mesh=new THREE.Mesh(decalPlane,material);
+        const size=.19+Math.random()*.10;
+        mesh.scale.set(size,size,1);
         const a=(index++*2.399963),distance=.05+(index%6)*.042;
         mesh.position.set(Math.cos(a)*distance,.01+index*.0015,Math.sin(a)*distance);
         mesh.rotation.x=-Math.PI/2+(5+Math.random()*10)*Math.PI/180;
@@ -184,6 +200,7 @@
     scatterJunk(mapId,scene,x,z,y-.20,rollJunk());
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),mapId,undefined,'heavy');
     lastEvent='crate shattered by '+source+' in '+mapId;
+    window.__farmLog?.('[crates] '+lastEvent,'combat');
     return true;
   }
   function shatterBurden(burden,cause='impact') {
@@ -247,6 +264,7 @@
       const summary=Object.keys(drop.loot).slice(0,3).join(', ');
       window.Combat?.deps?.showToast?.('Collected crate junk: '+summary,false);
       lastEvent='collected '+drop.id+': '+summary;
+      window.__farmLog?.('[crates] '+lastEvent,'world');
     }
   }
   const debugSnapshot=()=>({

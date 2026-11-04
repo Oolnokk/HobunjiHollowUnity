@@ -1239,9 +1239,9 @@
   }
   function nearInteraction() {
     const p=playerPosition(),rec=records.get(area());
-    if(!p||!rec)return null;
+    if(!p)return null; // Interactive crate piles need not have any Shattercask spawns in this area.
     let choice=null,smallest=1.65;
-    for(const vase of rec.vases.values()) {
+    for(const vase of rec?.vases.values()||[]) {
       if(vase.exploded||vase.carried||vase.flying||vase.hanging||vase.plinthAttached)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
@@ -1249,7 +1249,7 @@
     const crates=window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
     if(crates){const pos=crates.group.getWorldPosition(new THREE.Vector3());const d=distance(p,{x:pos.x,z:pos.z});
       if(d<smallest){smallest=d;choice={type:'cratePile',obj:crates};}}
-    for(const pile of rec.piles.values()) {
+    for(const pile of rec?.piles.values()||[]) {
       const d=distance(p,{x:pile.x??pile.col+.5,z:pile.z??pile.row+.5});
       if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
     }
@@ -2362,7 +2362,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Single back-mounted Burden follows the avatar, tool arch, hit reactions, and fuse.',backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Single back-mounted Burden follows the avatar, tool arch, hit reactions, and fuse.',crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

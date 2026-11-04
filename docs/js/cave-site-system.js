@@ -650,10 +650,17 @@
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       propRecord.groups.set(prop.id, group); // Only actual, scene-attached props become candidate Sense Mode targets.
-      if(prop.key==='crateStack')window.CratePiles?.registerPile?.({
-        id:prop.id,mapId:id,group,scene,lootable:true,
-        count:prop.crateCount??3,onChange:count=>{prop.crateCount=count;},
-      });
+      if(prop.key==='crateStack'){
+        const profile=sitesByMapId.get(id); // Cache cave crate counts in its existing world-save state.
+        const saved=profile?stateFor(profile):null;
+        const count=saved?.crateCounts?.[prop.id]??prop.crateCount??3;
+        window.CratePiles?.registerPile?.({id:prop.id,mapId:id,group,scene,lootable:true,
+          count,onChange:remaining=>{
+            prop.crateCount=remaining;
+            if(saved){saved.crateCounts||={};saved.crateCounts[prop.id]=remaining;persistState(true);}
+          },
+        });
+      }
       return 1;
     }))).then(built => built.reduce((sum, n) => sum + n, 0));
   }
