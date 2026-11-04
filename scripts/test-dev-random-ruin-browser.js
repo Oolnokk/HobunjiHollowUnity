@@ -150,7 +150,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.deepEqual(projectileOnlySettings, {
     pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
-    safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
+    safePath:false,ropeSwing:false,ropeChain:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   const constrainedEntry = await page.evaluate(async seed => { // Observe scene entry in the same task that finishes the awaited transition, before shader warmup.
@@ -182,7 +182,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     };
   });
   assert.equal(constrained.puzzleOptions?.glyphObelisk, true, JSON.stringify(constrained));
-  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','hallwayTraps','lavaBasin','sanctum']) {
+  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','ropeChain','hallwayTraps','lavaBasin','sanctum']) {
     assert.equal(constrained.puzzleOptions?.[key], false, JSON.stringify(constrained));
   }
   assert.equal(constrained.puzzleOptions?.maxPerRoom, 1, JSON.stringify(constrained));
