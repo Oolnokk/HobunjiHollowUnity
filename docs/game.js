@@ -31805,6 +31805,7 @@
 
       window.ZonePlateauMesa?.init({
         NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
+        tileSurfaceYInArea, // The renderer and navigation graph must agree on exact terrain Y, including ramps and raised tiles.
         getCurrentArea: () => currentArea, // Keeps offscreen cliff supports out of the dungeon and other zones.
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
