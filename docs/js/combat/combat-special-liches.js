@@ -366,7 +366,7 @@
     else actor._banditAction=null;
     actor.telegraphState=null;actor._lichCastingAbility=null;
     if(completed) {
-      actor._specialMeleeCooldown=finalStep?setting(actor,'meleeCooldownSeconds',1.45):.16; // Tight follow-ups; the authored cooldown applies only after a full combo.
+      actor._specialMeleeCooldown=finalStep?setting(actor,'meleeCooldownSeconds',1.45):Math.max(.25,Number(actor._banditSwingHoldS)||.43); // Give each authored Strike Hold time to read before the next combo swing.
       if(finalStep){actor._specialComboStep=0;actor._specialComboUntilMs=0;} // A finished third strike has no further combo continuation.
     } else {
       actor._specialComboStep=0;actor._specialComboUntilMs=0;actor._specialLunge=null;actor._banditLunging=false;
@@ -498,7 +498,7 @@
       actor._specialModeClock+=dt;
       const switchSeconds=setting(actor,'switchSeconds',3.4);
       const phaseSeconds=switchSeconds*(actor._specialMode==='melee'?AZGARLU_MELEE_PHASE_MULT:1); // Approximate 75/25 melee/magic duty cycle.
-      const continuing=actor._banditAction||actor._specialLunge||performance.now()<(actor._specialComboUntilMs||0);
+      const continuing=actor._banditAction||actor._specialLunge||performance.now()<Math.max(actor._specialComboUntilMs||0,actor._specialStrikeHoldUntilMs||0); // Do not switch into magic while holding the warhammer's finishing strike.
       if(actor._specialModeClock>=phaseSeconds&&!continuing) {
         actor._specialModeClock=0;
         actor._specialMode=actor._specialMode==='magic'?'melee':'magic';
