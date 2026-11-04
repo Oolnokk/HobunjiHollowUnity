@@ -87,6 +87,15 @@
       const ice=body('ruin-fire-ice-seal-'+id,
         new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);
       rec.fireSource=source;rec.fireSeal=ice;
+      rec.meltProgress=0;rec.melting=false;
+      rec.animate=dt=>{
+        if(!rec.melting||rec.disposed||rec.meltProgress>=1)return;
+        rec.meltProgress=Math.min(1,rec.meltProgress+Math.max(0,Math.min(.05,Number(dt)||0))/.85);
+        const t=rec.meltProgress*rec.meltProgress*(3-2*rec.meltProgress); // Reverse the ice growth over a smooth .85s lerp.
+        ice.scale.y=Math.max(.02,1-t);
+        ice.position.y=y+1.18-1.04*t; // Retraction sinks toward the floor, like the authored iced doors.
+        if(t>=1)ice.visible=false;
+      };
       rec.fireRecord={
         id:'layer-fire-target-'+id,object:ice,active:true,contactPadding:.16,
         isActive:()=>!rec.disposed&&!rec.solved&&isActive()
@@ -94,6 +103,7 @@
         onBurn:()=>{
           if(!rec.fireRecord.isActive())return false;
           rec.fireRecord.active=false;
+          rec.melting=true;
           rec.fireSeal.material=hit;
           return complete();
         },
