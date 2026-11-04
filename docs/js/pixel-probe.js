@@ -1186,7 +1186,7 @@
       const support = cliffRegistry?.areas?.[cliffRegistry.areas.length - 1];
       const route = cliffGraph?.areas?.find?.(item => item.area === support?.area)
         || cliffGraph?.areas?.[cliffGraph.areas.length - 1];
-      lines.push(`Cliff navigation: area=${support?.area || route?.area || '-'} handholds=${route?.routes ?? '?'} raised=${support?.balconies ?? route?.balconies ?? '?'} supports=${support?.supportRectangles ?? '?'} unreachablePlateaus=${route?.unreachablePlateaus ?? '?'} unreachableBalconies=${route?.unreachableBalconies ?? '?'} invalidHops=${route?.invalidHops ?? '?'} error=${cliffRegistry?.lastError || 'none'}`);
+      lines.push(`Cliff navigation: area=${support?.area || route?.area || '-'} handholds=${route?.routes ?? '?'} raised=${support?.balconies ?? route?.balconies ?? '?'} supports=${support?.supportRectangles ?? '?'} unreachablePlateaus=${route?.unreachablePlateaus ?? '?'} unreachableBalconies=${route?.unreachableBalconies ?? '?'} invalidHops=${route?.invalidHops ?? '?'} rejectedRoutes=${route?.rejectedRoutes ?? '?'} error=${cliffRegistry?.lastError || 'none'}`);
       if (climbSafety?.balcony) lines.push(`Cliff player: shelf=${climbSafety.balcony} route=${climbSafety.handholdRoute ?? '-'} node=${climbSafety.handholdNode ?? '-'}`);
     }
     const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.

@@ -23,6 +23,38 @@
   const surface = (t, opts) => Number(opts.tileY?.(t) ?? ((t.elevTier || 0) * (opts.plateauUnit || 2.5)));
   const defaultBlocked = t => !t || t.incline || t.borderEscarpment || t.distantBoundaryLandscape || t.type === 'rock' || t.type === 'wall';
 
+  // Test the swept XZ segment against buffered footprints, including thin
+  // colliders that can sit between two individually clear handholds.
+  function crossesObstacle(from, to, obstacles, pad = 0.35) {
+    return obstacles.some(rect => {
+      let enter = 0, leave = 1;
+      for (const [axis, lo, hi] of [
+        ['x', rect.x - pad, rect.x + rect.w + pad],
+        ['z', rect.y - pad, rect.y + rect.h + pad],
+      ]) {
+        const start = from[axis], delta = to[axis] - start;
+        if (Math.abs(delta) < 1e-6) {
+          if (start < lo || start > hi) return false;
+          continue;
+        }
+        const a = (lo - start) / delta, b = (hi - start) / delta;
+        enter = Math.max(enter, Math.min(a, b));
+        leave = Math.min(leave, Math.max(a, b));
+        if (enter > leave) return false;
+      }
+      return true;
+    });
+  }
+
+  function overlapsClimb(network, rect) {
+    if (!network) return false;
+    const obstacles = [rect]; // Den turnover uses the same clearance as initial route selection.
+    return network.routes.some(route => route.nodes.some(from => from.links.some(id =>
+      id > from.id && crossesObstacle(from, route.nodes[id], obstacles)))) ||
+      network.balconies.some(shelf => shelf.footprint.some(cell =>
+        cell.c < rect.x + rect.w && cell.c + 1 > rect.x && cell.r < rect.y + rect.h && cell.r + 1 > rect.y));
+  }
+
   // The lower face of a miniature overhang is a separate, VISUAL-ONLY
   // tile footprint. Every cell must belong to the actual higher parent
   // plateau and lie below its walkable top; it never registers as support.
@@ -42,7 +74,7 @@
         const col = candidate.b.c + candidate.dir.x * distance - candidate.dir.z * lateral;
         const row = candidate.b.r + candidate.dir.z * distance + candidate.dir.x * lateral;
         if (!parentInterior(col, row)) continue;
-        centers.push({ c: col, r: row, score: distance * 2 + Math.abs(lateral) * 3 });
+        centers.push({ c: col, r: row, score: distance + Math.abs((col + 0.5 - shelf.x) * shelf.tangent.x + (row + 0.5 - shelf.z) * shelf.tangent.z) * 3 });
       }
     }
     // A narrow parent plateau might have no tile with all four neighboring
@@ -53,7 +85,7 @@
         for (let lateral = -3; lateral <= 3; lateral++) {
           const col = candidate.b.c + candidate.dir.x * distance - candidate.dir.z * lateral;
           const row = candidate.b.r + candidate.dir.z * distance + candidate.dir.x * lateral;
-          if (containsParent(col, row)) centers.push({ c: col, r: row, score: distance * 2 + Math.abs(lateral) * 3 });
+          if (containsParent(col, row)) centers.push({ c: col, r: row, score: distance + Math.abs((col + 0.5 - shelf.x) * shelf.tangent.x + (row + 0.5 - shelf.z) * shelf.tangent.z) * 3 });
         }
       }
     }
@@ -61,21 +93,16 @@
     centers.sort((a, b) => a.score - b.score || hash(a.c, a.r, 103) - hash(b.c, b.r, 103));
     const center = centers[0], wideInterior = parentInterior(center.c, center.r);
     const upperY = surface(grid[center.r][center.c], opts);
-    const baseY = Math.max(candidate.y0 + 0.12, Math.min(shelf.y - 0.54, upperY - 0.40));
+    const baseY = Math.max(candidate.y0 + 0.12, Math.min(shelf.y - 1.35, upperY - 0.40));
     if (!(baseY < shelf.y - 0.19 && baseY < upperY - 0.19)) return null;
     const footprint = [{ c: center.c, r: center.r, elevation: baseY }]; // Always entirely inside the parent's walkable footprint.
-    const neighbors = wideInterior ? DIRS.filter(d => parentInterior(center.c + d.x, center.r + d.z)) : [];
-    if (neighbors.length) {
-      const direction = neighbors[hash(center.c, center.r, 55) % neighbors.length];
-      footprint.push({ c: center.c + direction.x, r: center.r + direction.z, elevation: baseY });
-    }
     const minC = Math.min(...footprint.map(cell => cell.c)), maxC = Math.max(...footprint.map(cell => cell.c));
     const minR = Math.min(...footprint.map(cell => cell.r)), maxR = Math.max(...footprint.map(cell => cell.r));
     return {
       x: (minC + maxC + 1) / 2, z: (minR + maxR + 1) / 2,
       y: baseY, elevation: baseY, footprint, // Explicit lower tile elevations parallel the top footprint entries.
       parentComponent: candidate.bComp, // Validation: lower face is inside the owning upper plateau.
-      inset: wideInterior ? 0.17 : 0.32, // Narrow plateau bases are tucked farther inside their one actual parent tile.
+      inset: wideInterior ? 0.28 : 0.35, // Narrow plateau bases are tucked farther inside their one actual parent tile.
     };
   }
 
@@ -143,6 +170,8 @@
     const parent = components.map((_, i) => i); // Spanning forest: every component with a possible connection receives at least one route.
     const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
     const routes = [], selected = [], busy = [];
+    const obstacles = opts.obstacles || []; // Static cave and prop footprints in zone coordinates.
+    let rejectedRoutes = 0; // Pixel Probe count of candidate faces with missing geometry or blocked hops.
     for (const candidate of candidates) {
       const a = find(candidate.aComp), b = find(candidate.bComp);
       const required = a !== b;
@@ -150,52 +179,39 @@
       const spaced = busy.every(p => Math.hypot(p.x - midx, p.z - midz) >= 7);
       const optional = spaced && hash(candidate.a.c, candidate.a.r, candidate.b.c + candidate.b.r) % 100 < 12;
       if (!required && !optional) continue;
-      selected.push(candidate); busy.push({ x: midx, z: midz });
+      const route = planRoute(candidate, routes.length, opts.sampleFace, obstacles);
+      if (!route) { rejectedRoutes++; continue; }
+      selected.push(candidate);
+      routes.push(route);
+      busy.push({ x: midx, z: midz });
       if (required) parent[b] = a;
     }
     const balconies = [];
-    for (const c of selected) {
-      const id = routes.length, h = Math.abs(c.y1 - c.y0);
-      const spans = clamp(Math.ceil(Math.max(h / 0.54, (c.walls + 1) / 0.56)), 3, 95);
-      const tan = { x: -c.dir.z, z: c.dir.x }, normal = { x: -c.dir.x, z: -c.dir.z };
-      const nodes = [];
-      for (let i = 0; i <= spans; i++) {
-        const t = i / spans;
-        const wiggle = (i === 0 || i === spans) ? 0
-          : (Math.sin(t * Math.PI * (2 + (hash(c.a.c, c.a.r, 5) % 3))) * 0.32);
-        nodes.push({
-          id: i, x: c.a.c + 0.5 + (c.b.c - c.a.c) * t + tan.x * wiggle,
-          z: c.a.r + 0.5 + (c.b.r - c.a.r) * t + tan.z * wiggle,
-          y: c.y0 + (c.y1 - c.y0) * t, links: [],
-        });
-        if (i) { nodes[i - 1].links.push(i); nodes[i].links.push(i - 1); }
-      }
-      // Branching sideways detours make these actual climbing paths, not a disguised timed auto-climb.
-      for (let i = 3; i < spans - 2; i += 5) {
-        const sign = hash(c.a.c, c.a.r, i) & 1 ? 1 : -1;
-        const at = nodes[i];
-        const branchId = nodes.length;
-        nodes.push({
-          id: branchId, x: at.x + tan.x * sign * 0.58, z: at.z + tan.z * sign * 0.58,
-          y: at.y + 0.02, links: [i, i + 1],
-        });
-        nodes[i].links.push(branchId); nodes[i + 1].links.push(branchId);
-      }
-      const route = { id, a: c.a, b: c.b, aComp: c.aComp, bComp: c.bComp, dir: c.dir, tangent: tan, normal, nodes, upperNode: spans };
+    for (const route of routes) {
+      const c = selected[route.id], id = route.id, h = c.y1 - c.y0;
+      const { nodes, upperNode: spans, tangent: tan, normal } = route;
       if (h >= 1.5 && hash(c.a.c, c.a.r, 83) % 100 < 38) {
         const count = h >= 8 ? 2 : 1;
+        const oldSpans = clamp(Math.ceil(Math.max(h / 0.54, (c.walls + 1) / 0.56)), 3, 95); // Preserve existing reward save keys.
         for (let j = 0; j < count; j++) {
-          const idx = clamp(Math.round(spans * (j + 1) / (count + 1)), 2, spans - 2), anchor = nodes[idx];
+          const idx = clamp(Math.round(spans * (j + 1) / (count + 1)), 1, spans - 2), anchor = nodes[idx];
+          const width = 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16; // Width across the face.
+          const depth = 1.0 + (hash(c.a.c, c.a.r, 67 + j) % 5) * 0.13; // Extent into and out of the face.
+          const side = j % 2 ? -1 : 1; // Keep the ascent beside the overhang.
+          const along = side * (width / 2 + 0.42); // Center offset leaves space for the climber at the side edge.
+          const face = opts.sampleFace?.(c, anchor.x + tan.x * along, anchor.y, anchor.z + tan.z * along);
+          if (opts.sampleFace && !face) continue;
+          const faceX = face?.x ?? anchor.x + tan.x * along; // Intersect the cliff at the shelf's own lateral position.
+          const faceZ = face?.z ?? anchor.z + tan.z * along;
+          const oldIndex = clamp(Math.round(oldSpans * (j + 1) / (count + 1)), 2, oldSpans - 2);
+          const savedHeight = Math.round((c.y0 + h * oldIndex / oldSpans) * 100); // Keep existing reward state for surviving shelves.
           const shelf = {
-            // The inventory save key must survive route array reordering on terrain rebuilds.
-            // Position/elevation identify the actual physical shelf, not its incidental list index.
-            id: 'cliff-balcony-' + [c.a.c, c.a.r, c.b.c, c.b.r, Math.round(anchor.y * 100), j].join('-'),
+            id: 'cliff-balcony-' + [c.a.c, c.a.r, c.b.c, c.b.r, savedHeight, j].join('-'),
             routeId: id, nodeId: nodes.length,
-            x: anchor.x + tan.x * (j % 2 ? -0.4 : 0.4) + normal.x * 0.19,
-            z: anchor.z + tan.z * (j % 2 ? -0.4 : 0.4) + normal.z * 0.19,
+            x: faceX + normal.x * (depth / 2 - 0.32),
+            z: faceZ + normal.z * (depth / 2 - 0.32),
             y: anchor.y,
-            width: 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16, // Two-to-three tile micro-plateau width.
-            depth: 1.0 + (hash(c.a.c, c.a.r, 67 + j) % 5) * 0.13, // Narrow overhanging shelf depth.
+            width, depth,
             tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
             reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
           };
@@ -224,12 +240,34 @@
           // upper plateau's rock; it cannot act as a second ledge or collision plane.
           shelf.base = embeddedMiniCliffBase(c, shelf, grid, component, cols, rows, opts);
           if (!shelf.base) continue;
-          nodes.push({ id: shelf.nodeId, x: shelf.x, z: shelf.z, y: shelf.y, links: [idx], balconyId: shelf.id });
+          const landing = {
+            id: shelf.nodeId, y: shelf.y, links: [idx], balconyId: shelf.id,
+            x: shelf.x - tan.x * side * (width / 2 - 0.22),
+            z: shelf.z - tan.z * side * (width / 2 - 0.22),
+          }; // A lateral hop lands just inside the cap, clear of its center reward.
+          const halfX = (Math.abs(tan.x) * width + Math.abs(normal.x) * depth) / 2; // Cardinal cap bounds.
+          const halfZ = (Math.abs(tan.z) * width + Math.abs(normal.z) * depth) / 2;
+          const capBlocked = obstacles.some(rect => rect.x < shelf.x + halfX + 0.35 && rect.x + rect.w > shelf.x - halfX - 0.35 &&
+            rect.y < shelf.z + halfZ + 0.35 && rect.y + rect.h > shelf.z - halfZ - 0.35);
+          const capBounds = [{ x: shelf.x - halfX, y: shelf.z - halfZ, w: halfX * 2, h: halfZ * 2 }];
+          const shelfBlocksRoute = routes.some(other => {
+            if (Math.abs(other.a.c + 0.5 - shelf.x) >= 9 || Math.abs(other.a.r + 0.5 - shelf.z) >= 9) return false;
+            return other.nodes.some(from => from.links.some(index => {
+              if (index <= from.id) return false;
+              const to = other.nodes[index];
+              if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.base.y - 0.85) return false;
+              return crossesObstacle(from, to, capBounds, 0.25);
+            }));
+          });
+          const landingFace = opts.sampleFace?.(c, landing.x, landing.y, landing.z);
+          if (opts.sampleFace && (!landingFace ||
+              (landing.x - landingFace.x) * normal.x + (landing.z - landingFace.z) * normal.z < 0.08)) continue;
+          if (capBlocked || shelfBlocksRoute || !legalHop(anchor, landing, obstacles)) continue;
+          nodes.push(landing);
           nodes[idx].links.push(shelf.nodeId);
           balconies.push(shelf);
         }
       }
-      routes.push(route);
     }
     const adjacency = components.map(() => []); // Component graph used by creatures to find a real path instead of popping up a wall.
     for (const route of routes) {
@@ -238,12 +276,70 @@
     }
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
-      unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length };
+      unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes };
     // Adapt ShaftHub.reachable(): walking components, legal climbing links,
     // and every balcony node must be reachable from some ground entrance.
     network.verification = verifyReachability(network);
     debug.builds++; debug.lastArea = network.area;
     return network;
+  }
+
+  function legalHop(from, to, obstacles) {
+    const distance = Math.hypot(to.x - from.x, to.z - from.z, to.y - from.y); // Shared with reachability's hop limits.
+    return distance >= 0.02 && distance <= 1.20 && !crossesObstacle(from, to, obstacles);
+  }
+
+  function planRoute(c, id, sampleFace, obstacles) {
+    const height = c.y1 - c.y0; // Used to space holds from the foot to just below the lip.
+    const spans = clamp(Math.ceil(Math.max(height / 0.48, (c.walls + 1) / 0.56)), 5, 95);
+    const tangent = { x: -c.dir.z, z: c.dir.x }, normal = { x: -c.dir.x, z: -c.dir.z };
+    const start = { x: c.a.c + 0.5, z: c.a.r + 0.5, y: c.y0 };
+    const end = { x: c.b.c + 0.5, z: c.b.r + 0.5, y: c.y1 };
+    const nodes = [{ ...start, id: 0, links: [] }];
+    const facePoint = (x, y, z) => {
+      if (!sampleFace) return { x, y, z }; // Nominal grid profile for headless graph callers.
+      const face = sampleFace(c, x, y, z);
+      return face && { x: face.x + normal.x * 0.24, y, z: face.z + normal.z * 0.24 };
+    };
+    const clearOfFace = (from, to) => {
+      if (!sampleFace) return true;
+      for (const t of [0.25, 0.5, 0.75]) {
+        const x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+        const y = from.y + (to.y - from.y) * t; // Check the movement chord, not just the endpoints.
+        if (y >= c.y1) continue;
+        const face = sampleFace(c, x, y, z);
+        if (face && (x - face.x) * normal.x + (z - face.z) * normal.z < 0.07) return false;
+      }
+      return true;
+    };
+    const append = (point, links) => {
+      if (!point || !links.every(index => legalHop(nodes[index], point, obstacles) && clearOfFace(nodes[index], point))) return false;
+      const next = nodes.length; // IDs index the route array for player, wildlife and NPC traversal.
+      nodes.push({ ...point, id: next, links });
+      for (const index of links) nodes[index].links.push(next);
+      return true;
+    };
+    for (let i = 1; i < spans - 1; i++) {
+      const t = i / (spans - 1), wiggle = Math.sin(t * Math.PI * (2 + hash(c.a.c, c.a.r, 5) % 3)) * 0.28;
+      const y = c.y0 + height * t; // Sample the existing displaced rock at this hold's height.
+      const x = start.x + (end.x - start.x) * t + tangent.x * wiggle;
+      const z = start.z + (end.z - start.z) * t + tangent.z * wiggle;
+      const point = facePoint(x, y, z);
+      if (!append(point, [i - 1]) &&
+          !append(facePoint(x - tangent.x * wiggle, y, z - tangent.z * wiggle), [i - 1])) return null;
+    }
+    const last = nodes[nodes.length - 1]; // Rise outside the lip, then hop horizontally onto the top.
+    const rimY = c.y1 - Math.min(0.12, height / spans); // Sample below the lip where steep geometry still exists.
+    const rim = facePoint(end.x + normal.x * 0.35, rimY, end.z + normal.z * 0.35);
+    if (!rim || !append({ ...rim, y: c.y1 + 0.08, transfer: true }, [last.id]) ||
+        !append(end, [spans - 1])) return null;
+    for (let i = 2; i < spans - 2; i += 5) {
+      const sign = hash(c.a.c, c.a.r, i) & 1 ? 1 : -1;
+      const at = nodes[i];
+      append(facePoint(at.x + tangent.x * sign * 0.58, at.y + 0.02, at.z + tangent.z * sign * 0.58), [i, i + 1]);
+    }
+    return { id, a: c.a, b: c.b, aComp: c.aComp, bComp: c.bComp, dir: c.dir, tangent, normal, nodes, upperNode: spans,
+      project: sampleFace && ((x, y, z) => sampleFace(c, x, y, z)) };
   }
 
   // Dungeon ShaftHub.reachable checks (col,row,level). Outdoors, ordinary
@@ -354,7 +450,9 @@
     for (const id of node.links) {
       const to = route.nodes[id];
       const du = (to.x - node.x) * route.tangent.x + (to.z - node.z) * route.tangent.z;
-      const dv = (to.y - node.y) / 1.15;
+      const normalTravel = (to.x - node.x) * route.normal.x + (to.z - node.z) * route.normal.z;
+      const dv = node.transfer && id === route.upperNode || to.transfer && nodeId === route.upperNode
+        ? -normalTravel : (to.y - node.y) / 1.15; // The rim-to-top hop follows horizontal inward/outward input.
       const length = Math.hypot(du, dv);
       if (length < 0.02) continue;
       const wantU = ((input.x || 0) * route.tangent.x + (input.z || 0) * route.tangent.z) / norm;
@@ -443,12 +541,16 @@
   function makeMiniCliffRockMesh(THREE, scene, network, material) {
     const shelves = network.balconies.filter(s => s.base?.footprint?.length);
     if (!shelves.length) return null;
-    const positions = []; // One draw call's top caps and tapered undersides.
+    const positions = [], uvs = []; // One draw call's textured top caps and tapered undersides.
     const ringCorners = [
       [-1, -1], [0, -1], [1, -1], [1, 0],
       [1, 1], [0, 1], [-1, 1], [-1, 0],
     ];
-    const pushFace = (a, b, c) => positions.push(...a, ...b, ...c);
+    const pushFace = (a, b, c, side = false) => {
+      positions.push(...a, ...b, ...c);
+      const useX = Math.abs(a[0] - b[0]) >= Math.abs(a[2] - b[2]); // Tile the rock down the taper.
+      for (const p of [a, b, c]) uvs.push(side ? p[useX ? 0 : 2] : p[0], side ? p[1] : p[2]);
+    };
     const mix = (a, b, t) => a + (b - a) * t;
     for (const shelf of shelves) {
       const base = shelf.base;
@@ -466,7 +568,8 @@
         shelf.z + shelf.tangent.z * u * shelf.width / 2 + shelf.normal.z * v * shelf.depth / 2,
       ]);
       const bottom = ringCorners.map(([u, v]) => {
-        const x = mix(loX, hiX, (u + 1) / 2), z = mix(loZ, hiZ, (v + 1) / 2);
+        const x = (loX + hiX) / 2 + (shelf.tangent.x * u + shelf.normal.x * v) * (hiX - loX) / 2;
+        const z = (loZ + hiZ) / 2 + (shelf.tangent.z * u + shelf.normal.z * v) * (hiZ - loZ) / 2;
         // Read the base tile's OWN elevation. Later authored underside
         // shapes can adjust tile elevations without affecting collision.
         const owner = base.footprint.find(tile =>
@@ -491,14 +594,15 @@
         // The walkable cap has its ORIGINAL precise XZ and Y. The
         // underside's inner base cannot become a second landing surface.
         pushFace(center, top[j], top[i]);
-        pushFace(top[i], top[j], middle[j]);
-        pushFace(top[i], middle[j], middle[i]);
-        pushFace(middle[i], middle[j], bottom[j]);
-        pushFace(middle[i], bottom[j], bottom[i]);
+        pushFace(top[i], top[j], middle[j], true);
+        pushFace(top[i], middle[j], middle[i], true);
+        pushFace(middle[i], middle[j], bottom[j], true);
+        pushFace(middle[i], bottom[j], bottom[i], true);
       }
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material);
@@ -516,7 +620,7 @@
   let _stoneMaterial = null; // Shared rock material for actual stacked mini-cliff geometry.
   let _chestWoodMaterial = null; // Shared by all scenery rebuilds; old per-render allocations leaked GPU materials.
   let _chestLidMaterial = null; // Same lifecycle as the stone and decal materials.
-  function render(THREE, scene, network) {
+  function render(THREE, scene, network, rockMaterial) {
     if (!THREE || !scene || !network) return [];
     if (!_holdMaterial) {
       const texture = new THREE.TextureLoader().load('assets/textures/carved_smooth.png');
@@ -529,7 +633,7 @@
     const vertices = [], uvs = [];
     const uvSteps = [0, 0.32, 0.68, 1]; // Nine-slice margins preserve the carved border when each hold is stretched.
     for (const route of network.routes) for (const node of route.nodes) {
-      if (node.id === 0 || node.id === route.upperNode || node.balconyId) continue;
+      if (node.id === 0 || node.id === route.upperNode || node.transfer || node.balconyId) continue;
       const h = hash(Math.floor(node.x * 13), Math.floor(node.y * 13), route.id);
       const width = 0.21 + (h % 100) / 900, height = 0.23 + ((h >>> 8) % 100) / 800;
       const skew = (((h >>> 16) % 100) / 100 - 0.5) * width * 0.4;
@@ -539,9 +643,13 @@
         const corner = (ix, iy) => {
           const w = xs[ix] + skew * (iy / 3 - 0.5);
           const up = ys[iy] + (ix === 0 || ix === 3 ? Math.sin((h % 13) + iy * 2) * 0.025 : 0);
-          return [node.x + route.tangent.x * w + route.normal.x * 0.04, node.y + up, node.z + route.tangent.z * w + route.normal.z * 0.04];
+          const x = node.x + route.tangent.x * w, y = node.y + up, z = node.z + route.tangent.z * w;
+          const face = route.project?.(x, y, z); // All nine-slice vertices follow the actual slope.
+          if (route.project && !face) return null;
+          return [(face?.x ?? x) + route.normal.x * 0.012, y, (face?.z ?? z) + route.normal.z * 0.012];
         };
         const p00 = corner(c, r), p10 = corner(c + 1, r), p01 = corner(c, r + 1), p11 = corner(c + 1, r + 1);
+        if (!p00 || !p10 || !p01 || !p11) continue;
         vertices.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
         uvs.push(uvSteps[c], 1 - uvSteps[r], uvSteps[c + 1], 1 - uvSteps[r], uvSteps[c + 1], 1 - uvSteps[r + 1],
           uvSteps[c], 1 - uvSteps[r], uvSteps[c + 1], 1 - uvSteps[r + 1], uvSteps[c], 1 - uvSteps[r + 1]);
@@ -575,7 +683,7 @@
       scene.add(inst); meshes.push(inst);
       return inst;
     };
-    const cap = makeMiniCliffRockMesh(THREE, scene, network, _stoneMaterial);
+    const cap = makeMiniCliffRockMesh(THREE, scene, network, rockMaterial || _stoneMaterial);
     if (cap) meshes.push(cap); // Already generated as one fused mesh across all inverted profiles.
     const ores = shelves.filter(s => s.reward === 'oreRock');
     const chests = shelves.filter(s => s.reward !== 'oreRock');
@@ -616,12 +724,12 @@
     return meshes;
   }
   return Object.freeze({
-    build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render,
+    build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
     getRewardState, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,
-      components: n.components.length, disconnectedSets: n.unconnectedComponents, candidates: n.candidateCount,
+      components: n.components.length, rejectedRoutes: n.rejectedRoutes, disconnectedSets: n.unconnectedComponents, candidates: n.candidateCount,
       unreachablePlateaus: n.verification?.unreachablePlateaus?.length ?? null,
       unreachableBalconies: n.verification?.unreachableBalconies?.length ?? null,
       invalidHops: n.verification?.invalidHops?.length ?? null,

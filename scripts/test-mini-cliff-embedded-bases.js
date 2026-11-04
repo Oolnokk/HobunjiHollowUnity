@@ -99,6 +99,16 @@ for(let i=0;i<net.balconies.length;i++) {
   const bottom=verts.filter(v=>Math.abs(v.y-base.y)<0.001);
   const top=verts.filter(v=>Math.abs(v.y-shelf.y)<0.001);
   assert(bottom.length>0&&top.length>0,'both elevations appear in the actual render geometry');
+  for (const axis of ['x', 'z']) {
+    const span = points => Math.max(...points.map(v => v[axis])) - Math.min(...points.map(v => v[axis]));
+    assert(span(top) > span(bottom), 'the rock shell tapers inward on both axes');
+  }
+  const route = net.routes[shelf.routeId];
+  const landing = route.nodes[shelf.nodeId], approach = route.nodes[landing.links[0]];
+  assert(!routes.shelfContains(shelf, approach.x, approach.z) && routes.shelfContains(shelf, landing.x, landing.z),
+    'the climb joins the cap from the side');
+  assert.equal(approach.y, landing.y, 'the transfer reaches across at cap height');
+
   assert(verts.every(v=>v.y<=shelf.y+0.001&&v.y>=base.y-0.001),'taper lies between top and embedded base');
   for(const v of bottom)assert(base.footprint.some(t=>
     v.x>=t.c-0.001&&v.x<=t.c+1.001&&v.z>=t.r-0.001&&v.z<=t.r+1.001),
