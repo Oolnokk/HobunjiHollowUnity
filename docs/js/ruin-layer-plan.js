@@ -11,7 +11,7 @@
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
-  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho']); // Shared by composer and acceptance proof.
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
