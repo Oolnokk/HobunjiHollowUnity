@@ -709,9 +709,13 @@
     return chain;
   }
 
-  function ropeChainPitAt(x,z) {
+  function ropeChainPitAt(x,z,feetY=null) {
+    // A vertical ruin can contain the same X/Z location at multiple story
+    // heights. A pit on one floor must never kill somebody walking below it.
+    const y=Number(feetY); // Player feet elevation for vertically stacked shaft wings.
     return state?.ropeChains?.find(chain=>x>chain.bounds.minX+.015&&x<chain.bounds.maxX-.015
-      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015)||null;
+      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015
+      &&(!chain.external||!Number.isFinite(y)||(y>=chain.floorY-3.4&&y<=chain.floorY+1.35)))||null;
   }
 
   function instantRopeChainDeath() {
@@ -2263,7 +2267,7 @@
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
-    const chain=ropeChainPitAt(f.x,f.z);
+    const chain=ropeChainPitAt(f.x,f.z,f.y);
     if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;} // No downed state on a missed airborne rope catch.
     if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
       respawnAtCheckpoint('rope-fall');
@@ -2515,6 +2519,73 @@
     return true;
   }
 
+  function registerExternalRopeChain(spec){
+    // Layered ruin rooms use the *same* ride, pump, release-flight, mid-air
+    // catch and checkpoint machinery as the V50 abyss hallway. No second
+    // player-motion implementation or teleports are introduced here.
+    const active=window.DevRandomRuin?.getRuntimeContext?.(); // Prevent old sessions from claiming ropes during a fast generation reroll.
+    if(!state||!inRuin()||state.root!==active?.root||!spec?.id
+      ||!Array.isArray(spec.anchors)||spec.anchors.length<3||!spec.bounds
+      ||!spec.entry||!spec.exit)return null;
+    const id=String(spec.id);
+    if(state.ropeChains.some(c=>c.id===id))return null;
+    const ropes=[]; // Native rider ropes owned by this external floor; removed when the wing is destroyed.
+    const room={id:'layer_'+id};
+    const length=Math.max(ROPE_MIN_LENGTH,Number(spec.length)||2.43);
+    const maxLength=Math.max(length,Number(spec.maxLength)||length);
+    try{
+      for(let i=0;i<spec.anchors.length;i++){
+        const anchor=spec.anchors[i];
+        if(![anchor.x,anchor.y,anchor.z].every(Number.isFinite))throw new Error('Invalid rope anchor');
+        const bank=i===0?spec.entry:i===spec.anchors.length-1?spec.exit:null;
+        const rope=createRopeObject({
+          room,idSuffix:String(i),anchor,yaw:Number(spec.yaw)||0,
+          length,maxLength,minBobY:Number(spec.floorY)+.12,
+          angle:i===0?-.12:i===spec.anchors.length-1?.12:0,
+          grabPoint:bank?{...bank,y:Number(spec.floorY)+.92}:null,
+        });
+        rope.ropeChainHallId=id; // Enables both-way aerial catching through the canonical V50 release-flight loop.
+        rope.externalRopeChain=true;
+        rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
+        // Upper-story rope visuals disappear along with their owning story's
+        // room meshes, instead of hanging visibly above the camera.
+        for(const object of [rope.mesh,rope.marker,rope.mount])spec.parent?.add?.(object);
+        state.ropes.push(rope);ropes.push(rope);
+      }
+      const chain={id,external:true,scopeRoot:state.root,ropes,
+        axis:spec.bounds.axis||'x',
+        bounds:{minX:spec.bounds.minX,maxX:spec.bounds.maxX,minZ:spec.bounds.minZ,maxZ:spec.bounds.maxZ},
+        entry:{...spec.entry},exit:{...spec.exit},floorY:Number(spec.floorY),
+        checkpointIds:{start:'rope-chain-'+id+'-start',end:'rope-chain-'+id+'-end'}};
+      state.ropeChains.push(chain);
+      recordModulePlacement('layerRopeChainAbyss','layer',id,{
+        ropeCount:ropes.length,instantDeath:true,checkpointIds:chain.checkpointIds});
+      return chain;
+    }catch(error){
+      for(const rope of ropes){
+        const index=state.ropes.indexOf(rope);
+        if(index>=0)state.ropes.splice(index,1);
+        disposeRopeObject(rope);
+      }
+      console.warn('[Random Test Ruin] external rope chain creation failed:',id,error);
+      return null;
+    }
+  }
+
+  function removeExternalRopeChain(chain){
+    if(!chain?.external||!state||state.root!==chain.scopeRoot)return false;
+    const index=state.ropeChains.indexOf(chain);
+    if(index<0)return false;
+    state.ropeChains.splice(index,1);
+    for(const rope of chain.ropes){
+      if(rope.attached)releaseRope(rope);
+      const n=state.ropes.indexOf(rope);
+      if(n>=0)state.ropes.splice(n,1);
+      disposeRopeObject(rope);
+    }
+    return true;
+  }
+
   function registerExternalProjectileTarget(target){
     // Layered shaft chambers are composed before this V50 puzzle state is
     // initialized; they retry registration after entering the map. Reuse
@@ -2533,12 +2604,13 @@
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
     addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
+    registerExternalRopeChain,removeExternalRopeChain,
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
     respawnAtCheckpoint,
-    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z)), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
+    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
     instantRopeChainDeath,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.
