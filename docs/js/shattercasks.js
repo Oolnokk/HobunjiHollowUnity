@@ -455,53 +455,6 @@
     const composer=window.PlayerBodyTransformComposer; // Authoritative body root for back attachment and rear-portrait layering.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
   }
-  let heldHeadFrame=null; // {body, neck, anchor}: rigid attachment frame used only while a burden is held in the hands.
-  // A neutral-head frame maps the existing posterior-authored body coordinates into
-  // the neck bone's space ONCE per avatar. Live neck/head turns then move the
-  // burden, and inherited body lean/rotation still reaches it naturally.
-  function heldHeadMount(body){
-    const neck=window.PlayerBodyTransformComposer?.getPlayerNeckJoint?.(); // Current animated head joint; used only by hand-held Burdens.
-    if(!body?.isObject3D||!neck?.isBone||!neck.parent)return null;
-    let ancestor=neck;
-    while(ancestor&&ancestor!==body)ancestor=ancestor.parent;
-    if(ancestor!==body)return null; // Never attach to a stale or unrelated avatar.
-    if(heldHeadFrame?.body===body&&heldHeadFrame.neck===neck&&heldHeadFrame.anchor.parent===neck)
-      return heldHeadFrame.anchor;
-    const parent=neck.parent; // Neutral neck space omits current head yaw/pitch; authored offsets remain stable.
-    parent.updateWorldMatrix?.(true,false);
-    body.updateWorldMatrix?.(true,false);
-    const mount=new THREE.Group();
-    mount.name='burden_held_head_frame';
-    const bodyOrigin=body.localToWorld(new THREE.Vector3()); // Convert the body/pelvis origin to the unrotated neck-parent frame.
-    mount.position.copy(parent.worldToLocal(bodyOrigin)).sub(neck.position);
-    const neckScale=neck.scale||{x:1,y:1,z:1};
-    mount.position.set(mount.position.x/(neckScale.x||1),mount.position.y/(neckScale.y||1),
-      mount.position.z/(neckScale.z||1));
-    const worldRotation=node=>{ // The player rig can have mirrored scales: multiply quaternions, never decompose a reflected matrix.
-      const q=new THREE.Quaternion(),chain=[];
-      for(let part=node;part;part=part.parent)chain.unshift(part);
-      for(const part of chain)q.multiply(part.quaternion);
-      return q;
-    };
-    mount.quaternion.copy(worldRotation(parent).invert().multiply(worldRotation(body)));
-    const bodyScale=body.getWorldScale(new THREE.Vector3()); // Cancels avatar-to-neck rig scale so the editor's item size is unchanged.
-    const parentScale=parent.getWorldScale(new THREE.Vector3());
-    mount.scale.set(
-      bodyScale.x/((parentScale.x||1)*(neckScale.x||1)),
-      bodyScale.y/((parentScale.y||1)*(neckScale.y||1)),
-      bodyScale.z/((parentScale.z||1)*(neckScale.z||1)));
-    neck.add(mount);
-    heldHeadFrame={body,neck,anchor:mount};
-    return mount;
-  }
-  function discardUnusedHeldHeadFrame(previous=null){
-    const current=heldHeadFrame?.anchor;
-    if(previous&&previous!==current)previous.parent?.remove?.(previous); // Removes a former avatar's emptied frame after handoff.
-    if(current&&(!held||held.group?.parent!==current)){
-      current.parent?.remove?.(current);
-      heldHeadFrame=null;
-    }
-  }
   function heldItemHolder(){
     const d=carryDeps();
     return d?.getHeldItemHandTarget?.()?.holder
@@ -531,12 +484,9 @@
   }
   function alignHeldVase(vase) {
     const isBack=backCarried===vase;
-    const body=isBack?backCarryRoot():(window.PlayerBodyTransformComposer?.getPlayerMesh?.()||carryDeps()?.playerMesh);
+    const body=isBack?backCarryRoot():carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
-    const previousHeadFrame=heldHeadFrame?.anchor; // Clean up a former neck frame after switching between head and root mounts.
-    const attachment=isBack?body:(heldHeadMount(body)||body);
-    if(vase.group.parent!==attachment)attachment.add(vase.group);
-    discardUnusedHeldHeadFrame(previousHeadFrame);
+    if(vase.group.parent!==body)body.add(vase.group);
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
     const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
     const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
@@ -569,7 +519,7 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    const base=!isBack&&aimingThrow?.socketBase;
+    const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
       const live=currentThrowSocketPose();
       if(live?.holder===base.holder){
@@ -584,10 +534,8 @@
     return true;
   }
   function heldHandTarget(){
-    const holder=held?.group; // Procedural hands must keep tracking the same physical Burden after it is head-mounted.
-    return holder?.parent&&(holder.parent===heldHeadFrame?.anchor||holder.parent===carryDeps()?.playerMesh
-      ||holder.parent===window.PlayerBodyTransformComposer?.getPlayerMesh?.())
-      ?{holder,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
+    return held?.group?.parent&&held.group.parent===carryDeps()?.playerMesh
+      ?{holder:held.group,mode:'authored-world',handTargets:held.data?.carryable?.handTargets||{}}:null;
   }
   function updateEmitters(dt,mapId,targetScene){
     const rec=records.get(mapId);
@@ -2224,7 +2172,6 @@
       if(p)held.group.position.set(p.x+Math.cos(p.angle)*.60,
         baseHeight(Math.floor(p.x),Math.floor(p.z))+.75,p.z+Math.sin(p.angle)*.60);
     }
-    if(!held)discardUnusedHeldHeadFrame(); // Remove an empty head frame after throw, plinth transfer, drop or detonation.
     updateEmitters(Math.min(.1,Math.max(0,Number(dt)||0)),mapId,records.get(mapId)?.scene);
     elapsed+=Math.min(.2,Math.max(0,Number(dt)||0));
     if(elapsed<POLL_S)return;
@@ -2429,7 +2376,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Held Burdens follow the animated neck/head; back-stowed Burdens follow the body root.',heldMount:held?{mode:held.group?.parent===heldHeadFrame?.anchor?'head':'root-fallback',parent:held.group?.parent?.name||held.group?.parent?.type||null}:null,backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,rigRootAttached:!!backCarryRoot()&&backCarried.group?.parent===backCarryRoot()}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Back Burdens mount to the animation composer body root, independent of the neck and hand sockets.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,rigRootAttached:!!backCarryRoot()&&backCarried.group?.parent===backCarryRoot()}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
