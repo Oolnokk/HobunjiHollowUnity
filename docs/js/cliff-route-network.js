@@ -131,7 +131,10 @@
         for (let j = 0; j < count; j++) {
           const idx = clamp(Math.round(spans * (j + 1) / (count + 1)), 2, spans - 2), anchor = nodes[idx];
           const shelf = {
-            id: 'cliff-balcony-' + id + '-' + j, routeId: id, nodeId: nodes.length,
+            // The inventory save key must survive route array reordering on terrain rebuilds.
+            // Position/elevation identify the actual physical shelf, not its incidental list index.
+            id: 'cliff-balcony-' + [c.a.c, c.a.r, c.b.c, c.b.r, Math.round(anchor.y * 100), j].join('-'),
+            routeId: id, nodeId: nodes.length,
             x: anchor.x + tan.x * (j % 2 ? -0.4 : 0.4) + normal.x * 0.19,
             z: anchor.z + tan.z * (j % 2 ? -0.4 : 0.4) + normal.z * 0.19,
             y: anchor.y,
