@@ -41,15 +41,15 @@ const spline = { // Minimal shoulder-spline dependency for validation without a 
 const window = { AnimalShoulderSpline: spline }; // Shared module publishes its API here.
 vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/js/flying-animal-rig.js'), 'utf8'), { window });
 const api = window.FlyingAnimalRig; // Same normalizer used by the Flying Animal Author.
-assert.match(api.defaults.flying, /tzatzul_flying\\.png$/, 'Tzatzul must retain its preset');
+assert.ok(api.defaults.flying.endsWith('tzatzul_flying.png'), 'Tzatzul must retain its preset');
 assert.deepEqual(JSON.parse(JSON.stringify(api.normalize(rig))), rig, 'Skeeri preset must normalize without data loss');
 assert.throws(() => api.normalize({ ...rig, wings: '../../bad.png' }), /relative to the assets folder/);
 
 const html = fs.readFileSync(path.join(root, 'docs/tools/flying-animal-author/index.html'), 'utf8');
 const author = fs.readFileSync(path.join(root, 'docs/tools/flying-animal-author/app.js'), 'utf8');
 assert.match(html, /<select id="rigPreset">/);
-assert.match(html, /<option value="skeeri">Skeeri<\\/option>/);
-assert.match(author, /config\\/creatures\\/skeeri-flying-rig\\.json/);
-assert.match(author, /presetSelect\\.addEventListener\\('change'/);
+assert.ok(html.includes('<option value="skeeri">Skeeri</option>'));
+assert.ok(author.includes('config/creatures/skeeri-flying-rig.json'));
+assert.ok(author.includes("presetSelect.addEventListener('change'"));
 assert.match(author, /speciesDraftKey/);
 console.log('Skeeri rig preset config, sprites, normalization, and editor integration checks passed.');
