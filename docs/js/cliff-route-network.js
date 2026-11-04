@@ -132,8 +132,13 @@
           const extent = Math.ceil(Math.max(shelf.width, shelf.depth)) + 1;
           for (let dr = -extent; dr <= extent; dr++) for (let dc = -extent; dc <= extent; dc++) {
             const cc = Math.floor(shelf.x) + dc, rr = Math.floor(shelf.z) + dr;
-            if (cc >= 0 && rr >= 0 && cc < cols && rr < rows &&
-                shelfContains(shelf, cc + 0.5, rr + 0.5, 0.18))
+            // Include every tile touched by the actual balcony cap, not only
+            // tiles whose CENTRES overlap it. CellGrid3D can then support
+            // the whole visible platform while the oriented outline still
+            // constrains where feet can stand.
+            const touched = [0.08, 0.5, 0.92].some(u =>
+              [0.08, 0.5, 0.92].some(v => shelfContains(shelf, cc + u, rr + v, 0.01)));
+            if (cc >= 0 && rr >= 0 && cc < cols && rr < rows && touched)
               shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
           }
           if (!shelf.footprint.length) shelf.footprint.push({ c: Math.floor(shelf.x), r: Math.floor(shelf.z), elevation: shelf.y });
@@ -152,8 +157,66 @@
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
       unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length };
+    // Adapt ShaftHub.reachable(): walking components, legal climbing links,
+    // and every balcony node must be reachable from some ground entrance.
+    network.verification = verifyReachability(network);
     debug.builds++; debug.lastArea = network.area;
     return network;
+  }
+
+  // Dungeon ShaftHub.reachable checks (col,row,level). Outdoors, ordinary
+  // walkability is still the precise heightfield; each component stores its
+  // exact tier and climb edges join components without rounding surface Y.
+  function verifyReachability(network) {
+    if (!network?.components?.length) return {
+      ok: true, groundComponents: 0, checkedComponents: 0,
+      unreachablePlateaus: [], unreachableBalconies: [], invalidHops: [],
+    };
+    const tiers = network.components.map(c => Number(c.tier) || 0);
+    const groundTier = Math.min(...tiers);
+    const queue = network.components.filter(c => c.tier === groundTier).map(c => c.id);
+    const reached = new Set(queue); // Multi-source walkable ground; isolated landmasses need not be joined by cliffs.
+    for (let i = 0; i < queue.length; i++) {
+      for (const edge of network.adjacency[queue[i]] || []) {
+        if (!reached.has(edge.next)) {
+          reached.add(edge.next);
+          queue.push(edge.next);
+        }
+      }
+    }
+    const invalidHops = []; // Broken, nonreciprocal or overlong handhold connections.
+    const disconnectedNodes = new Map(); // Route ID -> nodes disconnected from the lower entrance.
+    for (const route of network.routes) {
+      const seen = new Set([0]), pending = [0];
+      for (let i = 0; i < pending.length; i++) {
+        const node = route.nodes[pending[i]];
+        for (const id of node.links) {
+          const to = route.nodes[id];
+          const distance = to ? Math.hypot(to.x - node.x, to.z - node.z, to.y - node.y) : Infinity;
+          if (!to || !to.links.includes(node.id) || distance > 1.20 || distance < 0.02) {
+            invalidHops.push({ routeId: route.id, from: node.id, to: id });
+            continue;
+          }
+          if (!seen.has(id)) { seen.add(id); pending.push(id); }
+        }
+      }
+      disconnectedNodes.set(route.id, seen);
+      if (!seen.has(route.upperNode)) invalidHops.push({ routeId: route.id, from: 0, to: route.upperNode });
+    }
+    const unreachablePlateaus = network.components
+      .filter(c => c.tier > groundTier && !reached.has(c.id))
+      .map(c => c.id);
+    const unreachableBalconies = network.balconies
+      .filter(s => {
+        const route = network.routes[s.routeId];
+        return !route || !reached.has(route.aComp) || !disconnectedNodes.get(s.routeId)?.has(s.nodeId);
+      }).map(s => s.id);
+    return {
+      ok: !unreachablePlateaus.length && !unreachableBalconies.length && !invalidHops.length,
+      groundComponents: queue.length - (reached.size - network.components.filter(c => c.tier === groundTier).length),
+      checkedComponents: network.components.length,
+      unreachablePlateaus, unreachableBalconies, invalidHops,
+    };
   }
 
   function forGrid(grid, opts = {}) {
@@ -371,12 +434,15 @@
     return meshes;
   }
   return Object.freeze({
-    build, forGrid, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render,
+    build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render,
     getRewardState, setRewardStage, serializeRewards, restoreRewards,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,
       components: n.components.length, disconnectedSets: n.unconnectedComponents, candidates: n.candidateCount,
+      unreachablePlateaus: n.verification?.unreachablePlateaus?.length ?? null,
+      unreachableBalconies: n.verification?.unreachableBalconies?.length ?? null,
+      invalidHops: n.verification?.invalidHops?.length ?? null,
     })) }),
   });
 });
