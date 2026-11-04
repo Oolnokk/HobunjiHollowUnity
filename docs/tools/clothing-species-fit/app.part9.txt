@@ -22,8 +22,15 @@ function makeExtendedRigPlanes(THREE,canvas,modelWidth,modelHeight){
   back.rotation.y=Math.PI;back.position.set(0,centerY,-.008);back.name='extended_overlay_back_plane';group.add(back);
   return group;
 }
+function startOptionalThreePreview(){
+  try{return ensureThreePreview()}catch(error){
+    E.threeStatus.textContent='3D unavailable: '+(error?.message||error)+'. The 2D editor remains usable.';
+    log('3D STARTUP ERROR '+(error?.message||error));
+    return false;
+  }
+} // Hardware/WebGL failures cannot interrupt independent 2D fitting and export.
 async function updateThreePreview(){
-  if(!R.body||!ensureThreePreview())return;
+  if(!R.body||!startOptionalThreePreview())return;
   const buildId=++R.three.buildGeneration;
   try{
     await ensureRigRuntime();
