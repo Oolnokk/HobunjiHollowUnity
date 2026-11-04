@@ -61,6 +61,18 @@ class Group {
   traverse(callback) { callback(this);for(const child of this.children)child.traverse?.(callback); }
   updateWorldMatrix() {}
 }
+class MeshBasicMaterial {
+  constructor(options={}) { Object.assign(this,{visible:true,depthTest:true,depthWrite:true,...options}); }
+  clone() { return new MeshBasicMaterial({...this}); }
+  dispose() {}
+}
+class SkinnedMesh extends Group {
+  constructor(geometry,material) {
+    super();this.isMesh=this.isSkinnedMesh=true;this.geometry=geometry;
+    this.material=material;this.skeleton={};this.bindMatrix={};
+  }
+  bind(skeleton,matrix) { this.skeleton=skeleton;this.bindMatrix=matrix; }
+}
 
 function testEditorAuthoring() {
   const author=read('docs/tools/furniture-avatar-author/carryable-objects.js'); // The editor's exported normalization is tested directly.
@@ -98,15 +110,16 @@ function testRuntime() {
   const headJoint=new Group();headJoint.name='player_neck_joint'; // Held burden continues to use this preexisting dependency unchanged.
   bodyRoot.add(headJoint);
   headJoint.position.set(.25,.3,.15);
-  const portrait=new Group();portrait.name='player_avatar_skinned_plane_assembly'; // Active player's skinned portrait parent for stowed burdens.
-  portrait.isMesh=portrait.isSkinnedMesh=true;
-  portrait.material=[{name:'npc_avatar_skinned_front_material'},{name:'npc_avatar_skinned_back_material'}];
+  const portrait=new SkinnedMesh(null,[
+    new MeshBasicMaterial({name:'npc_avatar_skinned_front_material'}),
+    new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]);
+  portrait.name='player_avatar_skinned_plane_assembly'; // Active skinned portrait and its back-only x-ray clone.
   portrait.position.set(.08,.2,-.12);portrait.scale.setScalar(1.2);
   bodyRoot.add(portrait);
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
   const window={
-    THREE:{Vector3,Group,Euler,Quaternion},Combat:{deps,update(){},init(){}},
+    THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     ProceduralHandAttachments:{gameDeps:deps},
     PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
