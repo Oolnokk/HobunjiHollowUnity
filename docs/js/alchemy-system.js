@@ -380,7 +380,7 @@
     if (!definition || !entity || !(factor > 0)) return { ok: false, message: 'That alchemical reaction cannot be applied.' };
     if (options.skipEmpower !== true) factor *= empowerFactor(definition); // Player-made effects keep perk scaling; NPC/environment flask hits can explicitly bypass the player's perk.
     const amount = (Number(definition.amount) || 0) * factor; // Instant magnitude.
-    if (definition.application === 'restoreHealth') entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount);
+    if (definition.application === 'restoreHealth') window.ResourceSystem?.applyHealthRecovery?.(entity, amount); // All potion healing now respects the shared healing-received trade-off and current Health cap.
     else if (definition.application === 'restoreStamina') {
       window.ResourceSystem?.restoreStamina?.(entity, amount, {
         exhaustionAmount: (Number(definition.exhaustionAmount) || 0) * factor,
