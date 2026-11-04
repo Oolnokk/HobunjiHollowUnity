@@ -4,6 +4,7 @@
   'use strict';
   const THREE = window.THREE;
   if (!THREE || window.RuinMelodyGlyphDecal) return;
+  const pngSurface = window.HobunjiSpritePngSurface; // Use the game's existing PNG-plane filter, alpha and color pipeline for the Scratchbone sprites.
 
   const MAX_COLUMNS = 6; // Long authored sequences wrap instead of spanning an entire hallway.
   const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on a stone floor inscription.
@@ -22,8 +23,8 @@
     let texture = glyphTextures.get(index);
     if (!texture) {
       texture = new THREE.TextureLoader().load('assets/hud/scratchbone' + (index + 1) + '.png');
-      if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-      else if (THREE.sRGBEncoding !== undefined) texture.encoding = THREE.sRGBEncoding;
+      if (pngSurface?.configureTexture) pngSurface.configureTexture(THREE,texture,'ruin-melody-glyph-' + (index+1));
+      else if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
       glyphTextures.set(index, texture);
     }
     return texture;
@@ -118,11 +119,12 @@
         const note = nextNotes[index]; // Exact generated scale-button index, not a pitch converted back to its nearest numeral.
         const row = Math.floor(index/MAX_COLUMNS), column=index%MAX_COLUMNS;
         const rowLength = Math.min(MAX_COLUMNS,nextNotes.length-row*MAX_COLUMNS);
-        const material = new THREE.MeshBasicMaterial({
-          map:getGlyphTexture(note), color:0xffffff, transparent:true, alphaTest:.035,
-          side:THREE.DoubleSide, depthWrite:false, polygonOffset:true,
-          polygonOffsetFactor:-1, polygonOffsetUnits:-2,
-        });
+        const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
+        const appearance={color:0xffffff,transparent:true,side:THREE.DoubleSide,
+          depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
+        const material=pngSurface?.makeMaterial
+          ? pngSurface.makeMaterial(THREE,texture,'ruin-melody-scratchbone-' + (index+1),appearance)
+          : new THREE.MeshBasicMaterial({map:texture,alphaTest:pngSurface?.alphaTest?.() ?? .001,...appearance});
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
         glyph.name = 'dev_ruin_melody_scratchbone_' + (index+1);
         glyph.scale.set(.26,.28,1);
