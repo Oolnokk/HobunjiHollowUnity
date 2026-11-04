@@ -157,8 +157,14 @@ function makeElement() {
   treasureWindow.WildTreasure.syncZoneInteractivity(area);
   const chest = objectMap.get('0,0');
   assert(chest);
+  placement.lockpickUnlocked = true; // Legacy persisted bit must never authorize bypassing a new chest's minigame.
   assert.equal(chest.onAction('obj_open_treasure_chest').ok, false);
   assert.equal(started.length, 1);
+  assert.equal(started[0].valid(), true);
+  persisted.placements = []; // Weekly re-scatter/removal invalidates a previously targeted buried chest.
+  assert.equal(started[0].valid(), false, 'a replaced chest may not grant old loot');
+  persisted.placements = [placement];
+  assert.equal(started[0].valid(), true);
   assert.equal(flushed.length, 0);
   assert.equal(inventory.gold, undefined);
   started[0].onSuccess();
@@ -167,6 +173,7 @@ function makeElement() {
   assert.equal(inventory.tinBar, 1);
   assert.equal(flushed.length, 1, 'asynchronous chest loot commits the canonical live game save');
   assert.equal(flushed[0].reason, 'buried-chest-lockpicked');
+  assert.equal(placement.lockpickUnlocked, true, 'legacy save metadata is ignored and never used for new bypass authorization');
   assert.equal(activity.length, 1);
   assert.equal(chest.onAction('obj_open_treasure_chest').ok, false, 'stale world object cannot grant the same treasure twice');
 
