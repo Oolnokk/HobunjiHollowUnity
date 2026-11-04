@@ -84,7 +84,8 @@ function testSpecialFinishers() {
   runtime.CombatAttackEvents = { prepare: input => ({ ...input, modifiers: { damage: 1, affliction: 1, footingDamage: 1, knockback: 1, lunge: 1 } }),
     scaleAfflictions: source => source, hit() {} };
   runtime.Combat = { deps: null, abilities: { register(id, def) { abilities[id] = def; } }, isStaggered: () => false,
-    meleeHit: (_attacker, enemy) => hittable.has(enemy), playerMeleeThreat: () => ({ source: 'test' }),
+    meleeHit: (_attacker, enemy, geometry) => hittable.has(enemy) && geometry.rangePx >= (enemy.requiredRangePx || 0), // The weapon's REAL reach must qualify each enemy separately.
+    playerMeleeThreat: () => ({ source: 'test' }),
     beginStagedAction(spec) { pending.push(spec); return spec; } };
   runtime.Combat.deps = { player, TILE: 64, currentWeaponKey: () => weapon, currentWeaponDamageType: () => 'sharp',
     toolMasteryLevel: () => 5, weaponDamageTypeForTool: () => 'sharp', spendMotesOfProwess: () => true,
@@ -128,6 +129,21 @@ function testSpecialFinishers() {
   assert.ok('bleedingHealth' in damage[2].afflictions);
   assert.ok(!('bleedingHealth' in damage[3].afflictions), 'special afflictions do not leak to other targets');
   assert.equal(sfx, 1, 'one special impact produces one distinct confirmation sound');
+  const reachOptionIndex = tree[2].findIndex(o => o.stat?.rangeMul === 0.12); // Uses the original Extended Reach effect from the scroll catalog.
+  assert.ok(reachOptionIndex >= 2, 'special reach upgrade must be a learned scroll option');
+  const reachScroll = progression.itemKey('sharp', 3, tree[2][reachOptionIndex].effectId, 'scroll');
+  items.inventory[reachScroll] = 1;
+  assert.ok(progression.readMasteryItem(reachScroll));
+  assert.ok(progression.choose(weapon, 'swingComboFinisher', 3, reachOptionIndex));
+  reset();
+  tap('swingCombo', [a], 1016);
+  tap('swingCombo', [a], 1016.5);
+  a.requiredRangePx = 73; // Ordinary Cleave has range 69; qualified +12% reach extends it past 73.
+  b.requiredRangePx = 73; // A bystander outside the ordinary range must not inherit qualified reach.
+  tap('swingCombo', [a,b], 1017);
+  delete a.requiredRangePx;
+  delete b.requiredRangePx;
+  assert.deepEqual(damage.map(h => [h.target, h.special]), [['a', false],['a', false],['a', true]], 'special reach is target-qualified rather than a blanket cone enlargement');
   reset();
   tap('swingCombo', [a], 1003);
   tap('swingCombo', [], 1003.5);
