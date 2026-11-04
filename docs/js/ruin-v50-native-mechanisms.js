@@ -48,7 +48,7 @@
       throw new Error('Native V50 mechanisms require the original generator bridge, geometry and game interactions');
     const inventory=inspect(nativeRoot);
     const boxScratch=new THREE.Box3(); // Reused when sampling authored doors, push-block bounds and moving-surface support.
-    const states=new Map(),controls=[],surfaceIds=[],blockerIds=[];
+    const states=new Map(),controls=[],surfaceIds=[],blockerIds=[],elevatorBlocks=[]; // Upper-story nested elevator blocks follow the genuine moving dais before the player can push them.
     const worldBox=object=>{
       object?.updateWorldMatrix?.(true,true);
       const box=boxScratch.setFromObject(object);
@@ -171,11 +171,21 @@
       if(!route||route.length<2)continue;
       let step=0; // One push moves a real V50 block one authored route node; reused by the next push and the pressure plate signal.
       const elevator=block.userData.previewMotion?.type==='elevatorPushBlock';
+      const drivingDais=elevator?[...states.values()].filter(state=>state.motion==='movingDais')
+        .sort((a,b)=>Math.hypot(center(block).x-center(a.object).x,center(block).z-center(a.object).z)
+          -Math.hypot(center(block).x-center(b.object).x,center(block).z-center(b.object).z))[0]||null:null; // V50 places the block at the same X/Z as its own nested elevator.
       trackBlocker(scope+'-pushblock-'+block.id,block);
-      control({kind:'v50NativePushBlock',object:block,promptRoot:block,range:1.8,
+      const pushControl=control({kind:'v50NativePushBlock',object:block,promptRoot:block,range:1.8,
         touchIcon:'✋',priority:23,label:elevator?'Push Lift Block':'Push Stone Block',
         onPress:()=>{
-          if(step>=route.length-1||!nearFloor(block))return;
+          if(step>=route.length-1)return;
+          const playerFoot=Number(getPlayerY?.()),blockBottom=worldBox(block)?.min.y;
+          if(!Number.isFinite(playerFoot)||!Number.isFinite(blockBottom)||Math.abs(playerFoot-blockBottom)>1.1)return; // The block's real moving elevation matters more than the static floor directly below it.
+          if(elevator&&drivingDais){
+            const range=drivingDais.object.userData.previewRange||drivingDais.object.userData.previewMotion?.previewRange;
+            const raised=range?.length===2?drivingDais.progress>=range[1]-.01:drivingDais.progress>=.95;
+            if(!raised){showToast?.('Raise the stone elevator before pushing its block.',false);return;}
+          }
           const next=route[step+1],current=center(block),player=getPlayerPosition?.();
           if(!player)return;
           const dx=Number(next.x)-Number(route[step].x),dz=Number(next.z)-Number(route[step].z);
@@ -199,6 +209,9 @@
           api.syncPressurePlates(nativeRoot);
           onStateChange?.();
         }});
+      if(elevator&&drivingDais)elevatorBlocks.push({
+        block,driver:drivingDais,control:pushControl,pushes:()=>step,lastLift:null,
+      }); // The original V50 block preview curve moves it from the lower socket to its upper travel path.
     }
     for(const door of inventory.transitDoors){
       const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door;
@@ -234,6 +247,21 @@
           state.reapplyAfter=1; // Unchanged authored stone still gets a periodic restoration pass.
         }
       }
+      for(const lift of elevatorBlocks){
+        if(lift.pushes()>0)continue; // After the first push the block owns its own V50 route position, not the elevator's current animation.
+        const range=lift.driver.object.userData.previewRange||lift.driver.object.userData.previewMotion?.previewRange;
+        const progress=range?.length===2
+          ?clamp((lift.driver.progress-range[0])/Math.max(.0001,range[1]-range[0]),0,1)
+          :lift.driver.progress;
+        const lifted=.45*progress; // V50's elevatorPushBlock rises during local 0–.45, then travels across its authored floor route.
+        if(lift.lastLift!==lifted){
+          const blockRange=lift.block.userData.previewRange||lift.block.userData.previewMotion?.previewRange;
+          const command=blockRange?.length===2?blockRange[0]+(blockRange[1]-blockRange[0])*lifted:lifted;
+          api.applyProgress(lift.block,command);
+          lift.lastLift=lifted;
+        }
+        lift.control.floorY=worldBox(lift.block)?.min.y??lift.control.floorY; // Prompt follows the physical block as the stone dais lifts it.
+      }
       for(const state of inventory.transitDoors){
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
@@ -263,7 +291,7 @@
       getState:()=>({
         mechanisms:states.size,activators:inventory.activators.length,
         pushBlocks:inventory.blocks.length,fixedBlocks:inventory.fixedBlocks.length,
-        transitDoors:inventory.transitDoors.length,
+        nestedElevatorBlocks:elevatorBlocks.length,transitDoors:inventory.transitDoors.length,
         solved:[...states.values()].filter(state=>state.solved).length,
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
