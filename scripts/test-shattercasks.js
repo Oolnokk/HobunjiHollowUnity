@@ -316,10 +316,11 @@ class Raycaster {
       if(!mesh.geometry?.authoredMock || !parent)continue;
       const ray=this.ray,dx=ray.direction.x;
       if(Math.abs(dx)<1e-9)continue;
-      const distance=(parent.position.x+mesh.position.x-ray.origin.x)/dx;
+      const world=parent.getWorldPosition(new Vector3()); // The exact physical Burden can be parented under the player during pickup.
+      const distance=(world.x+mesh.position.x-ray.origin.x)/dx;
       if(distance<this.near || distance>this.far)continue;
-      const y=ray.origin.y+distance*ray.direction.y-parent.position.y;
-      const z=ray.origin.z+distance*ray.direction.z-parent.position.z;
+      const y=ray.origin.y+distance*ray.direction.y-world.y;
+      const z=ray.origin.z+distance*ray.direction.z-world.z;
       // A narrow tapered neck rising to .89, and a broader rounded body.
       const inBody=y>=.04&&y<=.57&&Math.abs(z)<.26;
       const inNeck=y>.57&&y<=.88&&Math.abs(z)<.11;
@@ -487,6 +488,7 @@ async function arenaScenario() {
   ]);
   portrait.name='player_skinned_plane_assembly';
   portrait.bind({bones:[]},{});
+  body.position.set(player.x/64,0,player.y/64); // Mirror live game.js: the avatar root tracks the actor's tile position.
   body.add(portrait);
   const rearHeadwear=new Mesh({},new Material({depthTest:true,depthWrite:false,visible:true}));
   rearHeadwear.name='player_avatar_back_hat_xray_plane';
@@ -522,8 +524,8 @@ async function arenaScenario() {
   const isLegacyHeldPlane=vm.runInNewContext('('+heldRenderer.match(/function isLegacyHeldPlane\(object\) \{[\s\S]*?\n  \}/)[0]+')',
     {LEGACY_HELD_RENDER_ORDER:1.5});
   assert(isLegacyHeldPlane({isMesh:true,renderOrder:1.5,userData:{}}),'fixture exercises the reserved weapon replay order');
-  for(const mesh of activeScene.children.find(node=>node.userData?.shattercaskId===first.id).userData.meshById.values())
-    assert.equal(isLegacyHeldPlane(mesh),false,'physical cask stays in world colour pass below rear portrait');
+  for(const mesh of game.Shattercasks.getBurden(first.id,currentArea).group.userData.meshById.values())
+    assert.equal(isLegacyHeldPlane(mesh),false,'carried physical cask stays in the world colour pass below rear portrait');
   // A late portrait rebuild must replace the overlay and restore the old
   // material before attaching the new skinned back on the next poll.
   const rebuilt=new SkinnedMesh(portrait.geometry,[
@@ -617,6 +619,7 @@ async function arenaScenario() {
   const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
   assert(spare,'a second real Burden is available for back impact validation');
   player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
+  body.position.set(player.x/64,0,player.y/64); // The physical body root follows the actor between item pickups.
   assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
   assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
