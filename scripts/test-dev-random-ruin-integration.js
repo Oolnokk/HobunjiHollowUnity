@@ -474,6 +474,34 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
   assert(playable.includes('DS.registerPit')&&playable.includes('P.registerNode')&&playable.includes('P.unregisterNode'),'chasm collision and authored puzzles have lifecycle ownership');
   assert(worldInputs.includes("'shaft-passage', 'composed-passage'"),'shaft and trial entry actions work without needing to aim at invisible portal meshes');
 }
+// The rope-chain corridor adds no fake landing platform. Its empty floor must
+// use the same physical pit authority and direct-death path as the real ruin.
+{
+  new vm.Script(simplePuzzles, { filename:'dev-random-ruin-simple-puzzles.js' });
+  new vm.Script(interior, { filename:'dev-random-ruin-interior-map.js' });
+  assert(simplePuzzles.includes('function buildRopeChainHallway(')
+    && simplePuzzles.includes('crossCells<5'), 'rope-chain halls keep the same minimum width as the reveal grid');
+  assert(simplePuzzles.includes('state.ropeChains.push(chain)') && simplePuzzles.includes('DS.registerPit({id:pitId,scope:SCOPE,bounds})'),
+    'rope-chain module must claim an actual bottomless pit');
+  assert(simplePuzzles.includes('DS.registerSurface({...cell.record,enabled:false})')
+    && simplePuzzles.includes('ropeChainDisabledSurfaces'), 'rope chain must actually disable the existing floor surfaces and retain restoration records');
+  assert(simplePuzzles.includes('const forward=ropes.every(') && simplePuzzles.includes('const reverse=ropes.every('),
+    'every chain requires both directional release-and-catch checks');
+  assert(simplePuzzles.includes('instantRopeChainDeath') && simplePuzzles.includes("dieImmediately?.('rope-chain-abyss')"),
+    'falling must bypass PlayerDowned and immediately enter the existing fatal respawn path');
+  assert(interior.includes('isInstantDeathPit?.(info.x,info.z)') && interior.includes('instantRopeChainDeath?.()===true'),
+    'the real player floor reconciliation must take the fatal chain path before recoverable footing falls');
+  assert(simplePuzzles.includes('updateRopeChainCheckpoints();') && simplePuzzles.includes("'rope-chain-'+hall.id+'-start'")
+    && simplePuzzles.includes("'rope-chain-'+hall.id+'-end'"), 'both bank checkpoints must mutually replace the active ruin checkpoint');
+  assert(simplePuzzles.includes('if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(')
+    && simplePuzzles.includes('if(!allowTraps)continue;'),
+    'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
+  assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true'),
+    'mobile puzzle settings must offer the new hallway type without removing the existing safe-path grid');
+  assert(!simplePuzzles.slice(simplePuzzles.indexOf('function buildRopeChainHallway('),simplePuzzles.indexOf('function ropeChainPitAt(')).includes('createPlatform('),
+    'rope-chain module must not generate intermediate landing platforms');
+}
+
 console.log('Random Test Ruin integration static audit passed.');
 const interactionsSource = read('docs/js/dev-random-ruin-interactions.js');
 assert(interactionsSource.includes('function freeLandingNear') && interactionsSource.includes('if (top.blocked) top = freeLandingNear(ladder, top) || top;'), 'a prop filling the ladder head must not make the ladder unclimbable');
