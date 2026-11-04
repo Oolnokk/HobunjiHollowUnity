@@ -590,10 +590,11 @@
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
   <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
   <script src="js/shaft-hub.js?v=20261104octagon2"></script>
-  <script src="js/ruin-layer-plan.js?v=20261104freeform3"></script>
+  <script src="js/ruin-layer-plan.js?v=20261104realMechanisms2"></script>
   <script src="js/ruin-shaft-corridor.js?v=20261104physical1"></script>
-  <script src="js/ruin-layer-playable.js?v=20261104playable3"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261104physical4"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-layer-challenges.js?v=20261104realMechanisms1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261104playable4"></script>
+  <script src="js/ruin-shaft-connector.js?v=20261104physical5"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -2876,7 +2877,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261104shaftBootstrapR4"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261104shaftBootstrapR5"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
