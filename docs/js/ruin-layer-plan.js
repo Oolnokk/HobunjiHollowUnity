@@ -11,7 +11,7 @@
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
-  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets']); // Shared by composer and acceptance proof.
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
@@ -99,7 +99,7 @@
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
             challenge:isGoal?null:stage===1?'pressurePlate'
               :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
-              :puzzles[integer(rng,0,puzzles.length-1)]};
+              :rng()<.5?'melodyEcho':puzzles[integer(rng,0,puzzles.length-1)]};
           nodes.push(room);rooms.push(room);
           // Thresholds derive from the actual rectangle bounds, not the
           // conceptual centre. Even-width rooms otherwise leave a one-cell
