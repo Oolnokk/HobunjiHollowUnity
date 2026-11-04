@@ -505,7 +505,22 @@
       });
       rope.ropeChainHallId=String(hall.id); // Used to distinguish the bottomless hallway ropes in diagnostics and death handling.
       rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
-      if(!ropeArcClear(rope,.95)){disposeRopeObject(rope);ropes.forEach(disposeRopeObject);return reject('swing arc blocked',{ropeIndex:i,along});}
+      if(!ropeArcClear(rope,.95)){
+        let blockedPoint=null; // Only allocates during rejected generation, never while a rope is rendered.
+        const sources=occupancy?.getSnapshot?.()?.sources||{}; // Exact logical wall/door source IDs let mobile diagnostics distinguish a closed door from a structural wall.
+        for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
+          const angle=-.95+1.9*(sample/ROPE_ROUTE_SAMPLES),p=ropeBobAt(rope,angle);
+          if(!ropeBlockedAt(p.x,p.z,ROPE_COLLISION_RADIUS,p.y)&&!platformBlocksAt(p.x,p.z,p.y))continue;
+          const ids=new Set();
+          for(let row=Math.floor(p.z-.24);row<=Math.floor(p.z+.24);row++)
+            for(let col=Math.floor(p.x-.24);col<=Math.floor(p.x+.24);col++)
+              for(const id of sources[col+','+row]||[])ids.add(id);
+          blockedPoint={x:+p.x.toFixed(2),z:+p.z.toFixed(2),y:+p.y.toFixed(2),angle:+angle.toFixed(2),sources:[...ids].slice(0,12)};
+          break;
+        }
+        disposeRopeObject(rope);ropes.forEach(disposeRopeObject);
+        return reject('swing arc blocked',{ropeIndex:i,along,blockedPoint});
+      }
       ropes.push(rope);
     }
     // Use the production release-flight and air-catch predictor, not a second
