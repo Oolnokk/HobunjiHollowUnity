@@ -1,0 +1,78 @@
+name: Native V50 Playthrough
+
+# Always exercise real dungeon progression when native generation, game-side
+# puzzle bridges, stage gates, or their Playwright driver changes.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/smoke-v50-native-playthrough.yml'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/js/ruin-shaft-*.js'
+      - 'docs/js/dev-random-ruin-hit-puzzles.js'
+      - 'docs/js/dev-random-ruin-interactions.js'
+      - 'docs/js/dev-random-ruin-interior-map.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
+      - 'scripts/test-v50-native-playthrough-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'scripts/test-ruin-construction-browser.js'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/smoke-v50-native-playthrough.yml'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/js/ruin-shaft-*.js'
+      - 'docs/js/dev-random-ruin-hit-puzzles.js'
+      - 'docs/js/dev-random-ruin-interactions.js'
+      - 'docs/js/dev-random-ruin-interior-map.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
+      - 'scripts/test-v50-native-playthrough-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'scripts/test-ruin-construction-browser.js'
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: 'One to four comma-separated unsigned V50 seeds to replay'
+        required: false
+        default: '4'
+
+permissions:
+  contents: read
+
+jobs:
+  native-playthrough:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check native gameplay and browser driver syntax
+        run: |
+          node --check docs/js/ruin-v50-native-floors.js
+          node --check docs/js/ruin-v50-native-mechanisms.js
+          node --check docs/js/dev-random-ruin-hit-puzzles.js
+          node --check docs/js/dev-random-ruin-interactions.js
+          node --check scripts/v50-native-playthrough-browser.js
+          node --check scripts/test-v50-native-playthrough-browser.js
+      - name: Install actual Chromium and Three.js r128
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve game from docs
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-v50-http.log 2>&1 &
+      - name: Solve native V50 stages, prove gate routes and ignite each brazier
+        timeout-minutes: 17
+        env:
+          HOBUNJI_V50_PLAYTHROUGH_SEEDS: ${{ github.event.inputs.seeds || '4' }}
+        run: node scripts/test-v50-native-playthrough-browser.js
+      - name: Preserve screenshot after browser failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v50-native-playthrough-browser-failure
+          path: /tmp/v50-native-playthrough-failure.png
+          if-no-files-found: ignore
+          retention-days: 7
