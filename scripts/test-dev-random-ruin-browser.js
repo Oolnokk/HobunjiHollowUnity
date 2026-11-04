@@ -129,7 +129,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 7, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, ropeChain, hallwayTraps, lavaBasin, sanctum
+  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // The retired safe-path grid is no longer a generator choice.
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
@@ -150,7 +150,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.deepEqual(projectileOnlySettings, {
     pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
-    safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
+    safePath:false,ropeSwing:false,ropeChain:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   const constrainedEntry = await page.evaluate(async seed => { // Observe scene entry in the same task that finishes the awaited transition, before shader warmup.
@@ -182,7 +182,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     };
   });
   assert.equal(constrained.puzzleOptions?.glyphObelisk, true, JSON.stringify(constrained));
-  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','hallwayTraps','lavaBasin','sanctum']) {
+  for (const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom','safePath','ropeSwing','ropeChain','hallwayTraps','lavaBasin','sanctum']) {
     assert.equal(constrained.puzzleOptions?.[key], false, JSON.stringify(constrained));
   }
   assert.equal(constrained.puzzleOptions?.maxPerRoom, 1, JSON.stringify(constrained));
@@ -284,8 +284,9 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     maxInput.dispatchEvent(new Event('input', { bubbles:true }));
     return window.DevRandomRuin.getPuzzleGenerationOptions();
   });
-  assert.equal(restoredSimpleSettings.safePath,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.safePath,false,JSON.stringify(restoredSimpleSettings)); // Saved legacy settings must never resurrect memory grids.
   assert.equal(restoredSimpleSettings.ropeSwing,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.ropeChain,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.hallwayTraps,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.lavaBasin,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.sanctum,true,JSON.stringify(restoredSimpleSettings));
@@ -503,15 +504,14 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.hit.active, true, JSON.stringify(active.hit));
     assert.equal(active.motion.active, true, JSON.stringify(active.motion));
     assert.equal(active.simple.active, true, JSON.stringify(active.simple));
-    assert.equal(active.simple.safeGrids.length, 1, 'simple mode should place one safe-path pressure grid: '+JSON.stringify(active.simple));
-    assert.ok(active.simple.safeGrids[0]?.hallId && active.simple.safeGrids[0]?.mandatoryTraversal, 'safe-path pressure grid must occupy a mandatory hallway traversal: '+JSON.stringify(active.simple.safeGrids[0]));
+    assert.equal(active.simple.modules.some(module=>module.type==='safePathGrid'),false,'retired memory-grid modules must not be generated');
+    assert.ok(Array.isArray(active.simple.ropeChains),'rope-chain diagnostics must be present on the active ruin');
     if(!active.simple.ropes.length){
-      assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0 &&
-        active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
-        'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
+      assert.ok(active.simple.composers?.ropeVariants?.rejects?.length>0||active.simple.ropeChains.length===0,
+        'an otherwise rope-free seed should explain its rejected traversals');
     }
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
-    assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
+    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','melodyEchoTrigger','hallwayGlyphGate','ropeChainAbyss'].includes(module.type));
+    assert.ok(swappableHallwayModules.length >= 1 || active.simple.ropeChains.length > 0, 'simple mode should fill a generic hallway slot or the required rope-chain crossing: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
@@ -596,36 +596,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         };
 
         const initial=window.DevRandomRuinSimplePuzzles.snapshot();
-        const grid=initial.safeGrids[0];
-        const unsafe=grid?.unsafe?.[0]||null;
-        let burningAfter=null,revealRow=null,revealMs=0;
-        if(unsafe){
-          const prior=Number(rs.getAffliction?.(deps.player,'burningHealth'))||0;
-          if(prior>0)rs.removeAffliction?.(deps.player,'burningHealth',prior+1);
-          place({x:unsafe.x,z:unsafe.z,y:deps.playerMesh?.position?.y||0});
-          await sleep(3);
-          burningAfter=Number(rs.getAffliction?.(deps.player,'burningHealth'))||0;
-
-          const scene=window.GridTileAccessors.getActiveScene();
-          const button=scene?.getObjectByName?.('dev_ruin_safe_path_button_'+grid.hallId);
-          if(button){
-            button.updateWorldMatrix?.(true,true);
-            const box=new THREE.Box3().setFromObject(button);
-            const center=box.getCenter(new THREE.Vector3());
-            place({x:box.max.x+.45,z:center.z,y:center.y});
-            await sleep(3);
-            await window.__ruinBrowserAimAtPoint(center);
-            window.DevRandomRuinInteractions.refresh();
-            await sleep(3);
-            const interaction=window.DevRandomRuinInteractions.snapshot();
-            const index=interaction.rows.findIndex(row=>row.kind==='safepathreveal');
-            revealRow=index>=0?interaction.rows[index]:null;
-            if(index>=0)window.DevRandomRuinInteractions.invoke(index);
-            await sleep(2);
-            revealMs=window.DevRandomRuinSimplePuzzles.snapshot().safeGrids[0]?.revealMs||0;
-          }
-        }
-
+        // The retired pressure-grid puzzle has no in-game controls, burning plates, or reveal animations.
         let checkpointAfterCross=null,respawn=null;
         const checkpointBefore=window.DevRandomRuinSimplePuzzles.snapshot().checkpoints;
         const door=checkpointBefore.doorways?.[0]||null;
@@ -682,7 +653,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         }
 
         let ropeAttach=null;
-        const rope=window.DevRandomRuinSimplePuzzles.snapshot().ropes?.[0]||null;
+        const rope=window.DevRandomRuinSimplePuzzles.snapshot().ropes?.find(candidate=>!candidate.ropeChainHallId&&candidate.grabPoint)||null; // Air-only standalone handoff ropes have no ground grab point and must not be picked for the floor interaction smoke. // Traditional platform rope has different assertions from the separate abyss chains.
         if(rope){
           const weaponSwitch=document.getElementById('btnWeaponSwitch'); // Put a real weapon/tool in hand so rope auto-holster/restoration is exercised, not merely statically asserted.
           weaponSwitch?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:811,pointerType:'touch',clientX:8,clientY:8}));
@@ -701,13 +672,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           const grabArchText=document.getElementById('btnAction1')?.textContent||'';
           place(rope.grabPoint); // Contact alone must NOT grab (players were caught unintentionally); the prompt does.
           await sleep(4);
-          const contactAttached=window.DevRandomRuinSimplePuzzles.snapshot().ropes[0]?.attached===true;
+          const contactAttached=window.DevRandomRuinSimplePuzzles.snapshot().ropes.find(candidate=>candidate.id===rope.id)?.attached===true;
           window.DevRandomRuinInteractions.refresh();
           const pressIndex=window.DevRandomRuinInteractions.snapshot().rows.findIndex(row=>row.kind==='ropegrab');
           if(pressIndex>=0)window.DevRandomRuinInteractions.invoke(pressIndex);
           await sleep(4);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
-          const liveRope=beforePump.ropes[0];
+          const liveRope=beforePump.ropes.find(candidate=>candidate.id===rope.id);
           const dx=Math.abs(liveRope.grabPoint.x-liveRope.anchor.x);
           const dz=Math.abs(liveRope.grabPoint.z-liveRope.anchor.z);
           deps.player.inputX=dx>=dz?1:0;
@@ -728,23 +699,23 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
             grabPopupVisible:grabPopup.interactionRows?.some(row=>row.label==='Grab Rope')===true,
             grabClaim,
             grabArchText,
-            attached:beforePump.ropes[0]?.attached===true,
-            thickMesh:beforePump.ropes[0]?.thickMesh===true,
+            attached:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.attached===true,
+            thickMesh:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.thickMesh===true,
             contactAttached,
-            lavaVisible:beforePump.ropes[0]?.lavaVisible===true,
-            ceilingMounted:beforePump.ropes[0]?.ceilingMounted===true,
-            ceilingY:beforePump.ropes[0]?.ceilingY??null,
-            anchorY:beforePump.ropes[0]?.anchor?.y??null,
-            bobY:beforePump.ropes[0]?.bob?.y??null,
-            grabY:beforePump.ropes[0]?.grabPoint?.y??null,
-            startTopY:beforePump.ropes[0]?.startTopY??null,
-            endTopY:beforePump.ropes[0]?.endTopY??null,
+            lavaVisible:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.lavaVisible===true,
+            ceilingMounted:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.ceilingMounted===true,
+            ceilingY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.ceilingY??null,
+            anchorY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.anchor?.y??null,
+            bobY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.bob?.y??null,
+            grabY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.grabPoint?.y??null,
+            startTopY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.startTopY??null,
+            endTopY:beforePump.ropes.find(candidate=>candidate.id===rope.id)?.endTopY??null,
             weaponStowed:beforePump.ropeEquipment?.currentlyStowed===true && beforePump.ropeEquipment?.holstered>(beforeAttachEquipment?.holstered||0),
-            pumpChangedOmega:Math.abs((afterPump.ropes[0]?.omega||0)-(beforePump.ropes[0]?.omega||0))>.02,
+            pumpChangedOmega:Math.abs((afterPump.ropes.find(candidate=>candidate.id===rope.id)?.omega||0)-(beforePump.ropes.find(candidate=>candidate.id===rope.id)?.omega||0))>.02,
             releaseRow:releaseIndex>=0?interaction.rows[releaseIndex]:null,
             brakeRow:brakeIndex>=0?interaction.rows[brakeIndex]:null,
             worldPopupVisible:interaction.worldPopupVisible,
-            released:afterRelease.ropes[0]?.attached===false,
+            released:afterRelease.ropes.find(candidate=>candidate.id===rope.id)?.attached===false,
             weaponRestored:afterRelease.ropeEquipment?.currentlyStowed===false && afterRelease.ropeEquipment?.restored>(beforeAttachEquipment?.restored||0),
           };
         }
@@ -752,20 +723,10 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await new Promise(resolve=>setTimeout(resolve,1100));
         await sleep(2);
         const final=window.DevRandomRuinSimplePuzzles.snapshot();
-        return {initial,burningAfter,revealRow,revealMs,checkpointBefore,checkpointAfterCross,respawn,ropeAttach,final};
+        return {initial,checkpointBefore,checkpointAfterCross,respawn,ropeAttach,final};
       });
-      assert.ok(simpleRuntime.burningAfter>=20,'unsafe pressure plate must apply Burning Health: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.revealRow?.label,'Reveal Safe Path','safe-path button must enter the ordinary world input list: '+JSON.stringify(simpleRuntime));
-      assert.ok(simpleRuntime.revealMs>0,'safe-path button must temporarily reveal the safe plates: '+JSON.stringify(simpleRuntime));
-      {
-        const grid=simpleRuntime.final.safeGrids?.[0],entry=grid&&simpleRuntime.final.checkpoints?.doorways?.find(door=>door.id===grid.entryDoorId);
-        assert.ok(grid?.entryDoorId&&entry,'safe-path diagnostics must identify the actual room-to-hall entrance doorway: '+JSON.stringify(simpleRuntime.final));
-        const axis=grid.axis,buttonAlong=axis==='x'?grid.buttonPoint.x:grid.buttonPoint.z,entryAlong=axis==='x'?entry.x:entry.z;
-        const plateAlong=grid.safe.concat(grid.unsafe).map(cell=>axis==='x'?cell.x:cell.z);
-        const near=Math.min(...plateAlong),far=Math.max(...plateAlong),approachNear=Math.abs(entryAlong-near)<=Math.abs(entryAlong-far);
-        assert.equal(grid.approachSide,approachNear?'min':'max','safe-path reveal control must be assigned to the hallway end the player actually approaches from: '+JSON.stringify({grid,entry}));
-        assert.ok(approachNear?buttonAlong<near:buttonAlong>far,'safe-path reveal pedestal must sit before the pressure-plate field rather than beyond it: '+JSON.stringify({grid,entry,near,far}));
-      }
+      assert.equal(simpleRuntime.initial.modules.some(module=>module.type==='safePathGrid'),false,
+        'the old reveal-pressure grid must never reappear in a generated ruin');
       assert.match(simpleRuntime.checkpointAfterCross?.activeId||'',/^doorway-/,'crossing a doorway must advance the checkpoint: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.downedByBurn,true,'lethal Burning Health must first put the player down: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.respawn?.handled,true,'ruin checkpoint recovery must handle death locally: '+JSON.stringify(simpleRuntime));
@@ -807,13 +768,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       }
       assert.ok(Math.abs((simpleRuntime.ropeAttach?.grabY||0)-((simpleRuntime.ropeAttach?.startTopY||0)+.86))<.08,'idle rope grip must stay at reachable launch-side height instead of inheriting the raised destination: '+JSON.stringify(simpleRuntime));
       assert.ok((simpleRuntime.ropeAttach?.ceilingY||0)>(simpleRuntime.ropeAttach?.bobY||0),'rope must hang downward from the ceiling: '+JSON.stringify(simpleRuntime));
-      assert.ok((simpleRuntime.final?.ropes?.[0]?.bottomY??-Infinity)>=(simpleRuntime.final?.ropes?.[0]?.minBobY??Infinity)-.02,'rope pendulum bottom must stay above its authored floor-clearance datum: '+JSON.stringify(simpleRuntime.final?.ropes?.[0]));
+      assert.ok((simpleRuntime.final?.ropes?.find(candidate=>candidate.id===simpleRuntime.ropeAttach.sourceId)?.bottomY??-Infinity)>=(simpleRuntime.final?.ropes?.find(candidate=>candidate.id===simpleRuntime.ropeAttach.sourceId)?.minBobY??Infinity)-.02,'rope pendulum bottom must stay above its authored floor-clearance datum: '+JSON.stringify(simpleRuntime.final?.ropes?.[0]));
       assert.equal(simpleRuntime.ropeAttach?.weaponStowed,true,'grabbing the rope must put the drawn weapon/tool away: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
       } // Geometric rope fitting is optional for this seed; all rope mechanics are still fully asserted where a rope exists.
       if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
-      else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
+      else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway')||simpleRuntime.final.ropeChains.length>0||simpleRuntime.final.modules.some(module=>module.type==='hallwayGlyphGate'),'a non-trap hallway must contain a selected reusable traversal or trigger module: '+JSON.stringify(simpleRuntime.final));
 
       if(simpleRuntime.ropeAttach) await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Only wait for ballistic flight when a rope actually launched the player.
       const transitDoorRuntime = await page.evaluate(async () => {

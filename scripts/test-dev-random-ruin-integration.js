@@ -148,17 +148,17 @@ assert(renderProxy.includes('nativeSourceMeshCount:') && renderProxy.includes('t
 assert(renderProxy.includes('glyphDecalSourceCount:') && renderProxy.includes('glowingGlyphDecalSourceCount:'), 'native-source diagnostics must still prove glyph decals exist and enter their glow state');
 assert(!renderProxy.includes('cloneGeometry(') && !renderProxy.includes('cloneTexture('), 'native rendering must not clone V50 geometry or textures into a second graph');
 assert(!renderProxy.includes('updateMatrixWorld?.(true)') && !renderProxy.includes('copySourceWorldTransform'), 'render hot path must not perform the former proxy scene-wide matrix synchronization');
-assert(simplePuzzles.includes('new THREE.InstancedMesh(sharedBoxGeometry(plateSize,.055,plateSize)'), 'safe-path pressure plates must render as one instanced batch instead of one Mesh per cell');
+assert(!simplePuzzles.includes('dev_ruin_safe_path_grid_') && !simplePuzzles.includes('buildSafePathGrid'), 'memory-pressure grid rendering must be retired, not just hidden in the generator');
 assert(simplePuzzles.includes('const sharedPrimitiveGeometry = new Map()'), 'simple puzzle primitives must share immutable geometry instead of reallocating identical boxes/cylinders/spheres');
 assert(simplePuzzles.includes('if(length>maxSafeLength-.02)return null'), 'rope construction must reject spans whose pendulum bottom would pass through the floor');
 assert(simplePuzzles.includes('const authoredDoorways=roomDoorways(context,room)'), 'compound puzzle completion must choose onward doors from the current room graph rather than the globally farthest door');
 assert(interactions.includes('now-lastInteractionListAt>=80'), 'world interaction row reconstruction must be throttled off the render hot path');
 assert(simplePuzzles.includes('now-lastBadgeAt<250'), 'simple puzzle diagnostics must not rewrite DOM every render frame');
-assert(simplePuzzles.includes('const GRID_WALL_CLEARANCE = 0.52') && simplePuzzles.includes('const crossMargin = GRID_WALL_CLEARANCE'), 'safe-path pressure plates must stay inside the player-clear hallway lane instead of hugging collision walls');
+assert(simplePuzzles.includes('function buildRopeChainHallway(') && simplePuzzles.includes('ropeChainDisabledSurfaces'), 'rope-chain abyss must remove actual floor support and retain restoration records');
 assert(dynamicSurfaces.includes("const scope = options.scope == null ? null : String(options.scope)"), 'support sampling must support an exact scope filter for pre-entry audits');
 assert(interior.includes("hobunji.devRandomRuinPuzzleOptions.v2"), 'simple-mode defaults must use a fresh storage version so old all-on puzzle settings cannot leak forward');
 assert(interior.includes("pressurePlate:false") && interior.includes("brazier:false") && interior.includes("stackedObelisk:false") && interior.includes("linkedCubePillars:false") && interior.includes("nestedRoom:false"), 'fragile V50 puzzle families must default off in the simple first pass');
-assert(interior.includes("glyphObelisk:true") && interior.includes("safePath:true") && interior.includes("ropeSwing:true") && interior.includes("hallwayTraps:true"), 'simple first pass must keep projectile targets and enable safe-path, rope, and hallway hazards');
+assert(interior.includes('glyphObelisk:true') && interior.includes('safePath:false') && interior.includes('ropeChain:true') && interior.includes('ropeSwing:true') && interior.includes('hallwayTraps:true'), 'new ruins default to rope-chain traversal while keeping ordinary ropes and hazards');
 assert(interior.includes("getRuntimeContext"), 'parent-runtime simple puzzles need the generated scene/metadata context without reaching into V50 internals');
 assert(interior.includes('getPuzzleGenerationOptions') && interior.includes('setPuzzleGenerationOptions'), 'simple-mode Settings state must be directly inspectable/persistable for deterministic runtime tests');
 assert(interior.includes("checkbox.addEventListener('change'"), 'each simple puzzle checkbox must commit directly instead of depending on delegated Settings events');
@@ -170,7 +170,7 @@ assert(simplePuzzles.includes("label:'Grab Rope'") && simplePuzzles.includes("po
 assert(!simplePuzzles.includes('tryAutoGrabRope'), 'ropes are grabbed only through the Grab Rope prompt (which claims Action 1); proximity auto-grab caught players unintentionally');
 assert(simplePuzzles.includes('ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS') && ropeCore.includes('BODY_RADIUS: 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
 assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
-assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');
+assert(simplePuzzles.includes('const approachSide=Math.abs(entryAlong-start)') && simplePuzzles.includes("rewardSide:approachSide==='start'?'end':'start'"), 'rope-chain reward bank must be opposite the approach doorway even in reversed hallways');
 assert(simplePuzzles.includes('ROPE_DESTINATION_RISE = .78') && simplePuzzles.includes('ROPE_GRAB_ABOVE_LAUNCH = .86'), 'rope traversal must visibly separate the unreachable destination height from the reachable launch-side grip height');
 assert(simplePuzzles.includes('topRise:COMPOUND_ELEVATOR_TOP_RISE'), 'compound rope/elevator landing must start above ordinary step height so the rope has an obvious traversal purpose');
 assert(simplePuzzles.includes('generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway)') && simplePuzzles.includes('reusesGeneratedDoor:!!generatedMechanismId'), 'ossuary/chord locks must reuse the generated doorway mechanism instead of stacking a second blocking door over it');
@@ -232,10 +232,10 @@ assert(interactions.includes("['simple', window.DevRandomRuinSimplePuzzles]"), '
 assert(interactions.includes("typeof control.onHoldStart") && interactions.includes("onHoldEnd"), 'ruin input claims must support held rope brake/adjust controls');
 assert(game.includes("phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input')"), 'normal keyboard/controller input release must pair with held ruin interaction claims');
 assert(game.includes("dispatchWorldInputClaim(_claimedInputAction,'release'") || game.includes("dispatchWorldInputClaim(_claimedInputAction"), 'normal touch arch must pair claimed world-interaction press/release without a ruin-only pointer listener');
-assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plates must apply the existing Burning Health affliction');
+assert(!simplePuzzles.includes('GRID_BURNING') && !simplePuzzles.includes('safePathCells'), 'retired memory-grid burners must not remain in live ruin logic');
 assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
-assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
-assert(simplePuzzles.includes('devRandomRuinMandatoryTraversal') && simplePuzzles.includes('usedHallways.add(hall.id)'), 'safe-path grids must occupy a required hallway crossing rather than a bypassable room-center square');
+assert(simplePuzzles.includes('chain.mandatoryTraversal=true') && simplePuzzles.includes('for(const hall of candidates){'), 'the replacement chain must examine viable hallways before using a plain corridor');
+assert(simplePuzzles.includes("recordModulePlacement('ropeChainAbyss'") && simplePuzzles.includes('usedHallways.add(hall.id)'), 'rope-chain claims a hallway and prevents overlapping puzzle modules');
 assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && ropeCore.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
 assert(simplePuzzles.includes("label:'Jump Off Rope'") && simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("label:'Hold to Stop / Adjust Rope'"), 'rope controls must expose Dodge jump-off plus the held brake/adjust action');
 assert(ropeCore.includes('rope.yaw += move.side') && ropeCore.includes('rope.length = Math.max'), 'held rope braking must allow reorientation and rope-length adjustment');
@@ -485,8 +485,13 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'rope-chain module must claim an actual bottomless pit');
   assert(simplePuzzles.includes('DS.registerSurface({...cell.record,enabled:false})')
     && simplePuzzles.includes('ropeChainDisabledSurfaces'), 'rope chain must actually disable the existing floor surfaces and retain restoration records');
-  assert(simplePuzzles.includes('const forward=ropes.every(') && simplePuzzles.includes('const reverse=ropes.every('),
-    'every chain requires both directional release-and-catch checks');
+  assert(simplePuzzles.includes('i+1<ropes.length?{rope:ropes[i+1]}:exitFloor')
+    && simplePuzzles.includes('i>0?{rope:ropes[i-1]}:entryFloor')
+    && !simplePuzzles.includes('{platform:exitFloor}'),
+    'the final rope release must be tested against real shore bank targets, never the retired synthetic platform wrapper');
+  assert(simplePuzzles.includes('const forwardHops=ropes.map(') && simplePuzzles.includes('const reverseHops=ropes.map(')
+    && simplePuzzles.includes('forwardHops.every(') && simplePuzzles.includes('reverseHops.every('),
+    'every chain requires each individual forward and reverse ballistic hop to pass');
   assert(simplePuzzles.includes('instantRopeChainDeath') && simplePuzzles.includes("dieImmediately?.('rope-chain-abyss')"),
     'falling must bypass PlayerDowned and immediately enter the existing fatal respawn path');
   assert(interior.includes('isInstantDeathPit?.(info.x,info.z)') && interior.includes('instantRopeChainDeath?.()===true'),
@@ -496,8 +501,20 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
   assert(simplePuzzles.includes('if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(')
     && simplePuzzles.includes('if(!allowTraps)continue;'),
     'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
-  assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true'),
-    'mobile puzzle settings must offer the new hallway type without removing the existing safe-path grid');
+  assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true') && !interior.includes("['safePath',"),
+    'mobile puzzle settings must retain rope-chain controls and remove the retired memory-grid option');
+  assert(simplePuzzles.includes('stoneDoorStates.push(') && interior.includes('function keepRopeChainStoneDoorOpen('),
+    'selected V50 stone doors must be reversible during validation and opened through the parent mechanism authority on acceptance');
+  assert(simplePuzzles.includes('keepOpenForRopeChain=true') && simplePuzzles.includes('if(!keepOpen)restoreDoors()')
+    && interior.includes('control.object?.userData?.ropeChainPassage!==true'),
+    'only validated rope-chain hall doors may stay open, and their redundant prompts must be suppressed');
+  assert(!simplePuzzles.includes('chain[side]') && simplePuzzles.includes("side==='start'?chain.entry:chain.exit")
+    && sanctum.includes("chain.rewardSide==='start'?chain.entry:chain.exit"),
+    'the bank checkpoint updater and Great Door blue-brazier reward must resolve real chain.entry/exit points, not missing start/end properties');
+  assert(sanctum.includes('function buildRopeChainBraziers(kit)') && sanctum.includes('chain.rewardSide') && !sanctum.includes('buildSafePathBraziers'),
+    'the former grid-completion blue brazier now rewards crossing the rope-chain abyss');
+  assert(simplePuzzles.includes('function debugRopeChainHop(') && simplePuzzles.includes('releaseRope(rope)'),
+    'the focused browser probe must use canonical rope flight, collision, and catch handling');
   assert(!simplePuzzles.slice(simplePuzzles.indexOf('function buildRopeChainHallway('),simplePuzzles.indexOf('function ropeChainPitAt(')).includes('createPlatform('),
     'rope-chain module must not generate intermediate landing platforms');
 }
