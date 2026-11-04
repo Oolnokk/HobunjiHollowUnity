@@ -411,7 +411,7 @@
     "function": "positionCompactSongPicker (install callsite)",
     "reason": "Single non-recursive requestAnimationFrame call used to (re)position the compact song picker after it is built, paired with a setTimeout(120) fallback; it never reschedules itself.",
     "migrationStage": "not-planned",
-    "line": 696
+    "line": 810
   },
   {
     "file": "docs/js/music-system.js",

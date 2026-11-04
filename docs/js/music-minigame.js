@@ -32,8 +32,8 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261022npcpatternroots3';
-  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261103fluteEcho1'; // The default five-note puzzle surface, independent of the performance engine.
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261104puzzleHud1';
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261104puzzleHud2'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -185,7 +185,7 @@
     const saved = loadLyreAppSettings();
     const savedTonicMidi = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : FREEPLAY_TONIC_BASE_MIDI;
     const currentOffset = ((savedTonicMidi - FREEPLAY_TONIC_BASE_MIDI) % 12 + 12) % 12;
-    const currentScale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Major';
+    const currentScale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Pentatonic Minor';
 
     const keyRow = document.createElement('div');
     keyRow.className = 'input-binding-row';
@@ -273,48 +273,86 @@
       window.__farmLog?.('Kurraya puzzle note failed: ' + error.message, 'warn');
     }
   }
+  const puzzleFaceActions = ['musicNote1','musicNote2','musicNote3','musicNote4']; // Match the performance note order and its configurable bindings.
+  const puzzleBookAction = 'musicBank3'; // Reuse the music binding that defaults to LB, including conflict checks and remaps.
+  function puzzleView() {
+    return frameEl?.contentWindow?.HobunjiPuzzleInstrument;
+  }
+  function musicControllerBindings() {
+    const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
+    const defaults = window.InputBindings?.getDefaultBindings?.('controller') || {};
+    return action => Object.prototype.hasOwnProperty.call(bindings,action) ? bindings[action] : defaults[action];
+  }
+  function showPuzzleInput(device, binding = musicControllerBindings()) {
+    const label = code => code ? window.InputBindings?.buttonLabel?.(code) || code : '—'; // Use the same glyph names as the game settings.
+    const faces = puzzleFaceActions.map(binding); // The displayed notes follow the same binding snapshot as playback.
+    const modifier = binding('musicBank1');
+    const upper = faces.map(face => modifier && face ? label(modifier) + ' + ' + label(face) : '—');
+    puzzleView()?.setInputDevice?.(device,faces.map(label).concat(upper),label(binding(puzzleBookAction)));
+  }
   function puzzleKeyboard(event) {
-    if (playerSession?.instrumentMode !== 'puzzle' || event.repeat) return;
+    if (playerSession?.instrumentMode !== 'puzzle') return;
+    showPuzzleInput('desktop');
+    if (event.repeat) return;
     if (event.code === 'Escape') {
       event.preventDefault();
       event.stopImmediatePropagation();
-      close(); // Escape exits the five-note instrument instead of opening the game menu.
+      close();
       return;
     }
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')) return;
-    const index = ['KeyA','KeyS','KeyD','KeyF','KeyG'].indexOf(event.code); // Single-note keyboard map, with no modifier/bank combinations.
-    if (index < 0) return;
+    const index = window.KurrayaPuzzle.NOTE_CODES.indexOf(event.code); // Keep host and iframe keyboard paths on the same map.
+    if (index < 0 && event.code !== 'KeyB') return;
     event.preventDefault();
-    event.stopImmediatePropagation(); // Stops A/S/D/F from also moving the player while the instrument is open.
-    puzzleNote(index);
+    event.stopImmediatePropagation();
+    if (index < 0) puzzleView()?.toggleSongbook?.();
+    else puzzleNote(index);
   }
   function stopPuzzleInputs() {
     window.removeEventListener?.('keydown', puzzleKeyboard, true);
     unsubscribePuzzleController?.();
     unsubscribePuzzleController = null;
     puzzleHeldActions.clear();
+    if (window.ControllerInput?.owner === 'music-puzzle') window.ControllerInput.setOwner('gameplay');
   }
   function startPuzzleInputs() {
     stopPuzzleInputs();
+    window.ControllerInput?.setOwner?.('music-puzzle');
+    showPuzzleInput(deps.getLastInputDevice?.() || 'desktop');
     window.addEventListener('keydown',puzzleKeyboard,true);
-    const actions = ['musicNote1','musicNote2','musicNote3','musicNote4','musicBank1']; // Four existing face-note actions plus LT for the fifth note.
+    const binding = musicControllerBindings(); // Settings are closed during a puzzle session.
+    const isDown = (frame,code) => Boolean(code && frame.pad && frame.isDown(code,{triggerThreshold:0.3,buttonThreshold:0.55,stickThreshold:0.55}));
+    function pressed(action,down) {
+      const fresh = down && !puzzleHeldActions.has(action); // Track physical face edges independently of the modifier.
+      if (down) puzzleHeldActions.add(action);
+      else puzzleHeldActions.delete(action);
+      return fresh;
+    }
+    const exitCode = binding('musicPause'); // Resolve once for this puzzle session.
+    const bookCode = binding(puzzleBookAction);
+    const modifier = binding('musicBank1');
+    const faceCodes = puzzleFaceActions.map(binding);
+    function readFrame(frame,ready) {
+      const shifted = isDown(frame,modifier); // LT changes the pitch of the next face press.
+      const shiftedNow = pressed('shift',shifted);
+      const stickMoved = pressed('stick',(frame.move?.magnitude || 0) > 0 || (frame.look?.magnitude || 0) > 0);
+      const exit = pressed('exit',isDown(frame,exitCode));
+      const book = pressed('book',isDown(frame,bookCode));
+      let note = -1; // Consume all edges but sound only the first new note.
+      for (let index = 0; index < faceCodes.length; index++) {
+        if (pressed(index,isDown(frame,faceCodes[index])) && note < 0) note = index;
+      }
+      if (!ready) return; // Seed held buttons from the shared snapshot so opening the HUD cannot play a note.
+      if (exit) { close(); return; }
+      if (frame.pressed?.size || shiftedNow || stickMoved || book || note >= 0) showPuzzleInput('controller',binding);
+      if (book) puzzleView()?.toggleSongbook?.();
+      if (note >= 0) puzzleNote(note + (shifted ? faceCodes.length : 0));
+    }
+    const initialFrame = window.ControllerInput?.frame?.(); // Snapshot from the normal controller poller, even if the overlay opened mid-press.
+    if (initialFrame) readFrame(initialFrame,false);
     unsubscribePuzzleController = window.ControllerInput?.subscribe?.('music-puzzle', frame => {
-      if (!playerSession || playerSession.instrumentMode !== 'puzzle') return;
-      const bindings = window.InputBindings?.getCurrentBindings?.()?.controller || {};
-      const defaults = window.InputBindings?.getDefaultBindings?.('controller') || {};
-      const exitCode = Object.prototype.hasOwnProperty.call(bindings,'musicPause') ? bindings.musicPause : defaults.musicPause;
-      const exitDown = Boolean(exitCode && frame.pad && frame.isDown(exitCode,{buttonThreshold:0.55,triggerThreshold:0.3}));
-      if (exitDown) {
-        if (!puzzleHeldActions.has('musicPause')) { close(); return; } // Pause/Start exits the puzzle.
-      } else puzzleHeldActions.delete('musicPause');
-      actions.forEach((action,index) => {
-        const code = Object.prototype.hasOwnProperty.call(bindings,action) ? bindings[action] : defaults[action];
-        const down = Boolean(code && frame.pad && frame.isDown(code,{triggerThreshold:0.3,buttonThreshold:0.55,stickThreshold:0.55}));
-        if (down && !puzzleHeldActions.has(action)) puzzleNote(index);
-        if (down) puzzleHeldActions.add(action);
-        else puzzleHeldActions.delete(action);
-      });
+      if (playerSession?.instrumentMode === 'puzzle') readFrame(frame,true);
     },window.ControllerInput.PRIORITY.music) || null;
   }
 
@@ -341,10 +379,10 @@
   function onPlayerFrameLoaded() {
     if (!playerSession) return;
     if (playerSession.instrumentMode === 'puzzle') {
-      // The puzzle iframe owns its five single-note buttons and audio; never boot the chord/timing bridge here.
+      // The puzzle iframe owns its eight single-note buttons and audio; never boot the chord/timing bridge here.
       startPuzzleInputs();
       if (playerSession.echoChallenge) {
-        const challenge = playerSession.echoChallenge; // The ruin owns the generated melody; the iframe owns playback and the five-note touch/keyboard/controller UI.
+        const challenge = playerSession.echoChallenge; // The ruin owns the generated melody; the iframe owns playback and the eight-note touch/keyboard/controller UI.
         if (!frameEl?.contentWindow?.HobunjiPuzzleInstrument?.startEchoChallenge?.(challenge.id,challenge.notes)) {
           window.__farmLog?.('Ruin echo challenge could not start in the music iframe.', 'warn');
           deps?.showToast?.('Melody playback failed to initialize. Step on the trigger again.',false);
@@ -367,6 +405,25 @@
     try { window.focus(); } catch {}
   }
   frameEl?.addEventListener('load', onPlayerFrameLoaded);
+
+  let unsubscribeModeToggle = null; // Stays installed through iframe reloads so one held RS click cannot switch twice.
+  function startModeToggle() {
+    if (!window.ControllerInput || playerSession.echoChallenge) return;
+    const code = musicControllerBindings()('musicModeToggle'); // Use the music context, where RS click defaults to switching modes.
+    if (!code) return;
+    const isDown = frame => Boolean(frame?.pad && frame.isDown(code));
+    let held = isDown(window.ControllerInput.frame?.()); // An input held while opening the instrument cannot change modes.
+    unsubscribeModeToggle = window.ControllerInput.subscribe('music-mode-toggle',frame => {
+      const down = isDown(frame); // Share controller edge state across Puzzle and Performance.
+      const fresh = down && !held;
+      held = down;
+      if (fresh) toggleInstrumentMode();
+    },window.ControllerInput.PRIORITY.music - 1);
+  }
+
+  function toggleInstrumentMode() {
+    switchInstrumentMode(playerSession?.instrumentMode === 'puzzle' ? 'performance' : 'puzzle');
+  }
 
   function switchInstrumentMode(view) {
     if (!playerSession || !frameEl) return false;
@@ -399,26 +456,36 @@
       playerSession.songSnapshot = null;
     }
     playerSession.instrumentMode = next;
-    if (next === 'puzzle') silenceAmbientForPuzzle();
+    if (next === 'puzzle') {
+      window.ShoulderCamPointerLock?.release?.(); // Give the cursor back to the playable glyphs when entering from a locked camera.
+      window.ControllerInput?.setOwner?.('music-puzzle'); // Claim the frame before a switch from Performance can also trigger the gameplay RS action.
+      silenceAmbientForPuzzle();
+    }
     if (overlayEl.dataset) overlayEl.dataset.instrumentMode = next; // Real DOM dataset controls Kurraya's presentation and responsive CSS.
-    if (modeBtnEl) modeBtnEl.textContent = next === 'puzzle' ? 'Performance Mode' : 'Puzzle Mode';
-    modeBtnEl?.setAttribute('aria-label','Switch to ' + (next === 'puzzle' ? 'Performance' : 'Puzzle') + ' Mode');
-    frameEl.title = next === 'puzzle' ? 'Five-note melody puzzle' : 'Instrument performance';
+    if (modeBtnEl) {
+      const mode = next === 'puzzle' ? 'Performance Mode' : 'Puzzle Mode'; // Name the mode the player is about to enter.
+      const code = musicControllerBindings()('musicModeToggle');
+      const hint = code && window.InputBindings?.buttonLabel?.(code);
+      modeBtnEl.textContent = hint ? mode + ' (' + hint + ')' : mode;
+      modeBtnEl.setAttribute('aria-label','Switch to ' + mode);
+    }
+    frameEl.title = next === 'puzzle' ? 'Eight-note melody puzzle' : 'Instrument performance';
     frameEl.src = next === 'puzzle'
-      ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '')
-      : MUSIC_MINIGAME_SRC; // The flute sample is resolved inside the same five-note iframe; other instruments retain Kurraya audio.
+      ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
+        (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
+      : MUSIC_MINIGAME_SRC; // The flute sample is resolved inside the same eight-note iframe; other instruments retain Kurraya audio.
     return true;
   }
   modeBtnEl?.addEventListener('click',event => {
     event.stopPropagation();
-    switchInstrumentMode(playerSession?.instrumentMode === 'puzzle' ? 'performance' : 'puzzle');
+    toggleInstrumentMode();
   });
 
   function beginPlayerSession(options = {}) {
     if (playerSession || !overlayEl || !frameEl || !deps) return false;
     const proposedEcho = options?.echoChallenge; // Optional, ephemeral encounter melody; no songbook writes or global music-mode changes.
     if (proposedEcho && (!proposedEcho.id || !Array.isArray(proposedEcho.notes) || proposedEcho.notes.length < 3 ||
-        proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < 5))) return false;
+        proposedEcho.notes.length > 12 || !proposedEcho.notes.every(note => Number.isInteger(note) && note >= 0 && note < (window.KurrayaPuzzle?.NOTE_CODES.length ?? 8)))) return false;
     window.EquipmentPanel?.ensureStarterFlute?.(); // Existing saved characters receive their one-time flute before the first music session.
     const instrumentKey = deps.getEquippedInstrument?.(); // Both instrument modes use the currently assigned slot item.
     if (!instrumentKey) { deps.showToast?.('Equip an instrument in your gear before playing.',false); return false; }
@@ -429,7 +496,8 @@
     };
     overlayEl.classList.add('open');
     if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
-    switchInstrumentMode('puzzle'); // Puzzle is always the default; switching back never loses Performance mode.
+    switchInstrumentMode('puzzle'); // Puzzle is always the default.
+    startModeToggle();
     if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // Shares the authored blowgun mouth-aim pose for every sounded note.
     deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
@@ -446,6 +514,8 @@
     if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
     stopPuzzleInputs();
+    unsubscribeModeToggle?.();
+    unsubscribeModeToggle = null;
     if (frameEl) frameEl.src = 'about:blank'; // Tears the iframe down immediately, stopping its AudioContext with it.
     teardownEdgeControls();
     if (mode === 'lead') {
@@ -461,7 +531,7 @@
     setHostChromeSuppressed(false);
   }
 
-  closeBtnEl?.addEventListener('pointerup', (event) => { event.stopPropagation(); close(); });
+  closeBtnEl?.addEventListener('click', (event) => { event.stopPropagation(); close(); });
   closeBtnEl?.addEventListener('pointerdown', (event) => { event.stopPropagation(); });
   // The iframe's own Start/Escape (see requestExitOrPause in
   // lyre-performance.html) asks to be closed the same way — its usual job,

@@ -113,7 +113,7 @@
     deps.TOOL_ITEM_DEFS.flute ||= {
       label:'Flute', icon:'🎶', sprite:'assets/toolsprites/flute.png', slots:['instrument'],
       isInstrument:true, heldAnimationKey:'blowgunReady',
-      description:'A simple mouth-played flute. Its five notes can echo melodies heard in ancient ruins.',
+      description:'A simple mouth-played flute. Its eight notes can echo melodies heard in ancient ruins.',
     }; // The canonical item registry drives equipment/ownership and the existing tool sprite renderer.
     return true;
   }

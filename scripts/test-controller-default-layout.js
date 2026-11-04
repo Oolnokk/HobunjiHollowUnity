@@ -48,6 +48,7 @@ const expectedController = {
   musicBank3: 'Button4',
   musicBank4: 'Button5',
   musicPause: 'Button9',
+  musicModeToggle: 'Button11',
   musicScalePrev: 'Button14',
   musicScaleNext: 'Button15',
   socialWheel: 'Button15',
@@ -122,3 +123,11 @@ for (const shared of [api, null]) {
     assert.equal(compactContext.compactControllerBinding(code), expected);
   }
 }
+
+// Older saves may already use RS for a remapped music action.
+context.localStorage.getItem = () => JSON.stringify({ controller: { musicNote1: 'Button11' } });
+const migrated = api.loadInputBindings().controller;
+assert.equal(migrated.musicNote1, 'Button11');
+assert.equal(migrated.musicModeToggle, null);
+context.localStorage.getItem = () => JSON.stringify({ controller: { musicModeToggle: 'Button10' } });
+assert.equal(api.loadInputBindings().controller.musicModeToggle, 'Button10');

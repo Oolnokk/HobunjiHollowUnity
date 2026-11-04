@@ -3864,12 +3864,18 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
 }
 #musicMinigameOverlay[data-instrument-mode="puzzle"] #musicMinigameFrame {
   --frame-avail-w:unset;--frame-avail-h:unset;
-  left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(560px,97vw);height:min(520px,88dvh);
+  inset:0;transform:none;
+  width:100vw;height:100dvh;
   max-width:100%;border:0;background:transparent;display:block;pointer-events:auto;
 }
 #musicMinigameOverlay[data-instrument-mode="puzzle"] #leftMusicControls,
 #musicMinigameOverlay[data-instrument-mode="puzzle"] #rightMusicControls {display:none!important}
-@media(max-height:540px){
-  #musicMinigameOverlay[data-instrument-mode="puzzle"] #musicMinigameFrame {height:min(92dvh,510px);top:55%}
+#musicMinigameOverlay[data-instrument-mode="puzzle"] #musicMinigameModeBtn {
+  right: max(12vw, 12dvh); top: max(2dvh, env(safe-area-inset-top));
+  min-height: 7dvh; padding: 1dvh 2vmin; font: clamp(13px, 2.6vmin, 21px) var(--gameplay-font-family);
+  color: #f3e6c8; border: 0; background: transparent; text-shadow: 0 2px 5px #000;
+}
+#musicMinigameOverlay[data-instrument-mode="puzzle"] #musicMinigameCloseBtn {
+  top: max(2dvh, env(safe-area-inset-top)); right: max(2vw, env(safe-area-inset-right));
+  width: clamp(36px, 9vmin, 52px); height: clamp(36px, 9vmin, 52px);
 }

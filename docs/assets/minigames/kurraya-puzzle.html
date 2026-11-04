@@ -5,64 +5,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1,viewport-fit=cover">
 <title>Kurraya · Melody Puzzle</title>
 <style>
-:root{color-scheme:dark;--line:#50617b;--surface:rgba(12,22,35,.91);--ink:#f0f6ff;--muted:#bac9dc}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;font:15px/1.4 system-ui,sans-serif;color:var(--ink);background:transparent}
-body{display:grid;place-items:center;padding:8px}
-main{width:min(100%,520px);background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 14px 50px #0008}
-h1{font-size:19px;margin:0}
-.sub{font-size:12px;color:var(--muted);margin:3px 0 12px}
-.options{display:grid;grid-template-columns:1.35fr 1fr;gap:8px}
-label{font-size:11px;color:var(--muted);display:grid;gap:3px}
-select{width:100%;font:inherit;min-height:38px;border-radius:9px;padding:5px;background:#1d3045;color:var(--ink);border:1px solid var(--line)}
-.notes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:13px}
-.note{min-width:0;min-height:76px;border:2px solid #64799d;border-radius:18px;color:#fff;background:linear-gradient(#335275,#1a2a41);font:700 19px system-ui;touch-action:manipulation;cursor:pointer}
-.note:nth-child(2){border-color:#67b7ba}.note:nth-child(3){border-color:#acb37b}.note:nth-child(4){border-color:#ae92d0}.note:nth-child(5){border-color:#ddab74}
-.note:active,.note.flash{filter:brightness(1.65);transform:translateY(2px)}
-.note small{display:block;font-size:11px;opacity:.8}
-.readout{margin-top:10px;display:flex;justify-content:space-between;gap:7px;font-size:12px;color:var(--muted);min-height:32px}
-#sequence{font-size:17px;color:var(--ink);letter-spacing:.1em}
-#result{font-weight:700;color:#9de9ba;min-height:21px}
-#echoReplay{margin:5px 0 0;min-height:44px;padding:8px 14px;color:#f3f9ff;background:#284864;border:1px solid #8caec2;border-radius:10px;cursor:pointer}
-#echoReplay[hidden]{display:none}
-details{margin-top:8px;font-size:12px;color:var(--muted)}
-summary{cursor:pointer;min-height:26px}
-#songList{max-height:100px;overflow:auto}
-#songList div{padding:4px 0;border-bottom:1px solid #33465d}
-#debug{font:11px monospace;white-space:pre-wrap;word-break:break-word;max-height:70px;overflow:auto}
-@media(max-height:430px){main{padding:9px}.notes{margin-top:6px}.note{min-height:54px}.sub{margin-bottom:6px}details{margin-top:3px}}
-@media(max-width:370px){main{padding:8px}.notes{gap:4px}.note{min-height:70px;border-radius:12px}.options{gap:5px}}
+@font-face {
+  font-family: KhymeryyanRoman;
+  src: url('../hud/KhymeryyanRomanLetters+Numbers.otf.ttf') format('truetype');
+  font-display: swap;
+}
+:root { color-scheme: dark; background: transparent }
+* { box-sizing: border-box }
+body {
+  margin: 0; color: #f3e6c8; background: transparent;
+  font: clamp(13px, 2.8vmin, 22px)/1.35 KhymeryyanRoman, monospace;
+  text-shadow: 0 2px 5px #000, 0 0 6px #000;
+}
+button {
+  font: inherit; color: inherit; text-shadow: inherit; cursor: pointer;
+  border: 0; background: transparent; padding: 0; touch-action: manipulation;
+}
+button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
+.notes {
+  position: fixed; bottom: max(3dvh, env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); width: min(96vw, 146dvh);
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1vmin;
+}
+.note {
+  min-width: 0; min-height: 44px; display: grid; justify-items: center; align-content: center; gap: .5dvh;
+}
+.glyph { width: clamp(19px, 7vmin, 58px); height: clamp(19px, 7vmin, 58px); object-fit: contain; filter: drop-shadow(0 0 .45vmin #fff) drop-shadow(0 2px 3px #000) }
+.note small { font-size: clamp(10px, 2.4vmin, 17px); white-space: nowrap }
+.note:active .glyph, .note.flash .glyph { filter: brightness(1.55) drop-shadow(0 0 .7vmin #fff) drop-shadow(0 0 5px #f5ce81) }
+.readout {
+  position: fixed; bottom: max(21dvh, calc(env(safe-area-inset-bottom) + 67px));
+  left: 50%; transform: translateX(-50%); width: 90vw; text-align: center; pointer-events: none;
+}
+#echoReplay { pointer-events: auto; min-height: 44px; text-decoration: underline }
+#echoReplay:disabled { opacity: .55 }
+.book {
+  position: fixed; left: max(3vw, env(safe-area-inset-left)); top: max(3dvh, env(safe-area-inset-top));
+  width: min(53vw, 76dvh);
+}
+#bookToggle { min-height: 44px }
+#songList { max-height: 43dvh; overflow: auto; padding: 1dvh 2vmin; background: rgba(18, 14, 10, .48) }
+#songList div { padding-block: .6dvh }
+.song-notes { display: flex; flex-wrap: wrap; gap: .5vmin }
+.song-notes .glyph { width: clamp(13px, 3.6vmin, 28px); height: clamp(13px, 3.6vmin, 28px) }
+#diagnostics { position: fixed; right: 3vw; top: 16dvh; max-width: 45vw; background: #16110dcc }
+#debug { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32dvh; overflow: auto; font-size: clamp(10px, 2vmin, 15px) }
 </style>
 </head>
 <body>
-<main>
-<h1>Melody Puzzle</h1>
-<p class="sub">Play one note at a time. No beat, chords, banks, or root pad. Keyboard: A S D F G.</p>
-<div class="options">
-  <label>Scale<select id="scale" aria-label="Puzzle note scale"></select></label>
-  <label>Root note<select id="tonic" aria-label="Puzzle root note"></select></label>
+<div id="notes" class="notes" aria-label="Eight single notes"></div>
+<div class="readout">
+  <div id="result" role="status" aria-live="polite"></div>
+  <button type="button" id="echoReplay" hidden>Hear sequence again</button>
 </div>
-<div id="notes" class="notes" aria-label="Five single notes"></div>
-<div class="readout"><span>Recent notes: <span id="sequence">—</span></span><span id="count">1 song</span></div>
-<div id="result" role="status" aria-live="polite">Play any melody to begin.</div>
-<button type="button" id="echoReplay" hidden>Hear sequence again</button>
-<details><summary>Songbook (hints)</summary><div id="songList"></div></details>
-<details><summary>Diagnostics</summary><div id="debug"></div></details>
-</main>
-<script src="../../js/kurraya-puzzle.js?v=20261103fluteEcho1"></script>
+<section class="book" aria-label="Songbook">
+  <button type="button" id="bookToggle" aria-expanded="false" aria-controls="songList">Songbook <span id="bookHint"></span></button>
+  <div id="songList" hidden></div>
+</section>
+<details id="diagnostics" hidden><summary>Diagnostics</summary><div id="debug"></div></details>
+<script src="../../js/kurraya-puzzle.js?v=20261104heee8fce"></script>
 <script>
 (function () {
   'use strict';
   const music = window.KurrayaPuzzle;
-  const scale = document.getElementById('scale');
-  const tonic = document.getElementById('tonic');
   const notesEl = document.getElementById('notes');
-  const sequenceEl = document.getElementById('sequence');
   const resultEl = document.getElementById('result');
-  const countEl = document.getElementById('count');
   const songListEl = document.getElementById('songList');
+  const bookToggle = document.getElementById('bookToggle'); // Tap or activate via the device-specific songbook shortcut.
+  const bookHint = document.getElementById('bookHint');
   const debugEl = document.getElementById('debug');
-  const isFlute = new URLSearchParams(location.search).get('instrument') === 'flute'; // Uses the instrument equipped by the host, not an unrelated Kurraya sample preference.
+  const params = new URLSearchParams(location.search); // Optional diagnostics and equipped instrument from the host.
+  const diagnostics = document.getElementById('diagnostics');
+  diagnostics.hidden = params.get('debugMusic') !== '1';
+  const isFlute = params.get('instrument') === 'flute'; // Uses the instrument equipped by the host, not an unrelated Kurraya sample preference.
+  const tuning = music.settings(); // Keep the example and response in the same key throughout a session.
   const sampler = isFlute
     ? music.createSampler('../audio/music/instruments/sfx_flute_note.m4a',{useCustomSample:false,fallback:'midi',sampleName:'Bundled flute note'})
     : music.createSampler('../audio/music/instruments/sfx_kurraya_pluck.m4a'); // Flute sample is optional; MIDI synth takes over if absent.
@@ -74,25 +90,47 @@ summary{cursor:pointer;min-height:26px}
   let lastMatched = ''; // Last recognized melody, visible in diagnostics for mobile testing.
   let playbackSerial = 0; // Drops audio for older pending presses if a newer press wins the load race.
   const post = payload => { try { parent.postMessage(Object.assign({source:'hobunji-music-minigame'},payload),'*'); } catch (_) {} };
-  function refreshSongs() {
-    const songs = music.listSongs(); // Read afresh so songs authored in the Tool Hub appear when this mode opens.
-    countEl.textContent = songs.length + (songs.length === 1 ? ' song' : ' songs');
-    songListEl.replaceChildren();
-    songs.forEach(song => {
-      const line = document.createElement('div');
-      line.textContent = song.title + ': ' + song.notes.map(note => note + 1).join(' · ');
-      songListEl.appendChild(line);
+  let inputDevice = ''; // Avoid rebuilding labels on each controller edge.
+  function setInputDevice(device, controllerLabels, controllerBookLabel) {
+    if (inputDevice === device) return;
+    inputDevice = device;
+    Array.from(notesEl.children).forEach((button,index) => {
+      button.lastElementChild.textContent = device === 'controller' ? controllerLabels[index] :
+        device === 'desktop' ? music.NOTE_CODES[index].slice(3) : 'Tap';
     });
+    bookHint.textContent = device === 'controller' ? '(' + controllerBookLabel + ')' :
+      device === 'desktop' ? '(B)' : '';
+  }
+  function toggleSongbook() {
+    songListEl.hidden = !songListEl.hidden;
+    bookToggle.setAttribute('aria-expanded',String(!songListEl.hidden));
+  }
+  bookToggle.addEventListener('click',toggleSongbook);
+  window.addEventListener('pointerdown',event => setInputDevice(event.pointerType === 'touch' ? 'touch' : 'desktop'),true);
+
+  function glyph(index, decorative = false) {
+    const image = document.createElement('img'); // Reuse the exact numbered HUD glyphs for notes and transcriptions.
+    image.className = 'glyph';
+    image.src = '../hud/scratchbone' + (index + 1) + '.png';
+    image.alt = decorative ? '' : String(index + 1);
+    image.draggable = false;
+    return image;
+  }
+  function refreshSongs() {
+    songListEl.replaceChildren();
+    for (const song of music.listSongs()) {
+      const line = document.createElement('div'); // One title and glyph sequence per authored melody.
+      line.textContent = song.title;
+      const sequence = document.createElement('span');
+      sequence.className = 'song-notes';
+      for (const index of song.notes) sequence.appendChild(glyph(index));
+      line.appendChild(sequence);
+      songListEl.appendChild(line);
+    }
   }
   function render() {
-    const settings = music.settings(); // Reused to label each note with its actual chosen scale pitch.
-    for (let i=0;i<5;i++) {
-      const button = notesEl.children[i];
-      if (button) button.querySelector('small').textContent = music.noteName(music.pitchFor(i,settings));
-    }
-    sequenceEl.textContent = history.length ? history.slice(-12).map(n => n+1).join(' ') : '—';
-    debugEl.textContent = 'scale=' + settings.scale + ' tonic=' + settings.tonicMidi +
-      '\nlastSong=' + (lastMatched || 'none') + '\nnotes=' + JSON.stringify(history) +
+    if (diagnostics.hidden) return;
+    debugEl.textContent = 'lastSong=' + (lastMatched || 'none') + '\nnotes=' + JSON.stringify(history) +
       '\nsampler=' + JSON.stringify(sampler.diagnostics);
   }
   function delay(ms) { return new Promise(resolve => setTimeout(resolve,ms)); }
@@ -118,7 +156,7 @@ summary{cursor:pointer;min-height:26px}
       await delay(300);
       for (const note of challenge.notes) {
         if (challenge !== echoChallenge || generation !== echoGeneration) return false;
-        await sampler.play(music.pitchFor(note)); // The same configured five-note scale is used for both examples and player input.
+        await sampler.play(music.pitchFor(note,tuning)); // The same configured eight-note tuning is used for both examples and player input.
         await delay(510);
         if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
         sampler.stop();
@@ -141,11 +179,10 @@ summary{cursor:pointer;min-height:26px}
   }
   function startEchoChallenge(id, notes) {
     if (!id || !Array.isArray(notes) || notes.length < 3 || notes.length > 12 ||
-        !notes.every(note => Number.isInteger(note) && note >= 0 && note < 5)) return false;
+        !notes.every(note => Number.isInteger(note) && note >= 0 && note < music.NOTE_CODES.length)) return false;
     ++echoGeneration; sampler.stop();
     history = [];
     echoChallenge = {id:String(id),notes:notes.slice(),phase:'retry',progress:0,mistakes:0};
-    scale.disabled = true; tonic.disabled = true; // Retuning midway would make the heard sequence and response incomparable.
     echoReplay.hidden = false;
     echoReplay.textContent = 'Hear sequence again';
     resultEl.textContent = 'Press Hear sequence (or any note key/button) to listen, then copy the melody by ear.';
@@ -156,7 +193,7 @@ summary{cursor:pointer;min-height:26px}
   }
   echoReplay.addEventListener('click',() => replayEcho(false)); // An explicit gesture unlocks mobile Web Audio; keyboard and touch remain accessible.
   function playNote(index) {
-    if (!Number.isInteger(index) || index < 0 || index > 4) return false;
+    if (!Number.isInteger(index) || index < 0 || index >= music.NOTE_CODES.length) return false;
     if (echoChallenge && echoChallenge.phase === 'retry') {
       replayEcho(); // Controller and keyboard users can request the audio without needing a touchscreen tap.
       return true;
@@ -166,7 +203,7 @@ summary{cursor:pointer;min-height:26px}
     const button = notesEl.children[index];
     button?.classList.add('flash');
     setTimeout(() => button?.classList.remove('flash'),110);
-    const midi = music.pitchFor(index);
+    const midi = music.pitchFor(index,tuning);
     sampler.play(midi).then(played => {
       if (!played || serial !== playbackSerial) return; // A stale note never triggers a phantom instrument twitch.
       post({type:'sounded-note',performer:'lead',noteIndex:index,midi:midi});
@@ -199,41 +236,43 @@ summary{cursor:pointer;min-height:26px}
     if (song) {
       lastMatched = song.title;
       resultEl.textContent = '♪ Recognized: ' + song.title;
-      post({type:'puzzle-song-recognized',song:{id:song.id,title:song.title,notes:song.notes.slice()},scale:music.settings().scale,tonicMidi:music.settings().tonicMidi});
+      post({type:'puzzle-song-recognized',song:{id:song.id,title:song.title,notes:song.notes.slice()},scale:tuning.scale,tonicMidi:tuning.tonicMidi});
       history = []; // Clears only after a successful melody, allowing the next song to start immediately.
     } else {
-      resultEl.textContent = 'Listening…';
+      resultEl.textContent = '';
     }
     render();
     return true;
   }
-  Object.keys(music.SCALES).forEach(name => { const option=document.createElement('option');option.value=name;option.textContent=name;scale.appendChild(option); });
-  for (let midi=36;midi<=84;midi++) {
-    const option=document.createElement('option');option.value=String(midi);option.textContent=music.noteName(midi);tonic.appendChild(option);
-  }
-  for (let i=0;i<5;i++) {
-    const button=document.createElement('button');
+  for (let i=0;i<music.NOTE_CODES.length;i++) {
+    const button = document.createElement('button'); // Touch and pointer play the same note as the matching shortcut.
     button.type='button';button.className='note';
     button.setAttribute('aria-label','Note '+(i+1));
-    button.innerHTML='<span>'+(i+1)+'</span><small>—</small>';
-    button.addEventListener('pointerdown',event=>{event.preventDefault();playNote(i);});
-    button.addEventListener('click',event=>{if(event.detail===0)playNote(i);});
+    button.appendChild(glyph(i,true));
+    button.appendChild(document.createElement('small'));
+    button.addEventListener('pointerdown',event=>{
+      if (event.button !== 0) return;
+      event.preventDefault();
+      playNote(i);
+    });
+    button.addEventListener('click',event=>{ if (event.detail === 0) playNote(i); }); // Keep keyboard and assistive activation.
     notesEl.appendChild(button);
   }
-  const initial=music.settings();scale.value=initial.scale;tonic.value=String(initial.tonicMidi);
-  scale.addEventListener('change',()=>{music.setSettings({scale:scale.value});history=[];resultEl.textContent='Scale changed. Ready for a new melody.';render();});
-  tonic.addEventListener('change',()=>{music.setSettings({tonicMidi:Number(tonic.value)});history=[];resultEl.textContent='Root changed. Ready for a new melody.';render();});
+  setInputDevice('desktop');
   window.addEventListener('keydown',event=>{
+    setInputDevice('desktop');
     if (event.code === 'Escape') { event.preventDefault();post({type:'exit-requested'});return; }
-    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || /SELECT|INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
     const index=music.NOTE_CODES.indexOf(event.code);
-    if (index<0) return;
-    event.preventDefault();playNote(index);
+    if (index<0 && event.code !== 'KeyB') return;
+    event.preventDefault();
+    if (index<0) toggleSongbook();
+    else playNote(index);
   },true);
   window.addEventListener('hobunji-kurraya-puzzle-songs-changed',refreshSongs);
   window.addEventListener('error',event=>{resultEl.textContent='Puzzle error: '+event.message;render();});
-  window.HobunjiPuzzleInstrument={playNote:playNote,startEchoChallenge:startEchoChallenge,
-    getState:()=>({history:history.slice(),lastMatched:lastMatched,echo:echoChallenge?{id:echoChallenge.id,phase:echoChallenge.phase,progress:echoChallenge.progress,length:echoChallenge.notes.length,mistakes:echoChallenge.mistakes}:null,sampler:sampler.diagnostics,...music.settings()})};
+  window.HobunjiPuzzleInstrument={playNote,startEchoChallenge,setInputDevice,toggleSongbook,
+    getState:()=>({history:history.slice(),lastMatched:lastMatched,echo:echoChallenge?{id:echoChallenge.id,phase:echoChallenge.phase,progress:echoChallenge.progress,length:echoChallenge.notes.length,mistakes:echoChallenge.mistakes}:null,sampler:sampler.diagnostics,...tuning})};
   refreshSongs();render();
   post({type:'puzzle-ready'});
 })();

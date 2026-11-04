@@ -49,7 +49,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20261024h2313970"></script>
+  <script src="js/input-bindings.js?v=20261104puzzleModeMigration1"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
@@ -166,7 +166,7 @@
   <script src="js/metal-armor-system.js?v=20261031he182dd9"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261103kurrayaPuzzle2">
+  <link rel="stylesheet" href="style.css?v=20261104puzzleHud1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -802,7 +802,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261103fluteEcho1"></script>
+  <script src="js/equipment-panel.js?v=20261104hba953ed"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2237,7 +2237,7 @@
               <div class="settings-name">Editor Hub</div>
               <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
             </div>
-            <a href="tools/index.html?v=20261103puzzleReview4" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+            <a href="tools/index.html?v=20261104puzzleHud1" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
           </div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -2784,8 +2784,8 @@
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-puzzle.js?v=20261103fluteEcho1"></script>
-  <script src="js/music-minigame.js?v=20261103fluteEcho1"></script>
+  <script src="js/kurraya-puzzle.js?v=20261104heee8fce"></script>
+  <script src="js/music-minigame.js?v=20261104h2988b49"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2872,7 +2872,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261104ropeChainRebase1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261104h4efa8f9"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2887,7 +2887,7 @@
   <script src="js/banubu-cave-clouds.js?v=20261015hf69d7ce"></script>
   <script src="js/cavern-entrance-light.js?v=20261017hb7479e9"></script> <!-- Den cavern entrance light + floor glow (built from game.js). -->
   <!-- Shoulder Cam / Character View Pointer Lock (window.ShoulderCamPointerLock); game.js calls init(...) during setup. -->
-  <script src="js/shoulder-cam-pointer-lock.js?v=20260930hfc11b39"></script>
+  <script src="js/shoulder-cam-pointer-lock.js?v=20261104h65c5eb5"></script>
   <!-- Shared character-scoped hobunjiSaveMeta update step used by game.js's save* helpers. -->
   <script src="js/character-meta-save.js?v=20260930ench1"></script>
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
@@ -2917,7 +2917,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261104hc61386e"></script>
+  <script src="game.js?v=20261104h289cf68"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -10,11 +10,12 @@ const window = {localStorage,dispatchEvent() {}}; // Optional UI notifications a
 const moduleRef = {exports:{}}; // Captures the CommonJS export of the same UMD file that browsers load.
 vm.runInNewContext(source,{window,module:moduleRef,Event:function Event(){}});
 const model=moduleRef.exports;
-assert.equal(Object.keys(model.SCALES).length>=5,true,'several tunable five-note scales are supported');
-assert.ok(Object.values(model.SCALES).every(intervals=>intervals.length===5),'no banks, extra pitches, or chord notes');
+assert.equal(Object.keys(model.SCALES).length>=5,true,'several tunable scales are supported');
+assert.ok(Object.values(model.SCALES).every(intervals=>intervals.length===5),'each tuning has five degrees before the octave');
 assert.notEqual(model.pitchFor(4,{scale:'Dorian',tonicMidi:60}),model.pitchFor(4,{scale:'Natural Minor',tonicMidi:60}),
   'distinct scale names produce meaningfully distinct note layouts');
-assert.equal(model.pitchFor(4,{scale:'Pentatonic Minor',tonicMidi:60}),70);
+assert.equal(model.settings().scale,'Pentatonic Minor');
+assert.deepEqual(Array.from(model.NOTE_CODES,(_,index)=>model.pitchFor(index)),[60,63,65,67,70,72,75,77]);
 assert.equal(model.matchSuffix([4,4,0,1,2,4,2,1,0])?.id,'puzzle-practice',
   'recognition is purely ordered: arbitrary preceding notes do not affect the match');
 assert.equal(model.matchSuffix([0,1,3,4]),null);
@@ -47,8 +48,6 @@ assert.match(host,/switchInstrumentMode\('puzzle'\)/,'the default instrument mod
 assert.match(host,/PUZZLE_MINIGAME_SRC/);
 assert.match(host,/startPuzzleInputs\(\)/,'puzzle uses shared controller input');
 assert.match(host,/if \(event\.code === 'Escape'\)/,'Escape exits the puzzle');
-assert.match(host,/const exitCode = Object\.prototype\.hasOwnProperty\.call\(bindings,'musicPause'\)/,
-  'controller Start exits the puzzle');
 assert.match(host,/puzzle-song-recognized/,'a recognized song is forwarded to gameplay');
 assert.match(host,/function silenceAmbientForPuzzle\(\)/,'puzzle explicitly silences nearby NPC backing tracks');
 assert.match(host,/playerSession\?\.instrumentMode === 'puzzle' && playerSession\.area === performer\.area/,

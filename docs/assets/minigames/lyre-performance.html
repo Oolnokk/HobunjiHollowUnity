@@ -1471,7 +1471,7 @@
     compatibilityBuildPromise:null, // Prevents duplicate full-buffer WAV conversions while compatibility output is being prepared.
     playbackEngine:'webaudio', // Web Audio becomes playable immediately after decode/normalization and is the normal low-latency path.
     tonicMidi:48,
-    scaleName:'Major',
+    scaleName:'Pentatonic Minor',
     playMode:'pedal',
     voice:'Clean',
     attack:0.006,
@@ -1844,8 +1844,8 @@
   }
 
 
-  function scalePitchClasses() {
-    const scale = SCALES[state.scaleName] || SCALES.Major;
+  function scalePitchClasses(scaleName = state.scaleName) {
+    const scale = SCALES[scaleName] || SCALES['Pentatonic Minor'];
     const classes = [];
     for (const offset of scale) {
       if (offset >= 12) continue;
@@ -2044,9 +2044,9 @@
     }));
   }
 
-  function composeRandomKurrayaMelody() {
+  function composeRandomKurrayaMelody(scaleName) {
     const arrangement = activeKurrayaSongArrangement(); // Uses the same F/G/E/A/C bar painting as playback, so structural melody tones respond to the actual current harmony.
-    const scaleSemitones = scalePitchClasses().slice();
+    const scaleSemitones = scalePitchClasses(scaleName);
     const candidates = Array.from({length:Math.min(14,scaleSemitones.length * 2)},(_,degree) => degree);
     const chordByStep = new Map(KURRAYA_AUTHORING_STEPS.map((step,stepIndex) => [stepIndex,{...step,stepIndex}]));
     const rhythmA = randomKurrayaChoice(RANDOM_KURRAYA_MELODY_RHYTHMS);
@@ -2095,8 +2095,8 @@
     return normalizeKurrayaMelodyNotes(generated); // Enforces exactly 48 quarter-beats before either Foroji or the Music Lab is allowed to play it.
   }
 
-  function randomizeKurrayaSongMelody() {
-    state.kurrayaSongMelodyNotes = composeRandomKurrayaMelody(); // Shared authoring/runtime entry point: one generator feeds the standalone lab and Foroji's ambient performance.
+  function randomizeKurrayaSongMelody(scaleName) {
+    state.kurrayaSongMelodyNotes = composeRandomKurrayaMelody(scaleName); // Shared authoring/runtime entry point: one generator feeds the standalone lab and Foroji's ambient performance.
     return state.kurrayaSongMelodyNotes.map(note => note.slice());
   }
 
@@ -5579,7 +5579,7 @@
   }
 
   function applyPerformanceScale(scaleName, {persist = true} = {}) {
-    const nextScaleName = SCALES[scaleName] ? scaleName : 'Major'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
+    const nextScaleName = SCALES[scaleName] ? scaleName : 'Pentatonic Minor'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
     interruptAutoReleaseTail('note set selected in sampler');
     state.scaleName = nextScaleName;
     if (refs.scaleSelect) refs.scaleSelect.value = nextScaleName;
@@ -5749,7 +5749,7 @@
       state.tonicMidi = (currentRaw || lowerRegisterRaw)
         ? clamp(Number(state.tonicMidi) || 48, 24, 60)
         : clamp((Number(saved.tonicMidi) || 60) - 12, 24, 60); // V11 already contains the lowered register; only genuinely older settings migrate down once.
-      if (!SCALES[state.scaleName]) state.scaleName = 'Major';
+      if (!SCALES[state.scaleName]) state.scaleName = 'Pentatonic Minor';
       if (!HARMONY_PATTERNS[state.harmonyPattern]) state.harmonyPattern = FIXED_HARMONY_PATTERN_ID;
       state.harmonyBpm = clamp(Number(state.harmonyBpm) || 96, 40, 240);
       if (![2,4,8,16].includes(Number(state.harmonyChordBeats))) state.harmonyChordBeats = 8;
@@ -6793,9 +6793,11 @@
     state.selectedSong = type;
     state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
-    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
+    const npcScale = type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
+      ? 'Pentatonic Minor' : null; // Keep the generated lead in the same scale when the player joins it.
+    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
     if (requestedScaleName && state.scaleName !== requestedScaleName) {
-      applyPerformanceScale(requestedScaleName,{persist:options.persistScale !== false});
+      applyPerformanceScale(requestedScaleName,{persist:!npcScale && options.persistScale !== false});
       if (!options.scaleOverride) toast(`${melody.title} switched the note set to ${requestedScaleName}`, 2400);
     }
     state.bpm = clamp(Number($('#bpmInput').value) || melody?.defaultBpm || melody?.bpm || 104, 45, 300);
@@ -7170,7 +7172,7 @@
         // host keeps it selected.
         if (state.game.loopDemo) {
           const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
-          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody();
+          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor');
           startSong(state.selectedSong, {demoMode:state.ambientOnly ? randomNpcAutoPickPattern() : state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
@@ -7806,7 +7808,7 @@
       }
       const mode = randomNpcAutoPickPattern(); // NPCs never inherit a player's Single Note/tremolo preference.
       state.rootPadEnabled = true; // An ambient musician always plays the automatic bar-root accompaniment; does not persist over player settings.
-      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(); // Foroji begins with a new composition instead of the authored practice melody.
+      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor'); // Foroji begins with a new composition instead of the authored practice melody.
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
       return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
     },

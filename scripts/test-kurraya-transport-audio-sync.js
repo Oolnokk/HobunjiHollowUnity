@@ -228,7 +228,7 @@ assert.match(
 
 assert.match(
   source,
-  /const requestedScaleName = options\.scaleOverride[\s\S]*?applyPerformanceScale\(requestedScaleName,\{persist:options\.persistScale !== false\}\)/,
+  /const requestedScaleName = options\.scaleOverride[\s\S]*?applyPerformanceScale\(requestedScaleName,\{persist:!npcScale && options\.persistScale !== false\}\)/,
   'ordinary authored playback must still support its authored scale while the audition path can explicitly override it'
 );
 
@@ -374,13 +374,13 @@ assert.match(
 
 assert.match(
   source,
-  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\(\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
+  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
   'Foroji must generate a new Kurraya melody before an ambient performance begins'
 );
 
 assert.match(
   source,
-  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
+  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
   'procedural ambient performance must compose another melody at every song-loop boundary instead of repeating one random result forever'
 );
 

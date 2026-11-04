@@ -1,4 +1,4 @@
-/* Shared, timing-free five-note Kurraya song model for the puzzle instrument and Tool Hub. */
+/* Shared, timing-free eight-note Kurraya song model for the puzzle instrument and Tool Hub. */
 (function (root) {
   'use strict';
   const SONGS_KEY = 'hobunji.kurrayaPuzzleSongs.v1'; // Shared between the music lab and gameplay on the same origin.
@@ -13,17 +13,17 @@
     'Hirajoshi': [0, 2, 3, 7, 8],
     'Yo': [0, 2, 5, 7, 9],
     'Chromatic': [0, 1, 2, 3, 4]
-  }); // Each scale supplies exactly five distinct single-note buttons, with no banks or chords.
-  const NOTE_CODES = Object.freeze(['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG']); // Default keyboard notes 1–5.
+  }); // These five degrees repeat at the octave for the eight single-note controls.
+  const NOTE_CODES = Object.freeze(['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK']); // Default keyboard notes 1–8.
   const BUILTIN_SONGS = Object.freeze([
-    Object.freeze({id:'puzzle-practice',title:'Practice Melody',notes:[0,1,2,4,2,1,0],scale:'Pentatonic Major',tonicMidi:60})
+    Object.freeze({id:'puzzle-practice',title:'Practice Melody',notes:[0,1,2,4,2,1,0],scale:'Pentatonic Minor',tonicMidi:60})
   ]); // Gives new saves one recognizable example without requiring authoring first.
   let memorySongs = []; // Fallback if storage is unavailable, also used by isolated tests.
-  let memorySettings = {scale:'Pentatonic Major',tonicMidi:60}; // Fallback for privacy/storage-restricted browsers.
+  let memorySettings = {scale:'Pentatonic Minor',tonicMidi:60}; // Fallback for privacy/storage-restricted browsers.
 
   function storage() { try { return root.localStorage || null; } catch (_) { return null; } }
   function sanitizeSettings(input) {
-    const scale = Object.prototype.hasOwnProperty.call(SCALES,input?.scale) ? input.scale : 'Pentatonic Major';
+    const scale = Object.prototype.hasOwnProperty.call(SCALES,input?.scale) ? input.scale : 'Pentatonic Minor';
     const n = Number(input?.tonicMidi);
     return {scale:scale,tonicMidi:Number.isFinite(n) ? Math.max(36,Math.min(84,Math.round(n))) : 60};
   }
@@ -41,7 +41,7 @@
     const title = String(input.title || '').trim().slice(0,64);
     const notes = input.notes;
     if (!title || !Array.isArray(notes) || notes.length < 3 || notes.length > 32 ||
-        !notes.every(note => Number.isInteger(note) && note >= 0 && note < 5)) return null;
+        !notes.every(note => Number.isInteger(note) && note >= 0 && note < NOTE_CODES.length)) return null;
     const id = String(input.id || '').trim().replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64);
     if (!id) return null;
     return Object.assign({id:id,title:title,notes:notes.slice()},sanitizeSettings(input));
@@ -86,7 +86,7 @@
       draft.id = 'song-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
     }
     const song = normalizeSong(draft);
-    if (!song) throw new Error('A song needs a title and 3–32 notes, each between 1 and 5.');
+    if (!song) throw new Error('A song needs a title and 3–32 notes, each between 1 and 8.');
     const songs = userSongs();
     const index = songs.findIndex(item => item.id === song.id);
     if (index >= 0) songs[index] = song;
@@ -109,7 +109,7 @@
     const raw = Array.isArray(payload) ? payload : payload?.songs;
     if (!Array.isArray(raw) || raw.length > 100) throw new Error('Expected a songbook JSON object with up to 100 songs.');
     const songs = raw.map(normalizeSong);
-    if (songs.some(song => !song)) throw new Error('Invalid song: each entry requires an ID, title, and 3–32 note indices (0–4).');
+    if (songs.some(song => !song)) throw new Error('Invalid song: each entry requires an ID, title, and 3–32 note indices (0–7).');
     const merged = new Map(userSongs().map(song => [song.id,song]));
     songs.forEach(song => { if (!BUILTIN_SONGS.some(builtin => builtin.id === song.id)) merged.set(song.id,song); });
     if (merged.size > 100) throw new Error('The merged songbook exceeds 100 songs.');
@@ -119,8 +119,9 @@
   }
   function pitchFor(noteIndex,inputSettings) {
     const tune = sanitizeSettings(inputSettings || settings());
-    if (!Number.isInteger(noteIndex) || noteIndex < 0 || noteIndex >= 5) return null;
-    return tune.tonicMidi + SCALES[tune.scale][noteIndex];
+    if (!Number.isInteger(noteIndex) || noteIndex < 0 || noteIndex >= NOTE_CODES.length) return null;
+    const degrees = SCALES[tune.scale]; // The upper three notes continue the same scale.
+    return tune.tonicMidi + degrees[noteIndex % degrees.length] + 12 * Math.floor(noteIndex / degrees.length);
   }
   function noteName(midi) {
     const names = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
