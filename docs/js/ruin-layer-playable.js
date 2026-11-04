@@ -179,8 +179,8 @@
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
-            onMusicStart:()=>options.showToast?.('Listen, then play the phrase on your flute. Step off and on to hear it again.',true),
-            onMusicUnavailable:()=>options.showToast?.('Equip a flute to play the ancient phrase.',false),
+            onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
+            onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
