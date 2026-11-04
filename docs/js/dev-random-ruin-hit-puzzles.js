@@ -944,6 +944,12 @@
       preBaseFrame(); // Reuse the exact before-render lifecycle callback when software WebGL first-frame compilation is delayed in Chromium. Never invent a puzzle state.
       return !!root&&currentArea()===MAP_ID;
     },
+    debugAdvanceSignals:frames=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1'||!root||currentArea()!==MAP_ID)return false;
+      const ticks=Math.min(240,Math.max(0,Math.floor(Number(frames)||0)));
+      for(let i=0;i<ticks;i++)updateSignalState(.05); // Runs the unchanged gameplay target/proxy interpolation in deterministic 50 ms fixed steps, not a fabricated solve event.
+      return ticks;
+    },
     debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
     debugPickupTorch:()=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
