@@ -39,7 +39,11 @@ async function withThreePreviewDeadline(promise,timeoutMs,step){
   }finally{clearTimeout(timer)}
 } // A slow third-party 3D dependency cannot leave the preview in an infinite loading state.
 async function updateThreePreview(){
-  if(!R.body||!startOptionalThreePreview())return;
+  if(!R.body)return;
+  if(!startOptionalThreePreview()){
+    if(E.match3D.checked)E.match3DStatus.textContent='3D is not available yet; displaying raw sprite art. Use Retry runtime if it does not load.';
+    return;
+  }
   const buildId=++R.three.buildGeneration;
   try{
     await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
