@@ -159,7 +159,7 @@ assert(simplePuzzles.includes('const GRID_WALL_CLEARANCE = 0.52') && simplePuzzl
 assert(dynamicSurfaces.includes("const scope = options.scope == null ? null : String(options.scope)"), 'support sampling must support an exact scope filter for pre-entry audits');
 assert(interior.includes("hobunji.devRandomRuinPuzzleOptions.v2"), 'simple-mode defaults must use a fresh storage version so old all-on puzzle settings cannot leak forward');
 assert(interior.includes("pressurePlate:false") && interior.includes("brazier:false") && interior.includes("stackedObelisk:false") && interior.includes("linkedCubePillars:false") && interior.includes("nestedRoom:false"), 'fragile V50 puzzle families must default off in the simple first pass');
-assert(interior.includes("glyphObelisk:true") && interior.includes("safePath:true") && interior.includes("ropeSwing:true") && interior.includes("hallwayTraps:true"), 'simple first pass must keep projectile targets and enable safe-path, rope, and hallway hazards');
+assert(interior.includes("glyphObelisk:true") && interior.includes("safePath:true") && interior.includes("ropeSwing:true") && interior.includes("hallwayTraps:false"), 'simple puzzles retain glyph and rope traversal but permanently retire alternating hallway projectiles');
 assert(interior.includes("getRuntimeContext"), 'parent-runtime simple puzzles need the generated scene/metadata context without reaching into V50 internals');
 assert(interior.includes('getPuzzleGenerationOptions') && interior.includes('setPuzzleGenerationOptions'), 'simple-mode Settings state must be directly inspectable/persistable for deterministic runtime tests');
 assert(interior.includes("checkbox.addEventListener('change'"), 'each simple puzzle checkbox must commit directly instead of depending on delegated Settings events');
@@ -181,7 +181,7 @@ assert(simplePuzzles.includes("playObjectSfxKey?.('puzzleComplete')") && simpleP
 assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('notes:melody'), 'the retired chord collection must be replaced by a one-trigger echo melody module');
 assert(simplePuzzles.includes("mesh.name='dev_ruin_rope_lava'") && simplePuzzles.includes("textureUrl:'assets/textures/wibbly_surface.png'"), 'rope fall/burn zones must be visibly represented by the existing animated water surface treatment recolored as lava');
 assert(simplePuzzles.includes("HobunjiDrenkirraPellet?.sfx?.acidSizzle"), 'visible lava contact must reuse the Drenkirra pellet acid-sizzle cue');
-assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
+assert(!simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'") && !simplePuzzles.includes('spawnTrapProjectile(') && !simplePuzzles.includes('updateHallwayTraps('), 'fireball/poison-dart obstacle courses must neither generate nor tick');
 assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('replayEchoSet(set)') && simplePuzzles.includes("window.addEventListener('hobunji-kurraya-puzzle-note'"), 'musical echo triggers must stay reusable in hallways and rooms, replay on pressure, and listen to ordinary instrument note events');
 assert(simplePuzzles.includes('RuinMelodyGlyphDecal?.create?.(') && simplePuzzles.includes('notes:melody') && simplePuzzles.includes('syncEchoInscription(set)'), 'the exact generated notes must create an in-world Scratchbone clue and remain hot-swappable');
 assert(camera.includes('ruin-melody-glyph-decal.js?'), 'load the procedural inscription renderer before the ruin composer');
@@ -496,9 +496,10 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'the real player floor reconciliation must take the fatal chain path before recoverable footing falls');
   assert(simplePuzzles.includes('updateRopeChainCheckpoints();') && simplePuzzles.includes("'rope-chain-'+hall.id+'-start'")
     && simplePuzzles.includes("'rope-chain-'+hall.id+'-end'"), 'both bank checkpoints must mutually replace the active ruin checkpoint');
-  assert(simplePuzzles.includes('if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(')
-    && simplePuzzles.includes('if(!allowTraps)continue;'),
-    'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
+  assert(simplePuzzles.includes('buildSwappableHallwayModules(context,rng,usedHallways);')
+    && simplePuzzles.includes('buildRopeChainHallway(context,rng,hall,usedHallways)')
+    && !simplePuzzles.includes('if(!allowTraps)continue;'),
+    'hallway slots now choose rope, glyph or melody without ever falling back to an obsolete projectile trap');
   assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true'),
     'mobile puzzle settings must offer the new hallway type without removing the existing safe-path grid');
   assert(!simplePuzzles.slice(simplePuzzles.indexOf('function buildRopeChainHallway('),simplePuzzles.indexOf('function ropeChainPitAt(')).includes('createPlatform('),
