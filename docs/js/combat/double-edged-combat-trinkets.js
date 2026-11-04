@@ -28,10 +28,12 @@
   function outgoingMultipliers(target, options, player) {
     const maxHealth = Math.max(1, Number(window.ResourceSystem?.getEffectiveMax?.(player, 'health')) || Number(player?.maxHealth) || 1); // Berserker threshold uses the actual current Health cap.
     const lowHealth = Number(player?.health) > 0 && Number(player.health) / maxHealth < 0.35; // Checked when the hit lands, not before the attack starts.
+    const sampledRangedDamage = Number(options?.rangedTrinketDamageMultiplier); // Ranged projectiles carry the wearer's Gambler power at launch alongside their slowed launch velocity.
+    const rangedPower = options?.ranged === true ? (Number.isFinite(sampledRangedDamage) && sampledRangedDamage > 0 ? sampledRangedDamage : modifier('rangedDamage')) : 1;
     const health = modifier('outgoingHealthDamage')
       * (lowHealth ? modifier('lowHealthDamage') : 1)
       * (target?.prone ? modifier('proneTargetDamage') : 1)
-      * (options?.ranged === true ? modifier('rangedDamage') : 1);
+      * rangedPower;
     const footing = modifier('outgoingFootingDamage')
       * (options?.heavy === true ? modifier('heavyFootingDamage') : 1);
     const affliction = modifier('outgoingAffliction');
