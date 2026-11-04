@@ -11,9 +11,7 @@
     173
   ],
   "interpolation": "nearest-neighbor via inverse pixel-center lookup",
-  "missingUnchanged": [
-    "furhood_nelk-back_tl_m.png"
-  ],
+  "missingUnchanged": [],
   "files": [
     {
       "file": "furhood-base_tl_m.png",
@@ -56,6 +54,11 @@
       "afterGitBlob": "a796b6b880ea9dac992dfa7d0a587973dc056ea9"
     },
     {
+      "file": "furhood_nelk-back_tl_m.png",
+      "beforeGitBlob": "1080bfd758b43a25b279745aa160f7bfdbe58b78",
+      "afterGitBlob": "b49a270ba1aa14073ec5eb92683992d4d0df985c"
+    },
+    {
       "file": "furhood_nelk-front_tl_m.png",
       "beforeGitBlob": "99d73123c824161816105179bfe6ac7d89d02a46",
       "afterGitBlob": "ec9dcb6af51596e973ea336bb5aa7716377f6a32"
@@ -75,5 +78,6 @@
       "beforeGitBlob": "8498db956ecf40a3279766c0f7aadae07db06051",
       "afterGitBlob": "8a4a5b4a4374487930b96a91cc64f35ea9600cdc"
     }
-  ]
+  ],
+  "addedNelkBackFromMainCommit": "632258462154c00ecd6868d0286454f37e497689"
 }
