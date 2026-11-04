@@ -22,6 +22,27 @@ assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out
 for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js'])
   assert(index.includes(file),'game page must load '+file);
 
+// Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
+// through the same segment intersection used by Three.Box3 projectile hits.
+// Regress an actual 3D closed gate and avoid a rawBox.clone() runtime crash.
+{
+  const puzzleSource=fs.readFileSync('docs/js/dev-random-ruin-simple-puzzles.js','utf8');
+  const begin=puzzleSource.indexOf('  function segmentBoxInterval(');
+  const end=puzzleSource.indexOf('  function modularProjectileHit(',begin);
+  assert(begin>=0&&end>begin,'reuse the canonical projectile segment interval');
+  const intersect=new Function(puzzleSource.slice(begin,end)+'\nreturn segmentBoxInterval;')();
+  const gate=G.create({cols:10,rows:10,levels:3,baseY:8});
+  gate.set(4,4,0,G.KIND.SOLID);gate.set(4,4,1,G.KIND.SOLID);
+  const start={x:3,y:8.8,z:4.5},stop={x:5,y:8.8,z:4.5};
+  assert(intersect(start,stop,{min:{x:4,y:8,z:4},max:{x:5,y:10,z:5}},.02)?.enter>0,
+    'plain voxel AABBs must work in the actual segment intersection function');
+  const blocked=gate.solidSegmentHit(start,stop,.20,(a,b,record,pad)=>intersect(a,b,record.box,pad));
+  assert(blocked!==null,'native rope flight must collide with its own story\'s closed stone gate');
+  const elsewhere=gate.solidSegmentHit({...start,y:4.8},{...stop,y:4.8},.20,
+    (a,b,record,pad)=>intersect(a,b,record.box,pad));
+  assert.equal(elsewhere,null,'the same coordinates on a lower story remain unblocked');
+}
+
 // At identical X/Z, select the actor's story grid instead of the first
 // registered one; the shared shaft still owns all levels of its own portal.
 {
