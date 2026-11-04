@@ -66,6 +66,8 @@
     const flameMat=new THREE.MeshBasicMaterial({color:0xffb92a});
     const materials=[material,plateMat,gateMat,brazierMat,flameMat]; // Disposed together with the geometry and owned interactive controls.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
+    const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
+    let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,geometryCount:0}; // Exposed to mobile diagnostics.
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
@@ -77,7 +79,7 @@
       for(const mat of materials)mat.dispose?.();
     };
     function mesh(name,geometry,mat,x,y,z){
-      const node=new THREE.Mesh(geometry,mat);node.name=name;node.position.set(x,y,z);group.add(node);return node;
+      const node=new THREE.Mesh(geometry,mat);node.name=name;node.position.set(x,y,z);activeRoot.add(node);return node;
     }
     function instance(name,geometry,cells,mat,where){
       if(!cells.length)return;
@@ -85,7 +87,7 @@
       object.name=name;
       const matrix=new THREE.Matrix4(); // Reused for this batch instead of allocating a Matrix4 per floor tile.
       cells.forEach((cell,i)=>{const p=where(cell);object.setMatrixAt(i,matrix.makeTranslation(p.x,p.y,p.z));});
-      object.instanceMatrix.needsUpdate=true;group.add(object);owner.geometryCount++;
+      object.instanceMatrix.needsUpdate=true;activeRoot.add(object);owner.geometryCount++;
     }
     function setGate(record,blocked){
       if(!record?.gate)return;
@@ -102,6 +104,12 @@
     }
     try{
       for(const floor of plan.floors)for(const wing of floor.wings){
+        if(!floorRoots.has(floor.floor)){
+          const rootGroup=new THREE.Group(); // Per-story scene root used to occlude floors above current player elevation.
+          rootGroup.name='ruin-layer-floor-'+floor.floor;
+          floorRoots.set(floor.floor,rootGroup);group.add(rootGroup);
+        }
+        activeRoot=floorRoots.get(floor.floor);
         const tiles=collect(wing),walkCells=[...tiles].map(k=>k.split(',').map(Number)); // Each stage is reachable on its own 2D level.
         const localBounds=walkCells.reduce((a,[x,z])=>({
           minX:Math.min(a.minX,x),maxX:Math.max(a.maxX,x),minZ:Math.min(a.minZ,z),maxZ:Math.max(a.maxZ,z)
@@ -206,6 +214,10 @@
       if(owner.disposed)return;
       const player=getPlayerPosition(),y=Number(getPlayerY?.()); // Actor feet elevation disambiguates vertically overlapping room coordinates.
       if(!player||!Number.isFinite(y))return;
+      // When on the ground floor, an upper floor's stone deck would otherwise
+      // be drawn over the player by the overhead third-person camera. Keep
+      // physical collision/supports active; hide ONLY the upper story meshes.
+      for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
       for(const record of states){
         const challenge=record.challenges[record.solved];
         if(!challenge)continue;
