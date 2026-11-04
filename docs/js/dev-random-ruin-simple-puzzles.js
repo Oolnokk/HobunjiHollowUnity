@@ -747,8 +747,11 @@
       const pointAlong=chain.axis==='x'?point.x:point.z;
       const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
       const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
-      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue;
-      activateCheckpoint(id,point,true); // Entering either side replaces the other side, including after a reverse traversal.
+      const support=chain.external?DS.sampleSupport?.(player.x,player.z,{
+        minY:chain.floorY-.32,maxY:chain.floorY+.32,pad:.02,
+      }):sampleSupport(player.x,player.z);
+      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!support)continue;
+      activateCheckpoint(id,point,true,chain.external?chain.floorY:null); // Entering either side replaces the other side, including after a reverse traversal.
       return;
     }
   }
@@ -1812,10 +1815,14 @@
     return {x:crossX,z:door.z,side:Math.sign(b)||1};
   }
 
-  function activateCheckpoint(id, point, announce = true) {
+  function activateCheckpoint(id, point, announce = true, fixedStoryY = null) {
     if (!state || !point) return false;
-    const support=sampleSupport(point.x,point.z);
-    const final={x:point.x,z:point.z,y:Number(support?.y ?? point.y ?? 0)};
+    const storyY=fixedStoryY===null?null:Number(fixedStoryY); // External stacked checkpoints must never snap to a higher story sharing X/Z.
+    const support=Number.isFinite(storyY)?DS.sampleSupport?.(point.x,point.z,{
+      minY:storyY-.32,maxY:storyY+.32,pad:.02,
+    }):sampleSupport(point.x,point.z);
+    const final={x:point.x,z:point.z,
+      y:Number.isFinite(storyY)?storyY:Number(support?.y ?? point.y ?? 0)};
     state.checkpoints.active={id,point:final,at:performance.now()};
     state.checkpoints.triggered.add(id);
     state.checkpoints.activationCount++;
@@ -1839,7 +1846,7 @@
     if(previous){
       const jumped=Math.hypot(nowPoint.x-previous.x,nowPoint.z-previous.z)>.75;
       for(const door of state.checkpoints.doorways){
-        if(state.ropeChains.some(chain=>chain.doorIds.has(door.id)))continue; // A rope hallway's endpoints use its own mutually replacing checkpoints.
+        if(state.ropeChains.some(chain=>chain.doorIds?.has?.(door.id)))continue; // Externally authored chains have no V50 hallway doorway list. // A rope hallway's endpoints use its own mutually replacing checkpoints.
         const crossing=doorwayCrossing(door,previous,nowPoint);
         const proximity=!crossing&&jumped?doorwayProximity(door,nowPoint):null;
         const trigger=crossing||proximity;
@@ -2563,7 +2570,7 @@
         for(const object of [rope.mesh,rope.marker,rope.mount])spec.parent?.add?.(object);
         state.ropes.push(rope);ropes.push(rope);
       }
-      const chain={id,external:true,scopeRoot:state.root,ropes,
+      const chain={id,external:true,scopeRoot:state.root,ropes,doorIds:new Set(),
         axis:spec.bounds.axis||'x',
         bounds:{minX:spec.bounds.minX,maxX:spec.bounds.maxX,minZ:spec.bounds.minZ,maxZ:spec.bounds.maxZ},
         entry:{...spec.entry},exit:{...spec.exit},floorY:Number(spec.floorY),
