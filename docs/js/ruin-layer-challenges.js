@@ -87,7 +87,7 @@
           const number=rec.notes[i]+1; // Actual Scratchbone 1–8 sprites match the generated instrument notes.
           let texture=boneTextures.get(number);
           if(!texture){
-            texture=new THREE.TextureLoader().load('assets/hud/2DScratchbone'+number+'.png');
+            texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
             if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
             boneTextures.set(number,texture);
           }
