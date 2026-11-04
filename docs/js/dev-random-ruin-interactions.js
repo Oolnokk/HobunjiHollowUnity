@@ -128,10 +128,12 @@
     if (!root?.traverse || now - lastSemanticScanAt < SEMANTIC_RESCAN_MS) return;
     lastSemanticScanAt = now;
     const discoveredLadders = []; // Used to replace the live ladder list after each throttled V50 hierarchy rescan.
-    root.traverse(object => {
-      if (object.userData?.generatedAccessType === 'stoneLadder') discoveredLadders.push(object);
-    });
-    ladders = discoveredLadders;
+    const scanLadders=object=>{if(object.userData?.generatedAccessType==='stoneLadder')discoveredLadders.push(object);};
+    root.traverse(scanLadders);
+    for(const native of window.DevRandomRuinHitPuzzles?.getNativeRoots?.()||[]){
+      if(native&&native!==root&&native.parent)native.traverse?.(scanLadders); // These are real V50 ladder meshes on detached upper stories, not duplicate proxy geometry.
+    }
+    ladders=discoveredLadders;
     ladders.forEach(tagLadder);
   }
 
@@ -175,8 +177,9 @@
     for (const ladder of ladders) {
       const pos = worldPosition(ladder);
       if (!pos) continue;
-      const dist = (pos.x - player.x) ** 2 + (pos.z - player.z) ** 2;
-      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; }
+      const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladder);
+      const dist=Number.isFinite(reach)?reach**2:(pos.x-player.x)**2+(pos.z-player.z)**2;
+      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; } // Never select a ladder on a different story because its X/Z matches.
     }
     return best;
   }
@@ -253,8 +256,12 @@
       deps.showToast?.('The ladder endpoints could not be resolved.', false);
       return false;
     }
-    const currentSupport = DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:12, pad:.02 });
-    const currentY = Number.isFinite(Number(currentSupport?.y)) ? Number(currentSupport.y) : Number(deps.playerMesh?.position?.y) || 0;
+    const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.();
+    const currentSupport=typeof physicalY==='number'&&Number.isFinite(physicalY)
+      ?null:DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:24, pad:.02 });
+    const currentY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY
+      :Number.isFinite(Number(currentSupport?.y))&&currentSupport?.y!=null?Number(currentSupport.y)
+        :Number(deps.playerMesh?.position?.y)||0; // Never choose the highest overlapping floor under the player's X/Z.
     const midpoint = (endpoints.top.y + endpoints.bottom.y) * .5;
     const target = currentY >= midpoint ? endpoints.bottom : endpoints.top;
     const deltaY=Math.abs(target.y-currentY);
@@ -514,7 +521,11 @@
         touchIcon:'🪜',
         owner:ladderHit.ladder,
         distance:ladderHit.distance,
-        onPress:() => climbLadder(ladderHit.ladder),
+        onPress:()=>{
+          const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladderHit.ladder);
+          if(Number.isFinite(reach)&&reach>LADDER_RANGE)return false; // A cached mobile/controller prompt cannot climb another story after the player moves.
+          return climbLadder(ladderHit.ladder);
+        },
         seenAt:now,
         source:'semantic-ladder',
       });
