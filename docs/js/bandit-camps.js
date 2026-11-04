@@ -278,7 +278,7 @@
   }
 
   function ensureBanditCampMeshes(zoneId) {
-    const zi = deps.zoneScenes.get(zoneId);
+    const zi = deps?.zoneScenes?.get?.(zoneId); // The async authored-crate/tent load may finish before a zone scene is registered.
     if (!zi) return;
     let meshes = _banditCampMeshes.get(zoneId);
     if (!meshes) { meshes = new Map(); _banditCampMeshes.set(zoneId, meshes); }
