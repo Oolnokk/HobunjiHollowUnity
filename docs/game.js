@@ -7141,7 +7141,7 @@
           // Scent-marked opponents take priority without bypassing wild animals' existing
           // aggro, leash, perception or attack-commitment rules.
           window.AnimalScentTargeting?.prioritizeWild?.(
-            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx)
+            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
           );
           if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
             targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
