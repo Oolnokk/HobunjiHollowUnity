@@ -287,6 +287,17 @@
       const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * deps.PLATEAU_UNIT, zGrid);
       if (mesh) meshes.push(mesh);
     });
+    // Routes are computed from the exact merged runtime grid (not authored
+    // sub-map coordinates). Mini-cliff caps occupy their own Y layers, so
+    // overlapping footprint tiles never overwrite the ground beneath them.
+    const network = window.CliffRouteNetwork?.forGrid?.(zGrid, {
+      area: mapId,
+      blocked: t => !t || t.incline || t.type === deps.TileType.ROCK || t.type === deps.TileType.WALL,
+      isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+      tileY: t => Number.isFinite(t?.surfaceY) ? t.surfaceY
+        : (deps.NORMAL_TOP + (t?.elevTier || 0) * deps.PLATEAU_UNIT),
+    });
+    if (network) meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network));
     scheduleMesaRenderBatching(zScene, mapId, meshes);
     return meshes;
   }
