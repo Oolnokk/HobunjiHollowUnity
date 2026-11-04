@@ -91,7 +91,10 @@
   }
 
   function aimedAnimal() {
-    if (!deps || deps.getCurrentArea?.() !== 'farm') return null;
+    if (!deps || deps.getCurrentArea?.() !== 'farm') {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock'); // Prevent a stale farm hit from lingering after leaving the farm.
+      return null;
+    }
     const frame = Number(deps.getInteractionFrameTime?.()); // Reuses game.js's frame clock to avoid repeatedly raycasting for each action-bar query.
     if (Number.isFinite(frame) && frame > 0 && frame === aimedAnimalFrame) return aimedAnimalCache;
     aimedAnimalFrame = frame;
@@ -116,9 +119,9 @@
     for (const animal of deps.animalObjects || []) {
       const avatar = animal?.avatarRef; // Uses the same live plane model that the game actually draws.
       const root = avatar?.group; // World transform changes continuously even while the animal's reserved tile stays fixed.
-      if (!root?.visible || !root.parent || animal._barnHome || animal._vatWorkPose) continue;
+      if (!root?.visible || !root.parent || animal._barnHome || animal._vatWorkPose || animal._harvestFrozen) continue;
       const scale = Math.max(Math.abs(Number(root.scale?.x) || 1), Math.abs(Number(root.scale?.y) || 1), Math.abs(Number(root.scale?.z) || 1)); // Coarse rejection includes authored large animals.
-      const visualExtent = Math.max(Number(animal.modelWidth) || 1, Number(animal.modelHeight) || 1) * scale * 0.5; // Conservative bounds; actual selection is based on the mesh intersection below.
+      const visualExtent = Math.hypot(Number(animal.modelWidth) || 1, Number(animal.modelHeight) || 1) * scale * 0.5; // A full rectangle's half-diagonal (not merely half its longest side) bounds visible corners during rotation.
       if (Math.hypot((Number(root.position?.x) || 0) - playerX, (Number(root.position?.z) || 0) - playerZ) > LIVESTOCK_INTERACTION_REACH + visualExtent) continue;
       root.updateMatrixWorld?.(true); // Refresh after the animal's moving/rotating/squashing animation before evaluating its visible planes.
       interactionRayHits.length = 0;
