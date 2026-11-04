@@ -37,7 +37,7 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  code.includes("detonate(vase,'melee')") &&
+  (code.includes("detonate(vase,'melee')") || code.includes("detonate(vase,'melee',opts.actor)")) && // Attacker context is now forwarded for attributed impacts.
   code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
   code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
   code.includes("return detonate(burden,'projectile');"),
