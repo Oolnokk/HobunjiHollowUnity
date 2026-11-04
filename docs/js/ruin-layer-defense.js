@@ -60,7 +60,17 @@
     function releaseInstances(){
       if(encounter){encounters?.remove?.(encounter.id);encounter=null;}
       for(const identifier of placedIds.splice(0))puzzles?.unregisterNode?.(mapId,identifier);
-      for(const node of placements.splice(0))node.parent?.remove?.(node);
+      const geometries=new Set(),materials=new Set(); // Authored meshes are detached before their parent network disposes, so they need explicit per-instance cleanup.
+      for(const node of placements.splice(0)){
+        node.traverse?.(child=>{
+          if(child.geometry&&!child.geometry.userData?.devRuinSharedPrimitive)geometries.add(child.geometry);
+          for(const material of Array.isArray(child.material)?child.material:[child.material])
+            if(material)materials.add(material);
+        });
+        node.parent?.remove?.(node);
+      }
+      for(const geometry of geometries)geometry.dispose?.();
+      for(const material of materials)material.dispose?.(); // Texture maps remain owned by the shared authored-asset cache.
       for(const control of controlHandles.splice(0))options.removeControl?.(control);
     }
     function onPressFor(piece,instanceId,node){
