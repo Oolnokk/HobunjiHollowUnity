@@ -131,6 +131,12 @@
     "icon": "🌿",
     "cat": "ingredient"
   },
+  "cloudSaffron": {
+    "key": "cloudSaffron",
+    "label": "Cloud Saffron",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
   "cosmetic:anuri_hood": {
     "key": "cosmetic:anuri_hood",
     "label": "Anuri Hood",
@@ -302,6 +308,12 @@
   "cosmetic:appearance::Kenkari_M::kenk_fowardtuft": {
     "key": "cosmetic:appearance::Kenkari_M::kenk_fowardtuft",
     "label": "Kenk Fowardtuft",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Kenkari_M::kenk_grandbeard": {
+    "key": "cosmetic:appearance::Kenkari_M::kenk_grandbeard",
+    "label": "Kenk Grandbeard",
     "icon": "👕",
     "cat": "clothing"
   },
@@ -479,6 +491,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard": {
+    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard",
+    "label": "Mao Ao Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:appearance::Mao-ao_M::mao-ao_long_ponytail": {
     "key": "cosmetic:appearance::Mao-ao_M::mao-ao_long_ponytail",
     "label": "Mao Ao Long Ponytail",
@@ -506,6 +524,12 @@
   "cosmetic:appearance::Mao-ao_M::mao-ao_wildbeard": {
     "key": "cosmetic:appearance::Mao-ao_M::mao-ao_wildbeard",
     "label": "Mao Ao Wildbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard": {
+    "key": "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard",
+    "label": "Mashtz Grandbeard",
     "icon": "👕",
     "cat": "clothing"
   },
@@ -629,6 +653,12 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:appearance::Tletingan_M::tl_grandbeard": {
+    "key": "cosmetic:appearance::Tletingan_M::tl_grandbeard",
+    "label": "Tl Grandbeard",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:appearance::Tletingan_M::tl_longponytail": {
     "key": "cosmetic:appearance::Tletingan_M::tl_longponytail",
     "label": "Tl Longponytail",
@@ -683,6 +713,30 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:festivalmask_gar-wolf": {
+    "key": "cosmetic:festivalmask_gar-wolf",
+    "label": "Festivalmask Gar-Wolf",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_grehlr": {
+    "key": "cosmetic:festivalmask_grehlr",
+    "label": "Festivalmask Grehlr",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_uumkao'ii": {
+    "key": "cosmetic:festivalmask_uumkao'ii",
+    "label": "Festivalmask Uumkao'Ii",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:festivalmask_voorg-ass": {
+    "key": "cosmetic:festivalmask_voorg-ass",
+    "label": "Festivalmask Voorg-Ass",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:fine_bodywrap": {
     "key": "cosmetic:fine_bodywrap",
     "label": "Fine Body Wrap",
@@ -692,12 +746,6 @@
   "cosmetic:fine_hood": {
     "key": "cosmetic:fine_hood",
     "label": "Fine Hood",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:ragged_hood": {
-    "key": "cosmetic:ragged_hood",
-    "label": "Ragged Hood",
     "icon": "👕",
     "cat": "clothing"
   },
@@ -713,15 +761,21 @@
     "icon": "👕",
     "cat": "clothing"
   },
-  "cosmetic:rough_cloth_poncho": {
-    "key": "cosmetic:rough_cloth_poncho",
-    "label": "Rough Cloth Poncho",
+  "cosmetic:ragged_hood": {
+    "key": "cosmetic:ragged_hood",
+    "label": "Ragged Hood",
     "icon": "👕",
     "cat": "clothing"
   },
-  "cosmetic:rugged_poncho": {
-    "key": "cosmetic:rugged_poncho",
-    "label": "Rugged Poncho",
+  "cosmetic:replica_bzabag_helm": {
+    "key": "cosmetic:replica_bzabag_helm",
+    "label": "Replica Helm of Bzabag",
+    "icon": "🪖",
+    "cat": "clothing"
+  },
+  "cosmetic:rough_cloth_poncho": {
+    "key": "cosmetic:rough_cloth_poncho",
+    "label": "Rough Cloth Poncho",
     "icon": "👕",
     "cat": "clothing"
   },
@@ -731,9 +785,21 @@
     "icon": "👕",
     "cat": "clothing"
   },
+  "cosmetic:rugged_poncho": {
+    "key": "cosmetic:rugged_poncho",
+    "label": "Rugged Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
   "cosmetic:simple_poncho": {
     "key": "cosmetic:simple_poncho",
     "label": "Simple Poncho",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:tangedcirclet": {
+    "key": "cosmetic:tangedcirclet",
+    "label": "Tanged Circlet",
     "icon": "👕",
     "cat": "clothing"
   },
@@ -1031,6 +1097,18 @@
     "icon": "🍂",
     "cat": "material"
   },
+  "nazgrakuBaby": {
+    "key": "nazgrakuBaby",
+    "label": "Nazgraku Hatchling",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
+  "nazgrakuCrate": {
+    "key": "nazgrakuCrate",
+    "label": "Nazgraku Crate",
+    "icon": "🐟",
+    "cat": "livestock"
+  },
   "nazgrakuEggs": {
     "key": "nazgrakuEggs",
     "label": "Nazgraku Eggs",
@@ -1067,11 +1145,29 @@
     "icon": "🌾",
     "cat": "seed"
   },
+  "nelkBaby": {
+    "key": "nelkBaby",
+    "label": "Nelk Hatchling",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
+  "nelkCrate": {
+    "key": "nelkCrate",
+    "label": "Nelk Crate",
+    "icon": "🦎",
+    "cat": "livestock"
+  },
   "nelkEggs": {
     "key": "nelkEggs",
     "label": "Nelk Eggs",
     "icon": "🥚",
     "cat": "ingredient"
+  },
+  "nelkHide": {
+    "key": "nelkHide",
+    "label": "Nelk Hide",
+    "icon": "🟫",
+    "cat": "material"
   },
   "nelkMayonnaise": {
     "key": "nelkMayonnaise",
@@ -1083,6 +1179,12 @@
     "key": "nelkMeat",
     "label": "Nelk Meat",
     "icon": "🍗",
+    "cat": "ingredient"
+  },
+  "nightCardamom": {
+    "key": "nightCardamom",
+    "label": "Night Cardamom",
+    "icon": "🌶️",
     "cat": "ingredient"
   },
   "nutButter": {
@@ -1143,6 +1245,12 @@
     "key": "pineLog",
     "label": "Pine Log",
     "icon": "🪵",
+    "cat": "material"
+  },
+  "puktukHide": {
+    "key": "puktukHide",
+    "label": "Puktuk Hide",
+    "icon": "🟫",
     "cat": "material"
   },
   "puktukMeat": {
@@ -1259,6 +1367,12 @@
     "icon": "🥩",
     "cat": "ingredient"
   },
+  "starpepper": {
+    "key": "starpepper",
+    "label": "Starpepper",
+    "icon": "🌶️",
+    "cat": "ingredient"
+  },
   "stone": {
     "key": "stone",
     "label": "Stone",
@@ -1313,6 +1427,12 @@
     "icon": "🥩",
     "cat": "material"
   },
+  "uumkaoiiShell": {
+    "key": "uumkaoiiShell",
+    "label": "Uumkao'ii Shell",
+    "icon": "🐚",
+    "cat": "material"
+  },
   "uumkaoiiWhiteDewCurds": {
     "key": "uumkaoiiWhiteDewCurds",
     "label": "White Uumkao’ii Curds",
@@ -1324,6 +1444,12 @@
     "label": "White Uumkao’ii Milk",
     "icon": "🫙",
     "cat": "ingredient"
+  },
+  "voorgAssHide": {
+    "key": "voorgAssHide",
+    "label": "Voorg-Ass Hide",
+    "icon": "🟫",
+    "cat": "material"
   },
   "voorgAssMeat": {
     "key": "voorgAssMeat",
@@ -1408,107 +1534,5 @@
     "label": "Zinc",
     "icon": "💎",
     "cat": "ingredient"
-  },
-  "cosmetic:tangedcirclet": {
-    "key": "cosmetic:tangedcirclet",
-    "label": "Tanged Circlet",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:festivalmask_gar-wolf": {
-    "key": "cosmetic:festivalmask_gar-wolf",
-    "label": "Festivalmask Gar-Wolf",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:festivalmask_grehlr": {
-    "key": "cosmetic:festivalmask_grehlr",
-    "label": "Festivalmask Grehlr",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:festivalmask_uumkao'ii": {
-    "key": "cosmetic:festivalmask_uumkao'ii",
-    "label": "Festivalmask Uumkao'Ii",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:festivalmask_voorg-ass": {
-    "key": "cosmetic:festivalmask_voorg-ass",
-    "label": "Festivalmask Voorg-Ass",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "nelkCrate": {
-    "key": "nelkCrate",
-    "label": "Nelk Crate",
-    "icon": "🦎",
-    "cat": "livestock"
-  },
-  "nelkBaby": {
-    "key": "nelkBaby",
-    "label": "Nelk Hatchling",
-    "icon": "🦎",
-    "cat": "livestock"
-  },
-  "nazgrakuBaby": {
-    "key": "nazgrakuBaby",
-    "label": "Nazgraku Hatchling",
-    "icon": "🐟",
-    "cat": "livestock"
-  },
-  "nazgrakuCrate": {
-    "key": "nazgrakuCrate",
-    "label": "Nazgraku Crate",
-    "icon": "🐟",
-    "cat": "livestock"
-  },
-  "cosmetic:replica_bzabag_helm": {
-    "key": "cosmetic:replica_bzabag_helm",
-    "label": "Replica Helm of Bzabag",
-    "icon": "🪖",
-    "cat": "clothing"
-  },
-  "cloudSaffron": {
-    "key": "cloudSaffron",
-    "label": "Cloud Saffron",
-    "icon": "🌶️",
-    "cat": "ingredient"
-  },
-  "starpepper": {
-    "key": "starpepper",
-    "label": "Starpepper",
-    "icon": "🌶️",
-    "cat": "ingredient"
-  },
-  "nightCardamom": {
-    "key": "nightCardamom",
-    "label": "Night Cardamom",
-    "icon": "🌶️",
-    "cat": "ingredient"
-  },
-  "cosmetic:appearance::Kenkari_M::kenk_grandbeard": {
-    "key": "cosmetic:appearance::Kenkari_M::kenk_grandbeard",
-    "label": "Kenk Grandbeard",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard": {
-    "key": "cosmetic:appearance::Mao-ao_M::mao-ao_grandbeard",
-    "label": "Mao Ao Grandbeard",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard": {
-    "key": "cosmetic:appearance::Mashtzarr_M::mashtz_grandbeard",
-    "label": "Mashtz Grandbeard",
-    "icon": "👕",
-    "cat": "clothing"
-  },
-  "cosmetic:appearance::Tletingan_M::tl_grandbeard": {
-    "key": "cosmetic:appearance::Tletingan_M::tl_grandbeard",
-    "label": "Tl Grandbeard",
-    "icon": "👕",
-    "cat": "clothing"
   }
 }
