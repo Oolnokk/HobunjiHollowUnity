@@ -655,6 +655,7 @@
     resolvedYawDeltaRad,
     getHeadMaxYawDeg: () => PLAYER_HEAD_MAX_YAW_DEG, // Shared physical yaw cap lets NPC greeting neck turns match the player's head limit without duplicating the number.
     getPlayerMesh: () => playerMesh,
+    getPlayerNeckJoint: () => currentPlayerNeckJoint(), // Shared by Shattercasks' held (head-bound) Burden frame; always returns the live rebuilt neck bone.
     getPlayerLegHandle: () => playerLegHandle,
     getPosteriorY: () => playerPosteriorY, // Exact live player-local posterior pivot shared by holding/camera/composed body transforms.
     getVisualRoots: () => currentOwnedRoots().slice(),
