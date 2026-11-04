@@ -448,8 +448,11 @@
     const length=longCells*cs,finish=start+length;
     const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
     const crossWidth=crossCells*cs,cross=crossStart+crossWidth*.5;
-    const ropeCount=Math.max(3,Math.min(5,Math.ceil((length-1)/1.7)+1));
-    if((length-1)/(ropeCount-1)>2.15)return reject('rope spacing too long',{length,ropeCount}); // A very long hallway needs more ropes than our bounded chain supports.
+    const shore=cs; // Retain the original first and last hallway floor cells as real shore landings, not fabricated platforms.
+    const anchorInset=shore+.55*cs; // End ropes stay beyond the decorative door frame even when swung toward their bank.
+    const span=length-2*anchorInset;
+    const ropeCount=Math.max(3,Math.min(5,Math.ceil(span/1.7)+1));
+    if(span<=0||(span/(ropeCount-1))>2.15)return reject('rope spacing too long',{length,ropeCount,span}); // A very long hallway needs more ropes than our bounded chain supports.
     const point=(along,crossAt=cross)=>axis==='x'?{x:along,z:crossAt}:{x:crossAt,z:along};
     const occupancy=window.DevRandomRuinTileOccupancy;
     function checkpointOutside(side){
@@ -521,21 +524,30 @@
     const ropes=[],room={id:'rope_chain_hall_'+hall.id};
     const direction=axis==='x'?0:Math.PI*.5;
     for(let i=0;i<ropeCount;i++){
-      const along=start+.5+(length-1)*i/(ropeCount-1);
+      const along=start+anchorInset+span*i/(ropeCount-1);
       const anchor=point(along),isFirst=i===0;
       const rope=createRopeObject({
         room,idSuffix:String(i),anchor:{...anchor,y:anchorY},yaw:direction,length:ropeLength,
         maxLength:ropeLength,minBobY:floorY+.12,angle:isFirst?-.13:(i===ropeCount-1?.13:0),
-        grabPoint:isFirst?{...point(start+.10),y:floorY+.86}:
-          i===ropeCount-1?{...point(finish-.10),y:floorY+.86}:null, // Either bank can start the chain without an added ledge.
+        grabPoint:isFirst?{...point(start+shore*.75),y:floorY+.86}:
+          i===ropeCount-1?{...point(finish-shore*.75),y:floorY+.86}:null, // Both real shore cells provide a walk-up interaction.
       });
       rope.ropeChainHallId=String(hall.id); // Used to distinguish the bottomless hallway ropes in diagnostics and death handling.
       rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
-      if(!ropeArcClear(rope,.95)){
+      // End ropes only need a short backswing toward their landing shore;
+      // a full backswing would collide with the doorway frame, which is not
+      // part of the rope challenge. Interior ropes retain the full swing arc.
+      const arcMin=isFirst?-.32:-.95,arcMax=i===ropeCount-1?.32:.95;
+      let arcBlocked=false;
+      for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
+        const p=ropeBobAt(rope,arcMin+(arcMax-arcMin)*sample/ROPE_ROUTE_SAMPLES);
+        if(ropeBlockedAt(p.x,p.z,ROPE_COLLISION_RADIUS,p.y)||platformBlocksAt(p.x,p.z,p.y)){arcBlocked=true;break;}
+      }
+      if(arcBlocked){
         let blockedPoint=null; // Only allocates during rejected generation, never while a rope is rendered.
         const sources=occupancy?.getSnapshot?.()?.sources||{}; // Exact logical wall/door source IDs let mobile diagnostics distinguish a closed door from a structural wall.
         for(let sample=0;sample<=ROPE_ROUTE_SAMPLES;sample++){
-          const angle=-.95+1.9*(sample/ROPE_ROUTE_SAMPLES),p=ropeBobAt(rope,angle);
+          const angle=arcMin+(arcMax-arcMin)*(sample/ROPE_ROUTE_SAMPLES),p=ropeBobAt(rope,angle);
           if(!ropeBlockedAt(p.x,p.z,ROPE_COLLISION_RADIUS,p.y)&&!platformBlocksAt(p.x,p.z,p.y))continue;
           const ids=new Set();
           for(let row=Math.floor(p.z-.24);row<=Math.floor(p.z+.24);row++)
@@ -551,9 +563,13 @@
     }
     // Use the production release-flight and air-catch predictor, not a second
     // distance heuristic. The final target is EXISTING floor, not a platform.
-    const exitFloor={x:exit.x,z:exit.z,y:exit.y,topY:exit.y,width:axis==='x'?2.2:Math.min(2.4,crossWidth-1),
-      depth:axis==='z'?2.2:Math.min(2.4,crossWidth-1)};
-    const entryFloor={x:entry.x,z:entry.z,y:entry.y,topY:entry.y,width:exitFloor.width,depth:exitFloor.depth};
+    const shoreLanding=(side)=>{ // Targets only the floor we deliberately kept, never a fictitious strip over the pit.
+      const p=point(side==='start'?start+shore*.5:finish-shore*.5);
+      return {...p,y:floorY,topY:floorY,
+        width:axis==='x'?shore*.75:Math.min(2.4,crossWidth-1),
+        depth:axis==='z'?shore*.75:Math.min(2.4,crossWidth-1)};
+    };
+    const exitFloor=shoreLanding('end'),entryFloor=shoreLanding('start');
     const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
     const forward=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight)!==null);
     const reverse=ropes.every((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
@@ -562,6 +578,8 @@
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
     for(const cell of cells){
+      const along=axis==='x'?cell.x:cell.z;
+      if(along<start+shore||along>finish-shore)continue; // Existing floor on both banks remains solid and traversable.
       DS.registerSurface({...cell.record,enabled:false});
       disabledSurfaces.push(cell.record);
       const gridCol=Math.floor(cell.x),gridRow=Math.floor(cell.z),tile=context.grid?.[gridRow]?.[gridCol];
@@ -572,8 +590,8 @@
     }
     state.ropeChainDisabledSurfaces.push(...disabledSurfaces);
     const bounds=axis==='x'
-      ? {minX:start,maxX:finish,minZ:crossStart,maxZ:crossStart+crossWidth}
-      : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start,maxZ:finish};
+      ? {minX:start+shore,maxX:finish-shore,minZ:crossStart,maxZ:crossStart+crossWidth}
+      : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start+shore,maxZ:finish-shore};
     const pitId='dev_ruin_rope_chain_abyss_'+hall.id;
     DS.registerPit({id:pitId,scope:SCOPE,bounds});
     state.surfaceIds.add(pitId);
@@ -632,7 +650,7 @@
       const pointAlong=chain.axis==='x'?point.x:point.z;
       const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
       const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
-      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue;
+      if(Math.abs(along-pointAlong)>1.65||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue; // The short existing-floor shore sits just inside the doorway; activate its bank on a real landing.
       activateCheckpoint(id,point,true); // Entering either side replaces the other side, including after a reverse traversal.
       return;
     }
