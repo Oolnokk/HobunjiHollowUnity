@@ -204,8 +204,12 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert(shaft.teleported&&Math.abs(shaft.standing-shaft.topSupport)<.15,
       'upper balcony must be a real walkable support, not a visual-only ledge: '+JSON.stringify(shaft));
     await page.evaluate(async()=>window.DevRandomRuin.leave());
-    const afterExitCubes=await page.evaluate(()=>document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50?.getState?.()?.linkedCubeSolverRoots??null);
-    assert.equal(afterExitCubes,0,'V50 cube animations from all stories must unregister after leaving the ruin');
+    const afterExitCubes=await page.evaluate(()=>{
+      const frame=document.getElementById('devRandomRuinGeneratorFrame');
+      return {frameAttached:!!frame,count:frame?.contentWindow?.DebrisifierV50?.getState?.()?.linkedCubeSolverRoots??null};
+    });
+    assert(!afterExitCubes.frameAttached||afterExitCubes.count===0,
+      'V50 solver registry must be empty if the generator iframe remains mounted; destroying the iframe releases the entire private V50 realm: '+JSON.stringify(afterExitCubes));
     assert.deepEqual(pageErrors,[],'no unhandled browser errors: '+pageErrors.join(' | '));
     console.log('Ruin construction browser smoke passed: '+JSON.stringify({trial:first.state,blast:afterBlast,shaft}));
   } finally {await browser.close();}

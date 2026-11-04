@@ -149,8 +149,9 @@ jobs:
                 persistedToggle: localStorage.getItem('hobunjiDevRandomRuinWallPlanes'),
                 ladderNodes: (() => {
                   const root = window.GridTileAccessors.getActiveScene()?.children?.find?.(o => /^dev_v50_ruin_/.test(o?.name || ''));
+                  const roots = [root, ...(window.DevRandomRuinHitPuzzles?.getNativeRoots?.() || [])].filter(Boolean); // The ordinary ladder provider now scans all physically mounted V50 stories.
                   const rows = [];
-                  root?.traverse?.(o => {
+                  for(const source of roots)source.traverse?.(o => {
                     if (o.userData?.generatedAccessType === 'stoneLadder') {
                       const meshChildren = (o.children || []).filter(c => c.isMesh);
                       rows.push({
