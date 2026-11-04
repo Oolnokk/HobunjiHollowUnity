@@ -140,6 +140,7 @@
     }
     previewActor.updateWorldMatrix(true,true);
     if(previewHands){
+      for(const side of ['left','right'])previewHands.setSideVisible?.(side,!isBack); // Hide hand GLBs entirely in back-carry preview.
       root.updateWorldMatrix(true,false);
       // Hand sockets share the game's authored-world position/rotation path:
       // local grip + canonical side frame + local XYZ grip rotation, and the
