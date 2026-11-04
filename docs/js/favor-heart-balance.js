@@ -11,7 +11,8 @@
   const FRIENDSHIP_TIER_HEARTS = Object.freeze([0, 2, 4, 6, 8, 10]); // Used to keep the existing two-heart Friendship Tier spacing while Favor itself stays point-based.
 
   let installReason = 'direct'; // Used by debugSnapshot to show whether DialogueContent existed immediately or arrived later.
-  let dialogueDeps = null; // Used by relationship spillover to resolve the authoritative NPC records after DialogueContent.init.
+  let dialogueDeps = null; // Used to resolve the authoritative records for faction membership and seating bonds.
+  let factionReputation = Object.create(null); // Saved group standings used by rank multipliers, UI and debug tools.
   let giftingDeps = null; // Used by gift-quality bookkeeping to consume the exact quality bucket for the held gift.
   let activeGiftContext = null; // Used only while NpcGifting.offerGift runs so Favor can apply the selected item's star multiplier.
   let rawGetNpcState = null; // Used by point/heart helpers so UI reads the stored Favor-point value without semantic conversion.
@@ -40,18 +41,55 @@
     return Array.isArray(walkers) ? walkers.map(walker => walker?.rec).filter(Boolean) : [];
   }
 
+  const FACTION_SAVE_KEY = '__factions'; // Member-scoped reputation rides the existing npcRelationships save object; never a synthetic NPC.
+  const RANK_THRESHOLDS = Object.freeze([40, 120, 240, 400]); // Reputation required for ranks I–IV, in Favor-point units.
+  function factionGroupsForNpc(npcId) {
+    const rec = npcRecords().find(record => record?.id === npcId); // Reuse the live NPC roster and its authored affiliations.
+    if (!rec) return [];
+    const keys = [rec.homeId && 'home:' + rec.homeId, rec.scheduleHooks?.workBuildingId && 'work:' + rec.scheduleHooks.workBuildingId,
+      (rec.factionId || rec.socialFactionId) && 'faction:' + (rec.factionId || rec.socialFactionId)]; // An NPC can participate in multiple independent groups.
+    return [...new Set(keys.filter(id => typeof id === 'string' && /^(home|work|faction):[a-z0-9_-]+$/i.test(id)))];
+  }
+  function reputationRank(points) {
+    const value = finite(points, 0); // Saved group points determine a symmetric positive or negative rank.
+    return value >= 0 ? RANK_THRESHOLDS.filter(n => value >= n).length : -RANK_THRESHOLDS.filter(n => value <= -n).length;
+  }
+  function rankMultiplier(rank) {
+    return rank >= 0 ? 1 + Math.min(4, rank) * .1 : Math.max(.6, 1 + rank * .1); // Neutral 1×, max 1.4× per circle; poor standing hinders positive gains.
+  }
+  function factionPoints(groupId) { return finite(factionReputation[String(groupId || '')], 0); }
+  function factionRank(groupId) { return reputationRank(factionPoints(groupId)); }
+  function factionMultiplier(groupId) { return rankMultiplier(factionRank(groupId)); }
+  function gainMultiplierForNpc(npcId) {
+    const groups = factionGroupsForNpc(npcId); // Each affiliation affects only this NPC's positive Favor gain.
+    return clamp(groups.reduce((factor, id) => factor * factionMultiplier(id), 1), .5, 2); // Bounded when household and workplace both have high rank.
+  }
+  function changeFactionReputation(npcId, points) {
+    for (const id of factionGroupsForNpc(npcId)) factionReputation[id] = roundPoint(factionPoints(id) + points); // Each real NPC adjustment modifies each of their groups once.
+  }
+  function factionStandings() {
+    const ids = new Set(Object.keys(factionReputation)); // Existing reputation and circles of NPCs the player has met appear in Relationships.
+    for (const [id, state] of window.DialogueContent?.npcDlgState || []) {
+      if ((state?.memory || []).length) for (const group of factionGroupsForNpc(id)) ids.add(group);
+    }
+    return [...ids].sort().map(id => {
+      const [kind, raw] = id.split(':'); // Labels reuse existing group IDs without adding parallel NPC metadata.
+      const name = (raw || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+      return { id, label:kind === 'work' ? name + ' Staff' : name, points:factionPoints(id),
+        rank:factionRank(id), multiplier:factionMultiplier(id) };
+    });
+  }
+  // Still used by NPC festival seating, but no longer for relationship propagation.
   function relatedNpcBonds(npcId) {
-    const records = npcRecords(); // Used to calculate the existing household/workplace Favor spillover without duplicating NPC data.
-    const source = records.find(record => record?.id === npcId); // Used as the relationship source whose home/work links define spillover.
+    const records = npcRecords(); // Seating's existing NPC bonds retain their familiar relative strengths.
+    const source = records.find(record => record?.id === npcId);
     if (!source) return [];
-    const bonds = new Map(); // Used to dedupe NPCs who share both home and workplace while keeping the stronger fraction.
+    const bonds = new Map(); // One pair cannot double-count overlapping home and workplace ties.
     for (const other of records) {
       if (!other?.id || other.id === npcId) continue;
-      const sameHome = source.homeId && other.homeId === source.homeId; // Used to award the existing 25% household spillover.
-      const sameWork = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId; // Used to award the existing 15% workplace spillover.
-      if (!sameHome && !sameWork) continue;
-      const fraction = sameHome ? 0.25 : 0.15; // Used by adjustNpcFavor when recursively applying quiet spillover.
-      if (!bonds.has(other.id) || bonds.get(other.id) < fraction) bonds.set(other.id, fraction);
+      const sameHome = source.homeId && other.homeId === source.homeId;
+      const sameWork = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId;
+      if (sameHome || sameWork) bonds.set(other.id, Math.max(bonds.get(other.id) || 0, sameHome ? .25 : .15));
     }
     return [...bonds.entries()];
   }
@@ -207,6 +245,21 @@
     if (!dialogue?.getNpcDlgState || !dialogue?.adjustNpcFavor || !dialogue?.loadNpcRelationships) return false;
 
     rawGetNpcState = dialogue.getNpcDlgState.bind(dialogue);
+    const originalLoad = dialogue.loadNpcRelationships.bind(dialogue); // A different character/world starts with its own group standings.
+    dialogue.loadNpcRelationships = function loadFactionReputation(playerData, ...args) {
+      factionReputation = Object.create(null); // Never inherit the last player's faction ranks.
+      const saved = playerData?.npcRelationships?.[FACTION_SAVE_KEY];
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) for (const [id, points] of Object.entries(saved)) {
+        if (/^(home|work|faction):[a-z0-9_-]+$/i.test(id) && typeof points === 'number' && Number.isFinite(points)) factionReputation[id] = roundPoint(points);
+      }
+      return originalLoad(playerData, ...args);
+    };
+    const originalSnapshot = dialogue.npcRelationshipsSnapshot?.bind(dialogue); // Write through the real world-member relationship snapshot.
+    if (originalSnapshot) dialogue.npcRelationshipsSnapshot = function snapshotFactionReputation(...args) {
+      const snapshot = originalSnapshot(...args) || {};
+      snapshot[FACTION_SAVE_KEY] = { ...factionReputation };
+      return snapshot;
+    };
 
     const originalDialogueInit = dialogue.init?.bind(dialogue); // Used to capture DialogueContent's dependency bag without changing its initialization.
     if (originalDialogueInit) {
@@ -232,16 +285,15 @@
       }
 
       const state = rawGetNpcState(npcId); // Used to persist Favor XP directly instead of fractional-heart storage.
+      if (appliedPoints > 0 && !isSpillover) appliedPoints = roundPoint(appliedPoints * gainMultiplierForNpc(npcId)); // Rank multiplies earned Favor, not other NPCs' Favor.
       state.favor = roundPoint(finite(state.favor, 0) + appliedPoints);
       if (isSpillover) return appliedPoints;
+      changeFactionReputation(npcId, appliedPoints);
 
       if (appliedPoints > 0 && window.WorldPopupText?.queueSocialGain) window.WorldPopupText.queueSocialGain('favor', appliedPoints, npcId);
       else window.WorldPopupText?.queueReward?.('favor', `${appliedPoints > 0 ? '+' : '−'}${formatCompact(Math.abs(appliedPoints))} Favor`);
       dialogue.recordNpcMemory?.(npcId, reason || (appliedPoints >= 0 ? 'favor_up' : 'favor_down'));
 
-      for (const [relatedId, fraction] of relatedNpcBonds(npcId)) {
-        dialogue.adjustNpcFavor(relatedId, appliedPoints * fraction, `spillover_${npcId}`, true, true);
-      }
       return appliedPoints;
     };
 
@@ -292,6 +344,12 @@
       heartsToFavorPoints,
       favorPointsForNpc,
       relationshipHeartsForNpc,
+      factionGroupsForNpc,
+      factionPoints,
+      factionRank,
+      factionMultiplier,
+      gainMultiplierForNpc,
+      factionStandings,
       relationshipDebug,
       giftQualityMultiplierForStars: stars => clamp(finite(stars, 3), 1, 5) / 5,
       maxRapportOvernightHearts: (rapport = 100, rate = 0.10) => favorPointsToHearts(Math.round(Math.max(0, finite(rapport, 0)) * Math.max(0, finite(rate, 0)))),
@@ -301,6 +359,7 @@
         favorPointsPerHeart: FAVOR_POINTS_PER_HEART,
         maxGiftFavorPoints: MAX_GIFT_FAVOR_POINTS,
         activeGift: activeGiftContext ? { kind: activeGiftContext.kind, key: activeGiftContext.key, stars: activeGiftContext.stars } : null,
+        factions: factionStandings(), // In-game mobile diagnostics expose standing, rank and gain multiplier.
         proceduralTasksPatched: !!window.ProceduralTasks?.__favorPointHeartScalePatched,
         maxRapportHeartsAt100: favorPointsToHearts(10),
       }),
