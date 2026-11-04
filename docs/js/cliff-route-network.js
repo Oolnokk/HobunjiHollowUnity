@@ -71,7 +71,13 @@
           // that ignoring these could strand an entire upper plateau.
           if (walkable(x, z) && surface(t, opts) > surface(lower, opts) + 0.5) {
             const toComp = component[tileId(x, z)];
-            if (toComp !== fromComp) candidates.push({ a: { c, r }, b: { c: x, r: z }, aComp: fromComp, bComp: toComp, dir, walls, y0: surface(lower, opts), y1: surface(t, opts), weight: walls * 12 + hash(c, r, x * 71 + z) % 12 });
+            if (toComp !== fromComp) {
+              const edgeDistance = Math.min(c, r, x, z, cols - 1 - c, rows - 1 - r, cols - 1 - x, rows - 1 - z);
+              const boundaryPenalty = Math.max(0, 4 - edgeDistance) * 25; // Prefer interior routes with room for real balcony footprints.
+              candidates.push({ a: { c, r }, b: { c: x, r: z }, aComp: fromComp, bComp: toComp, dir, walls,
+                y0: surface(lower, opts), y1: surface(t, opts),
+                weight: walls * 12 + hash(c, r, x * 71 + z) % 12 + boundaryPenalty });
+            }
           }
           break;
         }
@@ -146,7 +152,15 @@
             if (cc >= 0 && rr >= 0 && cc < cols && rr < rows && touched)
               shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
           }
-          if (!shelf.footprint.length) shelf.footprint.push({ c: Math.floor(shelf.x), r: Math.floor(shelf.z), elevation: shelf.y });
+          // Projecting ledges may overhang lower terrain, but not the entire
+          // playable map. Skip the optional shelf rather than create a half-
+          // supported floor outside the world's collision bounds.
+          const fitsMap = [-1, 1].every(u => [-1, 1].every(v => {
+            const px = shelf.x + shelf.tangent.x * u * shelf.width / 2 + shelf.normal.x * v * shelf.depth / 2;
+            const pz = shelf.z + shelf.tangent.z * u * shelf.width / 2 + shelf.normal.z * v * shelf.depth / 2;
+            return px >= 0.05 && pz >= 0.05 && px <= cols - 0.05 && pz <= rows - 0.05;
+          }));
+          if (!fitsMap || !shelf.footprint.length) continue;
           nodes.push({ id: shelf.nodeId, x: shelf.x, z: shelf.z, y: shelf.y, links: [idx], balconyId: shelf.id });
           nodes[idx].links.push(shelf.nodeId);
           balconies.push(shelf);
