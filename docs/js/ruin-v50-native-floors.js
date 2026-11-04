@@ -388,8 +388,9 @@
           routeX,new THREE.BoxGeometry(1,2.24,.12));
         wallBatch('native-v50-corridor-east-west-'+item.floor,
           routeZ,new THREE.BoxGeometry(.12,2.24,1));
-        const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,
-          route,routeWallSegments:routeX.length+routeZ.length,
+        const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,meta,
+          route,routeWallSegments:routeX.length+routeZ.length, // Retain exact V50 floor topology for developer-mode automated reachability checks; no second generated model.
+
           solved:0,challenges:[],lit:false,goalBrazier:null,nativeMechanisms:null};
         owner.records.push(record);
         record.nativeMechanisms=NativeMechanisms.mount({
