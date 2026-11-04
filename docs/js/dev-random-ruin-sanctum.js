@@ -318,7 +318,7 @@
       ? `Blue fire takes hold (${lit}/${total}). A seal on the Great Door answers it.`
       : 'The last brazier flares blue — somewhere, the Great Door hums awake.', true);
     window.__farmLog?.(`[random-ruin] brazier ${brazier.id} lit ${lit}/${total}`, 'world');
-    if (lit === total) awakenDoor();
+    if (lit === total) tryAwakenDoor();
     return true;
   }
 
@@ -504,6 +504,26 @@
     return hidden;
   }
 
+  function shaftSealsPending(){
+    // Normal Harlyao ruins now have actual braziers at the end of every
+    // physical floor wing. The Great Door requires these in addition to the
+    // original V50 blue seals; Hachutu has its own independent boss route.
+    const network=window.DevRandomRuin?.getShaftNetworkState?.();
+    return network&&!network.complete?network:null;
+  }
+
+  function sealedDoorLabel(){
+    const local=s?.braziers?.filter(b=>b.lit).length||0,total=s?.braziers?.length||0;
+    const pending=shaftSealsPending();
+    return pending&&local===total
+      ?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')'
+      :'Great Door (Sealed '+local+'/'+total+')';
+  }
+  function awakeDoorLabel(){
+    const pending=shaftSealsPending(); // One read per context-menu refresh, not three redundant deep snapshots.
+    return pending?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')':'Open the Great Door';
+  }
+
   function buildGreatDoor(kit, context, site, decalCount) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
     s.hiddenDecor = clearDoorFootprint(context, site);
@@ -521,13 +541,23 @@
     }, null, kit.SCOPE);
     door.control = {
       kind:'greatDoor', object:door.group, promptRoot:door.group, range:2.3, priority:24, claimAction1:true, touchIcon:'🚪',
-      label:() => door.state === 'sealed' ? `Great Door (Sealed ${s.braziers.filter(b => b.lit).length}/${s.braziers.length})`
-        : door.state === 'awake' ? 'Open the Great Door'
+      label:() => door.state === 'sealed' ? sealedDoorLabel()
+        : door.state === 'awake' ? awakeDoorLabel()
         : door.state === 'opening' ? 'The Great Door is opening…'
         : 'Enter the Sanctum',
       onPress:() => pressGreatDoor(),
     };
     return door;
+  }
+
+  function tryAwakenDoor(){
+    // The local blue seals and the physically separate multi-story braziers
+    // are BOTH prerequisites. Keep the stone door visibly sealed until the
+    // last required source is lit instead of merely denying its interaction.
+    if(!s?.door||s.door.state!=='sealed')return false;
+    if(s.braziers.some(b=>!b.lit)||window.DevRandomRuin?.isShaftNetworkComplete?.()===false)return false;
+    awakenDoor();
+    return s.door.state==='awake';
   }
 
   function awakenDoor() {
@@ -545,11 +575,18 @@
     const door = s?.door;
     if (!door) return;
     if (door.state === 'sealed') {
-      const lit = s.braziers.filter(b => b.lit).length;
-      deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its seals glow — light the blue braziers at the end of each puzzle.`, false);
+      const lit = s.braziers.filter(b => b.lit).length,pending=shaftSealsPending();
+      if(pending&&lit===s.braziers.length)
+        deps?.showToast?.('The shaft braziers still bind the Great Door ('+pending.lit+'/'+pending.braziers+').',false);
+      else deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its blue seals glow.`,false);
       return;
     }
     if (door.state === 'awake') {
+      const pending=shaftSealsPending(); // Door cannot skip the physically separate upper-story puzzle objectives.
+      if(pending){
+        deps?.showToast?.('The Great Door remains sealed by the shaft. Light all '+pending.braziers+' wing braziers ('+pending.lit+'/'+pending.braziers+').',false);
+        return;
+      }
       door.state = 'opening';
       deps?.showToast?.('The Great Door grinds down into the floor.', true);
       return;
@@ -1052,7 +1089,7 @@
     if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
     buildSanctum(kit, context, s.braziers.length, s.rng);
-    if (!s.braziers.length) awakenDoor(); // A ruin whose puzzles carry no goals leaves the door unsealed.
+    if (!s.braziers.length) tryAwakenDoor(); // A ruin without local blue goals still requires all shaft-wing braziers.
     kit.recordModulePlacement('greatDoorSanctum', 'room', 'sanctum', { braziers:s.braziers.length, bossType:s.bossType, door:{ x:+site.x.toFixed(2), z:+site.z.toFixed(2) } });
   }
 
@@ -1073,7 +1110,8 @@
       if (!s) return;
       deps = kit.deps || deps;
       if (!s.built) { try { build(kit); } catch (error) { s.built = true; s.rejects.push(String(error?.message || error)); console.warn('[Random Test Ruin sanctum] build failed', error); } }
-      const allLit = s.braziers.length > 0 && s.braziers.every(b => b.lit) || (s.door && s.door.state !== 'sealed');
+      tryAwakenDoor(); // Cheap scalar check; respond immediately to the last upper-floor brazier.
+      const allLit = !!s.door && s.door.state !== 'sealed';
       for (const brazier of s.braziers) updateFire(brazier.fire, now, dt);
       for (const fire of s.arenaFires || []) updateFire(fire, now, dt);
       for (const fire of s.vaultFires || []) {
