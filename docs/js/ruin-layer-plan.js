@@ -69,13 +69,13 @@
         // First connection starts on the shaft wall. Each next room gets a distant
         // invisible-grid anchor, but its dimensions and offsets remain un-snapped.
         let previous={x:cx+dir.dx*Math.ceil(o.shaftSize/2),z:cz+dir.dz*Math.ceil(o.shaftSize/2)};
-        for(let stage=1;stage<=challengeCount;stage++){
+        for(let stage=1;stage<=challengeCount+1;stage++){ // Always at least two actual puzzle rooms BEFORE the goal brazier.
           const anchor={x:cx+dir.dx*stage*o.spacing,z:cz+dir.dz*stage*o.spacing};
           const offset=integer(rng,-5,5),rx=anchor.x+lateral.dx*offset,rz=anchor.z+lateral.dz*offset;
           const rw=dir.dx?integer(rng,11,19):integer(rng,9,15);
           const rd=dir.dz?integer(rng,11,19):integer(rng,9,15);
           const area=rect(rx,rz,rw,rd);
-          const isGoal=stage===challengeCount;
+          const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,anchor,wingId,
             challenge:isGoal?null:puzzles[integer(rng,0,puzzles.length-1)]};
@@ -117,7 +117,7 @@
       add(`floor${floor.floor}-wingCount`,floor.wings.length>=1&&floor.wings.length<=4);
       add(`floor${floor.floor}-uniqueSides`,new Set(floor.wings.map(w=>w.side)).size===floor.wings.length);
       for(const wing of floor.wings){
-        add(wing.id+'-challenges',wing.rooms.length>=2&&wing.rooms.length<=4);
+        add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-braziers',floor.braziers.filter(b=>b.wingId===wing.id).length===1);
         add(wing.id+'-corridors',wing.corridors.length===wing.rooms.length&&wing.corridors.every(c=>c.length>0&&c.rects.length>=1));
         add(wing.id+'-roomsSeparate',wing.rooms.every((room,i)=>floor.rooms.every((other,j)=>other.id===room.id||!intersects(room,other)||j<=i&&other.wingId===wing.id&&other===room)));
