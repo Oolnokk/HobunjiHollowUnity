@@ -8,7 +8,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {chromium}=require('playwright');
 const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIntro=1';
-const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fallback seeds for finding a valid wide, flat V50 hallway.
+const SEEDS=[0x5eed1234]; // Fixed deterministic full-physics fixture. The separate general ruin browser audit covers multiple seeds.
 
 (async()=>{
   const browser=await chromium.launch({headless:true});
