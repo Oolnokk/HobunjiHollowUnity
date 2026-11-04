@@ -173,6 +173,22 @@ function testSpecialFinishers() {
   assert.equal(damage.at(-1).special, true, 'the thrusting combo also has a condition-qualified special finisher');
   assert.equal(runtime.Combat.comboData.lastSpecialFinisher.comboId, 'pokeCombo');
   assert.equal(runtime.Combat.comboData.lastSpecialFinisher.specialProcs, 1, 'the in-game mobile diagnostic exposes the earned proc');
+  // The production Combat.beginStagedAction may synchronously cancel a player action
+  // when CharacterActionLocks reports tools/actions locked. Such cancellations
+  // must not strand a busy combo action or credit an opener that never struck.
+  const beginNormally = runtime.Combat.beginStagedAction; // Restored after exercising immediate rejection.
+  runtime.Combat.beginStagedAction = action => {
+    action.onCancel();
+    return { cancelled: true, phase: 'done' };
+  };
+  now = 1030;
+  abilities.swingCombo.onTap();
+  runtime.Combat.beginStagedAction = beginNormally;
+  reset();
+  tap('swingCombo', [a], 1030.5);
+  assert.equal(damage.length, 1, 'combo must accept input again after immediate action cancellation');
+  assert.equal(damage[0].amount, 20, 'cancelled attack cannot advance the next swing to step two');
+  assert.equal(damage[0].special, false, 'cancelled attack cannot seed an earned special finisher');
 }
 
 (async () => {
