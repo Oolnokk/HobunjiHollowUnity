@@ -8,9 +8,9 @@
   const manifest = JSON.parse(read('docs/config/patterns/fur-hoods.json'));
   const cosmetic = JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
   const index = JSON.parse(read('docs/config/cosmetics/index.json'));
-  const expectedPendingNelk='assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png'; // Artist will upload after merge, so the file reference is intentionally ahead of its bytes.
-  assert.deepEqual(manifest.pendingAssets,[expectedPendingNelk],'Only the explicitly deferred Nelk Tletingan back sprite can be absent');
-  assert.equal(manifest.species.nelk.parts.tletingan_male.back,expectedPendingNelk,'Nelk Tletingan back is connected to the future filename');
+  const expectedNelkBack='assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png'; // Shipped Tletingan rear sprite must be present and correctly resolved.
+  assert.deepEqual(manifest.pendingAssets,[],'All authored fur-hood assets must be present');
+  assert.equal(manifest.species.nelk.parts.tletingan_male.back,expectedNelkBack,'Nelk Tletingan back is connected to the shipped PNG');
   assert.equal(manifest.species.nelk.parts.mashtzarr_male.back,'assets/cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png','Mashtzarr keeps the renamed real art');
   assert(index.entries.some(entry => entry.id === 'fur_hood'), 'new wearable cosmetic is published in portrait registry');
   assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_male','tletingan_male']);
@@ -27,7 +27,6 @@
       assert(['tletingan_male','mashtzarr_male'].includes(variant), 'unsupported wearer art key ' + variant);
       for (const [position, url] of Object.entries(parts)) {
         assert(['front','back'].includes(position), 'unexpected animal piece position');
-        if (url === expectedPendingNelk) continue; // Intentional pending art, never a general exemption for missing sprites.
         assert(fs.existsSync(path.join(root, 'docs', url)), 'missing animal '+kind+' '+position+' '+url);
       }
     }
@@ -80,12 +79,12 @@
       assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');
       assert(fs.existsSync(path.join(root,'docs',layers.front.behindImage.url)),'rear hood art must be bundled in the feature branch');
     }
-    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedPendingNelk),true,'only the exact planned Nelk image is pending');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedNelkBack),false,'newly imported Nelk rear image is no longer pending');
     assert.equal(window.FurHoodLeatherworking.isPendingAsset('assets/cosmetics/clothes/hood/furhood_nelk-front_tl_m.png'),false,'uploaded Nelk front must not be silently skipped');
-    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedPendingNelk),true,'pending image lookup accepts docs-relative URLs');
-    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedPendingNelk.replace(/^assets\//,'')),true,'actual loadImg path without assets/ resolves pending Nelk art');
-    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedPendingNelk.replace(/^assets\//,'')),true,'relative stripped image path is permitted');
-    assert.equal(window.FurHoodLeatherworking.isPendingAsset('https://example.test/docs/'+expectedPendingNelk),true,'absolute hosted asset URL is permitted');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedNelkBack),false,'docs-relative URLs resolve the nonpending Nelk art');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedNelkBack.replace(/^assets\//,'')),false,'loadImg-relative path is no longer an exception');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('./'+expectedNelkBack.replace(/^assets\//,'')),false,'relative stripped image path is no longer an exception');
+    assert.equal(window.FurHoodLeatherworking.isPendingAsset('https://example.test/docs/'+expectedNelkBack),false,'absolute hosted path is no longer an exception');
     assert.equal(window.FurHoodLeatherworking.isPendingAsset('cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png'),false,'existing Nelk artwork is never treated as pending');
     const tl = window.FurHoodLeatherworking.specialPartsFor(fur,'nuhongan','female');
     const mashtz = window.FurHoodLeatherworking.specialPartsFor(fur,'kenkari','male');
