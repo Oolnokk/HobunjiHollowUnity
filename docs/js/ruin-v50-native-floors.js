@@ -270,8 +270,31 @@
         const matrix=new THREE.Matrix4();
         route.tiles.forEach(([x,z],i)=>hall.setMatrixAt(i,matrix.makeTranslation(x+.5,floor.y-.06,z+.5)));
         hall.instanceMatrix.needsUpdate=true;group.add(hall);
+        // The visible passage must agree with the same walkable-footprint
+        // boundary used by CellGrid3D. No invisible walls, no open-sided
+        // floating walkway, and no wall closing the shaft/native doorway.
+        const routeX=[],routeZ=[];
+        for(const [x,z] of route.tiles){
+          if(!all.has(key(x-1,z))&&!(x===port.x&&z===port.z))routeZ.push([x,z+.5]);
+          if(!all.has(key(x+1,z)))routeZ.push([x+1,z+.5]);
+          if(!all.has(key(x,z-1)))routeX.push([x+.5,z]);
+          if(!all.has(key(x,z+1)))routeX.push([x+.5,z+1]);
+        }
+        const wallBatch=(name,positions,geometry)=>{
+          if(!positions.length)return;
+          const wall=new THREE.InstancedMesh(geometry,material,positions.length);
+          wall.name=name;
+          positions.forEach(([x,z],i)=>wall.setMatrixAt(i,matrix.makeTranslation(x,floor.y+1.12,z)));
+          wall.instanceMatrix.needsUpdate=true;
+          group.add(wall);
+        };
+        wallBatch('native-v50-corridor-north-south-'+item.floor,
+          routeX,new THREE.BoxGeometry(1,2.24,.12));
+        wallBatch('native-v50-corridor-east-west-'+item.floor,
+          routeZ,new THREE.BoxGeometry(.12,2.24,1));
         const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,
-          route,solved:0,challenges:[],lit:false,goalBrazier:null};
+          route,routeWallSegments:routeX.length+routeZ.length,
+          solved:0,challenges:[],lit:false,goalBrazier:null};
         owner.records.push(record);
         const kinds=STAGES; // Native V50 generated the real room graph; current shared puzzle runtime supplies stage goals.
         for(let i=0;i<analysis.stages.length;i++){
@@ -355,6 +378,7 @@
       perFloor:owner.records.map(r=>({
         floor:r.floor,rooms:r.analysis.rooms,hallways:r.analysis.hallways,
         stages:r.challenges.length,solved:r.solved,lit:r.lit,routeLength:r.route.length,
+        routeWallSegments:r.routeWallSegments,
       })),
     });
     return owner;
