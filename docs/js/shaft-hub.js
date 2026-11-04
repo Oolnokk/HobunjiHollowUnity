@@ -105,7 +105,7 @@
     // the surface one cell below its mantle point.
     const ringCellsByLevel = [];
     if (o.octagon) {
-      const lo=o.wall,hi=lo+o.shaft-1,cut=Math.floor(o.shaft*.19),width=3;
+      const lo=o.wall,hi=lo+o.shaft-1,cut=Math.floor(o.shaft*.19),width=5; // Five-cell galleries remain walkable around higher buttresses.
       const approaches=new Set(); // All climb lanes, across every story.
       for(const side of balconySides){
         const g=sideGeometry(side,o,cols,rows),out=OUTWARD[side];
@@ -158,7 +158,7 @@
 
     const surfaces = grid.collectClimbSurfaces();
     const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, surfaces, checks: [],
-      stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]})) }; // Level map for a subsequent wing composer.
+      stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
     return result;
