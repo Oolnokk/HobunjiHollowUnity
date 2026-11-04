@@ -553,8 +553,11 @@
 
   function visibleNavigationRect(el) {
     const rect = el.getBoundingClientRect(); // Clips against both the screen and every overflow ancestor, including nested scroll panes.
-    let left = Math.max(0, rect.left), top = Math.max(0, rect.top); // Visible bounds are also used to score partially visible groups.
-    let right = Math.min(window.innerWidth, rect.left + rect.width), bottom = Math.min(window.innerHeight, rect.top + rect.height);
+    const viewport = window.visualViewport; // Mobile keyboards/zoom can shrink the actually visible area without changing the layout viewport.
+    const screenLeft = viewport?.offsetLeft ?? 0, screenTop = viewport?.offsetTop ?? 0; // Visual viewport origin in layout-viewport coordinates.
+    let left = Math.max(screenLeft, rect.left), top = Math.max(screenTop, rect.top); // Visible bounds are also used to score partially visible groups.
+    let right = Math.min(screenLeft + (viewport?.width ?? window.innerWidth), rect.left + rect.width);
+    let bottom = Math.min(screenTop + (viewport?.height ?? window.innerHeight), rect.top + rect.height);
     for (let node = el.parentElement; node; node = node.parentElement) {
       const style = getComputedStyle(node); // Only evaluated on the first directional gesture after manual scrolling.
       const clipX = /auto|scroll|hidden|clip/.test(style.overflowX || style.overflow); // CSS overflow clips candidates even when they are still laid out.
