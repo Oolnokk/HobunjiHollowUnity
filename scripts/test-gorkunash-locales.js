@@ -311,4 +311,26 @@ for(const rec of residents){
 assert(standing>0,'overflow guests without another preferred locale wait standing');
 assert(seats.size>0,'available dining chairs are still used');
 
+// A seven-day maximum is a separate cap from the contest reward: even excess dance/keg/meal attempts cannot exceed 19.2 permanent Favor.
+const championSave = api.serialize(); // Reuses the real saved seven-day opponent roster and authored participant ledger.
+const championKey = Object.keys(championSave.potluckContests).find(key => key.endsWith(':gorkunash'));
+assert(championKey,'the contribution has a persistent contest record');
+championSave.potluckContests[championKey].entry.score = 999999; // Clearly wins against all six seeded rivals across seven days.
+championSave.potluckContests[championKey].favorAwarded = false;
+api.restore(championSave);
+civilDay = 4 * 28 + 14; hour = 17; // Final Gorkunash day, before judging.
+api.addFestivalFun('sloomi',100000);
+assert(Math.abs(api.serialize().festivalFunEarned[championKey + ':sloomi'] - 96) < 1e-8,'weekly Fun is capped at exactly 19.2 Favor worth');
+civilDay++; realMs += 1000; api.update(); // First day after the full seven-day competition.
+const winGrants = awarded.filter(event=>event.reason==='festival_potluck_win');
+assert(winGrants.length>0,'winning the contest awards real Favor after the festival');
+assert(winGrants.every(event=>event.amount===19.2),'a potluck win is 120/250 Stardew hearts at 40 Favor per Hobunji heart');
+const festivalFunGrants = awarded.filter(event=>event.id==='sloomi' && event.reason==='festival_fun_rollover');
+const lifetimeFunFavor = festivalFunGrants.reduce((total,event)=>total+event.amount,0);
+assert(Math.abs(lifetimeFunFavor-19.2)<1e-8,'fractional overnight participation settlement reaches exactly 19.2, even after earlier midfestival payments');
+const awardCount = winGrants.length;
+realMs += 1000; api.update();
+assert.equal(awarded.filter(event=>event.reason==='festival_potluck_win').length,awardCount,'finished contest can never reward twice');
+assert.equal(api.serialize().potluckContests[championKey].favorAwarded,true,'judging persists across saves');
+
 console.log('Gorkunash locale placement, schedule shifts, seven-pot contest food, potluck, save, and heart conversion passed.');
