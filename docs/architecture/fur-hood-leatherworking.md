@@ -61,9 +61,13 @@ The test checks the exact authored art filenames, manifest paths, genetic hue an
 
 ## Tletingan Nelk rear artwork and baked hood fit
 
-The Mashtzarr Nelk sprite was previously renamed to `furhood_nelk-back_mashtz_m.png`; the Tletingan variant now has both `furhood_nelk-front_tl_m.png` and the artist-uploaded `furhood_nelk-back_tl_m.png`. The rear PNG was imported from main without merging unrelated changes and was baked using the same Tletingan headwear fit applied to the other 12 fur-hood sprites: scale X/Y 0.835, translation X -3.5 px, Y -11.25 px, zero per-node 6×6 corrections. All 13 Tletingan files retain 234×173 RGBA canvas dimensions and source pixel-art colors. The authoring JSON's associated transform should be reset to identity when using the baked sprite set, or the fit will be applied twice.
+The Mashtzarr Nelk sprite was previously renamed to `furhood_nelk-back_mashtz_m.png`; the Tletingan variant has both `furhood_nelk-front_tl_m.png` and the artist-uploaded `furhood_nelk-back_tl_m.png`. The original 13-sprite resize (0.835 on both axes, translation X -3.5 and Y -11.25) was reverted by PR #1417 because that editor preview was inaccurate. The corrected editor was subsequently calibrated against the already resized sprites (scale X 1.105, Y 1.165; translation X 0, Y +11.75).
 
-The manifest keeps `pendingAssets: []`: every referenced animal front/back piece is now required to exist, including the newly committed Nelk rear PNG. Regression tests no longer exempt it from missing-image checks. The complete batch is recorded in `scripts/records/tletingan-furhood-bake-2026-11-03.json` with the original and baked Git blob hashes.
+All 13 restored original Tletingan sprites are now baked **once** using the composed center-anchored transform: scale X **0.922675**, scale Y **0.972775**, translation X **-3.8675 px**, Y **-1.35625 px**, with zero 6×6 per-node offsets. Only a single nearest-neighbor inverse pixel-center lookup is performed on each original, retaining the 234×173 RGBA canvas and source pixel colors. This avoids repeated resampling. The script `scripts/bake-tletingan-furhood-composed-fit.py` checks the original Git blob hashes before changing any sprite. The new before/after record is `scripts/records/tletingan-furhood-composed-fit-2026-11-04.json`; the historical first-pass record is preserved.
+
+**Do not apply either saved transform to these baked PNGs in the runtime or clothing-fit tool.** If displaying the baked files, reset their fit transform to identity; if displaying original unbaked files, use the single composed transform instead.
+
+The manifest keeps `pendingAssets: []`: every referenced animal front/back piece is required to exist, including the Tletingan Nelk rear PNG. Regression tests do not exempt it from missing-image checks.
 
 ## Exact sprite-color exclusion eyedropper
 
