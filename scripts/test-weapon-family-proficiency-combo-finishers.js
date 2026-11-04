@@ -36,7 +36,7 @@ async function testFamilyProficiency() {
     assert.equal(policy.weaponFamily(item), family, 'weapon classification: ' + item);
   }
   const shapesWindow = {}; // The real weapon-shape registry is the authoritative finite set of currently supported melee donors.
-  vm.runInContext(source('docs/js/combat/weapon-shape-stats.js'), { window: shapesWindow });
+  vm.runInContext(source('docs/js/combat/weapon-shape-stats.js'), vm.createContext({ window: shapesWindow }));
   for (const shape of Object.keys(shapesWindow.WeaponShapeStats.SHAPES)) {
     defs[shape] ||= { shapeKey: shape, slots: ['weapon'] }; // Preserve the fixture's real dual-role axe/spear slots when adding other authored donors.
     assert.ok(policy.weaponFamily(shape), 'no shipped melee weapon shape should lack a proficiency: ' + shape);

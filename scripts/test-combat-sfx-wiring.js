@@ -40,7 +40,7 @@ assert(core.includes('action.data?.comboStep'), 'staged swing playback must rece
 assert.equal(attackValues.combo.COMBO_RESET_S, 1.8, 'authored combo reset window must be doubled to 1.8 seconds');
 assert(combo.includes('let COMBO_RESET_S = 1.8'), 'runtime fallback combo reset window must match the authored value');
 assert(combo.includes('consumeHealthVulnerability: isFinisher'), 'combo finishers must explicitly consume Bruised/Corroded Health');
-assert(combo.includes("isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]"), 'combo finisher impacts should use huge only when vulnerability is available to consume');
+assert(combo.includes("specialProc || (isFinisher && vulnerabilityBefore > 0) ? 'huge' : ['small', 'medium', 'large'][comboStep]"), 'combo finisher impacts should use huge only when vulnerability is available to consume');
 assert(quick.includes('consumeHealthVulnerability: conditionBonusUsed'), 'condition-qualified quick attacks must consume Bruised/Corroded Health');
 assert(quick.includes("conditionBonusUsed ? 'huge' : 'small'"), 'only bonus-qualified quick attacks should use huge');
 assert(corroded.includes('opts?.heavy || opts?.consumeHealthVulnerability'), 'health vulnerability wrapper must accept explicit power-hit qualification');
