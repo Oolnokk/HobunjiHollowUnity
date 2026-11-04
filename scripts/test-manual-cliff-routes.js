@@ -58,6 +58,9 @@ assert(balconies.length, 'intermediate miniature cliffs generate on tall walls')
 const shelf = balconies[0];
 assert(shelf.footprint.length >= 2, 'balcony owns a multi-tile footprint');
 assert(shelf.footprint.every(t => t.elevation === shelf.y), 'every balcony tile carries its own world elevation');
+const shelfRoute = network.routes[shelf.routeId];
+assert(shelf.id.includes([shelfRoute.a.c, shelfRoute.a.r, shelfRoute.b.c, shelfRoute.b.r].join('-')),
+  'shelf save identity comes from stable map coordinates, not an incidental route-list index');
 assert.equal(routes.highestBelow(network, shelf.x, shelf.z, shelf.y + 2, shelf.y - 3)?.id, shelf.id, 'fall lands on intermediate balcony before ground');
 const stacked = {
   balconies: [
