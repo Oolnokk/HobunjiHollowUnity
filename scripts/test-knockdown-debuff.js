@@ -102,6 +102,49 @@ function run() {
   assert.match(game, /startProneThrow\(entity, isPlayer, facingAngle, direction\)/);
   assert.match(game, /function proneRecoveryReady\(entity\)/);
   assert.ok((game.match(/getProneAttackMultiplier\?\.\(/g) || []).length >= 2, 'player and creature damage paths use shared prone multipliers');
+
+  // Run the actual game knockdown entry function in isolation: an interrupted
+  // somersault must be cancelled before its old callback can stand up an actor.
+  const enterStart = game.indexOf('function enterTimedKnockdown(entity, options = {})'); // The production helper is private to game.js.
+  const enterEnd = game.indexOf('window.HobunjiKnockdown = { enter: enterTimedKnockdown }', enterStart);
+  assert.ok(enterStart > 0 && enterEnd > enterStart, 'live entry helper is registered for ResourceSystem');
+  const events = []; // Captures the real helper\'s invocation of movement and ragdoll hooks.
+  const recoverer = {
+    health: 50, x: 4, y: 5, angle: 0, prone: true, somersaultRecovering: true,
+    footing: 100, _temporaryKnockdownProne: false,
+  }; // Zero-Footing-origin actor has refilled and started getting up.
+  const harness = {
+    actor: recoverer,
+    events,
+    window: {
+      Combat: { cancelAllStaged: () => events.push('interrupt-attacks') },
+      ImpactRagdollPlayback: { trigger: bank => events.push(bank) },
+    },
+  };
+  const enterSource = game.slice(enterStart, enterEnd); // Uses the production function body rather than a reimplemented knockdown algorithm.
+  const enter = vm.runInNewContext(`(() => {
+    const player = actor;
+    let _nestHoldT = 1;
+    const hitDirectionRelativeToFacing = () => 'front';
+    const startProneThrow = () => events.push('launch');
+    const enterPronePose = (entity, isPlayer, direction, temporary) => {
+      entity.prone = true; entity._temporaryKnockdownProne = temporary;
+      events.push('first-fall'); return true;
+    };
+    ${enterSource}
+    return enterTimedKnockdown;
+  })()`, harness);
+  assert.equal(enter(recoverer, { fromX: 1, fromY: 2 }), true, 'a fresh knockdown during get-up interrupts recovery');
+  assert.equal(recoverer.somersaultRecovering, false, 'old recovery must no longer complete');
+  assert.equal(recoverer._temporaryKnockdownProne, false, 'zero-Footing origin preserves 2.5x vulnerability');
+  assert.equal(events.includes('launch'), true);
+  assert.equal(events.includes('breakThrow'), true, 'the full fall replaces the in-flight somersault');
+  assert.equal(events.includes('first-fall'), false, 'the existing prone source must not be overwritten');
+  events.length = 0;
+  recoverer.somersaultRecovering = false;
+  assert.equal(enter(recoverer), false, 'a target already lying down only extends debuff duration');
+  assert.equal(events.length, 0, 'an extension never replays the launch');
+
   console.log('Knockdown duration, mastery choices, loot rewards, prone multipliers and live ragdoll wiring: OK');
 }
 run();
