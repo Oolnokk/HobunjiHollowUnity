@@ -263,7 +263,8 @@
             const landingFace = opts.sampleFace?.(c, landing.x, landing.y, landing.z);
             if (opts.sampleFace && (!landingFace ||
                 (landing.x - landingFace.x) * normal.x + (landing.z - landingFace.z) * normal.z < 0.08)) continue;
-            if (capBlocked || shelfBlocksRoute || !legalHop(anchor, landing, obstacles)) continue;
+            if (capBlocked || shelfBlocksRoute || !legalHop(anchor, landing, obstacles) ||
+                !clearOfFace(anchor, landing, c, normal, opts.sampleFace)) continue;
             nodes.push(landing);
             nodes[idx].links.push(shelf.nodeId);
             balconies.push(shelf);
@@ -292,6 +293,18 @@
     return distance >= 0.02 && distance <= 1.20 && !crossesObstacle(from, to, obstacles);
   }
 
+  function clearOfFace(from, to, candidate, normal, sampleFace) {
+    if (!sampleFace) return true;
+    for (const t of [0.25, 0.5, 0.75]) {
+      const x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
+      const y = from.y + (to.y - from.y) * t; // Check the movement chord, not just the endpoints.
+      if (y >= candidate.y1) continue;
+      const face = sampleFace(candidate, x, y, z);
+      if (face && (x - face.x) * normal.x + (z - face.z) * normal.z < 0.07) return false;
+    }
+    return true;
+  }
+
   function planRoute(c, id, sampleFace, obstacles) {
     const height = c.y1 - c.y0; // Used to space holds from the foot to just below the lip.
     const spans = clamp(Math.ceil(Math.max(height / 0.48, (c.walls + 1) / 0.56)), 5, 95);
@@ -304,19 +317,8 @@
       const face = sampleFace(c, x, y, z);
       return face && { x: face.x + normal.x * 0.24, y, z: face.z + normal.z * 0.24 };
     };
-    const clearOfFace = (from, to) => {
-      if (!sampleFace) return true;
-      for (const t of [0.25, 0.5, 0.75]) {
-        const x = from.x + (to.x - from.x) * t, z = from.z + (to.z - from.z) * t;
-        const y = from.y + (to.y - from.y) * t; // Check the movement chord, not just the endpoints.
-        if (y >= c.y1) continue;
-        const face = sampleFace(c, x, y, z);
-        if (face && (x - face.x) * normal.x + (z - face.z) * normal.z < 0.07) return false;
-      }
-      return true;
-    };
     const append = (point, links) => {
-      if (!point || !links.every(index => legalHop(nodes[index], point, obstacles) && clearOfFace(nodes[index], point))) return false;
+      if (!point || !links.every(index => legalHop(nodes[index], point, obstacles) && clearOfFace(nodes[index], point, c, normal, sampleFace))) return false;
       const next = nodes.length; // IDs index the route array for player, wildlife and NPC traversal.
       nodes.push({ ...point, id: next, links });
       for (const index of links) nodes[index].links.push(next);
