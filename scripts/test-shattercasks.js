@@ -544,6 +544,18 @@ async function arenaScenario() {
   assert(game.Shattercasks.toolArchTap(),'tool selection stows the original Burden on the back');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'back stow frees both hands');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,first.id,'back slot references the physical original Burden');
+  const stowed=game.Shattercasks.getBurden(first.id,currentArea); // Confirms the original burden is attached to the current rendered portrait, not a copy.
+  assert.equal(stowed.group.parent,rebuilt,'stowed charge is parented directly to the rebuilt portrait plane');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
+  assert.equal(game.Shattercasks.hitProjectile({vase:stowed}),false,'stowed charge cannot receive an independent projectile hit');
+  const beforePortraitYaw=stowed.group.getWorldPosition(new Vector3()); // A visual-only deadzone turn must reach its child.
+  const authoredStowLocal=stowed.group.position.clone();
+  rebuilt.quaternion.setFromEuler(new Euler(0,.8,0));
+  game.Combat.update(.016);
+  const afterPortraitYaw=stowed.group.getWorldPosition(new Vector3());
+  assert(Math.hypot(afterPortraitYaw.x-beforePortraitYaw.x,afterPortraitYaw.z-beforePortraitYaw.z)>1e-4,
+    'stowed charge follows its portrait when the deadzone changes the plane yaw');
+  assert.deepEqual(stowed.group.position,authoredStowLocal,'the authored back offset is not reset against the portrait yaw');
   assert.equal(game.Shattercasks.actionButtons(),null,'normal tool actions return while a back burden is stowed');
   assert(game.Shattercasks.takeFromBack(),'the tool arch takes the back Burden into the hands');
   assert.equal(game.Shattercasks.debugSnapshot().held,first.id,'retrieval does not replace the burden with an inventory copy');
