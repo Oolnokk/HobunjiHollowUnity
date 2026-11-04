@@ -170,7 +170,7 @@ function render(scheduleRig=true){
     if(E.showBody.checked&&R.headReference)C.drawImage(R.headReference,0,0);
     if(warpedFront&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedFront,0,0);C.globalAlpha=1}
     R.warped=null; // The split front/rear warps above are sufficient; do not bake a redundant third full headwear warp.
-    if(E.showAuthored.checked&&R.authoredTargetCloth){
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
       C.save();C.globalAlpha=+E.authoredOpacity.value;
       if(R.authoredTargetCloth._back)C.drawImage(R.authoredTargetCloth._back,0,0);
       if(R.headReference&&E.showBody.checked)C.drawImage(R.headReference,0,0);
@@ -186,7 +186,7 @@ function render(scheduleRig=true){
         C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
       }
     }
-    if(E.showAuthored.checked&&R.authoredTargetCloth){
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
       C.save();C.globalAlpha=+E.authoredOpacity.value;
       C.drawImage(R.authoredTargetCloth,0,0);C.restore();
     }
