@@ -27,7 +27,7 @@ class Node {
   traverse(fn){fn(this);this.children.forEach(child=>child.traverse(fn));}
   updateWorldMatrix(){}
 }
-const THREE={Box3,Vector3},root=new Node(),controls=[],surfaces=[],blockers=[],removed=[],calls=[];
+const THREE={Box3,Vector3},root=new Node(0,4,0),controls=[],surfaces=[],blockers=[],removed=[],calls=[]; // Native V50 geometry is mounted under its upper-story world-elevation parent.
 const DS={
   registerSurface:def=>surfaces.push(def),registerBlocker:def=>blockers.push(def),
   remove:id=>removed.push(id)
