@@ -47,6 +47,12 @@ windowStub.LootRolling.init({
 async function main() {
   await windowStub.LootRolling.loadLootShopConfig();
   await windowStub.FurHoodLeatherworking.ensureManifest();
+  for (const kind of Object.keys(manifest.species)) {
+    const authoredPool = pools.pools['creature_' + kind]; // Every fur-hood animal needs a corresponding obtainable hide.
+    assert(authoredPool?.entries.some(entry => entry.itemKey?.endsWith('Hide')),
+      kind + ' has fur-hood art but no wild hide source');
+  }
+  assert(!Object.keys(manifest.species).includes('uumkaoii'), 'Uumkao\'ii shells must not accidentally become fur-hood source art');
 
   for (const [poolId, hideKey, species, motif] of [
     ['creature_puktuk', 'puktukHide', 'puktuk', 'foxtail'],
