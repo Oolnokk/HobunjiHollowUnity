@@ -4,8 +4,20 @@
 // stacked wings. Async asset failures, inventory actions, encounter ownership,
 // and the real plinth's completion state determine the challenge outcome.
 const assert=require('assert');
+const fs=require('fs'); // Tests use the SHIPPED authored assets to detect missing puzzle properties before gameplay.
 const Composer=require('../docs/js/ruin-composer.js'); // Existing authored defence solver, not a test-only layout.
 const Defense=require('../docs/js/ruin-layer-defense.js'); // Production wing-to-furniture/encounter integration.
+
+const authoredAssets={}; // Three actual on-disk pieces used by every generated statue arena.
+for(const key of ['ruinDefensePlinth','keyStatueDispenser','ruinPillarBroken']){
+  authoredAssets[key]=JSON.parse(fs.readFileSync('docs/config/furniture-authored/'+key+'.json','utf8'));
+  assert(authoredAssets[key].parts?.length,'required authored arena piece is missing or empty: '+key);
+}
+assert.equal(authoredAssets.ruinDefensePlinth.puzzle?.behavior,'burdenPlate');
+assert.equal(authoredAssets.ruinDefensePlinth.puzzle?.requiredBurdenKind,'keyStatue');
+assert.equal(authoredAssets.ruinDefensePlinth.puzzle?.motion?.durationSeconds,Defense.PRESS_SECONDS);
+assert.equal(authoredAssets.keyStatueDispenser.puzzle?.behavior,'keyStatue');
+assert.equal(authoredAssets.keyStatueDispenser.puzzle?.payloadPartId,'key_statue_button');
 
 class Group {
   constructor(){
