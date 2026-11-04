@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/js/farm-animals.js', 'utf8');
 
-const rayStats = { calls: 0 }; // Counts mesh intersections to verify one pick per game frame.
+const rayStats = { calls: 0, alphaReads: 0 }; // Counts triangle intersections and first-use alpha reads separately.
 const notes = []; // Captures focus changes sent to the mobile-visible raycast overlay.
 const clears = []; // Captures misses sent to the overlay so stale targets disappear.
 let area = 'farm'; // Current area, used to reject livestock selection indoors.
@@ -26,7 +26,7 @@ class Raycaster {
     rayStats.calls++;
     assert.equal(recursive, false, 'only the visible authored plane should be tested');
     if (!mesh.hitPoint || mesh.acceptDirection && mesh.acceptDirection !== this.ray.direction.x) return hits;
-    hits.push({ point: mesh.hitPoint, distance: mesh.hitDistance });
+    hits.push({ object: mesh, point: mesh.hitPoint, distance: mesh.hitDistance, uv: mesh.hitUv || { x: 0.5, y: 0.5 } });
     return hits;
   }
 }
@@ -42,8 +42,33 @@ const window = {
   },
 };
 window.window = window;
-const THREE = { Raycaster };
-vm.runInNewContext(source, { window, THREE, Map, Set, Number, Math, performance: { now: () => 1 } }, { filename: 'farm-animals.js' });
+const THREE = {
+  Raycaster,
+  Vector2: class { set(x, y) { this.x = x; this.y = y; return this; } }, // Alpha pixel UV scratch used in the production picker.
+};
+const document = {
+  createElement(tag) {
+    assert.equal(tag, 'canvas');
+    return {
+      width: 0, height: 0,
+      getContext() {
+        let sourceImage = null; // Source image passed to drawImage, used to simulate canvas alpha readback.
+        return {
+          drawImage(image) { sourceImage = image; },
+          getImageData(_x, _y, width, height) {
+            rayStats.alphaReads++;
+            const data = new Uint8ClampedArray(width * height * 4); // Opaque body with transparent sprite margins.
+            for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+              data[(y * width + x) * 4 + 3] = sourceImage.opaque(x / width, y / height) ? 255 : 0;
+            }
+            return { data };
+          },
+        };
+      },
+    };
+  },
+};
+vm.runInNewContext(source, { window, THREE, document, Map, WeakMap, Set, Number, Math, Uint8ClampedArray, performance: { now: () => 1 } }, { filename: 'farm-animals.js' });
 
 const animals = new Set(); // Live animal registry, independent of obsolete logical tile reservations.
 const player = { x: 0, y: 0 }; // Player position in pixels; TILE=10 makes 20 world px equal two tiles.
@@ -57,7 +82,8 @@ window.FarmAnimals.init({
 });
 
 function animal(id, x, z, hitDistance, options = {}) {
-  const face = { isMesh: true, visible: true, hitPoint: { x, y: 1, z }, hitDistance }; // Real ray intersections occur on the moving visible PNG planes.
+  const texture = { image: { width: 800, height: 450, opaque: (u, v) => u >= 0.2 && u <= 0.8 && v >= 0.2 && v <= 0.8 }, transformUv(uv) { uv.y = 1 - uv.y; } }; // Simulates the actual loaded sprite texture's transparent background.
+  const face = { isMesh: true, visible: true, hitPoint: { x, y: 1, z }, hitDistance, material: { map: texture, alphaTest: 0.35 } }; // The real Mesh material owns the loaded, alpha-tested PNG map.
   const group = {
     visible: true,
     parent: {},
@@ -69,7 +95,7 @@ function animal(id, x, z, hitDistance, options = {}) {
     id, livestockId: id, animalKey: 'gar-wolf',
     col: 9, row: 9, // Logical reservation deliberately far away from the rendered sprite!
     modelWidth: 1.5, modelHeight: 1,
-    avatarRef: { group, frontPlane: face, backPlane: { isMesh: true, visible: true, hitPoint: null } },
+    avatarRef: { group, frontPlane: face, backPlane: { isMesh: true, visible: true, hitPoint: null, material: { map: texture, alphaTest: 0.35 } } },
     ...options,
   };
 }
@@ -85,7 +111,13 @@ assert.equal(notes.at(-1).point.x, 1.4, 'debug overlay draws the actual 3D hit p
 const firstCallCount = rayStats.calls;
 assert.equal(window.FarmAnimals.aimedAnimal(), near, 'button list and press agree within the same frame');
 assert.equal(rayStats.calls, firstCallCount, 'no duplicate raycast cost for repeated action-bar queries');
+assert.equal(rayStats.alphaReads, 2, 'each visible animal sprite image is sampled only once for all subsequent frames');
 
+frame++;
+near.avatarRef.frontPlane.hitUv = { x: 0.01, y: 0.5 }; // Intersects the plane geometry but lands on a transparent PNG pixel.
+assert.equal(window.FarmAnimals.aimedAnimal(), far, 'a transparent foreground sprite rectangle must not steal the interaction');
+assert.equal(rayStats.alphaReads, 2, 'cached alpha masks avoid per-frame drawImage/getImageData costs');
+near.avatarRef.frontPlane.hitUv = { x: 0.5, y: 0.5 };
 frame++;
 near.avatarRef.frontPlane.hitPoint = null;
 assert.equal(window.FarmAnimals.aimedAnimal(), far, 'closer missing face lets a visible animal behind it win');
