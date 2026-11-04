@@ -318,7 +318,7 @@
       ? `Blue fire takes hold (${lit}/${total}). A seal on the Great Door answers it.`
       : 'The last brazier flares blue — somewhere, the Great Door hums awake.', true);
     window.__farmLog?.(`[random-ruin] brazier ${brazier.id} lit ${lit}/${total}`, 'world');
-    if (lit === total) awakenDoor();
+    if (lit === total) tryAwakenDoor();
     return true;
   }
 
@@ -541,6 +541,16 @@
       onPress:() => pressGreatDoor(),
     };
     return door;
+  }
+
+  function tryAwakenDoor(){
+    // The local blue seals and the physically separate multi-story braziers
+    // are BOTH prerequisites. Keep the stone door visibly sealed until the
+    // last required source is lit instead of merely denying its interaction.
+    if(!s?.door||s.door.state!=='sealed')return false;
+    if(s.braziers.some(b=>!b.lit)||window.DevRandomRuin?.isShaftNetworkComplete?.()===false)return false;
+    awakenDoor();
+    return s.door.state==='awake';
   }
 
   function awakenDoor() {
@@ -1070,7 +1080,7 @@
     if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
     buildSanctum(kit, context, s.braziers.length, s.rng);
-    if (!s.braziers.length) awakenDoor(); // A ruin whose puzzles carry no goals leaves the door unsealed.
+    if (!s.braziers.length) tryAwakenDoor(); // A ruin without local blue goals still requires all shaft-wing braziers.
     kit.recordModulePlacement('greatDoorSanctum', 'room', 'sanctum', { braziers:s.braziers.length, bossType:s.bossType, door:{ x:+site.x.toFixed(2), z:+site.z.toFixed(2) } });
   }
 
@@ -1091,7 +1101,8 @@
       if (!s) return;
       deps = kit.deps || deps;
       if (!s.built) { try { build(kit); } catch (error) { s.built = true; s.rejects.push(String(error?.message || error)); console.warn('[Random Test Ruin sanctum] build failed', error); } }
-      const allLit = s.braziers.length > 0 && s.braziers.every(b => b.lit) || (s.door && s.door.state !== 'sealed');
+      tryAwakenDoor(); // Cheap scalar check; respond immediately to the last upper-floor brazier.
+      const allLit = s.door?.state !== 'sealed';
       for (const brazier of s.braziers) updateFire(brazier.fire, now, dt);
       for (const fire of s.arenaFires || []) updateFire(fire, now, dt);
       for (const fire of s.vaultFires || []) {
