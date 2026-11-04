@@ -28,7 +28,11 @@
     const group=new THREE.Group(); // Visible mechanism geometry follows the wing floor's presentation culling.
     group.name='ruin-layer-challenge-'+id;parent.add(group);
     const basic=color=>{const mat=new THREE.MeshBasicMaterial({color});materials.push(mat);return mat;};
-    const stone=basic(TARGET_COLORS.stone),idle=basic(TARGET_COLORS.idle),hit=basic(TARGET_COLORS.hit);
+    const authoredStone=root.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#777267'
+    });
+    if(authoredStone)materials.push(authoredStone); // Owned stone material uses the same texture treatment as the shaft and V50 walls.
+    const stone=authoredStone||basic(TARGET_COLORS.stone),idle=basic(TARGET_COLORS.idle),hit=basic(TARGET_COLORS.hit);
     const plateMat=basic(0x776452);
     const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
     const music=options.music||root.MusicMinigame; // Existing eight-note flute performance/puzzle bridge is authoritative.
