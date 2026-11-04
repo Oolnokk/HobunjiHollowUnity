@@ -46,6 +46,7 @@ async function updateThreePreview(){
   }
   const buildId=++R.three.buildGeneration;
   let pendingRigGroup=null, pendingAvatarModel=null, pendingFeet=null; // Dispose incomplete previews if any 3D construction stage fails.
+  try{
     await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
     E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
