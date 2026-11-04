@@ -520,6 +520,15 @@
     if (Object.keys(perks).length) lines.push(`Bonus perk ranks: ${Object.entries(perks).map(([k, v]) => `${k} +${v}`).join(', ')}`);
     const comp = companionModifiers();
     if (comp) lines.push(`Companion: damage ×${comp.damage.toFixed(2)}, affliction ×${comp.affliction.toFixed(2)}, footing ×${comp.footing.toFixed(2)}`);
+    const doubleEdgedDebug = window.DoubleEdgedCombatTrinkets?.debugSnapshot?.(); // Makes recent weapon-hit and kill-refund attribution visible on mobile in Gear diagnostics.
+    if (doubleEdgedDebug?.lastHit) {
+      const hit = doubleEdgedDebug.lastHit; // Most recent wearer-attributed hit after resolving player gear.
+      lines.push(`Last combat hit: Health ×${hit.damageMultiplier.toFixed(2)}, Footing ×${hit.footingMultiplier.toFixed(2)}, Affliction ×${hit.afflictionMultiplier.toFixed(2)}; heavy=${hit.heavy}, ranged=${hit.ranged}, prone=${hit.proneTarget}`);
+    }
+    if (doubleEdgedDebug?.lastKill) {
+      const kill = doubleEdgedDebug.lastKill; // Most recent credited hostile kill with Death's Momentum equipped.
+      lines.push(`Last Death's Momentum: ${kill.enemy}, ordinary +${Number(kill.restored?.stamina || 0).toFixed(1)}, black +${Number(kill.restored?.blackStamina || 0).toFixed(1)}`);
+    }
     return lines;
   }
 
