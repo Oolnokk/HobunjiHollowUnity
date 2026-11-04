@@ -28,13 +28,12 @@
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Theme darkness is always active; enabling the dev toggle only permits a severity override.
-  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, ropeChain:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
+  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, ropeChain:true, hallwayTraps:false, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
   const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
     ['safePath','Safe-path pressure grids'],
     ['ropeSwing','Rope swing traversal'],
     ['ropeChain','Bottomless rope-to-rope hallways'],
-    ['hallwayTraps','Alternating hallway fire / poison traps'],
     ['lavaBasin','Deep lava basin rope rooms'],
     ['sanctum','Blue braziers, Great Door and lich sanctum'],
   ]);
@@ -181,6 +180,7 @@
   function normalizePuzzleGenerationOptions(raw = {}) {
     const normalized = { ...DEFAULT_PUZZLE_OPTIONS }; // Used as the complete generator-facing puzzle option object.
     for (const [key] of PUZZLE_OPTION_ROWS) normalized[key] = raw?.[key] !== false;
+    normalized.hallwayTraps = false; // Retired projectile obstacle courses cannot be resurrected by a previously saved Settings toggle.
     normalized.maxPerRoom = clamp(Math.floor(Number(raw?.maxPerRoom) || 0), 0, 12);
     return normalized;
   }
