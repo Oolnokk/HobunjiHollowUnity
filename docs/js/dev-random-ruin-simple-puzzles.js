@@ -592,9 +592,9 @@
       : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start+shore,maxZ:finish-shore};
     const exitFloor={bank:{bounds,axis,side:'end'}},entryFloor={bank:{bounds,axis,side:'start'}}; // Matches actual floor sampling after an airborne release.
     const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
-    const forwardHops=ropes.map((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight));
+    const forwardHops=ropes.map((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:exitFloor,viableFlight));
     const reverseHops=ropes.map((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
-      i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight));
+      i>0?{rope:ropes[i-1]}:entryFloor,viableFlight));
     const forward=forwardHops.every(amp=>amp!==null),reverse=reverseHops.every(amp=>amp!==null);
     if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse,forwardHops,reverseHops,entryProbe:entryFloor.bank,exitProbe:exitFloor.bank});} // Both checkpoint sides must lead to a physically solvable crossing.
 
