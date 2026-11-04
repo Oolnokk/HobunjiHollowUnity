@@ -10,15 +10,6 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const SCOPE = 'dev-random-ruin-simple-puzzles';
   const PAD = 2;
-  const GRID_REVEAL_MS = 3600;
-  const GRID_BURNING = 24;
-  const GRID_RETRIGGER_MS = 900;
-  const PLATE_IDLE_COLOR = 0x9b8763; // Sandstone plates read as a distinct trap floor instead of blending into the grey flagstones.
-  const PLATE_SAFE_REVEAL_COLOR = 0x7dff6a;
-  const PLATE_UNSAFE_REVEAL_COLOR = 0xc2412c;
-  const PLATE_PROVEN_COLOR = 0x5fae58; // Safe plates the player has already stood on stay marked, so the path is remembered after the reveal fades.
-  const PLATE_SCORCHED_COLOR = 0x5a2a1e; // Wrong plates stay scorched after they fire.
-  const PLATE_FIRING_COLOR = 0xff5b2b;
   const ROPE_DESTINATION_RISE = .78; // Keeps ordinary rope landings clearly above the 0.42u ruin step limit so the rope is visibly required.
   const ROPE_GRAB_ABOVE_LAUNCH = .86; // Places the idle grip at reachable head/hand height over the launch platform instead of inheriting the destination height.
   const LAVA_TEXTURE_TILE = 4; // World units per lava texture repeat; matches MergedWaterRenderer's default water tiling.
@@ -26,7 +17,6 @@
   const AMBIENT_LIFT_SIZE = 2.2;
   const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
-  const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
   const HALL_FIRE_BURNING = 18;
   const HALL_POISON = 16;
   const HALL_SHOT_PERIOD = 0.9;
@@ -67,8 +57,6 @@
   let lastBadgeAt = -Infinity; // Throttles the mobile diagnostic DOM write; the simple runtime otherwise touched layout every rendered frame.
   // Badge segments are deduplicated by DevRandomRuin.setDebugBadgePart rather than stale full-text caches.
   const sharedPrimitiveGeometry = new Map(); // Reuses immutable simple-puzzle primitives across plates, posts, coffins, emitters, and doors instead of allocating identical BufferGeometry repeatedly.
-  const plateInstanceDummy = new THREE.Object3D(); // Reused to write pressure-plate instance transforms without allocating one Object3D per cell/frame.
-  const plateInstanceColor = new THREE.Color(); // Reused to write per-instance pressure-plate state colors.
   const ropeAxis = new THREE.Vector3(0,1,0); // Canonical cylinder axis used to rotate the thick rope mesh between anchor and bob.
   const ropeDirection = new THREE.Vector3(); // Scratch vector reused while updating thick rope orientation.
   const ropeMidpoint = new THREE.Vector3(); // Scratch vector reused while centering the rope cylinder between its endpoints.
@@ -447,158 +435,6 @@
     return { centerX, centerZ, y:ys.reduce((sum,value) => sum + value, 0) / ys.length, bounds }; // Plates/platforms ground to their own support; authored plateau steps are valid, not a generation failure.
   }
 
-  function safePathCells(cols, rows, rng) {
-    const path = new Set();
-    let col = Math.floor(rng() * cols);
-    for (let row = 0; row < rows; row++) {
-      path.add(col + ',' + row);
-      if (row >= rows - 1) continue;
-      const next = Math.max(0, Math.min(cols - 1, col + (Math.floor(rng() * 3) - 1)));
-      if (next !== col) path.add(next + ',' + row);
-      col = next;
-    }
-    return path;
-  }
-
-  function buildSafePathGrid(context, rng, usedHallways) {
-    const cs = worldCellSize(context.meta);
-    const candidates = shuffle((context.meta?.hallways || []).filter(hall => {
-      const longCells = hall.axis === 'x' ? Number(hall.w) : Number(hall.h);
-      const crossCells = hall.axis === 'x' ? Number(hall.h) : Number(hall.w);
-      return longCells >= 5 && crossCells >= 5 && !usedHallways.has(hall.id);
-    }), rng);
-
-    for (const hall of candidates) {
-      const axis = hall.axis === 'z' ? 'z' : 'x';
-      const longStart = PAD + (axis === 'x' ? Number(hall.col) : Number(hall.row)) * cs;
-      const longLength = (axis === 'x' ? Number(hall.w) : Number(hall.h)) * cs;
-      const crossStart = PAD + (axis === 'x' ? Number(hall.row) : Number(hall.col)) * cs;
-      const crossWidth = (axis === 'x' ? Number(hall.h) : Number(hall.w)) * cs;
-      const cols = Math.max(5, Math.min(9, Math.ceil(crossWidth / .76)));
-      const rows = Math.max(5, Math.min(8, Math.floor((longLength - 1.4) / .72) + 1));
-      if (rows < 5) continue;
-
-      const crossMargin = GRID_WALL_CLEARANCE;
-      const alongMargin = .7;
-      const crossSpacing = (crossWidth - crossMargin * 2) / Math.max(1, cols - 1);
-      const alongSpan = Math.min(longLength - alongMargin * 2, .78 * (rows - 1));
-      const alongSpacing = alongSpan / Math.max(1, rows - 1);
-      const plateSize = Math.max(.52, Math.min(.72, crossSpacing * .94, alongSpacing * .94));
-      const originAlong = longStart + (longLength - alongSpan) * .5;
-      const originCross = crossStart + crossMargin;
-      const safe = safePathCells(cols, rows, rng);
-
-      const root = new THREE.Group();
-      root.name = 'dev_ruin_safe_path_grid_' + hall.id;
-      root.userData.devRandomRuinSimplePuzzle = 'safePath';
-      root.userData.devRandomRuinMandatoryTraversal = true;
-      state.group.add(root);
-
-      const cells = [];
-      const plateMaterial = makeBasic(0xffffff); // Instanced colors multiply this white base so every plate can still reveal/flash independently in one draw call.
-      const plateBatch = new THREE.InstancedMesh(sharedBoxGeometry(plateSize,.055,plateSize), plateMaterial, cols * rows);
-      plateBatch.name = 'dev_ruin_pressure_plate_batch_' + hall.id;
-      plateBatch.userData.devRandomRuinPressurePlate = true;
-      plateBatch.userData.devRandomRuinPressurePlateBatch = true;
-      plateBatch.frustumCulled = false; // Three r128 culls InstancedMesh from the base geometry bounds, not these translated instances; one batch draw is cheaper than risking the distant grid disappearing.
-      plateBatch.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols * rows * 3), 3); // Allocate before count=0: r128's lazy setColorAt sizes this buffer from the *current* count, which left every plate black.
-      plateBatch.count = 0;
-      root.add(plateBatch);
-      let invalidPatch = false;
-      for (let row = 0; row < rows && !invalidPatch; row++) {
-        for (let col = 0; col < cols; col++) {
-          const key = col + ',' + row;
-          const along = originAlong + row * alongSpacing;
-          const cross = originCross + col * crossSpacing;
-          const x = axis === 'x' ? along : cross;
-          const z = axis === 'x' ? cross : along;
-          const support = sampleSupport(x, z);
-          if (!support) { invalidPatch = true; break; }
-          const index = cells.length;
-          plateInstanceDummy.position.set(x, Number(support.y)+.028, z);
-          plateInstanceDummy.rotation.set(0,0,0);
-          plateInstanceDummy.scale.set(1,1,1);
-          plateInstanceDummy.updateMatrix();
-          plateBatch.setMatrixAt(index, plateInstanceDummy.matrix);
-          plateInstanceColor.setHex(PLATE_IDLE_COLOR);
-          plateBatch.setColorAt(index, plateInstanceColor);
-          plateBatch.count = index + 1;
-          cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), index, renderDown:false, renderColor:PLATE_IDLE_COLOR, lastTriggeredAt:-Infinity, proven:false });
-        }
-      }
-      plateBatch.instanceMatrix.needsUpdate = true;
-      if (plateBatch.instanceColor) plateBatch.instanceColor.needsUpdate = true;
-      if (invalidPatch || cells.length !== cols * rows) {
-        disposeObject(root);
-        continue;
-      }
-
-      const entryDoorRaw=(context.meta?.doorways||[]).find(door=>String(door?.to)===String(hall.id))
-        ||(context.meta?.doorways||[]).find(door=>String(door?.from)===String(hall.id)||String(door?.to)===String(hall.id));
-      const entryDoor=entryDoorRaw?doorwayWorld(context.meta,entryDoorRaw,(context.meta?.doorways||[]).indexOf(entryDoorRaw)):null;
-      const minAlong=longStart,maxAlong=longStart+longLength;
-      const entryAlong=entryDoor?(axis==='x'?entryDoor.x:entryDoor.z):minAlong;
-      const approachAtMin=Math.abs(entryAlong-minAlong)<=Math.abs(entryAlong-maxAlong); // Hall generation's room→hall doorway is the player-approach side even when the hall extends toward decreasing coordinates.
-      const fallbackInside=approachAtMin
-        ? Math.max(minAlong+.18,originAlong-Math.max(.58,alongSpacing*.82))
-        : Math.min(maxAlong-.18,originAlong+alongSpan+Math.max(.58,alongSpacing*.82));
-      const preferredOutside=entryDoor?entryAlong+(approachAtMin?-.68:.68):fallbackInside; // Put the reveal pedestal just before the trapped hallway, in the room the player enters from.
-      const buttonCross=entryDoor?(axis==='x'?entryDoor.z:entryDoor.x):(crossStart+crossWidth*.5);
-      const preferredX=axis==='x'?preferredOutside:buttonCross,preferredZ=axis==='x'?buttonCross:preferredOutside;
-      const preferredSupport=sampleSupport(preferredX,preferredZ);
-      const buttonAlong=preferredSupport?preferredOutside:fallbackInside; // If unusual room geometry leaves no support outside the threshold, keep the control immediately inside the correct end.
-      const buttonX = axis === 'x' ? buttonAlong : buttonCross;
-      const buttonZ = axis === 'x' ? buttonCross : buttonAlong;
-      const buttonSupport = preferredSupport || sampleSupport(buttonX, buttonZ) || { y:(approachAtMin?cells[0]:cells[cells.length-1])?.y || 0 };
-      const button = new THREE.Group();
-      button.name = 'dev_ruin_safe_path_button_' + hall.id;
-      button.userData.devRuinInteractionType = 'safePathReveal';
-      button.userData.interactive3D = true;
-      const pedestal = naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.62,.35,.62), makeBasic(0x777777)));
-      pedestal.position.y = .175;
-      const capMat = makeBasic(0x718a72);
-      const cap = new THREE.Mesh(sharedBoxGeometry(.42,.09,.42), capMat);
-      cap.position.y = .395;
-      button.add(pedestal,cap);
-      button.position.set(buttonX, Number(buttonSupport.y), buttonZ);
-      root.add(button);
-
-      // A stone door in the hallway's entry doorway would otherwise only open
-      // from glyphs that may not be near (or even on this side of) it; the
-      // reveal pedestal is the obvious control at this threshold, so it
-      // opens that door too.
-      let entryMechanismId=null;
-      if(entryDoor){
-        for(const door of generatedStoneDoorMechanisms(context)){
-          if(Math.hypot(door.x-entryDoor.x,door.z-entryDoor.z)<=Math.max(1.4,entryDoor.width*.6)){entryMechanismId=door.id;break;}
-        }
-      }
-      const grid = {
-        entryMechanismId,
-        hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat, plateBatch,
-        approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
-        revealUntil:0, lastPlayerKey:null, triggerCount:0,
-      };
-      state.safeGrids.push(grid);
-      state.controls.push({
-        kind:'safePathReveal', object:button, promptRoot:button, range:1.9, priority:20, touchIcon:'✦',
-        label:'Reveal Safe Path',
-        onPress:() => {
-          grid.revealUntil = performance.now() + GRID_REVEAL_MS;
-          if (grid.entryMechanismId) {
-            if (window.DevRandomRuin?.mechanismInfo?.(grid.entryMechanismId)?.locked) window.DevRandomRuin.unlockMechanism?.(grid.entryMechanismId, true);
-            else window.DevRandomRuin?.setMechanismTarget?.(grid.entryMechanismId, 1);
-          }
-          deps?.showToast?.(grid.entryMechanismId ? 'The hallway door grinds open. Green plates are safe, red plates burn; plates you step on safely stay green.' : 'Green plates are safe, red plates burn. Plates you step on safely stay green.', true);
-        },
-      });
-      usedHallways.add(hall.id);
-      return grid;
-    }
-    return null;
-  }
-
-
   // An unobstructed safe-grid-width hallway can become a single abyss crossed
   // entirely by successive airborne rope catches. No artificial landing pads:
   // the generator uses the existing rooms on either side for its checkpoints.
@@ -701,7 +537,12 @@
     state.ropes.push(...ropes);
     const doorIds=new Set((context.meta?.doorways||[]).flatMap((door,index)=>
       String(door.from)===String(hall.id)||String(door.to)===String(hall.id)?[doorwayWorld(context.meta,door,index).id]:[]));
-    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,floorY,checkpointIds:{
+    const entryDoorRaw=(context.meta?.doorways||[]).find(door=>String(door?.to)===String(hall.id))
+      ||(context.meta?.doorways||[]).find(door=>String(door?.from)===String(hall.id)||String(door?.to)===String(hall.id)); // The mandatory chain's completion reward belongs beyond the doorway the player approaches from.
+    const entryDoor=entryDoorRaw?doorwayWorld(context.meta,entryDoorRaw,(context.meta?.doorways||[]).indexOf(entryDoorRaw)):null;
+    const entryAlong=entryDoor?(axis==='x'?entryDoor.x:entryDoor.z):start;
+    const approachSide=Math.abs(entryAlong-start)<=Math.abs(entryAlong-finish)?'start':'end';
+    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,floorY,approachSide,rewardSide:approachSide==='start'?'end':'start',checkpointIds:{
       start:'rope-chain-'+hall.id+'-start',end:'rope-chain-'+hall.id+'-end'}};
     state.ropeChains.push(chain);
     usedHallways.add(hall.id);
@@ -1956,7 +1797,6 @@
       root:context.root,
       group,
       controls:[],
-      safeGrids:[],
       ropeChains:[], // Hallway-wide bottomless gaps traversed exclusively by midair rope catches.
       ropeChainDisabledSurfaces:[], // Original V50 supports restored on clear so rerolls cannot strand floor state.
       ropeChainPitTiles:[], // Existing grid cell flags restored on clear while traversal uses actual DynamicSurfaces pits.
@@ -2010,9 +1850,16 @@
       updateBadge(true);
       return;
     }
-    if(options.safePath!==false){
-      const grid=buildSafePathGrid(context,rng,usedHallways);
-      if(grid)recordModulePlacement('safePathGrid','hallway',grid.hallId,{mandatoryTraversal:true});
+    if(options.ropeChain!==false){ // Replace the retired memory-grid crossing with a validated rope chain, using every viable hallway before falling back to ordinary walking.
+      const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)),rng);
+      for(const hall of candidates){
+        const chain=buildRopeChainHallway(context,rng,hall,usedHallways);
+        if(!chain)continue;
+        chain.mandatoryTraversal=true;
+        const placement=state.modulePlacements.find(module=>module.type==='ropeChainAbyss'&&module.slotId===chain.id);
+        if(placement)placement.mandatoryTraversal=true;
+        break;
+      }
     }
     if(options.ropeSwing!==false){
       let rope=rng()<cfg('moduleChances.balconyRopeElevator',.58)?buildBalconyRopeElevatorComposer(context,rng,usedRooms):null; // Full balcony→rope→glyph→elevator chain is one possible composition, not a dedicated puzzle type.
@@ -2058,55 +1905,6 @@
     }
     window.DevRandomRuinTileOccupancy?.scanSolids?.(group,SCOPE); // Every visible solid this build placed (sarcophagi, ossuary shell, canopy posts, pedestals) collides exactly like V50 props.
     updateBadge(true);
-  }
-
-  function updateSafeGrids(now) {
-    const player=playerWorld();
-    if(!player)return;
-    for(const grid of state.safeGrids){
-      const revealing=now<grid.revealUntil;
-      const idlePulse=grid.revealUntil===0?.5+.5*Math.sin(now*.005):0; // Pedestal throbs until it has been used once, pointing the player at the reveal.
-      grid.capMat.color.setHex(revealing?0xc9f7a2:(idlePulse>.5?0x9fe0a0:0x718a72));
-      let occupied=null,matrixDirty=false,colorDirty=false,near=false;
-      for(const cell of grid.cells){
-        const on=Math.abs(player.x-cell.x)<=.34&&Math.abs(player.z-cell.z)<=.34;
-        if(on)occupied=cell;
-        if(on&&cell.safe)cell.proven=true;
-        if(Math.abs(player.x-cell.x)<=1.2&&Math.abs(player.z-cell.z)<=1.2)near=true;
-        if(cell.renderDown!==on){
-          plateInstanceDummy.position.set(cell.x,cell.y+.028-(on?.032:0),cell.z);
-          plateInstanceDummy.rotation.set(0,0,0);
-          plateInstanceDummy.scale.set(1,1,1);
-          plateInstanceDummy.updateMatrix();
-          grid.plateBatch.setMatrixAt(cell.index,plateInstanceDummy.matrix);
-          cell.renderDown=on;matrixDirty=true;
-        }
-        const color=now-cell.lastTriggeredAt<260?PLATE_FIRING_COLOR
-          :revealing?(cell.safe?PLATE_SAFE_REVEAL_COLOR:PLATE_UNSAFE_REVEAL_COLOR)
-          :cell.proven?PLATE_PROVEN_COLOR
-          :Number.isFinite(cell.lastTriggeredAt)?PLATE_SCORCHED_COLOR
-          :PLATE_IDLE_COLOR;
-        if(cell.renderColor!==color){
-          plateInstanceColor.setHex(color);
-          grid.plateBatch.setColorAt(cell.index,plateInstanceColor);
-          cell.renderColor=color;colorDirty=true;
-        }
-      }
-      if(near&&!grid.hinted&&grid.revealUntil===0){
-        grid.hinted=true;
-        deps?.showToast?.('Trapped pressure plates ahead — use the glowing pedestal to reveal the safe path.',true);
-      }
-      if(matrixDirty)grid.plateBatch.instanceMatrix.needsUpdate=true;
-      if(colorDirty&&grid.plateBatch.instanceColor)grid.plateBatch.instanceColor.needsUpdate=true;
-      const key=occupied?.key||null;
-      if(occupied&&!occupied.safe&&grid.lastPlayerKey!==key&&now-occupied.lastTriggeredAt>=GRID_RETRIGGER_MS){
-        occupied.lastTriggeredAt=now;
-        grid.triggerCount++;
-        window.ResourceSystem?.addAffliction?.(deps.player,'burningHealth',GRID_BURNING);
-        deps.showToast?.('Wrong pressure plate — Burning Health!',false);
-      }
-      grid.lastPlayerKey=key;
-    }
   }
 
   function updateCyclingElevators(dt) {
@@ -2345,7 +2143,7 @@
     if(!force&&now-lastBadgeAt<250)return; // Diagnostics are human-readable, not simulation state; 4 Hz is plenty and avoids a layout-affecting DOM mutation every frame.
     lastBadgeAt=now;
     const cp=state.checkpoints;
-    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
+    const segment=' · simple C'+state.ropeChains.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
     window.DevRandomRuin?.setDebugBadgePart?.('simple',segment); // Never compose from a previous badge string.
   }
 
@@ -2362,7 +2160,6 @@
     if(!context?.root||!context?.scene)return;
     if(!state||state.root!==context.root)buildForContext(context);
 
-    updateSafeGrids(now);
     updateChordPlateSets();
     updateCyclingElevators(dt);
     updateLockDoors(dt);
@@ -2374,6 +2171,39 @@
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
     updateBadge();
+  }
+
+  // Developer-only deterministic launch preparation for the full-game rope-chain browser smoke.
+  // It uses the same pendulum and flight predictor as generation and the *actual* player release/collision/catch path; no teleport can count as a successful crossing.
+  function debugRopeChainHop(hallId,direction='forward') {
+    if(!state||!inRuin())return {ok:false,reason:'not in a generated ruin'};
+    try{if(localStorage.getItem('hobunjiDevMode')!=='1')return {ok:false,reason:'developer mode required'};}catch(_){return {ok:false,reason:'developer mode required'};}
+    const chain=state.ropeChains.find(chain=>chain.id===String(hallId)); // The selected hallway owns the rope order and both real banks.
+    const rope=state.activeRope;
+    if(!chain||!rope?.attached)return {ok:false,reason:'the player must be holding a chain rope'};
+    const index=chain.ropes.indexOf(rope),reverse=direction==='reverse';
+    if(index<0)return {ok:false,reason:'the active rope is not in that chain'};
+    const destinationIndex=index+(reverse?-1:1);
+    const destination=chain.ropes[destinationIndex]; // An undefined destination means the player must land on the existing bank floor.
+    const bank=reverse?chain.entry:chain.exit;
+    const target=destination?{rope:destination}:{platform:{...bank,topY:bank.y,
+      width:chain.axis==='x'?2.2:Math.min(2.4,chain.bounds.maxX-chain.bounds.minX-1),
+      depth:chain.axis==='z'?2.2:Math.min(2.4,chain.bounds.maxZ-chain.bounds.minZ-1)}};
+    const sign=reverse?-1:1;
+    for(let amp=.55;amp<=1.15+1e-6;amp+=.05){
+      for(let step=0;step<=10;step++){
+        const theta=amp*(.15+.85*step/10),omega=Math.sqrt(Math.max(0,2*(ROPE_GRAVITY/rope.length)*(Math.cos(theta)-Math.cos(amp))));
+        const candidate={...rope,angle:theta*sign,omega:omega*sign};
+        const predicted=RopeCore.releaseFlight(candidate,RopeCore.bobAt(candidate));
+        if(!simulateRopeFlight(predicted,target,chain.floorY-.4))continue;
+        rope.angle=candidate.angle;rope.omega=candidate.omega;
+        const bob=updateRopeVisual(rope);rope.lastSafeBob=clonePoint(bob);
+        setPlayerWorld(bob,true,false);
+        if(!releaseRope(rope))return {ok:false,reason:'canonical rope release refused'};
+        return {ok:true,from:index,to:destinationIndex,landing:destination?'rope':'bank',angle:rope.angle,omega:rope.omega};
+      }
+    }
+    return {ok:false,reason:'no release from the live rope reaches the next target'};
   }
 
   function getInteractionControls() {
@@ -2431,23 +2261,8 @@
     return {
       active:true,
       seed:state.buildSeed,
-      safeGrids:state.safeGrids.map(grid=>({
-        hallId:grid.hallId,
-        axis:grid.axis,
-        cols:grid.cols,
-        rows:grid.rows,
-        mandatoryTraversal:true,
-        approachSide:grid.approachAtMin?'min':'max',
-        entryDoorId:grid.entryDoorId,
-        entryMechanismId:grid.entryMechanismId||null,
-        buttonPoint:clonePoint(grid.buttonPoint),
-        revealMs:Math.max(0,Math.round(grid.revealUntil-now)),
-        triggerCount:grid.triggerCount,
-        safe:grid.cells.filter(cell=>cell.safe).map(cell=>({key:cell.key,x:+cell.x.toFixed(3),z:+cell.z.toFixed(3)})),
-        unsafe:grid.cells.filter(cell=>!cell.safe).map(cell=>({key:cell.key,x:+cell.x.toFixed(3),z:+cell.z.toFixed(3)})),
-      })),
       ropes:state.ropes.map(rope=>({
-        id:rope.id,roomId:rope.roomId,attached:rope.attached,braking:rope.braking,
+        id:rope.id,roomId:rope.roomId,attached:rope.attached,braking:rope.braking,airCatchCount:rope.airCatchCount||0,ropeChainHallId:rope.ropeChainHallId||null,
         length:+rope.length.toFixed(3),angle:+rope.angle.toFixed(3),omega:+rope.omega.toFixed(3),yaw:+rope.yaw.toFixed(3), // Mobile/browser diagnostics prove movement input changes the live pendulum rather than a canned traversal.
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
@@ -2456,7 +2271,9 @@
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
-        ropeCount:chain.ropes.length,checkpoints:chain.checkpointIds,instantDeath:true})),
+        ropeCount:chain.ropes.length,ropeIds:chain.ropes.map(rope=>rope.id),entry:clonePoint(chain.entry),exit:clonePoint(chain.exit),
+        floorY:chain.floorY,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
+        checkpoints:chain.checkpointIds,instantDeath:true})),
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
@@ -2524,6 +2341,7 @@
     respawnAtCheckpoint,
     isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z)), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
     instantRopeChainDeath,
+    debugRopeChainHop,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.
     listProjectileTargets:()=>!state||!inRuin()?[]:[
