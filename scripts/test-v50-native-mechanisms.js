@@ -125,4 +125,44 @@ runtime.dispose();runtime.dispose();
 assert.equal(rootsReleased,1,'native torch/glyph roots unregister exactly once');
 assert.equal(controls.length,0,'all upper story interactions unregister on exit');
 assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or blockers survive a reroll');
+// Reuse a real V50-authored elevator block curve with a rising native dais.
+// This fixture stays independent from the six ordinary mechanisms above.
+{
+  const liftRoot=new Node(0,4,0),liftDais=new Node(25,0,25),liftSignal=new Node(24,0,25);
+  liftDais.userData={mechanismId:'lift',previewMotion:{type:'movingDais'},previewRange:[.05,.34]};
+  liftSignal.userData={activatorType:'glyphObelisk',linkedMechanismId:'lift'};
+  liftDais.userData.linkedCubePuzzleRoot={userData:{solveProgress:0}};
+  const raisedBlock=new Node(25,-.8,25);
+  raisedBlock.userData={pushable:true,previewMotion:{type:'elevatorPushBlock'},
+    previewRange:[.28,.94],pushPath:[{x:25,y:.13,z:25},{x:26,y:.13,z:25}],
+    ridesMovingDais:true};
+  liftRoot.add(liftDais);liftRoot.add(liftSignal);liftRoot.add(raisedBlock);
+  const liftCalls=[],liftGenerator={
+    applyProgress(object,progress){
+      liftCalls.push({object,progress});
+      if(object!==raisedBlock)return;
+      const local=Math.max(0,Math.min(1,(progress-.28)/(.94-.28)));
+      raisedBlock.position.y=-.8+(.13+.8)*Math.min(1,local/.45);
+      if(local>.45)raisedBlock.position.x=25+(local-.45)/.55;
+    },
+    syncPressurePlates(){pressureSyncs++;}
+  };
+  const liftRuntime=Native.mount({nativeRoot:liftRoot,floor:2,scope:'lift-story',api:liftGenerator,THREE,
+    DynamicSurfaces:DS,getPlayerPosition:()=>player,getPlayerY,addControl,removeControl,
+    hitPuzzles:{registerExternalRoot:()=>()=>{}},heightAt:()=>4,showToast(){}});
+  const liftPush=controls.find(c=>c.kind==='v50NativePushBlock');
+  assert(liftPush,'the original elevatorPushBlock receives a real interaction');
+  player.x=24;player.z=25;player.y=3;liftPush.onPress();
+  assert.equal(raisedBlock.position.x,25,'the block cannot move across the room until its elevator rises');
+  liftDais.userData.linkedCubePuzzleRoot.userData.solveProgress=1;
+  for(let index=0;index<20;index++)liftRuntime.tick(.05);
+  assert.equal(liftRuntime.getState().nestedElevatorBlocks,1,'the nested V50 block is linked to its original moving dais');
+  assert(Math.abs(raisedBlock.position.y-.13)<.01,'the block rides its original V50 lift curve to the upper route');
+  assert(Math.abs(liftPush.floorY-(4+.13-.25))<.01,'interaction prompt follows the raised block rather than the sunken socket');
+  player.y=4;liftPush.onPress();
+  assert(Math.abs(raisedBlock.position.x-26)<.01,'once raised, the block can be pushed along its actual V50 route');
+  assert(liftCalls.some(entry=>entry.object===raisedBlock&&Math.abs(entry.progress-.94)<.001),
+    'the push reaches the original V50 elevator-block route endpoint');
+  liftRuntime.dispose();assert.equal(controls.length,0,'nested elevator controls release on floor teardown');
+}
 console.log('ok V50 native authored puzzles: plates, blocks, glyphs, torches, ring obelisks, linked cubes, moving stone, transit controls, cleanup');
