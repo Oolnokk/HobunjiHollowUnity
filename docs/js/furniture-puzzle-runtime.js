@@ -552,9 +552,13 @@
     if (object?.userData?.furniturePuzzle?.role !== 'activator'
       || object.userData.furniturePuzzle.behavior !== 'keyStatue') return [];
     const payload = object.userData.keyStatuePayload;
-    const ready = !!payload && !payload.exploded && !!payload.group?.parent;
-    return [{ icon:'🗿', label:ready ? 'Take Key Statue' : 'The Key Statue is returning',
-      action:'obj_key_statue_'+id, style:'primary', allowed:ready }];
+    const state=window.KeyStatues?.status?.(mapId,id); // The dispenser remains usable after a statue is dropped in an inaccessible location.
+    const ready=state ? state==='ready' : !!payload&&!payload.exploded&&!!payload.group?.parent;
+    const label=ready?'Take Key Statue':state==='recallable'?'Recall Key Statue'
+      :state==='carried'?'Already Carrying Key Statue'
+      :state==='seated'?'Key Statue Seated in Plinth':'Restore Key Statue';
+    return [{icon:'🗿',label,action:'obj_key_statue_'+id,style:'primary',
+      allowed:ready||state==='recallable'||state==='restoring'}];
   }
 
   function interactKeyStatue(mapId, id, action) {
@@ -564,6 +568,10 @@
       return {ok:false,message:'That statue mount is not responsive.'};
     if (action && action !== 'obj_key_statue_'+id) return {ok:false,message:'Unknown Key Statue action.'};
     const payload = object.userData.keyStatuePayload;
+    const state=window.KeyStatues?.status?.(mapId,id);
+    if(state==='recallable'||state==='restoring')return window.KeyStatues.recall(mapId,id);
+    if(state==='carried')return {ok:false,message:'You are already carrying the Key Statue.'};
+    if(state==='seated')return {ok:false,message:'The Key Statue is already seated in its plinth.'};
     if (!payload || payload.exploded || !payload.group?.parent)
       return {ok:false,message:'The Key Statue is being restored.'};
     if (!window.Shattercasks?.pickUp?.(payload))
@@ -601,6 +609,6 @@
 
   window.FurniturePuzzleRuntime = Object.freeze({
     getNode, registerMap, registerNode, unregisterNode, clearMap, activate, toggle, setMechanism, toggleMechanism,
-    setChannelSource, burdenPlateButtons, interactBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
+    setChannelSource, burdenPlateButtons, interactBurdenPlate, cancelBurdenPlate, keyStatueButtons, interactKeyStatue, setKeyStatueTaken, applyMechanism, debug,
   });
 })();
