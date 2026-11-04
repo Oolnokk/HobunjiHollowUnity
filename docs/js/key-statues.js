@@ -12,9 +12,19 @@
   function linkedPlinth(state) {
     return state.feedPlinthId ? window.FurniturePuzzleRuntime?.getNode?.(state.mapId,state.feedPlinthId)||null : null;
   }
+  function seatedPlinth(state,burden=state.payload) {
+    if(!burden)return null;
+    const linked=linkedPlinth(state); // The authored target is the first place to check, even after the Burden has been detached by destruction.
+    if(linked?.userData?.burdenPlatePayload===burden)return linked;
+    let node=burden.plinthAnchor; // Players may put this dispenser's statue into a different Burden Plinth; follow the physical attachment instead of trusting the original assignment.
+    for(let depth=0;node&&depth<16;depth++,node=node.parent){
+      if(node.userData?.furniturePuzzle?.behavior==='burdenPlate'&&node.userData?.burdenPlatePayload===burden)return node;
+    }
+    return null;
+  }
   function isSeated(state) {
-    const node=linkedPlinth(state),payload=state.payload; // Prevents recall while the timed defense is legitimately in progress.
-    return !!node&&!!payload&&node.userData?.burdenPlatePayload===payload&&!payload.exploded&&payload.group?.parent===node.userData?.burdenPlateAnchor;
+    const payload=state.payload,node=seatedPlinth(state); // Only a physically attached living statue blocks recall.
+    return !!payload&&!payload.exploded&&!!node&&payload.group?.parent===node.userData?.burdenPlateAnchor;
   }
   function status(mapId,id) {
     const state=dispensers.get(String(id));
@@ -77,8 +87,9 @@
   }
   function lostStatue(state,burden,reason='lost') {
     if(!state||state.disposed||state.payload!==burden)return false;
-    const node=linkedPlinth(state);
-    if(node?.userData?.burdenPlatePayload===burden)window.FurniturePuzzleRuntime?.cancelBurdenPlate?.(state.mapId,state.feedPlinthId); // A destroyed statue reverses its plinth, even after a prior completed press.
+    const node=seatedPlinth(state,burden);
+    const plinthId=node?.userData?.puzzleInstanceId||(node===linkedPlinth(state)?state.feedPlinthId:''); // Cancel whichever physical plinth held the statue, including a swapped offering statue.
+    if(plinthId)window.FurniturePuzzleRuntime?.cancelBurdenPlate?.(state.mapId,plinthId); // A destroyed statue reverses its animation, even after a prior completed press.
     state.payload=null;
     state.root.userData.keyStatuePayload=null;
     if(state.respawning)return true;
