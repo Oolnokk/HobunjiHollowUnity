@@ -179,12 +179,15 @@
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
+            onMusicStart:()=>options.showToast?.('Listen, then play the phrase on your flute. Step off and on to hear it again.',true),
+            onMusicUnavailable:()=>options.showToast?.('Equip a flute to play the ancient phrase.',false),
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
               setGate(challenge,false);
-              options.showToast?.(challenge.kind==='pressurePlate'
-                ?'A stone gate opens.':'The last target falls — the stone gate opens.',true);
+              options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
+                :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
+                :'The last target falls — the stone gate opens.',true);
               options.onStateChange?.();
             }
           });
