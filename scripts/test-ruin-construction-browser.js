@@ -159,18 +159,30 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       const entered=await window.DevRandomRuin.generate(4,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // No shaft option: every generated ruin receives one.
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress()};
       const state=window.DevRandomRuin.getState();
-      const hasTeleport=window.DevRandomRuin.getInteractionControls().some(c=>c.kind==='shaft-passage'||c.label==='Enter Shaft Hub'); // The shaft must be a real corridor, not a warp.
+      const controls=window.DevRandomRuin.getInteractionControls(); // The actual in-game interaction resolver must own one native V50 brazier per upper story.
+      const hasTeleport=controls.some(c=>c.kind==='shaft-passage'||c.label==='Enter Shaft Hub'); // The shaft must be a real corridor, not a warp.
       const surfaces=window.ClimbSurfaces.list().filter(s=>String(s.scope)==='shaft-hub');
       const highest=surfaces.reduce((best,next)=>!best||next.y1>best.y1?next:best,null);
       const top=highest&&window.ClimbSurfaces.topExitPoint(highest,(highest.u0+highest.u1)/2);
       const support=top&&window.DynamicSurfaces.sampleSupport(top.x,top.z,{minY:highest.y1-.2,maxY:highest.y1+.4});
       const teleported=top&&support&&window.DevRandomRuin.setPlayerWorldPoint({x:top.x,y:support.y,z:top.z},{grounded:true});
-      return {ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
+      let nativeGates=0; // Count actual gated native meshes across all physical story roots, not just planner metadata.
+      window.GridTileAccessors.getActiveScene()?.traverse(node=>{if(String(node.name||'').startsWith('v50-native-gate-'))nativeGates++;});
+      return {native:{...state.nativeV50Runtime,
+        brazierControls:controls.filter(control=>control.kind==='v50NativeBrazier').length,
+        gateMeshes:nativeGates},ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
         connection:state.shaftConnection,plannedFloors:state.shaftLayerPlan?.floorCount,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     });
     assert(shaft.ok&&shaft.surfaces>=2&&shaft.topLevel>=8,'the live multi-floor shaft must expose its physical climb faces: '+JSON.stringify(shaft));
+    assert.equal(shaft.native.floors,shaft.plannedFloors-1,'each planned upper story must mount its real V50 floor in the live game');
+    assert.equal(shaft.native.totalBraziers,shaft.native.floors,'every native V50 floor must have one objective brazier');
+    assert.equal(shaft.native.brazierControls,shaft.native.floors,'each native brazier must be bound to the real interaction resolver');
+    assert.equal(shaft.native.gateMeshes,shaft.native.stagesTotal,'every native V50 challenge stage must mount its physical stone gate');
+    assert(shaft.native.stagesTotal>=shaft.native.floors*2
+      &&shaft.native.perFloor.every(floor=>floor.reservationVerified&&floor.routeLength>0&&floor.routeWallSegments>0),
+      'live native stories must have pre-reserved layouts, physical entrance corridors and staged gates: '+JSON.stringify(shaft.native));
     assert(shaft.teleported&&Math.abs(shaft.standing-shaft.topSupport)<.15,
       'upper balcony must be a real walkable support, not a visual-only ledge: '+JSON.stringify(shaft));
     await page.evaluate(async()=>window.DevRandomRuin.leave());
