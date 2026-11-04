@@ -1007,7 +1007,7 @@
         const trialChance=Math.max(0,Math.min(1,Number(cfg(opts.site?'moduleChances.composedTrialSite':'moduleChances.composedTrialDev',opts.site?.55:.48))||0)); // Hronal encounters can roll at real sites and ordinary dev generation; old opt-in is still supported.
         const trialRequested=!ruin.hachutu&&(opts.composedTrial===true||(opts.composedTrial!==false&&theme==='hronal'&&moduleRoll(candidateSeed,0x735281ac)<trialChance));
         const trialArchetype=['trialHall','vaultHall'].includes(opts.composedArchetype)?opts.composedArchetype
-          :moduleRoll(candidateSeed,0x452b9813)<.78?'trialHall':'vaultHall'; // Most encounters demonstrate the full rope-bomb bridge; some are straight Key Statue defenses.
+          :opts.composedTrial===true?'trialHall':moduleRoll(candidateSeed,0x452b9813)<.78?'trialHall':'vaultHall'; // Explicit dev trial retains the full original challenge; natural generation varies.
         const burdenOffering=trialArchetype==='trialHall'&&moduleRoll(candidateSeed,0x94a75513)<Math.max(0,Math.min(1,Number(cfg('moduleChances.burdenOffering',.7))||0));
         if(trialRequested)await attachComposedTrialWing(rec,candidateSeed,{archetype:trialArchetype,burdenOffering});
         lastGenerationAudit.acceptedSeed=candidateSeed;
