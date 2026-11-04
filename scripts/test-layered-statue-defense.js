@@ -9,7 +9,7 @@ const Defense=require('../docs/js/ruin-layer-defense.js'); // Production wing-to
 
 class Group {
   constructor(){
-    this.children=[];this.parent=null;this.userData={};
+    this.children=[];this.parent=null;this.userData={};this.isObject3D=true; // The real KeyStatues registry rejects non-Three.js dispenser roots.
     this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
     this.rotation={y:0};
   }
@@ -107,6 +107,19 @@ async function flush(){
   rec.dispose();assert.equal(one.nodes.size,0,'defence cleanup unregisters all furniture puzzle nodes');
   assert.equal(one.controls.length,0,'defence cleanup withdraws player inputs');
   assert.deepEqual(one.removed,[combat.id],'defence cleanup removes its enemy encounter and survivors');
+
+  const invalid=harness('statue-missing-metadata',{
+    buildGroup:asset=>{
+      const group=new Group(); // Bad authored export: no mandatory burden plate or key-statue puzzle metadata.
+      return group;
+    },
+  });
+  invalid.instance.tick(.05);await flush();
+  assert(!invalid.instance.ready&&!!invalid.instance.error&&invalid.errors===1,
+    'a missing authored puzzle schema must be visible and must not silently unlock the gate');
+  assert.equal(invalid.encounters.length,0,'invalid authored art cannot start combat with no usable plinth');
+  assert.equal(invalid.nodes.size,0,'failed authored export rolls back all fixture registrations');
+  invalid.instance.dispose();
 
   let fail=true;
   const later=harness('statue-retry', {load:async key=>{
