@@ -143,7 +143,8 @@
           DS.registerSurface(spec);surfaces.push(spec);
         });
         const gridScope=scope+'-'+wing.id;gridScopes.push(gridScope);
-        DevRandomRuin?.registerShaftGrid?.(gridScope,grid,()=>owner.dispose());
+        const occupied=(x,z)=>tiles.has(key(Math.floor(x),Math.floor(z))); // Avoid selecting the wing's empty rectangular allocation when other floors overlap X/Z.
+        DevRandomRuin?.registerShaftGrid?.(gridScope,grid,()=>owner.dispose(),occupied);
         const record={wingId:wing.id,floor:floor.floor,side:wing.side,grid,solved:0,
           challenges:[],braziers:[],walkable:walkCells.length}; // One physical wing with ordered challenge→goal activation.
         states.push(record);
