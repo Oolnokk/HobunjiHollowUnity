@@ -1190,6 +1190,8 @@
       RuinLayerPlayable:window.RuinLayerPlayable,CellGrid3D:window.CellGrid3D,
       getPlayerPosition:()=>({x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}),
       getPlayerY:()=>ruin.supportY,
+      showToast:(message,ok)=>deps.showToast?.(message,ok),
+      onStateChange:()=>updateBadge(),
     });
     ruin.shaftConnector=linked; // Exposed to in-game diagnostics and cleaned through shaftConnectorCleanup on reroll.
   }
