@@ -175,6 +175,8 @@
   function knockOff(c, reason = 'shot while climbing') {
     const climb = c?._cliffClimb;
     if (!climb || climb.phase !== 'climb' || climb.descending) return false;
+    c._cliffRouteTravel = null; // Knocked-off enemies must not resume a discarded hop from thin air.
+    c._cliffEntryPath = null;
     climb.phase = 'fall';
     climb.t = 0;
     climb.startX = c.x; climb.startY = c.y;
