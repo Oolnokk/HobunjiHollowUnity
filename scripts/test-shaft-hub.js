@@ -166,7 +166,8 @@ class Matrix4 {makeTranslation(x,y,z){this.xyz=[x,y,z];return this}}
 class Geometry {rotateX(){return this}dispose(){}}
 class Mesh extends Group{
   constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.visible=true;
-    this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};} // Position changes are observable for moving rail targets.
+    this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
+    this.scale={x:1,y:1,z:1};} // Position and scale changes are visible to moving targets and melting ice tests.
 }
 class Material {clone(){return new Material()}dispose(){}}
 class InstancedMesh {
@@ -201,6 +202,9 @@ const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   currentY=4;controls[0].onPress();
   assert.equal(challenge.fireRecord.onBurn(),true,'native fire collision burns the seal');
   assert(challenge.solved&&solved===1);
+  for(let i=0;i<18;i++)challenge.animate(.05);
+  assert(challenge.meltProgress===1&&!challenge.fireSeal.visible,
+    'the DungeonFire ice target reverses its growth to fully disappear after contact');
   challenge.dispose();assert.equal(targets.size,0,'fire contact target must unregister on reroll');
 }
 
