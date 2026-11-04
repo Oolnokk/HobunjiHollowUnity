@@ -1094,28 +1094,39 @@
     };
     const selectedPatternHex = () => dyeById(state.dyeC)?.hex || clothingColorHex(reweaveItem?.colorC);
 
-    async function openLayerPatternAuthor(role, roleKey) {
+    async function openLayerPatternAuthor(role, roleKey, slotIndex = 0) {
       const bp = selectedBlueprint();
-      const existing = state.layerPatterns[roleKey];
-      const swapPatternColors = !!existing?.swapPatternColors; // Preserved while editing the motif because the swap belongs to the garment layer outside PatternAuthoring.
+      const isOverpass = slotIndex === 1; // Advanced Loom overpass has a separate motif and save target.
+      if (isOverpass && (!advanced || !state.layerPatterns[roleKey])) return;
+      const existing = (isOverpass ? state.overpassPatterns : state.layerPatterns)[roleKey];
+      const swapPatternColors = !!state.layerPatterns[roleKey]?.swapPatternColors; // Garment dye-swap is owned by the primary layer, not by a pattern asset.
       const initialPattern = await resolvedForEditing(existing?.pattern || (existing?.patternId ? window.PatternLibrary?.getById?.(existing.patternId) : null) || null);
       const supportsBehindView = await hasBehindView(bp.baseCosmeticId);
       const previewFor = view => patternData => {
         const base = weavingFromState() || { layers: {} };
-        const currentLayer = base.layers?.[roleKey] || {}; // Used to retain Advanced Loom pattern stack slot 2 while previewing edits to slot 1.
+        const currentLayer = base.layers?.[roleKey] || {}; // Preview replaces only its selected slot.
         const currentStack = normalizePatternStack(currentLayer.patterns?.length ? currentLayer.patterns : currentLayer.pattern);
-        const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patternData, patterns: currentStack[1] ? [patternData, currentStack[1]] : [patternData], swapPatternColors: !!swapPatternColors } } };
-        return renderClothingLayers(bp.baseCosmeticId, { primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(), weaving, view, furTrimColorName: reweaveItem?.furTrimColorName || null, furHood: reweaveItem?.furHood || null, metalItem: hybridCap ? reweaveItem : null }).then(r => r.canvas); // Cap pattern authoring must keep the real alloy/patina/plating on its faceguard.
+        const primary = currentStack[0] || state.layerPatterns[roleKey]?.pattern;
+        const second = isOverpass
+          ? { ...patternData, ...(existing?.inkColorHex ? { inkColorHex: existing.inkColorHex } : {}) }
+          : currentStack[1]; // Retain the separately dyed overpass when primary authoring is open.
+        const patterns = isOverpass ? [primary, second].filter(Boolean) : (second ? [patternData, second] : [patternData]);
+        const weaving = { layers: { ...base.layers, [roleKey]: { ...currentLayer, pattern: patterns[0], patterns, swapPatternColors } } };
+        return renderClothingLayers(bp.baseCosmeticId, {
+          primaryHex: selectedPrimaryHex(), secondaryHex: selectedSecondaryHex(), patternHex: selectedPatternHex(),
+          weaving, view, furTrimColorName: reweaveItem?.furTrimColorName || null, furHood: reweaveItem?.furHood || null,
+          metalItem: hybridCap ? reweaveItem : null,
+        }).then(r => r.canvas);
       };
-      const patternRoleCount = patternRoles().length; // UI wording follows logical weave roles rather than raw front/back raster count.
+      const roleSuffix = patternRoles().length > 1 ? ' — ' + layerLabel(role) : '';
       window.PatternAuthoring?.openEditor?.({
-        title: `Weave pattern — ${bp.label || bp.baseCosmeticId}${patternRoleCount > 1 ? ' — ' + layerLabel(role) : ''}`,
-        motifHint: patternRoleCount > 1
-          ? `Draw the motif to weave onto this layer (${layerLabel(role)}). It will use the garment's third dye slot.`
-          : 'Draw the motif to weave onto this garment. It will use the garment\'s third dye slot.',
+        title: (isOverpass ? 'Overpass' : 'Weave') + ' pattern — ' + (bp.label || bp.baseCosmeticId) + roleSuffix,
+        motifHint: isOverpass
+          ? 'Author the overpass independently. Its own ink selection and pattern placement are preserved.'
+          : 'Draw a motif for this garment layer. It uses the garment third dye slot.',
         initialPattern,
         initialPatternLibraryId: existing?.patternId || null,
-        offloadCustomMotif: false, // A garment owns its custom motif pixels; do not replace them with origin-local storage references.
+        offloadCustomMotif: false, // Crafted clothing must retain a portable motif snapshot.
         library: window.PatternLibrary ? {
           list: () => window.PatternLibrary.listAvailable(),
           get: id => window.PatternLibrary.getById(id),
@@ -1125,9 +1136,15 @@
         renderPreview: previewFor('front'),
         renderPreviewBehind: supportsBehindView ? previewFor('behind') : undefined,
         onSave: async (patternData, sourceLibraryId) => {
-          const patternLabel = sourceLibraryId ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom') : 'Custom';
-          state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel, swapPatternColors };
-          await refreshPatternLayerControls(); // This seeds controls and triggers exactly one guarded preview refresh.
+          const patternLabel = sourceLibraryId
+            ? (window.PatternLibrary?.listAvailable?.().find(entry => entry.id === sourceLibraryId)?.label || 'Custom')
+            : 'Custom';
+          if (isOverpass) {
+            state.overpassPatterns[roleKey] = { ...existing, pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel }; // Preserve this overpass's independent dye.
+          } else {
+            state.layerPatterns[roleKey] = { pattern: clone(patternData), patternId: sourceLibraryId || '', patternLabel, swapPatternColors };
+          }
+          await refreshPatternLayerControls();
           return true;
         },
       });
