@@ -11,6 +11,8 @@
   const cache = new WeakMap(); // Grid identity -> the immutable-in-practice climb/navigation network.
   const activeByArea = new Map(); // Area -> latest network, used for mobile debug and landing queries.
   const debug = { builds: 0, lastArea: null, lastError: null };
+  const rewardStateByArea = new Map(); // Save-restorable per-balcony dig, mining and chest-claim progress.
+  const rewardMeshesByArea = new Map(); // Scene-only reward meshes toggled as stages change, never serialized.
   const key = (c, r) => c + ',' + r;
   const hash = (c, r, salt = 0) => {
     let h = Math.imul((c | 0) + 4177, 73856093) ^ Math.imul((r | 0) + 331, 19349663) ^ Math.imul((salt | 0) + 19, 83492791);
@@ -205,6 +207,37 @@
       Math.abs(dx * shelf.normal.x + dz * shelf.normal.z) <= shelf.depth / 2 + pad;
   }
   function shelfAt(network, id) { return network?.balconies.find(s => s.id === id) || null; }
+  function getRewardState(area, id) {
+    let areaStates = rewardStateByArea.get(area);
+    if (!areaStates) { areaStates = new Map(); rewardStateByArea.set(area, areaStates); }
+    if (!areaStates.has(id)) areaStates.set(id, { revealed: false, claimed: false });
+    return areaStates.get(id);
+  }
+  function setRewardStage(area, id, stage) {
+    const state = getRewardState(area, id);
+    if (stage === 'revealed') state.revealed = true;
+    else if (stage === 'claimed') { state.revealed = true; state.claimed = true; }
+    else return false;
+    const mesh = rewardMeshesByArea.get(area)?.get(id);
+    if (mesh) mesh.visible = !state.claimed && (mesh.userData.rewardKind === 'oreRock' || state.revealed);
+    return true;
+  }
+  function serializeRewards() {
+    const saved = {};
+    for (const [area, entries] of rewardStateByArea) {
+      saved[area] = {};
+      for (const [id, state] of entries) saved[area][id] = { revealed: !!state.revealed, claimed: !!state.claimed };
+    }
+    return saved;
+  }
+  function restoreRewards(saved) {
+    rewardStateByArea.clear();
+    for (const [area, entries] of Object.entries(saved || {})) {
+      const states = new Map();
+      for (const [id, value] of Object.entries(entries || {})) states.set(id, { revealed: !!value.revealed, claimed: !!value.claimed });
+      rewardStateByArea.set(area, states);
+    }
+  }
   function highestBelow(network, x, z, fromY, baseY = -Infinity) {
     let found = null;
     for (const s of (network?.balconies || [])) {
@@ -245,6 +278,8 @@
       }
     }
     const meshes = [];
+    const rewardMeshes = new Map(); // Area-local visibility registry for ore and diggable treasure.
+    rewardMeshesByArea.set(network.area, rewardMeshes);
     if (vertices.length) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
@@ -265,11 +300,41 @@
       mesh.name = s.id;
       mesh.receiveShadow = true;
       scene.add(mesh); meshes.push(mesh);
+      // Rewards live at balcony elevation and never occupy/change the
+      // underlying regular terrain tile, even if several shelves overlap X/Z.
+      const ore = s.reward === 'oreRock';
+      const object = new THREE.Group();
+      if (ore) {
+        const irregularStone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.26, 0), _stoneMaterial);
+        irregularStone.scale.set(1.3, 0.8, 1.1);
+        irregularStone.position.y = 0.18;
+        object.add(irregularStone);
+        const chip = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), _stoneMaterial);
+        chip.position.set(0.23, 0.12, 0.1);
+        object.add(chip);
+      } else {
+        const chestBody = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.27, 0.3),
+          new THREE.MeshStandardMaterial({ color: 0x6a4625, roughness: 0.82 }));
+        chestBody.position.y = 0.16;
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.075, 0.32),
+          new THREE.MeshStandardMaterial({ color: 0xbe993b, roughness: 0.62 }));
+        lid.position.y = 0.33;
+        object.add(chestBody, lid);
+      }
+      object.name = s.id + '-resource';
+      object.position.set(s.x, s.y, s.z);
+      object.userData.cliffBalconyId = s.id;
+      object.userData.rewardKind = s.reward;
+      object.visible = !getRewardState(network.area, s.id).claimed &&
+        (ore || getRewardState(network.area, s.id).revealed);
+      scene.add(object);
+      rewardMeshes.set(s.id, object); meshes.push(object);
     }
     return meshes;
   }
   return Object.freeze({
     build, forGrid, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render,
+    getRewardState, setRewardStage, serializeRewards, restoreRewards,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,
