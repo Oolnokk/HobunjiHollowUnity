@@ -581,7 +581,7 @@
           break;
         }
         disposeRopeObject(rope);ropes.forEach(disposeRopeObject);
-        return reject('swing arc blocked',{ropeIndex:i,along,blockedPoint});
+        return reject('swing arc blocked',{ropeIndex:i,along,blockedPoint,stoneDoors:stoneDoorStates.map(s=>s.id),transitDoors:doorStates.length});
       }
       ropes.push(rope);
     }
