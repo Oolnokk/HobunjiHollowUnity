@@ -248,12 +248,15 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   placement.refresh(pattern);
   assert(fields.get('dye-base').children.some(option=>option.value==='dye:CLOTH:silver'),'full game dye catalog is available');
   fields.get('dye-base').value='dye:CLOTH:cream';fields.get('dye-base').onchange();assert.equal(baseInput.value,'#FFF0CC');
-  fields.get('overpass').value='rune-b';fields.get('repeat-1').checked=false;fields.get('zoom-1').value='2';fields.get('rotation-1').value='90';fields.get('x-1').value='.5';fields.get('y-1').value='-.25';
+  fields.get('overpass').value='rune-b';fields.get('repeat-1').checked=false;fields.get('zoom-1').value='2';fields.get('motif-1').value='1.75';fields.get('rotation-1').value='90';fields.get('x-1').value='.5';fields.get('y-1').value='-.25';
   const instance=placement.read(pattern),saved=JSON.parse(JSON.stringify(instance));
   assert.equal(saved.patterns.length,2);assert.equal(saved.overpassPatternId,'rune-b');assert.equal(saved.patterns[1].motifDataUrl,'data:b');
+  assert.equal(saved.layerTransforms[1].motifScale,1.75,'overpass motif zoom survives furniture placement save');
   placement.refresh(saved);assert.equal(fields.get('repeat-1').checked,false);assert.equal(fields.get('x-1').value,.5);
+  assert.equal(Number(fields.get('motif-1').value),1.75,'furniture editor reloads overpass motif zoom');
   const stack=api.placedPatterns(api.normalize(saved),null,[512,512,.5]);
   assert.equal(stack[1].tiling,false);assert.equal(stack[1].usageRotationDeg,90);assert.equal(stack[1].usageScaleMultiplier,2);assert.equal(stack[1].usageOffsetX,64);assert.equal(stack[1].usageOffsetY,-32);
+  assert.equal(stack[1].motifScale,1.75,'rug compositor receives persisted second-slot motif zoom');
   await api.renderTile(saved,null,[512,512,.5]);assert.equal(stacks.at(-1)[1].tiling,false);assert.equal(stacks.at(-1)[1].usageOffsetX,64,'actual compositor receives the instance offset');
   assert.equal(definitions[1].pattern.usageOffsetX,undefined,'instance placement never mutates a library motif');
   assert.equal(api.placedPatterns(api.normalize(pattern),null,[256,256])[0].usageOffsetX,undefined,'other instances retain their original placement');
