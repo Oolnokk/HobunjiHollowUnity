@@ -53,6 +53,17 @@
         ||(e.from===next.id&&e.to===current.id));
       const entry=edge?.doors?.find(d=>d.roomId===next.id)?.door;
       if(!entry)return {ok:false,reason:'Native V50 goal path lacks a physical hallway gate at '+current.id};
+      // The door must be a genuine cut-set in the V50 room graph, not a
+      // cosmetic obstacle the player can bypass down an alternate hallway.
+      const visited=new Set([current.id]),queue=[current.id];
+      for(let index=0;index<queue.length;index++){
+        const node=queue[index];
+        for(const adjacent of roomGraph.get(node)||[]){
+          if(node===current.id&&adjacent===next.id||node===next.id&&adjacent===current.id)continue;
+          if(!visited.has(adjacent)){visited.add(adjacent);queue.push(adjacent);}
+        }
+      }
+      if(visited.has(next.id))return {ok:false,reason:'Native V50 hallway gate can be bypassed: '+current.id+' -> '+next.id};
       gates.push({from:current.id,to:next.id,door:entry,hallId:edge.hall.id});
     }
     return {ok:true,start,goal,rooms:meta.rooms.length,hallways:meta.hallways.length,
