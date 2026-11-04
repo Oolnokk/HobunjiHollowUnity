@@ -293,8 +293,15 @@
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
       }
     }
-    function stageCandidate(room){
+    function stageCandidate(room,preferredMechanismId=null){
       if(!room)return null;
+      if(preferredMechanismId){
+        const raw=String(preferredMechanismId),prefix='native-v50-f'+floor+'-'; // Original generator metadata is unprefixed; detached world objects are namespaced per story.
+        const id=raw.startsWith(prefix)?raw:prefix+raw;
+        const final=states.get(id);
+        if(!final||!final.linked.length)return null; // If the author recorded a final objective but its real state is missing, never misreport a preparatory control as the solution.
+        return {id:final.id,kind:final.linked[0].userData.activatorType,nestedFinal:true};
+      }
       for(const state of states.values()){
         if(state.linked.some(activator=>['ON','OFF'].includes(activator.userData?.bridgeCommand)))
           continue; // A bridge toggle is preparatory hardware, not the final solution to the chamber's pressure-plate puzzle.
