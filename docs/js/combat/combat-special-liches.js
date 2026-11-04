@@ -375,7 +375,11 @@
   function meleeAI(actor,dt,target,deps,angle,dist) {
     const tile=deps?.TILE||TILE_FALLBACK;
     const lunging=stepAzgarluLunge(actor,dt,deps); // Finish the physical flight even during a staged windup or strike.
-    if(actor._banditAction)return {aimAngle:actor.facing||angle,moving:lunging,handled:true};
+    if(actor._banditAction) {
+      const aim=window.Combat?.meleeAimSolution?.(actor,target,actor.facing||angle,actor._banditAimPitch||0); // The hammer follows a moving target vertically during windup and Strike Hold.
+      if(Number.isFinite(aim?.pitch))actor._banditAimPitch=aim.pitch;
+      return {aimAngle:actor.facing||angle,moving:lunging,handled:true};
+    }
     actor._specialMeleeCooldown=Math.max(0,(actor._specialMeleeCooldown||0)-dt);
     if(performance.now()>(actor._specialComboUntilMs||0))actor._specialComboStep=0; // Uses Combat.comboData.COMBO_RESET_S, the player's actual continuation threshold.
     let moving=lunging;
@@ -406,6 +410,8 @@
       onStrike:()=>{
         actor.telegraphState='strike';
         if(!(Number(target.health)>0)||actor.prone)return;
+        const strikeAim=window.Combat?.meleeAimSolution?.(actor,target,actor.facing,actor._banditAimPitch||0); // Final height-aware aim resolves after the zero-gravity lunge, not at its original altitude.
+        if(Number.isFinite(strikeAim?.pitch))actor._banditAimPitch=strikeAim.pitch;
         const actualHit=window.Combat?.meleeHit?.(actor,target,{rangePx,halfConeRad,yaw:actor.facing,pitch:actor._banditAimPitch||0});
         window.Combat?.spawnMeleeTrail?.({actor,scene:actor.scene,yaw:actor.facing,pitch:actor._banditAimPitch||0,rangePx,halfConeRad,color:0xff8533});
         if(!actualHit)return;
@@ -474,6 +480,10 @@
   function handleAI(actor,dt,target,deps,angle,dist) {
     if(!actor?.isSpecialLich)return null;
     if(!target || !(Number(target.health)>0)) {
+      if(actor.lichType==='hronal') {
+        actor._specialDodge=null;actor._specialLunge=null;actor.dodging=false;actor._banditLunging=false; // Target loss interrupts an otherwise unstepped aerial maneuver safely.
+        actor._specialComboStep=0;actor._specialComboUntilMs=0;
+      }
       if(actor.lichType==='tothal' && actor._specialStage?.kind==='kneel') {
         window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor);
         actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL); // Cancel an interrupted barrage without orphaning its emitter.
