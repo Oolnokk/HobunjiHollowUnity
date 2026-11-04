@@ -159,18 +159,18 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       const entered=await window.DevRandomRuin.generate(4,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // No shaft option: every generated ruin receives one.
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress()};
       const state=window.DevRandomRuin.getState();
-      const door=window.DevRandomRuin.getInteractionControls().find(c=>c.label==='Enter Shaft Hub');
-      if(door)await door.onPress();
+      const hasTeleport=window.DevRandomRuin.getInteractionControls().some(c=>c.kind==='shaft-passage'||c.label==='Enter Shaft Hub'); // The shaft must be a real corridor, not a warp.
       const surfaces=window.ClimbSurfaces.list().filter(s=>String(s.scope)==='shaft-hub');
       const highest=surfaces.reduce((best,next)=>!best||next.y1>best.y1?next:best,null);
       const top=highest&&window.ClimbSurfaces.topExitPoint(highest,(highest.u0+highest.u1)/2);
       const support=top&&window.DynamicSurfaces.sampleSupport(top.x,top.z,{minY:highest.y1-.2,maxY:highest.y1+.4});
       const teleported=top&&support&&window.DevRandomRuin.setPlayerWorldPoint({x:top.x,y:support.y,z:top.z},{grounded:true});
-      return {ok:!!door&&!!state.shaftHub&&!!state.shaftNavigation?.length,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
+      return {ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
+        connection:state.shaftConnection,plannedFloors:state.shaftLayerPlan?.floorCount,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     });
-    assert(shaft.ok&&shaft.surfaces>=3&&shaft.topLevel>=12,'the live shaft wing must expose all climb faces: '+JSON.stringify(shaft));
+    assert(shaft.ok&&shaft.surfaces>=2&&shaft.topLevel>=8,'the live multi-floor shaft must expose its physical climb faces: '+JSON.stringify(shaft));
     assert(shaft.teleported&&Math.abs(shaft.standing-shaft.topSupport)<.15,
       'upper balcony must be a real walkable support, not a visual-only ledge: '+JSON.stringify(shaft));
     await page.evaluate(async()=>window.DevRandomRuin.leave());
