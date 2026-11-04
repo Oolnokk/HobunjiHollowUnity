@@ -12665,15 +12665,23 @@
                   "equippedCosmetics": [
                         "tankan_bodywrap",
                         "tankan_tunic",
-                        "fine_hood",
+                        "fur_lined_hood",
                         "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:bright_blue",
                         "TORSO": "dye:CLOTH:bright_green_blue",
                         "HOOD": "dye:CLOTH:bright_green_blue",
-                        "HOOD_B": "dye:CLOTH:bright_blue",
                         "PANTS": "dye:CLOTH:bright_blue"
+                  },
+                  "clothingPatterns": {
+                        "defaultClothing": {
+                              "hood": {
+                                    "cosmeticId": "fur_lined_hood",
+                                    "baseLabel": "Fur-lined Hood",
+                                    "furTrimColorName": "Pale Cream"
+                              }
+                        }
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -12715,14 +12723,13 @@
                               "equippedCosmetics": [
                                     "tankan_bodywrap",
                                     "tankan_tunic",
-                                    "fine_hood",
+                                    "fur_lined_hood",
                                     "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:bright_blue",
                                     "TORSO": "dye:CLOTH:bright_green_blue",
                                     "HOOD": "dye:CLOTH:bright_green_blue",
-                                    "HOOD_B": "dye:CLOTH:bright_blue",
                                     "PANTS": "dye:CLOTH:bright_blue"
                               }
                         }
@@ -13198,15 +13205,23 @@
                   },
                   "equippedCosmetics": [
                         "rugged_poncho",
-                        "fine_hood",
+                        "fur_lined_hood",
                         "pants_basic"
                   ],
                   "appliedDyes": {
                         "CLOTH": "dye:CLOTH:dark_muted_orange",
                         "CLOTH_B": "dye:CLOTH:muted_yellow_orange",
                         "PANTS": "dye:CLOTH:muted_yellow_orange",
-                        "HOOD": "dye:CLOTH:muted_yellow_orange",
-                        "HOOD_B": "dye:CLOTH:dark_muted_orange"
+                        "HOOD": "dye:CLOTH:muted_yellow_orange"
+                  },
+                  "clothingPatterns": {
+                        "defaultClothing": {
+                              "hood": {
+                                    "cosmeticId": "fur_lined_hood",
+                                    "baseLabel": "Fur-lined Hood",
+                                    "furTrimColorName": "Champagne"
+                              }
+                        }
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -13249,15 +13264,14 @@
                               },
                               "equippedCosmetics": [
                                     "rugged_poncho",
-                                    "fine_hood",
+                                    "fur_lined_hood",
                                     "pants_basic"
                               ],
                               "appliedDyes": {
                                     "CLOTH": "dye:CLOTH:dark_muted_orange",
                                     "CLOTH_B": "dye:CLOTH:muted_yellow_orange",
                                     "PANTS": "dye:CLOTH:muted_yellow_orange",
-                                    "HOOD": "dye:CLOTH:muted_yellow_orange",
-                                    "HOOD_B": "dye:CLOTH:dark_muted_orange"
+                                    "HOOD": "dye:CLOTH:muted_yellow_orange"
                               }
                         }
                   },
@@ -13782,7 +13796,7 @@
                         "appearance::hat::basic_headband",
                         "bandolier1",
                         "rugged_poncho",
-                        "fine_hood",
+                        "fur_lined_hood",
                         "pants_basic"
                   ],
                   "appliedDyes": {
@@ -13790,8 +13804,16 @@
                         "CLOTH_B": "dye:CLOTH:smoky_green_blue",
                         "PANTS": "dye:CLOTH:smoky_green_blue",
                         "HAT": "dye:CLOTH:smoky_green",
-                        "HOOD": "dye:CLOTH:smoky_yellow_green",
-                        "HOOD_B": "dye:CLOTH:smoky_green_blue"
+                        "HOOD": "dye:CLOTH:smoky_yellow_green"
+                  },
+                  "clothingPatterns": {
+                        "defaultClothing": {
+                              "hood": {
+                                    "cosmeticId": "fur_lined_hood",
+                                    "baseLabel": "Fur-lined Hood",
+                                    "furTrimColorName": "Cream"
+                              }
+                        }
                   },
                   "avatarEditor": {
                         "sourceFormat": "npc_avatar_editor_export",
@@ -13835,7 +13857,7 @@
                                     "appearance::hat::basic_headband",
                                     "bandolier1",
                                     "rugged_poncho",
-                                    "fine_hood",
+                                    "fur_lined_hood",
                                     "pants_basic"
                               ],
                               "appliedDyes": {
@@ -13843,8 +13865,7 @@
                                     "CLOTH_B": "dye:CLOTH:smoky_green_blue",
                                     "PANTS": "dye:CLOTH:smoky_green_blue",
                                     "HAT": "dye:CLOTH:smoky_green",
-                                    "HOOD": "dye:CLOTH:smoky_yellow_green",
-                                    "HOOD_B": "dye:CLOTH:smoky_green_blue"
+                                    "HOOD": "dye:CLOTH:smoky_yellow_green"
                               }
                         }
                   },

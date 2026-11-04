@@ -12,9 +12,9 @@ const manifest = JSON.parse(read('docs/config/patterns/fur-hoods.json'));
 
 // These guards remain meaningful even if the overlay is refactored: the game
 // must reject a locked species before AnimalHides.consume changes the pack.
-assert.match(furSource, /craftButton\.disabled = !kind \|\| !hasSpeciesUnlock\(kind\)/);
-assert(furSource.indexOf('if (!hasSpeciesUnlock(current.furHood.kind))') > 0);
-assert(furSource.indexOf('if (!hasSpeciesUnlock(current.furHood.kind))') < furSource.indexOf('AnimalHides.consume(choice.key'), 'runtime species gate must precede hide consumption');
+assert.match(furSource, /craftButton\.disabled = !kind \|\| \(isLined\(\) \? [^:]+ : !hasSpeciesUnlock\(kind\)\)/, 'species trophy must still honor its mastery unlock while the new lined recipe bypasses it');
+assert(furSource.indexOf('if (!lined && !hasSpeciesUnlock(current.furHood.kind))') > 0);
+assert(furSource.indexOf('if (!lined && !hasSpeciesUnlock(current.furHood.kind))') < furSource.indexOf('AnimalHides.consume(choice.key'), 'runtime species gate must precede hide consumption');
 
 function testWorld(masterFirst) {
   const storage = new Map([['hobunjiSaveMeta', JSON.stringify({worlds:[{id:'world-a'},{id:'world-b'}]})]]);
@@ -22,10 +22,13 @@ function testWorld(masterFirst) {
   const overlays = []; // Captures the real fur-hood overlay to test disabled buttons and craft clicks.
   const createOverlay = () => {
     const select = {value:'0',options:[],appendChild(option){this.options.push(option);}};
+    const kind = {value:'fur_hood'}; // This legacy trophy-specific test explicitly selects the mastery-gated recipe.
     const status = {textContent:''};
     const canvas = {width:1,height:1,getContext(){return {clearRect(){},drawImage(){},imageSmoothingEnabled:false};}};
     const controls = {
-      '[data-field="hide"]':select, '[data-field="status"]':status, '[data-view="preview"]':canvas,
+      '[data-field="hide"]':select, '[data-field="hood-kind"]':kind,
+      '[data-field="dye"]':{value:'',appendChild(){}}, '[data-dye-row]':{hidden:false},
+      '[data-field="status"]':status, '[data-view="preview"]':canvas,
       '[data-action="unlock"]':{hidden:false,disabled:false,textContent:''},
       '[data-action="craft"]':{disabled:false},
       '[data-action="close"]':{}, '[data-action="cloth"]':{}, '[data-action="view"]':{},
