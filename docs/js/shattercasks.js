@@ -1457,6 +1457,10 @@
     Object.freeze({icon:'↗',label:'Throw Shattercask',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Shattercask',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shared by computeActionButtonsImpl while carrying; no per-frame allocations.
+  const CARRIED_CRATE_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({...CARRIED_ACTION_BUTTONS[0],label:'Throw Wooden Crate'}),
+    Object.freeze({...CARRIED_ACTION_BUTTONS[1],label:'Drop Wooden Crate'}),
+  ]);
   const CARRIED_FRUIT_ACTION_BUTTONS=Object.freeze([
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
@@ -1468,6 +1472,7 @@
     if(!held)return null;
     const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
+    if(held.kind==='looseCrate')return canHang?[CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
   }
   function grantLoot(items) {
