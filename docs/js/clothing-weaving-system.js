@@ -695,12 +695,12 @@
     function applyPreview() {
       const dyeA = pendingA ? window.DyeSystem?.getById?.(pendingA) : null;
       const dyeB = hasSecondary && pendingB ? window.DyeSystem?.getById?.(pendingB) : null;
-      const dyeC = pendingC ? window.DyeSystem?.getById?.(pendingC) : null;
+      const dyeC = showPatternDye && pendingC ? window.DyeSystem?.getById?.(pendingC) : null; // Hidden pattern ink must not alter fur-lined hoods.
       if (dyeA && !item?.furHood) item.colorA = window.DyeSystem.toClothingColor(dyeA);
       if (hasSecondary && dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
       if (dyeC) item.colorC = window.DyeSystem.toClothingColor(dyeC);
       previewEl.innerHTML = '';
-      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], [thirdLabel, dyeC]]) {
+      for (const [label, dye] of [['Primary', dyeA], ['Trim', dyeB], ...(showPatternDye ? [[thirdLabel, dyeC]] : [])]) { // Show only editable dye channels.
         if (!dye || (label === 'Trim' && !hasSecondary)) continue;
         const chip = document.createElement('span');
         chip.className = 'dye-preview-chip';
@@ -783,17 +783,17 @@
     document.getElementById('dyePanelApply').onclick = () => {
       const dyeA = window.DyeSystem?.getById?.(pendingA);
       const dyeB = hasSecondary ? window.DyeSystem?.getById?.(pendingB) : null;
-      const dyeC = window.DyeSystem?.getById?.(pendingC);
+      const dyeC = showPatternDye ? window.DyeSystem?.getById?.(pendingC) : null;
       if ((!item?.furHood && !dyeA) || (showPatternDye && !dyeC) || (hasSecondary && !dyeB)) { equipmentDeps?.showToast?.('Pick every visible dye slot first.', false); return; }
       if (!item?.furHood) item.colorA = window.DyeSystem.toClothingColor(dyeA);
       if (dyeB) item.colorB = window.DyeSystem.toClothingColor(dyeB);
       if (showPatternDye) item.colorC = window.DyeSystem.toClothingColor(dyeC);
-      item.label = item?.furTrimColorName ? `${item.furTrimColorName} Fur-lined Hood` : item?.furHood ? `${item.furHood.kind.replace(/-/g, ' ')} Fur Hood` : `${dyeA.label}${dyeB ? ' & ' + dyeB.label : ''} ${articleLabel(item)}`;
-      item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), pendingA, pendingB, pendingC].filter(Boolean))];
+      item.label = item?.furTrimColorName ? `${item.furTrimColorName} Fur-lined Hood${weavingHasAnyPattern(item.weaving) ? ' (Woven)' : ''}` : item?.furHood ? `${item.furHood.kind.replace(/-/g, ' ')} Fur Hood` : `${dyeA.label}${dyeB ? ' & ' + dyeB.label : ''} ${articleLabel(item)}`;
+      item.articleDyeIds = [...new Set([...(item.articleDyeIds || []), item?.furHood ? null : pendingA, hasSecondary ? pendingB : null, showPatternDye ? pendingC : null].filter(Boolean))]; // Avoid adding dyes from hidden slots.
       invalidateClothingVisualCaches();
       equipmentDeps?.saveGearInventory?.();
       if (worn()) equipmentDeps?.refreshPlayerAvatar?.();
-      equipmentDeps?.showToast?.('Redyed ' + articleLabel(item) + ' (including pattern).', true);
+      equipmentDeps?.showToast?.('Redyed ' + articleLabel(item) + (showPatternDye ? ' (including pattern).' : ' fabric.'), true);
       close();
       window.EquipmentPanel?.buildEquipmentSlots?.();
     };
