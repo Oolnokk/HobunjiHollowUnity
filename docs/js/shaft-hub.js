@@ -252,6 +252,52 @@
     return shell;
   }
 
+  // Merge each level's walkable stone cells into broad support rectangles.
+  // DynamicSurfaces.samplesupport scans registered records; thousands of tiny
+  // per-cell supports in one tall room caused unnecessary per-frame work.
+  function registerGroupedSupport(result, DS, scope) {
+    const {grid,options:o}=result;
+    const exteriorCut=o.octagon?Math.floor(o.shaft*.19)+o.wall:0;
+    const levelRows=new Map(); // Level -> row -> sorted columns, shared by the rectangle sweep.
+    for(const cell of grid.standingSurfaces({clearance:2})){
+      if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
+      if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
+      let rows=levelRows.get(cell.level);
+      if(!rows){rows=new Map();levelRows.set(cell.level,rows);}
+      let columns=rows.get(cell.row);
+      if(!columns){columns=[];rows.set(cell.row,columns);}
+      columns.push(cell.col);
+    }
+    let count=0;
+    for(const [level,rows] of levelRows){
+      let active=new Map(); // Identical horizontal spans on consecutive rows fuse into one support rectangle.
+      const flush=rect=>{
+        DS.registerSurface({id:scope+'-support-'+(count++),scope,
+          bounds:{minX:grid.colToX(rect.c0),maxX:grid.colToX(rect.c1+1),
+            minZ:grid.rowToZ(rect.r0),maxZ:grid.rowToZ(rect.r1+1)},
+          topY:grid.levelToY(level),priority:1});
+      };
+      for(let row=0;row<grid.rows;row++){
+        const cols=(rows.get(row)||[]).sort((a,b)=>a-b),spans=[];
+        for(const c of cols){
+          const tail=spans[spans.length-1];
+          if(tail&&tail.c1+1===c)tail.c1=c;
+          else spans.push({c0:c,c1:c,r0:row,r1:row});
+        }
+        const next=new Map();
+        for(const span of spans){
+          const key=span.c0+','+span.c1,prior=active.get(key);
+          if(prior&&prior.r1===row-1){prior.r1=row;next.set(key,prior);}
+          else next.set(key,span);
+        }
+        for(const [key,rect] of active)if(!next.has(key))flush(rect);
+        active=next;
+      }
+      for(const rect of active.values())flush(rect);
+    }
+    return count;
+  }
+
   function mount(result, deps = {}) {
     const scope = deps.scope || 'shaft-hub', out = { surfaces: 0, floors: 0 };
     if (!result?.ok) return out;
@@ -262,7 +308,7 @@
     const visual = parent && THREE ? buildVisual(result,THREE,deps.ClimbSurfaces) : null;
     if (visual) parent.add(visual);
     if (deps.ClimbSurfaces) out.surfaces = deps.ClimbSurfaces.registerGrid(result.grid, { scope, idPrefix: scope });
-    if (deps.DynamicSurfaces) out.floors = result.grid.registerWith(deps.DynamicSurfaces, { scope, idPrefix: scope, clearance: 2 });
+    if (deps.DynamicSurfaces) out.floors = registerGroupedSupport(result, deps.DynamicSurfaces, scope);
     mounts.set(scope,{ deps, visual });
     deps.DevRandomRuin?.registerShaftGrid?.(scope,result.grid,() => unmount(deps));
     return out;
