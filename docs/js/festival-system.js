@@ -793,7 +793,7 @@
           const wholeSeconds=Math.max(0,Math.floor(elapsedPair)-(dance.awardedSeconds||0));
           if(wholeSeconds>0){
             dance.awardedSeconds+=wholeSeconds;
-            addFestivalFun(dance.targetNpcId,wholeSeconds*15);
+            addFestivalFun(dance.targetNpcId,wholeSeconds*GORKUNASH_SOCIAL_FUN_PER_SECOND); // Shared dancing obeys the same event-long cap as ordinary festival music.
             deps.save?.(); // Entire granted-second intervals survive an immediate reload.
           }
         }
