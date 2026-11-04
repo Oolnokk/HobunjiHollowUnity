@@ -131,7 +131,8 @@
       if (!contest) {
         const guests = residents();
         if (!guests.length) { retry = true; continue; } // Preserve the claim until real residents are ready to generate its original-year roster.
-        contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false,favorAwarded:true }; // Old donated dishes already granted the legacy tenfold Favor; do not pay them twice.
+        contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false,
+          favorAwarded:donated.favorRewardVersion !== 1 }; // Legacy donations already paid their old entry Favor; new pending donations still qualify for championship Favor.
       }
       const snapshot = contestIngredients(definition,donated.stars); // Recover legacy donations without rewriting their recorded contest result.
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
@@ -353,7 +354,8 @@
     for (const [key, contest] of Object.entries(state.potluckContests || {})) {
       const match = /^(\d+):gorkunash$/.exec(key); // This saved seven-day entry is judged only after the gathering ends.
       if (!match || !contest?.entry || contest.favorAwarded || day() < Number(match[1]) * 336 + GORKUNASH_START + 7) continue;
-      contest.favorAwarded = true; // Losing or tying cannot be replayed by reloading a save.
+      if (!window.DialogueContent?.adjustNpcFavor || !residents().length) continue; // NPC hydration must finish before awarding or permanently closing the annual claim.
+      contest.favorAwarded = true; // A settled win or loss cannot be replayed by reloading a save.
       if (window.FestivalPotluckContest.winner(contest.entry, contest.days)) {
         allFavor(FESTIVAL_MAX_FAVOR, 'potluck_win'); // Stardew's +120/250 hearts = 19.2/40 Favor for every eligible resident.
         commit('Gorkunash potluck champion! +' + FESTIVAL_MAX_FAVOR + ' Favor with each resident.');
@@ -969,7 +971,7 @@
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
         estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition?.foodEffects || {})}};
     }
-    mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
+    mark('potluck',{key:payload.key,stars:payload.stars,day:day(),favorRewardVersion:1}); // Distinguishes new pending championship awards from already-compensated legacy entries.
     if (!contest) potluckRecoveryPending = true; // NPC loading may defer creation of an otherwise accepted donation's roster.
     feastCache = null; // The seventh physical serving pot becomes available immediately.
     return commit(`Entered ${definition?.label||payload.key} in the potluck. The seven-day winner receives ${FESTIVAL_MAX_FAVOR} Favor with each resident.`);
