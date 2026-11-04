@@ -189,6 +189,36 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   offscreenButton.x = 450; press('confirm');
   assert.equal(offscreenButton.clicks, 1, 'visual-viewport clipping also prevents controller activation');
   delete context.window.visualViewport;
+
+  const staleSelected = button('stale-selected', 10, 50); // A hidden selection must never redirect its Confirm press onto a visible neighbor.
+  const safeNeighbor = button('safe-neighbor', 120, 50); // Confirms a stale-focus recovery cannot accidentally purchase or select something else.
+  panel.append(staleSelected); panel.append(safeNeighbor);
+  staleSelected.focus(); staleSelected.hidden = true;
+  press('confirm');
+  assert.equal(staleSelected.clicks, 0, 'a hidden selection is not clickable');
+  assert.equal(safeNeighbor.clicks, 0, 'Confirm on hidden focus does not activate its replacement focus target');
+  assert.equal(ui.debugState().lastBlockedActivation.reason, 'focus-recovered');
+
+  const removedSelected = button('rebuilt-selected', 10, 50); // Rebuilt controls with the same ID require a fresh Confirm press.
+  panel.append(removedSelected);
+  removedSelected.focus();
+  const replacementSelected = button('rebuilt-selected', 10, 50);
+  const replacementIndex = panel.children.indexOf(removedSelected); // Used to simulate a synchronous inventory/control rerender between gamepad frames.
+  panel.children[replacementIndex] = replacementSelected;
+  replacementSelected.parentElement = panel;
+  removedSelected.parentElement = null;
+  press('confirm');
+  assert.equal(replacementSelected.clicks, 0, 'Confirm does not activate a newly rebuilt button on the old focus press');
+  assert.equal(ui.focusedElement(), replacementSelected, 'focus still recovers to the exact rebuilt button');
+  press('confirm');
+  assert.equal(replacementSelected.clicks, 1, 'next deliberate Confirm activates the now-visible recovered button');
+
+  const offscreenSlider = new Element('input', { id: 'offscreen-slider' }, [], 700, 50); // A focused range input must not change while outside the viewport.
+  offscreenSlider.type = 'range'; offscreenSlider.min = '0'; offscreenSlider.max = '100'; offscreenSlider.step = '1'; offscreenSlider.value = '20';
+  panel.append(offscreenSlider);
+  offscreenSlider.focus(); press('right');
+  assert.equal(offscreenSlider.value, '20', 'controller range adjustments ignore a selected off-screen slider');
+
   close.x = 700; press('cancel');
   assert.equal(close.clicks, 1, 'off-screen close button cannot be clicked by controller Back');
   close.x = 400;
