@@ -188,6 +188,9 @@
           }
           const playerFoot=Number(getPlayerY?.()),blockBottom=worldBox(block)?.min.y;
           if(!Number.isFinite(playerFoot)||!Number.isFinite(blockBottom)||Math.abs(playerFoot-blockBottom)>1.1)return; // The block's real moving elevation matters more than the static floor directly below it.
+          if(bridgeDriver&&bridgeDriver.progress<.35){
+            showToast?.('Extend the stone bridge before pushing its block.',false);return;
+          }
           if(elevator&&drivingDais){
             const range=drivingDais.object.userData.previewRange||drivingDais.object.userData.previewMotion?.previewRange;
             const raised=range?.length===2?drivingDais.progress>=range[1]-.01:drivingDais.progress>=.95;
