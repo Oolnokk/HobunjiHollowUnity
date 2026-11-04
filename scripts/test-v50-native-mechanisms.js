@@ -87,6 +87,8 @@ const runtime=Native.mount({nativeRoot:root,floor:2,scope:'story-f2',api:generat
   hitPuzzles,heightAt:()=>4,showToast(){}});
 assert.equal(rootsRegistered,1);
 assert.equal(runtime.getState().mechanisms,6);
+assert(controls.every(control=>control.floorY===4),
+  'all native cube, obelisk, push-block, mechanism and transit controls must be limited to the owning story height');
 assert(runtime.getState().families.includes('glyphObelisk')&&runtime.getState().families.includes('brazier'));
 const push=controls.find(c=>c.kind==='v50NativePushBlock');
 assert(push);
