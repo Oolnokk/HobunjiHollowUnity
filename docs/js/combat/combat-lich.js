@@ -2043,9 +2043,10 @@
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const special = d.specialLiches ? (' special=' + d.specialLiches.event + '/p' + d.specialLiches.plasmPatches + '/d' + d.specialLiches.drips) : ''; // Appends boss state to the existing Pixel Probe line.
+      const azgarlu = d.activeLiches.filter(lich => lich.type==='hronal' && lich.specialMode).map(lich => `${lich.specialMode}/step${lich.comboStep}/combo${Math.ceil(lich.comboLeftMs)}ms/hold${Math.ceil(lich.strikeHoldLeftMs)}ms/alt${lich.aerialOffset.toFixed(2)}${lich.dodging?'/dodge':''}${lich.lunging?'/lunge':''}`).join(',') || '-'; // Mobile Pixel Probe exposes attack-combo retention and active air flight without DevTools.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}${special}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} azgarlu=${azgarlu} last=${d.lastEvent}${special}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
