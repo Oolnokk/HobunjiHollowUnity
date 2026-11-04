@@ -217,6 +217,11 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+const Defense={create:options=>({
+  id:options.id,kind:'statueDefense',ready:true,solved:false,
+  tick(){},dispose(){this.disposed=true;},
+  simulateCompletion(){if(this.solved)return;this.solved=true;options.onSolved(this);}
+})}; // The separate authored-defence test verifies real plinth/encounter integration; the network test drives its completion callback.
 // The rope gap must run wall-to-wall across each radial chamber, leaving
 // exactly two safe banks and never trapping the player in a sealed room.
 {
@@ -374,7 +379,7 @@ for(const side of ['north','east','south','west']){
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
   const connected=Connector.connect({rec,ruin,seed:23,meta,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
-    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,CellGrid3D:G,
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
@@ -412,6 +417,7 @@ for(const side of ['north','east','south','west']){
     else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
     else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
     else if(remaining.kind==='ropeChain'){player={...remaining.ropeSpec.exit};network.tick(.05);} // Same bank condition as native rope traversal.
+    else if(remaining.kind==='statueDefense')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
@@ -434,7 +440,8 @@ for(const side of ['north','east','south','west']){
         else if(challenge.kind==='ropeChain'){
           network.tick(.05); // Registers the authored ropes into the active native V50 state.
           player={...challenge.ropeSpec.exit};network.tick(.05);
-        }else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
+        }else if(challenge.kind==='statueDefense')challenge.simulateCompletion();
+        else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
         assert(challenge.solved,'every authored challenge can progress: '+challenge.id);
       }
     }
