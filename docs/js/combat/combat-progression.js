@@ -1,5 +1,6 @@
-// Combat ability progression — each of the 10 weapon-tool abilities has 5
-// levels; at each one the player picks ONE of 2+ upgrade options. No
+// Combat ability progression — the 10 weapon-tool abilities and two
+// conditional combo-finisher mastery tracks each have five levels.
+// At each level the player picks ONE of 2+ upgrade options. No
 // ability applies any affliction damage on its own — every affliction an
 // attack can inflict comes from a level chosen here (see resource-
 // system.js's applyDamage, which takes an explicit opts.afflictionBonuses
@@ -32,7 +33,8 @@
 // damage) and stat bonuses. Quick Attack affliction/debuff choices are
 // returned separately as quickBonusAfflictions/quickBonusDebuffs so their
 // condition + cooldown gate can own those burst effects without changing
-// Combo/Held/Flurry behavior.
+// ordinary Combo/Held/Flurry behavior. A Combo's separate Finisher mastery
+// track uses the same scroll-unlocked effects after two consecutive landed hits.
 (() => {
   "use strict";
   if (!window.Combat) { console.error('combat-progression.js requires combat-core.js to load first'); return; }
