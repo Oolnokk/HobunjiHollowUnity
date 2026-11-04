@@ -596,7 +596,7 @@
     const reverseHops=ropes.map((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
       i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight));
     const forward=forwardHops.every(amp=>amp!==null),reverse=reverseHops.every(amp=>amp!==null);
-    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse,forwardHops,reverseHops});} // Both checkpoint sides must lead to a physically solvable crossing.
+    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse,forwardHops,reverseHops,entryProbe:entryFloor.bank,exitProbe:exitFloor.bank});} // Both checkpoint sides must lead to a physically solvable crossing.
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
     for(const cell of cells){
@@ -881,9 +881,22 @@
       else{f.x=next.x;f.z=next.z;}
       f.y=next.y;
       if(target.rope&&ropeCatchPoint(target.rope,f))return true;
-      if(target.bank&&f.vy<=0&&ropeBankReached(target.bank.bounds,target.bank.axis,target.bank.side,f)){
-        const support=sampleSupport(f.x,f.z,f.y+.25);
-        if(support?.id?.startsWith('devruin-floor-')&&f.y<=Number(support.y)+.08&&f.y>=Number(support.y)-.22)return true;
+      if(target.bank&&f.vy<=0){
+        const bank=target.bank,along=bank.axis==='x'?f.x:f.z;
+        const edge=bank.side==='start'?(bank.axis==='x'?bank.bounds.minX:bank.bounds.minZ)
+          :(bank.axis==='x'?bank.bounds.maxX:bank.bounds.maxZ);
+        const progress=bank.side==='start'?edge-along:along-edge;
+        if(progress>(bank.bestProgress??-Infinity)){
+          bank.bestProgress=progress;
+          bank.bestPoint={x:+f.x.toFixed(2),z:+f.z.toFixed(2),y:+f.y.toFixed(2),
+            vy:+f.vy.toFixed(2),progress:+progress.toFixed(2)};
+        } // Generation-only diagnostics distinguish a blocked doorway from a mistimed landing.
+        if(ropeBankReached(bank.bounds,bank.axis,bank.side,f)){
+          const support=sampleSupport(f.x,f.z,f.y+.25);
+          bank.lastLandingProbe={id:support?.id||null,y:support?.y??null,
+            flyerY:+f.y.toFixed(2),point:{x:+f.x.toFixed(2),z:+f.z.toFixed(2)}};
+          if(support?.id?.startsWith('devruin-floor-')&&f.y<=Number(support.y)+.08&&f.y>=Number(support.y)-.22)return true;
+        }
       }
       if(target.platform){
         const p=target.platform,top=Number(p.topY);
