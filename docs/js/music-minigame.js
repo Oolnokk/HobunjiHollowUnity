@@ -1482,7 +1482,7 @@
     // js/music-system.js, which ducks the game's ambient bgm/cues for as
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
-    diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
+    diagnostics: () => ({latestChange:'Puzzle instrument publishes player note events for passive ruin melody listeners; ordinary instrument modes stay independent.',
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
