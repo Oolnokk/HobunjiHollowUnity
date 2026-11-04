@@ -14,7 +14,7 @@
   function plan(seed, archetype = 'trialHall') {
     const composer = G.RuinComposer; // Owns focal-goal solving, spatial claims and encounter schedules.
     if (!composer?.compose) throw new Error('RuinComposer is not loaded.');
-    const room = composer.rooms.chasm(SIZE); // Shared authored chasm proportions validated by the solver.
+    const room = archetype==='vaultHall' ? composer.rooms.hall({width:24,depth:18,ceilingY:SIZE.ceilingY}) : composer.rooms.chasm(SIZE); // Defense-only chambers need a whole floor; bridge trials retain their authored chasm.
     const composition = composer.compose(room, { archetype, seed:Number(seed) >>> 0, pressSeconds:30 }); // The authored defence plinth takes 30 real seconds; enemy waves share that deadline.
     if (!composition.ok) throw new Error('Ruin composition rejected: ' + composition.reason);
     return { room, composition };
@@ -25,16 +25,17 @@
     const columns = Math.max(rec.cols, Math.ceil(origin.x + room.bounds.maxX + 2));
     const rows = Math.max(rec.rows, Math.ceil(origin.z + room.bounds.maxZ + 2));
     let addedFloors = 0;
+    const gap=room.gaps?.[0]||null; // Used by both tile collision and terrain support; a vault hall has no abyss.
     for (let row = 0; row < rows; row++) {
       const target = rec.grid[row] || (rec.grid[row] = []); // Appends collision data for the new wing.
       for (let col = target.length; col < columns; col++) {
         const x = col + .5 - origin.x, z = row + .5 - origin.z;
         const inside = x >= 0 && x < room.bounds.maxX && z >= 0 && z < room.bounds.maxZ;
-        const gap = inside && x >= SIZE.gapStart && x < SIZE.gapStart + SIZE.gapWidth;
+        const inGap = inside && gap && (gap.axis==='x' ? x>=gap.start&&x<gap.end : z>=gap.start&&z<gap.end);
         const tile = makeTile(inside); // Pit cells remain enterable so a player can fall, rather than hit invisible ROCK.
-        if (gap) tile.bottomless = true; // Bombs recognize the void; DynamicSurfaces owns the player's fall.
+        if (inGap) tile.bottomless = true; // Bombs recognize the void; DynamicSurfaces owns the player's fall.
         target.push(tile);
-        if (inside && !gap) {
+        if (inside && !inGap) {
           const key = col + ',' + row;
           rec.floorSet.add(key);
           rec.mapData.floor.push([col, row]);
@@ -62,11 +63,14 @@
       owner.generated.push(mesh);
       return mesh;
     }
-    const w=room.bounds.maxX,d=room.bounds.maxZ,left=SIZE.gapStart,right=left+SIZE.gapWidth;
-    box('composed_near_floor',left/2,-.13,d/2,left,.26,d,mat);
-    box('composed_far_floor',(right+w)/2,-.13,d/2,w-right,.26,d,mat);
-    box('composed_near_lip',left-.07,.025,d/2,.14,.05,d,rim);
-    box('composed_far_lip',right+.07,.025,d/2,.14,.05,d,rim);
+    const w=room.bounds.maxX,d=room.bounds.maxZ,gap=room.gaps?.[0]||null; // Preserves the bridge chasm while allowing a true defense-only vault.
+    if(gap){
+      const left=gap.start,right=gap.end;
+      box('composed_near_floor',left/2,-.13,d/2,left,.26,d,mat);
+      box('composed_far_floor',(right+w)/2,-.13,d/2,w-right,.26,d,mat);
+      box('composed_near_lip',left-.07,.025,d/2,.14,.05,d,rim);
+      box('composed_far_lip',right+.07,.025,d/2,.14,.05,d,rim);
+    }else box('composed_vault_floor',w/2,-.13,d/2,w,.26,d,mat);
     // Outer walls have actual impassable tile cells outside this footprint.
     box('composed_north_wall',w/2,1.5,-.12,w+.5,3,.24,mat);
     box('composed_south_wall',w/2,1.5,d+.12,w+.5,3,.24,mat);
@@ -77,13 +81,18 @@
 
   function registerTerrain(DS, scope, origin, room) {
     const x=origin.x,z=origin.z,w=room.bounds.maxX,d=room.bounds.maxZ;
-    // Priority 4 beats the visual masonry; no support is registered over the pit.
+    // Priority 4 beats decorative masonry. A defense-only vault has floor across its whole room.
+    const gap=room.gaps?.[0]||null;
+    if(!gap){
+      DS.registerSurface({id:scope+'-vault',scope,priority:4,bounds:{minX:x,maxX:x+w,minZ:z,maxZ:z+d},topY:0});
+      return;
+    }
     DS.registerSurface({ id:scope+'-near',scope,priority:4,
-      bounds:{minX:x,maxX:x+SIZE.gapStart,minZ:z,maxZ:z+d},topY:0 });
+      bounds:{minX:x,maxX:x+gap.start,minZ:z,maxZ:z+d},topY:0 });
     DS.registerSurface({ id:scope+'-far',scope,priority:4,
-      bounds:{minX:x+SIZE.gapStart+SIZE.gapWidth,maxX:x+w,minZ:z,maxZ:z+d},topY:0 });
+      bounds:{minX:x+gap.end,maxX:x+w,minZ:z,maxZ:z+d},topY:0 });
     DS.registerPit({ id:scope+'-gap',scope,
-      bounds:{minX:x+SIZE.gapStart,maxX:x+SIZE.gapStart+SIZE.gapWidth,minZ:z,maxZ:z+d} });
+      bounds:{minX:x+gap.start,maxX:x+gap.end,minZ:z,maxZ:z+d} });
   }
 
   async function mount(options = {}) {
@@ -96,7 +105,7 @@
       throw new Error('Playable ruin wing requires the real scene, authored furniture, puzzle, rope and encounter runtimes.');
     const { room, composition } = plan(options.seed, options.archetype);
     const origin = {x:Math.ceil(Number(options.originX)||3),z:Math.ceil(Number(options.originZ)||rec.rows+4)}; // Isolated south wing with a return prompt.
-    const keys = [...new Set(composition.records.map(record=>record.key).filter(Boolean))];
+    const keys = [...new Set([...composition.records.map(record=>record.key).filter(Boolean),...(options.burdenOffering===true&&options.archetype!=='vaultHall'?['burdenPlinth','shattercaskBlasting']:[])])]; // Load the optional self-contained Burden offering before mutating the ruin.
     const data = new Map(); // Preload every authored piece before touching the live map: never build half a puzzle.
     for (const key of keys) {
       const item=await A.load(key);
@@ -105,7 +114,7 @@
     }
     if (options.isCurrent?.()===false) throw new Error('Playable ruin generation was superseded.');
     const scope=String(options.scope||'composed-ruin-wing'); // Private terrain scope; it must be removed on exit/reroll.
-    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], applied:null, disposed:false }; // Tracks authored collisions and restores original walkable tiles on rollback.
+    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], burdens:[], offering:null, applied:null, disposed:false }; // Owns optional carryables, unlocks and every authored node during teardown. // Tracks authored collisions and restores original walkable tiles on rollback.
     let result=null;
     try {
       extendGrid(rec,origin,room,makeTile);
@@ -198,13 +207,50 @@
         }),
       });
       if (owner.applied.skipped.length) throw new Error('Composer skipped actual placements: '+owner.applied.skipped.join(', '));
+      if(options.burdenOffering===true&&composition.archetype==='trialHall'){
+        if(!G.Shattercasks?.registerHangingBurden||!G.DevRandomRuinDungeonChests?.create)
+          throw new Error('Burden offering requires the physical Burden and dungeon chest runtimes.');
+        const id='composed_offering_'+(Number(options.seed)>>>0); // Isolates this short plate from the 30-second Key Statue defense.
+        const z=origin.z+room.bounds.maxZ-2.5;
+        const plinth=A.buildGroup(data.get('burdenPlinth'));plinth.name=id;plinth.position.set(origin.x+3.3,0,z);
+        owner.root.add(plinth);owner.placed.push(plinth);owner.placementIds.push(id);
+        if(!P.registerNode(mapId,{id,key:'burdenPlinth',puzzle:{channel:'Offering-'+id,completionChannel:'Offering-Done-'+id}},plinth))
+          throw new Error('Could not register optional Burden Plinth.');
+        const charge=A.buildGroup(data.get('shattercaskBlasting'));charge.name=id+'_charge';
+        charge.position.set(origin.x+5.1,.18,z);owner.root.add(charge);
+        const burden=G.Shattercasks.registerHangingBurden({id:id+'_charge',mapId,scene:rec.scene,group:charge,data:data.get('shattercaskBlasting'),kind:'shattercask',hanging:false,displayName:'Shattercask'});
+        if(!burden)throw new Error('Could not register the Burden Plinth\'s pickup Shattercask.');
+        owner.burdens.push(burden);
+        const chest=G.DevRandomRuinDungeonChests.create({id:id+'_reward',tier:2,theme:ruin.theme,x:origin.x+7.4,y:0,z,parent:owner.root});
+        chest.group.visible=false; // Only a completed physical Burden insertion reveals the optional reward.
+        owner.offering={id,plinth,burden,chest,unlocked:false};
+        owner.controls.push({
+          kind:'composed-burden-offering',point:{x:origin.x+3.3,z},promptRoot:plinth,range:1.7,priority:98,
+          label:()=>P.burdenPlateButtons(mapId,id)?.[0]?.label||'Insert Shattercask',
+          onPress:()=>{
+            const button=P.burdenPlateButtons(mapId,id)?.[0];
+            const response=P.interactBurdenPlate(mapId,id,button?.action);
+            if(response?.message)options.showToast?.(response.message,!!response.ok);
+            return response;
+          },
+        });
+      }
       // On both real wilderness sites and dev tests, returning is an ordinary world interaction.
       result={ok:true,origin,room,composition,entry:{x:origin.x+1.7,y:0,z:origin.z+room.bounds.maxZ/2},
-        placed:owner.placed.length,controls:owner.controls,dispose};
+        placed:owner.placed.length,controls:owner.controls,offering:!!owner.offering,update,dispose};
       return result;
     } catch (error) {
       dispose();
       throw error;
+    }
+    function update() {
+      const bonus=owner.offering;
+      if(owner.disposed||!bonus||bonus.unlocked)return false;
+      if(P.getNode(mapId,bonus.id)?.userData?.burdenPlateComplete!==true)return false;
+      bonus.unlocked=true;bonus.chest.group.visible=true;
+      options.addControl?.(bonus.chest.control); // The parent ruin copied our initial controls when the wing was mounted.
+      options.showToast?.('The Burden offering unlocks a hidden dungeon chest.',true);
+      return true;
     }
     function dispose() {
       if (owner.disposed) return;
@@ -214,6 +260,7 @@
         const [col,row]=key.split(',').map(Number); // Restore original cells when a generation aborts after placement.
         if(rec.grid[row]?.[col])rec.grid[row][col]=tile;
       }
+      for(const burden of owner.burdens)G.Shattercasks?.discardBurden?.(burden); // Never strand a physical offering in another generated ruin.
       for (const id of owner.placementIds) P.unregisterNode?.(mapId,id); // Releases surface listeners, active statue dispensers and pending motions.
       for (const id of owner.ropes) G.HangingRopes?.removeRope?.(id);
       for (const group of owner.placed) group.parent?.remove(group);
