@@ -41,6 +41,8 @@ function refreshDebug(){
     `extended warped: ${R.extendedWarped?`${R.extendedWarped.width}x${R.extendedWarped.height}`:'(none)'}`,
     `3D runtime docs: ${R.three.runtimeDocsBase||'(not loaded yet)'}`,
     `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
+    `game garment xform: preset B ${JSON.stringify(window.getPortraitXformPreset?.('B')||'(runtime loading)')}`,
+    `2D reference scope: raw fit pixels; full-character preview uses game garment xform and depth order`,
     `cloud mask: ${R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url||'(none)'}`,
     `cloud mask preview: ${JSON.stringify(currentMaskTransform())}`,
     `cloud mask scope: not applied in game (arm-cut source only)`,
