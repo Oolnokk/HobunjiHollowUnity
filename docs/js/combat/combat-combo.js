@@ -251,7 +251,7 @@
       // early the moment a hostile is inside this step's own hit cone
       // instead of always covering the full lunge distance (see
       // game.js's beginCombatLunge/updateMovement).
-      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx, halfConeRad });
+      deps.beginCombatLunge(lungePx, windupS + strikeS, 0, { rangePx: normalRangePx, halfConeRad: normalHalfConeRad }); // Don't stop the lunge early on a bystander who only appears inside the conditional finisher's bonus reach.
 
       // The pose reaches its authored Strike endpoint only after BOTH the
       // windup and strike interpolation intervals. Firing gameplay impact at
