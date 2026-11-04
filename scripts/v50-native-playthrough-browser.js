@@ -12,7 +12,19 @@ module.exports=async function runNativeV50Playthrough(page){
     if(!owner?.records?.length)throw new Error('No playable native V50 story records after successful game generation');
     const THREE=window.THREE,DS=window.DynamicSurfaces;
     const hit=window.DevRandomRuinHitPuzzles,controls=()=>game.getInteractionControls();
-    const steps=[],sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)); // Used to let the actual renderer and original V50 signal/animation systems tick.
+    const steps=[],sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)); // Brief yields allow browser input callbacks to settle without assuming a software-WebGL frame rate.
+    const advance=async(frames=30)=>{
+      const count=Math.min(200,Math.max(0,Math.floor(Number(frames)||0)));
+      const source=document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50;
+      if(!source?.tickRuntime||typeof hit?.debugAdvanceSignals!=='function')
+        throw new Error('V50 autoplayer needs the original generator tick and development-only hit-signal interpolation');
+      for(let i=0;i<count;i++){
+        if(hit.debugAdvanceSignals(1)!==1)throw new Error('Genuine V50 hit runtime stopped while advancing the puzzle');
+        source.tickRuntime(.05); // Same unchanged original V50 linked-cube and particle animation update as the ordinary game frame.
+        owner.tick(.05); // Executes the actual source mechanism pose, authored progression gate and interactive puzzle animation.
+      }
+      await sleep(30); // Renders remain live, but CI does not depend on how fast software WebGL compiles a large ruin frame.
+    };
     const key=(x,z)=>Math.floor(x)+','+Math.floor(z);
     const fail=(phase,record,stage,details)=>{throw new Error('V50 autoplay '+JSON.stringify({
       phase,floor:record?.floor,stage:stage?.id||null,kind:stage?.kind||null,
@@ -108,7 +120,7 @@ module.exports=async function runNativeV50Playthrough(page){
           fail('projectile hit callback rejected real V50 glyph',record,stage,{mechanismId,command,target:target.id});
       }
       steps.push({floor:record.floor,stage:stage.id,event:'registered-glyph-hit-callback',mechanismId,command:command||null,hits:targets.length});
-      await sleep(260);
+      await advance(32);
     };
     const turnCubes=async(actor,record,stage)=>{
       const data=actor.userData,initial=data.states?.slice(),links=data.linkage;
@@ -139,7 +151,7 @@ module.exports=async function runNativeV50Playthrough(page){
         await trigger(control,record,stage);
       }
       steps.push({floor:record.floor,stage:stage.id,event:'native-cube-controls',moves:moves.length,statesBefore:initial});
-      await sleep(900); // V50's native cube solveProgress interpolates on its own render frame clock.
+      await advance(52); // The original V50 cube solver interpolates its own solveProgress, deterministically stepped in the browser.
     };
     const turnObelisk=async(actor,record,stage)=>{
       await put({...point(actor),y:floorY(record)},record,stage);
@@ -152,6 +164,7 @@ module.exports=async function runNativeV50Playthrough(page){
         }
         if(rotation()!==0)fail('obelisk ring did not align',record,stage,entry);
       }
+      await advance(30);
       steps.push({floor:record.floor,stage:stage.id,event:'native-rotating-obelisk-controls'});
     };
     const lightBrazier=async (actor,record,stage)=>{
@@ -169,7 +182,7 @@ module.exports=async function runNativeV50Playthrough(page){
       if(!hit.debugIgniteTarget(actor))fail('authored brazier rejected actual fire-transfer callback',record,stage,{target});
       hit.dropTorch();
       steps.push({floor:record.floor,stage:stage.id,event:'torch-pickup-and-contact-callback'});
-      await sleep(230);
+      await advance(32);
     };
     const solveNative=async(state,record,stage,depth=0)=>{
       if(!state||depth>6)fail('native puzzle dependency cycle',record,stage,state?.id||null);
@@ -220,20 +233,20 @@ module.exports=async function runNativeV50Playthrough(page){
         if(block.userData.dropOntoPlateAfterRetraction){
           const bridge=[...record.nativeMechanisms.states.values()].find(candidate=>candidate.motion==='bridgeSequence');
           await hitCircuit(bridge.id,'OFF',record,stage);
-          await sleep(550);
+          await advance(22);
         }
         steps.push({floor:record.floor,stage:stage.id,event:'native-pressure-plate-pushes',count:path.length-1});
       }else fail('unsupported authored V50 activator family',record,stage,{state:state.id,type:actor.userData.activatorType});
-      await sleep(500);
+      await advance(42);
       if(!state.solved)fail('authored V50 mechanism did not signal completion',record,stage,{mechanismId:state.id,progress:state.progress,target:state.target});
     };
     const solveFallback=async(stage,record)=>{
       await put({x:stage.x,z:stage.z,y:stage.floorY},record,stage);
       if(stage.kind==='pressurePlate'){
-        await sleep(1100); // The actual player's feet must hold the room's authored plate for 0.8 real seconds.
+        await advance(22); // The actual player's feet stand on the plate while its unchanged .8s game timer advances in fixed real gameplay steps.
         steps.push({floor:record.floor,stage:stage.id,event:'real-player-pressure-hold'});
       }else if(stage.kind==='glyphObelisk'||stage.kind==='ceilingRailTargets'){
-        await sleep(180);
+        await advance(4);
         if(!stage.linked)fail('canonical projectile bus never registered fallback targets',record,stage);
         for(const target of stage.targets){
           if(!target.hittable?.())fail('registered glyph is not hittable in its active room',record,stage,target.id);
@@ -241,7 +254,7 @@ module.exports=async function runNativeV50Playthrough(page){
         }
         steps.push({floor:record.floor,stage:stage.id,event:'registered-projectile-hit-callback',count:stage.targets.length});
       }else if(stage.kind==='dungeonFire'){
-        await sleep(220);
+        await advance(5);
         if(!stage.fireLinked||!stage.fireRecord?.isActive?.())fail('native fire-ice challenge did not register a real reactive target',record,stage);
         stage.fireRecord.onBurn(); // Tests production fire target completion; weapon fire-stream collision is verified by separate DungeonFire suites.
         steps.push({floor:record.floor,stage:stage.id,event:'registered-fire-contact-callback'});
@@ -255,7 +268,7 @@ module.exports=async function runNativeV50Playthrough(page){
         if(!stage.ropeLinked)fail('V50 rope physics never registered',record,stage);
         await put(stage.ropeSpec.exit,record,stage);
         steps.push({floor:record.floor,stage:stage.id,event:'rope-exit-checkpoint',warning:'not a physics crossing'});
-        await sleep(230);
+        await advance(7);
       }else fail('unknown fallback puzzle type',record,stage,stage.kind);
     };
     for(const record of owner.records){
@@ -281,7 +294,7 @@ module.exports=async function runNativeV50Playthrough(page){
           await put({x:stage.x,z:stage.z,y:stage.floorY},record,stage);
           await solveNative(state,record,stage);
         }else await solveFallback(stage,record);
-        await sleep(350);
+        await advance(34);
         if(stage.kind==='v50Authored'){
           const sourceMechanism=record.nativeMechanisms.states.get(stage.nativeMechanism.id);
           if(sourceMechanism?.motion==='stoneDoor'&&sourceMechanism.progress<.85)
