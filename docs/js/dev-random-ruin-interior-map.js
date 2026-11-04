@@ -1187,7 +1187,7 @@
       DynamicSurfaces:DS,ShaftHub:window.ShaftHub,ClimbSurfaces:window.ClimbSurfaces,
       DevRandomRuin:window.DevRandomRuin,TileOccupancy,
       RuinLayerPlan:window.RuinLayerPlan,RuinShaftCorridor:window.RuinShaftCorridor,
-      RuinLayerPlayable:window.RuinLayerPlayable,CellGrid3D:window.CellGrid3D,
+      RuinLayerPlayable:window.RuinLayerPlayable,RuinLayerChallenges:window.RuinLayerChallenges,CellGrid3D:window.CellGrid3D,
       getPlayerPosition:()=>({x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}),
       getPlayerY:()=>ruin.supportY,
       showToast:(message,ok)=>deps.showToast?.(message,ok),
