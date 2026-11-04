@@ -146,7 +146,7 @@ function testSpecialFinishers() {
   delete a.requiredRangePx;
   delete b.requiredRangePx;
   assert.deepEqual(damage.map(h => [h.target, h.special]), [['a', false],['a', false],['a', true]], 'special reach is target-qualified rather than a blanket cone enlargement');
-  assert.equal(lungeStops.at(-1).rangePx, 69, 'lunge stopping must use Cleave’s normal reach, not a bonus radius that includes unqualified enemies');
+  assert.ok(Math.abs(lungeStops.at(-1).rangePx - 69) < 1e-9, 'lunge stopping must use Cleave’s normal reach, not a bonus radius that includes unqualified enemies');
   reset();
   tap('swingCombo', [a], 1003);
   tap('swingCombo', [], 1003.5);
