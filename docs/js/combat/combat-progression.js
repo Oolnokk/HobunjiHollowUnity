@@ -173,7 +173,7 @@
   // weapon trees, but affliction picks are moved from "every hit" into the
   // condition-bonus package. Existing character saves therefore migrate
   // behavior without having their selected mastery rows remapped.
-  function quickAttackTree(levels) {
+  function quickAttackTree(levels, isBlunt = false) {
     const tree = levels.map(level => level.map(option => {
       const copy = { ...option, stat: option.stat ? { ...option.stat } : undefined };
       if (!option.afflictions) return copy;
@@ -183,6 +183,9 @@
       copy.desc = `Successful condition-bonus procs apply ${names} as a burst; ordinary Quick Attack hits do not.`;
       return copy;
     }));
+    if (isBlunt) for (const row of tree) row.push(
+      quickDebuff('knockdown', 'Knockdown', 'A successful Quick Attack condition bonus knocks the target prone for 1 second. Assign at multiple mastery levels to add 1 second per level.', 1)
+    ); // Append after existing indexes: every blunt level can extend duration without remapping saved selections.
     tree[2] = [
       ...tree[2],
       // Keep these first three appended indexes stable for saves created against the first cooldown-debuff implementation.
@@ -206,10 +209,10 @@
   const TREES = {
     swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
     pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
-    opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
-    exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree()) },
-    backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
-    mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree()) },
+    opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
     acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
     counterShield: {

@@ -250,6 +250,11 @@
       name: "Inhibited", maxStacks: 5, minModifier: 0.2,
       modifiers: Object.freeze({ healingReceived: 0.90 }),
       desc: "Receives less Health recovery per stack."
+    }),
+    knockdown: Object.freeze({
+      name: "Knockdown", maxStacks: 1, durationStacksInstead: true,
+      modifiers: Object.freeze({}),
+      desc: "Drops prone in the full break-throw animation. Further applications extend time instead of stacks; Footing stays unchanged."
     })
   });
 
@@ -285,36 +290,36 @@
   }
 
   function applyTimedDebuff(entity, id, durationS, options = {}) {
-    const def = TIMED_DEBUFFS[id]; // Registry entry supplies stack cap, authored per-stack percentages, and safety clamps.
-    const duration = Math.max(0, Number(durationS) || 0); // Used to refresh the lifetime of the complete same-name stack.
+    const def = TIMED_DEBUFFS[id]; // Registry controls normal stack-bearing effects and duration-only knockdown.
+    const duration = Math.max(0, Number(durationS) || 0); // Base seconds contributed by each application or stack-granting perk.
     if (!entity || !def || !(duration > 0)) return null;
-    const appliedAtMs = nowMs(); // Shared monotonic combat clock used to make the effect save-agnostic and immune to wall-clock changes.
+    if (id === 'knockdown' && (!(Number(entity.health) > 0) || entity._downed)) return null;
+    const incomingPower = Math.max(0, Number.isFinite(Number(options.power)) ? Number(options.power) : 1); // For knockdown, mastery power scales duration.
+    const durationOnly = def.durationStacksInstead === true; // Repeated knockdown applies additional seconds, not increased severity.
+    if (durationOnly && !(incomingPower > 0)) return null;
+    const appliedAtMs = nowMs(); // Statuses use one monotonic runtime clock.
     cleanupTimedDebuffs(entity, appliedAtMs);
-    const store = timedDebuffStore(entity, true); // Runtime-only storage shared by combat/resource/movement consumers.
-    const previous = store[id]; // Existing active same-name entry contributes its stack count and strongest power.
-    const addedStacks = Math.max(1, Math.floor(Number(options.stacks) || 1)); // One successful application adds one stack unless an authored caller explicitly adds more.
-    const maxStacks = Math.max(1, Math.floor(Number(def.maxStacks) || 1)); // Hard cap keeps percentage debuffs readable and prevents pathological movement/timing values.
-    const stacks = Math.min(maxStacks, Math.max(0, Number(previous?.stacks) || 0) + addedStacks); // Same-name stacks add while the duration refreshes.
-    const incomingPower = Math.max(0, Number.isFinite(Number(options.power)) ? Number(options.power) : 1); // Current application strength after Immundanity/mastery scaling.
-    const power = Math.max(incomingPower, Number(previous?.power) || 0); // A weaker refresh never downgrades already-earned stacks.
+    const store = timedDebuffStore(entity, true); // Existing runtime-only status store.
+    const previous = store[id]; // Captures active remaining duration or normal stacks.
+    const addedStacks = Math.max(1, Math.floor(Number(options.stacks) || 1)); // Stack-granting perks count as extra duration units for knockdown.
+    const maxStacks = Math.max(1, Math.floor(Number(def.maxStacks) || 1)); // Normal stack cap; knockdown displays just one.
+    const stacks = durationOnly ? 1 : Math.min(maxStacks, Math.max(0, Number(previous?.stacks) || 0) + addedStacks);
+    const power = durationOnly ? 1 : Math.max(incomingPower, Number(previous?.power) || 0); // A weaker refresh never downgrades normal debuffs.
     const modifiers = Object.fromEntries(Object.entries(def.modifiers || {}).map(([key, value]) => [
       key,
       scaledTimedDebuffModifier(value, power, stacks, def.minModifier, def.maxModifier),
-    ])); // Materialized current percentages let every runtime consumer stay a cheap lookup.
-    const expiresAtMs = Math.max(Number(previous?.expiresAtMs) || 0, appliedAtMs + duration * 1000); // Every added stack refreshes the full authored window.
+    ])); // Every runtime consumer can read cheap materialized modifiers.
+    const expiresAtMs = durationOnly
+      ? Math.max(appliedAtMs, Number(previous?.expiresAtMs) || 0) + duration * addedStacks * incomingPower * 1000
+      : Math.max(Number(previous?.expiresAtMs) || 0, appliedAtMs + duration * 1000); // Existing named debuffs still refresh their shared window.
     const entry = {
-      id,
-      name: def.name,
-      appliedAtMs,
-      expiresAtMs,
-      durationS: Math.max(duration, Number(previous?.durationS) || 0),
-      power,
-      stacks,
-      maxStacks,
-      modifiers,
+      id, name: def.name, appliedAtMs, expiresAtMs,
+      durationS: durationOnly ? (expiresAtMs - appliedAtMs) / 1000 : Math.max(duration, Number(previous?.durationS) || 0),
+      power, stacks, maxStacks, modifiers,
       source: options.source || previous?.source || null,
     };
     store[id] = entry;
+    if (id === 'knockdown' && !previous) window.HobunjiKnockdown?.enter?.(entity, options); // First application alone throws, cancels, and enters faux-ragdoll.
     return { ...entry, remainingS: Math.max(0, (expiresAtMs - appliedAtMs) / 1000) };
   }
 
@@ -331,6 +336,19 @@
   function hasTimedDebuff(entity, id) {
     cleanupTimedDebuffs(entity);
     return !!timedDebuffStore(entity)?.[id];
+  }
+
+  function clearTimedDebuff(entity, id) {
+    const store = timedDebuffStore(entity); // Respawn cleanup avoids carrying one life\'s knockdown into the next.
+    if (!store || !Object.prototype.hasOwnProperty.call(store, id)) return false;
+    delete store[id];
+    cleanupTimedDebuffs(entity);
+    return true;
+  }
+
+  function getProneAttackMultiplier(entity) {
+    if (!entity?.prone) return 1;
+    return entity._temporaryKnockdownProne === true ? 1.75 : 2.5; // Footing-break prone stays stronger while Footing refills.
   }
 
   function timedDebuffModifier(entity, key) {
@@ -445,6 +463,7 @@
     // clears it. staggered: the shared lockout combat-core.js's
     // isStaggered/beginStagger read to block starting new staged actions.
     if (entity.prone === undefined) entity.prone = false;
+    entity._temporaryKnockdownProne = false; // Spawn/profile initialization resets session-only prone-source metadata.
     entity.staggered = { active: false, direction: null, endsAt: 0, ...(entity.staggered || {}) };
     return entity;
   }
@@ -1183,6 +1202,8 @@
     applyTimedDebuff,
     getTimedDebuffs,
     hasTimedDebuff,
+    clearTimedDebuff,
+    getProneAttackMultiplier,
     timedDebuffModifier,
     registerStatModifierProvider,
     statModifier,
