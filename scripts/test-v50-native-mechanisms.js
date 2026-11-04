@@ -119,6 +119,11 @@ assert(runtime.isSolved(fireBridge.userData.mechanismId),'authentic torch igniti
 const door=controls.find(c=>c.kind==='v50NativeTransitDoor');
 door.onPress();runtime.tick(.05);assert(transit.children.length===0);
 assert(blockers.some(record=>record.id.includes('v50-fixed-block')),'immovable native push-route shapers have real upper-story collision');
+const raisedBlocker=blockers.find(record=>record.id.includes('pushblock-'+block.id)); // Verify actor height is checked against the actual world-space block, not the overlapping 2D tile.
+assert(raisedBlocker&&!raisedBlocker.blocksAt(3,2,1.25,null,0,{y:0}),
+  'a lower-floor actor must not collide with the upper-story push block');
+assert(raisedBlocker.blocksAt(3,2,1.25,null,0,{y:4}),
+  'the same push block must collide with a player at its real story elevation');
 assert(blockers.length>=4,'door panels, push blocks, transit doors register game collision');
 assert(surfaces.length>=4,'moving bridges, daises and stair treads register actual game support');
 runtime.dispose();runtime.dispose();
