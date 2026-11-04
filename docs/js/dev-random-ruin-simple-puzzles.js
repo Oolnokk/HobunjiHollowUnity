@@ -439,16 +439,17 @@
   // entirely by successive airborne rope catches. No artificial landing pads:
   // the generator uses the existing rooms on either side for its checkpoints.
   function buildRopeChainHallway(context,rng,hall,usedHallways) {
+    const reject=(reason,extra={})=>{state.ropeChainRejects.push({hallId:String(hall.id),reason,...extra});return null;}; // Visible in the in-game ruin snapshot and CI so procedural generation never fails silently.
     const cs=worldCellSize(context.meta),axis=hall.axis==='z'?'z':'x';
     const longCells=axis==='x'?Number(hall.w):Number(hall.h);
     const crossCells=axis==='x'?Number(hall.h):Number(hall.w);
-    if(longCells<5||crossCells<5||usedHallways.has(hall.id))return null; // Same minimum width as the safe-path grid.
+    if(longCells<5||crossCells<5||usedHallways.has(hall.id))return reject('hallway dimensions/claimed',{longCells,crossCells}); // Same minimum width as the safe-path grid.
     const start=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
     const length=longCells*cs,finish=start+length;
     const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
     const crossWidth=crossCells*cs,cross=crossStart+crossWidth*.5;
     const ropeCount=Math.max(3,Math.min(5,Math.ceil((length-1)/1.7)+1));
-    if((length-1)/(ropeCount-1)>2.15)return null; // A very long hallway needs more ropes than our bounded chain supports.
+    if((length-1)/(ropeCount-1)>2.15)return reject('rope spacing too long',{length,ropeCount}); // A very long hallway needs more ropes than our bounded chain supports.
     const point=(along,crossAt=cross)=>axis==='x'?{x:along,z:crossAt}:{x:crossAt,z:along};
     const occupancy=window.DevRandomRuinTileOccupancy;
     function checkpointOutside(side){
@@ -465,23 +466,23 @@
       return null;
     }
     const entry=checkpointOutside('start'),exit=checkpointOutside('end');
-    if(!entry||!exit)return null;
+    if(!entry||!exit)return reject('missing bank floor support',{entry:!!entry,exit:!!exit});
     const cells=[];let floorY=null;
     for(let col=Number(hall.col);col<Number(hall.col)+Number(hall.w);col++){
       for(let row=Number(hall.row);row<Number(hall.row)+Number(hall.h);row++){
         const x=PAD+(col+.5)*cs,z=PAD+(row+.5)*cs,key=col+','+row;
         const support=sampleSupport(x,z);
-        if(!support||support.id!=='devruin-floor-'+key||!support.record)return null;
+        if(!support||support.id!=='devruin-floor-'+key||!support.record)return reject('floor cell missing or overridden',{key,supportId:support?.id||null});
         if(floorY===null)floorY=Number(support.y);
-        if(Math.abs(Number(support.y)-floorY)>.08)return null; // Never carve a tiered corridor or a bridge/dais support.
-        if(occupancy?.blocksAt?.(x,z,.24)||occupancy?.solidAt?.(x,z,.24))return null;
+        if(Math.abs(Number(support.y)-floorY)>.08)return reject('uneven floor',{key,y:Number(support.y),floorY}); // Never carve a tiered corridor or a bridge/dais support.
+        if(occupancy?.blocksAt?.(x,z,.24)||occupancy?.solidAt?.(x,z,.24))return reject('floor obstructed',{key});
         cells.push({support,record:support.record,col,row,x,z});
       }
     }
-    if(floorY===null||Math.abs(entry.y-floorY)>.42||Math.abs(exit.y-floorY)>.42)return null;
+    if(floorY===null||Math.abs(entry.y-floorY)>.42||Math.abs(exit.y-floorY)>.42)return reject('bank height mismatch',{floorY,entryY:entry.y,exitY:exit.y});
     const anchorY=(Number(context.meta?.floorSurfaceY)||floorY)+(Number(context.meta?.wallHeight)||3)-.09;
     const ropeLength=anchorY-(floorY+.86);
-    if(ropeLength<ROPE_MIN_LENGTH+.05)return null;
+    if(ropeLength<ROPE_MIN_LENGTH+.05)return reject('rope too short',{ropeLength});
     const ropes=[],room={id:'rope_chain_hall_'+hall.id};
     const direction=axis==='x'?0:Math.PI*.5;
     for(let i=0;i<ropeCount;i++){
@@ -495,7 +496,7 @@
       });
       rope.ropeChainHallId=String(hall.id); // Used to distinguish the bottomless hallway ropes in diagnostics and death handling.
       rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
-      if(!ropeArcClear(rope,.95)){disposeRopeObject(rope);ropes.forEach(disposeRopeObject);return null;}
+      if(!ropeArcClear(rope,.95)){disposeRopeObject(rope);ropes.forEach(disposeRopeObject);return reject('swing arc blocked',{ropeIndex:i,along});}
       ropes.push(rope);
     }
     // Use the production release-flight and air-catch predictor, not a second
@@ -507,7 +508,7 @@
     const forward=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight)!==null);
     const reverse=ropes.every((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
       i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight)!==null);
-    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return null;} // Both checkpoint sides must lead to a physically solvable crossing.
+    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse});} // Both checkpoint sides must lead to a physically solvable crossing.
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
     for(const cell of cells){
@@ -1798,6 +1799,7 @@
       group,
       controls:[],
       ropeChains:[], // Hallway-wide bottomless gaps traversed exclusively by midair rope catches.
+      ropeChainRejects:[], // Why attempted hallways failed; shown in mobile Pixel Probe / browser CI.
       ropeChainDisabledSurfaces:[], // Original V50 supports restored on clear so rerolls cannot strand floor state.
       ropeChainPitTiles:[], // Existing grid cell flags restored on clear while traversal uses actual DynamicSurfaces pits.
       ropes:[],
@@ -2270,6 +2272,7 @@
         thickMesh:rope.mesh?.isMesh===true,collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
+      ropeChainRejects:state.ropeChainRejects.slice(),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
         ropeCount:chain.ropes.length,ropeIds:chain.ropes.map(rope=>rope.id),entry:clonePoint(chain.entry),exit:clonePoint(chain.exit),
         floorY:chain.floorY,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
