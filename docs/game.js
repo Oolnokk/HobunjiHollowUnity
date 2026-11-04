@@ -5761,6 +5761,13 @@
       }); // Shared registry is initialized once and can be used by future sacred-ground mechanics.
 
       function respawnPlayer(reason = 'death') {
+        window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // No death/checkpoint may carry timed immobilization into the next life.
+        player._temporaryKnockdownProne = false; // Reset 1.75x attack vulnerability and the temporary source before any respawn branch.
+        if (player.prone) {
+          player.prone = false;
+          player.somersaultRecovering = false;
+          window.ImpactRagdollPlayback?.stop?.(); // Clear the held break-throw rig before placing the player at a respawn point.
+        }
         window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
