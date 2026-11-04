@@ -202,6 +202,8 @@
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
+      const normalRangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range; // Normal third-hit geometry, also used for enemies that missed either setup attack.
+      const normalHalfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0))); // Stops conditional reach upgrades leaking to unrelated targets.
       const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (activeStats.rangeMul || 0)) * shapeStats.range;
       const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (activeStats.coneWidthMul || 0)));
       const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (activeStats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
@@ -212,8 +214,8 @@
         damage: baseAbil.damage * step.damageMul * (1 + (effects.stats.damageMul || 0)),
         afflictionBonuses: effects.afflictions,
         knockbackPxS: baseAbil.knockbackPxS * step.knockbackMul * (1 + (effects.stats.knockbackMul || 0)),
-        rangePx,
-        halfConeRad,
+        rangePx: normalRangePx,
+        halfConeRad: normalHalfConeRad,
         lungePx: baseLungePx,
         comboStep: comboStep + 1,
         comboFinisher: isFinisher,
@@ -271,13 +273,14 @@
           const bonusPower = Math.max(0, Number(window.Combat.quickAttackData?.BONUS_EFFECT_POWER_MULTIPLIER) || 2); // Share Quick Attack bonus strength, including authored tuning.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
+            const specialProc = isFinisher && qualifiedTargets.has(c); // Third hit must reconnect with the same enemy that took both openers.
             if (!window.Combat.meleeHit(deps.player, c, {
-              rangePx, halfConeRad,
+              rangePx: specialProc ? rangePx : normalRangePx,
+              halfConeRad: specialProc ? halfConeRad : normalHalfConeRad, // Unqualified targets never inherit special-only reach or cone modifiers.
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
             if (Number(c.invulnUntil) > performance.now()) continue; // A dodged/iframe-blocked opener cannot seed a finisher.
-            const specialProc = isFinisher && qualifiedTargets.has(c); // Third hit must reconnect with the same enemy that took both openers.
             const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used to report post-mitigation damage to Mirrored Health and other post-hit observers.
             const pronePower = window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // Snapshot before a possible Knockdown so the proc cannot empower itself.
