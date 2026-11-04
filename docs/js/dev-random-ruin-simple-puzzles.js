@@ -2196,9 +2196,14 @@
     const tuning=window.KurrayaPuzzle?.settings?.(); // Capture one tuning for the entire phrase, even if the Music Lab settings change during playback.
     set.notes.forEach((note,index)=>{
       if (index===0) playKurrayaPlateNote(note,tuning); // The first note sounds on contact with the plate.
-      else set.playbackTimers.push(setTimeout(()=>{
-        if (state && inRuin() && !set.solved && state.chordPlateSets.includes(set)) playKurrayaPlateNote(note,tuning);
-      },index*620));
+      else {
+        const timer=setTimeout(()=>{
+          const pendingIndex=set.playbackTimers.indexOf(timer);
+          if(pendingIndex>=0)set.playbackTimers.splice(pendingIndex,1); // A played note is no longer pending in mobile diagnostics.
+          if (state && inRuin() && !set.solved && state.chordPlateSets.includes(set)) playKurrayaPlateNote(note,tuning);
+        },index*620);
+        set.playbackTimers.push(timer);
+      }
     });
   }
 
