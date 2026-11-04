@@ -3201,7 +3201,16 @@
           }
         }
         return !interiorFurnitureObjects.find(o => {
-          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Existing rugs never block new furniture either.
+          if (o.id === ignoreId || o.area !== area || placingRug || o.key === 'rug') return false; // Rugs remain overlap-friendly.
+          if (o.tableAttachment && o.tableId === ignoreId) return false; // A parent carries its own chairs to the new position.
+          if (o.tableAttachment) {
+            const candidate = DECORATIVE_FURNITURE_DEFS[furnitureKey];
+            const attached = DECORATIVE_FURNITURE_DEFS[o.key];
+            return !!(candidate && attached && window.TableChairPlacement?.overlapsFootprints?.(
+              { x: col + fw / 2, z: row + fd / 2, width: candidate.fw || 1, depth: candidate.fd || 1, yaw: rotYDeg * Math.PI / 180 },
+              { x: o.mesh.position.x, z: o.mesh.position.z, width: attached.fw || 1, depth: attached.fd || 1, yaw: o.mesh.rotation.y }
+            )); // No grid tile claimed by the attached chair, but physical overlap is still prohibited.
+          }
           const { fw: ow, fd: od } = decorativeFurnitureSize(o.key, o.rotYDeg || 0, o);
           return col < o.col + ow && col + fw > o.col && row < o.row + od && row + fd > o.row;
         });
@@ -3232,12 +3241,26 @@
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         if (!def || def.walkable) return false;
         const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
-        const cx = obj.col + bounds.fw * 0.5, cz = obj.row + bounds.fd * 0.5;
+        const cx = obj.tableAttachment ? obj.mesh.position.x : obj.col + bounds.fw * 0.5, cz = obj.tableAttachment ? obj.mesh.position.z : obj.row + bounds.fd * 0.5;
         const angle = -(obj.rotYDeg || 0) * Math.PI / 180;
         const dx = x - cx, dz = z - cz;
         const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
         const localZ = dx * Math.sin(angle) + dz * Math.cos(angle);
         return Math.abs(localX) < (def.fw || 1) * 0.5 && Math.abs(localZ) < (def.fd || 1) * 0.5;
+      }
+
+      function decorativeFurnitureClaimsInteriorCell(obj, c, r) {
+        if (obj.tableAttachment) {
+          const def = DECORATIVE_FURNITURE_DEFS[obj.key];
+          return !!(def && obj.mesh && window.TableChairPlacement?.overlapsFootprints?.(
+            { x: c + 0.5, z: r + 0.5, width: 1, depth: 1, yaw: 0 },
+            { x: obj.mesh.position.x, z: obj.mesh.position.z, width: def.fw || 1,
+              depth: def.fd || 1, yaw: obj.mesh.rotation.y }
+          ));
+        }
+        const bounds = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
+        return c >= obj.col && r >= obj.row
+          && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
       }
 
       function furnitureBlocksMovementAt(area, x, z) {
@@ -3797,7 +3820,7 @@
         interiorFurnitureObjects.push(placedFurniture);
         window.FurnitureTableSystem?.registerPlacement(currentArea, placedFurniture, result.mesh, def);
         if (isOnFarm) registerFarmDecorativeInteractable(furnitureKey, col, row, def.fw, def.fd, 0);
-        registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea));
+        placedFurniture.npcStationId = registerChairNpcStation(furnitureKey, col, row, 0, normalizeNpcArea(currentArea), null, null, placedFurniture.id);
         window.HudUpdate.refreshItemScroll();
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def.icon} ${def.name} placed.` };
@@ -3847,6 +3870,8 @@
 
       function disposeDecorativeFurniture(obj, refundToInventory = false) {
         const targetScene = obj.area === 'interior' ? interiorScene : scene;
+        const linkedChairs = interiorFurnitureObjects.filter(child =>
+          child.id !== obj.id && child.area === obj.area && child.tableId === obj.id); // Retained after the parent leaves its footprint.
         window.FurnitureTableSystem?.unregisterPlacement?.(obj.area, obj.id || obj.mesh); // Removes precisely this furniture instance, leaving stacked rugs registered.
         targetScene.remove(obj.mesh);
         obj.mesh?.traverse?.(child => {
@@ -3856,30 +3881,257 @@
         if (obj.light) targetScene.remove(obj.light);
         window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         const idx = interiorFurnitureObjects.indexOf(obj);
         if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
+        for (const child of linkedChairs) {
+          const wasAttached = !!child.tableAttachment;
+          child.tableAttachment = null;
+          child.tableId = '';
+          if (wasAttached) {
+            const tile = nearestDetachedChairTile(child);
+            if (tile && moveDecorativeFurniture(child.id, tile.col, tile.row, { area: child.area, skipSave: true }).ok) continue;
+            window.__farmLog?.('[furniture] No free tile when removing a table; chair kept at its world position.', 'warn');
+            const dimensions = decorativeFurnitureSize(child.key, child.rotYDeg || 0, child);
+            child.col = child.mesh.position.x - dimensions.fw / 2;
+            child.row = child.mesh.position.z - dimensions.fd / 2;
+            child.npcStationId = registerChairNpcStation(child.key, child.col, child.row, child.rotYDeg || 0,
+              normalizeNpcArea(child.area), null, null, child.id, child.npcStationId);
+          }
+          window.FurnitureTableSystem?.registerPlacement(child.area, child, child.mesh, DECORATIVE_FURNITURE_DEFS[child.key]);
+        }
         if (refundToInventory) {
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
           if (itemKey) { inventory[itemKey] = (inventory[itemKey] || 0) + 1; clampInventoryStack(itemKey); }
         }
       }
 
+      window.HobunjiFurnitureTableAttachmentMoved = record => {
+        if (!record?.tableAttachment || !record.mesh) return;
+        const area = normalizeNpcArea(record.area);
+        record.npcStationId ||= furnitureNpcStationId(area, record.col, record.row, record.id);
+        unregisterChairNpcStation(record.key, record.col, record.row, area, record.npcStationId);
+        const size = decorativeFurnitureSize(record.key, record.mesh.rotation.y * 180 / Math.PI, record);
+        record.col = record.mesh.position.x - size.fw * 0.5;
+        record.row = record.mesh.position.z - size.fd * 0.5;
+        record.rotYDeg = record.mesh.rotation.y * 180 / Math.PI;
+        if (record.area === 'interior') {
+          const parentTable = interiorFurnitureObjects.find(obj => obj.id === record.tableId && obj.area === record.area);
+          const owner = parentTable ? housePieces.find(piece => piece.id === parentTable.ownerPieceId) : null;
+          const rect = interiorRoomRect(owner);
+          if (parentTable && rect) {
+            record.ownerPieceId = owner.id;
+            record.localCol = record.col - rect.col;
+            record.localRow = record.row - rect.row;
+          }
+        }
+        // The approach tile is selected from the actual chair center, not its potentially negative fractional bounds.
+        record.npcStationId = registerChairNpcStation(record.key, record.mesh.position.x, record.mesh.position.z,
+          record.rotYDeg, area, record.roles, record.lookAt, record.id, record.npcStationId);
+      };
+
+      function nearestDetachedChairTile(chair) {
+        // Used after manual detachment and table removal to restore a real independent tile.
+        const size = decorativeFurnitureSize(chair.key, chair.rotYDeg || 0, chair);
+        const baseCol = Math.round(chair.mesh.position.x - size.fw / 2);
+        const baseRow = Math.round(chair.mesh.position.z - size.fd / 2);
+        for (let radius = 0; radius <= 8; radius++) {
+          for (let dc = -radius; dc <= radius; dc++) for (let dr = -radius; dr <= radius; dr++) {
+            if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+            const col = baseCol + dc, row = baseRow + dr;
+            if (canPlaceDecorativeFurnitureAt(col, row, chair.id, chair.key, chair.rotYDeg || 0, chair.area, chair)) return { col, row };
+          }
+        }
+        return null;
+      }
+
+      function canKeepAttachedChairHere(chair, table) {
+        const def = DECORATIVE_FURNITURE_DEFS[chair.key];
+        if (!def || chair.area !== 'interior') return false;
+        const position = chair.mesh.position, yaw = chair.mesh.rotation.y;
+        const cos = Math.cos(yaw), sin = Math.sin(yaw);
+        for (const dx of [-0.49 * (def.fw || 1), 0.49 * (def.fw || 1)]) {
+          for (const dz of [-0.49 * (def.fd || 1), 0.49 * (def.fd || 1)]) {
+            const col = Math.floor(position.x + dx * cos + dz * sin);
+            const row = Math.floor(position.z - dx * sin + dz * cos);
+            const tile = interiorGrid[row]?.[col];
+            if (!tile || tile.type === TileType.ROCK
+              || _interiorRoomDoorTiles.has(col + ',' + row)
+              || _interiorArrivalTiles.has(col + ',' + row)) return false;
+          }
+        }
+        return !interiorFurnitureObjects.some(other => {
+          if (other === chair || other === table || other.area !== chair.area || other.key === 'rug') return false;
+          const otherDef = DECORATIVE_FURNITURE_DEFS[other.key];
+          if (!otherDef || otherDef.walkable) return false;
+          const size = decorativeFurnitureSize(other.key, other.rotYDeg || 0, other);
+          const centerX = other.tableAttachment ? other.mesh.position.x : other.col + size.fw / 2;
+          const centerZ = other.tableAttachment ? other.mesh.position.z : other.row + size.fd / 2;
+          return !!window.TableChairPlacement?.overlapsFootprints?.(
+            { x: position.x, z: position.z, width: def.fw || 1, depth: def.fd || 1, yaw },
+            { x: centerX, z: centerZ, width: otherDef.fw || 1, depth: otherDef.fd || 1,
+              yaw: other.tableAttachment ? other.mesh.rotation.y : (other.rotYDeg || 0) * Math.PI / 180 }
+          );
+        });
+      }
+
+      function canTransformTableWithAttachedChairs(table, x, y, z, rotYDeg) {
+        if (table.area !== 'interior') return true;
+        const children = interiorFurnitureObjects.filter(child =>
+          child.area === table.area && child.tableId === table.id && child.tableAttachment);
+        if (!children.length) return true;
+        const meshes = [table, ...children].map(record => ({
+          record, position: record.mesh.position.clone(), yaw: record.mesh.rotation.y,
+        })); // Transaction snapshot prevents rejected table moves from altering any child mesh.
+        const def = DECORATIVE_FURNITURE_DEFS[table.key];
+        try {
+          table.mesh.position.set(x, y, z);
+          table.mesh.rotation.y = rotYDeg * Math.PI / 180;
+          table.mesh.updateWorldMatrix?.(true, false);
+          for (const child of children) {
+            if (!window.TableChairPlacement?.apply?.(child.mesh, table.mesh, child.tableAttachment,
+              { width: def?.fw || 1, depth: def?.fd || 1 })) return false;
+          }
+          return children.every(child => canKeepAttachedChairHere(child, table));
+        } finally {
+          for (const snapshot of meshes) {
+            snapshot.record.mesh.position.copy(snapshot.position);
+            snapshot.record.mesh.rotation.y = snapshot.yaw;
+            snapshot.record.mesh.updateWorldMatrix?.(true, false);
+          }
+        }
+      }
+
+      function placeTableAttachedChair(itemKey, requested, source = 'bag') {
+        if (currentArea !== 'interior') return { ok: false, message: 'Table-child placement is available inside your house.' };
+        const key = getDecorativeFurnitureKeyByItemKey(itemKey) || itemKey;
+        const def = DECORATIVE_FURNITURE_DEFS[key];
+        if (!def?.sit) return { ok: false, message: 'Choose a chair, stool, or other sitting furniture.' };
+        const table = interiorFurnitureObjects.find(obj =>
+          obj.area === 'interior' && obj.id === requested?.tableId && /table|desk|counter/i.test(obj.key));
+        if (!table) return { ok: false, message: 'Select an existing table.' };
+        const descriptor = window.TableChairPlacement?.normalize?.(requested);
+        if (!descriptor || descriptor.mode !== window.TableChairPlacement.modeForTable(table.key)) {
+          return { ok: false, message: 'Choose orbit placement for round tables or a side for flat tables.' };
+        }
+        if (!hasFarmPermission('placeFurniture') || furnitureStock(def.itemKey, source) < 1) {
+          return { ok: false, message: 'You do not have permission or an available chair.' };
+        }
+        // The new chair exists as a mesh first, not a grid occupant: this permits table-child placement in a full room.
+        const result = makeDecorativeFurnitureMesh(table.col, table.row, key, interiorScene, 'interior');
+        if (!result) return { ok: false, message: 'Could not build chair furniture.' };
+        const chair = {
+          id: 'decor_' + Math.random().toString(36).slice(2, 10),
+          key, col: table.col, row: table.row, mesh: result.mesh, light: result.light,
+          sfxSource: result.sfxSource, area: 'interior', rotYDeg: 0, tableId: table.id,
+          tableAttachment: descriptor, npcStationId: null,
+        }; // Candidate is persisted only after the complete relative placement passes collision validation.
+        const discard = () => {
+          chair.npcStationId = 'unregistered_' + chair.id; // Cleanup must never remove another chair's legacy tile-based station.
+          disposeDecorativeFurniture(chair, false);
+        };
+        const tableDef = DECORATIVE_FURNITURE_DEFS[table.key];
+        if (!window.TableChairPlacement?.apply?.(chair.mesh, table.mesh, descriptor,
+          { width: tableDef?.fw || 1, depth: tableDef?.fd || 1 })
+          || !canKeepAttachedChairHere(chair, table)) {
+          discard();
+          return { ok: false, message: 'The attached chair would overlap a wall, doorway, or another object.' };
+        }
+        if (!consumeFurnitureStock(def.itemKey, source)) {
+          discard();
+          return { ok: false, message: 'Could not consume chair inventory.' };
+        }
+        interiorFurnitureObjects.push(chair);
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        if (chair.light) chair.light.position.set(chair.mesh.position.x,
+          chair.mesh.position.y + (def.light?.height || 0.6), chair.mesh.position.z);
+        window.Music?.unregisterFurnitureSfxSource(chair.sfxSource);
+        chair.sfxSource = window.Music?.registerFurnitureSfxSource(chair.area,
+          chair.mesh.position.x, chair.mesh.position.z, window.Music?.resolveFurnitureSfx(def));
+        window.FurnitureTableSystem?.registerPlacement('interior', chair, chair.mesh, def);
+        window.HudUpdate.refreshItemScroll();
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Chair placed directly at the table without occupying its own grid tile.' };
+      }
+
+      function setFurnitureTableAttachment(id, requested) {
+        const chair = interiorFurnitureObjects.find(obj => obj.id === id && obj.area === currentArea);
+        const def = chair && DECORATIVE_FURNITURE_DEFS[chair.key];
+        if (!chair || !def?.sit || chair.area !== 'interior') {
+          return { ok: false, message: 'Only indoor chairs and other sitting furniture can attach to a table.' };
+        }
+        if (!requested) {
+          if (!chair.tableAttachment) {
+            chair.tableId = '';
+            window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+            window.FarmEditor.saveFarmLayout();
+            return { ok: true, message: 'Table relationship cleared.' };
+          }
+          const tile = nearestDetachedChairTile(chair);
+          if (!tile) return { ok: false, message: 'No free tile near this table. Move the table or chair before detaching.' };
+          const prior = { tableId: chair.tableId, tableAttachment: chair.tableAttachment };
+          chair.tableAttachment = null;
+          chair.tableId = '';
+          const moved = moveDecorativeFurniture(chair.id, tile.col, tile.row, { area: chair.area });
+          if (!moved.ok) {
+            chair.tableId = prior.tableId;
+            chair.tableAttachment = prior.tableAttachment;
+            window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+            return moved;
+          }
+          return { ok: true, message: 'Chair detached onto a free floor tile.' };
+        }
+        const table = interiorFurnitureObjects.find(obj =>
+          obj.id === requested.tableId && obj.area === chair.area && obj.id !== chair.id
+          && /table|desk|counter/i.test(obj.key));
+        if (!table) return { ok: false, message: 'Choose a table in this room.' };
+        const descriptor = window.TableChairPlacement?.normalize?.(requested);
+        if (!descriptor) return { ok: false, message: 'The table-relative placement settings are invalid.' };
+        if (descriptor.mode !== window.TableChairPlacement.modeForTable(table.key)) {
+          return { ok: false, message: 'Use orbit placement for round tables and side placement for flat-edged tables.' };
+        }
+        const before = {
+          tableId: chair.tableId, tableAttachment: chair.tableAttachment,
+          position: chair.mesh.position.clone(), yaw: chair.mesh.rotation.y,
+        }; // Transaction snapshot used if the new placement cannot fit.
+        const tableDef = DECORATIVE_FURNITURE_DEFS[table.key];
+        const applied = window.TableChairPlacement.apply(chair.mesh, table.mesh, descriptor,
+          { width: tableDef?.fw || 1, depth: tableDef?.fd || 1 });
+        if (!applied || !canKeepAttachedChairHere(chair, table)) {
+          chair.mesh.position.copy(before.position);
+          chair.mesh.rotation.y = before.yaw;
+          chair.mesh.updateWorldMatrix?.(true, false);
+          return { ok: false, message: 'The chair would overlap another object, doorway, or leave the interior floor.' };
+        }
+        chair.tableId = table.id;
+        chair.tableAttachment = descriptor;
+        window.HobunjiFurnitureTableAttachmentMoved?.(chair);
+        window.FurnitureTableSystem?.registerPlacement(chair.area, chair, chair.mesh, def);
+        window.FarmEditor.saveFarmLayout();
+        return { ok: true, message: 'Chair attached. It follows the table and faces its center.' };
+      }
+
       function moveDecorativeFurniture(id, col, row, options = {}) {
         const area = options.area || currentArea; // Partition migration may move indoor furniture while the player is still outside.
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === area);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (obj.tableAttachment) return { ok:false, message:'Detach this chair before moving it independently.' };
         const dimensions = obj.key === 'rug' && options.dimensions ? { ...options.dimensions, rugLayer: obj.rugLayer || 0 } : obj; // Two-corner moves can resize while retaining the rug's stack layer.
         if (!canPlaceDecorativeFurnitureAt(col, row, obj.id, obj.key, obj.rotYDeg || 0, area, dimensions)) return { ok: false, message: 'Cannot move furniture there.' };
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, dimensions);
+        const nextX = col + fw / 2, nextZ = row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, obj.rotYDeg || 0)) {
+          return { ok: false, message: 'Attached chairs would collide or leave the floor. Adjust the table placement first.' };
+        }
         if (obj.key === 'rug' && options.dimensions) {
           obj.widthTiles = dimensions.widthTiles; obj.heightTiles = dimensions.heightTiles; // Persist the moved rug's freshly selected rectangle.
           const farmhouseInset = obj.area === 'interior' ? 1 : 0; // Match initial placement when an interior rug is moved or resized.
           obj.mesh.scale.set(Math.max(0.05, dimensions.widthTiles - farmhouseInset) / def.fw, 1, Math.max(0.05, dimensions.heightTiles - farmhouseInset) / def.fd);
         }
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         obj.col = col; obj.row = row;
         const centerX = col + fw * 0.5; // Moved furniture center used for both visual placement and exact farm grounding.
         const centerZ = row + fd * 0.5; // Moved furniture center paired with centerX for the continuous height sample.
@@ -3890,7 +4142,7 @@
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, col + fw * 0.5, row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(col, row));
         if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, col, row, fw, fd, obj.rotYDeg || 0);
-        registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+        obj.npcStationId = registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         if (!options.skipSave) window.FarmEditor.saveFarmLayout(); // The caller batches migration saves only after all furniture and rooms have loaded.
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} moved.` };
@@ -3910,7 +4162,7 @@
         const changes = []; // Visible mobile diagnostics report displaced saved items rather than silently losing them.
         const built = housePieces.filter(piece => piece.stage === 'built'); // Search valid rooms before considering storage recovery.
         for (const obj of [...interiorFurnitureObjects]) {
-          if (obj.area !== 'interior' || obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
           const { fw, fd } = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           const clearFootprint = (c, r) => {
             for (let y = r; y < r + fd; y++) for (let x = c; x < c + fw; x++) {
@@ -3973,13 +4225,19 @@
       function rotateDecorativeFurniture(id, degrees = 45) {
         const obj = interiorFurnitureObjects.find(o => o.id === id && o.area === currentArea);
         if (!obj) return { ok: false, message: 'Furniture not found.' };
+        if (obj.tableAttachment) return { ok:false, message:'A table-attached chair always faces its table. Detach it before rotating.' };
         const nextRot = ((obj.rotYDeg || 0) + degrees + 360) % 360;
         if (!canPlaceDecorativeFurnitureAt(obj.col, obj.row, obj.id, obj.key, nextRot, currentArea, obj)) {
           return { ok: false, message: 'Cannot rotate here — the turned furniture would overlap a wall or another item.' };
         }
         const def = DECORATIVE_FURNITURE_DEFS[obj.key];
         const { fw, fd } = decorativeFurnitureSize(obj.key, nextRot, obj);
-        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+        const nextX = obj.col + fw / 2, nextZ = obj.row + fd / 2;
+        if (!canTransformTableWithAttachedChairs(obj, nextX, furnitureSurfaceYAtWorld(obj.area, nextX, nextZ),
+          nextZ, nextRot)) {
+          return { ok: false, message: 'Rotation would place an attached chair outside the floor or inside furniture.' };
+        }
+        unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
         obj.rotYDeg = nextRot;
         obj.mesh.rotation.y = nextRot * Math.PI / 180;
@@ -3992,7 +4250,7 @@
         obj.sfxSource = window.Music?.registerFurnitureSfxSource(obj.area, obj.col + fw * 0.5, obj.row + fd * 0.5, window.Music?.resolveFurnitureSfx(def));
         if (obj.area === 'interior') Object.assign(obj, furnitureOwnerFields(obj.col, obj.row));
         if (obj.area === 'farm') registerFarmDecorativeInteractable(obj.key, obj.col, obj.row, fw, fd, nextRot);
-        registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area));
+        obj.npcStationId = registerChairNpcStation(obj.key, obj.col, obj.row, nextRot, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
         window.FurnitureTableSystem?.registerPlacement(obj.area, obj, obj.mesh, def);
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${def?.icon || '🪑'} ${def?.name || 'Furniture'} rotated 45°.` };
@@ -4010,7 +4268,7 @@
         window.FarmhouseRoomPlanner?.transformWithPiece?.(pieceId, oldRect, newRect, rotateClockwise); // Room-owned walls remain in local coordinates.
         const oldRoom = interiorRoomRect({ ...oldRect, id: pieceId }); // Cached old indoor origin before the geometry rebuild.
         interiorFurnitureObjects.filter(o => o.area === 'interior').forEach(obj => {
-          if (obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) return;
+          if (obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) return;
           const insideOld = oldRoom && obj.col >= oldRoom.col && obj.col < oldRoom.col + oldRoom.w
             && obj.row >= oldRoom.row && obj.row < oldRoom.row + oldRoom.h;
           if (obj.ownerPieceId !== pieceId && !(obj.ownerPieceId == null && insideOld)) return;
@@ -4037,7 +4295,7 @@
 
       function syncFurnitureWithIndoorRoomOrigins() {
         for (const obj of interiorFurnitureObjects) {
-          if (obj.area !== 'interior' || obj.derivedLinkedWindow || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
+          if (obj.area !== 'interior' || obj.derivedLinkedWindow || obj.tableAttachment || window.WallOrnamentPlacement?.isPlayerMounted?.(obj.id)) continue;
           const piece = housePieces.find(p => p.id === obj.ownerPieceId && p.stage === 'built')
             || housePieces.find(p => p.stage === 'built' && obj.col >= p.col * 2 && obj.col < (p.col + p.w) * 2
               && obj.row >= p.row * 2 && obj.row < (p.row + p.h) * 2); // Compatibility with pre-room-local legacy furniture.
@@ -4050,13 +4308,13 @@
           if (obj.col === col && obj.row === row) continue;
           const size = decorativeFurnitureSize(obj.key, obj.rotYDeg || 0, obj);
           const def = DECORATIVE_FURNITURE_DEFS[obj.key];
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
           obj.col = col; obj.row = row;
           obj.mesh.position.set(col + size.fw * 0.5, obj.key === 'rug' ? Math.max(0, Math.min(32, Number(obj.rugLayer) || 0)) * 0.032 : 0, row + size.fd * 0.5); // Room moves preserve the rug's own visual stack level.
           if (obj.light) obj.light.position.set(col + size.fw * 0.5, def?.light?.height || 0.6, row + size.fd * 0.5);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           obj.sfxSource = window.Music?.registerFurnitureSfxSource('interior', col + size.fw * 0.5, row + size.fd * 0.5, window.Music?.resolveFurnitureSfx(def));
-          registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area));
+          obj.npcStationId = registerChairNpcStation(obj.key, col, row, obj.rotYDeg || 0, normalizeNpcArea(obj.area), null, null, obj.id, obj.npcStationId);
           window.FurnitureTableSystem?.registerPlacement('interior', obj, obj.mesh, def);
         }
       }
@@ -4072,7 +4330,7 @@
           if (obj.light) s.remove(obj.light);
           window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
           if (obj.area === 'farm' && isFarmDecorativeInteractable(obj.key)) worldObjects.delete(obj.col + ',' + obj.row);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
+          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area), obj.npcStationId);
         });
         interiorFurnitureObjects.length = 0;
       }
@@ -4095,18 +4353,9 @@
         if (!toRemove.length) return 0;
         const store = _loadWorldStorage();
         toRemove.forEach(obj => {
-          interiorScene.remove(obj.mesh);
-          obj.mesh.traverse && obj.mesh.traverse(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-          });
-          if (obj.light) interiorScene.remove(obj.light);
-          window.Music?.unregisterFurnitureSfxSource(obj.sfxSource);
-          unregisterChairNpcStation(obj.key, obj.col, obj.row, normalizeNpcArea(obj.area));
           const itemKey = DECORATIVE_FURNITURE_DEFS[obj.key]?.itemKey;
+          disposeDecorativeFurniture(obj, false); // Also detaches surviving chairs, unregisters surface/NPC state and disposes meshes.
           if (itemKey) store[itemKey] = (store[itemKey] || 0) + 1;
-          const idx = interiorFurnitureObjects.indexOf(obj);
-          if (idx >= 0) interiorFurnitureObjects.splice(idx, 1);
         });
         _saveWorldStorage(store);
         return toRemove.length;
@@ -12033,16 +12282,19 @@
       // placed — no map author has to hand-add an npcStations entry for
       // player-placed furniture. Deterministic id (area+tile) so placing the
       // same spot twice is idempotent and a schedule rule survives a reload.
-      function furnitureNpcStationId(area, col, row) {
-        return `furniture_chair_${area}_${col}_${row}`;
+      function furnitureNpcStationId(area, col, row, furnitureId = null) {
+        // Unique instance ids preserve several independent chairs within the same navigation tile.
+        return furnitureId ? `furniture_chair_${area}_${furnitureId}` : `furniture_chair_${area}_${col}_${row}`;
       }
-      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt) {
+      function registerChairNpcStation(furnitureKey, col, row, rotYDeg, area, extraRoles, lookAt, furnitureId = null, stationId = null) {
         const def = DECORATIVE_FURNITURE_DEFS[furnitureKey];
         if (!def?.sit) return null;
-        const id = furnitureNpcStationId(area, col, row);
+        const id = stationId || furnitureNpcStationId(area, col, row, furnitureId);
+        // NPC pathfinding indexes whole grid tiles; the furniture mesh may have a fractional center.
+        const tileCol = Math.floor(col), tileRow = Math.floor(row);
         registerNpcStations([{
-          id, label: def.name,
-          area, c: col, r: row, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
+          id, label: def.name, furnitureId: furnitureId || null,
+          area, c: tileCol, r: tileRow, rotY: rotYDeg || 0, pose: 'sit', furnitureKey, seatIndex: 0,
           // Every sittable piece of furniture is automatically a 'sit'
           // free-time opportunity (design doc §14/§16) — no per-chair
           // authoring needed for the Activity Planner's free-time/break
@@ -12060,9 +12312,9 @@
         }], area);
         return id;
       }
-      function unregisterChairNpcStation(furnitureKey, col, row, area) {
+      function unregisterChairNpcStation(furnitureKey, col, row, area, stationId = null) {
         if (!DECORATIVE_FURNITURE_DEFS[furnitureKey]?.sit) return;
-        npcStationsById.delete(furnitureNpcStationId(area, col, row));
+        npcStationsById.delete(stationId || furnitureNpcStationId(area, col, row));
       }
 
       function sceneForNpcArea(area) {
@@ -14289,8 +14541,6 @@
               _markFurnitureEdgeId(model);
               bScene.add(model);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
-              const seatStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0, normalizeNpcArea(mapId), f.roles, f.lookAt);
-              if (seatStationId) registeredStationIds.push(seatStationId);
               if (furnitureKey === 'trough' && f.barnId != null && f.troughIndex != null) {
                 const authoredData = window.AuthoredFurniture?.peek('trough');
                 window.FarmTroughs.registerMesh(f.barnId, f.troughIndex, model, authoredData);
@@ -14308,7 +14558,12 @@
               bScene.add(ph);
               furnitureSfxSource = window.Music?.registerFurnitureSfxSource(mapId, bx, bz, window.Music?.resolveFurnitureSfx(def));
             }
-            window.FurnitureTableSystem?.registerPlacement(mapId, { ...f, key:furnitureKey }, renderedFurniture, def); // Interior records use the same explicit chair-to-table ids as exterior and locale furniture.
+            // Keep a live record shared by the registry and NPC stations, so the chair can move if its table is registered later.
+            const furnitureRecord = { ...f, key: furnitureKey, area: mapId, mesh: renderedFurniture };
+            furnitureRecord.npcStationId = registerChairNpcStation(furnitureKey, f.col, f.row, f.rotY || 0,
+              normalizeNpcArea(mapId), f.roles, f.lookAt, f.id);
+            if (furnitureRecord.npcStationId) registeredStationIds.push(furnitureRecord.npcStationId);
+            window.FurnitureTableSystem?.registerPlacement(mapId, furnitureRecord, renderedFurniture, def);
             if (def?.walkable !== true) buildingCameraFurniture.push(renderedFurniture); // Nonwalkable furniture blocks the camera; rugs and other traversable floor decor do not.
             renderedFurniture.userData.surfaceFoliageId = f.id; // Captured per-instance growth targets from the interior editor.
             renderedFurniture.userData.mapEditorRef = {
@@ -31065,16 +31320,12 @@
       window.FarmhouseRoomPlanner?.init({
         interiorCols: INTERIOR_COLS, interiorRows: INTERIOR_ROWS, // Fallback gap corridors cannot exceed the live indoor grid.
         canEdit: () => currentArea === 'interior' && hasFarmPermission('placeFurniture'),
-        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o => o.area === 'interior'
-          && c >= o.col && r >= o.row
-          && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
-          && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd), // Door relocation never discards an owned decoration.
+        canHostDoor: (c, r) => !interiorFurnitureObjects.some(o =>
+          o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r)), // Attached chairs guard their actual positions.
         canBlockCell: (c, r) => {
           const occupiedByPlayer = Math.floor(player.x / TILE) === c && Math.floor(player.y / TILE) === r; // Never build a wall through the player.
-          const occupiedByFurniture = interiorFurnitureObjects.some(o => o.area === 'interior'
-            && c >= o.col && r >= o.row
-            && c < o.col + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fw
-            && r < o.row + decorativeFurnitureSize(o.key, o.rotYDeg || 0, o).fd);
+          const occupiedByFurniture = interiorFurnitureObjects.some(o =>
+            o.area === 'interior' && decorativeFurnitureClaimsInteriorCell(o, c, r));
           return !occupiedByPlayer && !occupiedByFurniture; // Prevent new walls from trapping owned furniture or people.
         },
         rebuild: () => rebuildInteriorGeometry(),
@@ -31094,6 +31345,8 @@
         getArmedFurniturePlacementKey,
         armFurnitureMove,
         getArmedFurnitureMoveId,
+        setTableAttachment: setFurnitureTableAttachment,
+        placeTableAttachedChair,
         getPlacedFurniture: () => [
           ...interiorFurnitureObjects.filter(o => o.area === currentArea).map(o => ({ ...o, placementKind: 'decorative' })),
           ...(currentArea === 'farm' ? [...processingFurnitureObjects].map(o => ({ ...o, key: o.furnitureKey, area: 'farm', placementKind: 'processing' })) : []),

@@ -403,4 +403,3 @@ if (realThree) {
 }
 
 console.log('Substance Cover Shell tests passed.')
-
