@@ -502,8 +502,7 @@
       if(lich.specialLichId==='azgarlu') {
         const pillars=window.DevRandomRuinLichThemes?.spawnBossPillar?.(lich,target)||0; // The named boss summons preset-footprint exploding pillars instead of ordinary Hronal earth spells.
         if(pillars>0){lastEvent='azgarlu:pillar-cast';return true;}
-        if(currentLichArea()!=='map_dev_arena')return false; // A blocked sanctum spawn must never silently turn back into a different attack.
-        return !!makeEruptingEarth(lich,target,4*(windupS+strikeS)); // Isolated Testing Arena has no dungeon composer: retain the existing visible eruption there.
+        return false; // An unavailable landing footprint never becomes the old Hronal spell, in the dungeon OR Testing Arena.
       }
       return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS)); // Ordinary Hronal liches are unchanged.
     }
@@ -1911,6 +1910,7 @@
   function updateRuntime(dt) {
     if (!(dt > 0)) return;
     if (!isArena()) {
+      window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // Arena summons cannot outlive a map switch.
       window.SpecialHarlyaoLiches?.clear?.(); // Dispose charge remnants when leaving the arena or dungeon.
       for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
       for (const erupt of [...eruptions]) disposeHronalEruption(erupt); // Overlapping Erupting Earth warnings/lava are arena-local scene state.
@@ -1931,6 +1931,8 @@
       updateEntrancerMarker(dt);
       return;
     }
+    if(currentLichArea()==='map_dev_arena')window.DevRandomRuinLichThemes?.updateArenaBossPillars?.(dt); // Test Arena uses the same pillar rise, pulses and explosion as a real Hronal ruin.
+    else window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // No phantom arena columns when gameplay continues inside a generated ruin.
     window.SpecialHarlyaoLiches?.updateEffects?.(dt); // Bound charged-plasm particle work to one tick per frame.
     updateProjectiles(dt);
     updateEruptions(dt);
