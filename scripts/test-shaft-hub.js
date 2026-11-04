@@ -98,6 +98,20 @@ for(const start of [{x:20,z:1},{x:1,z:25},{x:100,z:30},{x:32,z:100}]){
       'every route tile has a broad collision/support rectangle');
 }
 
+// Generated entrance rooms can lie DEEP INSIDE the generator's rectangular
+// extent. The connector must route around genuinely occupied cells, not refuse
+// all empty space inside the original world bounding rectangle.
+{
+  const occupied=new Set();
+  for(let z=15;z<42;z++)for(let x=15;x<36;x++)occupied.add(x+','+z);
+  for(const start of [{x:25,z:14},{x:36,z:26},{x:25,z:42},{x:14,z:26}]){
+    const p=Corridor.route({start,end:{x:130,z:65},width:3,maxX:190,maxZ:130,
+      existing:occupied,mainBounds:null,shaftBounds:{minX:130,minZ:40,maxX:179,maxZ:89}});
+    assert(p.ok,'inner V50 entrance must connect through unused space: '+JSON.stringify(start));
+    assert(p.path.every(cell=>!occupied.has(cell.x+','+cell.z)),'hallway may not cut through occupied V50 room floor');
+  }
+}
+
 // Real connector wiring using lightweight Three/occupancy doubles.
 // No real browser is required to prove the returned floor tiles meet both ends.
 class Group {
