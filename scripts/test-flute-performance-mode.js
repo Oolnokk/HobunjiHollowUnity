@@ -40,11 +40,15 @@ async function missingFluteSample() {
   const listeners = {}; // Captures the existing iframe load capture hook, not a duplicate audio router.
   const fetched = []; // Verifies that the flute never requests the Kurraya recording.
   const played = []; // Verifies sampled-note bridge calls are released after the optional file lookup.
+  let audioWakeCalls = 0; // A missing optional sound must not await AudioContext.resume() in an untrusted iframe load.
   class Frame {}
   const frame = new Frame();
   frame.getAttribute = () => 'assets/minigames/lyre-performance.html?instrument=flute';
   frame.contentDocument = {getElementById:id => id === 'analysisReadout' ? {textContent:''} : id === 'audioFile' ? {} : null};
-  frame.contentWindow = {HobunjiMusicControlBridge:{wakeAudio:async()=>{},noteDown:(index)=>played.push(index)}};
+  frame.contentWindow = {HobunjiMusicControlBridge:{
+    wakeAudio:() => {audioWakeCalls++;return new Promise(()=>{});}, // Simulates a mobile browser waiting indefinitely for a user gesture.
+    noteDown:(index)=>played.push(index),
+  }};
   const doc = {addEventListener:(type,handler) => listeners[type] = handler};
   const win = {__farmLog:noop};
   vm.runInNewContext(read('docs/js/kurraya-instrument.js'), {
@@ -53,7 +57,11 @@ async function missingFluteSample() {
   });
   win.KurrayaInstrument.init({});
   listeners.load({target:frame});
-  await frame.contentWindow.HobunjiMusicControlBridge.noteDown(2);
+  await Promise.race([
+    frame.contentWindow.HobunjiMusicControlBridge.noteDown(2),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('flute fallback was blocked by autoplay audio wake')),150)),
+  ]);
+  assert.equal(audioWakeCalls,0,'404 path must not attempt audio activation before a trusted input');
   assert.deepEqual(fetched,['assets/audio/music/instruments/sfx_flute_note.m4a']);
   assert.deepEqual(played,[2],'404 is an expected MIDI-flute fallback, not a blocked performance');
   win.KurrayaInstrument.beginFlute();
