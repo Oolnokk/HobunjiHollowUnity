@@ -25,13 +25,13 @@
     return root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'})
       ||new THREE.MeshBasicMaterial({color:0x7a746b}); // Shared V50 ruin stone, not untextured shaft gray.
   }
-  function visual(tiles,THREE,parent,baseY){
+  function visual(tiles,THREE,parent,baseY,allWalkable){
     const group=new THREE.Group(); // Owns all corridor meshes for one ruin session.
     group.name='ruin-physical-shaft-connector';
     const floorMat=stoneMaterial(THREE),wallMat=floorMat.clone();
     const floors=new THREE.InstancedMesh(new THREE.BoxGeometry(1,.12,1),floorMat,tiles.length);
     const mat=new THREE.Matrix4();
-    const keys=new Set(tiles.map(([c,r])=>key(c,r)));
+    const keys=allWalkable||new Set(tiles.map(([c,r])=>key(c,r))); // Do not put walls across the existing ruin entrance or the shaft's open mouth.
     const wallsX=[],wallsZ=[];
     for(let i=0;i<tiles.length;i++){
       const [c,r]=tiles[i];
@@ -52,7 +52,7 @@
     parent.add(group);
     return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
   }
-  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor}={}){
+  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,getPlayerPosition}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!makeTile)
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
@@ -60,7 +60,7 @@
     const anchorZ=Math.ceil((rec.rows+spacing)/spacing)*spacing;
     const plan=RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
-    const shaftOptions={seed,floors:plan.floorCount,chambers:true,shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W'};
+    const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:8,shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W'}; // Upper exits terminate at real side-wall thresholds, ready for future wings.
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=anchorX-Math.floor(hub.cols/2),originZ=anchorZ-Math.floor(hub.rows/2);
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
@@ -103,7 +103,7 @@
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
     for(const [c,r] of route.tiles)DS.registerSurface({id:scope+'-'+c+','+r,scope,
       bounds:{minX:c,maxX:c+1,minZ:r,maxZ:r+1},topY:placed.grid.baseY,priority:1});
-    const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY);
+    const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     // Tile occupancy was created before the old post-generation shaft phase.
     // Rebuild it against the enlarged record so the ordinary game can walk all
@@ -114,8 +114,8 @@
         floorSet:rec.floorSet,grid:rec.grid,solidType:makeTile(false).type,
         walls,solidRoots:[ruin.localeRoot],mechanisms:ruin.mechanisms,transitDoors:ruin.transitDoors,
         activators:ruin.activators,pushBlocks:ruin.pushBlocks,
-        getPlayerPosition:()=>({x:root.__ruinConnectorPlayerX?.()??-1,z:root.__ruinConnectorPlayerZ?.()??-1})});
-      // The caller may replace this getter with its existing injected player adapter.
+        getPlayerPosition:typeof getPlayerPosition==='function'?getPlayerPosition:()=>({x:-1,z:-1})});
+      // Reuse the existing player's position callback for occupancy and mobile input.
     }
     ruin.shaftConnectorCleanup=()=>{unmountVisual();DS.clearScope(scope);};
     return {plan,hub:placed,route,registered};
