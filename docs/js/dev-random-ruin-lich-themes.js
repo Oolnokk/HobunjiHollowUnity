@@ -41,8 +41,8 @@
   const pointOf = (actor, tile) => ({ x:(Number(actor.x) || 0) / tile, z:(Number(actor.y) || 0) / tile });
   const floorY = (kit, x, z) => Number(kit.sampleSupport(x, z)?.y) || Number(world?.context?.meta?.floorSurfaceY) || 0;
   const cellExists = (x, z) => !!world?.context?.floorSet?.has(tileKey(x, z));
-  const clearAt = (x, z, y) => cellExists(x, z) && !window.DevRandomRuinTileOccupancy?.solidAt?.(x, z, .27, y + .35)
-    && (!world?.isTestingArena || world.kit.deps?.canOccupyAt?.(x*world.kit.deps.TILE,z*world.kit.deps.TILE,world.kit.deps.TILE*.32)!==false); // Arena lacks the ruin occupancy model; its native terrain sweep remains authoritative.
+  const clearAt = (x, z, y) => cellExists(x, z) && (world?.isTestingArena || !window.DevRandomRuinTileOccupancy?.solidAt?.(x, z, .27, y + .35))
+    && (!world?.isTestingArena || world.kit.deps?.canOccupyAt?.(x*world.kit.deps.TILE,z*world.kit.deps.TILE,world.kit.deps.TILE*.32)!==false); // Arena consults native terrain, not the last generated ruin's occupancy.
   function roomAt(point) {
     if (!world) return null;
     for (const room of world.rooms) {
@@ -543,15 +543,16 @@
     group.scale.y=summoned?.001:1; // Group pivot stays at ground level so only the height rises visibly.
     world.group.add(group);
     const tag=summoned?'lich-theme-boss-'+id:'lich-theme-pillars'; // Separate tag allows single boss-pillar collision cleanup.
-    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag}; // Same pulse/explode state machine for both variants.
+    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena}; // Only generated ruins own DevRandomRuinTileOccupancy registration.
     world.pillars.push(pillar);
-    window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
-      {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed floor footprint, nonblocking until fully emerged.
+    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
+      {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
     return pillar;
   }
   function clearArenaBossPillars() {
     if(!arenaWorld)return;
     const active=arenaWorld; // Teardown acts on this one arena scene even if a generated ruin world has since become active.
+    active.unregisterFootprint?.(); // Remove the Testing Arena's native player/NPC/projectile blocker before disposing its meshes.
     for(const pillar of active.pillars)releaseBossPillar(pillar);
     for(const burst of active.bursts){burst.mesh.geometry?.dispose?.();burst.mesh.material?.dispose?.();}
     active.group.parent?.remove?.(active.group);
@@ -578,7 +579,14 @@
     const surface=Number(deps.worldSurfaceY?.(boss.x,boss.y))||0;
     arenaWorld={scene:boss.scene,isTestingArena:true,theme:'hronal',kit,group,context:{floorSet,root:group,meta:{floorSurfaceY:surface}},
       rooms:[{id:'arena',bounds:{minX,maxX,minZ,maxZ}}],ceilingY:surface+4.2,
-      pillars:[],bossPillarSequence:0,bursts:[],lights:[],dummy:new THREE.Object3D()}; // Shared makeBoxExplodingPillar/updatePillars/updateBursts consume this same shape.
+      pillars:[],bossPillarSequence:0,bursts:[],lights:[],dummy:new THREE.Object3D(),unregisterFootprint:null}; // Same rising-pillar state machine, with an arena-local physical blocker.
+    const arena=arenaWorld; // Stable provider identity; retired arenas cannot block later scenes.
+    arena.unregisterFootprint=window.AreaFootprintBlockers?.register?.('azgarlu-arena-pillars',{
+      area:'map_dev_arena',enabled:()=>arenaWorld===arena&&!!arena.group.parent,
+      blocksBox:(x,z,half=0,worldY=null)=>arena.pillars.some(p=>p.phase!=='emerging'&&p.phase!=='spent'
+        && Math.abs(x-p.x)<=half+.31&&Math.abs(z-p.z)<=half+.31
+        && (worldY==null||(worldY>=p.y&&worldY<=p.y+p.height))), // Player, enemies and projectiles all use native area footprint collision.
+    })||null;
     return arenaWorld;
   }
   function updateArenaBossPillars(dt) {
@@ -624,7 +632,7 @@
     return 0; // No pillar is created without a clear, real piece of ruin floor.
   }
   function releaseBossPillar(pillar) {
-    window.DevRandomRuinTileOccupancy?.clearSolids?.(pillar.tag); // Remove only this summon; existing structural pillars remain unchanged.
+    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.clearSolids?.(pillar.tag); // Arena summons never touch the generated-ruin collision registry.
     pillar.group.parent?.remove?.(pillar.group);
     pillar.group.traverse?.(node=>{
       if(!node.isMesh)return;
