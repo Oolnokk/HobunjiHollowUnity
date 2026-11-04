@@ -24,7 +24,7 @@ assert.match(geneticsSource, /puktuk_idle\.png[\s\S]*puktuk_run1\.png[\s\S]*pukt
 assert.match(geneticsSource, /label: 'Puktuk',[\s\S]*?hostile: false,[\s\S]*?modelWidth: 2\.1,[\s\S]*?spriteAspect: 0\.43636/, 'Puktuk runtime registration is explicitly non-hostile with authored dimensions');
 assert.match(wildlifeSource, /label: 'Puktuk',[\s\S]*?hostile: false,[\s\S]*?modelWidth: 2\.1,[\s\S]*?spriteAspect: 0\.43636/, 'Wildlife fallback preserves the same non-hostile Puktuk metadata');
 assert.match(geneticsSource, /itemKey: 'puktukWool'[\s\S]*verb: 'Shear'/, 'Puktuk livestock production uses the existing wool item');
-assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat'], 'Puktuk has its own meat drop pool');
+assert.deepEqual(loot.pools?.creature_puktuk?.entries?.map(entry => entry.itemKey), ['puktukMeat', 'puktukHide'], 'Puktuk drops both meat and a fur-hood-compatible hide');
 assert.match(cookingSource, /"puktukWool"\s*:\s*\{[\s\S]*?"name"\s*:\s*"Puktuk Wool"[\s\S]*?"Heavy"/, 'Puktuk Wool remains tagged Heavy in authored cooking data');
 assert.match(wildlifeSource, /function denSpeciesFor\(zoneId, cavernMapId\)[\s\S]*?_denspecies[\s\S]*?return pool\[Math\.floor\(rng\(\) \* pool\.length\)\]/, 'Explicit denSpecies resolves to one deterministic exact species per den');
 assert.match(wildlifeSource, /const explicitSpeciesKey = denSpeciesFor\(zoneId, cavernMapId\)/, 'Exterior den guards use the shared exact per-den species resolver');
