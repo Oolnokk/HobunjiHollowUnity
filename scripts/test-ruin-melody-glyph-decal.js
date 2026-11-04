@@ -65,6 +65,8 @@ assert.equal(inscription.diagnostics().fallback,false);
 assert.equal(inscription.diagnostics().rows,1);
 assert.equal(glyphs().every(glyph=>glyph.raycast()===undefined),true,'decal art never steals gameplay hits');
 assert.equal(inscription.setNotes(first.slice()),true);
+assert.equal(inscription.matchesNotes(first),true,'an unchanged generated sequence is recognized without allocations');
+assert.equal(inscription.matchesNotes([0,7,1,2,7]),false,'note order determines the inscription');
 assert.equal(inscription.group.children.length,first.length+1,'reapplying the same notes is idempotent');
 
 const oldMaterial=glyphs()[0].material; // Verifies that swapping a melody does not leak its previous material wrappers.
