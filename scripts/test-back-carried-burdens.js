@@ -51,12 +51,13 @@ function testRuntime() {
   const scene=new Group(),player={x:4.5*64,y:3.5*64,health:100,angle:0,lastAttackReceivedAt:100};
   const grid=Array.from({length:10},()=>Array.from({length:10},()=>({type:'grass'})));
   let activeScene=scene; // Simulates area unload during bomb detonation without creating WebGL art.
+  let currentArea='map_back_test'; // Mutable map identity exercises moving one physical burden between populated zones.
   let clock=1000; // Deterministic fuse clock for the witch-bomb behavior.
-  const deps={player,TILE:64,getCurrentArea:()=> 'map_back_test',getActiveScene:()=>activeScene,
+  const deps={player,TILE:64,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
   const window={
     THREE:{Vector3,Group},Combat:{deps,update(){},init(){}},
-    GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=> 'map_back_test',getActiveGrid:()=>grid},
+    GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
     ResourceSystem:{spendFooting(){}},ActionArcUI:{stowForCarry(){}},
   };
@@ -92,6 +93,30 @@ function testRuntime() {
   assert.equal(causes[0],'carrier-direct-hit');
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
+
+  // A carried shattercask moving between rooms must never replace a static
+  // shattercask with the same area-local ID, or respawn at its original source.
+  const travel=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'same-room-local-id',kind:'shattercask',hanging:false,data:{carryable:{}}});
+  assert(window.Shattercasks.pickUp(travel));
+  assert(window.Shattercasks.stowOnBack());
+  const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
+  currentArea='map_back_destination';
+  activeScene=secondScene;
+  const incumbent=window.Shattercasks.registerBurden({mapId:currentArea,scene:secondScene,group:new Group(),
+    id:'same-room-local-id',kind:'shattercask',hanging:false,data:{carryable:{}}});
+  window.Shattercasks.tick(.2);
+  assert.equal(window.Shattercasks.getBurden(incumbent.id,currentArea),incumbent,
+    'incoming back burden may not overwrite destination static furniture');
+  assert.equal(window.Shattercasks.getBurden(travel.id,currentArea),travel,
+    'the back burden has its own live identity at its destination');
+  assert.notEqual(travel.id,incumbent.id,'conflicting area-local IDs must be disambiguated');
+  assert.equal(window.Shattercasks.getBurden('same-room-local-id','map_back_test'),null,
+    'the original room no longer owns the carried object');
+  assert.equal(window.Shattercasks.backCarriedInfo()?.id,travel.id);
+  window.Shattercasks.discardBurden(travel);
+  currentArea='map_back_test';
+  activeScene=scene;
 
   const bomb=window.Shattercasks.registerBurden({mapId:'map_back_test',scene,group:new Group(),
     id:'test-back-witch-bomb',kind:'hronalWitchBomb',hanging:false,data:{carryable:{}}});
