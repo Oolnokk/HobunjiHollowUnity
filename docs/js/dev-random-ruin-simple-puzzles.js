@@ -1754,14 +1754,18 @@
   }
 
   function buildSwappableHallwayModules(context,rng,usedHallways) {
+    const allowTraps=context.puzzleOptions?.hallwayTraps!==false; // Keeps legacy glyph/melody/trap hallway modules independently optional.
+    const allowChains=context.puzzleOptions?.ropeChain!==false; // Makes rope-chain hallway toggles effective even when trap hallways are disabled.
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
     const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
     for(const hall of selected){
       const roll=rng();
-      if(roll<.3&&state.context.puzzleOptions?.ropeChain!==false){
+      if(allowChains&&(!allowTraps||roll<.3)){
         const chain=buildRopeChainHallway(context,rng,hall,usedHallways);
         if(chain)continue;
-      }else if(roll<.5){
+      }
+      if(!allowTraps)continue;
+      if(roll<.5){
         const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
         if(chord)continue;
       }else if(roll<.72){
@@ -2047,7 +2051,7 @@
         freeRooms.splice(freeRooms.indexOf(room),1);usedRooms.add(room.id);break;
       }
     }
-    if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     for(const composer of composers){ // Late composers take whatever rooms the standalone modules left free.
       try{composer.buildLate?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildLate failed',error);}
     }
