@@ -111,7 +111,7 @@
     ['js/npc-gifting.js?v=20261102h3fbdd71', () => !!window.NpcGifting],
     ['js/favor-heart-balance.js?v=20261024h930df98', () => Number(window.NpcFavorBalance?.version) >= 1],
     ['config/npcs/clothing-patterns.js?v=20260924npcweave1', () => Number(window.HobunjiNpcClothingPatterns?.version) >= 1],
-    ['js/npc-wardrobe.js?v=20261102h93f8258', () => !!window.NpcWardrobe],
+    ['js/npc-wardrobe.js?v=20261104familylocks1', () => !!window.NpcWardrobe],
     ['js/clothing-weaving-npc-compat.js?v=20260913a', () => Number(window.ClothingWeavingNpcCompat?.version) >= 1],
     ['js/npc-furniture-wardrobe-bridge-v5.js?v=20261101spousewardrobe2', () => Number(window.NpcFurnitureWardrobes?.version) >= 5],
     ['config/npcs/social-relations.js?v=20261013h9b7e0bc', () => !!window.HobunjiNpcSocialRelationsConfig],

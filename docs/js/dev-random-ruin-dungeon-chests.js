@@ -116,10 +116,21 @@
     chest.control = {
       kind:'dungeonChest', object:group, promptRoot:group, range:1.6, priority:22, claimAction1:true, touchIcon:'🗝️',
       label:() => `Open ${look.name} Dungeon Chest`,
-      onPress:() => open(chest),
+      onPress:() => pickLock(chest),
     };
     chests.add(chest);
     return chest;
+  }
+
+  function pickLock(chest) {
+    if (!chest || chest.opened) return false;
+    const started = window.ChestLockpicking?.open?.({
+      id: chest.id, title: chest.tierName + ' Dungeon Chest', tier: chest.tier,
+      valid: () => !chest.opened && inScene(chest.group), // Avoid granting loot after a generated chest is removed.
+      onSuccess: () => open(chest), // Reuse the existing reward, sound, animation and activity event path.
+    });
+    if (!started && !window.ChestLockpicking?.isActive?.()) deps?.showToast?.('Lockpicking unavailable.', false);
+    return !!started;
   }
 
   function open(chest) {

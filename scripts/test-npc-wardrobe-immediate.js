@@ -312,7 +312,7 @@ fallbackWalker.area = 'map_i_test_bedroom';
     equippedCosmetics: ['restored_offscreen_tunic'],
     appliedDyes: { TORSO: 'dye:CLOTH:offscreen_restored' },
   };
-  assert.equal(snapshot.version, 3, 'wardrobe save format includes full worn garment metadata');
+  assert.equal(snapshot.version, 4, 'wardrobe save format includes outfit metadata and optional picked storage locks');
   assert.deepEqual(snapshot.outfits.test_npc.equippedCosmetics, ['rugged_poncho'], 'corrected worn outfit is persisted');
   assert.equal(snapshot.outfits.test_npc.appliedDyes.CLOTH, 'dye:CLOTH:old_primary', 'corrected outfit dyes are persisted');
 
