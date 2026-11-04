@@ -16,6 +16,7 @@
   const DEATH_FALLBACK_DURATION_S = 0.7; // Simple local tip-over when the recorded clip or rig is unavailable.
   const DEATH_BLOOD_PARTICLES = 24; // Reused in a single lightweight Points emitter only when a colored spray is called for.
   const activeSprays = new Set(); // Updated and disposed by updateCorpses; never left attached to a looted or unloaded body.
+  const activeDyingCorpses = new Set(); // Tracks unfinished falls, avoiding a full scan of permanently lootable bodies per frame.
   let deps = null;
 
   const deathDebug = { lastBegin: null, lastRecovery: null }; // Used by mobile diagnostics to expose chosen cause/clip and interrupted transitions.
@@ -230,6 +231,7 @@
     // baked mesh orientation.
     if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
     deps.corpseObjects.add(c);
+    activeDyingCorpses.add(c); // The newly dying entity needs short-lived animation updates.
     _prepareScorch(c);
     _spawnSpray(c);
   }
@@ -240,6 +242,7 @@
   // record the original error for the in-game diagnostics.
   function recover(c, fromX, fromY, error) {
     if (!c || !deps) return false;
+    activeDyingCorpses.delete(c); // This recovery path settles the body immediately.
     const TILE = deps.TILE;
     const col = deps.clamp(Math.floor((Number(c.x) || 0) / TILE), 0, (c.areaCols || deps.COLS) - 1); // Used as the guaranteed fallback corpse column.
     const row = deps.clamp(Math.floor((Number(c.y) || 0) / TILE), 0, (c.areaRows || deps.ROWS) - 1); // Used as the guaranteed fallback corpse row.
@@ -304,12 +307,18 @@
   }
 
   function updateCorpses(dt) {
-    _updateSprays(dt);
+    if (!activeDyingCorpses.size && !activeSprays.size) return; // Zero work after all animations and effects end.
+    if (activeSprays.size) _updateSprays(dt); // Particle effects may outlast the final dying creature.
+    if (!activeDyingCorpses.size) return;
     const TILE = deps.TILE;
     const currentArea = deps.getCurrentArea();
-    for (const c of deps.corpseObjects) {
-      if (c.state !== 'dying' || c.areaId !== currentArea) continue;
-      c.deathT = Math.min(c.deathDurationS, c.deathT + Math.max(0, Number(dt) || 0));
+    for (const c of activeDyingCorpses) {
+      if (c?.state !== 'dying' || !deps.corpseObjects.has(c)) {
+        activeDyingCorpses.delete(c); // An external cleanup or settle operation has already finished it.
+        continue;
+      }
+      const outsideArea = c.areaId !== currentArea; // Finish offscreen falls at their final pose instead of retaining them forever.
+      c.deathT = outsideArea ? c.deathDurationS : Math.min(c.deathDurationS, c.deathT + Math.max(0, Number(dt) || 0));
       const t = Math.min(1, c.deathT / c.deathDurationS);
       const eased = 1 - Math.pow(1 - t, 2); // Short grounded slide; no ballistic arc.
       c.x = c.deathStartX + (c.deathTargetX - c.deathStartX) * eased;
@@ -339,6 +348,7 @@
         c.x = c.deathTargetX; c.y = c.deathTargetY;
         grp.position.set(c.x / TILE, surfY + halfHeight * (c.deathRecorded ? 0.82 : 0.12), c.y / TILE);
         if (!c.deathRecorded) grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
+        activeDyingCorpses.delete(c); // Settled corpses no longer require any simulation tick.
       }
     }
   }
@@ -349,6 +359,7 @@
   // exactly like any other settled corpse.
   function settleAsCorpse(c, opts = {}) {
     if (!c?.avatarRef?.group) return false;
+    activeDyingCorpses.delete(c); // An explicit pre-settle supersedes any previous death animation.
     const TILE = deps.TILE;
     window.ResourceRings?.disposeRingHud(c);
     if (c._banditToolHolder) c._banditToolHolder.visible = false;
@@ -386,7 +397,7 @@
     settleAsCorpse,
     recover,
     updateCorpses,
-    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, activeSprays: activeSprays.size }),
+    getDebug: () => ({ lastBegin: deathDebug.lastBegin && { ...deathDebug.lastBegin }, lastRecovery: deathDebug.lastRecovery && { ...deathDebug.lastRecovery }, activeDying: activeDyingCorpses.size, activeSprays: activeSprays.size }),
     formatDebug: () => deathDebug.lastRecovery
       ? `Creature death recovery: ${deathDebug.lastRecovery.creature} at ${deathDebug.lastRecovery.areaId}:${deathDebug.lastRecovery.col},${deathDebug.lastRecovery.row} | ${deathDebug.lastRecovery.reason}`
       : `Creature death: last begin ${deathDebug.lastBegin?.creature || 'none'} (${deathDebug.lastBegin?.cause || 'unknown'}, recorded=${!!deathDebug.lastBegin?.recording}); no recovery needed`,
