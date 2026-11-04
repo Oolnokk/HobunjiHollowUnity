@@ -317,7 +317,7 @@
       return false;
     }
     closePanel();
-    ensureManifest(); // Early loading is safe; the preview repeats after the manifest fetch resolves.
+    // The ordinary fur-lined recipe does not depend on the optional trophy-hood species manifest.
     const overlay = document.createElement('div');
     overlay.className = 'furhood-overlay';
     overlay.innerHTML = '<section class="furhood-dialog" role="dialog" aria-modal="true" aria-label="Loom leatherworking">' +
@@ -397,7 +397,7 @@
         ? choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + (furTrimColorName || 'Unknown coat') + ' fur trim · cloth dye: ' + (selectedDye()?.label || 'None') + '\n' + recipeStatus
         : choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + details.baseColor + ' base coat · ' + (details.appearance?.patterns?.length || 0) + ' expressed markings\\n' + recipeStatus;
       try {
-        await ensureManifest();
+        if (!isLined()) await ensureManifest(); // Only species trophy hoods need the animal-part manifest.
         const rendered = await window.ClothingWeavingSystem?.renderClothingLayers?.(recipeKind(), {
           primaryHex: isLined() ? selectedDye()?.hex : details.baseColor,
           secondaryHex: isLined() ? trimHexForName(furTrimColorName) : details.baseColor,
@@ -445,7 +445,7 @@
       else status.textContent = 'Could not save the fur-hood species unlock.';
     };
     craftButton.onclick = async () => {
-      await ensureManifest(); // Prefer the fully loaded per-species trim-gene priority before saving natural color B.
+      if (!isLined()) await ensureManifest(); // Genetic trim needs no species-specific art/manifest; trophy hoods still load it.
       if (activePanel !== overlay) return; // Ignore a craft click whose overlay was closed while the manifest was loading.
       const choice = chosen();
       const current = choice && hideChoices(deps.inventory).find(x => x.key === choice.key && x.variant === choice.variant);
