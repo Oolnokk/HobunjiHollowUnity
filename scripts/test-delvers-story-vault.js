@@ -154,10 +154,19 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
       return {floors:1,surfaces:3};
     },
   };
+  const RuinShaftConnector={
+    connect({ruin}){
+      shaftMounts++;
+      ruin.shaftHub=true;
+      ruin.shaftConnection={physical:true,floorCount:4,length:3,totalWingsPlanned:4,braziersPlanned:4};
+      ruin.shaftConnectorCleanup=()=>{};
+      return {plan:{floorCount:4},route:{ok:true}};
+    },
+  }; // The story-vault unit fixture asserts connector wiring; full geometry is covered by test-shaft-hub.js.
   const ruinRuntimeWindow={
     DynamicSurfaces:DS,DevSpawner:{init(){}},GridTileAccessors:{init(){}},
     DevRandomRuinTileOccupancy:{},DevRandomRuinSolvability:{},
-    DelversGuild:{hasTalisman:()=>true,vaultPhase:()=> 'search'},ShaftHub,
+    DelversGuild:{hasTalisman:()=>true,vaultPhase:()=> 'search'},ShaftHub,RuinShaftConnector,
   };
   const areaDeps={player,TILE:32,getCurrentArea:()=>area,setCurrentArea:id=>{area=id;},
     startSceneTransition:callback=>callback(),getActiveScene:()=>buildingScenes.get(area)?.scene||null,
@@ -173,17 +182,17 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   assert.equal(await ruin.generateStoryVault({returnAnchor:{area:zone,x:player.x,y:player.y}}),true);
   const current=ruin.getRuntimeContext();
   assert.equal(area,'map_i_dev_random_ruin');
-  assert.equal(current.floorSet.size,136); // The 135 authored vault tiles stay untouched; the mock shaft adds one ground landing.
+  assert.equal(current.floorSet.size,135); // Mock connector leaves all 135 authored vault tiles intact; real corridor expansion has its own geometry test.
   assert.equal(current.shaftHub,true);
-  assert.equal(shaftMounts,1,'fixed story vault must mount one shaft hub');
+  assert.equal(shaftMounts,1,'fixed story vault must invoke the physical shaft connector exactly once');
   const names=[];
   current.root.traverse(node=>{if(node.name)names.push(node.name);});
   assert.equal(names.filter(n=>n.startsWith('hachutu_bird_footprint_')).length,66);
   assert.equal(names.filter(n=>n.startsWith('noncolliding_great_door_fragment_')).length,18);
   assert(names.includes('story_vault_empty_altar'));
-  assert.equal(ruin.getInteractionControls().length,3);
-  assert(ruin.getInteractionControls().some(c=>c.label==='Enter Shaft Hub'));
-  assert(ruin.getInteractionControls().some(c=>c.label==='Return to Ruin'));
+  assert.equal(ruin.getInteractionControls().length,1);
+  assert(!ruin.getInteractionControls().some(c=>c.kind==='shaft-passage'),'story vault must not offer teleport prompts');
+  assert(ruin.getState().shaftConnection?.physical,'story vault must expose a physical connector');
   assert.equal(imageSource,'assets/textures/decals/footprint_hachutu.png');
   assert.equal(current.puzzleOptions.sanctum,undefined);
   assert.equal(current.specialBoss,false);
