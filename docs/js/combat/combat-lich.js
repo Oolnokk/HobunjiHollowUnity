@@ -273,11 +273,12 @@
     const socketQuaternion = hierarchyWorldQuaternion(holder, scratch.socketQuaternion); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
     if (!socketQuaternion) return false;
     const grips = window.HobunjiHandToolGrips; // Existing authored grip metadata keeps the invisible reference weapon's hand placement identical to a real held copy.
-    const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
+    const gripToolKey = entity._specialWeaponKey || LICH_CAST_WEAPON_KEY; // Azgarlu's hands follow his actual warhammer grip, not the ordinary lich's invisible casting tool.
+    const grip = grips?.authoredPrimaryGripForTool?.(gripToolKey, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
-    const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+    const gripScale = Number(grips?.toolScaleForTool?.(gripToolKey)) || 1;
+    const gripTarget = grips?.itemPointToHolder?.(gripToolKey, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
       || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
     socketPosition.add(scratch.gripOffset.set(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
     socketQuaternion.multiply(scratch.gripQuaternion.setFromEuler(scratch.gripEuler.set(
@@ -498,7 +499,12 @@
     if (def.id === 'hronal') {
       const windupS = Math.max(0, Number(castTiming?.windupS) || 0.16); // Exact staged attack timing captured by beginLichCast.
       const strikeS = Math.max(0, Number(castTiming?.strikeS) || 0.10); // Paired with windup so the warning lasts exactly four attack phases.
-      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS));
+      if(lich.specialLichId==='azgarlu') {
+        const pillars=window.DevRandomRuinLichThemes?.spawnBossPillar?.(lich,target)||0; // The named boss summons preset-footprint exploding pillars instead of ordinary Hronal earth spells.
+        if(pillars>0){lastEvent='azgarlu:pillar-cast';return true;}
+        return false; // An unavailable landing footprint never becomes the old Hronal spell, in the dungeon OR Testing Arena.
+      }
+      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS)); // Ordinary Hronal liches are unchanged.
     }
     const velocity = ballisticVelocity(lich, target, def.projectile); // Kanthic remains ballistic; Tothal uses this only as its initial heading before homing takes over.
     const mesh = makeSpellVisual(def.id); // Per-type procedural spell visual avoids adding un-authored sprite assets.
@@ -1868,7 +1874,7 @@
     const baseGroundLift = Number(lich._lichBaseGroundLift) || Number(lich.halfHeight) || Number(lich.avatarRef?.modelHeight) * 0.5 || 0.45; // Grounded baseline remains the collision/simulation origin.
     const legs = lich.avatarRef?.legs; // Existing two-bone procedural leg handle attached by BanditCombat's humanoid portrait builder.
     const hovering = isArena() && isLiveActor(lich) && !lich.prone; // Knockdown explicitly brings a lich back to ground instead of ragdolling in midair.
-    const hoverTarget = hovering ? (lich.isSpecialLich && Number(lich._specialHoverTarget) === 0 ? 0 : 1) : 0; // Azgarlu melee and Nanahi kneeling use grounded movement.
+    const hoverTarget = hovering ? (lich.isSpecialLich && Number(lich._specialHoverTarget) === 0 ? 0 : 1) : 0; // Nanahi's kneel can ground her; Azgarlu's melee never switches off hovering.
     const oldBlend = Number.isFinite(lich._specialHoverBlend) ? lich._specialHoverBlend : hoverTarget; // Lerp state is per-entity, independent of other liches.
     lich._specialHoverBlend = lich.isSpecialLich ? oldBlend + (hoverTarget - oldBlend) * Math.min(1, Math.max(0, dt) * 3.2) : hoverTarget;
     legs?.setHoverMode?.(hovering && lich._specialHoverBlend > .45);
@@ -1882,7 +1888,8 @@
     const hoverHeight = Math.max(HOVER_HEIGHT_MIN_WORLD, modelHeight * HOVER_HEIGHT_MODEL_FRACTION); // Main static separation above ordinary ground-following minions.
     const bobAmplitude = modelHeight * HOVER_BOB_MODEL_FRACTION; // Gentle secondary float, deliberately much smaller than the main lift.
     const bob = Math.sin((lich._lichHoverClockS / HOVER_BOB_PERIOD_S) * Math.PI * 2) * bobAmplitude;
-    lich._lichHoverOffsetWorld = (hoverHeight + bob) * lich._specialHoverBlend;
+    const aerialOffset = lich.specialLichId==='azgarlu' ? (Number(lich._specialHoverOffsetWorld)||0) : 0; // Azgarlu's current lunge/dodge altitude composes with, rather than replaces, natural lich bobbing.
+    lich._lichHoverOffsetWorld = (hoverHeight + aerialOffset + bob) * lich._specialHoverBlend;
     const kneel = lich.lichType === 'tothal' && lich.isSpecialLich ? Math.max(0, Math.min(1, Number(lich._specialKneelBlend) || 0)) : 0; // Nanahi's head/torso descends toward the sanctum floor during the deadly barrage.
     const crouch = modelHeight * .20 * kneel; // Visual-only crouch; combat collision and damage hitbox retain their normal authoritative size.
     lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld - crouch; // Existing creature renderer applies this lift without changing X/Z simulation.
@@ -1903,6 +1910,7 @@
   function updateRuntime(dt) {
     if (!(dt > 0)) return;
     if (!isArena()) {
+      window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // Arena summons cannot outlive a map switch.
       window.SpecialHarlyaoLiches?.clear?.(); // Dispose charge remnants when leaving the arena or dungeon.
       for (const projectile of [...projectiles]) disposeProjectile(projectile); // Custom spell objects never survive a Testing Arena transition.
       for (const erupt of [...eruptions]) disposeHronalEruption(erupt); // Overlapping Erupting Earth warnings/lava are arena-local scene state.
@@ -1923,6 +1931,8 @@
       updateEntrancerMarker(dt);
       return;
     }
+    if(currentLichArea()==='map_dev_arena')window.DevRandomRuinLichThemes?.updateArenaBossPillars?.(dt); // Test Arena uses the same pillar rise, pulses and explosion as a real Hronal ruin.
+    else window.DevRandomRuinLichThemes?.clearArenaBossPillars?.(); // No phantom arena columns when gameplay continues inside a generated ruin.
     window.SpecialHarlyaoLiches?.updateEffects?.(dt); // Bound charged-plasm particle work to one tick per frame.
     updateProjectiles(dt);
     updateEruptions(dt);
@@ -1965,7 +1975,11 @@
       const baseToolMeshUpdate = BanditCombat.updateToolMesh.bind(BanditCombat); // Preserves EnemyWeaponStances/player-parity Light Weapon pose preparation before hand placement.
       BanditCombat.updateToolMesh = function harlyaoLichToolMesh(entity, ...args) {
         const result = baseToolMeshUpdate(entity, ...args);
-        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the invisible weapon object through the existing attack animation.
+        if(entity?.specialLichId==='azgarlu' && (entity._banditAction || entity._banditToolTail)) {
+          const holder=entity._banditToolHolder; // The real warhammer holder already owns the shared authored swing angles.
+          if(holder?.rotateX)holder.rotateX(Number(entity._banditAimPitch)||0); // Tilt the actual held weapon up/down during windup, strike and Hold.
+        }
+        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the currently equipped weapon's pitched grip.
         return result;
       };
     }
@@ -1998,7 +2012,7 @@
     const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       specialLiches: window.SpecialHarlyaoLiches?.snapshot?.() || null, // Mobile debug source for named-boss effects and current stage.
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
@@ -2029,9 +2043,10 @@
       const d = debugSnapshot(); // Compact status line intended for Pixel Probe/mobile-copyable diagnostics.
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const special = d.specialLiches ? (' special=' + d.specialLiches.event + '/p' + d.specialLiches.plasmPatches + '/d' + d.specialLiches.drips) : ''; // Appends boss state to the existing Pixel Probe line.
+      const azgarlu = d.activeLiches.filter(lich => lich.type==='hronal' && lich.specialMode).map(lich => `${lich.specialMode}/step${lich.comboStep}/combo${Math.ceil(lich.comboLeftMs)}ms/hold${Math.ceil(lich.strikeHoldLeftMs)}ms/alt${lich.aerialOffset.toFixed(2)}${lich.dodging?'/dodge':''}${lich.lunging?'/lunge':''}`).join(',') || '-'; // Mobile Pixel Probe exposes attack-combo retention and active air flight without DevTools.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} last=${d.lastEvent}${special}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} azgarlu=${azgarlu} last=${d.lastEvent}${special}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
