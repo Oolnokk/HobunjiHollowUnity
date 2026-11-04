@@ -1,6 +1,6 @@
 # Vertical grid (cubic cells) and climbable surfaces
 
-Status: **wide octagonal shaft, physical ground entrance and 3–5 instantiated stacked-story wing networks**. Each story now has genuine stone rooms, 2D hallways, climb-connected doorway tunnels, height-aware collision, starter pressure-plate gates and igniteable endpoint braziers. Full V50 puzzle variety, boss progression and browser sign-off remain unfinished.
+Status: **wide octagonal shaft, physical ground entrance and 3–5 instantiated stacked-story wing networks**. Each story now has genuine stone rooms, 2D hallways, climb-connected doorway tunnels, height-aware collision, starter pressure-plate gates and igniteable endpoint braziers. Full V50 puzzle variety, full quest/boss progression and browser sign-off remain unfinished. The existing Harlyao Great Door is now additionally gated by completing every shaft-wing brazier.
 
 ## The idea
 
@@ -68,7 +68,7 @@ The overall dungeon is **not** one enormous three-dimensional tile grid. Each st
 
 The shaft is a **shared room at the center of the eventual dungeon**, **not the player spawn** or a teleport destination. Its interior is a broad, eight-sided 33-cell chamber, comparable to V50's very-large room class (22–26 × 26–36), with an eight-cell-thick shell in the integrated ruin (49 cells across externally). It spans **3–5 stories** of 4 world units each, with continuous perimeter galleries at upper levels, real climbable buttresses and side-door thresholds. Its stone walls and galleries reuse the ordinary ruin's unlit `carved_smooth.png` material. The ceiling is visible from below but one-sided so the overhead third-person camera can see into the room.
 
-There are **1–4 wings per floor**. Every wing's planned sequence contains **2–4 challenge chambers and a final brazier chamber**. Braziers should only count once the associated wing's challenges have been completed. All floors must connect physically through the central shaft, so visiting the shared room is mandatory to complete a full dungeon. The shaft is the hub; each floor's arrangement of wings is a separate wheel. All planned wings and brazier endpoints now have corresponding actual scene/collision geometry. **Current challenges are simple stand-to-activate stone plates**; the authored advanced puzzle families still need to replace them. The global set of braziers is tracked but does not yet unlock the final sanctum.
+There are **1–4 wings per floor**. Every wing's planned sequence contains **2–4 challenge chambers and a final brazier chamber**. Braziers should only count once the associated wing's challenges have been completed. All floors must connect physically through the central shaft, so visiting the shared room is mandatory to complete a full dungeon. The shaft is the hub; each floor's arrangement of wings is a separate wheel. All planned wings and brazier endpoints now have corresponding actual scene/collision geometry. **Current challenges are simple stand-to-activate stone plates**; the authored advanced puzzle families still need to replace them. The existing Harlyao Great Door now also requires all shaft braziers in addition to its original blue seals, before it can open. Hachutu's separate boss logic is unchanged.
 
 ### What is currently live
 
@@ -83,7 +83,7 @@ There are **1–4 wings per floor**. Every wing's planned sequence contains **2�
 
 1. Make the **core** dungeon generator reserve multi-level anchor slots *before* assembling each V50 floor graph. The present adapter extends a generated entry-floor V50 ruin, so its 2D challenge rooms are custom generated rather than full V50 room/puzzle instantiations. The positive-coordinate anchor reservation and footprint-size guard handle the present map but should become a proper chunked/translated layer system as more multi-floor room types are introduced.
 2. Replace the current stone-plate gate challenges with the requested **authored puzzle families** (rope traversal, projectile glyphs, rail movers, bomb/statue defence, dungeon fire, instrument songs) and validate each room's puzzle solvability.
-3. Connect `shaftNetworkComplete` to the actual sanctum door/quest objectives. Currently lighting every wing brazier is visible, counted and announced, but does not complete or open the boss encounter.
+3. Complete the **quest/boss integration** beyond the Harlyao Great Door's new shaft-wide requirement. The existing Harlyao door will not open until both its old blue seals and all new shaft wing braziers are lit; story-specific alternatives such as Hachutu still require their own deliberate progression wiring.
 4. Run **browser gameplay** tests of climbing across hub↔upper-wing thresholds, targeting/projectiles, camera/headroom and collision with 3D height-specific voxels. The in-process suite mounts wing networks and solves a plate but is not a substitute for browser tests.
 
 ### Verification and performance
