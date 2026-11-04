@@ -71,7 +71,9 @@ for (const name of ['captureMemberWorldData','saveMemberWorldData'])
   vm.runInContext(functionSource(game,name,'      '),captureContext);
 captureContext.saveMemberWorldData();
 const resaved = JSON.parse(storage.get('hobunjiSaveMeta')).worlds[0].members.char_test;
-assert.deepEqual(resaved.festivals.potluckContests,clone(savedFestivals.potluckContests),'the next gameplay save must retain the winning entry and original roster');
+assert.equal(resaved.festivals.potluckContests['1156:gorkunash'].favorAwarded,true,'legacy contest saves must not grant a second 19.2-Favor championship reward');
+assert.deepEqual(resaved.festivals.potluckContests['1156:gorkunash'].days,clone(savedFestivals.potluckContests['1156:gorkunash'].days),'the next gameplay save must retain the original contest roster');
+assert.deepEqual(resaved.festivals.potluckContests['1156:gorkunash'].entry,clone(savedFestivals.potluckContests['1156:gorkunash'].entry),'the winning entry is preserved');
 assert.deepEqual(resaved.festivals.claims,clone(savedFestivals.claims));
 api.restore(resaved.festivals);
 const visit = provider.next();
