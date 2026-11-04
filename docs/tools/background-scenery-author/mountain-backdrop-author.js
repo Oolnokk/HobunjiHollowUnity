@@ -80,6 +80,7 @@
       Backdrops.attach(scene, map.cols, map.rows, WESTERN_ID, {
         config,
         assetBase: '../../',
+        buildHiddenLayers: true, // The author preview keeps invisible layers' geometry ready for immediate visibility toggles.
       }).then(root => {
         if (!root || scene !== previewDeps?.getTownScene?.() || map !== activeMap) return;
         resolvedLayout = Backdrops.applyAuthorConfigToGroup(root, map.cols, map.rows, config);
