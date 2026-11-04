@@ -80,7 +80,14 @@
       ?{minX:0,minZ:0,maxX:oldCols,maxZ:authoredExit[1]+1} // The fixed vault's authored walls end at its single south opening.
       :null; // V50 entrance is at a ROOM edge, not necessarily the full layout edge. Existing occupied cells, not the overall rectangle, are the obstacles.
     const shaftBounds={minX:originX,minZ:originZ,maxX:originX+placed.cols,maxZ:originZ+placed.rows};
-    const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:oldFloor,mainBounds,shaftBounds,maxX:cols,maxZ:rows});
+    // The entrance hallway must not be routed through the *ground-level*
+    // challenge rooms that are about to be materialized. Upper floors can
+    // legitimately cross its 2D projection because their collision is height
+    // specific; floor-zero walls cannot.
+    const reservedGround=new Set(oldFloor);
+    for(const wing of plan.floors[0].wings)
+      for(const tile of RuinLayerPlayable.collect(wing))reservedGround.add(tile);
+    const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:reservedGround,mainBounds,shaftBounds,maxX:cols,maxZ:rows});
     if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason+
       ' (entry '+entrance.x+','+entrance.z+' → '+mouth.x+','+mouth.z+
       '; main cells '+oldCols+'×'+oldRows+'; blocked floors '+oldFloor.size+')');
