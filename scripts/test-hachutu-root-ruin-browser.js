@@ -75,9 +75,12 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     const built=await page.evaluate(()=>window.DevHachutuRuin.debug());
     assert.equal(built.active,true,'Hachutu composer failed to build: '+JSON.stringify(built));
     const hachutuShaft=await page.evaluate(()=>({hub:window.DevRandomRuin.getState()?.shaftHub,connection:window.DevRandomRuin.getState()?.shaftConnection,
-      floors:window.DevRandomRuin.getState()?.shaftLayerPlan?.floorCount,passages:window.DevRandomRuin.getInteractionControls().filter(c=>c.kind==='shaft-passage').length})); // Specialized temple uses the ordinary walkable connector.
+      floors:window.DevRandomRuin.getState()?.shaftLayerPlan?.floorCount,
+      nativeFloors:window.DevRandomRuin.getState()?.preplannedShaft?.nativeFloors,
+      passages:window.DevRandomRuin.getInteractionControls().filter(c=>c.kind==='shaft-passage').length})); // Specialized temple uses the ordinary walkable connector.
     assert(hachutuShaft.hub&&hachutuShaft.connection?.physical&&hachutuShaft.passages===0&&hachutuShaft.floors>=3,
       'Hachutu needs a real multi-floor shaft corridor, not teleport prompts: '+JSON.stringify(hachutuShaft));
+    assert.equal(hachutuShaft.nativeFloors,0,'the special Hachutu temple must retain its own five-room quest puzzles without generating unrelated V50 upper-floor challenges');
     assert.equal(built.rooms.length,5,'exact five-room Hachutu ruin was built in the live game');
     assert.equal(built.entered,true,'generating the Hachutu temple must arrive inside it, not in the stripped V50 vestibule');
     assert.equal(built.platforms,15,'root-grown platforms exist in the swing hall');

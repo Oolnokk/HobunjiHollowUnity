@@ -963,8 +963,8 @@
         // room graph; the other portals remain the authored challenge wings.
         const planned=window.RuinLayerPlan?.compose?.({
           seed:candidateSeed,spacing:64,anchorX:320,anchorZ:320,
-          shaftSize:33,floorHeight:4,nativeV50:true,
-        }); // Stable pre-generation reservation shared by V50 and the 3D runtime.
+          shaftSize:33,floorHeight:4,nativeV50:requestedRuinType!=='hachutu',
+        }); // Hachutu retains its real multi-story shaft and authored wing rooms, but never generates unrelated native V50 puzzle stories that contradict the root temple's puzzle-free vestibule.
         if(!planned?.ok)throw new Error('Pre-generation shaft reservation is invalid: '+planned?.checks?.filter(c=>!c.ok).map(c=>c.name).join(', '));
         generationMark('generating-v50-layout-'+(attempt+1));
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
@@ -1016,13 +1016,15 @@
           ruin.vestibuleRootMs=Math.round(performance.now()-started);
           ruin.vestibuleStone=window.DevHachutuVestibuleStone?.swapDoors?.(ruin,{seed:ruin.sourceSeed})||null; // Unbound doors get rockified stone-age skins too.
         }else if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
-        generationMark('generating-native-v50-floors');
-        const nativeSnapshots=[]; // Real V50 meshes and room metadata belong to this accepted candidate, never the next reroll.
+        const nativeSnapshots=[]; // Actual V50 upper-floor ownership belongs to the planned rooms; Hachutu has no ordinary V50 upper-floor reservations.
         ruin.nativeV50Pending=nativeSnapshots;
-        await window.RuinV50NativeFloors.generateFloors({
-          api,plan:planned,seed:candidateSeed,density:cfg('generation.density',62),records:nativeSnapshots,
-          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
-        }); // The native-floor owner validates each reservation and retries before handing meshes to the connector.
+        if(planned.nativeFloorCount){
+          generationMark('generating-native-v50-floors');
+          await window.RuinV50NativeFloors.generateFloors({
+            api,plan:planned,seed:candidateSeed,density:cfg('generation.density',62),records:nativeSnapshots,
+            ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
+          }); // Skip expensive, unrelated room generation entirely for the five-room Hachutu root temple while preserving its climbable 3D shaft.
+        }
         generationMark('composing-preplanned-multifloor-shaft');
         attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});
         ruin.nativeV50Pending=null; // The mounted native runtime now owns these exact scene roots and their disposal.
