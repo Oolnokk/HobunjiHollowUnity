@@ -25,7 +25,7 @@ assert.match(source, /visualOnly:true/, 'replacement scenery must be visual only
 assert.doesNotMatch(source, /diggableRockOre|mineableRocksByTile|oreKey/, 'backdrop rocks must never register as mineable resources');
 assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep scenery spacing must remain explicit and map-scaled');
 assert.match(source, /WEST_STACK_SHIFT_MULTIPLIER = 0\.25/, 'the complete default stack must retain its westward shift');
-assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the existing local transform override key');
+assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v2'/, 'approved defaults must supersede stale v1 browser-local transforms');
 assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the replacement module');
 assert.match(mountainAuthor, /Western Slope rock ridges/, 'author bridge must identify the replacement scenery');
 const terrainGeometryScript = author.indexOf('../../js/terrain-geometry.js?'); // The standalone author page needs the same mine-rock geometry builder as gameplay.
@@ -40,17 +40,62 @@ assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no l
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
 assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must retain scale controls');
+assert.match(mountainAuthor, /mountainScaleZ" type="text" inputmode="decimal"/, 'Z scale must use a decimal-friendly text field, not a mobile number input that sanitizes intermediate dots');
 
 // Execute the author field formatter: unset coordinates must display resolved defaults.
 const inputs = Object.fromEntries(['x', 'y', 'z'].map(id => [id, { dataset: {} }]));
-const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayVector('), mountainAuthor.indexOf('  function syncUi('));
-const formatterContext = { $: id => inputs[id] };
+const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function writeTransformValue('), mountainAuthor.indexOf('  function syncUi('));
+const formatterContext = { $: id => inputs[id], document: { activeElement: null } };
 vm.createContext(formatterContext);
 vm.runInContext(formatterSource, formatterContext);
 formatterContext.displayVector(['x','y','z'], [null,null,null], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [-194,160,100], 'automatic coordinates must retain resolved positions');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['-194','160','100'], 'automatic coordinates must retain resolved positions');
 formatterContext.displayVector(['x','y','z'], [0,-4,12], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [0,-4,12], 'explicit zero and negative positions must survive');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['0','-4','12'], 'explicit zero and negative positions must survive');
+formatterContext.document.activeElement = inputs.z;
+inputs.z.value = '1.'; // Simulates the exact mobile edit state that used to turn 1.5 into 15.
+formatterContext.displayVector(['x','y','z'], [8,9,10], [8,9,10], [0,0,0]);
+assert.equal(inputs.z.value, '1.', 'a concurrent scenery preview refresh must not erase the focused input decimal point');
+assert.equal(inputs.x.value, '8', 'unfocused fields must continue updating normally');
+formatterContext.document.activeElement = null;
+formatterContext.displayVector(['x','y','z'], [8,9,1.5], [8,9,1.5], [0,0,0]);
+assert.equal(inputs.z.value, '1.5', 'after blur the committed decimal is displayed as entered');
+
+// The author displays base-relative offsets and updates only the axis actually edited.
+const positionInputs = Object.fromEntries(['pX','pY','pZ'].map(id => [id, { dataset: {} }]));
+const positionFormatSource = formatterSource;
+const positionFormatContext = { $: id => positionInputs[id], document: { activeElement: null } };
+vm.createContext(positionFormatContext);
+vm.runInContext(positionFormatSource, positionFormatContext);
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [null,null,null], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['0','0','0'], 'automatic position fields must present as zero offsets');
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,99], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['9','5','-1'], 'offset fields must subtract the automatic map-dependent origin');
+positionFormatContext.document.activeElement = positionInputs.pZ;
+positionInputs.pZ.value = '-0.';
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,100], { defaultPosition: [-74,160,100] });
+assert.equal(positionInputs.pZ.value, '-0.', 'focused position offset may contain an incomplete signed decimal during rebuild');
+
+const transformEditSource = mountainAuthor.slice(mountainAuthor.indexOf('  const TRANSFORM_FIELDS ='), mountainAuthor.indexOf('  function commitControls('));
+const transformEditContext = {};
+vm.createContext(transformEditContext);
+vm.runInContext(transformEditSource, transformEditContext);
+const editableLayer = { transform: { position: [null,null,null], rotationDeg: [0,0,0], scale: [1,1,1] } };
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '10', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,170,null], 'editing Y offset must preserve X and Z automatic positions');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.'), 'trailing decimal point is an incomplete input, not a rounded whole number');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1], 'an incomplete decimal must not commit a transient scale');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.5'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'editing length must not change thickness or height');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '0.05'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,0.05], 'small positive scale decimals must be accepted');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1,25'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'locale decimal commas must be accepted by the mobile keyboard');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '-.'), 'unfinished signed decimal must not mutate the scale');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleY', '-2'), 'negative height scale must be rejected');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'rejected input cannot mutate scale');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,null,null], 'clearing the edited axis restores automatic positioning');
 
 function transformSlot(defaults = { x: 0, y: 0, z: 0 }) {
   return { ...defaults, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
@@ -124,6 +169,7 @@ let geometryCalls = 0;
 let fitCalls = 0;
 const THREE = {
   Group, Mesh, LineSegments, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial,
+  DoubleSide: 2, // The distant rock/snow faces render from both camera directions.
   BufferGeometry: FakeGeometry,
   BufferAttribute: FakeBufferAttribute,
   Float32BufferAttribute: FakeBufferAttribute,
@@ -186,6 +232,29 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const api = window.WesternSlopeMountainBackdrops;
   assert(api?.installed, 'public backdrop API missing');
 
+  const approvedLayers = [
+    {layer:1,asset:'assets/backdrops/bd_mountains_1.png',visible:true,transform:{position:[-134,140,100],rotationDeg:[0,0,0],scale:[2.25,0.5,3]}},
+    {layer:2,asset:'assets/backdrops/bd_mountains_2.png',visible:true,transform:{position:[-159,188,175],rotationDeg:[0,0,0],scale:[3,0.6,3]}},
+    {layer:3,asset:'assets/backdrops/bd_mountains_3.png',visible:false,transform:{position:[null,null,null],rotationDeg:[0,0,0],scale:[1,1,1]}},
+  ]; // Approved Western Slope mountainBackdrops layers from the uploaded scenery export; guards gameplay and editor defaults.
+  const defaults = api.defaultAuthorConfig(); // Runtime source of truth: editor resets and untouched game sessions use these layers.
+  assert.equal(defaults.enabled,true,'Western Slope mountain stack remains enabled');
+  assert.deepEqual(defaults.layers,approvedLayers,'committed default layers must reproduce the complete approved export');
+  assert.deepEqual(api.normalizeAuthorConfig({}).layers,approvedLayers,'normalization of absent map settings must keep the committed preset');
+  assert.deepEqual(api.normalizeAuthorConfig(null).layers,approvedLayers,'fresh game sessions must not fall back to the old three-visible preset');
+  defaults.layers[0].transform.position[0]=999; // Verify the editor can freely mutate an export without rewriting the shared preset.
+  assert.equal(api.defaultAuthorConfig().layers[0].transform.position[0],-134,'new default config requests must get independently cloned vectors');
+  localStorageData.set('hobunjiWesternSlopeMountainBackdrops.v1',JSON.stringify({layers:[
+    {visible:true,transform:{position:[999,999,999],rotationDeg:[0,0,0],scale:[1,1,1]}},
+    {},{visible:true}
+  ]})); // Old browser-local author preferences must not override the newly approved game default.
+  assert.deepEqual(api.readAuthorConfig().layers,approvedLayers,'old v1 browser storage must not show the obsolete third mountain or old transforms');
+  const partial = api.normalizeAuthorConfig({layers:[{}, {transform:{position:[null,null,null]}},{}]});
+  assert.deepEqual(partial.layers[0],approvedLayers[0],'missing layer values must inherit the approved first ridge');
+  assert.equal(partial.layers[2].visible,false,'missing third-layer visibility must inherit the approved hidden state');
+  const automaticLayer2=api.resolveLayoutFromSizes(null,200,200,partial)[1]; // Deliberate null still means procedural placement, not the committed authored coordinates.
+  assert.equal(automaticLayer2.position[2],500,'explicit null Z on layer 2 must restore procedural staggering');
+
   const unrelatedScene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(unrelatedScene, 200, 200, 'map_cloud_forest');
   assert.equal(unrelatedScene.children.length, 0, 'non-Western wilderness must not receive the decorative rocks');
@@ -197,16 +266,19 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const root = scene.getObjectByName('WesternSlopeMountainBackdrops');
   assert(root, 'Western Slope scenery root missing');
   assert.equal(root.children.length, 3, 'the three original PNG layers must remain three separately authorable ridges');
-  assert.deepEqual(root.children.map(group => group.position.x), [-74, -244, -414], 'all ridges must retain the original westward shift and spacing');
-  assert.deepEqual(root.children.map(group => group.position.z), [100, 500, 100], 'the second ridge must be staggered by one complete doubled mountain length');
-  assert.equal(root.children[1].position.z - root.children[0].position.z, root.children[0].userData.targetWorldLength, 'the second ridge offset must equal the first ridge full north-south length');
+  assert.deepEqual(root.children.map(group => group.position.x), [-134, -159, -414], 'authored X positions must be used for layers 1/2, with procedural X on hidden layer 3');
+  assert.deepEqual(root.children.map(group => group.position.z), [100, 175, 100], 'authored Z positions replace the old automatic stagger on layers 1/2');
+  assert.deepEqual(root.children.map(group => group.visible), [true, true, false], 'the uploaded scenery must render only layers 1 and 2 by default');
+  assert.deepEqual(root.children.map(group => group.userData.authoredScale), [[2.25,0.5,3],[3,0.6,3],[1,1,1]], 'the approved per-layer scales must be used in-game');
   assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
   const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
   assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
-  assert(root.children.every(group => group.children.length === 8), 'each ridge must contain exactly eight rock assemblies');
-  assert.equal(geometryCalls, 24, 'exactly 24 mine-rock geometries must be built');
-  assert.equal(fitCalls, 24, 'every stone base must retain the normal mine-rock surface treatment');
-  assert.equal(root.children.reduce((sum, group) => sum + group.children.length, 0), 24, 'the complete replacement must contain 24 rocks');
+  assert.deepEqual(root.children.map(group => group.children.length), [8,8,0], 'gameplay must omit the eight hidden layer-3 rocks entirely, not merely make them invisible');
+  assert.equal(geometryCalls, 16, 'only the two visible ridges should allocate mine-rock geometry');
+  assert.equal(fitCalls, 16, 'every built stone base must retain the normal mine-rock surface treatment');
+  assert.equal(root.children.reduce((sum, group) => sum + group.children.length, 0), 16, 'the default runtime must build only 16 visible rocks');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 16, 'mobile debug snapshot must expose the actual default built-rock count');
+  assert.deepEqual(api.getDebugState().lastLayout.map(l => l.rocks), [8,8,0], 'layout debug must identify the omitted third ridge');
   assert(sourceGeometries.every(geometry => geometry.disposed), 'source mine-rock geometries must be disposed after the snow/stone split');
   assert(unusedGrassGeometries.every(geometry => !geometry.disposed), 'the unused grass half must retain its shared-attribute lifecycle');
 
@@ -215,8 +287,13 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   root.children.forEach((group, index) => {
     assert(Math.abs(group.userData.baseWorldWidth - expectedWidths[index]) < 1e-9, 'each rock row must preserve its former PNG reference width');
     assert(group.userData.visualOnly && group.userData.snowCapped, 'each ridge must be marked visual-only and snow-capped');
-    assert(Math.abs(group.userData.worldNorthSouthLength - 400) < 1e-8, 'each completed ridge must span exactly twice the map north-south edge');
-    assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - 400) < 1e-8, 'parent-group scaling must fit the generated rock geometry to the target length');
+    const expectedLength=index<2?1200:400; // Approved Z scale 3 triples each visible ridge's 400-unit baseline; hidden layer 3 remains unscaled.
+    assert(Math.abs(group.userData.worldNorthSouthLength - expectedLength) < 1e-8, 'each authored ridge length must apply its per-layer Z scale');
+    assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - expectedLength) < 1e-8, 'parent-group scaling must compose with the uploaded Z scale');
+    if(index===2){
+      assert.equal(group.children.length, 0, 'the omitted third ridge must allocate no scene-rock geometry');
+      return;
+    }
     assert.equal(group.children.length, 8, 'ridge scaling must not increase the eight-rock count');
     assert(group.children.every(rock => rock instanceof Group && rock.children.length === 3), 'each rock assembly must contain stone, snow and a boundary line');
     const stoneMaterials = new Set(group.children.map(rock => rock.children[0].material));
@@ -254,7 +331,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     '  window.testSkyDepth = { setSkyLayerDepth, CLOUD_DEPTH_NDC, CELESTIAL_DEPTH_NDC };'), skyContext);
   const skyDepth = skyContext.window.testSkyDepth;
   assert.equal(firstMaterial.fog, false, 'distant rock ridges must not inherit near-ground fog');
-  assert.equal(firstMaterial.depthWrite, false, 'distant rocks must not write depth over foreground terrain');
+  assert.equal(firstMaterial.depthWrite, true, 'opaque ridge rocks must write depth to occlude overlapping stone and snow faces');
+  assert.equal(firstMaterial.side, THREE.DoubleSide, 'ridges must show the back of their open mine-rock heightfields');
   assert.equal(firstMaterial.depthTest, true, 'foreground terrain must continue to occlude distant rocks');
   const backgroundShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
   firstMaterial.onBeforeCompile(backgroundShader);
@@ -263,7 +341,10 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
   assert(allParts.every(part => part.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped rock parts');
   const snowShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
-  root.children[0].children[0].children[1].material.onBeforeCompile(snowShader);
+  const capMaterial = root.children[0].children[0].children[1].material;
+  assert.equal(capMaterial.depthWrite, true, 'snow caps must depth-occlude nearer faces of other rocks');
+  assert.equal(capMaterial.side, THREE.DoubleSide, 'snow caps must have the same two-sided culling policy as stone');
+  capMaterial.onBeforeCompile(snowShader);
   assert.match(snowShader.vertexShader, /uBackgroundMaxDepth/, 'snow cap clones must share the far-background depth ordering');
   assert.equal(sharedSnowMaterial.onBeforeCompile, undefined, 'ground snow must retain its original terrain depth shader');
   for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
@@ -299,12 +380,32 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   authored.layers[1].visible = false;
   api.saveAuthorConfig(authored);
   api.applyAuthorConfigToGroup(root, 200, 200, api.readAuthorConfig());
-  assert.deepEqual([root.children[0].position.x, root.children[0].position.y, root.children[0].position.z], [-40, 180, 95], 'editor-authored position must reach the complete ridge');
+  assert.equal(root.children[0].position.x, -40, 'authored X is the actual ridge X');
+  assert.equal(root.children[0].position.z, 95, 'authored Z is the actual ridge Z');
+  assert(Math.abs(root.children[0].position.y - (180 + (0.85 - 1) * root.children[0].userData.baseWorldHeight * 0.5)) < 1e-8,
+    'Y scaling compensates the center pivot so the base remains at its original authored elevation');
   assert(Math.abs(root.children[0].rotation.y - (82 * Math.PI / 180)) < 1e-9, 'editor-authored Y rotation must reach the complete ridge');
   assert.equal(root.children[0].scale.x, 1.2, 'editor-authored X scale must reach the complete ridge');
+  assert.equal(root.children[0].userData.worldWidth, root.children[0].userData.baseWorldWidth / 8 * 1.2,
+    'X thickness must be measured across one rock, not mislabeled as Z ridge length');
   assert.equal(root.children[0].scale.y, 0.85, 'editor-authored Y scale must reach the complete ridge');
   assert(Math.abs(root.children[0].scale.z - root.children[0].userData.ridgeLengthScale) < 1e-9, 'automatic ridge-length normalization must compose with author Z scale');
   assert.equal(root.children[1].visible, false, 'per-layer visibility must remain authorable');
+
+  const revealThird = api.readAuthorConfig(); // Runtime overrides may reveal a previously omitted layer without rebuilding the zone.
+  revealThird.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(root.children[2].visible, true, 'revealed third ridge must be visible');
+  assert.equal(root.children[2].children.length, 8, 'revealing the omitted layer must materialize its eight rocks on demand');
+  assert.equal(geometryCalls, 24, 'revealing the hidden ridge must allocate precisely eight additional rocks');
+  assert.equal(fitCalls, 24, 'newly materialized stone geometry must get the same mine-rock UV treatment');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'live debug must update the actual built-rock count after reveal');
+  allParts.push(...root.children[2].children.flatMap(rock => rock.children)); // Include newly allocated geometry in the existing lifecycle/disposal checks below.
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(geometryCalls, 24, 'reapplying a visible layer must not duplicate previously materialized geometry');
+  const hideAgain = api.readAuthorConfig();
+  api.applyAuthorConfigToGroup(root, 200, 200, hideAgain);
+  assert.equal(root.children[2].visible, false, 'hiding a revealed ridge must immediately stop rendering it');
 
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
   assert.equal(scene.children.filter(child => child.name === 'WesternSlopeMountainBackdrops').length, 1, 'repeated zone-border builds must not duplicate the rock ridges');
@@ -331,8 +432,22 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(debug.snowBoundaryLinesBuilt, 24, 'debug snapshot must report every stone/snow outline');
   assert.equal(debug.snowCapHeightFraction, 2 / 3, 'debug snapshot must expose the snow coverage setting');
   assert.equal(debug.visualOnly, true, 'debug snapshot must make the non-interactive scenery status explicit');
+  assert.equal(debug.builtDecorativeRocks, 0, 'detached runtime scenery must report zero currently allocated rocks');
   assert.deepEqual(debug.lastLayout[0].position, [-40, 180, 95], 'debug snapshot must expose the author-edited transform');
   assert.equal(debug.lastLayout[0].worldNorthSouthLength, 400, 'debug layout must report the complete doubled ridge length');
+
+  const editorScene = new Group(); // The standalone scenery tool explicitly retains hidden geometry for immediate visibility toggles.
+  await api.attach(editorScene, 200, 200, 'map_western_slope', { config: api.defaultAuthorConfig(), buildHiddenLayers: true });
+  const editorRoot = editorScene.getObjectByName('WesternSlopeMountainBackdrops');
+  assert.deepEqual(editorRoot.children.map(group => group.children.length), [8,8,8], 'scenery author must keep all three layers immediately editable');
+  assert.deepEqual(editorRoot.children.map(group => group.visible), [true,true,false], 'author preview must still hide layer 3 by default');
+  const editorReveal = api.defaultAuthorConfig();
+  editorReveal.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(editorRoot, 200, 200, editorReveal);
+  assert.equal(editorRoot.children[2].visible, true, 'author visibility checkbox must reveal an already-built hidden ridge');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'editor debug must report all three built layers');
+  api.detach();
+  assert(!editorScene.getObjectByName('WesternSlopeMountainBackdrops'), 'editor scene cleanup must release the hidden-geometry preview');
 
   console.log('Western Slope mine-rock ridge checks passed.');
 })().catch(error => {
