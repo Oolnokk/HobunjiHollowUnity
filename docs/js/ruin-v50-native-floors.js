@@ -9,6 +9,7 @@
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
   const key=(x,z)=>x+','+z,MAX_CELLS=300000;
+  const nativeGridOwnership=new WeakSet(); // Frozen CellGrid3D objects cannot be tagged; owner checks are identity-based.
   const SIDES={north:[0,-1],east:[1,0],south:[0,1],west:[-1,0]};
   const RANGED=['glyphObelisk','ceilingRailTargets'];
   const STAGES=['pressurePlate','glyphObelisk','melodyEcho','dungeonFire'];
@@ -216,7 +217,7 @@
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
         const grid=CG.create({originX:xmin-1,originZ:zmin-1,
           baseY:floor.y,cols:xmax-xmin+3,rows:zmax-zmin+3,levels:3});
-        grid.nativeV50=true; // Floor support is V50's own fractional plateau metadata, not integer voxel bedrock.
+        nativeGridOwnership.add(grid); // Floor support is V50's original fractional plateau metadata.
         const border=new Set();
         for(const [x,z] of tiles){
           for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
@@ -345,5 +346,5 @@
     });
     return owner;
   }
-  return Object.freeze({analyze,nativeSeed,layoutPlacement,nativeRoom,cellProjection,mount});
+  return Object.freeze({analyze,nativeSeed,layoutPlacement,nativeRoom,cellProjection,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
 });
