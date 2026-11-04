@@ -118,7 +118,8 @@ for(let floor=1;floor<3;floor++){
   const levels={'8,18':1,'62,18':1}; // Test native objective height and both positive and negative doorway plateaus.
   for(let z=16;z<20;z++)levels[(floor===1?'20':'38')+','+z]=floor===1?3:-2;
   const floorMeta={...meta,layoutReservation:{...plan.floors[floor].nativePort.reservation,floor,y:plan.floors[floor].y,tileScale:2},
-    plateauModel:{stepHeight:.42,levelByCell:levels}};
+    plateauModel:{stepHeight:.42,levelByCell:levels},
+    movingParts:floor===1?[{type:'nestedPuzzleChain',roomId:'room_1',finalMechanismId:'authored-gate-1'}]:[]}; // The original V50 nested-chain metadata declares the final gate, not an intermediate bridge.
   floors.push({floor,roots:{localeRoot:root,particleRoot:new Group()},
     generated:{locale:{meta:{interiorShell:floorMeta}}}});
 }
@@ -140,8 +141,9 @@ const authoredSolved=new Set(); // Synthetic V50 mechanism signal used to prove 
 const nativeAdapter={...NativeMechanisms,mount(options){
   const runtime=NativeMechanisms.mount(options),choose=runtime.stageCandidate,solved=runtime.isSolved;
   return {...runtime,
-    stageCandidate:room=>options.floor===1&&room.id==='room_1'
-      ?{id:'authored-gate-1',kind:'glyphObelisk'}:choose(room),
+    stageCandidate:(room,preferred)=>options.floor===1&&room.id==='room_1'
+      ?(assert.equal(preferred,'authored-gate-1','native stage must pass the generator-declared final V50 mechanism ID'),
+        {id:'authored-gate-1',kind:'glyphObelisk'}):choose(room,preferred),
     isSolved:id=>authoredSolved.has(id)||solved(id)};
 }};
 const oldBus=globalThis.DevRandomRuinSimplePuzzles,oldFire=globalThis.DungeonFire;
