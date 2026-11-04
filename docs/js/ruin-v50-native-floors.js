@@ -280,6 +280,8 @@
               options.showToast?.('The native chamber gate opens.',true);options.onStateChange?.();
             },
           });
+          challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
+          challenge.floorY=floor.y; // Shared stage diagnostics and native pressure-plate tests use exact V50 room centers.
           const door=analysis.gates[i].door,span=Math.max(2,Math.round(Number(door.widthCells)||3));
           const x=place.originX+(door.axis==='x'?door.boundary:door.center)*place.cs;
           const z=place.originZ+(door.axis==='x'?door.center:door.boundary)*place.cs;
