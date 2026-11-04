@@ -257,7 +257,7 @@
     }
     if(document.activeElement!==el('carrySize'))el('carrySize').value=(id==='back'?c.backCarry:c.billboardAnchor).size;
     el('carrySummary').textContent=c.enabled
-      ?'Authoring enabled: billboard anchor and both hand positions will be exported.'
+      ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
       :'Carrying disabled: configure the anchors here and enable when ready.';
     for(const key of ['anchor','back','left','right','hitbox']){
       const idKey='carrySelect'+key[0].toUpperCase()+key.slice(1);
@@ -335,6 +335,7 @@
     if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
     transform.attach(guides[id]);
     renderControls();
+    syncHoldingPreview();
   }
   function fromInputs() {
     const id=state.selectedType==='carry'?state.selectedId:'anchor';
@@ -344,7 +345,7 @@
       const n=Number(el('carry'+axis).value);
       if(Number.isFinite(n))point[axis.toLowerCase()]=n;
     }
-    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:state.carryable.handTargets[id]?.rotation;
+    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:id==='back'?state.carryable.backCarry.rotation:state.carryable.handTargets[id]?.rotation;
     if(rotations)for(const axis of ['X','Y','Z']){
       const n=Number(el('carryR'+axis).value);
       if(Number.isFinite(n))rotations[axis.toLowerCase()]=n;
@@ -353,10 +354,10 @@
       const n=Number(el('carryHitboxS'+axis).value);
       if(Number.isFinite(n))state.carryable.hitbox.size[axis.toLowerCase()]=Math.max(.01,Math.abs(n));
     }
-    if(id==='anchor')state.carryable.billboardAnchor.size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
+    if(id==='anchor'||id==='back')(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
     for(const axis of ['X','Y','Z']){
       const n=Number(el('carryPosterior'+axis).value);
-      if(Number.isFinite(n))state.carryable.billboardAnchor.posteriorOffset[axis.toLowerCase()]=n;
+      if(Number.isFinite(n))(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).posteriorOffset[axis.toLowerCase()]=n;
     }
     refreshGuides();
     syncHoldingPreview();
@@ -373,7 +374,7 @@
         state.carryable.hitbox.size[axis]=Math.max(.01,Number(Math.abs(marker.scale[axis]).toFixed(4)));
     }else if(id==='anchor'||id==='back'){
       for(const axis of ['x','y','z'])
-        state.carryable.billboardAnchor.rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
+        (id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
     }else if(id==='left'||id==='right'){
       // A hand's gizmo rotates in canonical side-hand space, so recover the
       // authored local correction instead of baking the ±90° wrist basis.
@@ -387,6 +388,7 @@
     syncHoldingPreview();
   }
   el('carrySelectAnchor').onclick=()=>select('anchor');
+  el('carrySelectBack').onclick=()=>select('back');
   el('carrySelectLeft').onclick=()=>select('left');
   el('carrySelectRight').onclick=()=>select('right');
   el('carrySelectHitbox').onclick=()=>select('hitbox');
@@ -443,6 +445,6 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
   };
 })();
