@@ -62,6 +62,10 @@
         !viable(creature, previousFocus, areaId, creature.def?.aggroRangePx || 0, creature.def?.leashRangePx || 0))) {
       releaseWild(creature);
     }
+    if (creature._fleeCooldownUntil > (window.performance?.now?.() ?? Date.now())) { // A marked opponent cannot bypass a wild animal's post-retreat grace period.
+      releaseWild(creature);
+      return null;
+    }
     if (creature.state === 'fleeing-low-health' || creature.state === 'return' || creature._animalSleeping ||
         creature._denHidden || creature.prone || creature.knockbackT > 0) return null;
     // Passive wildlife is allowed to finish an existing defensive/prey fight, not start attacking peaceful bystanders.
