@@ -33,7 +33,7 @@
   });
 
   const METAL_VISUAL_FALLBACKS = Object.freeze({
-    nativeCopper: Object.freeze({ label: 'Native Copper', hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 }),
+    nativeCopper: Object.freeze({ label: 'Copper', hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 }),
     lowTinBronze: Object.freeze({ label: 'Low-Tin Bronze', hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 }),
     tinBronze: Object.freeze({ label: 'Tin Bronze', hex: '#CD7F32', verdigrisHex: '#57B38B', tier: 3 }),
     highTinBronze: Object.freeze({ label: 'High-Tin Bronze', hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 }),
