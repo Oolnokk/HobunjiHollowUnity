@@ -77,6 +77,15 @@
         floor,side:'E',x:cx+Math.floor((o.shaftSize+o.shaftWall*2)/2),
         z:cz+o.portalOffset,y,kind:'native-v50',
       }:null; // Reserved BEFORE V50 renders another native room/hallway graph.
+      if(nativePort){
+        // Every upper V50 floor owns a fixed 180x180 eastern allocation
+        // BEFORE any room graphs are generated. The eventual V50 scene may
+        // occupy a smaller rectangle inside it, never another wing's space.
+        const maxNativeExtent=180; // Maximum accepted V50 footprint in RuinV50NativeFloors.layoutPlacement.
+        nativePort.reservation={x:nativePort.x+28,
+          z:Math.max(8,Math.floor(nativePort.z-maxNativeExtent/2)),
+          w:maxNativeExtent,d:maxNativeExtent};
+      }
       const shuffled=DIRS.map(d=>({d,roll:rng()})).sort((a,b)=>a.roll-b.roll).map(x=>x.d)
         .filter(d=>!nativePort||d.side!==nativePort.side);
       const maxCustomWings=nativePort?Math.min(3,o.maxWings-1):o.maxWings;
@@ -159,6 +168,14 @@
       add(`floor${floor.floor}-wingCount`,floor.wings.length+(floor.nativePort?1:0)>=1&&floor.wings.length+(floor.nativePort?1:0)<=4);
       add(`floor${floor.floor}-uniqueSides`,new Set([...floor.wings.map(w=>w.side),...(floor.nativePort?[floor.nativePort.side]:[])]).size===floor.wings.length+(floor.nativePort?1:0));
       add(`floor${floor.floor}-nativeReserved`,!plan.options.nativeV50||floor.floor===0||!!floor.nativePort&&floor.nativePort.side==='E');
+      if(floor.nativePort){
+        const area=floor.nativePort.reservation; // The V50 allocation is fixed before the iframe generates this floor's room graph.
+        add(`floor${floor.floor}-nativeAllocation`,!!area&&area.w===180&&area.d===180
+          &&area.x>=floor.nativePort.x+28&&area.z>=0);
+        add(`floor${floor.floor}-nativeClearance`,!!area&&floor.wings.every(wing=>
+          wing.rooms.every(room=>!intersects(room,area))
+          &&wing.corridors.every(hall=>hall.rects.every(rect=>!intersects(rect,area)))));
+      }
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
