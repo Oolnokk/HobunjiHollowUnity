@@ -242,7 +242,7 @@
   // over undisturbed ground, and re-burying it (filling the trench back
   // in before opening) hides the option again.
   function _makeTreasureChestObject(mapId, col, row, placement, mesh) {
-    return {
+    const chestObject = { // The success callback re-enters the live decorated action so discovery rewards still fire.
       id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
       col, row, mesh,
       label: '🗝️ Buried Chest',
@@ -257,6 +257,22 @@
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
+        if (placement.found) return { ok: false, message: 'Already opened.' }; // Reject stale interaction buttons after the treasure is claimed.
+        if (!placement.lockpickUnlocked) {
+          const started = window.ChestLockpicking?.open?.({
+            id: chestObject.id, title: 'Buried Chest', tier: 1,
+            valid: () => !placement.found && deps.getCurrentArea() === mapId
+              && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH,
+            onSuccess: () => {
+              placement.lockpickUnlocked = true; // Used only for the successful action's re-entry; the chest is then removed.
+              const result = chestObject.onAction('obj_open_treasure_chest'); // Must call the live object to preserve WeaponDiscoveryRewards' decorator.
+              if (result?.message) deps.showToast?.(result.message, result.ok === true);
+            },
+          });
+          // A pending minigame is NOT an opened chest. Keep result.ok false so
+          // WeaponDiscoveryRewards cannot roll a weapon before a successful pick.
+          return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
+        }
         const { loot } = placement;
         const parts = [];
         for (const metalKey of loot.metalKeys) {
@@ -302,6 +318,7 @@
         return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
       },
     };
+    return chestObject;
   }
 
   function _clearZoneTreasureMeshes(mapId) {
