@@ -71,9 +71,7 @@ class G{dispose(){}}
 class M{constructor(fields={}){Object.assign(this,fields);}dispose(){}}
 class Mesh extends O{constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 let composer;const footprints=new Map(); // Records exact XZ occupied boxes and their separate lifecycle tags.
-const arenaProviders=new Map(); // Native area collision providers used by the real player/creature movement pipeline.
 const rockWindow={
-  AreaFootprintBlockers:{register:(id,provider)=>{arenaProviders.set(id,provider);return ()=>arenaProviders.delete(id);}},
   THREE:{Group:O,Object3D:O,Vector3:V,Mesh,BoxGeometry:G,PlaneGeometry:G,MeshBasicMaterial:M,DoubleSide:2},
   DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   DevRandomRuinSanctum:{getState:()=>({layout:{arena:{minX:1,maxX:11,minZ:1,maxZ:11}}})},
@@ -84,6 +82,7 @@ const rockWindow={
   },
   ResourceSystem:{addAffliction(){},spendFooting(){}},
 }; // Uses the same true Hronal composer as a generated dungeon, not a fabricated pillar animation.
+vm.runInNewContext(read('docs/js/area-footprint-blockers.js'),{window:rockWindow,console}); // Load the actual movement/projectile collision registry.
 vm.runInNewContext(read('docs/js/dev-random-ruin-lich-themes.js'),{window:rockWindow,console});
 const context={root:new O(),theme:'hronal',seed:8,floorSet:new Set(),ceilingY:4,meta:{rooms:[],floorSurfaceY:0,wallHeight:4}};
 for(let z=0;z<12;z++)for(let x=0;x<12;x++)context.floorSet.add(x+','+z);
@@ -107,17 +106,18 @@ assert.equal(rockWindow.DevRandomRuinLichThemes.spawnBossPillar(arenaBoss,simula
 const arenaPillar=arenaScene.children[0].children[0]; // Body of the stand-alone fixed-width arena column.
 assert.equal(arenaPillar.scale.y,.001);
 assert.equal(footprints.size,0,'Arena pillar must not register a footprint on the generated ruin model');
-assert.equal(arenaProviders.size,1,'Testing Arena registers a native player/enemy/projectile blocker');
-const arenaBlocker=arenaProviders.get('azgarlu-arena-pillars'); // Same provider used by canOccupyAt, enemy sweeps and projectile terrain tests.
-assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,.2),false,'Column stays nonblocking while rising');
+assert.equal(rockWindow.AreaFootprintBlockers.providerIds().length,1,'Testing Arena registers a native player/enemy/projectile blocker');
+const arenaBlocked=(worldY=null)=>rockWindow.AreaFootprintBlockers.blocksBox('map_dev_arena',arenaPillar.position.x,arenaPillar.position.z,.2,worldY); // Game movement and projectiles query this exact native area registry.
+assert.equal(arenaBlocked(),false,'Column stays nonblocking while rising');
 rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
 assert(arenaPillar.scale.y>.001&&arenaPillar.scale.y<1,'Testing Arena advances the same grounded height lerp');
 rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
 assert.equal(arenaPillar.scale.y,1);
-assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,.2),true,'Full-height arena pillar physically blocks traversal');
-assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,0,100),false,'Projectile collision respects the actual pillar height');
+assert.equal(arenaBlocked(),true,'Full-height arena pillar physically blocks traversal');
+assert.equal(rockWindow.AreaFootprintBlockers.blocksBox('map_i_dev_random_ruin',arenaPillar.position.x,arenaPillar.position.z,.2),false,'Arena pillar never blocks generated ruins');
+assert.equal(arenaBlocked(100),false,'Projectile collision respects the actual pillar height');
 rockWindow.DevRandomRuinLichThemes.clearArenaBossPillars();
 assert.equal(footprints.size,0,'Leaving the arena never touches generated-ruin pillar footprints');
-assert.equal(arenaProviders.size,0,'Leaving the arena unregisters the live native collision provider');
+assert.equal(rockWindow.AreaFootprintBlockers.providerIds().length,0,'Leaving the arena unregisters the live native collision provider');
 assert.equal(arenaScene.children.length,0,'Leaving the arena removes the pillar render scene');
 console.log('Azgarlu aerial combat and rising-pillar regressions passed');
