@@ -245,7 +245,7 @@ async function buildHeadReferenceCanvas(species,gender,width,height){
   }
   const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   const sourceHead=window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49};
-  const bodyXform=normalizedLayerXform(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers?.find(layer=>layer.id==='torso')?.xform||{ax:-.2,ay:0,sx:2.55,sy:2.55});
+  const bodyXform=sourceHead; // Portrait-utils forces preset B on BOTH head and body layers. Using the authored/legacy torso A offset moves the 2D head against its 3D wearer.
   const headRect=portraitLayerRect(image.naturalWidth,image.naturalHeight,sourceHead);
   const bodyRect=portraitLayerRect(width,height,bodyXform);
   const scaleX=width/bodyRect.w,scaleY=height/bodyRect.h;
