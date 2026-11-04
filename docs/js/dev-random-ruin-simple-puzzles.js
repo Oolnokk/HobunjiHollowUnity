@@ -414,6 +414,10 @@
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
+    if(inRuin()&&window.DevRandomRuin?.getRuntimeContext?.()?.root===state.root){
+      for(const record of state.ropeChainDisabledSurfaces)DS.registerSurface(record); // Restore only while the owning map is still alive; never resurrect surfaces after the parent cleared its scope.
+    }
+    for (const {tile,original} of state.ropeChainPitTiles){if(original===undefined)delete tile.bottomless;else tile.bottomless=original;}
     window.DevRandomRuinTileOccupancy?.clearSolids?.(SCOPE); // Drops this build's prop footprints (lock door, sarcophagi, ossuary shell, canopy posts...).
     const lavaTexture=state.lavaMaterial?.uniforms?.uWaterTexture?.value; // Material owns its dedicated wibbly-water texture loader result for this session.
     lavaTexture?.dispose?.();
@@ -592,6 +596,147 @@
       return grid;
     }
     return null;
+  }
+
+
+  // An unobstructed safe-grid-width hallway can become a single abyss crossed
+  // entirely by successive airborne rope catches. No artificial landing pads:
+  // the generator uses the existing rooms on either side for its checkpoints.
+  function buildRopeChainHallway(context,rng,hall,usedHallways) {
+    const cs=worldCellSize(context.meta),axis=hall.axis==='z'?'z':'x';
+    const longCells=axis==='x'?Number(hall.w):Number(hall.h);
+    const crossCells=axis==='x'?Number(hall.h):Number(hall.w);
+    if(longCells<5||crossCells<5||usedHallways.has(hall.id))return null; // Same minimum width as the safe-path grid.
+    const start=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
+    const length=longCells*cs,finish=start+length;
+    const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
+    const crossWidth=crossCells*cs,cross=crossStart+crossWidth*.5;
+    const ropeCount=Math.max(3,Math.min(5,Math.ceil((length-1)/1.7)+1));
+    if((length-1)/(ropeCount-1)>2.15)return null; // A very long hallway needs more ropes than our bounded chain supports.
+    const point=(along,crossAt=cross)=>axis==='x'?{x:along,z:crossAt}:{x:crossAt,z:along};
+    const occupancy=window.DevRandomRuinTileOccupancy;
+    function checkpointOutside(side){
+      for(const distance of [.72,1.05,1.4,1.8]){
+        for(const offset of [0,-.35,.35]){
+          const candidate=point(side==='start'?start-distance:finish+distance,cross+offset);
+          const support=sampleSupport(candidate.x,candidate.z);
+          if(!support||!String(support.id).startsWith('devruin-floor-'))continue;
+          if(DS.pointInPit?.(candidate.x,candidate.z,.12))continue;
+          if(occupancy?.blocksAt?.(candidate.x,candidate.z,.28)||occupancy?.solidAt?.(candidate.x,candidate.z,.28))continue;
+          return {...candidate,y:Number(support.y)};
+        }
+      }
+      return null;
+    }
+    const entry=checkpointOutside('start'),exit=checkpointOutside('end');
+    if(!entry||!exit)return null;
+    const cells=[];let floorY=null;
+    for(let col=Number(hall.col);col<Number(hall.col)+Number(hall.w);col++){
+      for(let row=Number(hall.row);row<Number(hall.row)+Number(hall.h);row++){
+        const x=PAD+(col+.5)*cs,z=PAD+(row+.5)*cs,key=col+','+row;
+        const support=sampleSupport(x,z);
+        if(!support||support.id!=='devruin-floor-'+key||!support.record)return null;
+        if(floorY===null)floorY=Number(support.y);
+        if(Math.abs(Number(support.y)-floorY)>.08)return null; // Never carve a tiered corridor or a bridge/dais support.
+        if(occupancy?.blocksAt?.(x,z,.24)||occupancy?.solidAt?.(x,z,.24))return null;
+        cells.push({support,record:support.record,col,row,x,z});
+      }
+    }
+    if(floorY===null||Math.abs(entry.y-floorY)>.42||Math.abs(exit.y-floorY)>.42)return null;
+    const anchorY=(Number(context.meta?.floorSurfaceY)||floorY)+(Number(context.meta?.wallHeight)||3)-.09;
+    const ropeLength=anchorY-(floorY+.86);
+    if(ropeLength<ROPE_MIN_LENGTH+.05)return null;
+    const ropes=[],room={id:'rope_chain_hall_'+hall.id};
+    const direction=axis==='x'?0:Math.PI*.5;
+    for(let i=0;i<ropeCount;i++){
+      const along=start+.5+(length-1)*i/(ropeCount-1);
+      const anchor=point(along),isFirst=i===0;
+      const rope=createRopeObject({
+        room,idSuffix:String(i),anchor:{...anchor,y:anchorY},yaw:direction,length:ropeLength,
+        maxLength:ropeLength,minBobY:floorY+.12,angle:isFirst?-.13:(i===ropeCount-1?.13:0),
+        grabPoint:isFirst?{...point(start+.10),y:floorY+.86}:
+          i===ropeCount-1?{...point(finish-.10),y:floorY+.86}:null, // Either bank can start the chain without an added ledge.
+      });
+      rope.ropeChainHallId=String(hall.id); // Used to distinguish the bottomless hallway ropes in diagnostics and death handling.
+      rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
+      if(!ropeArcClear(rope,.95)){disposeRopeObject(rope);ropes.forEach(disposeRopeObject);return null;}
+      ropes.push(rope);
+    }
+    // Use the production release-flight and air-catch predictor, not a second
+    // distance heuristic. The final target is EXISTING floor, not a platform.
+    const exitFloor={x:exit.x,z:exit.z,y:exit.y,topY:exit.y,width:axis==='x'?2.2:Math.min(2.4,crossWidth-1),
+      depth:axis==='z'?2.2:Math.min(2.4,crossWidth-1)};
+    const entryFloor={x:entry.x,z:entry.z,y:entry.y,topY:entry.y,width:exitFloor.width,depth:exitFloor.depth};
+    const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
+    const forward=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight)!==null);
+    const reverse=ropes.every((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
+      i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight)!==null);
+    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return null;} // Both checkpoint sides must lead to a physically solvable crossing.
+
+    const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
+    for(const cell of cells){
+      DS.registerSurface({...cell.record,enabled:false});
+      disabledSurfaces.push(cell.record);
+      const gridCol=Math.floor(cell.x),gridRow=Math.floor(cell.z),tile=context.grid?.[gridRow]?.[gridCol];
+      if(tile){
+        state.ropeChainPitTiles.push({tile,original:tile.bottomless});
+        tile.bottomless=true; // Witch-bombs and other burden objects recognize this void without turning it into blocking ROCK.
+      }
+    }
+    state.ropeChainDisabledSurfaces.push(...disabledSurfaces);
+    const bounds=axis==='x'
+      ? {minX:start,maxX:finish,minZ:crossStart,maxZ:crossStart+crossWidth}
+      : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start,maxZ:finish};
+    const pitId='dev_ruin_rope_chain_abyss_'+hall.id;
+    DS.registerPit({id:pitId,scope:SCOPE,bounds});
+    state.surfaceIds.add(pitId);
+    // An opaque, unlit void mask hides V50's retained decorative floor geometry.
+    // It registers no support/collision and sits only over removed floor cells.
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ),
+      makeBasic(0x08090b));
+    mesh.name=pitId+'_fog';mesh.rotation.x=-Math.PI/2;
+    mesh.position.set((bounds.minX+bounds.maxX)*.5,floorY+.16,(bounds.minZ+bounds.maxZ)*.5);
+    mesh.userData.devRuinFootprintIgnore=true;mesh.userData.devRandomRuinBottomlessFog=true;
+    state.group.add(mesh);
+    state.ropes.push(...ropes);
+    const doorIds=new Set((context.meta?.doorways||[]).flatMap((door,index)=>
+      String(door.from)===String(hall.id)||String(door.to)===String(hall.id)?[doorwayWorld(context.meta,door,index).id]:[]));
+    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,floorY,checkpointIds:{
+      start:'rope-chain-'+hall.id+'-start',end:'rope-chain-'+hall.id+'-end'}};
+    state.ropeChains.push(chain);
+    usedHallways.add(hall.id);
+    recordModulePlacement('ropeChainAbyss','hallway',hall.id,{ropeCount,checkpointIds:chain.checkpointIds,instantDeath:true});
+    return chain;
+  }
+
+  function ropeChainPitAt(x,z) {
+    return state?.ropeChains?.find(chain=>x>chain.bounds.minX+.015&&x<chain.bounds.maxX-.015
+      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015)||null;
+  }
+
+  function instantRopeChainDeath() {
+    if(!inRuin()||!state)return false;
+    // PlayerDowned's direct death skips Second Wind, crawl and the downed HUD;
+    // the game's normal die callback then restores the active ruin checkpoint.
+    if(window.PlayerDowned?.dieImmediately?.('rope-chain-abyss')===true)return true;
+    return respawnAtCheckpoint('rope-chain-abyss'); // Legacy fallback still never enters the downed state.
+  }
+
+  function updateRopeChainCheckpoints() {
+    if(!state?.ropeChains?.length||state.activeRope||state.flight)return;
+    const player=playerWorld();
+    if(!player)return;
+    for(const chain of state.ropeChains)for(const side of ['start','end']){
+      const point=chain[side],id=chain.checkpointIds[side];
+      if(state.checkpoints.active?.id===id)continue;
+      const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
+      const pointAlong=chain.axis==='x'?point.x:point.z;
+      const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
+      const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
+      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue;
+      activateCheckpoint(id,point,true); // Entering either side replaces the other side, including after a reverse traversal.
+      return;
+    }
   }
 
   function createPlatform(id, x, z, baseY, width, depth, height = .28) {
@@ -1609,14 +1754,21 @@
   }
 
   function buildSwappableHallwayModules(context,rng,usedHallways) {
+    const allowTraps=context.puzzleOptions?.hallwayTraps!==false; // Keeps legacy glyph/melody/trap hallway modules independently optional.
+    const allowChains=context.puzzleOptions?.ropeChain!==false; // Makes rope-chain hallway toggles effective even when trap hallways are disabled.
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
     const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
     for(const hall of selected){
       const roll=rng();
-      if(roll<.34){
+      if(allowChains&&(!allowTraps||roll<.3)){
+        const chain=buildRopeChainHallway(context,rng,hall,usedHallways);
+        if(chain)continue;
+      }
+      if(!allowTraps)continue;
+      if(roll<.5){
         const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
         if(chord)continue;
-      }else if(roll<.62){
+      }else if(roll<.72){
         const glyph=buildHallwayGlyphGate(context,hall,usedHallways);
         if(glyph)continue;
       }
@@ -1671,6 +1823,7 @@
     if(previous){
       const jumped=Math.hypot(nowPoint.x-previous.x,nowPoint.z-previous.z)>.75;
       for(const door of state.checkpoints.doorways){
+        if(state.ropeChains.some(chain=>chain.doorIds.has(door.id)))continue; // A rope hallway's endpoints use its own mutually replacing checkpoints.
         const crossing=doorwayCrossing(door,previous,nowPoint);
         const proximity=!crossing&&jumped?doorwayProximity(door,nowPoint):null;
         const trigger=crossing||proximity;
@@ -1803,6 +1956,9 @@
       group,
       controls:[],
       safeGrids:[],
+      ropeChains:[], // Hallway-wide bottomless gaps traversed exclusively by midair rope catches.
+      ropeChainDisabledSurfaces:[], // Original V50 supports restored on clear so rerolls cannot strand floor state.
+      ropeChainPitTiles:[], // Existing grid cell flags restored on clear while traversal uses actual DynamicSurfaces pits.
       ropes:[],
       platforms:[], // Static rope platforms (createPlatform); their bodies stop rope flight.
       trapHallways:[],
@@ -1895,7 +2051,7 @@
         freeRooms.splice(freeRooms.indexOf(room),1);usedRooms.add(room.id);break;
       }
     }
-    if(options.hallwayTraps!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(context,rng,usedHallways);
     for(const composer of composers){ // Late composers take whatever rooms the standalone modules left free.
       try{composer.buildLate?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildLate failed',error);}
     }
@@ -2095,7 +2251,7 @@
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
     for(const rope of state.ropes){ // Rope-to-rope: flying into an air-only rope's hanging length grabs it. Ordinary ropes idle over their launch deck, where catching one on landing would skip that deck's plate/chest.
-      if(!rope.airOnly||rope.attached||rope.id===f.ropeId)continue;
+      if((!rope.airOnly&&!rope.ropeChainHallId)||rope.attached||rope.id===f.ropeId)continue; // Endpoint ropes remain catchable from the air in either direction.
       if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
     }
     const support=sampleSupport(f.x,f.z,f.y+.25);
@@ -2106,6 +2262,8 @@
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
+    const chain=ropeChainPitAt(f.x,f.z);
+    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;} // No downed state on a missed airborne rope catch.
     if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
       respawnAtCheckpoint('rope-fall');
       return;
@@ -2213,6 +2371,7 @@
     for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
     updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
+    updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
     updateBadge();
   }
 
@@ -2295,6 +2454,8 @@
         thickMesh:rope.mesh?.isMesh===true,collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
+      ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
+        ropeCount:chain.ropes.length,checkpoints:chain.checkpointIds,instantDeath:true})),
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
@@ -2360,6 +2521,8 @@
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
     respawnAtCheckpoint,
+    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z)), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
+    instantRopeChainDeath,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.
     listProjectileTargets:()=>!state||!inRuin()?[]:[

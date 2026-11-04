@@ -28,11 +28,12 @@
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Theme darkness is always active; enabling the dev toggle only permits a severity override.
-  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
+  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, ropeChain:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
   const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
     ['safePath','Safe-path pressure grids'],
     ['ropeSwing','Rope swing traversal'],
+    ['ropeChain','Bottomless rope-to-rope hallways'],
     ['hallwayTraps','Alternating hallway fire / poison traps'],
     ['lavaBasin','Deep lava basin rope rooms'],
     ['sanctum','Blue braziers, Great Door and lich sanctum'],
@@ -1470,6 +1471,10 @@
       return;
     }
     if(info.pit&&!info.support){
+      if(window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(info.x,info.z)){
+        if(window.DevRandomRuinSimplePuzzles.instantRopeChainDeath?.()===true)return; // Fatal void skips downed state and respawns at the current opposing checkpoint.
+        return; // No recoverable footing-fall animation is allowed in the rope-chain abyss.
+      }
       if(ruin.hachutu&&window.DevHachutuRuin?.isDeadlyPit?.(info.x,info.z)){
         ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};
         if(window.PlayerDowned?.dieImmediately?.('hachutu-temple-abyss')!==true)deps.damagePlayer?.(999999);
