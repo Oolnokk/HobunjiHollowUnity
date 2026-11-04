@@ -4,6 +4,7 @@
 // place its room/hallway graph at the pre-reserved shaft portal, and solve the
 // standard gate/brazier chain without a teleport or a shared-floor blocker.
 const assert=require('assert');
+const fs=require('fs'); // Read the real V50 bridge source to prove scene snapshots preserve native meshes across generations.
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const Native=require('../docs/js/ruin-v50-native-floors.js');
 const CG=require('../docs/js/cell-grid-3d.js');
@@ -50,12 +51,44 @@ function metadata(){
     plateauModel:{stepHeight:.42,levelByCell:{}},
   };
 }
+// The V50 bridge must physically transfer its current preview children
+// instead of shallow-cloning or reusing roots that V50 clears next round.
+{
+  const source=fs.readFileSync('docs/tools/debris-ifier/debrisifier-v50-api.js','utf8');
+  const begin=source.indexOf('  function takePreviewRoots(options = {}) {');
+  const end=source.indexOf('  function pausePreviewLoop()',begin);
+  assert(begin>=0&&end>begin,'native source transfer hook is present on the actual V50 API');
+  const original=new Group(),particles=new Group(),child=new Mesh(new Geometry(),new Material());
+  const spark=new Group(),host=new Group();
+  host.add(original);host.add(particles);original.add(child);particles.add(spark);
+  const detach=obj=>obj.parent?.remove(obj);
+  const take=new Function('localePreviewRoot','mechanismParticleRoot','detachObject','THREE',
+    source.slice(begin,end)+'\\nreturn takePreviewRoots;')(original,particles,detach,THREE);
+  const snap=take({snapshot:true,floor:2});
+  assert(child.parent===snap.localeRoot&&spark.parent===snap.particleRoot);
+  assert(original.children.length===0&&particles.children.length===0);
+  original.add(new Mesh(new Geometry(),new Material())); // Simulate V50 clearing and regenerating into its fixed preview root.
+  assert(snap.localeRoot.children[0]===child,
+    'generating floor two may never erase meshes kept from floor one');
+  const legacy=take();
+  assert(legacy.localeRoot===original&&legacy.particleRoot===particles,
+    'normal single-floor V50 callers retain the original takePreviewRoots behavior');
+}
+
 const meta=metadata(),analysis=Native.analyze(meta);
 assert(analysis.ok&&analysis.stages.length===3&&analysis.gates.length===3,
   'independent V50 room graphs are recognized by their actual parent/doorway metadata');
 assert.equal(analysis.rooms,4);assert.equal(analysis.hallways,3);
 assert(!Native.analyze({...meta,doorways:[]}).ok,
   'a disconnected native V50 graph must not be placed with a fake progression gate');
+const shortcut={id:'hall_shortcut',col:10,row:25,w:50,h:4};
+const bypass={...meta,hallways:[...meta.hallways,shortcut],doorways:[
+  ...meta.doorways,
+  {from:'room_1',to:'hall_shortcut',axis:'z',boundary:25,center:12,widthCells:4},
+  {from:'hall_shortcut',to:'room_3',axis:'z',boundary:25,center:46,widthCells:4},
+]};
+assert(!Native.analyze(bypass).ok,
+  'a native hallway loop that bypasses a sealed V50 challenge gate must be rejected');
 assert(!Native.analyze({...meta,rooms:meta.rooms.slice(0,2)}).ok,
   'V50 native floor requires two challenge rooms before its brazier');
 const plan=Plan.compose({seed:22,anchorX:320,anchorZ:320,minFloors:3,maxFloors:3,nativeV50:true});
@@ -111,6 +144,7 @@ try{
     const found=registered.find(r=>r.id==='ruin-native-v50-story-'+state.floor);
     assert(found?.contains?.(state.place.originX+5,state.place.originZ+18));
     assert(state.route.length>0,'native V50 entrance is joined by an actual exterior corridor');
+    assert(state.routeWallSegments>0,'physical corridor walls must visually match its 3D collision');
     for(const stage of state.challenges){
       const before=state.solved;
       const grid=stage.gate.grid,[gx,gz]=stage.gate.tiles[0];
