@@ -48,7 +48,7 @@ function testEditorAuthoring() {
 }
 
 function testRuntime() {
-  const scene=new Group(),player={x:4.5*64,y:3.5*64,health:100,angle:0};
+  const scene=new Group(),player={x:4.5*64,y:3.5*64,health:100,angle:0,lastAttackReceivedAt:100};
   const grid=Array.from({length:10},()=>Array.from({length:10},()=>({type:'grass'})));
   let activeScene=scene; // Simulates area unload during bomb detonation without creating WebGL art.
   let clock=1000; // Deterministic fuse clock for the witch-bomb behavior.
@@ -83,10 +83,13 @@ function testRuntime() {
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
   assert(window.Shattercasks.stowOnBack());
-  player.health-=10;
-  window.Shattercasks.tick(.02); // Exercises the direct-damage fallback without a mocked secondary dispatcher.
-  assert.equal(causes.length,1,'successful carrier hit triggers one impact');
-  assert.equal(causes[0],'carrier-health-hit');
+  player.health-=10; // Affliction damage alone must never trigger a back-mounted collision.
+  window.Shattercasks.tick(.02);
+  assert.equal(causes.length,0,'health loss without a physical hit does not detonate the burden');
+  player.lastAttackReceivedAt+=500; // Same marker written by ResourceSystem.applyDamage on real impacts.
+  window.Shattercasks.tick(.02);
+  assert.equal(causes.length,1,'a direct impact triggers even if enhanced Health absorbs damage');
+  assert.equal(causes[0],'carrier-direct-hit');
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
 
