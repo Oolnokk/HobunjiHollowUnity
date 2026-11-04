@@ -164,6 +164,14 @@
 <script async src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
   onload="window.dispatchEvent(new Event('hobunji-clothing-fit-three-ready'))"
   onerror="document.getElementById('threeStatus').textContent='Three.js could not load; 2D fitting is still available. Retry the 3D preview when connected.'"></script>
+<script>
+window.__hobunjiFitLoaderStarted=false;
+setTimeout(()=>{
+  if(!window.__hobunjiFitLoaderStarted){
+    document.getElementById('status').textContent='Editor loader has not responded after 20 seconds. Check your connection or reload.';
+  }
+},20000); // Detect a hanging script download before loader.js can install its own diagnostics.
+</script>
 <script src="loader.js" onerror="document.getElementById('status').textContent='Editor loader could not be fetched. Check your connection and reload this page.'"></script>
 </body>
 </html>
