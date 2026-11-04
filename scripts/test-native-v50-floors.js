@@ -7,6 +7,7 @@ const assert=require('assert');
 const fs=require('fs'); // Read the real V50 bridge source to prove scene snapshots preserve native meshes across generations.
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const Native=require('../docs/js/ruin-v50-native-floors.js');
+const NativeMechanisms=require('../docs/js/ruin-v50-native-mechanisms.js'); // Real V50 authored activators must remain attached to each generated story.
 const CG=require('../docs/js/cell-grid-3d.js');
 const Corridors=require('../docs/js/ruin-shaft-corridor.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
@@ -27,7 +28,9 @@ class InstancedMesh extends Mesh{constructor(geometry,material,count){super(geom
   this.instanceMatrix={needsUpdate:false};this.matrices=[]}
   setMatrixAt(i,m){this.matrices[i]=m.xyz}}
 class Matrix4{makeTranslation(x,y,z){this.xyz=[x,y,z];return this}}
-const THREE={Group,Mesh,InstancedMesh,Matrix4,BoxGeometry:Geometry,PlaneGeometry:Geometry,
+class Vector3{constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}}
+class Box3{setFromObject(){return this}isEmpty(){return false}getCenter(target){return target}}
+const THREE={Group,Mesh,InstancedMesh,Matrix4,Box3,Vector3,BoxGeometry:Geometry,PlaneGeometry:Geometry,
   ConeGeometry:Geometry,CylinderGeometry:Geometry,MeshBasicMaterial:Material,DoubleSide:2};
 function metadata(){
   const rooms=Array.from({length:4},(_,i)=>({id:'room_'+(i+1),col:2+i*18,row:12,w:12,h:12,
@@ -121,13 +124,18 @@ for(let floor=1;floor<3;floor++){
 }
 const rec={scene,cols:100,rows:100,grid:[],
   floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]}};
-const ruin={controls:[],shaftLayerRuntime:{calls:[],setNativeGoalState(total,lit){this.calls.push({total,lit})}}};
+const ruin={controls:[],api:{applyProgress(){},syncPressurePlates(){}},
+  shaftLayerRuntime:{calls:[],setNativeGoalState(total,lit){this.calls.push({total,lit})}}}; // V50's original pose bridge is required even when this fixture has no authored activators.
 const registered=[],surfaces=[],cleared=[],toasts=[],player={x:0,z:0,y:0};
-const DS={registerSurface:r=>surfaces.push(r),clearScope:id=>cleared.push(id)};
+const DS={registerSurface:r=>surfaces.push(r),registerBlocker:r=>surfaces.push(r),
+  remove(){},clearScope:id=>cleared.push(id)};
 const Dev={registerShaftGrid:(id,grid,dispose,contains)=>registered.push({id,grid,dispose,contains}),
   unregisterShaftGrid:id=>registered.splice(registered.findIndex(v=>v.id===id),1)};
 const targets=new Map(),fireTargets=new Map();
 const music={state:{echoChallenge:null},closed:0,close(){this.closed++;this.state.echoChallenge=null;}}; // Injects the real session-close lifecycle without requiring the browser flute UI.
+const nativeScanRoots=new Set(),hitPuzzles={registerExternalRoot(root){
+  nativeScanRoots.add(root);return ()=>nativeScanRoots.delete(root);
+}}; // The shared source glyph/torch runtime follows the exact story-root lifetime.
 const oldBus=globalThis.DevRandomRuinSimplePuzzles,oldFire=globalThis.DungeonFire;
 globalThis.DevRandomRuinSimplePuzzles={
   registerExternalProjectileTarget(t){targets.set(t.id,t);return ()=>targets.delete(t.id)},
@@ -143,6 +151,7 @@ try{
     hub:{ok:true,cols:49},records:floors,makeTile:open=>({type:open?'grass':'rock'}),
     THREE,DynamicSurfaces:DS,CellGrid3D:CG,RuinShaftCorridor:Corridors,
     RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,MusicMinigame:music,
+    RuinV50NativeMechanisms:NativeMechanisms,hitPuzzles,
     DevRandomRuin:Dev,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
     showToast:message=>toasts.push(message),tileScale:2,
   });
@@ -150,6 +159,9 @@ try{
   assert(native.getState().perFloor.every(f=>f.reservationVerified));
   assert.equal(native.records[0].challenges[0].floorY,4.42,'native puzzle height comes from V50 surface metadata');
   assert.equal(native.getState().rooms,8);
+  assert.equal(nativeScanRoots.size,2,'both upper-floor V50 roots join the real glyph/torch runtime');
+  assert(native.getState().perFloor.every(record=>record.nativeMechanisms?.mechanisms===0),
+    'an empty fixture still mounts and disposes its independent native mechanism bridge');
   assert.equal(native.getState().hallways,6);
   assert.equal(registered.length,2);
   assert(registered.every(v=>Native.isNativeGrid(v.grid)),
@@ -208,6 +220,7 @@ try{
   assert(cleared.length===2,'both native stories release their own independent surface and voxel scope');
   assert.equal(targets.size,0);
   assert.equal(fireTargets.size,0);
+  assert.equal(nativeScanRoots.size,0,'native glyph and torch roots must unregister when the dungeon closes');
   console.log('ok preplanned native V50: real room graphs, 2 upper stories, plateau-aware 3D gates, physical halls, native braziers, cleanup');
 }finally{
   native?.dispose();
