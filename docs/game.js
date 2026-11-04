@@ -15649,6 +15649,7 @@
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
+        window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
       }
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
@@ -31803,6 +31804,7 @@
 
       window.ZonePlateauMesa?.init({
         NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
+        getCurrentArea: () => currentArea, // Keeps offscreen cliff supports out of the dungeon and other zones.
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
