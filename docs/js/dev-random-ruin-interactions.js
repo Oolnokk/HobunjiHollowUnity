@@ -310,6 +310,13 @@
       for (let index = 0; index < controls.length; index++) {
         const control = controls[index];
         if (!control || (typeof control.onPress !== 'function' && typeof control.onHoldStart !== 'function')) continue;
+        // Floor-local controls on stacked 2D layers must not show up through
+        // an upper deck or trigger a different story's brazier from below.
+        // Older V50 controls have no floorY and retain their legacy range.
+        if(Number.isFinite(Number(control.floorY))&&control.floorY!==null&&control.floorY!==undefined){
+          const supportY=window.DevRandomRuin?.getPlayerSupportY?.();
+          if(!Number.isFinite(supportY)||Math.abs(supportY-Number(control.floorY))>.9)continue;
+        }
         const kind = String(control.kind || 'interactive').toLowerCase();
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
