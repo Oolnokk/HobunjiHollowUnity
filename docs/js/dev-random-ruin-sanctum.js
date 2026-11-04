@@ -260,36 +260,31 @@
     return brazier;
   }
 
-  // Safe-path mazes finish at a standing brazier just beyond their exit:
-  // through the far doorway, off to one side of the walking line.
-  function buildSafePathBraziers(kit) {
-    const T = window.DevRandomRuinTileOccupancy;
-    const free = (x, z, r) => { const sup = DS.sampleSupport(x, z, { minY:-2, maxY:3 }); return sup && !T?.blocksAt?.(x, z, r) && !T?.solidAt?.(x, z, r) ? sup : null; };
-    for (const grid of kit.state?.safeGrids || []) {
-      const cells = grid.cells || [];
-      if (!cells.length) continue;
-      const along = c => grid.axis === 'x' ? c.x : c.z, cross = c => grid.axis === 'x' ? c.z : c.x;
-      const alongs = cells.map(along), crosses = cells.map(cross);
-      const dir = grid.approachAtMin ? 1 : -1;
-      const lastRow = dir > 0 ? Math.max(...alongs) : Math.min(...alongs);
-      const mid = (Math.min(...crosses) + Math.max(...crosses)) / 2;
-      const at = (a, c) => grid.axis === 'x' ? { x:a, z:c } : { x:c, z:a };
-      let spot = null;
-      for (let d = 1.6; d <= 5 && !spot; d += .3) {
-        const a = lastRow + dir * d;
-        const lane = at(a, mid);
-        if (!free(lane.x, lane.z, .22)) continue; // Still inside the doorway/wall band.
-        for (const side of [1.5, -1.5, 2.1, -2.1]) {
-          const p = at(a, mid + side);
-          const sup = free(p.x, p.z, .32);
-          if (sup) { spot = { ...p, y:Number(sup.y) }; break; }
+  // The retired safe-path grid's Great Door seal is now earned on the far bank
+  // of the rope-chain abyss. Both banks use existing floor, not new platforms.
+  function buildRopeChainBraziers(kit) {
+    const T=window.DevRandomRuinTileOccupancy;
+    const free=(x,z,r)=>{const sup=DS.sampleSupport(x,z,{minY:-2,maxY:3});return sup&&!T?.blocksAt?.(x,z,r)&&!T?.solidAt?.(x,z,r)?sup:null;};
+    for(const chain of kit.state?.ropeChains||[]){
+      const bank=chain[chain.rewardSide]; // Reward bank is opposite the progression entry doorway.
+      if(!bank)continue;
+      const axis=chain.axis,along=axis==='x'?bank.x:bank.z,cross=axis==='x'?bank.z:bank.x;
+      const outward=chain.rewardSide==='end'?1:-1;
+      let spot=null;
+      for(const distance of [.7,1.2,1.8,2.6,3.4]){
+        if(spot)break;
+        for(const offset of [1.5,-1.5,1.15,-1.15,2,-2]){
+          const a=along+outward*distance,c=cross+offset;
+          const x=axis==='x'?a:c,z=axis==='x'?c:a;
+          const sup=free(x,z,.32);
+          if(sup){spot={x,z,y:Number(sup.y)};break;}
         }
       }
-      if (!spot) { s.rejects.push(`safe-path ${grid.hallId}: no spot for its brazier`); continue; }
-      const fire = standingBrazier(kit, kit.group(), spot.x, spot.z, spot.y);
+      if(!spot){s.rejects.push('rope-chain '+chain.id+': no safe reward brazier spot on far bank');continue;}
+      const fire=standingBrazier(kit,kit.group(),spot.x,spot.z,spot.y);
       fire.holder.scale.setScalar(.8);
-      makeBrazierRecord('brazier-safepath-' + grid.hallId, 'Safe Path', fire.holder, fire, { safePath:grid.hallId });
-      T?.addSolidBox?.('devruin-brazier-safepath-' + grid.hallId, { cx:spot.x, cz:spot.z, halfX:.16, halfZ:.16 }, null, kit.SCOPE);
+      makeBrazierRecord('brazier-rope-chain-'+chain.id,'Rope Chain',fire.holder,fire,{ropeChain:chain.id});
+      T?.addSolidBox?.('devruin-brazier-rope-chain-'+chain.id,{cx:spot.x,cz:spot.z,halfX:.16,halfZ:.16},null,kit.SCOPE);
     }
   }
 
@@ -1047,7 +1042,7 @@
       return rise ? {index:'room-'+index,bounds,rise,open:true,spawned:false,spawnPending:false,skeleton:null} : null;
     }).filter(Boolean); // Every eligible generated room has one sleeping skeleton encounter.
     s.braziers = buildBraziers(kit, context);
-    if (cfg('sanctum.safePathBraziers', true)) buildSafePathBraziers(kit);
+    if (cfg('sanctum.ropeChainBraziers', cfg('sanctum.safePathBraziers', true))) buildRopeChainBraziers(kit);
     const site = chooseDoorSite(kit, context, s.rng);
     if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
