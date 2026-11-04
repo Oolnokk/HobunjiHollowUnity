@@ -19,8 +19,9 @@
     const bounds=p=>p.x>=1&&p.z>=1&&p.x<maxX-1&&p.z<maxZ-1;
     if(!bounds(a)||!bounds(b))return {ok:false,reason:'entry or shaft mouth outside map'};
     const goal=key(b.x,b.z),origin=key(a.x,a.z);
+    const adjacentToExisting=p=>dirs.some(([dx,dz])=>existing.has(key(p.x+dx,p.z+dz)));
     const pass=p=>bounds(p)&&(key(p.x,p.z)===origin||key(p.x,p.z)===goal||
-      (!within(p,mainBounds)&&!within(p,shaftBounds)&&!existing.has(key(p.x,p.z))));
+      (!within(p,mainBounds)&&!within(p,shaftBounds)&&!existing.has(key(p.x,p.z))&&!adjacentToExisting(p)));
     const queue=[a],parents=new Map([[origin,null]]);
     let head=0;
     while(head<queue.length&&!parents.has(goal)){
@@ -44,9 +45,7 @@
       const radius=i<3||i>path.length-4?0:half;
       for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
         const cell={x:p.x+dx,z:p.z+dz};
-        if(bounds(cell)&&(key(cell.x,cell.z)===origin||key(cell.x,cell.z)===goal||
-          !within(cell,mainBounds)&&!within(cell,shaftBounds)&&!existing.has(key(cell.x,cell.z))))
-          tiles.add(key(cell.x,cell.z));
+        if(pass(cell))tiles.add(key(cell.x,cell.z));
       }
     }
     return {ok:true,path,tiles:[...tiles].map(k=>k.split(',').map(Number)),length:path.length-1,

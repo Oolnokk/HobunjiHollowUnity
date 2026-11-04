@@ -100,6 +100,18 @@ const bypass={...meta,hallways:[...meta.hallways,shortcut],doorways:[
 ]};
 assert(!Native.analyze(bypass).ok,
   'a native hallway loop that bypasses a sealed V50 challenge gate must be rejected');
+{
+  const reserved=new Set();
+  for(let z=3;z<=7;z++)for(let x=5;x<=8;x++)reserved.add(x+','+z);
+  const corridor=Corridors.route({start:{x:1,z:5},end:{x:9,z:5},width:3,
+    existing:reserved,maxX:16,maxZ:12});
+  assert(corridor.ok,'an exterior corridor must route around a reserved native floor');
+  for(const [x,z] of corridor.tiles){
+    if(x===9&&z===5)continue; // The endpoint is the one intentional entrance into the native floor.
+    assert(![[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>reserved.has((x+dx)+','+(z+dz))),
+      'an exterior corridor must not open side passages into a reserved native floor');
+  }
+}
 assert(!Native.analyze({...meta,rooms:meta.rooms.slice(0,2)}).ok,
   'V50 native floor requires two challenge rooms before its brazier');
 const plan=Plan.compose({seed:22,anchorX:320,anchorZ:320,minFloors:3,maxFloors:3,nativeV50:true});
@@ -217,6 +229,13 @@ try{
     assert(found?.contains?.(state.place.originX+5,state.place.originZ+18));
     assert(state.route.length>0,'native V50 entrance is joined by an actual exterior corridor');
     assert(state.routeWallSegments>0,'physical corridor walls must visually match its 3D collision');
+    const floorTiles=new Set(state.meta.floorCells.map(([x,z])=>
+      (Math.floor(state.place.originX+x*state.place.cs))+','+(Math.floor(state.place.originZ+z*state.place.cs))));
+    for(const [x,z] of state.route.tiles){
+      if(x===state.place.outside.x&&z===state.place.outside.z)continue;
+      assert(![[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>floorTiles.has((x+dx)+','+(z+dz))),
+        'the exterior corridor may join a native story only at its designated entrance');
+    }
     for(const stage of state.challenges){
       const before=state.solved;
       const grid=stage.gate.grid,[gx,gz]=stage.gate.tiles[0];
