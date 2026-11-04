@@ -2212,7 +2212,7 @@
   }
 
   function syncEchoInscription(set) {
-    if (!set.inscription || set.inscription.sequenceKey===set.notes.join(',')) return;
+    if (!set.inscription || set.inscription.matchesNotes(set.notes)) return;
     if (set.inscription.setNotes(set.notes)) {
       set.heardNotes.length=0; // Changing the authored phrase never inherits a partial attempt against the previous melody.
       cancelEchoPlayback(set);
