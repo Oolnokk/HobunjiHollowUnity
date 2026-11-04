@@ -134,6 +134,9 @@
     }
   }
 
+  function ownsArea(area) {
+    return mounts.has(String(area)); // Distinguishes 'no raised landing' from 'adapter not registered'.
+  }
   function stateFor(network) {
     const state = mounts.get(String(network?.area ?? ''));
     return state?.network === network ? state : null; // Refuse stale topology after terrain edits.
@@ -184,5 +187,5 @@
       area: s.area, balconies: s.byId.size, supportRectangles: s.supportCount, scope: s.scope,
     })) };
   }
-  return Object.freeze({ groupedRectangles, mount, clear, supportAt, highestBelow, canStandOn, debugSnapshot });
+  return Object.freeze({ groupedRectangles, mount, clear, ownsArea, supportAt, highestBelow, canStandOn, debugSnapshot });
 });
