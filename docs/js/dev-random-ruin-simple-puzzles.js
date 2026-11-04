@@ -587,13 +587,10 @@
     }
     // Use the production release-flight and air-catch predictor, not a second
     // distance heuristic. The final target is EXISTING floor, not a platform.
-    const shoreLanding=(side)=>{ // Targets only the floor we deliberately kept, never a fictitious strip over the pit.
-      const p=point(side==='start'?start+shore*.5:finish-shore*.5);
-      return {...p,y:floorY,topY:floorY,
-        width:axis==='x'?shore*.75:Math.min(2.4,crossWidth-1),
-        depth:axis==='z'?shore*.75:Math.min(2.4,crossWidth-1)};
-    };
-    const exitFloor=shoreLanding('end'),entryFloor=shoreLanding('start');
+    const bounds=axis==='x'
+      ? {minX:start+shore,maxX:finish-shore,minZ:crossStart,maxZ:crossStart+crossWidth}
+      : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start+shore,maxZ:finish-shore};
+    const exitFloor={bank:{bounds,axis,side:'end'}},entryFloor={bank:{bounds,axis,side:'start'}}; // Matches actual floor sampling after an airborne release.
     const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
     const forwardHops=ropes.map((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight));
     const reverseHops=ropes.map((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
@@ -614,9 +611,6 @@
       }
     }
     state.ropeChainDisabledSurfaces.push(...disabledSurfaces);
-    const bounds=axis==='x'
-      ? {minX:start+shore,maxX:finish-shore,minZ:crossStart,maxZ:crossStart+crossWidth}
-      : {minX:crossStart,maxX:crossStart+crossWidth,minZ:start+shore,maxZ:finish-shore};
     const pitId='dev_ruin_rope_chain_abyss_'+hall.id;
     DS.registerPit({id:pitId,scope:SCOPE,bounds});
     state.surfaceIds.add(pitId);
@@ -864,6 +858,18 @@
     return true;
   }
 
+  // The target bank is ordinary pre-existing floor, not an invented platform.
+  // This geometry is used by both generation's flight predictor and live
+  // arrival checkpoint claims after the shared rope flight lands.
+  function ropeBankReached(bounds,axis,side,point) {
+    const along=axis==='x'?point.x:point.z,cross=axis==='x'?point.z:point.x;
+    const minCross=axis==='x'?bounds.minZ:bounds.minX;
+    const maxCross=axis==='x'?bounds.maxZ:bounds.maxX;
+    const edge=side==='start'?(axis==='x'?bounds.minX:bounds.minZ):(axis==='x'?bounds.maxX:bounds.maxZ);
+    return cross>=minCross+.3&&cross<=maxCross-.3
+      &&(side==='start'?along<edge-.02:along>edge+.02);
+  }
+
   // Ballistic flight after letting go, with the same gravity, release kick,
   // collision and landing rules as releaseRope()/updateFlight().
   function simulateRopeFlight(start,target,floorY) {
@@ -875,6 +881,10 @@
       else{f.x=next.x;f.z=next.z;}
       f.y=next.y;
       if(target.rope&&ropeCatchPoint(target.rope,f))return true;
+      if(target.bank&&f.vy<=0&&ropeBankReached(target.bank.bounds,target.bank.axis,target.bank.side,f)){
+        const support=sampleSupport(f.x,f.z,f.y+.25);
+        if(support?.id?.startsWith('devruin-floor-')&&f.y<=Number(support.y)+.08&&f.y>=Number(support.y)-.22)return true;
+      }
       if(target.platform){
         const p=target.platform,top=Number(p.topY);
         if(f.vy<=0&&f.y<=top+.08&&f.y>=top-PLATFORM_SIDE_CLEARANCE&&Math.abs(f.x-p.x)<=p.width*.5-.15&&Math.abs(f.z-p.z)<=p.depth*.5-.15)return true;
@@ -2163,6 +2173,13 @@
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
       setPlayerWorld(f,true,true);
+      for(const chain of state.ropeChains){
+        if(!chain.ropes.some(rope=>rope.id===f.ropeId))continue;
+        for(const side of ['start','end'])if(ropeBankReached(chain.bounds,chain.axis,side,f)){
+          activateCheckpoint(chain.checkpointIds[side],chain[side],true); // A long but legitimate landing beyond either bank still replaces the opposite checkpoint.
+          break;
+        }
+      }
       state.flight=null;
       state.lastPlayerWorld=clonePoint(f);
       return;
@@ -2291,10 +2308,7 @@
     if(index<0)return {ok:false,reason:'the active rope is not in that chain'};
     const destinationIndex=index+(reverse?-1:1);
     const destination=chain.ropes[destinationIndex]; // An undefined destination means the player must land on the existing bank floor.
-    const bank=reverse?chain.entry:chain.exit;
-    const target=destination?{rope:destination}:{platform:{...bank,topY:bank.y,
-      width:chain.axis==='x'?2.2:Math.min(2.4,chain.bounds.maxX-chain.bounds.minX-1),
-      depth:chain.axis==='z'?2.2:Math.min(2.4,chain.bounds.maxZ-chain.bounds.minZ-1)}};
+    const target=destination?{rope:destination}:{bank:{bounds:chain.bounds,axis:chain.axis,side:reverse?'start':'end'}}; // Same existing-floor landing test as generation.
     const sign=reverse?-1:1;
     for(let amp=.55;amp<=1.15+1e-6;amp+=.05){
       for(let step=0;step<=10;step++){
