@@ -32,6 +32,7 @@
     }
     const entry = { id, area, record, root, def }; // Holds live roots so moving/rotating a table carries its surface contents and targeting together.
     entries.set(id, entry);
+    window.TableChairPlacement?.refreshArea?.(area, entries.values(), id); // Only the changed table or chair needs a transform refresh.
     collisionAreas.delete(area); // Same-frame placement/replacement must invalidate the broad phase too.
     focusStamp = null; // Placement changes invalidate any cached interaction target.
     window.NpcFurnitureWardrobes?.primeArea?.(area); // Authored map storage receives its real furniture-to-NPC binding asynchronously.

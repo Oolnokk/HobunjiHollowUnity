@@ -20,7 +20,7 @@ assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?baseShadeReferenceHex:\s
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?baseRecolorKeyHex:\s*BASE_RECOLOR_KEY_HEX/, 'Voorg-Ass renderer metadata exposes the authored source recolor key');
 assert.match(registrationSource, /prefix:\s*KIND[\s\S]*?fullBaseRecolor:\s*false/, 'Voorg-Ass no longer recolors every opaque base pixel');
 assert.match(geneticsSource, /resources\[VOORG_ASS_KIND\]\s*=\s*\{\s*itemKey:\s*LIGHT_WOOL_ITEM_KEY,\s*cooldownDays:\s*1,\s*verb:\s*'Shear'/, 'Voorg-Ass uses the generic one-day shearing path');
-assert.deepEqual(loot.pools?.['creature_voorg-ass']?.entries?.map(entry => entry.itemKey), ['voorgAssMeat'], 'Voorg-Ass has its own meat drop pool');
+assert.deepEqual(loot.pools?.['creature_voorg-ass']?.entries?.map(entry => entry.itemKey), ['voorgAssMeat', 'voorgAssHide'], 'Voorg-Ass has both meat and inherited-coat hide drops');
 
 let rngState = 0x8a77c11; // Used by deterministic Math.random so breeding coverage cannot become flaky in CI.
 const seededMath = Object.create(Math); // Used by the VM while retaining native Math helpers.

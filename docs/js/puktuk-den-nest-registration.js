@@ -8,6 +8,12 @@
   const VOORG_ASS_ZONE_ID = 'map_northern_cliffs'; // Exterior-zone key whose open-air herd ecology owns Voorg-Asses.
   const VOORG_ASS_BABY_ITEM_KEY = 'voorgAssBaby'; // Livestock item recovered from a killed Voorg-Ass Herd-Mother.
   const LIGHT_WOOL_ITEM_KEY = 'lightWool'; // Voorg-Ass shearing output presented to players as Light Wool.
+  const WILDLIFE_MATERIAL_DEFS = Object.freeze({ // Runtime inventory materials for hides and shells; also indexed by generate-item-index.js.
+    puktukHide: { label: 'Puktuk Hide', icon: '🟫', cat: 'material', sellPrice: 24, tags: ['Material', 'Hide', 'Puktuk'], desc: 'A Puktuk hide preserving its original inherited fur for leatherworking.' },
+    voorgAssHide: { label: 'Voorg-Ass Hide', icon: '🟫', cat: 'material', sellPrice: 24, tags: ['Material', 'Hide', 'Voorg-Ass'], desc: 'A Voorg-Ass hide whose natural coat can be made into a fur hood.' },
+    nelkHide: { label: 'Nelk Hide', icon: '🟫', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide', 'Nelk'], desc: 'A Nelk hide, suitable for a natural-color fur hood.' },
+    uumkaoiiShell: { label: "Uumkao'ii Shell", icon: '🐚', cat: 'material', sellPrice: 18, tags: ['Material', 'Shell', "Uumkao'ii"], desc: "A hard shell recovered from a wild Uumkao'ii; not a fur hide." },
+  });
 
   function registerDenNestConfig() {
     const game = window.SCRATCHBONES_CONFIG?.game; // Config is loaded before this bridge and snapshotted later by game.js.
@@ -86,6 +92,30 @@
         inventoryItems.push({ key: spec.key, icon: itemDefs[spec.key].icon, label: spec.label.toUpperCase(), max: 99 });
       }
     }
+    registerWildAnimalMaterials(injectedDeps); // Share this already-installed CookingSystem.init bridge rather than creating another initialization wrapper.
+    return true;
+  }
+
+  function registerWildAnimalMaterials(injectedDeps) {
+    const itemDefs = injectedDeps?.ITEM_DEFS; // The game's authoritative inventory definitions, also read by shipping and item actions.
+    const inventoryItems = injectedDeps?.inventoryItems; // Visible Pack/item-wheel entries for newly introduced loot materials.
+    if (!itemDefs || !Array.isArray(inventoryItems)) return false;
+    for (const [key, spec] of Object.entries(WILDLIFE_MATERIAL_DEFS)) {
+      itemDefs[key] = { ...spec, ...(itemDefs[key] || {}), sellPrice: Number(itemDefs[key]?.sellPrice) > 0 ? itemDefs[key].sellPrice : spec.sellPrice }; // Preserve existing authored overrides but prevent zero-value shipping rejects.
+      const existing = inventoryItems.find(item => item?.key === key); // Reuse an existing item-wheel entry on repeated initialization.
+      if (existing) {
+        existing.icon ||= itemDefs[key].icon;
+        existing.label = itemDefs[key].label.toUpperCase();
+        existing.max ||= 99;
+      } else inventoryItems.push({ key, icon: itemDefs[key].icon, label: itemDefs[key].label.toUpperCase(), max: 99 });
+    }
+    return true;
+  }
+
+  function registerNelkWildlifeLoot(injectedDeps) {
+    const nelk = injectedDeps?.CREATURE_DB?.nelk; // Live Nelk species definition owns the corpse's lootPool selection.
+    if (!nelk) return false;
+    nelk.lootPool = 'creature_nelk'; // Register at species-init time, before creatures are spawned; no per-creature mutation.
     return true;
   }
 
@@ -103,6 +133,7 @@
     if (api.__voorgAssHerdRegistrationInstalled) return true;
     const originalInit = api.init; // Preserves CreatureGenetics and every other WildlifeSpawn.init wrapper already in the chain.
     api.init = function voorgAssHerdAwareWildlifeInit(injectedDeps) {
+      registerNelkWildlifeLoot(injectedDeps); // Nelk's new authored loot pool must be available before wild Nelk spawn.
       registerVoorgAssHerdRuntime(injectedDeps);
       return originalInit.call(this, injectedDeps);
     };
@@ -218,6 +249,8 @@
     registerDenNestConfig,
     registerDenBabyItems,
     registerWoolInventoryItems,
+    registerWildAnimalMaterials,
+    registerNelkWildlifeLoot,
     registerVoorgAssHerdRuntime,
     registerVoorgAssDenRuntime: registerVoorgAssHerdRuntime, // Compatibility alias for older diagnostics; v3 no longer creates a den.
     debugSnapshot: () => ({
@@ -228,6 +261,7 @@
       initBridgeReady: !!window.DenNestSystem?.__denBabyItemBridgeInstalled,
       wildlifeBridgeReady: !!window.WildlifeSpawn?.__voorgAssHerdRegistrationInstalled || wildlifeBridgeReady,
       woolBridgeReady: !!window.CookingSystem?.__livestockWoolItemBridgeInstalled || woolBridgeReady,
+      wildMaterialKeys: Object.keys(WILDLIFE_MATERIAL_DEFS), // Mobile diagnostics: confirms the exact shell/hide registration roster.
       denLocaleReady: !!window.DenLocaleRuntime,
     }),
   };

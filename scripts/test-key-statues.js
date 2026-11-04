@@ -85,10 +85,17 @@ class MockGroup {
  remove(child){this.children=this.children.filter(item=>item!==child);child.parent=null;}
  updateWorldMatrix(){}
 }
-const scene={isScene:true};
+const scene=new MockGroup();scene.isScene=true; // Authoritative scene root accepts a discarded statue during recovery.
 const runtimeButton=new MockGroup();
 const root=new MockGroup();
-root.parent=scene;
+scene.add(root);
+const plinth=new MockGroup(),plinthAnchor=new MockGroup(); // Linked defense plinth used to prove seated statues are protected from recall.
+plinth.userData.burdenPlateAnchor=plinthAnchor;plinth.userData.puzzleInstanceId='trial_plinth';
+plinth.userData.furniturePuzzle={behavior:'burdenPlate'};plinth.add(plinthAnchor);
+const alternate=new MockGroup(),alternateAnchor=new MockGroup(); // An unrelated optional plinth can accept the same physical Key Statue kind.
+alternate.userData.burdenPlateAnchor=alternateAnchor;alternate.userData.puzzleInstanceId='alternate_plinth';
+alternate.userData.furniturePuzzle={behavior:'burdenPlate'};alternate.add(alternateAnchor);
+let cancelledPlinths=0,alternateCancels=0;
 root.userData.meshById=new Map([['key_statue_button',runtimeButton]]);
 let assetLoads=0;
 const registered=[];
@@ -105,11 +112,19 @@ const runtimeWindow={
   discardBurden(burden){burden.exploded=true;burden.group.parent?.remove(burden.group);burden.onLost?.(burden,'discarded');return true;},
   pickUp(){return true;},
  },
- FurniturePuzzleRuntime:{setKeyStatueTaken(_map,_id,taken){takenTransitions.push(taken);return true;}},
+ FurniturePuzzleRuntime:{
+  setKeyStatueTaken(_map,_id,taken){takenTransitions.push(taken);return true;},
+  getNode(_map,id){return id==='trial_plinth'?plinth:id==='alternate_plinth'?alternate:null;},
+  cancelBurdenPlate(_map,id){
+    if(id==='trial_plinth'){cancelledPlinths++;plinth.userData.burdenPlatePayload=null;return true;}
+    if(id==='alternate_plinth'){alternateCancels++;alternate.userData.burdenPlatePayload=null;return true;}
+    return false;
+  },
+ },
 };
 runtimeWindow.window=runtimeWindow;
 vm.runInNewContext(read('docs/js/key-statues.js'),{window:runtimeWindow,console});
-assert(runtimeWindow.KeyStatues.registerDispenser('map_key_statue_runtime','fixture',root,{payloadPartId:'key_statue_button'}));
+assert(runtimeWindow.KeyStatues.registerDispenser('map_key_statue_runtime','fixture',root,{payloadPartId:'key_statue_button'},{feedPlinthId:'trial_plinth'}));
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(assetLoads,1,'initial missing authored data is observed');
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,
@@ -127,6 +142,37 @@ assert.notStrictEqual(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].pay
  'the live payload reference changes to the replacement');
 assert.equal(registered[1].group.parent?.parent,runtimeButton,'replacement is attached while the runtimeButton animates back up');
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,'successful replacement releases the respawn lock');
-
-console.log('Key Statue: authored statue/dispenser, inverted button transforms, mounted Burden, pickup channel, automatic loss cleanup and ON→OFF restoration checks passed.');
+const area='map_key_statue_runtime',api=runtimeWindow.KeyStatues,second=registered[1];
+assert.equal(api.status(area,'fixture'),'ready','new statue is available on the dispenser');
+second.carried=true;second.keyStatueMounted=false;second.onPickup?.(second);
+assert.equal(api.status(area,'fixture'),'carried','carried statues are not duplicated by their dispenser');
+assert.equal(api.recall(area,'fixture').ok,false,'recall cannot discard the statue currently in the player hands');
+second.carried=false;scene.add(second.group); // A dropped statue can be made inaccessible without being destroyed.
+assert.equal(api.status(area,'fixture'),'recallable');
+assert.equal(api.recall(area,'fixture').ok,true,'the player can request a fresh statue from an unreachable drop');
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(registered.length,3,'manual recall creates exactly one replacement after discarding the original');
+const third=registered[2];
+assert.equal(api.status(area,'fixture'),'ready');
+third.carried=false;third.keyStatueMounted=false;
+plinthAnchor.add(third.group);plinth.userData.burdenPlatePayload=third;
+assert.equal(api.status(area,'fixture'),'seated','the linked plinth owns the statue during a defense');
+assert.equal(api.recall(area,'fixture').ok,false,'the dispenser must not steal a statue from an active plinth');
+runtimeWindow.Shattercasks.discardBurden(third);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(cancelledPlinths,1,'destroying the seated statue reverses its plinth instead of leaving a false completion');
+assert.equal(registered.length,4,'destroying the seated statue restores exactly one replacement');
+assert.equal(api.status(area,'fixture'),'ready','after a failed defense the dispenser is ready again');
+assert.equal(api.debugSnapshot().dispensers[0].feedPlinthId,'trial_plinth','mobile debug reports the linked defense objective');
+const swapped=registered[3];swapped.carried=false;swapped.keyStatueMounted=false;
+swapped.plinthAttached=true;swapped.plinthAnchor=alternateAnchor;
+alternateAnchor.add(swapped.group);alternate.userData.burdenPlatePayload=swapped;
+assert.equal(api.status(area,'fixture'),'seated','a statue moved into another plinth is protected by its actual attachment');
+assert.equal(api.recall(area,'fixture').ok,false,'the original dispenser cannot duplicate a statue seated at another plinth');
+runtimeWindow.Shattercasks.discardBurden(swapped);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(alternateCancels,1,'destroying a swapped statue resets the plinth that actually held it');
+assert.equal(registered.length,5,'a cross-placed destroyed statue still produces only one fresh replacement');
+assert.equal(api.status(area,'fixture'),'ready');
+console.log('Key Statue: authored dispenser + plinth feed, retry after failed loads, loss and drop recovery, protected in-progress or swapped statues, and reset on destruction passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -84,7 +84,10 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(a.clicks, 0, 'entering does not accidentally activate the first item');
   press('right'); assert.equal(ui.focusedElement(), b);
   press('right'); assert.equal(ui.focusedElement(), b, 'Right cannot escape to a nearby outside item');
-  press('tabNext'); assert.equal(tabB.clicks, 1, 'bumper switches tabs without first focusing their bar');
+  tabB.x = 700; // Outside the 600 px viewport: bumpers must not click a tab hidden beyond the edge.
+  press('tabNext'); assert.equal(tabB.clicks, 0, 'bumper cannot activate an off-screen tab');
+  tabB.x = 350;
+  press('tabNext'); assert.equal(tabB.clicks, 1, 'bumper switches tabs once the tab is on-screen');
   assert.equal(ui.debugState().groupDepth, 0, 'bumper selection exits the chooser');
   tabA.focus();
   assert.equal(ui.debugState().groupDepth, 1, 'native tab focus enters its chooser');
@@ -173,6 +176,53 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   actionCard.focus(); press('down'); assert.equal(ui.focusedElement(), lockedEffect);
   press('confirm'); assert.equal(lockedEffect.clicks, 0);
 
+  const offscreenButton = button('offscreen-action', 720, 50); // A stale selection stays selected but cannot fire outside the screen.
+  panel.append(offscreenButton);
+  offscreenButton.focus(); press('confirm');
+  assert.equal(offscreenButton.clicks, 0, 'Confirm ignores a selected button completely beyond the viewport');
+  assert.equal(ui.focusedElement(), offscreenButton, 'blocking off-screen activation does not steal the selection');
+  assert.equal(ui.debugState().focusedControlOnScreen, false, 'mobile/controller diagnostics explain the ignored Confirm');
+  assert.equal(ui.debugState().lastBlockedActivation.id, 'offscreen-action');
+  offscreenButton.x = 590; press('confirm');
+  assert.equal(offscreenButton.clicks, 1, 'a partially visible control is still actionable');
+  context.window.visualViewport = { offsetLeft: 0, offsetTop: 0, width: 400, height: 400 }; // Mobile on-screen keyboard can reduce the visible viewport without shrinking innerWidth.
+  offscreenButton.x = 450; press('confirm');
+  assert.equal(offscreenButton.clicks, 1, 'visual-viewport clipping also prevents controller activation');
+  delete context.window.visualViewport;
+
+  const staleSelected = button('stale-selected', 10, 50); // A hidden selection must never redirect its Confirm press onto a visible neighbor.
+  const safeNeighbor = button('safe-neighbor', 120, 50); // Confirms a stale-focus recovery cannot accidentally purchase or select something else.
+  panel.append(staleSelected); panel.append(safeNeighbor);
+  staleSelected.focus(); staleSelected.hidden = true;
+  press('confirm');
+  assert.equal(staleSelected.clicks, 0, 'a hidden selection is not clickable');
+  assert.equal(safeNeighbor.clicks, 0, 'Confirm on hidden focus does not activate its replacement focus target');
+  assert.equal(ui.debugState().lastBlockedActivation.reason, 'focus-recovered');
+
+  const removedSelected = button('rebuilt-selected', 10, 50); // Rebuilt controls with the same ID require a fresh Confirm press.
+  panel.append(removedSelected);
+  removedSelected.focus();
+  const replacementSelected = button('rebuilt-selected', 10, 50);
+  const replacementIndex = panel.children.indexOf(removedSelected); // Used to simulate a synchronous inventory/control rerender between gamepad frames.
+  panel.children[replacementIndex] = replacementSelected;
+  replacementSelected.parentElement = panel;
+  removedSelected.parentElement = null;
+  press('confirm');
+  assert.equal(replacementSelected.clicks, 0, 'Confirm does not activate a newly rebuilt button on the old focus press');
+  assert.equal(ui.focusedElement(), replacementSelected, 'focus still recovers to the exact rebuilt button');
+  press('confirm');
+  assert.equal(replacementSelected.clicks, 1, 'next deliberate Confirm activates the now-visible recovered button');
+
+  const offscreenSlider = new Element('input', { id: 'offscreen-slider' }, [], 700, 50); // A focused range input must not change while outside the viewport.
+  offscreenSlider.type = 'range'; offscreenSlider.min = '0'; offscreenSlider.max = '100'; offscreenSlider.step = '1'; offscreenSlider.value = '20';
+  panel.append(offscreenSlider);
+  offscreenSlider.focus(); press('right');
+  assert.equal(offscreenSlider.value, '20', 'controller range adjustments ignore a selected off-screen slider');
+
+  close.x = 700; press('cancel');
+  assert.equal(close.clicks, 1, 'off-screen close button cannot be clicked by controller Back');
+  close.x = 400;
+
   const scrollTopButton = button('scroll-top', 10, 10); // Offscreen old focus after scrolling must not drag the viewport back.
   const scrollVisible = button('scroll-visible', 10, 50);
   const scrollOther = button('scroll-other', 10, 100);
@@ -191,6 +241,10 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   const scrollFrame = y => context.window.ControllerInput.poll({ now: frameTime += 50, focused: true, pad: { axes: [0, 0, 0, y] }, isDown: () => false });
   scrollFrame(1); scrollFrame(1);
   assert.equal(ui.debugState().pendingScrollReanchor, true);
+  press('confirm');
+  assert.equal(scrollTopButton.clicks, 0, 'Confirm cannot click a selected button clipped by a scrolled panel');
+  assert.equal(ui.focusedElement(), scrollTopButton, 'manual scrolling does not change selection just because Confirm was blocked');
+  assert.equal(ui.debugState().focusedControlOnScreen, false);
   const topBefore = scrollPanel.scrollTop;
   press('down');
   assert.equal(ui.focusedElement(), scrollVisible, 'first direction selects a visible control after manual scrolling');

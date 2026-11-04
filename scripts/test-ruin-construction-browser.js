@@ -41,9 +41,11 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:15000});
     const first=await page.evaluate(async()=>{
+      window.DevRandomRuinConfig?.setOverride?.({moduleChances:{burdenOffering:1}}); // Force both replenishable Key Statue feeds to exist in this seed.
       const entered=await window.DevRandomRuin.generate(3,{composedTrial:true,theme:'hronal',rootMechanisms:false,stoneAge:false});
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress(),audit:window.DevRandomRuin.getLastSolvabilityAudit()};
       const state=window.DevRandomRuin.getState(),context=window.DevRandomRuin.getRuntimeContext();
+      if(!state.shaftHub || !context.shaftHub || !state.shaftNavigation?.length) return {ok:false,issue:'required shaft hub missing from composed ruin',state};
       const plan=window.RuinComposerPlayable.plan(state.seed).composition;
       const pillar=plan.records.find(record=>record.piece==='crackedPillar');
       const node=window.FurniturePuzzleRuntime.getNode('map_i_dev_random_ruin',pillar.id);
@@ -66,6 +68,50 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert(Math.hypot(first.before.x-first.after.x,first.before.z-first.after.z)>3,'the in-game passage must move the player to the trial wing');
     assert.equal(first.supportBefore,null,'a closed bridge cannot grant support in the gap');
     assert(first.pit,'the chasm must remain a physical fall volume until a bridge opens');
+    assert(first.state.burdenOffering&&first.controls.includes('composed-offering-dispenser'),'this seed must expose both independent Key Statue dispensers');
+    await page.waitForFunction(()=>{
+      const items=window.KeyStatues?.debugSnapshot?.().dispensers?.filter(d=>d.mapId==='map_i_dev_random_ruin')||[];
+      return items.length>=2&&items.every(d=>d.status==='ready');
+    },null,{timeout:30000,polling:150});
+    const defense=await page.evaluate(feedPlinthId=>{
+      const id='map_i_dev_random_ruin',api=window.FurniturePuzzleRuntime,statues=window.KeyStatues;
+      const source=statues.debugSnapshot().dispensers.find(d=>d.feedPlinthId===feedPlinthId);
+      const taken=source&&api.interactKeyStatue(id,source.id);
+      const carried=window.Shattercasks?.heldBurdenInfo?.();
+      const inserted=api.interactBurdenPlate(id,feedPlinthId),node=api.getNode(id,feedPlinthId);
+      const seated=statues.status(id,source?.id),blockedRecall=statues.recall(id,source?.id);
+      const discarded=window.Shattercasks.discardBurden(node?.userData?.burdenPlatePayload);
+      return {sourceId:source?.id,taken,carried,inserted,seated,blockedRecall,discarded,
+        afterLoss:{payload:node?.userData?.burdenPlatePayload?.id||null,complete:node?.userData?.burdenPlateComplete,active:node?.userData?.puzzleActive}};
+    },first.state.feedPlinthId);
+    assert(defense.taken?.ok&&defense.carried?.kind==='keyStatue'&&defense.inserted?.ok,
+      'a dispensed physical Key Statue must fit its actual defense plinth: '+JSON.stringify(defense));
+    assert(defense.seated==='seated'&&defense.blockedRecall?.ok===false,
+      'the dispenser must not recall a statue already seated for defense: '+JSON.stringify(defense));
+    assert(defense.discarded&&defense.afterLoss.payload===null&&defense.afterLoss.complete===false,
+      'destroying a Key Statue must reset the actual defense plinth: '+JSON.stringify(defense));
+    await page.waitForFunction(id=>window.KeyStatues?.status?.('map_i_dev_random_ruin',id)==='ready',defense.sourceId,{timeout:30000,polling:150});
+    const recalled=await page.evaluate(id=>{
+      const mapId='map_i_dev_random_ruin',taken=window.FurniturePuzzleRuntime.interactKeyStatue(mapId,id);
+      const dropped=window.Shattercasks.drop(),before=window.KeyStatues.status(mapId,id),recall=window.KeyStatues.recall(mapId,id);
+      return {taken,dropped,before,recall};
+    },defense.sourceId);
+    assert(recalled.taken?.ok&&recalled.dropped&&recalled.before==='recallable'&&recalled.recall?.ok,
+      'a dropped statue must be recoverable at its dispenser: '+JSON.stringify(recalled));
+    await page.waitForFunction(id=>window.KeyStatues?.status?.('map_i_dev_random_ruin',id)==='ready',defense.sourceId,{timeout:30000,polling:150});
+    const bonus=await page.evaluate(()=>{
+      const mapId='map_i_dev_random_ruin',api=window.FurniturePuzzleRuntime,statues=window.KeyStatues;
+      const source=statues.debugSnapshot().dispensers.find(d=>d.id.startsWith('composed_offering_'));
+      const taken=source&&api.interactKeyStatue(mapId,source.id);
+      const inserted=source&&api.interactBurdenPlate(mapId,source.feedPlinthId);
+      return {sourceId:source?.id,plinthId:source?.feedPlinthId,taken,inserted,status:source&&statues.status(mapId,source.id)};
+    });
+    assert(bonus.taken?.ok&&bonus.inserted?.ok&&bonus.status==='seated',
+      'the optional plinth must use its own physical Key Statue dispenser: '+JSON.stringify(bonus));
+    await page.waitForFunction(id=>window.FurniturePuzzleRuntime?.getNode?.('map_i_dev_random_ruin',id)?.userData?.burdenPlateComplete===true,
+      bonus.plinthId,{timeout:10000,polling:100});
+    await page.waitForFunction(()=>window.DevRandomRuin?.getInteractionControls?.().some(c=>c.kind==='dungeonChest'&&c.object?.name?.includes('composed_offering_')),
+      null,{timeout:10000,polling:100});
     const blast=await page.evaluate(()=>{
       const state=window.DevRandomRuin.getState(),composition=window.RuinComposerPlayable.plan(state.seed).composition;
       const pillar=composition.records.find(record=>record.piece==='crackedPillar');
@@ -80,15 +126,16 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       return node?.userData?.puzzleProgress>=.99;
     },blast.pillarId,{timeout:25000,polling:100});
     const afterBlast=await page.evaluate(({x,z})=>{
-      const support=window.DynamicSurfaces.sampleSupport(x,z,{minY:-.5,maxY:2});
-      const entered=support&&window.DevRandomRuin.setPlayerWorldPoint({x,y:support.y,z},{grounded:true});
       const puzzleNode=window.FurniturePuzzleRuntime.debug().flatMap(graph=>graph.nodes).find(n=>n.id.includes('crackedPillar'));
       const node=puzzleNode&&window.FurniturePuzzleRuntime.getNode('map_i_dev_random_ruin',puzzleNode.id);
       const part=node?.userData.puzzlePartMeshes?.get?.(node.userData.furniturePuzzle.standingSurface?.partId);
       const box=part&&new THREE.Box3().setFromObject(part);
-      const ray=new THREE.Raycaster(new THREE.Vector3(x,(box?.max.y??0)+.2,z),new THREE.Vector3(0,-1,0));
+      const walkZ=box?(box.min.z+box.max.z)/2:z; // The authored 97-degree fallen pillar shifts its upper shaft to the side of the room centerline.
+      const support=window.DynamicSurfaces.sampleSupport(x,walkZ,{minY:-.5,maxY:2});
+      const entered=support&&window.DevRandomRuin.setPlayerWorldPoint({x,y:support.y,z:walkZ},{grounded:true});
+      const ray=new THREE.Raycaster(new THREE.Vector3(x,(box?.max.y??0)+.2,walkZ),new THREE.Vector3(0,-1,0));
       const hits=part?ray.intersectObject(part,true):[];
-      return {supportY:support?.y??null,source:support?.id||null,entered,
+      return {walkZ,supportY:support?.y??null,source:support?.id||null,entered,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null,
         pillar:puzzleNode?.progress??null,standingSurface:puzzleNode?.standingSurface,
         mesh:part?{visible:part.visible,kind:part.type,box:{min:box.min.toArray(),max:box.max.toArray()},hits:hits.length,
@@ -109,17 +156,17 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(cleared.ropes,0,'ruin exit must dispose the rope');
     assert.equal(cleared.puzzleNodes,0,'ruin exit must discard the authored puzzle graph');
     const shaft=await page.evaluate(async()=>{
-      const entered=await window.DevRandomRuin.generate(4,{shaftWing:true,theme:'hronal',rootMechanisms:false,stoneAge:false});
+      const entered=await window.DevRandomRuin.generate(4,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // No shaft option: every generated ruin receives one.
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress()};
       const state=window.DevRandomRuin.getState();
-      const door=window.DevRandomRuin.getInteractionControls().find(c=>c.label==='Enter Shaft Wing');
+      const door=window.DevRandomRuin.getInteractionControls().find(c=>c.label==='Enter Shaft Hub');
       if(door)await door.onPress();
       const surfaces=window.ClimbSurfaces.list().filter(s=>String(s.scope)==='shaft-hub');
       const highest=surfaces.reduce((best,next)=>!best||next.y1>best.y1?next:best,null);
       const top=highest&&window.ClimbSurfaces.topExitPoint(highest,(highest.u0+highest.u1)/2);
       const support=top&&window.DynamicSurfaces.sampleSupport(top.x,top.z,{minY:highest.y1-.2,maxY:highest.y1+.4});
       const teleported=top&&support&&window.DevRandomRuin.setPlayerWorldPoint({x:top.x,y:support.y,z:top.z},{grounded:true});
-      return {ok:!!door&&!!state.shaftNavigation?.length,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
+      return {ok:!!door&&!!state.shaftHub&&!!state.shaftNavigation?.length,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     });

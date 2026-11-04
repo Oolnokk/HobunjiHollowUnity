@@ -160,6 +160,7 @@
   const lastFocusedByGroup = new WeakMap(); // Remembers the control selected when leaving an entered section.
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
+  let lastBlockedActivation = null; // Exposed by debugState() so a controller-only player can see why an off-screen Confirm was ignored.
   let focusPath = null; // Remembers the active control through in-panel DOM rebuilds.
   let scrolledSelection = null; // Reanchors the next directional input to the right-stick scroll host's visible controls.
   const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
@@ -393,7 +394,7 @@
     selected.classList.add('ctrl-nav-subtab-selected');
     for (const section of sections) if (section !== selected) section.classList.add('ctrl-nav-subtab-hidden');
     const opener = Array.from(selected.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, selected, panel) === control && control.getAttribute('aria-expanded') === 'false'); // Open a collapsed baby inventory on selection without requiring another Confirm.
-    if (opener) opener.click();
+    if (opener) clickOnScreen(opener, 'auto-open');
     return true;
   }
 
@@ -409,7 +410,7 @@
     groupsByPanel.set(panel, entries);
     group.classList.add('ctrl-nav-group-active');
     const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
-    if (opener?.getAttribute('aria-expanded') === 'false') opener.click();
+    if (opener?.getAttribute('aria-expanded') === 'false') clickOnScreen(opener, 'auto-open');
     prepareSubtabsWithMemory(group, panel, requestedSection || group.getAttribute('data-ctrl-initial-subtab'), 0, !requestedSection); // Direct page jumps skip remembered-page opener side effects.
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Includes subgroups as whole targets, never their unentered controls.
@@ -552,8 +553,11 @@
 
   function visibleNavigationRect(el) {
     const rect = el.getBoundingClientRect(); // Clips against both the screen and every overflow ancestor, including nested scroll panes.
-    let left = Math.max(0, rect.left), top = Math.max(0, rect.top); // Visible bounds are also used to score partially visible groups.
-    let right = Math.min(window.innerWidth, rect.left + rect.width), bottom = Math.min(window.innerHeight, rect.top + rect.height);
+    const viewport = window.visualViewport; // Mobile keyboards/zoom can shrink the actually visible area without changing the layout viewport.
+    const screenLeft = viewport?.offsetLeft ?? 0, screenTop = viewport?.offsetTop ?? 0; // Visual viewport origin in layout-viewport coordinates.
+    let left = Math.max(screenLeft, rect.left), top = Math.max(screenTop, rect.top); // Visible bounds are also used to score partially visible groups.
+    let right = Math.min(screenLeft + (viewport?.width ?? window.innerWidth), rect.left + rect.width);
+    let bottom = Math.min(screenTop + (viewport?.height ?? window.innerHeight), rect.top + rect.height);
     for (let node = el.parentElement; node; node = node.parentElement) {
       const style = getComputedStyle(node); // Only evaluated on the first directional gesture after manual scrolling.
       const clipX = /auto|scroll|hidden|clip/.test(style.overflowX || style.overflow); // CSS overflow clips candidates even when they are still laid out.
@@ -564,6 +568,20 @@
       if (clipY) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.top + bounds.height); }
     }
     return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+  }
+
+  function controlOnScreen(el) {
+    return Boolean(el && isVisible(el) && visibleNavigationRect(el)); // Includes viewport and every nested overflow clip; layout visibility alone is insufficient.
+  }
+
+  function clickOnScreen(el, action) {
+    if (!el || isDisabled(el)) return false;
+    if (!controlOnScreen(el)) {
+      lastBlockedActivation = { action, id: el.id || null, tag: el.tagName || null }; // Debug-only history of an intentional ignored controller press.
+      return false;
+    }
+    el.click();
+    return true;
   }
 
   function reanchorAfterScroll(panel, dir) {
@@ -679,6 +697,7 @@
   function moveOrAdjust(dir) {
     // Focused range controls consume horizontal input, so gamepad D-pad and stick can adjust pattern/size sliders without moving focus away.
     if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && (dir === 'left' || dir === 'right')) {
+      if (!controlOnScreen(currentTarget)) return true; // A scrolled-out selected slider must not change value either.
       const min = currentTarget.min === '' ? 0 : Number(currentTarget.min);
       const max = currentTarget.max === '' ? 100 : Number(currentTarget.max);
       const step = Number(currentTarget.step) > 0 ? Number(currentTarget.step) : 1;
@@ -711,8 +730,17 @@
 
   function activate() {
     const panel = activePanel();
-    if (!panel || panelOwnsAction(panel, 'confirm')) return;
+    if (!panel || panelOwnsAction(panel, 'confirm')) return; // Opt-in reader panels own semantic Confirm; they do not click the focused DOM button.
+    const intendedTarget = currentTarget; // Captures the user's selected button before dynamic panel updates can recover focus elsewhere.
     refreshFocusIfStale();
+    if (intendedTarget && currentTarget !== intendedTarget) {
+      lastBlockedActivation = { action: 'confirm', id: intendedTarget.id || null, tag: intendedTarget.tagName || null, reason: 'focus-recovered' };
+      return; // Never activate a different button on the press intended for a hidden, removed, or rebuilt selection.
+    }
+    if (currentTarget && !controlOnScreen(currentTarget)) {
+      lastBlockedActivation = { action: 'confirm', id: currentTarget.id || null, tag: currentTarget.tagName || null, reason: 'off-screen' };
+      return; // Selection can remain focused after right-stick scrolling; never fire it while outside the visible area.
+    }
     if (!currentTarget) return;
     if (isGroup(currentTarget)) {
       if (currentTarget !== navigationRoot(panel)) enterGroup(currentTarget, panel);
@@ -722,12 +750,12 @@
     if (currentTarget.tagName === 'SELECT' || (currentTarget.tagName === 'INPUT' && currentTarget.type === 'range')) { currentTarget.focus(); return; }
     if (isTextEditable(currentTarget)) { currentTarget.blur(); return; }
     if (currentTarget.tagName === 'INPUT' && (currentTarget.type === 'checkbox' || currentTarget.type === 'radio')) {
-      currentTarget.click();
+      clickOnScreen(currentTarget, 'confirm');
       return;
     }
     const tabGroup = currentTarget.closest(TABS_SELECTOR); // Tab selection releases its chooser nest so directional input can enter the selected page.
     if (tabGroup) {
-      currentTarget.click();
+      if (!clickOnScreen(currentTarget, 'confirm')) return;
       clearGroups(panel);
       scrolledSelection = null;
       setFocus(groupTarget(tabGroup, panel, panel), { scroll: false });
@@ -735,7 +763,7 @@
     }
     const detailId = currentTarget.getAttribute('data-ctrl-detail'); // Optional association is captured before the item's click can replace its card.
     const returnPath = focusPath; // Preserves exact stack/clothing identity for Back and whole-grid rebuilds.
-    currentTarget.click();
+    if (!clickOnScreen(currentTarget, 'confirm')) return;
     if (!detailId || activePanel() !== panel) return;
     const detail = Array.from(panel.querySelectorAll('[data-ctrl-detail-panel]')).find(node => node.id === detailId); // No CSS selector interpolation; ids are compared literally within this panel.
     if (detail && isGroup(detail) && isNavTarget(detail) && belongsToNavigation(detail, panel)) enterGroup(detail, panel, returnPath);
@@ -745,8 +773,8 @@
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, 'cancel')) return;
     if (leaveGroup(panel)) return;
-    const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(el => isNavTarget(el) && belongsToNavigation(el, panel));
-    if (btn) { btn.click(); return; }
+    const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(el => isNavTarget(el) && belongsToNavigation(el, panel) && controlOnScreen(el));
+    if (btn && clickOnScreen(btn, 'cancel')) return;
     // Panels added later occasionally omit data-ctrl-cancel. Give B a safe,
     // universal fallback through the same Escape path their keyboard close
     // handlers already support rather than leaving controller users trapped.
@@ -816,7 +844,7 @@
     let idx = items.findIndex(el => el === currentTarget || el.classList.contains('active'));
     if (idx < 0) idx = 0;
     const next = items[(idx + delta + items.length) % items.length];
-    next.click();
+    if (!clickOnScreen(next, 'tab')) return;
     clearGroups(panel);
     scrolledSelection = null;
     setFocus(groupTarget(group, panel, panel), { scroll: false });
@@ -1292,6 +1320,8 @@
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
         scrollHostId: cachedScrollHost?.host?.id || null,
         pendingScrollReanchor: scrolledSelection?.panel === panel,
+        focusedControlOnScreen: currentTarget ? controlOnScreen(currentTarget) : null, // Read only when the in-game debug view is requested.
+        lastBlockedActivation,
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,

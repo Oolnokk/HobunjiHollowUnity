@@ -465,7 +465,9 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
   const playable=read('docs/js/ruin-composer-playable.js'); // Shared native placement, support and enemy integration.
   const worldInputs=read('docs/js/dev-random-ruin-interactions.js'); // Location passages must not require reticle focus.
   assert(html.includes('js/ruin-composer-playable.js')&&html.indexOf('js/ruin-composer-playable.js')<html.indexOf('js/dev-random-ruin-bootstrap.js'),'the gameplay page loads the playable composer before the ruin bootstrap');
-  assert(interior.includes('await attachComposedTrialWing(rec,candidateSeed)')&&interior.includes("opts.site===true&&theme==='hronal'"),'seeded Hronal wilderness sites actually attach the composed room');
+  assert(interior.includes('if(trialRequested)await attachComposedTrialWing(rec,candidateSeed,{archetype:trialArchetype,burdenOffering});')&&interior.includes("theme==='hronal'&&moduleRoll(candidateSeed"),'seeded Hronal wilderness sites and dev generation both roll solvable authored encounter variants');
+  assert(playable.includes('feedPlinthId')&&playable.includes('G.KeyStatues?.registerDispenser?.('),'each Key Statue dispenser must be explicitly linked to the encounter plinth');
+  assert(interior.includes('composedTrial:ruin?.composedTrialForced===true?true:undefined'),'reroll must not suppress naturally rolled Hronal puzzles by passing composedTrial:false');
   assert(interior.includes('window.RuinComposerPlayable.mount')&&interior.includes('ruin?.composedWing?.dispose?.()'),'real map generation must mount and tear down authored trials');
   assert(interior.includes("composedButton.textContent='V50 + Composed Trial'"),'mobile Dev Mode exposes a reproducible trial entry');
   assert(playable.includes('C.apply(composition')&&playable.includes('G.HangingRopes.registerRope')&&playable.includes('G.RuinEncounters.create'),'composition is consumed by gameplay furniture, rope and enemy runtimes');

@@ -97,7 +97,7 @@
        window.FarmEditor.init(...) very early (right after
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
-  <script src="js/farm-editor.js?v=20261101interiorfixture1"></script>
+  <script src="js/farm-editor.js?v=20261102tablechild1"></script>
   <script src="js/farm-plot-editor.js?v=20261029allberries4"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
@@ -250,11 +250,12 @@
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
-  <script src="js/furniture-puzzle-runtime.js?v=20261103h976dc33"></script>
+  <script src="js/furniture-puzzle-runtime.js?v=20261104statueRecall1"></script>
   <script src="js/interior-door-tiles.js?v=20261102h292ab3a"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
+  <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
   <script src="js/furniture-table-system.js?v=20261103h6f4dc6e"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/authored-furniture-runtime.js?v=20261103surfacematerialv2"></script>
@@ -405,7 +406,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261103furpaint2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261103animalmaterials1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -545,7 +546,7 @@
   <script src="js/festival-calendar.js?v=20261021ha63617d"></script>
   <script src="js/map-layout-system.js?v=20261019h5ca2b48"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
-  <script src="js/interior-furniture-grid.js?v=20261012heb9cb96"></script>
+  <script src="js/interior-furniture-grid.js?v=20261102chairreview2"></script>
   <!-- Keeps authored seat anchors/surfaces on the same post-placement transform as interior-editor furniture visuals. -->
   <script src="js/seat-surface-placement-transform.js?v=20260915seat1"></script>
   <!-- Relationships menu tab render (window.RelationshipsPanel) —
@@ -587,7 +588,7 @@
   <script src="js/cell-grid-3d.js?v=20261103he7fa634"></script>
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=1"></script>
+  <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
   <script src="js/shaft-hub.js?v=20261103h5605f19"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
@@ -704,7 +705,7 @@
        inventory consumption stays in the existing game placement functions.
        Must load before game.js, which calls window.FurniturePlacer.init(...)
        during its own setup. -->
-  <script src="js/furniture-placer.js?v=20261101fixtureplacementui3"></script>
+  <script src="js/furniture-placer.js?v=20261102chairreview4"></script>
   <!-- Player-craftable persistent campfire (window.WildernessCampfire) —
        only one at a time; survives map changes/saves and also works on Town
        Mine floors, where player death destroys an underground camp.
@@ -894,8 +895,8 @@
   <script src="js/room-plan.js?v=1"></script>
   <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
   <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
-  <script src="js/ruin-composer-playable.js?v=20261103h961d7ee"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
-  <script src="js/key-statues.js?v=20261102keyStatues1"></script>
+  <script src="js/ruin-composer-playable.js?v=20261104plinthFeed1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
+  <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261103particlesheld1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
@@ -2871,7 +2872,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261103ropechain2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261104ropeChainRebase1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2916,13 +2917,13 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261103downedhold2"></script>
+  <script src="game.js?v=20261104h9d53284"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20260925snorepitchrevert1"></script>
   <script src="js/ui-element-editor.js?v=20260814a"></script>
-  <script src="js/controller-ui-nav.js?v=20261101rangeSliders2"></script>
+  <script src="js/controller-ui-nav.js?v=20261103offscreenAct3"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

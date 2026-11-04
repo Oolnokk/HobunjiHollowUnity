@@ -1073,6 +1073,12 @@
     "icon": "🥚",
     "cat": "ingredient"
   },
+  "nelkHide": {
+    "key": "nelkHide",
+    "label": "Nelk Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
   "nelkMayonnaise": {
     "key": "nelkMayonnaise",
     "label": "Nelk Mayonnaise",
@@ -1143,6 +1149,12 @@
     "key": "pineLog",
     "label": "Pine Log",
     "icon": "🪵",
+    "cat": "material"
+  },
+  "puktukHide": {
+    "key": "puktukHide",
+    "label": "Puktuk Hide",
+    "icon": "🟫",
     "cat": "material"
   },
   "puktukMeat": {
@@ -1313,6 +1325,12 @@
     "icon": "🥩",
     "cat": "material"
   },
+  "uumkaoiiShell": {
+    "key": "uumkaoiiShell",
+    "label": "Uumkao'ii Shell",
+    "icon": "🐚",
+    "cat": "material"
+  },
   "uumkaoiiWhiteDewCurds": {
     "key": "uumkaoiiWhiteDewCurds",
     "label": "White Uumkao’ii Curds",
@@ -1324,6 +1342,12 @@
     "label": "White Uumkao’ii Milk",
     "icon": "🫙",
     "cat": "ingredient"
+  },
+  "voorgAssHide": {
+    "key": "voorgAssHide",
+    "label": "Voorg-Ass Hide",
+    "icon": "🟫",
+    "cat": "material"
   },
   "voorgAssMeat": {
     "key": "voorgAssMeat",
