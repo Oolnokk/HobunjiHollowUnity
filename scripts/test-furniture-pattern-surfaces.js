@@ -68,6 +68,17 @@ function box(){const geo=new Geometry();geo.setAttribute('position',new Attribut
 const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',palette:['#b7a185','#315b67'],scale:1}; // Used on real fixture triangles and restored overrides.
 (async()=>{
   assert.equal(api.normalize({scale:NaN}).scale,1);
+  const primaryPlacementSource={motifDataUrl:'data:primary',motifScale:.6,usageScaleMultiplier:2}; // Frozen library motifs must not be mutated by rug placement changes.
+  const overpassPlacementSource={motifDataUrl:'data:overpass',motifScale:1.2,usageOffsetX:7};
+  const placed=api.placedPatterns({scale:1,patterns:[primaryPlacementSource,overpassPlacementSource],
+    layerTransforms:[{motifScale:2,scale:3,rotationDeg:10,offsetX:.5},{motifScale:.5,scale:4,offsetY:.25}]},null,[256,256,1]);
+  assert.equal(placed[0].motifScale,1.2,'rug primary motif zoom applies independently');
+  assert.equal(placed[1].motifScale,.6,'rug overpass motif zoom applies independently');
+  assert.equal(placed[0].usageScaleMultiplier,6,'existing per-surface pattern-scale multiplier remains intact');
+  assert.equal(placed[1].usageOffsetY,64,'existing per-surface tile translation remains intact');
+  assert.equal(primaryPlacementSource.motifScale,.6,'primary source motif remains unchanged');
+  assert.equal(overpassPlacementSource.motifScale,1.2,'overpass source motif remains unchanged');
+
   assert.equal(api.normalize({mode:"engraving",opacity:0}).engravingCoreOpacity,0,"zero opacity must still hide the entire carving");
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
