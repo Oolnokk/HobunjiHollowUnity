@@ -218,8 +218,12 @@
     if (stage === 'revealed') state.revealed = true;
     else if (stage === 'claimed') { state.revealed = true; state.claimed = true; }
     else return false;
-    const mesh = rewardMeshesByArea.get(area)?.get(id);
-    if (mesh) mesh.visible = !state.claimed && (mesh.userData.rewardKind === 'oreRock' || state.revealed);
+    const handles = rewardMeshesByArea.get(area)?.get(id) || [];
+    for (const handle of handles) {
+      const visible = !state.claimed && (handle.kind === 'oreRock' || state.revealed);
+      handle.mesh.setMatrixAt(handle.index, visible ? handle.matrix : handle.hidden);
+      handle.mesh.instanceMatrix.needsUpdate = true;
+    }
     return true;
   }
   function serializeRewards() {
@@ -291,44 +295,61 @@
       decals.userData.terrainJigsawIgnore = true;
       scene.add(decals); meshes.push(decals);
     }
-    for (const s of network.balconies) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(s.width, 0.16, s.depth), _stoneMaterial);
-      mesh.position.set(s.x, s.y - 0.08, s.z);
-      mesh.rotation.y = Math.atan2(-s.tangent.z, s.tangent.x);
-      mesh.userData.cliffBalconyId = s.id;
-      mesh.userData.terrainJigsawIgnore = true;
-      mesh.name = s.id;
-      mesh.receiveShadow = true;
-      scene.add(mesh); meshes.push(mesh);
-      // Rewards live at balcony elevation and never occupy/change the
-      // underlying regular terrain tile, even if several shelves overlap X/Z.
-      const ore = s.reward === 'oreRock';
-      const object = new THREE.Group();
-      if (ore) {
-        const irregularStone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.26, 0), _stoneMaterial);
-        irregularStone.scale.set(1.3, 0.8, 1.1);
-        irregularStone.position.y = 0.18;
-        object.add(irregularStone);
-        const chip = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12, 0), _stoneMaterial);
-        chip.position.set(0.23, 0.12, 0.1);
-        object.add(chip);
+    // A single instanced cap/ore/chest draw per zone replaces hundreds of
+    // separate mesh draw calls on cliff-heavy maps (particularly mobile).
+    const shelves = network.balconies;
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0); // Invisible claimed/unrevealed reward matrix, with no instance list reallocation.
+    const makeInstanced = (geometry, material, count, name) => {
+      if (!count) return null;
+      const inst = new THREE.InstancedMesh(geometry, material, count);
+      inst.name = network.area + '-' + name;
+      inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      inst.userData.terrainJigsawIgnore = true;
+      inst.receiveShadow = true;
+      scene.add(inst); meshes.push(inst);
+      return inst;
+    };
+    const cap = makeInstanced(new THREE.BoxGeometry(1, 1, 1), _stoneMaterial, shelves.length, 'cliff-balconies');
+    if (cap) {
+      cap.userData.hobunjiGroundSurface = true;
+      cap.userData.cameraObstacle = true;
+    }
+    const ores = shelves.filter(s => s.reward === 'oreRock');
+    const chests = shelves.filter(s => s.reward !== 'oreRock');
+    const oreMesh = makeInstanced(new THREE.DodecahedronGeometry(1, 0), _stoneMaterial, ores.length, 'cliff-balcony-ores');
+    const chestWood = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x6a4625, roughness: 0.82 }), chests.length, 'cliff-balcony-chest-bodies');
+    const chestLid = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0xbe993b, roughness: 0.62 }), chests.length, 'cliff-balcony-chest-lids');
+    const transform = (mesh, index, x, y, z, sx, sy, sz, yaw, visible, kind, shelfId) => {
+      if (!mesh) return;
+      const o = new THREE.Object3D();
+      o.position.set(x, y, z);
+      o.scale.set(sx, sy, sz);
+      o.rotation.y = yaw;
+      o.updateMatrix();
+      const matrix = o.matrix.clone(); // Original transform is retained for stage-based reappearance.
+      mesh.setMatrixAt(index, visible ? matrix : hidden);
+      const handles = rewardMeshes.get(shelfId) || [];
+      if (kind) { handles.push({ mesh, index, matrix, hidden, kind }); rewardMeshes.set(shelfId, handles); }
+    };
+    let oi = 0, ci = 0;
+    for (let i = 0; i < shelves.length; i++) {
+      const s = shelves[i], yaw = Math.atan2(-s.tangent.z, s.tangent.x);
+      transform(cap, i, s.x, s.y - 0.08, s.z, s.width, 0.16, s.depth, yaw, true);
+      const state = getRewardState(network.area, s.id);
+      const visible = !state.claimed && (s.reward === 'oreRock' || state.revealed);
+      if (s.reward === 'oreRock') {
+        transform(oreMesh, oi++, s.x, s.y + 0.18, s.z, 0.32, 0.23, 0.29, yaw, visible, s.reward, s.id);
       } else {
-        const chestBody = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.27, 0.3),
-          new THREE.MeshStandardMaterial({ color: 0x6a4625, roughness: 0.82 }));
-        chestBody.position.y = 0.16;
-        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.075, 0.32),
-          new THREE.MeshStandardMaterial({ color: 0xbe993b, roughness: 0.62 }));
-        lid.position.y = 0.33;
-        object.add(chestBody, lid);
+        transform(chestWood, ci, s.x, s.y + 0.16, s.z, 0.42, 0.27, 0.3, yaw, visible, s.reward, s.id);
+        transform(chestLid, ci, s.x, s.y + 0.33, s.z, 0.44, 0.075, 0.32, yaw, visible, s.reward, s.id);
+        ci++;
       }
-      object.name = s.id + '-resource';
-      object.position.set(s.x, s.y, s.z);
-      object.userData.cliffBalconyId = s.id;
-      object.userData.rewardKind = s.reward;
-      object.visible = !getRewardState(network.area, s.id).claimed &&
-        (ore || getRewardState(network.area, s.id).revealed);
-      scene.add(object);
-      rewardMeshes.set(s.id, object); meshes.push(object);
+    }
+    for (const mesh of [cap, oreMesh, chestWood, chestLid]) if (mesh) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere?.(); // Correct frustum culling across discontiguous balcony instances.
     }
     return meshes;
   }
