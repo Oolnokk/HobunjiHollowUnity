@@ -434,6 +434,7 @@
     deps.setInteractionBlocked?.(true);
     overlay = document.createElement('div');
     overlay.className = 'cp-overlay';
+    overlay.setAttribute('data-ctrl-panel', ''); // Include quick-setting arrows in the game's controller navigation surface.
     overlay.innerHTML = `
       <div class="cp-modal" role="dialog" aria-modal="true">
         <div class="cp-head"><h2>Color Pools</h2><button type="button" class="cp-close" aria-label="Close">✕</button></div>
