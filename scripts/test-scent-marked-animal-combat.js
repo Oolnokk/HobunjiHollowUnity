@@ -91,6 +91,9 @@ const peaceful = actor({ creatureKey: 'puktuk', state: 'idle', homeX: 0, homeY: 
   def: { hostile: false, aggroRangePx: 100, leashRangePx: 100 } });
 assert.equal(targeting.prioritizeWild(peaceful, [player], [playerPet], 'forest', () => true), null,
   'passive wild animals cannot be provoked solely by a scent');
+predator._fleeCooldownUntil = 2000; // Post-flight grace still wins over an attractive mark.
+assert.equal(targeting.prioritizeWild(predator, [player], [playerPet], 'forest', () => true), null,
+  'scent never bypasses a wild animal\'s post-retreat re-aggro cooldown');
 
 const abilities = ['opportunistJab', 'exhaustCutter', 'backstabFlick', 'mercySpike',
   'swingComboFinisher', 'pokeComboFinisher'];
