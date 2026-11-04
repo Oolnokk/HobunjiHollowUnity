@@ -191,6 +191,43 @@ function testChallengeHandoff() {
   win.MusicMinigame.close();
 }
 
+function testDemonstrationTimerLifecycle() {
+  const source=read('docs/js/dev-random-ruin-simple-puzzles.js'); // Exercise the shipped playback functions, not a reimplementation.
+  const begin=source.indexOf('  function cancelEchoPlayback(set) {');
+  const end=source.indexOf('  function completeEchoSet(set) {',begin);
+  assert(begin>=0&&end>begin,'the ruin retains cancellable physical pressure-plate playback');
+  const jobs=new Map(),played=[]; // A deterministic clock tracks both audio and genuinely pending note callbacks.
+  let nextId=0; // Allocates unique timer IDs for repeated presses in this isolated harness.
+  const schedule=(callback,delay)=>{const id=++nextId;jobs.set(id,{callback,delay});return id;};
+  const cancel=id=>jobs.delete(id);
+  const state={chordPlateSets:[]}; // The active ruin holds the single test trigger.
+  const set={notes:[0,3,7],solved:false,playbackTimers:[]}; // Tests immediate plus two delayed notes.
+  state.chordPlateSets.push(set);
+  const win={KurrayaPuzzle:{settings:()=>({scale:'Pentatonic Minor',tonicMidi:60})}};
+  const actual=new Function('window','setTimeout','clearTimeout','playKurrayaPlateNote','inRuin','state',
+    source.slice(begin,end)+'\\nreturn {cancelEchoPlayback,replayEchoSet};')(
+    win,schedule,cancel,note=>played.push(note),()=>true,state);
+  const advance=()=>{
+    const entry=[...jobs].sort((a,b)=>a[1].delay-b[1].delay)[0]; // Executes the next scheduled note at its authored offset.
+    assert(entry,'a queued demonstration note must exist');
+    jobs.delete(entry[0]);entry[1].callback();
+  };
+  actual.replayEchoSet(set);
+  assert.deepEqual(played,[0],'stepping on the plate sounds the first note immediately');
+  assert.equal(set.playbackTimers.length,2);
+  advance();
+  assert.deepEqual(played,[0,3]);
+  assert.equal(set.playbackTimers.length,1,'played callbacks are removed from pending diagnostics');
+  advance();
+  assert.deepEqual(played,[0,3,7]);
+  assert.equal(set.playbackTimers.length,0,'finished phrase leaves no phantom pending notes');
+  actual.replayEchoSet(set);
+  assert.equal(jobs.size,2);
+  actual.cancelEchoPlayback(set);
+  assert.equal(jobs.size,0,'leaving or rebuilding the ruin can cancel every remaining note');
+  assert.equal(set.playbackTimers.length,0);
+}
+
 function testUnrestrictedMelodySuffix() {
   const {matchSuffix}=require('../docs/js/kurraya-puzzle.js');
   const target={notes:[0,1,0,7]}; // The production song matcher handles overlapping partial starts.
@@ -210,6 +247,7 @@ function testUnrestrictedMelodySuffix() {
   await testMidiFallback();
   await testIframeEchoInput();
   testChallengeHandoff();
+  testDemonstrationTimerLifecycle();
   testUnrestrictedMelodySuffix();
   const ruin=read('docs/js/dev-random-ruin-simple-puzzles.js');
   assert.match(ruin,/melodyEchoTrigger/);
