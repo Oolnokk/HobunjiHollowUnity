@@ -139,6 +139,7 @@
     _npcDlgState.clear();
     const rels = playerData?.npcRelationships || {};
     for (const [npcId, rel] of Object.entries(rels)) {
+      if (npcId === '__factions') continue; // Member-scoped faction standings are not fake NPCs.
       _npcDlgState.set(npcId, {
         visitedSeqSlots: { ...(rel.visitedSeqSlots || {}) },
         localNickname:   rel.localNickname || null,
@@ -200,66 +201,30 @@
     if (st.memory.length > 50) st.memory.shift();
   }
 
-  // Favor "spillover" — helping (or upsetting) one NPC nudges the people
-  // close to them too, like an informal faction web where an NPC can
-  // belong to more than one circle at once. Two bond types, both derived
-  // straight from data every NPC already has (no new authored relationship
-  // graph needed):
-  //   - household ("familiar"): NPCs sharing the same homeId. Tooth
-  //     Hatayap's homeId is unumanuk_household (she lodges with that
-  //     family as a refugee, despite her own surname) — helping her nudges
-  //     favor with Teacup/Spearhead/Oddclaw/Binding too, and vice versa.
-  //   - workplace ("friendly"): NPCs sharing the same
-  //     scheduleHooks.workBuildingId, when that doesn't already overlap
-  //     with a shared homeId. Hreesh, Jubmir, and Tooth all have
-  //     workBuildingId 'inn' (Tooth waits tables there; Jubmir lodges
-  //     there rent-free as Hreesh's friend) — a second, independent circle
-  //     Tooth belongs to alongside her household one.
-  // A given pair only ever gets the stronger of the two fractions if both
-  // somehow apply (see relatedNpcBonds), and this never affects who counts
-  // as "known" for the Relationships tab (js/relationships-panel.js) or
-  // pops a reward toast — only actually talking to someone does that;
-  // spillover just quietly pre-seeds favor for people you haven't met yet.
-  const HOUSEHOLD_SPILLOVER_FRACTION = 0.25;
-  const WORKPLACE_SPILLOVER_FRACTION = 0.15;
-
+  // Household/workplace ties remain available for NPC seating and social decisions.
+  // Group standing in favor-heart-balance.js has replaced all cross-NPC Favor propagation.
   function relatedNpcBonds(npcId) {
     const records = deps.getNpcRecords?.() || [];
-    const source = records.find(r => r?.id === npcId);
+    const source = records.find(record => record?.id === npcId);
     if (!source) return [];
-    const bonds = new Map(); // relatedNpcId -> strongest applicable fraction
+    const bonds = new Map(); // Seating affinity is a maximum, never additive Favor.
     for (const other of records) {
       if (!other?.id || other.id === npcId) continue;
-      const sameHome = source.homeId && other.homeId === source.homeId;
-      const sameWork = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId;
-      if (!sameHome && !sameWork) continue;
-      const fraction = sameHome ? HOUSEHOLD_SPILLOVER_FRACTION : WORKPLACE_SPILLOVER_FRACTION;
-      if (!bonds.has(other.id) || bonds.get(other.id) < fraction) bonds.set(other.id, fraction);
+      const home = source.homeId && other.homeId === source.homeId;
+      const workId = source.workBuildingId || source.scheduleHooks?.workBuildingId; // Top-level workplace IDs and schedule hooks describe the same social link.
+      const work = workId && (other.workBuildingId || other.scheduleHooks?.workBuildingId) === workId;
+      if (home || work) bonds.set(other.id, Math.max(bonds.get(other.id) || 0, home ? .25 : .15));
     }
     return [...bonds.entries()];
   }
-
-  // No gift/relationship-building system exists yet to call this from —
-  // exposed as the entry point that one will use once built.
-  //
-  // _isSpillover is internal only (see relatedNpcBonds above) — a
-  // spillover application never triggers further spillover, so a tightly
-  // interconnected household/workplace can't cascade into a runaway favor
-  // chain reaction.
-  function adjustNpcFavor(npcId, amount, reason, _isSpillover = false) {
-    if (!npcId) return;
-    const st = getNpcDlgState(npcId);
-    if (amount > 0) amount *= window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1; // Love Potion hooks the one favor adjustment path.
-    amount = Math.round(amount * 10) / 10;
-    st.favor = (st.favor || 0) + amount;
-    if (_isSpillover) return; // Quiet: no reward toast, no memory entry (see the header comment above).
-    if (amount) window.WorldPopupText?.queueReward('favor', `${amount > 0 ? '+' : '-'}${Math.abs(amount)} Favor`);
-    recordNpcMemory(npcId, reason || (amount >= 0 ? 'favor_up' : 'favor_down'));
-    if (amount) {
-      for (const [relatedId, fraction] of relatedNpcBonds(npcId)) {
-        adjustNpcFavor(relatedId, amount * fraction, `spillover_${npcId}`, true);
-      }
-    }
+  function adjustNpcFavor(npcId, amount, reason) {
+    if (!npcId || !Number.isFinite(Number(amount))) return 0;
+    const st = getNpcDlgState(npcId); // Used only if the canonical Favor-point module has not installed yet.
+    const applied = Math.round(Number(amount) * (Number(amount) > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) : 1) * 10000) / 10000;
+    st.favor = (Number(st.favor) || 0) + applied;
+    if (applied) window.WorldPopupText?.queueReward('favor', (applied > 0 ? '+' : '−') + Math.abs(applied) + ' Favor');
+    recordNpcMemory(npcId, reason || (applied >= 0 ? 'favor_up' : 'favor_down'));
+    return applied;
   }
 
   function _resolveTokens(text, npcRec, _depth = 0) {
@@ -1258,7 +1223,7 @@
     npcBaseDispositions: _npcBaseDispositions,
     hasQueuedConversationTree: npcId => queuedConversationTrees.has(npcId),
     queueConversationTree,
-    relatedNpcBonds, // Household/workplace bonds shared with social gathering table preferences.
+    relatedNpcBonds, // Household/workplace ties for seating only; no cross-NPC Favor changes.
     registerTreeProvider,
     registerContextProvider,
     contextGreeting,

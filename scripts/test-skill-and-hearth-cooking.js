@@ -126,7 +126,7 @@ assert.match(festivalSource, /feastBuffDurationHours=FOOD_PORTION_HOURS/, 'new s
 assert.match(festivalSource, /storedHours\*\(FOOD_PORTION_HOURS\/24\)/, 'existing 24-hour-per-portion meal timers migrate proportionally to four hours once');
 assert.match(festivalSource, /legacyDuration/, 'existing active festival fullness saves retain their one-time 24-hour migration');
 assert.match(festivalSource, /expiresHour:worldHour\(\)\+FULLNESS_DURATION_HOURS/, 'festival fullness expiry is independent from meal portion duration');
-assert.match(festivalSource, /\+\$\{FOOD_PORTION_HOURS\} in-game hours of meal effects/, 'the serving confirmation reports four hours per portion');
+assert.match(festivalSource, /\+ FOOD_PORTION_HOURS \+ ' in-game hours of meal effects/, 'the serving confirmation reports four hours per portion');
 assert.match(cookingSource, /recipe\?\.inventoryCategories/, 'saved cooked bases recover their reusable recipe categories');
 assert.match(cookingSource, /ingredientEffectTotals\(definition, selected\?\.stars\)/, 'meal totals reuse the same per-ingredient buff calculation displayed by the picker');
 assert.match(cookingSource, /Cooking buff:/, 'ingredient candidates and selected ingredients visibly identify their cooking buff');

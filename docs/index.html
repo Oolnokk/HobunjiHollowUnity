@@ -406,7 +406,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261104linedOffline3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261104faction-luau1"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -489,7 +489,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261102h26920d8&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261104faction-luau1&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -557,7 +557,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.RelationshipsPanel.init(...) during its own setup. -->
-  <script src="js/relationships-panel.js?v=20261001foodgift1"></script>
+  <script src="js/relationships-panel.js?v=20261104faction-luau1"></script>
   <!-- Debug hitbox/collider overlay, Settings → Dev Tools → Show Hitboxes
        (window.DebugHitboxes) — self-contained aside from deps injected via
        init(), so load order relative to the other systems above doesn't
@@ -2742,7 +2742,7 @@
   <script src="js/dialogue-templates.js?v=20260929mastery1"></script>
   <script src="js/dialogue-rich-text.js?v=20260929colors1"></script>
   <script src="js/character-voice-owner.js?v=20261027releaseOverlap1"></script>
-  <script src="js/dialogue-content.js?v=20261028spouse1"></script>
+  <script src="js/dialogue-content.js?v=20261104faction-luau1"></script>
   <script src="js/combat/combat-tutorial-content.js?v=20261014ha823029"></script>
   <script src="js/combat/combat-tutorial-mastery.js?v=20261016h85f4532"></script>
   <script src="js/combat/combat-tutorial-partner.js?v=20261014h03ab150"></script>
@@ -2753,7 +2753,7 @@
   <script src="js/npc-shared-meals.js?v=20261021hdde83ea"></script>
   <script src="js/festival-potluck-contest.js?v=20261028h97a1825"></script>
   <script src="js/festival-locale-activities.js?v=20261023h2f3ea4a"></script>
-  <script src="js/festival-system.js?v=20261102-food4h-transfer"></script>
+  <script src="js/festival-system.js?v=20261104faction-luau1"></script>
   <script src="js/festival-dialogue.js?v=20261022h561ec26"></script>
   <script src="js/festival-ui.js?v=20261023h929b96d"></script>
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
