@@ -103,6 +103,7 @@ window.ClothingSpeciesFitTool=Object.freeze({
 E.modeBtns.forEach(b=>b.onclick=()=>{mode=b.dataset.mode;saveState();render()});
 E.reload.onclick=loadRepositoryData;
 E.fitRegion.onchange=()=>{
+  ++R.garmentSelectionEpoch; // Region switches invalidate any deferred catalog auto-restoration.
   // Keep the last item selection for each region and never reuse body transforms for headwear.
   R.three.portraitCache.clear();
   R.assetGeneration++;
@@ -113,8 +114,11 @@ E.fitRegion.onchange=()=>{
   if(patchSection)patchSection.hidden=fitRegion()==='headwear';
   refreshAssets();log('Fit region changed to '+fitRegion());
 };
-E.gender.onchange=refreshAssets;E.species.onchange=refreshAssets;E.garment.onchange=refreshAssets;
+E.gender.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()};
+E.species.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()};
+E.garment.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()}; // Explicit selections win over deferred loading.
 function changeStartingSprite(){
+  ++R.garmentSelectionEpoch; // Source-fit changes also cancel restoration of an old garment selection.
   R.three.portraitCache.clear();
   rebuildGarmentSelector(); // Hide garments lacking a source variant for this starting species/gender.
   refreshAssets();
@@ -130,7 +134,6 @@ E.reset.onclick=resetTarget;E.resetTransform.onclick=resetBaseTransform;E.resetM
 wireTransformPair(E.scaleX,E.scaleXNumber,'scaleX');wireTransformPair(E.scaleY,E.scaleYNumber,'scaleY');
 wireTransformPair(E.translateX,E.translateXNumber,'translateX');wireTransformPair(E.translateY,E.translateYNumber,'translateY');
 wireMaskPair(E.maskScaleX,E.maskScaleXNumber,'scaleX');wireMaskPair(E.maskScaleY,E.maskScaleYNumber,'scaleY');wireMaskPair(E.maskTranslateY,E.maskTranslateYNumber,'translateY');
-E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.undo.onclick=()=>{if(!undoStack.length)return;redoStack.push(snapshot());restore(undoStack.pop());syncHistory()};
 E.redo.onclick=()=>{if(!redoStack.length)return;undoStack.push(snapshot());restore(redoStack.pop());syncHistory()};
 E.bodyPng.onclick=()=>R.body&&downloadCanvas(bodyOut(),`${safeName(E.species.value)}_${E.gender.value}_${fitRegion()==='headwear'?'head_reference':'body'}.png`);
