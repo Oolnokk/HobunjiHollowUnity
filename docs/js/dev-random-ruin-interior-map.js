@@ -1443,6 +1443,16 @@
     }
     const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE; // World position proposed by ordinary ground movement.
     const grid=shaftAt(x,z,ruin.supportY);
+    // CellGrid3D intentionally models implicit bedrock at level 0; a hole
+    // carved into an elevated independent 2D layer is not represented by
+    // that bedrock. The actual shaft-wing void has no rendered floor and no
+    // DynamicSurfaces support, so test its height-aware fatal pit FIRST.
+    // Rope flight/attached motion returns above and is handled exclusively by
+    // the native V50 rope engine until a landing or failed catch occurs.
+    if(grid&&window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(x,z)){
+      if(window.DevRandomRuinSimplePuzzles.instantRopeChainDeath?.()===true)return;
+      return; // Never allow ordinary footing damage/downed state inside a floorless rope abyss.
+    }
     let info;
     if(grid){
       const level=grid.yToLevel(ruin.supportY+1e-5);
