@@ -1,5 +1,6 @@
 (async()=>{
   'use strict';
+  window.__hobunjiFitLoaderStarted=true; // Disarms the page-level script-download watchdog.
   const status=document.getElementById('status'); // Bootstrap reports progress before the main editor has loaded.
   const banner=document.createElement('div'); // Independent status avoids overwriting repository/3D load diagnostics.
   banner.id='clothingFitBootstrapStatus';
