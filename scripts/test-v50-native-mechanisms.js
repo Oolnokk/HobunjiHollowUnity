@@ -53,6 +53,7 @@ const plateDoor=create('door_plate','stoneDoor',3,2),plate=linked('door_plate','
 plate.userData.weightProgress=0;plateDoor.userData.linkedPressurePlateRoot=plate;
 const block=new Node(2,0,2);block.userData={pushable:true,previewMotion:{type:'pushPuzzleBlock'},
   pushPath:[{x:2,y:0,z:2},{x:3,y:0,z:2}]};root.add(block);
+const routeShaper=new Node(4,0,2);routeShaper.userData={immovable:true,blockerPurpose:'route shaper'};root.add(routeShaper); // Native floor obstacle collision is separate from floor-zero TileOccupancy.
 const cubeDoor=create('door_cube','stoneDoor',5,3),cubes=linked('door_cube','linkedCubePillars',4,3);
 cubes.userData.rotatingSegments=Array.from({length:4},(_,controlIndex)=>{
   const segment=new Node();cubes.add(segment);return{segment,controlIndex};
@@ -73,6 +74,7 @@ const inventoryBefore=Native.inspect(root);
 assert.equal(inventoryBefore.mechanisms.size,6);
 assert.equal(inventoryBefore.activators.length,5);
 assert.equal(inventoryBefore.blocks.length,1);
+assert.equal(inventoryBefore.fixedBlocks.length,1);
 assert.equal(inventoryBefore.transitDoors.length,1);
 Native.namespace(root,2);
 assert.equal(plateDoor.userData.mechanismId,'native-v50-f2-door_plate');
@@ -114,6 +116,7 @@ assert(runtime.isSolved(glyphBridge.userData.mechanismId),'projectile glyph sign
 assert(runtime.isSolved(fireBridge.userData.mechanismId),'authentic torch ignition signal is authoritative');
 const door=controls.find(c=>c.kind==='v50NativeTransitDoor');
 door.onPress();runtime.tick(.05);assert(transit.children.length===0);
+assert(blockers.some(record=>record.id.includes('v50-fixed-block')),'immovable native push-route shapers have real upper-story collision');
 assert(blockers.length>=4,'door panels, push blocks, transit doors register game collision');
 assert(surfaces.length>=4,'moving bridges, daises and stair treads register actual game support');
 runtime.dispose();runtime.dispose();
