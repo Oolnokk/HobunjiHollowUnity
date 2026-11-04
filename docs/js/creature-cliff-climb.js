@@ -71,6 +71,8 @@
   }
 
   function findClimbToward(c, target) {
+    // Legacy probing is retained for authored non-route cliffs only; the
+    // exterior route network takes priority in update/navigate below.
     const g = grid();
     if (!g) return null;
     const goalTier = targetTier(g, target);
@@ -188,14 +190,34 @@
   function update(c, dt, target) {
     if (!deps || !c) return false;
     if (c._cliffClimb) {
-      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) { c._cliffClimb = null; return false; }
+      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) { c._cliffClimb = null; c._cliffRouteTravel = null; return false; }
       advance(c, Math.max(0, Number(dt) || 0));
+      return true;
+    }
+    if (c._cliffRouteTravel) {
+      // Ownership persists between hops: main wildlife AI must never move
+      // vertically through the cliff or select another destination halfway.
+      if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) { c._cliffRouteTravel = null; return false; }
+      const travel = c._cliffRouteTravel, route = travel.route;
+      if (travel.node === travel.exit) {
+        c._cliffRouteTravel = null; c._cliffClimbCooldownT = 0; return false;
+      }
+      const next = travel.node + Math.sign(travel.exit - travel.node);
+      const fromNode = route.nodes[travel.node], toNode = route.nodes[next];
+      if (!fromNode || !toNode || !fromNode.links.includes(next)) { c._cliffRouteTravel = null; return false; }
+      beginRouteHop(c, fromNode, toNode, travel);
+      advance(c, 0);
       return true;
     }
     if (c._cliffClimbCooldownT > 0) { c._cliffClimbCooldownT = Math.max(0, c._cliffClimbCooldownT - dt); return false; }
     if (c.isCompanion || c.health <= 0 || c.state !== 'chase' || c.onBranch || c._branchDefense || c.prone) return false;
     if (!deps.isZoneArea(deps.getCurrentArea()) || c.areaId !== deps.getCurrentArea()) return false;
     if (!target || target.health <= 0) return false;
+    // Route graph is authoritative for exterior climbs, including enemies
+    // approaching a distant branch in the wall instead of their nearest face.
+    if (navigate(c, target.x, target.y, c.def?.chaseSpeed || c.def?.moveSpeed || deps.TILE * 2, dt)) return true;
+    const network = networkForCurrentArea();
+    if (network) return false; // Never fall back to an unrestricted legacy wall scan in wilderness.
     if (Math.hypot(target.x - c.x, target.y - c.y) > deps.TILE * MAX_TARGET_DIST_TILES) return false;
     if (window.Combat?.animalAttacks?.isBusy?.(c) || c.knockbackT > 0) return false;
     const wall = findClimbToward(c, target);
@@ -205,11 +227,109 @@
     return true;
   }
 
+  const entryDebug = { approaches: 0, hops: 0, failures: 0 }; // Mobile snapshot identifies chosen route and navigation stalls.
+
+  function networkForCurrentArea() {
+    if (!deps?.isZoneArea?.(deps.getCurrentArea())) return null;
+    const active = grid();
+    return active && window.CliffRouteNetwork?.forGrid?.(active, {
+      area: deps.getCurrentArea(),
+      blocked: tile => !tile || tile.incline || deps.isSolid(tile.type),
+      isBoundary,
+      tileY: tile => deps.tileSurfaceYInArea(tile, deps.getCurrentArea()),
+    });
+  }
+  function beginRouteHop(c, start, end, travel) {
+    const startY = Number(start.y), endY = Number(end.y);
+    c._cliffClimb = {
+      phase: 'climb', t: 0, hops: 1,
+      activeS: HOP_ACTIVE_S, pauseS: HOP_PAUSE_S,
+      startX: c.x, startY: c.y,
+      endX: end.x * deps.TILE, endY: end.z * deps.TILE,
+      surfaceStartY: startY, surfaceEndY: endY, surfaceY: startY,
+      originX: travel.route.nodes[travel.entry].x * deps.TILE,
+      originY: travel.route.nodes[travel.entry].z * deps.TILE,
+      originSurfaceY: travel.route.nodes[travel.entry].y,
+      descending: endY < startY,
+    };
+    c.facing = Math.atan2(c._cliffClimb.endY - c.y, c._cliffClimb.endX - c.x);
+    travel.node = end.id; // Only the scripted hop owns c.x/y until it finishes.
+    c.vx = 0; c.vy = 0;
+    entryDebug.hops++;
+  }
+
+  function walkToEntry(c, tx, ty, speed, dt, route, entry, net) {
+    const node = route.nodes[entry];
+    const targetX = node.x * deps.TILE, targetY = node.z * deps.TILE;
+    const distance = Math.hypot(c.x - targetX, c.y - targetY);
+    if (distance < deps.TILE * 0.36) {
+      c._cliffRouteTravel = { route, entry, node: entry, exit: entry === 0 ? route.upperNode : 0 };
+      c._cliffEntryPath = null;
+      c._cliffClimbCooldownT = 0;
+      entryDebug.approaches++;
+      return true;
+    }
+    const entryKey = route.id + '|' + entry;
+    if (c._cliffEntryKey !== entryKey || !c._cliffEntryPath?.length) {
+      const startCol = Math.floor(c.x / deps.TILE), startRow = Math.floor(c.y / deps.TILE);
+      const endCol = Math.floor(targetX / deps.TILE), endRow = Math.floor(targetY / deps.TILE);
+      const component = window.CliffRouteNetwork.componentAt(net, startCol, startRow);
+      const path = window.TilePathfinding?.findPath?.(startCol, startRow, endCol, endRow, (col, row) => {
+        const tile = grid()?.[row]?.[col];
+        return !!tile && !tile.incline && !isBoundary(tile) && !deps.isSolid(tile.type) &&
+          window.CliffRouteNetwork.componentAt(net, col, row) === component &&
+          deps.creatureCanEnterTile(c.def, (col + 0.5) * deps.TILE, (row + 0.5) * deps.TILE, NaN, NaN, c, true);
+      }, { bounds: window.TilePathfinding.boxAround(startCol, startRow, endCol, endRow, 10), maxNodes: 6500 });
+      c._cliffEntryPath = path || [];
+      c._cliffEntryKey = entryKey;
+      if (!path?.length) { entryDebug.failures++; return false; }
+    }
+    const waypoint = c._cliffEntryPath?.[0];
+    if (!waypoint) return false;
+    const wx = (waypoint.col + 0.5) * deps.TILE, wy = (waypoint.row + 0.5) * deps.TILE;
+    const dx = wx - c.x, dy = wy - c.y, length = Math.hypot(dx, dy);
+    if (length <= deps.TILE * 0.19) { c._cliffEntryPath.shift(); return true; }
+    const step = Math.min(length, Math.max(0, speed * dt));
+    const x = c.x + dx / length * step, y = c.y + dy / length * step;
+    if (!deps.creatureCanEnterTile(c.def, x, y, c.x, c.y, c)) {
+      c._cliffEntryPath = null;
+      entryDebug.failures++;
+      c.vx = 0; c.vy = 0;
+      return false;
+    }
+    c.x = x; c.y = y;
+    c.vx = dx / length * speed; c.vy = dy / length * speed;
+    c.facing = Math.atan2(dy, dx);
+    return true;
+  }
+
+  // Used both by chasing enemies and the shared moveCreatureToward choke
+  // point (herds, prey, companions, returning animals). A higher/lower goal
+  // is routed to a *selected* cliff path instead of teleporting in height.
+  function navigate(c, goalX, goalY, speed, dt) {
+    if (!deps || !c || ![goalX, goalY, c.x, c.y].every(Number.isFinite)) return false;
+    if (!deps.isZoneArea(deps.getCurrentArea()) || c.areaId !== deps.getCurrentArea()) return false;
+    if (c._cliffClimb || c._cliffRouteTravel) return true;
+    if (c.health <= 0 || c.prone || c.knockbackT > 0 || c.onBranch) return false;
+    const net = networkForCurrentArea();
+    if (!net) return false;
+    const fromC = Math.floor(c.x / deps.TILE), fromR = Math.floor(c.y / deps.TILE);
+    const goalC = Math.floor(goalX / deps.TILE), goalR = Math.floor(goalY / deps.TILE);
+    const edge = window.CliffRouteNetwork.toward(net, fromC, fromR, goalC, goalR);
+    if (!edge) {
+      c._cliffEntryPath = null;
+      c._cliffEntryKey = null;
+      return false;
+    }
+    return walkToEntry(c, goalX, goalY, speed, dt, edge.route, edge.entry, net);
+  }
+
   window.CreatureCliffClimb = {
     init,
     update,
+    navigate,
     knockOff,
     isClimbing: c => !!c?._cliffClimb,
-    get debug() { return { ...debug }; },
+    get debug() { return { ...debug, ...entryDebug }; },
   };
 })();
