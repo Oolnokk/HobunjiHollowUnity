@@ -13,7 +13,9 @@
   ]);
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
-    shaftSize:33, // Largest V50-room-class footprint, with an octagonal shaft inside.
+    shaftSize:33, // Interior octagon width; actual masonry spans shaftSize + 2*shaftWall.
+    shaftWall:8, // Matches ShaftHub's real shell thickness; door ends must be outside this wall.
+    portalOffset:8, // Side-wall wing doors sit away from the climbing buttresses.
     floorHeight:4, // Vertical separation between ordinary 2D layers at shaft access galleries.
     minFloors:3,maxFloors:5,minWings:1,maxWings:4,
     minChallenges:2,maxChallenges:4,
@@ -49,6 +51,8 @@
     o.minChallenges=Math.max(2,Math.min(4,o.minChallenges|0));
     o.maxChallenges=Math.max(o.minChallenges,Math.min(4,o.maxChallenges|0));
     o.corridorWidth=3;
+    o.shaftWall=Math.max(5,Math.min(12,Math.round(Number(o.shaftWall)||8)));
+    o.portalOffset=Math.max(1,Math.min(8,Math.round(Number(o.portalOffset)||8)));
     const rng=random(o.seed);
     const floorCount=integer(rng,o.minFloors,o.maxFloors); // Used to bound both the shared shaft and independent 2D floor maps.
     // A shaft reserves the same snapped invisible-grid slot on ALL floor layers.
@@ -68,18 +72,25 @@
         const dir=shuffled[wi],challengeCount=integer(rng,o.minChallenges,o.maxChallenges);
         const wingId=`floor${floor}-${dir.side}`, nodes=[], corridors=[];
         const lateral=dir.dx!==0?{dx:0,dz:1}:{dx:1,dz:0};
-        // First connection starts on the shaft wall. Each next room gets a distant
-        // invisible-grid anchor, but its dimensions and offsets remain un-snapped.
-        let previous={x:cx+dir.dx*Math.ceil(o.shaftSize/2),z:cz+dir.dz*Math.ceil(o.shaftSize/2)};
+        // Only the multi-floor shaft snaps to the invisible anchor grid.
+        // Ordinary chambers are freely laid out, separated by short variable
+        // hallways; packing them between major anchors avoids 300-cell-long
+        // empty passages when a wing has four sequential puzzles.
+        const outerRadius=Math.floor((o.shaftSize+o.shaftWall*2)/2);
+        const portal={x:cx+dir.dx*outerRadius+lateral.dx*o.portalOffset,
+          z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
+        let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
         for(let stage=1;stage<=challengeCount+1;stage++){ // Always at least two actual puzzle rooms BEFORE the goal brazier.
-          const anchor={x:cx+dir.dx*stage*o.spacing,z:cz+dir.dz*stage*o.spacing};
-          const offset=integer(rng,-5,5),rx=anchor.x+lateral.dx*offset,rz=anchor.z+lateral.dz*offset;
           const rw=dir.dx?integer(rng,11,19):integer(rng,9,15);
           const rd=dir.dz?integer(rng,11,19):integer(rng,9,15);
+          const gap=integer(rng,7,15); // Variable-length hall, not a snapped room-grid separation.
+          const offset=integer(rng,-5,5),depth=Math.floor((dir.dx?rw:rd)/2);
+          const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
+          const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
           const area=rect(rx,rz,rw,rd);
           const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
-          const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,anchor,wingId,
+          const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
             challenge:isGoal?null:puzzles[integer(rng,0,puzzles.length-1)]};
           nodes.push(room);rooms.push(room);
           const door={x:rx-dir.dx*Math.floor(rw/2),z:rz-dir.dz*Math.floor(rd/2)};
@@ -99,7 +110,7 @@
           if(isGoal)braziers.push({id:`${wingId}-brazier`,wingId,roomId:id,
             x:rx,z:rz,y,requires:nodes.filter(n=>n.challenge).map(n=>n.id)});
         }
-        wings.push({id:wingId,floor,side:dir.side,entry:{x:cx+dir.dx*Math.ceil(o.shaftSize/2),z:cz+dir.dz*Math.ceil(o.shaftSize/2),y},rooms:nodes,corridors,goalBrazierId:braziers[braziers.length-1].id});
+        wings.push({id:wingId,floor,side:dir.side,entry:{...portal,y},rooms:nodes,corridors,goalBrazierId:braziers[braziers.length-1].id});
       }
       floors.push({floor,y,anchor:{...shaft.anchor},rooms,hallways,doorways,wings,braziers,entry:floor===0?{kind:'external-wing',side:'S'}:null});
     }
@@ -120,6 +131,10 @@
       add(`floor${floor.floor}-uniqueSides`,new Set(floor.wings.map(w=>w.side)).size===floor.wings.length);
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
+        add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
+        const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
+        add(wing.id+'-clearShaft', wing.rooms.every(room=>!
+          intersects(room,{x:plan.shaft.anchor.x-shellRadius,z:plan.shaft.anchor.z-shellRadius,w:shellRadius*2+1,d:shellRadius*2+1})));
         add(wing.id+'-braziers',floor.braziers.filter(b=>b.wingId===wing.id).length===1);
         add(wing.id+'-corridors',wing.corridors.length===wing.rooms.length&&wing.corridors.every(c=>
           c.length>0&&c.rects.length>=1&&c.rects.some(r=>inRect(c.start,r))&&
