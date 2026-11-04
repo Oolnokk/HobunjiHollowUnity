@@ -92,8 +92,7 @@
       if (Array.isArray(state.memory)) state.memory.push({ type: 'romance_rollover', day: today, amount: romanceFavor, sourceRomance: oldRomance });
       window.__farmLog?.(`Romance with ${npcId} became ${romanceFavor} permanent favor at midnight.`);
     }
-    if (favorGain) state.favor = num(state.favor, 0) + favorGain;
-    if (favorGain > 0) window.WorldPopupText?.queueSocialGain?.('favor', favorGain, npcId);
+    if (favorGain) window.DialogueContent?.adjustNpcFavor?.(npcId, favorGain, 'rapport_romance_rollover'); // Permanent Favor settles through the same faction-rank and reputation authority.
     return favorGain;
   }
   function relationship(npcId) {
@@ -175,6 +174,7 @@
       flushRollover();
       const snapshot = originalSnapshot(...args) || {};
       for (const id of new Set([...Object.keys(snapshot), ...touchedNpcIds])) {
+        if (id === '__factions') continue; // Saved group standings never become Rapport-bearing NPCs.
         const state = relationship(id);
         if (!state) continue;
         snapshot[id] = snapshot[id] || {};
@@ -189,6 +189,7 @@
     dialogue.loadNpcRelationships = function (playerData, ...args) {
       const result = originalLoad(playerData, ...args);
       for (const [id, saved] of Object.entries(playerData?.npcRelationships || {})) {
+        if (id === '__factions') continue; // Only real NPC records roll over overnight.
         const state = rawRelationship(id);
         if (!state) continue;
         touchedNpcIds.add(id);
