@@ -106,15 +106,6 @@ async function withPreviewCloudMaskTransform(callback){
   }
 }
 
-async function applyRuntimeCloudMask(canvas){
-  const cfg=R.speciesCfg.get(E.species.value)?.[E.gender.value];
-  const maskLayer=cfg?.portraitOpacityMaskLayer;
-  if(!maskLayer?.url||typeof window.applyPortraitOpacityMask!=='function')return canvas;
-  const image=await loadImage(assetUrl(maskLayer.url));
-  if(!image)return canvas;
-  const ctx=canvas.getContext('2d',{alpha:true});
-  window.applyPortraitOpacityMask(ctx,image,previewedCloudMaskXform(maskLayer.xform||{}));
-  return canvas;
-}
+// Full-portrait mask application retired: the game's cloud PNG is now only an arm-cut source.
 async function rawGarmentToRuntimeLayer(rawCanvas,opacity=1){
   if(!rawCanvas||!R.body)return null;
