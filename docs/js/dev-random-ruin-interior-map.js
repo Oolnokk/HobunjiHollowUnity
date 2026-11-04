@@ -1365,18 +1365,9 @@
   }
 
   function shaftAt(x,z,referenceY=0){
-    let best=null,bestDistance=Infinity; // Nearest vertical story at a given X/Z; lower and upper wings may overlap in plan view.
-    const y=Number(referenceY);
-    for(const [scope,{grid,contains}] of ruin?.shaftGrids||[]){
-      if(!grid.inBounds(grid.xToCol(x),grid.zToRow(z),0)
-        ||typeof contains==='function'&&!contains(x,z))continue;
-      // The central shared shaft owns its entire X/Z footprint at every
-      // elevation, including the physical overlap at each wing portal.
-      if(scope==='shaft-hub')return grid;
-      const distance=Number.isFinite(y)?Math.abs(y-grid.baseY):0;
-      if(distance<bestDistance){bestDistance=distance;best=grid;}
-    }
-    return best;
+    // Reuse the pure tested selector instead of duplicating 3D wing overlap
+    // logic in this 2D interior adapter. The shaft retains precedence at ports.
+    return window.RuinLayerPlayable?.selectGrid?.(ruin?.shaftGrids,x,z,referenceY)||null;
   }
 
   function shaftActorFloor(actor,x,z,maxDrop=1){
