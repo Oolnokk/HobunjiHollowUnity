@@ -97,4 +97,18 @@ composer.update(kit,0,.36);assert(pillarGroup.scale.y>.001&&pillarGroup.scale.y<
 composer.update(kit,0,.36);assert.equal(pillarGroup.scale.y,1,'Pillar finishes fully emerged');
 composer.update(kit,0,.05);assert.equal(rockWindow.DevRandomRuinLichThemes.snapshot().chargedPillars,1,'Existing pulse/explosion handler owns its subsequent charge');
 composer.clear();assert.equal(footprints.size,0,'Ruin teardown removes summoned pillar collision');
+const arenaScene=new O(); // A stand-alone Testing Arena needs the exact same rise/charge handler without a generated ruin composer.
+const arenaDeps={TILE:64,player:simulatedPlayer,hostileObjects:new Set(),canOccupyAt:()=>true,worldSurfaceY:()=>0};
+const arenaBoss={...boss,areaId:'map_dev_arena',scene:arenaScene,areaGrid:Array.from({length:12},()=>Array(12).fill({type:'grass'})),_specialToolDeps:arenaDeps};
+arenaDeps.hostileObjects.add(arenaBoss);
+assert.equal(rockWindow.DevRandomRuinLichThemes.spawnBossPillar(arenaBoss,simulatedPlayer),1,'Testing Arena summons a rising pillar, not the old earth eruption');
+const arenaPillar=arenaScene.children[0].children[0]; // Body of the stand-alone fixed-width arena column.
+assert.equal(arenaPillar.scale.y,.001);
+rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
+assert(arenaPillar.scale.y>.001&&arenaPillar.scale.y<1,'Testing Arena advances the same grounded height lerp');
+rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
+assert.equal(arenaPillar.scale.y,1);
+rockWindow.DevRandomRuinLichThemes.clearArenaBossPillars();
+assert.equal(footprints.size,0,'Leaving the arena removes summoned pillar footprints');
+assert.equal(arenaScene.children.length,0,'Leaving the arena removes the pillar render scene');
 console.log('Azgarlu aerial combat and rising-pillar regressions passed');
