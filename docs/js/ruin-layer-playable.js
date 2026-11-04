@@ -67,6 +67,15 @@
     const materials=[material,plateMat,gateMat,brazierMat,flameMat]; // Disposed together with the geometry and owned interactive controls.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,geometryCount:0}; // Exposed to mobile diagnostics.
+    owner.dispose=()=>{
+      if(owner.disposed)return;owner.disposed=true;
+      for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
+      DS.clearScope(scope);group.parent?.remove(group);
+      const geometries=new Set();
+      group.traverse(node=>{if(node.geometry)geometries.add(node.geometry);});
+      for(const geometry of geometries)geometry.dispose?.();
+      for(const mat of materials)mat.dispose?.();
+    };
     function mesh(name,geometry,mat,x,y,z){
       const node=new THREE.Mesh(geometry,mat);node.name=name;node.position.set(x,y,z);group.add(node);return node;
     }
@@ -181,6 +190,11 @@
       }
       rec.cols=cols;rec.rows=rows;rec.mapData.cols=cols;rec.mapData.rows=rows;
       ruin.cols=cols;ruin.rows=rows;
+      // Opening the flat occupancy grid is a separate operation from filling
+      // the elevation-aware voxel slices. Reapply authored puzzle gates after
+      // all room tiles have been mapped into rec.grid.
+      for(const record of states)for(const challenge of record.challenges)
+        if(challenge.gate)setGate(challenge,true);
     }catch(error){
       owner.dispose?.();
       // Rollback for a failed startup is handled by clearRuntime(), which
@@ -212,15 +226,7 @@
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
         side:r.side,solved:r.solved,total:r.challenges.length,lit:r.braziers[0]?.lit===true
       }))}))});
-    owner.dispose=()=>{
-      if(owner.disposed)return;owner.disposed=true;
-      for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
-      DS.clearScope(scope);group.parent?.remove(group);
-      const geometries=new Set();
-      group.traverse(node=>{if(node.geometry)geometries.add(node.geometry);});
-      for(const geometry of geometries)geometry.dispose?.();
-      for(const mat of materials)mat.dispose?.();
-    };
+
     return owner;
   }
   return Object.freeze({mount,projectedExtent,collect});
