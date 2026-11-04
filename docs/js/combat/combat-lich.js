@@ -273,11 +273,12 @@
     const socketQuaternion = hierarchyWorldQuaternion(holder, scratch.socketQuaternion); // Current Light Weapon pose orientation without mirrored-matrix decomposition.
     if (!socketQuaternion) return false;
     const grips = window.HobunjiHandToolGrips; // Existing authored grip metadata keeps the invisible reference weapon's hand placement identical to a real held copy.
-    const grip = grips?.authoredPrimaryGripForTool?.(LICH_CAST_WEAPON_KEY, 'melee') || {};
+    const gripToolKey = entity._specialWeaponKey || LICH_CAST_WEAPON_KEY; // Azgarlu's hands follow his actual warhammer grip, not the ordinary lich's invisible casting tool.
+    const grip = grips?.authoredPrimaryGripForTool?.(gripToolKey, 'melee') || {};
     const gripPosition = grip.position || {}; // Authored point on the reference weapon where the right hand belongs.
     const gripRotation = grip.rotationDeg || {}; // Authored grip orientation on the reference weapon.
-    const gripScale = Number(grips?.toolScaleForTool?.(LICH_CAST_WEAPON_KEY)) || 1;
-    const gripTarget = grips?.itemPointToHolder?.(LICH_CAST_WEAPON_KEY, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
+    const gripScale = Number(grips?.toolScaleForTool?.(gripToolKey)) || 1;
+    const gripTarget = grips?.itemPointToHolder?.(gripToolKey, gripPosition, 'melee', { speciesId: rig.speciesId, gender: rig.gender })
       || { x: (Number(gripPosition.x) || 0) * gripScale, y: (Number(gripPosition.y) || 0) * gripScale, z: (Number(gripPosition.z) || 0) * gripScale }; // Height scaling pivots on the grip, so the hand target is the same as a real held copy's.
     socketPosition.add(scratch.gripOffset.set(gripTarget.x, gripTarget.y, gripTarget.z).applyQuaternion(socketQuaternion));
     socketQuaternion.multiply(scratch.gripQuaternion.setFromEuler(scratch.gripEuler.set(
@@ -1972,7 +1973,11 @@
       const baseToolMeshUpdate = BanditCombat.updateToolMesh.bind(BanditCombat); // Preserves EnemyWeaponStances/player-parity Light Weapon pose preparation before hand placement.
       BanditCombat.updateToolMesh = function harlyaoLichToolMesh(entity, ...args) {
         const result = baseToolMeshUpdate(entity, ...args);
-        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the invisible weapon object through the existing attack animation.
+        if(entity?.specialLichId==='azgarlu' && (entity._banditAction || entity._banditToolTail)) {
+          const holder=entity._banditToolHolder; // The real warhammer holder already owns the shared authored swing angles.
+          if(holder?.rotateX)holder.rotateX(Number(entity._banditAimPitch)||0); // Tilt the actual held weapon up/down during windup, strike and Hold.
+        }
+        if (entity?.enemyClass === CLASS_ID || entity?.isHarlyaoLich) syncLichCastHand(entity); // Right hand follows the currently equipped weapon's pitched grip.
         return result;
       };
     }
