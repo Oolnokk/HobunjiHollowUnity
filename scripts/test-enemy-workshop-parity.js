@@ -263,6 +263,7 @@ assert.equal(preview.actor._banditSwingDirSign, -1);
       this.geometry = geometry;
       this.material = material;
       this.rotation = {};
+      this.userData = {}; // Three.js Object3D metadata used by the held-tool factory.
     }
   }
   const weaponThree = {
