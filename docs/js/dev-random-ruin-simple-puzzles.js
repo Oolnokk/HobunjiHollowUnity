@@ -2533,6 +2533,7 @@
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
     addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
+    hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
