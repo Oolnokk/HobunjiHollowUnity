@@ -504,6 +504,14 @@
     return hidden;
   }
 
+  function shaftSealsPending(){
+    // Normal Harlyao ruins now have actual braziers at the end of every
+    // physical floor wing. The Great Door requires these in addition to the
+    // original V50 blue seals; Hachutu has its own independent boss route.
+    const network=window.DevRandomRuin?.getShaftNetworkState?.();
+    return network&&!network.complete?network:null;
+  }
+
   function buildGreatDoor(kit, context, site, decalCount) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
     s.hiddenDecor = clearDoorFootprint(context, site);
@@ -522,7 +530,9 @@
     door.control = {
       kind:'greatDoor', object:door.group, promptRoot:door.group, range:2.3, priority:24, claimAction1:true, touchIcon:'🚪',
       label:() => door.state === 'sealed' ? `Great Door (Sealed ${s.braziers.filter(b => b.lit).length}/${s.braziers.length})`
-        : door.state === 'awake' ? 'Open the Great Door'
+        : door.state === 'awake' ? (shaftSealsPending()
+          ? 'Great Door (Shaft '+shaftSealsPending().lit+'/'+shaftSealsPending().braziers+')'
+          : 'Open the Great Door')
         : door.state === 'opening' ? 'The Great Door is opening…'
         : 'Enter the Sanctum',
       onPress:() => pressGreatDoor(),
@@ -550,6 +560,11 @@
       return;
     }
     if (door.state === 'awake') {
+      const pending=shaftSealsPending(); // Door cannot skip the physically separate upper-story puzzle objectives.
+      if(pending){
+        deps?.showToast?.('The Great Door remains sealed by the shaft. Light all '+pending.braziers+' wing braziers ('+pending.lit+'/'+pending.braziers+').',false);
+        return;
+      }
       door.state = 'opening';
       deps?.showToast?.('The Great Door grinds down into the floor.', true);
       return;
