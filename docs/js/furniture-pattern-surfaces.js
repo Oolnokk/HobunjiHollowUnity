@@ -365,6 +365,13 @@
       blending:THREE.AdditiveBlending, polygonOffset:true,
       polygonOffsetFactor:-2, polygonOffsetUnits:-2,
     }); // Uses the already-carved engraving alpha; the opaque stone never enters this pass.
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // The carved core is nearly black. Sample its coverage without multiplying the emitted color by its dark ink.
+    };
     const glow = new THREE.Mesh(overlay.geometry, material);
     glow.name = 'engraving-glyph-glow';
     glow.raycast = () => {};
@@ -378,7 +385,7 @@
         finite(live.pulseSpeed, record.glowPulseSpeed)));
       const depth = Math.max(0, Math.min(1,
         finite(live.pulseDepth, record.glowPulseDepth)));
-      const phase = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 * speed * Math.PI * 2;
+      const phase = live.phase ?? (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 * speed * Math.PI * 2;
       material.opacity = currentIntensity * (1 - depth + depth * (.5 + .5 * Math.sin(phase)));
       material.visible = currentIntensity > .001;
       const color = live.color || record.glowColor;
@@ -399,6 +406,7 @@
       intensity:Math.max(0, Math.min(2, finite(state.intensity, 0))),
       pulseSpeed:Math.max(0, Math.min(16, finite(state.pulseSpeed, 1.4))),
       pulseDepth:Math.max(0, Math.min(1, finite(state.pulseDepth, .35))),
+      ...(Number.isFinite(state.phase) ? {phase:state.phase} : {}),
       ...( /^#[0-9a-f]{6}$/i.test(state.color || '') ? { color:state.color } : {}),
     };
     root.traverse(node => {
@@ -448,10 +456,14 @@
         const request = ++generation; // Each rescale owns one asynchronous atlas generation.
         overlay.userData.patternReady = renderTile(record, null, size).then(canvas => { // Preview callers can await the exact atlas uploaded by this surface.
           if (disposed || request !== generation) return;
-          releaseTexture(ownedTexture); ownedTexture = retainTexture(canvas);
+          const previousTexture = ownedTexture; // Both decal passes borrow this retained texture.
+          ownedTexture = retainTexture(canvas);
           material.map = ownedTexture.texture; material.needsUpdate = true;
           overlay.visible = true; overlay.userData.furniturePattern.status = 'ready';
-          installEngravingGlow(overlay, ownedTexture.texture, mesh, record); // A separate additive pass makes only the cut-out glyph pixels emit light.
+          const glow = overlay.userData.engravingGlowMesh; // A resized atlas must update both passes before the old texture is released.
+          if (glow) glow.material.map = ownedTexture.texture;
+          else installEngravingGlow(overlay, ownedTexture.texture, mesh, record); // A separate additive pass makes only the cut-out glyph pixels emit light.
+          releaseTexture(previousTexture);
           if (record.mode === 'glass') syncGlass(mesh);
         }).catch(error => { if (!disposed && request === generation) { overlay.visible = false; overlay.userData.furniturePattern.status = error.message; } });
       };

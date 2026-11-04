@@ -143,6 +143,10 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   api.setGlowState(glowSource,{intensity:1.2,pulseSpeed:8,pulseDepth:.9,color:'#ff9a28'});
   assert.equal(glowSource.userData.furniturePatternGlowState.intensity,1.2,'fuse runtime can raise glyph glow intensity');
   assert.equal(glowSource.userData.furniturePatternGlowState.pulseSpeed,8,'fuse runtime can accelerate glyph pulses');
+  const glowShader={fragmentShader:'#include <map_fragment>'}; // Exercise the real material hook without a WebGL context.
+  glowOverlay.userData.engravingGlowMesh.material.onBeforeCompile(glowShader);
+  assert.match(glowShader.fragmentShader,/diffuseColor\.a \*= texture2D\(map, vUv\)\.a/);
+  assert(!glowShader.fragmentShader.includes('#include <map_fragment>'),'the glow must not multiply orange by the dark carving RGB');
   const oldGlow=glowOverlay.userData.engravingGlowMesh;
   glowOverlay.material.dispose();
   assert.equal(oldGlow.material.disposed,true,'disposing the engraving also disposes its additive glow material');

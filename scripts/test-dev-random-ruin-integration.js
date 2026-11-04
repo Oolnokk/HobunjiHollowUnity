@@ -462,21 +462,13 @@ const ruinConfig = JSON.parse(read('docs/config/random-ruin/ruin-config.json'));
 assert(ruinConfig.schema === 'hobunji_random_ruin_config.v1' && ruinConfig.sanctum?.boss && ruinConfig.moduleChances, 'ruin tuning lives in docs/config/random-ruin/ruin-config.json');
 new vm.Script(read('docs/js/dev-random-ruin-config.js'), { filename: 'dev-random-ruin-config.js' });
 assert(interactions.includes('registerWorldClimbProvider') && !interactions.includes("label:'Climb Up'"), 'ruin ledges climb from a forward dodge (ClimbSystem world-climb provider), not a listed prompt');
-// Composed challenges must be reached from the actual game, not a disconnected preview/editor.
-{
-  const html=read('docs/index.html'); // Exact startup order for ordinary wilderness and mobile players.
-  const playable=read('docs/js/ruin-composer-playable.js'); // Shared native placement, support and enemy integration.
-  const worldInputs=read('docs/js/dev-random-ruin-interactions.js'); // Location passages must not require reticle focus.
-  assert(html.includes('js/ruin-composer-playable.js')&&html.indexOf('js/ruin-composer-playable.js')<html.indexOf('js/dev-random-ruin-bootstrap.js'),'the gameplay page loads the playable composer before the ruin bootstrap');
-  assert(interior.includes('if(trialRequested)await attachComposedTrialWing(rec,candidateSeed,{archetype:trialArchetype,burdenOffering});')&&interior.includes("theme==='hronal'&&moduleRoll(candidateSeed"),'seeded Hronal wilderness sites and dev generation both roll solvable authored encounter variants');
-  assert(playable.includes('feedPlinthId')&&playable.includes('G.KeyStatues?.registerDispenser?.('),'each Key Statue dispenser must be explicitly linked to the encounter plinth');
-  assert(interior.includes('composedTrial:ruin?.composedTrialForced===true?true:undefined'),'reroll must not suppress naturally rolled Hronal puzzles by passing composedTrial:false');
-  assert(interior.includes('window.RuinComposerPlayable.mount')&&interior.includes('ruin?.composedWing?.dispose?.()'),'real map generation must mount and tear down authored trials');
-  assert(interior.includes("composedButton.textContent='V50 + Composed Trial'"),'mobile Dev Mode exposes a reproducible trial entry');
-  assert(playable.includes('C.apply(composition')&&playable.includes('G.HangingRopes.registerRope')&&playable.includes('G.RuinEncounters.create'),'composition is consumed by gameplay furniture, rope and enemy runtimes');
-  assert(playable.includes('DS.registerPit')&&playable.includes('P.registerNode')&&playable.includes('P.unregisterNode'),'chasm collision and authored puzzles have lifecycle ownership');
-  assert(worldInputs.includes("'shaft-passage', 'composed-passage'"),'shaft and trial entry actions work without needing to aim at invisible portal meshes');
-}
+// The ordinary wilderness and dev entry points feed the same room planner.
+assert(interior.includes('plinthTrial:trialRequested')&&interior.includes("theme==='hronal'&&moduleRoll(candidateSeed"),
+  'seeded Hronal ruins feed plinth trial selection into the physical layout');
+assert(interior.includes('composedTrial:ruin?.composedTrialForced===true?true:undefined'),
+  'reroll retains a forced trial without suppressing natural rolls');
+assert(!interior.includes('Enter Ruin Trial')&&!interactions.includes('composed-passage'),
+  'ruin input cannot teleport to a trial');
 // The rope-chain corridor adds no fake landing platform. Its empty floor must
 // use the same physical pit authority and direct-death path as the real ruin.
 {
