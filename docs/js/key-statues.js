@@ -14,7 +14,7 @@
   }
   function isSeated(state) {
     const node=linkedPlinth(state),payload=state.payload; // Prevents recall while the timed defense is legitimately in progress.
-    return !!node&&node.userData?.burdenPlatePayload===payload&&!payload.exploded&&payload.group?.parent===node.userData?.burdenPlateAnchor;
+    return !!node&&!!payload&&node.userData?.burdenPlatePayload===payload&&!payload.exploded&&payload.group?.parent===node.userData?.burdenPlateAnchor;
   }
   function status(mapId,id) {
     const state=dispensers.get(String(id));
