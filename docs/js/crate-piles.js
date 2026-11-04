@@ -4,7 +4,11 @@
   if (window.CratePiles?.installed || !window.THREE) return;
   const THREE = window.THREE;
   const piles = new Map(); // Qualified area/id -> a wild, developer-authored crate pile.
-  const junk = new Map(); // Qualified area/id -> world pickup and its awarded inventory bundle.
+  const junk = new Map(); // Qualified area/id -> live, uncollected supply drop.
+  const savedDrops = new Map(); // Uncollected junk surviving scene reconstruction and world reload.
+  const savedCounts = new Map(); // Wilderness camp supplies survive reentry and reload.
+  const restoredScenes = new Map(); // Track one rehydration pass per active area scene.
+  let persistenceIdentity = null; // World and Tothal cycle, partitioned like Shattercasks.
   const bursts = []; // Bounded translucent-texture (opaque material) wood shard effects.
   const shardCount = 42; // Instanced crate-textured debris per individual crate.
   const maxBursts = 10; // GPU/CPU cap for chain reactions in combat.
@@ -17,6 +21,40 @@
   const key = (mapId,id) => String(mapId) + '::' + String(id);
   const currentArea = () => String(window.GridTileAccessors?.getCurrentArea?.() || window.Combat?.deps?.getCurrentArea?.() || '');
   const tileSize = () => Number(window.Combat?.deps?.TILE) || 64;
+  function worldIdentity() {
+    const id=window.__hobunjiPlayerProfile?.worldId || window.FarmWorldSettings?.read?.()?.world?.id;
+    if (!id) return null; // A preview or unselected save must not write into a shared global slot.
+    let cycle=1;
+    try { cycle=window.CalendarSystem?.tothalCycle?.()||1; } catch(_) { /* Boot may precede calendar init. */ }
+    return String(id)+'|'+String(cycle);
+  }
+  function ensurePersistence() {
+    const identity=worldIdentity();
+    if (!identity || identity===persistenceIdentity) return;
+    if (persistenceIdentity && persistenceIdentity!==identity) {
+      for(const drop of junk.values())drop.group.parent?.remove(drop.group);
+      junk.clear();piles.clear();restoredScenes.clear();savedDrops.clear();savedCounts.clear();
+    }
+    persistenceIdentity=identity;
+    if(typeof localStorage==='undefined')return;
+    try{
+      const raw=JSON.parse(localStorage.getItem('hobunji.crate-supplies.v1:'+identity)||'null');
+      for(const [id,count] of Object.entries(raw?.counts||{}))
+        if(Number.isFinite(Number(count)))savedCounts.set(id,Math.max(0,Math.min(3,Math.floor(Number(count)))));
+      for(const item of raw?.drops||[])
+        if(item && typeof item.id==='string' && typeof item.mapId==='string'
+          && [item.x,item.z,item.y].every(n=>Number.isFinite(Number(n)))
+          && item.loot && typeof item.loot==='object' && !Array.isArray(item.loot))
+          savedDrops.set(key(item.mapId,item.id),item);
+    }catch(error){window.__farmLog?.('[crates] supply restore failed: '+error.message,'warn');}
+  }
+  function persistSupplies() {
+    if(!persistenceIdentity || typeof localStorage==='undefined')return;
+    try{
+      localStorage.setItem('hobunji.crate-supplies.v1:'+persistenceIdentity,
+        JSON.stringify({counts:Object.fromEntries(savedCounts),drops:[...savedDrops.values()]}));
+    }catch(error){window.__farmLog?.('[crates] supply save failed: '+error.message,'warn');}
+  }
   function playerTiles() {
     const player = window.Combat?.deps?.player;
     return player ? { x: Number(player.x) / tileSize(), z: Number(player.y) / tileSize() } : null;
@@ -34,13 +72,16 @@
   function registerPile(options = {}) {
     // Town scenery and user-placed furniture never call this explicit registration gate.
     if (!options.lootable || !options.group?.isObject3D || !options.scene || !options.id || !options.mapId) return null;
+    ensurePersistence();
     const id = key(options.mapId,options.id);
     const existing = piles.get(id);
     if (existing?.scene === options.scene && existing.group === options.group) return existing;
     const rawCount=Number(options.count ?? 3); // Runtime variants accept only finite, bounded integral crate counts.
-    const count=Number.isFinite(rawCount)?Math.max(0,Math.min(3,Math.floor(rawCount))):3;
+    const count=options.persistViaParent!==true && savedCounts.has(id)
+      ?savedCounts.get(id)
+      :Number.isFinite(rawCount)?Math.max(0,Math.min(3,Math.floor(rawCount))):3;
     const pile = { id:String(options.id),mapId:String(options.mapId),scene:options.scene,
-      group:options.group,count,lootable:true,busy:false,onChange:options.onChange||null };
+      group:options.group,count,lootable:true,busy:false,persistViaParent:options.persistViaParent===true,onChange:options.onChange||null };
     if(existing?.scene!==options.scene){
       for(const [dropId,drop] of junk)if(drop.mapId===pile.mapId && drop.scene!==pile.scene){
         drop.group.parent?.remove(drop.group);junk.delete(dropId);
@@ -48,10 +89,15 @@
     }
     piles.set(id,pile);
     window.AuthoredFurniture?.setRuntimeValues?.(pile.group,{crateCount:count});
+    if(count!==rawCount)options.onChange?.(count); // Sync the camp prop snapshot with restored counts.
     return pile;
   }
-  function unregisterPile(mapId,id) {
-    return piles.delete(key(mapId,id));
+  function unregisterPile(mapId,id) { return piles.delete(key(mapId,id)); }
+  function forgetPile(mapId,id) {
+    unregisterPile(mapId,id);
+    const changed=savedCounts.delete(key(mapId,id)); // A rerolled camp must start with fresh crates.
+    if(changed)persistSupplies();
+    return changed;
   }
   function nearestInteractable(mapId,x,z) {
     let best = null, distance = 1.65;
@@ -69,6 +115,7 @@
     pile.count = Math.max(0,pile.count-1);
     window.AuthoredFurniture?.setRuntimeValues?.(pile.group,{crateCount:pile.count});
     pile.onChange?.(pile.count);
+    if(!pile.persistViaParent){savedCounts.set(key(pile.mapId,pile.id),pile.count);persistSupplies();}
     return true;
   }
   async function takeCrate(pile) {
@@ -139,9 +186,9 @@
     decalMaterials.set(item,material);
     return material;
   }
-  function scatterJunk(mapId,scene,x,z,y,loot) {
+  function scatterJunk(mapId,scene,x,z,y,loot,restoreId=null) {
     if (!scene || !THREE.PlaneGeometry || !THREE.Mesh) return null;
-    const id='crate_junk_'+(++serial);
+    const id=restoreId||'crate_junk_'+Date.now().toString(36)+'_'+(++serial);
     const group=new THREE.Group();
     const entry=Object.entries(loot).filter(([,amount])=>Number(amount)>0);
     let index=0;
@@ -165,6 +212,11 @@
     scene.add(group);
     const record={id,mapId,scene,group,loot};
     junk.set(key(mapId,id),record);
+    if(!restoreId){
+      ensurePersistence();
+      savedDrops.set(key(mapId,id),{id,mapId,x,z,y,loot});
+      persistSupplies();
+    }
     return record;
   }
   function woodBurst(scene,x,y,z) {
@@ -198,7 +250,10 @@
       tag:'blunt',reason:'Smashed crate',afflictionBonuses:{bleedingHealth:.35},
       footingDamage:90,footingDamageMultiplier:1,
     });
-    scatterJunk(mapId,scene,x,z,y-.20,rollJunk());
+    const groundY=window.Combat?.deps?.getGroundYAtWorld?.(x,z)
+      ?? window.Combat?.deps?.worldSurfaceY?.(x*tileSize(),z*tileSize())
+      ?? (source==='melee'?y-.32:y);
+    scatterJunk(mapId,scene,x,z,groundY,rollJunk()); // Never bury thrown drops below the landing surface.
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),mapId,undefined,'heavy');
     lastEvent='crate shattered by '+source+' in '+mapId;
     window.__farmLog?.('[crates] '+lastEvent,'combat');
@@ -239,7 +294,20 @@
     }
     return hit;
   }
+  function restoreAreaDrops(mapId,scene) {
+    if(!mapId||!scene||restoredScenes.get(mapId)===scene)return;
+    restoredScenes.set(mapId,scene);
+    for(const [id,drop] of junk)if(drop.mapId===mapId){
+      drop.group.parent?.remove(drop.group);junk.delete(id);
+    }
+    for(const record of savedDrops.values())
+      if(record.mapId===mapId)scatterJunk(mapId,scene,record.x,record.z,record.y,record.loot,record.id);
+  }
   function tick(dt=0) {
+    ensurePersistence();
+    const area=currentArea();
+    restoreAreaDrops(area,window.GridTileAccessors?.getActiveScene?.());
+
     const step=Math.min(.1,Math.max(0,Number(dt)||0));
     for(let i=bursts.length-1;i>=0;i--) {
       const burst=bursts[i];burst.elapsed+=step;
@@ -255,7 +323,6 @@
       burst.mesh.instanceMatrix.needsUpdate=true;
     }
     const p=playerTiles();if(!p)return;
-    const area=currentArea();
     for (const [id,drop] of junk) {
       if (drop.mapId!==area || drop.group.parent!==drop.scene) continue;
       const q=positionOf(drop.group);
@@ -264,6 +331,7 @@
       const awarded=window.Shattercasks?.grantBurdenLoot?.(drop.loot);
       if (!awarded || (Array.isArray(awarded)&&awarded.length===0)) continue;
       junk.delete(id);drop.group.parent?.remove(drop.group);
+      savedDrops.delete(id);persistSupplies();
       const summary=Object.keys(drop.loot).slice(0,3).join(', ');
       window.Combat?.deps?.showToast?.('Collected crate junk: '+summary,false);
       lastEvent='collected '+drop.id+': '+summary;
@@ -278,5 +346,5 @@
     activeDebrisBursts:bursts.length,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
-    shatterBurden,sweepMelee,tick,debugSnapshot};
+    shatterBurden,sweepMelee,tick,forgetPile,debugSnapshot};
 })();
