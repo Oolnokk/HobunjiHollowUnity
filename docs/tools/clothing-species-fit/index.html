@@ -33,6 +33,8 @@
         <div class="field"><label for="fitRegion">Fit region</label><select id="fitRegion"><option value="body">Body + clothing</option><option value="headwear">Head + hats / hoods</option></select></div>
         <div class="field"><label for="sourceSpecies">Starting sprite species</label><select id="sourceSpecies"></select></div>
         <div class="field"><label for="sourceGender">Starting sprite gender</label><select id="sourceGender"><option value="male">male</option><option value="female">female</option></select></div>
+        <div class="row"><button type="button" id="useStartingAsTarget">Show starting species in both viewports</button></div>
+        <div class="small">Target species controls the character in both previews; starting sprite species chooses the donor clothing art. Use the button to match them without losing independent cross-species fitting.</div>
         <div class="field"><label for="garment">Source garment / headwear</label><select id="garment"></select></div>
         <div id="sourceLayerStatus" class="small" aria-live="polite">Loading clothing source layers…</div>
       </section>
@@ -55,6 +57,9 @@
           <label class="small"><input id="showGarment" type="checkbox" checked> garment</label>
           <label class="small"><input id="showMeshes" type="checkbox" checked> grids</label>
         </div>
+        <div class="row"><label class="small"><input id="match3D" type="checkbox" checked> Match 3D portrait in 2D</label></div>
+        <div id="match3DStatus" class="small" aria-live="polite">Preparing game-matched front portrait…</div>
+        <div class="small">When enabled, the 2D canvas shows the same front portrait texture used by the 3D rig, projected onto the editable 6×6 canvas. Turn off to inspect uncolored original PNG pixels. Grid coordinates and PNG exports remain unchanged. Procedural neck, hands, and feet appear only in 3D.</div>
         <div class="field"><label for="opacity">Warped garment opacity</label><input id="opacity" type="range" min="0" max="1" step=".05" value=".78"></div>
         <div class="row">
           <label class="small"><input id="showAuthored" type="checkbox"> authored target variant</label>
@@ -139,9 +144,9 @@
 
     <main class="panel">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px">
-        <div><h2 style="margin:0">Reference canvas</h2><div id="label" class="small"></div></div>
+        <div><h2 style="margin:0">2D front portrait / fitting canvas</h2><div id="label" class="small"></div></div>
         <div class="legend">
-          <span><i class="dot" style="background:var(--orange)"></i>fixed Mao grid</span>
+          <span><i class="dot" style="background:var(--orange)"></i>source grid</span>
           <span><i class="dot" style="background:var(--green)"></i>base transform</span>
           <span><i class="dot" style="background:var(--blue)"></i>final target grid</span>
           <span><i class="dot" style="background:var(--pink)"></i>authored target variant</span>
@@ -155,7 +160,7 @@
         <div class="row"><button id="retry3D">Retry runtime</button><button id="reset3D">Reset 3D view</button></div>
       </div>
       <div id="threeHost" class="threeHost"></div>
-      <div class="small" style="margin-top:7px">Uses the game's PNG-plane avatar, neck rig, procedural hands/feet, species scaling, and canonical cloud opacity mask. Runtime JS is fetched from the same repository root as the 2D editor; loading progress is shown above. A preview-only cloud-mask transform lets you test X/Y scale and Y translation.</div>
+      <div class="small" style="margin-top:7px">With “Match 3D portrait in 2D” enabled, both views derive their front portrait from the same game-rendered texture; 2D resamples and inverse-projects that image into the editable 6×6 coordinate frame. The 3D view additionally renders the neck rig, procedural hands/feet and species scaling, and supports front/back rotation. Disable matching to inspect raw PNGs; saved fit grids and exported sprite files are always raw. Cloud mask art is only used for the arm cut. Runtime JS comes from the same selected repository revision as the editor.</div>
     </main>
   </div>
 </div>

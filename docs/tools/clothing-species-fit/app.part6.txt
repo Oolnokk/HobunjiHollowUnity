@@ -104,34 +104,32 @@ async function runtimePortraitSet(){
     const front=make(),back=make(),head=make();
     let headOnlyFront=null,headOnlyBack=null; // Head/UR anatomy overlay restores the skull in front of rear hood fabric during headwear preview.
 
-    // This is the important V11 change: the preview transform is installed
-    // while portrait-utils renders the WHOLE front/back portrait. Its canonical
-    // destination-out pass therefore cuts base torso, base arms, torso clothing,
-    // overwear, etc. exactly at the normal full-portrait mask stage.
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+    // Use the unchanged game portrait renderer for both views. The retired
+    // full-portrait mask must not alter clothing or base body pixels.
+    await window.NpcAvatarPreview.renderProfileToCanvas(
       front,profile,{seatId:'clothing-fit-runtime',forceEyesOpen:true}
-    ));
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+    );
+    await window.NpcAvatarPreview.renderProfileToCanvas(
       back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
-    ));
+    );
 
     // Keep the neck/head-only texture on the ordinary runtime path. The cloud
     // mask belongs to the body portrait and should not be authored by these sliders.
     await window.NpcAvatarPreview.renderProfileToCanvas(
       head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
     );
-    if(fitRegion()==='headwear'){
-      const isolatedFighter={...profile.fighter,
-        id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
-        headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
-        bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
-      }; // resolvePortraitFighter falls back by matching headUrl even when the ID is unique.
-         // A URL fragment keeps the actual sprite fetch identical but prevents accidental canonical full-body resolution.
-      const headProfile={...profile,fighter:isolatedFighter};
-      headOnlyFront=make();headOnlyBack=make();
-      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
-      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyBack,headProfile,{seatId:'clothing-fit-head-back',portraitView:'behind',forceEyesOpen:true});
-    }
+    // The front game draws torso clothing and overwear before the head. Keep a
+    // head-only render for *both* fit regions so clothing overlays can restore
+    // the game's head/UR depth order without duplicating its portrait math.
+    const isolatedFighter={...profile.fighter,
+      id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
+      headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
+      bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
+    }; // Prevents canonical full-body lookup from replacing the isolated fighter.
+    const headProfile={...profile,fighter:isolatedFighter};
+    headOnlyFront=make();headOnlyBack=make();
+    await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
+    await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyBack,headProfile,{seatId:'clothing-fit-head-back',portraitView:'behind',forceEyesOpen:true});
     return{npc,profile,front,back,head,headOnlyFront,headOnlyBack,size};
   })();
   R.three.portraitCache.set(cacheKey,promise);
@@ -158,8 +156,7 @@ function targetBodyLayerRecord(descriptor=null){
   return layers.find(layer=>String(layer.id||'').toLowerCase()==='torso')||layers[0]||null;
 }
 function targetBodyLayerXform(){
-  const torso=targetBodyLayerRecord({layerId:'torso'});
-  return normalizedLayerXform(torso?.xform||{ax:-.2,ay:0,scaleX:2.55,scaleY:2.55});
+  return normalizedLayerXform(window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49}); // The live game overrides base body layers with B too; do not inverse-project the canonical head or extended art through the obsolete torso A transform.
 }
 function routedBodyTintSlot(descriptor){
   const layer=targetBodyLayerRecord(descriptor);

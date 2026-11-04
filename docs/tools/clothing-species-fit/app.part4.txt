@@ -120,6 +120,19 @@ async function refreshAssets(){
   const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
   R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
   E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
+  // Clear the previous character immediately. An unavailable target, failed
+  // image, or slower response must never leave Mao-ao (or another old wearer)
+  // pretending to be the newly selected species.
+  R.three.buildGeneration++;
+  R.three.matchedFront2D=null; // A newly selected wearer must never inherit the previous species' synchronized 2D portrait.
+  clearTimeout(R.three.buildTimer);
+  disposeRuntimeRig();
+  C.setTransform(1,0,0,1,0,0);
+  C.clearRect(0,0,E.stage.width,E.stage.height);
+  E.label.textContent=`Loading target: ${species} ${gender} (source: ${sourceSpecies} ${sourceGender})…`;
+  E.threeStatus.textContent=`Loading target rig: ${species} ${gender}…`;
+  E.match3DStatus.textContent=`Loading ${species} ${gender} artwork and matched portrait…`;
+  E.sourceLayerStatus.textContent=`Loading ${species} ${gender} target body and ${sourceSpecies} ${sourceGender} garment…`;
   try{
     if(R.patchWorkflow.active||R.patchWorkflow.canvas){
       R.patchWorkflow={active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:(R.patchWorkflow.revision||0)+1};
@@ -150,7 +163,10 @@ async function refreshAssets(){
     window.dispatchEvent(new CustomEvent('hobunji-clothing-fit-assets-refreshed',{detail:{species,gender,garmentId}}));
   }catch(error){
     if(generation!==R.assetGeneration)return;
-    E.sourceLayerStatus.textContent='Source/target reload failed: '+error.message;
+    E.sourceLayerStatus.textContent=`Cannot show target ${species} ${gender}: ${error.message}`;
+    E.label.textContent=`Target unavailable: ${species} ${gender}`;
+    E.threeStatus.textContent=`No rig for ${species} ${gender}: target art failed to load (see source status).`;
+    E.match3DStatus.textContent=`Cannot match target ${species} ${gender}: artwork failed to load.`;
     status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error);
   }
 }

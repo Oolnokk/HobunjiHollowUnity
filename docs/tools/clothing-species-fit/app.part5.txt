@@ -302,27 +302,7 @@ async function executeRuntimeScript(path,index,total){
     throw new Error(`${path} threw during startup: ${error?.message||error}`);
   }
 }
-function installCanonicalCloudMaskScale(){
-  // The live game wraps the ordinary destination-out portrait cloud mask with
-  // this exact 0.60 Y-scale + bottom-anchor compensation. Keep that behavior
-  // available even if the later arm-specific cloud helper elects not to wrap.
-  const original=window.applyPortraitOpacityMask;
-  if(typeof original!=='function'||original.__hobunjiCloudMaskYScaled)return;
-  const wrapped=function(ctx,image,xform={}){
-    const ax=Number(xform.ax)||0;
-    const sy=Number(xform.sy??xform.scaleY)||1;
-    const multiplier=.60;
-    const bottomAnchorCompensation=sy*(1-multiplier)/2;
-    return original(ctx,image,{
-      ...xform,
-      ax:ax-bottomAnchorCompensation,
-      sy:sy*multiplier,
-      scaleY:sy*multiplier
-    });
-  };
-  wrapped.__hobunjiCloudMaskYScaled=true;
-  window.applyPortraitOpacityMask=wrapped;
-}
+// Full-portrait cloud mask scaling retired; arm cuts own their mask geometry.
 async function ensureRigRuntime(){
   if(R.three.runtimeReadyPromise)return R.three.runtimeReadyPromise;
   R.three.runtimeReadyPromise=(async()=>{

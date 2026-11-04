@@ -5,18 +5,29 @@
   ctx.globalAlpha=opacity;
   ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
   ctx.globalAlpha=1;
-  if(fitRegion()!=='headwear')await applyRuntimeCloudMask(out); // Cloud opacity masks clip torso layers, never the skull or hats.
+  // The game no longer applies a destination-out cloud mask to portrait art.
+  // Its original mask image is consumed by the separate arm-cut pipeline only.
   return out;
 }
 function targetGarmentLayerXform(){
-  if(fitRegion()==='headwear'){
-    const record=headwearLayerRecords(garmentRecord(),E.species.value,E.gender.value)[0]||
-      headwearLayerRecords(garmentRecord(),E.sourceSpecies.value,E.sourceGender.value)[0];
-    const authoredXform=record?.layer?.spriteStyle?.base?.xform?.head;
-    if(authoredXform)return normalizedLayerXform(authoredXform);
-  }
-  return targetBodyLayerXform();
-} // In 3D use the actual garment's portrait xform rather than implicitly applying the torso preset to hats.
+  // portrait-utils._extractLayersFromParts assigns xformPreset:'B' to every
+  // wearable layer. That preset overrides spriteStyle AND the species torso
+  // transform in the live game's resolveXform, so use the same live preset here.
+  const runtimePreset=window.getPortraitXformPreset?.('B'); // Used to place fitted garments exactly where the game places their portrait layers.
+  if(!runtimePreset)throw new Error('Portrait transform preset B unavailable; cannot preview garment placement accurately.');
+  return normalizedLayerXform(runtimePreset);
+}
+function projectRuntimeFrontToFittingCanvas(source){
+  if(!source||!R.body)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height}); // Mirrors the game-rendered front texture into the editor's native fit coordinate space; never used as export art.
+  const ctx=canvas.getContext('2d',{alpha:true});
+  ctx.imageSmoothingEnabled=false;
+  const rect=portraitLayerRect(canvas.width,canvas.height,targetGarmentLayerXform(),source.width,source.height); // Same preset B projection as rawGarmentToRuntimeLayer, inverted.
+  if(!(rect.w>0&&rect.h>0))throw new Error('Cannot project the game portrait into a zero-size fitting frame.');
+  ctx.drawImage(source,-rect.x*canvas.width/rect.w,-rect.y*canvas.height/rect.h,
+    source.width*canvas.width/rect.w,source.height*canvas.height/rect.h);
+  return canvas;
+} // A shared 3D front-portrait texture prevents separate raw/tinted/head-depth compositions from drifting apart.
 function canonicalHeadReference(source){
   if(!source||!R.body)return null;
   const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
@@ -42,7 +53,7 @@ async function composeRuntimePortrait(){
   fctx.drawImage(runtime.front,0,0);
 
   bctx.drawImage(runtime.back,0,0); // Canonical rear base body is always the backplane foundation.
-  if(routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
+  if(mode!=='body'&&routedPatchIsBody()&&mainClothSource()){ // Body visibility checkbox only affects the 2D editing canvas.
     const warpedPatch=currentWarp();
     const patchLayer=await renderRoutedBodyPatchOverlay(
       runtime.profile,warpedPatch,R.patchWorkflow.descriptor,back.width,back.height
@@ -80,17 +91,24 @@ async function composeRuntimePortrait(){
       }
     };
     if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
-    if(E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
+    if(mode!=='body'&&E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
   }else{
-    if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
+    if(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
       const warped=currentWarp();
       const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
       if(layer){fctx.drawImage(layer,0,0);bctx.drawImage(flipCanvasX(layer),0,0)}
     }
-    if(E.showAuthored.checked&&R.authoredTargetCloth){
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
       const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
       if(authored){fctx.drawImage(authored,0,0);bctx.drawImage(flipCanvasX(authored),0,0)}
     }
+    // The game draws torso clothing/overwear before the head in front view,
+    // unlike the rear portrait (where clothing follows the head). Pauldrons
+    // are a later front layer and intentionally stay over the head.
+    const hasBodyGarment=(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
+      (mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
+    if(hasBodyGarment&&garmentRecord()?.slot!=='pauldron'&&runtime.headOnlyFront)
+      fctx.drawImage(runtime.headOnlyFront,0,0);
   }
   return{...runtime,frontComposed:front,backComposed:back};
 }
@@ -113,7 +131,7 @@ async function extendedRuntimeCanvas(){
   const out=Object.assign(document.createElement('canvas'),{width:normalSize,height:outHeight});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   ctx.drawImage(raw,drawX,drawY,drawW,drawH);
-  await applyRuntimeCloudMask(out);
+  // Extended overlays must also remain uncut: the in-game cloud image is arm-only.
   return out;
 }
 function disposeObjectTree(root){
