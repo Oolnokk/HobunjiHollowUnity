@@ -79,6 +79,8 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Serve repo
         run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
+      - name: Verify rope-chain crossing in both directions, lethal falls and opposing checkpoints
+        run: node scripts/test-ruin-rope-chain-browser.js
       - name: Exercise real skinned Hachutu player tearing and cinematic cleanup
         run: node scripts/test-hachutu-root-tear-browser.js
       - name: Verify Hachutu game generation, authentic root hands and paid escape
@@ -87,8 +89,6 @@ jobs:
         run: node scripts/test-dev-random-ruin-collision-browser.js
       - name: Verify playable composed trial and shaft wing in the real game
         run: node scripts/test-ruin-construction-browser.js
-      - name: Verify rope-chain crossing in both directions, lethal falls and opposing checkpoints
-        run: node scripts/test-ruin-rope-chain-browser.js
       - name: Isolate previously failing seed
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'
