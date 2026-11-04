@@ -507,10 +507,34 @@
       if(!doorStates.some(record=>record.door===door))
         doorStates.push({door,open:door.open,target:door.target,openingSide:door.openingSide,panelY:door.panel.position.y});
     });
+    const stoneDoorStates=[]; // Saves only V50 stone doors belonging to this hallway; restored if either-direction validation fails.
+    const sources=occupancy?.getSnapshot?.()?.sources||{};
+    const nearbyDoorIds=new Set();
+    for(const p of doorwayPoints){
+      for(let row=Math.floor(p.z)-1;row<=Math.floor(p.z)+1;row++)
+        for(let col=Math.floor(p.x)-1;col<=Math.floor(p.x)+1;col++)
+          for(const source of sources[col+','+row]||[])
+            if(source.startsWith('door:'))nearbyDoorIds.add(source.slice(5));
+    }
+    for(const id of nearbyDoorIds){
+      const info=window.DevRandomRuin?.mechanismInfo?.(id);
+      if(info?.type!=='stoneDoor'||!info.root)continue;
+      const center=new THREE.Vector3();
+      info.root.updateWorldMatrix?.(true,false);
+      info.root.getWorldPosition(center);
+      if(!doorwayPoints.some(p=>Math.hypot(p.x-center.x,p.z-center.z)<=2))continue;
+      stoneDoorStates.push({id,root:info.root,scaleY:info.root.scale.y});
+      info.root.scale.y=Math.min(info.root.scale.y,Number(info.root.userData.previewMotion?.minScale) || .06);
+      info.root.updateMatrixWorld?.(true);
+    }
     const restoreDoors=()=>{
       for(const original of doorStates){
         Object.assign(original.door,{open:original.open,target:original.target,openingSide:original.openingSide});
         original.door.panel.position.y=original.panelY;
+      }
+      for(const original of stoneDoorStates){
+        original.root.scale.y=original.scaleY;
+        original.root.updateMatrixWorld?.(true);
       }
       occupancy?.refresh?.();
     };
@@ -571,10 +595,11 @@
     };
     const exitFloor=shoreLanding('end'),entryFloor=shoreLanding('start');
     const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
-    const forward=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight)!==null);
-    const reverse=ropes.every((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
-      i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight)!==null);
-    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse});} // Both checkpoint sides must lead to a physically solvable crossing.
+    const forwardHops=ropes.map((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight));
+    const reverseHops=ropes.map((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
+      i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight));
+    const forward=forwardHops.every(amp=>amp!==null),reverse=reverseHops.every(amp=>amp!==null);
+    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return reject('ballistic validation failed',{forward,reverse,forwardHops,reverseHops});} // Both checkpoint sides must lead to a physically solvable crossing.
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
     for(const cell of cells){
@@ -611,11 +636,15 @@
     const entryDoor=entryDoorRaw?doorwayWorld(context.meta,entryDoorRaw,(context.meta?.doorways||[]).indexOf(entryDoorRaw)):null;
     const entryAlong=entryDoor?(axis==='x'?entryDoor.x:entryDoor.z):start;
     const approachSide=Math.abs(entryAlong-start)<=Math.abs(entryAlong-finish)?'start':'end';
-    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,openedTransitDoors:doorStates.length,floorY,approachSide,rewardSide:approachSide==='start'?'end':'start',checkpointIds:{
+    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,openedTransitDoors:doorStates.length,openedStoneDoors:stoneDoorStates.length,floorY,approachSide,rewardSide:approachSide==='start'?'end':'start',checkpointIds:{
       start:'rope-chain-'+hall.id+'-start',end:'rope-chain-'+hall.id+'-end'}};
     state.ropeChains.push(chain);
     usedHallways.add(hall.id);
     recordModulePlacement('ropeChainAbyss','hallway',hall.id,{ropeCount,checkpointIds:chain.checkpointIds,instantDeath:true});
+    for(const {id} of stoneDoorStates){
+      if(!window.DevRandomRuin?.keepRopeChainStoneDoorOpen?.(id))
+        throw new Error('Could not retain the open rope-chain stone door '+id);
+    }
     for(const {door} of doorStates){
       door.keepOpenForRopeChain=true; // The player's rope corridor has no separate entry/exit door interactions.
       door.door.userData.ropeChainPassage=true;
@@ -2350,7 +2379,7 @@
       ropeChainRejects:state.ropeChainRejects.slice(),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
         ropeCount:chain.ropes.length,ropeIds:chain.ropes.map(rope=>rope.id),entry:clonePoint(chain.entry),exit:clonePoint(chain.exit),
-        floorY:chain.floorY,openedTransitDoors:chain.openedTransitDoors,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
+        floorY:chain.floorY,openedTransitDoors:chain.openedTransitDoors,openedStoneDoors:chain.openedStoneDoors,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
         checkpoints:chain.checkpointIds,instantDeath:true})),
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
