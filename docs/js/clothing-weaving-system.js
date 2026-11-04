@@ -1079,6 +1079,7 @@
         option.textContent = entry.label;
         select.appendChild(option);
       }
+      if (selectedId && !Array.from(select.options).some(option => option.value === selectedId)) select.add(new Option('Saved pattern (' + selectedId + ')', selectedId)); // Missing library entries must not hide an item-owned snapshot.
       select.value = selectedId || (customLabel ? '__custom' : '');
     }
 
