@@ -87,7 +87,7 @@ async function loadRepositoryData(){
     if(!active())return;
     R.speciesIndex=si.entries||[];
     const speciesResults=await mapLimit(R.speciesIndex,6,async entry=>({
-      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\\.\\//,''))
+      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\.\//,''))
     }),(done,total)=>{if(active())status(`Loading species: ${done}/${total}…`)});
     if(!active())return;
     for(const x of speciesResults)if(x&&!x.error)R.speciesCfg.set(x.entry.speciesId,x.cfg);
@@ -96,7 +96,7 @@ async function loadRepositoryData(){
     const entries=ci.entries||[];
     const priority=entries.filter((entry,i)=>i<20||['fur_hood','fine_hood','ragged_hood'].includes(entry.id)); // Hood art and the original body-fitting choices load before the large cosmetic catalog.
     const remaining=entries.filter(entry=>!priority.includes(entry)); // Secondary choices populate without blocking the first usable canvas.
-    const fetchGarment=async entry=>({entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\\.\\//,''))});
+    const fetchGarment=async entry=>({entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\.\//,''))});
     const addGarments=results=>{
       for(const x of results){
         if(!x||x.error)continue;
@@ -104,7 +104,7 @@ async function loadRepositoryData(){
         if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
            (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
           R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
-            configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\\.\\//,'')}`});
+            configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\.\//,'')}`});
         }
       }
       R.garments.sort((a,b)=>a.label.localeCompare(b.label));
