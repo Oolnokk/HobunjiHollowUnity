@@ -258,7 +258,7 @@
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
   <script src="js/furniture-table-system.js?v=20261104familylocks1"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
-  <script src="js/authored-furniture-runtime.js?v=20261103surfacematerialv2"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261104hf23bb18"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
@@ -398,7 +398,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261031h8971d90"></script>
+  <script src="js/bandit-camps.js?v=20261104h92ff24f"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -877,14 +877,14 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261104chestlocks1"></script>
+  <script src="js/cave-site-system.js?v=20261104he3456d4"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261104backcarry2"></script>
+  <script src="js/shattercasks.js?v=20261104hccd3dae"></script>
   <script src="js/crate-piles.js?v=20261104cratepiles1"></script>
   <script src="js/hronal-witch-bombs.js?v=20261104backcarry3"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
