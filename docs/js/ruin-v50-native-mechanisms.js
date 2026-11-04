@@ -13,7 +13,7 @@
   const finite=n=>Number.isFinite(Number(n));
 
   function inspect(nativeRoot){
-    const mechanisms=new Map(),activators=[],blocks=[],transitDoors=[];
+    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[]; // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
     nativeRoot?.traverse?.(object=>{
       const d=object.userData||{},motion=d.previewMotion?.type;
       if(d.mechanismId&&MOTIONS.has(motion))mechanisms.set(String(d.mechanismId),object);
@@ -24,9 +24,10 @@
         activators.push(object);
       }
       if(d.pushable&&(motion==='pushPuzzleBlock'||motion==='elevatorPushBlock'))blocks.push(object);
+      if(d.immovable===true&&d.blockerPurpose)fixedBlocks.push(object);
       if(d.transitDoor)transitDoors.push(object);
     });
-    return {mechanisms,activators,blocks,transitDoors};
+    return {mechanisms,activators,blocks,fixedBlocks,transitDoors};
   }
   function namespace(nativeRoot,floor){
     const prefix='native-v50-f'+floor+'-'; // V50 restarts mechanism numbering every generated floor; parent glyph circuits need globally unique keys.
@@ -160,6 +161,8 @@
       // DevRandomRuinHitPuzzles' real ranged-hit and carried-torch collision
       // code scans this native root, so they remain physical puzzles.
     }
+    for(const fixed of inventory.fixedBlocks)
+      trackBlocker(scope+'-v50-fixed-block-'+fixed.id,fixed); // Without height-aware collision, the player can walk through original V50 push-puzzle stoppers.
     for(const block of inventory.blocks){
       let route=Array.isArray(block.userData.pushPath)?block.userData.pushPath:null;
       if(!route||route.length<2)continue;
@@ -254,7 +257,8 @@
       isSolved:id=>states.get(String(id))?.solved===true,
       getState:()=>({
         mechanisms:states.size,activators:inventory.activators.length,
-        pushBlocks:inventory.blocks.length,transitDoors:inventory.transitDoors.length,
+        pushBlocks:inventory.blocks.length,fixedBlocks:inventory.fixedBlocks.length,
+        transitDoors:inventory.transitDoors.length,
         solved:[...states.values()].filter(state=>state.solved).length,
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
