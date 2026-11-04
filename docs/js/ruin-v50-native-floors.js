@@ -401,7 +401,9 @@
           const kind=i===0?'pressurePlate':i===1?RANGED[item.floor%RANGED.length]
             :kinds[(i+item.floor)%kinds.length];
           const challengeY=floor.y+(heights.get(key(Math.floor(world.x+world.w/2),Math.floor(world.z+world.d/2)))||0); // Match the actual V50 surface under the puzzle.
-          const authored=record.nativeMechanisms.stageCandidate(world); // Prefer V50's actual puzzles; never let an unrelated substitute plate bypass a real mechanism.
+          const nestedChain=(meta.movingParts||[]).find(part=>part.type==='nestedPuzzleChain'
+            &&String(part.roomId)===String(native.id)); // V50 exports the actual final mechanism for nested room-spanning puzzles.
+          const authored=record.nativeMechanisms.stageCandidate(world,nestedChain?.finalMechanismId||null); // A preparatory bridge, lift or stair cannot open the stage gate ahead of its real final objective.
           const challengeId='v50-f'+item.floor+'-'+native.id;
           let challenge=null;
           if(authored){
