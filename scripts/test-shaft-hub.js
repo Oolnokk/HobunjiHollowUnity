@@ -11,6 +11,7 @@ const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
 const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
+const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
@@ -24,6 +25,42 @@ assert(!runtime.includes("passage('Enter Shaft Hub'"),'no gameplay teleporter in
 assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out of the shaft');
 for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js','ruin-v50-native-floors.js'])
   assert(index.includes(file),'game page must load '+file);
+
+// Native V50 upper stories reserve a concrete full-size footprint before
+// ANY V50 floor is generated. Generated V50 rooms must fit inside it, and
+// none of the authored wings or their corridors may intrude on that space.
+{
+  let floors=0;
+  for(let seed=1;seed<=1000;seed++){
+    const plan=Plan.compose({seed,anchorX:320,anchorZ:320,nativeV50:true});
+    assert(plan.ok,'native plan '+seed+' '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(','));
+    for(const floor of plan.floors){
+      if(floor.floor===0){assert(!floor.nativePort);continue;}
+      floors++;
+      const port=floor.nativePort,area=port.reservation;
+      assert(area&&area.w===180&&area.d===180,'native floor allocation must exist before V50 runs');
+      assert(!floor.wings.some(w=>w.side==='E'),'reserved east portal is exclusively native V50');
+      for(const wing of floor.wings){
+        for(const room of wing.rooms)assert(!Plan.intersects(room,area),'native reservation overlaps an authored room');
+        for(const hall of wing.corridors)for(const rect of hall.rects)
+          assert(!Plan.intersects(rect,area),'native reservation overlaps an authored corridor');
+      }
+      for(const size of [[8,8],[48,62],[180,180]]){
+        const meta={cellSize:.5,gridCols:size[0],gridRows:size[1],
+          entrance:{side:'west',axis:'x',boundary:0,center:Math.floor(size[1]/2)}};
+        const placed=NativeV50.layoutPlacement(meta,port,2);
+        assert(placed.originX>=area.x&&placed.originZ>=area.z);
+        assert(placed.originX+placed.width<=area.x+area.w
+          &&placed.originZ+placed.depth<=area.z+area.d,'native V50 geometry escaped its preplanned area');
+      }
+      assert.throws(()=>NativeV50.layoutPlacement({
+        cellSize:.5,gridCols:181,gridRows:10,
+        entrance:{side:'west',axis:'x',boundary:0,center:5}
+      },port,2),/Invalid native V50/,'oversized V50 floor must fail before scene mutation');
+    }
+  }
+  assert(floors>=2000,'exercise real multi-story native V50 reservations');
+}
 
 // Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
 // through the same segment intersection used by Three.Box3 projectile hits.
