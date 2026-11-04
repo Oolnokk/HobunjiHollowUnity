@@ -233,6 +233,10 @@ class Vector3 {
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
   addScaledVector(v,k){this.x+=v.x*k;this.y+=v.y*k;this.z+=v.z*k;return this;}
   multiplyScalar(v){this.x*=v;this.y*=v;this.z*=v;return this;}
+  multiply(v){this.x*=v.x;this.y*=v.y;this.z*=v.z;return this;} // Used by the portrait-parent transform fixture.
+  divide(v){this.x/=v.x||1;this.y/=v.y||1;this.z/=v.z||1;return this;}
+  sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  applyQuaternion(q){const y=Number(q?.yaw)||0,x=this.x,z=this.z;this.x=x*Math.cos(y)+z*Math.sin(y);this.z=z*Math.cos(y)-x*Math.sin(y);return this;}
   lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
   length(){return Math.sqrt(this.lengthSq());}
   normalize(){return this.multiplyScalar(1/(this.length()||1));}
@@ -240,11 +244,40 @@ class Vector3 {
   distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
 }
 function vector() {return new Vector3();}
+class Euler {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);} // Exercises production carry offsets in their authored Euler order.
+  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+}
+class Quaternion {
+  constructor(){this.yaw=0;} // This suite needs yaw composition; the separate portrait test covers parent transforms explicitly.
+  setFromEuler(e){this.yaw=e.y;return this;}
+  copy(q){this.yaw=q.yaw;return this;}
+  multiply(q){this.yaw+=q.yaw;return this;}
+  premultiply(q){this.yaw+=q.yaw;return this;}
+  invert(){this.yaw=-this.yaw;return this;}
+  clone(){const q=new Quaternion();return q.copy(this);}
+}
 class Node {
-  constructor(){this.children=[];this.position=vector();this.scale=vector();this.rotation=vector();this.userData={};this.parent=null;}
-  add(other){this.children.push(other);other.parent=this;}
+  constructor(){
+    this.children=[];this.position=vector();this.scale=new Vector3(1,1,1);
+    this.rotation=vector();this.quaternion=new Quaternion();this.userData={};this.parent=null;this.isObject3D=true;
+  }
+  add(other){other.parent?.remove?.(other);this.children.push(other);other.parent=this;}
   remove(other){this.children=this.children.filter(child=>child!==other);other.parent=null;}
   traverse(callback){callback(this);for(const child of this.children)child.traverse(callback);}
+  updateWorldMatrix(){}
+  localToWorld(point){for(let node=this;node;node=node.parent)point.multiply(node.scale).applyQuaternion(node.quaternion).add(node.position);return point;}
+  worldToLocal(point){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    for(const node of chain)point.sub(node.position).applyQuaternion(node.quaternion.clone().invert()).divide(node.scale);
+    return point;
+  }
+  getWorldPosition(target){return this.localToWorld(target.set(0,0,0));}
+  getWorldScale(target){target.set(1,1,1);for(let node=this;node;node=node.parent)target.multiply(node.scale);return target;}
+  getWorldQuaternion(target){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    target.yaw=0;for(const node of chain)target.multiply(node.quaternion);return target;
+  }
   getObjectByProperty(key,value){
     if(this[key]===value)return this;
     for(const child of this.children){const match=child.getObjectByProperty(key,value);if(match)return match;}
@@ -283,10 +316,11 @@ class Raycaster {
       if(!mesh.geometry?.authoredMock || !parent)continue;
       const ray=this.ray,dx=ray.direction.x;
       if(Math.abs(dx)<1e-9)continue;
-      const distance=(parent.position.x+mesh.position.x-ray.origin.x)/dx;
+      const world=parent.getWorldPosition(new Vector3()); // The exact physical Burden can be parented under the player during pickup.
+      const distance=(world.x+mesh.position.x-ray.origin.x)/dx;
       if(distance<this.near || distance>this.far)continue;
-      const y=ray.origin.y+distance*ray.direction.y-parent.position.y;
-      const z=ray.origin.z+distance*ray.direction.z-parent.position.z;
+      const y=ray.origin.y+distance*ray.direction.y-world.y;
+      const z=ray.origin.z+distance*ray.direction.z-world.z;
       // A narrow tapered neck rising to .89, and a broader rounded body.
       const inBody=y>=.04&&y<=.57&&Math.abs(z)<.26;
       const inNeck=y>.57&&y<=.88&&Math.abs(z)<.11;
@@ -302,7 +336,7 @@ function authoredGroup() {
   group.userData.meshById=new Map([['silhouette',mesh]]);
   return group;
 }
-const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,RingGeometry,
+const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,Quaternion,Raycaster,RingGeometry,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
@@ -454,6 +488,7 @@ async function arenaScenario() {
   ]);
   portrait.name='player_skinned_plane_assembly';
   portrait.bind({bones:[]},{});
+  body.position.set(player.x/64,0,player.y/64); // Mirror live game.js: the avatar root tracks the actor's tile position.
   body.add(portrait);
   const rearHeadwear=new Mesh({},new Material({depthTest:true,depthWrite:false,visible:true}));
   rearHeadwear.name='player_avatar_back_hat_xray_plane';
@@ -489,8 +524,8 @@ async function arenaScenario() {
   const isLegacyHeldPlane=vm.runInNewContext('('+heldRenderer.match(/function isLegacyHeldPlane\(object\) \{[\s\S]*?\n  \}/)[0]+')',
     {LEGACY_HELD_RENDER_ORDER:1.5});
   assert(isLegacyHeldPlane({isMesh:true,renderOrder:1.5,userData:{}}),'fixture exercises the reserved weapon replay order');
-  for(const mesh of activeScene.children.find(node=>node.userData?.shattercaskId===first.id).userData.meshById.values())
-    assert.equal(isLegacyHeldPlane(mesh),false,'physical cask stays in world colour pass below rear portrait');
+  for(const mesh of game.Shattercasks.getBurden(first.id,currentArea).group.userData.meshById.values())
+    assert.equal(isLegacyHeldPlane(mesh),false,'carried physical cask stays in the world colour pass below rear portrait');
   // A late portrait rebuild must replace the overlay and restore the old
   // material before attaching the new skinned back on the next poll.
   const rebuilt=new SkinnedMesh(portrait.geometry,[
@@ -509,6 +544,18 @@ async function arenaScenario() {
   assert(game.Shattercasks.toolArchTap(),'tool selection stows the original Burden on the back');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'back stow frees both hands');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,first.id,'back slot references the physical original Burden');
+  const stowed=game.Shattercasks.getBurden(first.id,currentArea); // Confirms the original burden is attached to the current rendered portrait, not a copy.
+  assert.equal(stowed.group.parent,rebuilt,'stowed charge is parented directly to the rebuilt portrait plane');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
+  assert.equal(game.Shattercasks.hitProjectile({vase:stowed}),false,'stowed charge cannot receive an independent projectile hit');
+  const beforePortraitYaw=stowed.group.getWorldPosition(new Vector3()); // A visual-only deadzone turn must reach its child.
+  const authoredStowLocal=stowed.group.position.clone();
+  rebuilt.quaternion.setFromEuler(new Euler(0,.8,0));
+  game.Combat.update(.016);
+  const afterPortraitYaw=stowed.group.getWorldPosition(new Vector3());
+  assert(Math.hypot(afterPortraitYaw.x-beforePortraitYaw.x,afterPortraitYaw.z-beforePortraitYaw.z)>1e-4,
+    'stowed charge follows its portrait when the deadzone changes the plane yaw');
+  assert.deepEqual(stowed.group.position,authoredStowLocal,'the authored back offset is not reset against the portrait yaw');
   assert.equal(game.Shattercasks.actionButtons(),null,'normal tool actions return while a back burden is stowed');
   assert(game.Shattercasks.takeFromBack(),'the tool arch takes the back Burden into the hands');
   assert.equal(game.Shattercasks.debugSnapshot().held,first.id,'retrieval does not replace the burden with an inventory copy');
@@ -570,11 +617,13 @@ async function arenaScenario() {
   assert(game.Shattercasks.toolArchTap(),'dropped charge can be picked up again');
   assert(game.Shattercasks.startShatterAim(),'aim can restart with the same preview');
   assert.equal(groundProjectionBinds,1,'repeated aiming reuses the same projected mesh');
-  const carried=game.Shattercasks.debugSnapshot().vases.find(vase=>vase.carried); // Locates the actual held charge through the public diagnostics.
+  const carried=game.Shattercasks.activeBurdenRecords().find(vase=>vase.carried); // Actual physical burden; its original tile is not its position while held.
   const rayAt=(sx,sy,sz,ex,ey,ez)=>game.Shattercasks.projectileHit({x:sx,y:sy,z:sz},{x:ex,y:ey,z:ez},0,1,currentArea);
-  const cx=carried.col+.5,cz=carried.row+.5; // Randomly placed neighbours can shadow one approach, so take the first ray that reaches the carried charge.
-  const impact=[rayAt(cx-1,.4,cz,cx+1,.4,cz),rayAt(cx+1,.4,cz,cx-1,.4,cz),rayAt(cx,.4,cz-1,cx,.4,cz+1),rayAt(cx,.4,cz+1,cx,.4,cz-1)]
-    .find(hit=>hit?.vase?.carried); // Uses the real incoming projectile path.
+  const world=carried.group.getWorldPosition(new Vector3()); // Weapon/portrait transforms move the carried geometry in world space.
+  const cx=world.x,cy=world.y+.35,cz=world.z; // Shoot through the modeled body, never its stale spawn coordinates.
+  const impact=[rayAt(cx-.5,cy,cz,cx+.5,cy,cz),rayAt(cx+.5,cy,cz,cx-.5,cy,cz),
+    rayAt(cx,cy,cz-.5,cx,cy,cz+.5),rayAt(cx,cy,cz+.5,cx,cy,cz-.5)]
+    .find(hit=>hit?.vase===carried); // Still tests an incoming projectile hitting the held burden, independent of its carrier.
   assert(impact,'a projectile can hit a charge during aiming');
   assert(game.Shattercasks.hitProjectile(impact),'incoming projectile detonates the held charge');
   assert.equal(ring.visible,false,'a charge destroyed while aiming cannot leave its preview behind');
@@ -584,6 +633,7 @@ async function arenaScenario() {
   const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
   assert(spare,'a second real Burden is available for back impact validation');
   player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
+  body.position.set(player.x/64,0,player.y/64); // The physical body root follows the actor between item pickups.
   assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
   assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
