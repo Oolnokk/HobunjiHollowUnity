@@ -61,9 +61,34 @@ const cdn={
       },seed);
       assert(built.ok&&built.area==='map_i_dev_random_ruin'&&built.state?.floors>=2,
         'A complete real native V50 multi-story dungeon must generate before autoplay: '+JSON.stringify({seed,built}));
-      await page.waitForFunction(()=>window.DevRandomRuinHitPuzzles?.snapshot?.()?.active
-        &&window.DevRandomRuin?.getNativeV50TestRuntime?.()?.records?.length>=2,
-      null,{timeout:30000,polling:100});
+      const readiness=await page.evaluate(()=>{
+        const native=window.DevRandomRuin.getNativeV50TestRuntime?.(),hit=window.DevRandomRuinHitPuzzles;
+        const initialized=hit?.debugEnsureRuntimeReady?.(); // This is exactly the production before-render callback; software Chromium may not have compiled its first heavy dungeon frame yet.
+        return {initialized,storyCount:native?.records?.length||0,
+          area:window.GridTileAccessors?.getCurrentArea?.()||null,
+          playerGroundY:window.DevRandomRuin.getPlayerGroundSupportY?.()??null,
+          hit:hit?.snapshot?.()||null,
+          gameStarted:window.__hobunjiGameStarted===true};
+      });
+      console.log('V50_AUTOPLAY_RUNTIME_READY '+JSON.stringify({seed,readiness}));
+      if(!readiness.initialized||readiness.storyCount<2){
+        await page.waitForFunction(()=>{
+          const hit=window.DevRandomRuinHitPuzzles;
+          return hit?.debugEnsureRuntimeReady?.()===true&&
+            (window.DevRandomRuin.getNativeV50TestRuntime?.()?.records?.length||0)>=2;
+        },null,{timeout:90000,polling:200}).catch(async error=>{
+          const diagnostics=await page.evaluate(()=>({
+            area:window.GridTileAccessors?.getCurrentArea?.()||null,
+            gameStarted:!!window.__hobunjiGameStarted,
+            native:window.DevRandomRuin.getState?.()?.nativeV50Runtime||null,
+            devMode:localStorage.getItem('hobunjiDevMode'),
+            liveTestRecords:window.DevRandomRuin.getNativeV50TestRuntime?.()?.records?.length||null,
+            scene:window.GridTileAccessors?.getActiveScene?.()?.children?.filter(object=>/^dev_v50_ruin_/.test(object.name||'')).map(object=>object.name)||[],
+            hit:window.DevRandomRuinHitPuzzles?.snapshot?.()||null,
+          }));
+          throw new Error('Native V50 hit runtime failed to attach to the real map: '+JSON.stringify({seed,readiness,diagnostics}),{cause:error});
+        });
+      }
       const illegalTeleport=await page.evaluate(()=>window.DevRandomRuin.getInteractionControls()
         .some(control=>control.kind==='shaft-passage'||control.label==='Enter Shaft Hub'));
       assert.equal(illegalTeleport,false,'physical V50 shaft must not contain an escape teleport');
