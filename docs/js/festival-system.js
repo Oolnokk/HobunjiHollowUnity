@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   let deps = null; // Runtime-owned inventory, scene, NPC, and persistence closures.
-  let state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, feastBuffDurationHours: 4, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
+  let state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalFunPaid: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, feastBuffDurationHours: 4, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let remembrance = null; // Active Tzizkhanash observance; completing twelve played seconds earns an annual reward.
@@ -331,11 +331,18 @@
     if (today<=state.funDay) return;
     const awarded = []; // Permanent Favor follows the same overnight conversion without losing sub-heart Festival Fun.
     for (const [id, raw] of Object.entries(state.festivalFun || {})) {
-      const points = Math.round(Math.max(0,Number(raw) || 0) / FESTIVAL_FUN_PER_FAVOR * 10000) / 10000;
-      if (points <= 0) continue;
-      giveFavor(id, points, 'fun_rollover');
-      delete state.festivalFun[id]; // Conversion happens exactly once; lifetime event totals live in festivalFunEarned.
-      awarded.push(id + ' +' + points + ' Favor');
+      const keys = Object.keys(state.festivalFunEarned).filter(key => key.endsWith(':' + id)); // A character's earned ledger is event-scoped; settled credits never borrow a future event.
+      const event = keys.sort().at(-1) || (eventKey() + ':' + id);
+      const paid = Math.max(0, Number(state.festivalFunPaid[event]) || 0);
+      const earned = Math.max(0, Number(state.festivalFunEarned[event]) || Number(raw) || 0);
+      const total = Math.round(earned / FESTIVAL_FUN_PER_FAVOR * 10000) / 10000; // Cumulative rounding makes exactly 70 meals produce 19.2, not 19.2003.
+      const points = Math.round(Math.max(0, total - paid) * 10000) / 10000;
+      if (points > 0) {
+        giveFavor(id, points, 'fun_rollover');
+        state.festivalFunPaid[event] = total;
+        awarded.push(id + ' +' + points + ' Favor');
+      }
+      delete state.festivalFun[id]; // Pending Fun is settled once, even when rounding yielded no payable points.
     }
     state.funDay = today;
     if (awarded.length) commit('Festival Fun converted overnight: ' + awarded.join(', ') + '.');
@@ -519,13 +526,15 @@
   }
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
-    state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
+    state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalFunPaid: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
     heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
     window.FestivalLocaleActivities?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.min(GORKUNASH_MAX_FUN,Math.max(0,points));
     if (saved?.festivalFunEarned && typeof saved.festivalFunEarned === 'object')
       for (const [key, points] of Object.entries(saved.festivalFunEarned)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunEarned[key] = Math.min(GORKUNASH_MAX_FUN, Math.max(0, points));
+    if (saved?.festivalFunPaid && typeof saved.festivalFunPaid === 'object')
+      for (const [key, points] of Object.entries(saved.festivalFunPaid)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunPaid[key] = Math.min(FESTIVAL_MAX_FAVOR, Math.max(0, points));
     if (saved?.festivalMealPortions && typeof saved.festivalMealPortions === 'object')
       for (const [key, count] of Object.entries(saved.festivalMealPortions)) if (/^\d+:gorkunash:\d+:[a-z0-9_-]+$/i.test(key) && Number.isFinite(count)) state.festivalMealPortions[key] = Math.max(0, Math.min(MAX_FOOD_PORTIONS, Math.trunc(count)));
     if (!saved?.festivalFunEarned && festival()?.id === 'gorkunash') for (const [id, pending] of Object.entries(state.festivalFun)) {
@@ -801,7 +810,7 @@
   function diagnostics() {
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
-      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,festivalFunEarned:state.festivalFunEarned,festivalMealPortions:state.festivalMealPortions,
+      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,festivalFunEarned:state.festivalFunEarned,festivalFunPaid:state.festivalFunPaid,festivalMealPortions:state.festivalMealPortions,
       dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
