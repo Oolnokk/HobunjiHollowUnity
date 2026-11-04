@@ -485,8 +485,9 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'rope-chain module must claim an actual bottomless pit');
   assert(simplePuzzles.includes('DS.registerSurface({...cell.record,enabled:false})')
     && simplePuzzles.includes('ropeChainDisabledSurfaces'), 'rope chain must actually disable the existing floor surfaces and retain restoration records');
-  assert(simplePuzzles.includes('const forward=ropes.every(') && simplePuzzles.includes('const reverse=ropes.every('),
-    'every chain requires both directional release-and-catch checks');
+  assert(simplePuzzles.includes('const forwardHops=ropes.map(') && simplePuzzles.includes('const reverseHops=ropes.map(')
+    && simplePuzzles.includes('forwardHops.every(') && simplePuzzles.includes('reverseHops.every('),
+    'every chain requires each individual forward and reverse ballistic hop to pass');
   assert(simplePuzzles.includes('instantRopeChainDeath') && simplePuzzles.includes("dieImmediately?.('rope-chain-abyss')"),
     'falling must bypass PlayerDowned and immediately enter the existing fatal respawn path');
   assert(interior.includes('isInstantDeathPit?.(info.x,info.z)') && interior.includes('instantRopeChainDeath?.()===true'),
@@ -498,6 +499,8 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
   assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true') && !interior.includes("['safePath',"),
     'mobile puzzle settings must retain rope-chain controls and remove the retired memory-grid option');
+  assert(simplePuzzles.includes('stoneDoorStates.push(') && interior.includes('function keepRopeChainStoneDoorOpen('),
+    'selected V50 stone doors must be reversible during validation and opened through the parent mechanism authority on acceptance');
   assert(simplePuzzles.includes('keepOpenForRopeChain=true') && simplePuzzles.includes('if(!keepOpen)restoreDoors()')
     && interior.includes('control.object?.userData?.ropeChainPassage!==true'),
     'only validated rope-chain hall doors may stay open, and their redundant prompts must be suppressed');
