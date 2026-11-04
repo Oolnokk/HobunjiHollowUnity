@@ -593,7 +593,7 @@
     const entryDoor=entryDoorRaw?doorwayWorld(context.meta,entryDoorRaw,(context.meta?.doorways||[]).indexOf(entryDoorRaw)):null;
     const entryAlong=entryDoor?(axis==='x'?entryDoor.x:entryDoor.z):start;
     const approachSide=Math.abs(entryAlong-start)<=Math.abs(entryAlong-finish)?'start':'end';
-    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,floorY,approachSide,rewardSide:approachSide==='start'?'end':'start',checkpointIds:{
+    const chain={id:String(hall.id),axis,bounds,entry,exit,ropes,doorIds,openedTransitDoors:doorStates.length,floorY,approachSide,rewardSide:approachSide==='start'?'end':'start',checkpointIds:{
       start:'rope-chain-'+hall.id+'-start',end:'rope-chain-'+hall.id+'-end'}};
     state.ropeChains.push(chain);
     usedHallways.add(hall.id);
@@ -2332,7 +2332,7 @@
       ropeChainRejects:state.ropeChainRejects.slice(),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
         ropeCount:chain.ropes.length,ropeIds:chain.ropes.map(rope=>rope.id),entry:clonePoint(chain.entry),exit:clonePoint(chain.exit),
-        floorY:chain.floorY,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
+        floorY:chain.floorY,openedTransitDoors:chain.openedTransitDoors,approachSide:chain.approachSide,rewardSide:chain.rewardSide,mandatoryTraversal:!!chain.mandatoryTraversal,
         checkpoints:chain.checkpointIds,instantDeath:true})),
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
