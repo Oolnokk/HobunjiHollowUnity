@@ -249,6 +249,16 @@ async function main() {
   assert(matchE.match3DStatus.textContent.startsWith('Game-matched:'),
     'mobile status must confirm that both portrait textures agree');
   assert.equal(rebuilds, 0, 'synchronizing the 2D canvas must not trigger a recursive 3D build');
+  matchE.match3D.checked = false;
+  paintCalls.length = 0;
+  renderMatched(false);
+  assert.deepEqual(paintCalls, ['raw pixels'],
+    'turning off game matching must reveal the original fitting art without a 3D rebuild');
+  matchE.match3D.checked = true;
+  paintCalls.length = 0;
+  renderMatched(false);
+  assert.deepEqual(paintCalls, ['game-matched'],
+    'turning game matching back on restores the exact current 3D texture');
   renderMatched();
   assert.equal(matchR.three.matchedFront2D, null,
     'a transform update invalidates the old 3D portrait before the next 2D paint');
