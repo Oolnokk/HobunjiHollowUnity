@@ -168,9 +168,16 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       const teleported=top&&support&&window.DevRandomRuin.setPlayerWorldPoint({x:top.x,y:support.y,z:top.z},{grounded:true});
       let nativeGates=0; // Count actual gated native meshes across all physical story roots, not just planner metadata.
       window.GridTileAccessors.getActiveScene()?.traverse(node=>{if(String(node.name||'').startsWith('v50-native-gate-'))nativeGates++;});
+      const nativeRoots=window.DevRandomRuinHitPuzzles?.getNativeRoots?.()||[]; // Every story joins the real ranged-hit, torch and ladder runtime.
+      const actualFamilies=new Set();
+      for(const nativeRoot of nativeRoots)nativeRoot.traverse(object=>{
+        if(object.userData?.activatorType&&object.userData?.linkedMechanismId)
+          actualFamilies.add(object.userData.activatorType);
+      }); // Inspects real V50-produced objects rather than the planned stage repertoire.
       return {native:{...state.nativeV50Runtime,
         brazierControls:controls.filter(control=>control.kind==='v50NativeBrazier').length,
-        gateMeshes:nativeGates},ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
+        gateMeshes:nativeGates,registeredPuzzleRoots:nativeRoots.length,
+        actualPuzzleFamilies:[...actualFamilies].sort()},ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
         connection:state.shaftConnection,plannedFloors:state.shaftLayerPlan?.floorCount,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
@@ -180,6 +187,9 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(shaft.native.totalBraziers,shaft.native.floors,'every native V50 floor must have one objective brazier');
     assert.equal(shaft.native.brazierControls,shaft.native.floors,'each native brazier must be bound to the real interaction resolver');
     assert.equal(shaft.native.gateMeshes,shaft.native.stagesTotal,'every native V50 challenge stage must mount its physical stone gate');
+    assert.equal(shaft.native.registeredPuzzleRoots,shaft.native.floors,'every actual upper-floor root must be registered for native torch, glyph and ladder gameplay');
+    assert(shaft.native.perFloor.every(floor=>floor.nativeMechanisms&&Array.isArray(floor.nativeMechanisms.families)),
+      'live game must mount a separate authored V50 mechanism runtime for every upper floor: '+JSON.stringify(shaft.native));
     assert(shaft.native.stagesTotal>=shaft.native.floors*2
       &&shaft.native.perFloor.every(floor=>floor.reservationVerified&&floor.routeLength>0&&floor.routeWallSegments>0),
       'live native stories must have pre-reserved layouts, physical entrance corridors and staged gates: '+JSON.stringify(shaft.native));
