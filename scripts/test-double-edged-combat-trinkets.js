@@ -110,6 +110,16 @@ assert.equal(R.statModifier(player,'rangedProjectileSpeed'),.65);
 // correct central Combat route and assuming RangedWeapons invokes it.
 const rangedCode=read('docs/js/combat/ranged-weapons.js'); // Source of the real player-shot callback statements.
 assert(rangedCode.includes("rangedTrinketDamageMultiplier: team === 'player' ?"),'Gambler power and speed must both snapshot on player projectile launch');
+const speedMarker='const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier *'; // Uses the actual velocity assigned to every projectile.
+const speedStart=rangedCode.indexOf(speedMarker); // Locates the production launch velocity calculation.
+assert(speedStart>=0,'Gambler projectile speed must apply at launch');
+const speedEnd=rangedCode.indexOf(';',speedStart); // Isolates only the pure launch-speed assignment.
+assert(speedEnd>speedStart,'missing speed assignment terminator');
+const speedExpression=rangedCode.slice(speedStart,speedEnd+1); // Production formula, executable without THREE scene setup.
+const sampleSpeed=team=>vm.runInNewContext(speedExpression+'\n projectileSpeedPxS',
+  {window:w,def:{speedPxS:700},flightStats:{speedMultiplier:1.15},team}); // Distinguishes wearer projectiles from enemy shots.
+assert(Math.abs(sampleSpeed('player')-523.25)<1e-8,'player projectile gets -35% launch speed');
+assert(Math.abs(sampleSpeed('bandit')-805)<1e-8,'enemy projectiles keep ordinary speed');
 const impactMarker='const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature;';
 const impactStart=rangedCode.indexOf(impactMarker); // Finds the live impact site.
 assert(impactStart>=0,'player shots must use live Combat.deps callback');
@@ -138,6 +148,7 @@ calls.length=0;
 vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
   p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js prebuffed projectile impact'});
 assert.equal(calls[0].amount,16,'unequipping Gambler in flight does not erase its slower-shot power');
+assert(Math.abs(sampleSpeed('player')-805)<1e-8,'player projectile launches at normal speed after unequipping Gambler');
 assert(read('docs/js/combat/ranged-weapons.js').includes("team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedProjectileSpeed') || 1) : 1"));
 assert(read('docs/index.html').includes('src="js/combat/double-edged-combat-trinkets.js?'));
 console.log('13 double-edged combat trinkets: effects, equip/unequip and zero loot sources passed');
