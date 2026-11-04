@@ -361,7 +361,7 @@
   function _npcStepIsClear(walker, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile = null } = {}) {
     const travel = Math.hypot(desiredX - startX, desiredZ - startZ);
     const shortStep = Math.max(0.04, npcCollisionRadiusTiles() * 0.45);
-    if (travel <= shortStep) {
+    if (travel <= shortStep && !deps.isZoneArea(walker.area)) {
       return isNpcPositionWalkable(walker.area, desiredX, desiredZ, npcCollisionRadiusTiles(), { ignoreFurnitureTile });
     }
     return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile });
@@ -419,7 +419,7 @@
       area,
       blocked: t => !t || t.incline || deps.isSolid(t.type) || t.type === deps.TileType.TRENCH || t.type === deps.TileType.STREAM || t.type === deps.TileType.RIVER,
       isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
-      tileY: t => deps.npcSurfaceY(area, t.c, t.r),
+      tileY: t => deps.tileSurfaceYInArea(t, area),
     });
   }
 
