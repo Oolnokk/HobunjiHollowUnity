@@ -956,6 +956,14 @@
         if(attempt>0) clearRuntime(false);
         const candidateSeed=generationCandidateSeed(requestedSeed,attempt); // Deterministic retry seed so rejected layouts can be reproduced from diagnostics.
         if(button) button.textContent=attempt?'Retrying '+(attempt+1)+'/'+maxAttempts+'…':'Generating…';
+        // Plan the ENTIRE 3–5-story dungeon before calling V50. Each upper
+        // story reserves one east-side portal exclusively for a native V50
+        // room graph; the other portals remain the authored challenge wings.
+        const planned=window.RuinLayerPlan?.compose?.({
+          seed:candidateSeed,spacing:64,anchorX:320,anchorZ:320,
+          shaftSize:33,floorHeight:4,nativeV50:true,
+        }); // Stable pre-generation reservation shared by V50 and the 3D runtime.
+        if(!planned?.ok)throw new Error('Pre-generation shaft reservation is invalid: '+planned?.checks?.filter(c=>!c.ok).map(c=>c.name).join(', '));
         generationMark('generating-v50-layout-'+(attempt+1));
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
@@ -963,9 +971,10 @@
           ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
         generationMark('projecting-v50-layout-'+(attempt+1));
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
-        api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
+        api.snapMechanismState(0); api.pausePreviewLoop();
+        const roots=api.takePreviewRoots({snapshot:true,floor:0}); // Preserve V50 floor-zero meshes when the iframe next generates upper floor graphs.
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
-        ruin={seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true,composedArchetypeForced:opts.composedArchetype||null}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
+        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true,composedArchetypeForced:opts.composedArchetype||null}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
 
         generationMark('auditing-solvability-'+(attempt+1));
@@ -1003,8 +1012,33 @@
           ruin.vestibuleRootMs=Math.round(performance.now()-started);
           ruin.vestibuleStone=window.DevHachutuVestibuleStone?.swapDoors?.(ruin,{seed:ruin.sourceSeed})||null; // Unbound doors get rockified stone-age skins too.
         }else if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
-        generationMark('composing-required-shaft-hub');
-        attachShaftHub(rec,candidateSeed); // Every generated ruin, including Hachutu, gets the same proven multi-level shaft and return passage.
+        generationMark('generating-native-v50-floors');
+        const nativeSnapshots=[]; // Real V50 meshes and room metadata belong to this accepted candidate, never the next reroll.
+        ruin.nativeV50Pending=nativeSnapshots;
+        for(let floor=1;floor<planned.floorCount;floor++){
+          let failure=null;
+          for(let retry=0;retry<6;retry++){
+            const seedLabel=window.RuinV50NativeFloors.nativeSeed(candidateSeed,floor,retry);
+            const upper=await api.generateInteriorLocale({
+              seed:seedLabel,size:'small',density:cfg('generation.density',62),
+              roomMin:6,roomMax:8,
+              puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,
+                stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,maxPerRoom:0},
+              ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
+            }); // V50 creates the real rooms, halls and scenery; the normal shared puzzle runtime authors their ordered objectives.
+            const analysis=window.RuinV50NativeFloors.analyze(upper.locale?.meta?.interiorShell);
+            if(!analysis.ok){failure=analysis.reason;continue;}
+            api.snapMechanismState(1); // Native hallway machinery starts OPEN; the real stage-local 3D gates own progression.
+            nativeSnapshots.push({
+              floor,generated:upper,roots:api.takePreviewRoots({snapshot:true,floor}),
+            });
+            failure=null;break;
+          }
+          if(failure)throw new Error('V50 could not generate traversable floor '+floor+': '+failure);
+        }
+        generationMark('composing-preplanned-multifloor-shaft');
+        attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});
+        ruin.nativeV50Pending=null; // The mounted native runtime now owns these exact scene roots and their disposal.
         const trialChance=Math.max(0,Math.min(1,Number(cfg(opts.site?'moduleChances.composedTrialSite':'moduleChances.composedTrialDev',opts.site?.55:.48))||0)); // Hronal encounters can roll at real sites and ordinary dev generation; old opt-in is still supported.
         const trialRequested=!ruin.hachutu&&(opts.composedTrial===true||(opts.composedTrial!==false&&theme==='hronal'&&moduleRoll(candidateSeed,0x735281ac)<trialChance));
         const trialArchetype=['trialHall','vaultHall'].includes(opts.composedArchetype)?opts.composedArchetype
@@ -1176,7 +1210,7 @@
     }
   }
 
-  function attachShaftHub(rec,seed){
+  function attachShaftHub(rec,seed,{preplanned=null,nativeFloors=[]}={}){
     // One physical entrance passage, never an interaction that moves the player.
     // RuinShaftConnector consumes the existing 2D layout, and RuinLayerPlan
     // reserves aligned 2D floor layers around the octagonal shared-room anchor.
@@ -1187,7 +1221,9 @@
       DynamicSurfaces:DS,ShaftHub:window.ShaftHub,ClimbSurfaces:window.ClimbSurfaces,
       DevRandomRuin:window.DevRandomRuin,TileOccupancy,
       RuinLayerPlan:window.RuinLayerPlan,RuinShaftCorridor:window.RuinShaftCorridor,
-      RuinLayerPlayable:window.RuinLayerPlayable,RuinLayerChallenges:window.RuinLayerChallenges,RuinLayerDefense:window.RuinLayerDefense,CellGrid3D:window.CellGrid3D,
+      RuinLayerPlayable:window.RuinLayerPlayable,RuinLayerChallenges:window.RuinLayerChallenges,RuinLayerDefense:window.RuinLayerDefense,
+      RuinV50NativeFloors:window.RuinV50NativeFloors,preplanned,nativeFloors,
+      prepareMaterials:applyUnlitRuinMaterials,CellGrid3D:window.CellGrid3D,
       getPlayerPosition:()=>({x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}),
       getPlayerY:()=>ruin.supportY,
       showToast:(message,ok)=>deps.showToast?.(message,ok),
@@ -1564,7 +1600,7 @@
     }
     if(ruin.occupancy?.refresh())updateBadge();
   }
-  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);ruin.composedWing?.update?.();reconcilePlayer(now);ruin.shaftLayerRuntime?.tick?.(dt);}); // Polls only the optional Burden Plate's completed animation for its reward.
+  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);ruin.composedWing?.update?.();reconcilePlayer(now);ruin.shaftLayerRuntime?.tick?.(dt);ruin.nativeV50Runtime?.tick?.(dt);}); // Polls only the optional Burden Plate's completed animation for its reward.
 
   const BADGE_PART_ORDER=['base','hooks','motion','simple','hachutu','lich','coverage','shaft'];
   function setDebugBadgePart(part,text){
