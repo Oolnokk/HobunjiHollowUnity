@@ -1,6 +1,17 @@
   if(R.images.has(url))return R.images.get(url);
   const p=new Promise((ok,bad)=>{
-    const img=new Image();img.crossOrigin='anonymous';img.onload=()=>ok(img);img.onerror=()=>bad(new Error('Image failed: '+url));img.src=url;
+    const img=new Image(); // Every source sprite must resolve or report its path; no infinite spinner.
+    let settled=false;
+    const finish=(error)=>{
+      if(settled)return;
+      settled=true;clearTimeout(timeout);img.onload=null;img.onerror=null;
+      if(error){img.src='';bad(error)}else ok(img);
+    };
+    const timeout=setTimeout(()=>finish(new Error('Image timed out after 15 seconds: '+url)),15000);
+    img.crossOrigin='anonymous';
+    img.onload=()=>finish(null);
+    img.onerror=()=>finish(new Error('Image failed: '+url));
+    img.src=url;
   });
   R.images.set(url,p);
   p.catch(()=>{if(R.images.get(url)===p)R.images.delete(url)}); // A newly added sprite can succeed on a later refresh rather than reusing an old rejected image.
@@ -48,14 +59,21 @@ function updateExtendedStatus(mismatches=[]){
   lines.push('arms: skipped');
   E.extendedStatus.textContent=lines.join('\n');
 }
-async function mapLimit(items,n,fn){
-  const out=new Array(items.length);let q=0;
-  async function run(){while(true){const i=q++;if(i>=items.length)return;try{out[i]=await fn(items[i],i)}catch(error){out[i]={error}}}}
+async function mapLimit(items,n,fn,onProgress){
+  const out=new Array(items.length);let q=0,done=0; // Bounded request concurrency with a per-item progress report.
+  async function run(){
+    while(true){
+      const i=q++;if(i>=items.length)return;
+      try{out[i]=await fn(items[i],i)}catch(error){out[i]={error}}
+      done++;onProgress?.(done,items.length);
+    }
+  }
   await Promise.all(Array.from({length:Math.min(n,items.length)},run));return out;
 }
 
 async function loadRepositoryData(){
-  status('Loading repository data…');
+  const generation=++R.repositoryGeneration; // A second Reload invalidates progress and completion from the first.
+  status('Loading repository indexes…');
   R.three.portraitCache.clear();
   if(R.three.runtimeDocsBase&&R.three.runtimeDocsBase!==runtimeDocsBase()){
     R.three.runtimeReadyPromise=null;
@@ -63,32 +81,69 @@ async function loadRepositoryData(){
     E.threeStatus.textContent='Repository base changed; 3D runtime will reload from the new root.';
   }
   R.speciesCfg.clear();R.garments=[];R.images.clear();R.bodyCanvases.clear();R.garmentCanvases.clear();
+  const active=()=>generation===R.repositoryGeneration; // Prevents previous network responses from modifying new catalog state.
   try{
     const [si,ci]=await Promise.all([fetchJson('config/species/index.json'),fetchJson('config/cosmetics/index.json')]);
+    if(!active())return;
     R.speciesIndex=si.entries||[];
-
     const speciesResults=await mapLimit(R.speciesIndex,6,async entry=>({
-      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\.\//,''))
-    }));
+      entry,cfg:await fetchJson('config/species/'+String(entry.path||'').replace(/^\\.\\//,''))
+    }),(done,total)=>{if(active())status(`Loading species: ${done}/${total}…`)});
+    if(!active())return;
     for(const x of speciesResults)if(x&&!x.error)R.speciesCfg.set(x.entry.speciesId,x.cfg);
+    if(!R.speciesCfg.size)throw new Error('Could not load any species data. Check Docs base and use Reload data.');
 
-    const cosmeticResults=await mapLimit(ci.entries||[],8,async entry=>({
-      entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\.\//,''))
-    }));
-    for(const x of cosmeticResults){
-      if(!x||x.error)continue;
-      const cfg=x.cfg,variants=cfg?.speciesVariants||{};
-      if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
-         (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
-        R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
-          configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\.\//,'')}`}); // Ready-to-install ZIPs can include updated target config when needed.
+    const entries=ci.entries||[];
+    const priority=entries.filter((entry,i)=>i<20||['fur_hood','fine_hood','ragged_hood'].includes(entry.id)); // Hood art and the original body-fitting choices load before the large cosmetic catalog.
+    const remaining=entries.filter(entry=>!priority.includes(entry)); // Secondary choices populate without blocking the first usable canvas.
+    const fetchGarment=async entry=>({entry,cfg:await fetchJson('config/cosmetics/'+String(entry.path||'').replace(/^\\.\\//,''))});
+    const addGarments=results=>{
+      for(const x of results){
+        if(!x||x.error)continue;
+        const cfg=x.cfg,variants=cfg?.speciesVariants||{};
+        if((BODY_SLOTS.has(cfg?.slot)||HEAD_SLOTS.has(cfg?.slot))&&
+           (Object.keys(variants).length||(HEAD_SLOTS.has(cfg?.slot)&&cfg?.parts?.head))){
+          R.garments.push({id:x.entry.id,label:cfg?.meta?.name||x.entry.id,slot:cfg.slot,cfg,
+            configPath:`config/cosmetics/${String(x.entry.path||'').replace(/^\\.\\//,'')}`});
+        }
       }
+      R.garments.sort((a,b)=>a.label.localeCompare(b.label));
+    }; // The same validation is shared by the early and deferred cosmetic batches.
+
+    const priorityResults=await mapLimit(priority,8,fetchGarment,(done,total)=>{
+      if(active())status(`Loading initial clothing + fur hoods: ${done}/${total}…`);
+    });
+    if(!active())return;
+    addGarments(priorityResults);
+    rebuildSelectors();
+    status('Loading source art for first available garment…');
+    await refreshAssets();
+    if(!active())return;
+    if(R.body){
+      status(`2D editor ready: ${R.speciesCfg.size} species, ${R.garments.length} items. Loading other choices…`);
+      log('Core fitting sprites ready; cosmetic catalog continues separately.');
+    }else{
+      status('Could not load the selected source art. See source-layer status and use Reload data.');
     }
-    R.garments.sort((a,b)=>a.label.localeCompare(b.label));
-    rebuildSelectors();await refreshAssets();
-    status(`Loaded ${R.speciesCfg.size} species and ${R.garments.length} body/headwear items. Starting sprites: ${E.sourceSpecies.value} ${E.sourceGender.value}.`);
-    log('Repository load complete.');
-  }catch(error){status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error)}
+
+    // Finish loading other cosmetics in the background; neither the 2D controls nor 3D preview waits for them.
+    void (async()=>{
+      const more=await mapLimit(remaining,8,fetchGarment,(done,total)=>{
+        if(active()&&R.body)status(`2D ready • loading other choices: ${done}/${total}…`);
+      });
+      if(!active())return;
+      const previousGarment=E.garment.value;
+      addGarments(more);rebuildGarmentSelector();
+      if(!previousGarment&&E.garment.value)await refreshAssets();
+      if(!active())return;
+      const errors=[...priorityResults,...more].filter(result=>result?.error).length;
+      status(`2D editor ready: ${R.speciesCfg.size} species, ${R.garments.length} items.${errors?' '+errors+' cosmetic files unavailable; Reload data to retry.':''}`);
+      log(`Repository catalog finished (${errors} unavailable entries).`);
+    })().catch(error=>{if(active()){status('Additional clothing choices could not load: '+error.message);log('ERROR '+error.message)}});
+  }catch(error){
+    if(!active())return;
+    status('Load failed: '+error.message);log('ERROR '+error.message);console.error(error);
+  }
 }
 function rebuildSelectors(){
   const wantedSpecies=A.settings?.species||'mao-ao';
