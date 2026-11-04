@@ -175,7 +175,7 @@ async function main() {
 
   // The 2D appearance-matching path must use the EXACT front texture passed
   // to the 3D rig, inverse-projected by the same game-space preset B rectangle.
-  const rectCode = sourceBetween(part(7), 'function portraitLayerRect(', 'function previewedCloudMaskXform(');
+  const rectCode = sourceBetween(part(7), 'function portraitLayerRect(', 'async function rawGarmentToRuntimeLayer(');
   const portraitLayerRect = new Function(rectCode + '\nreturn portraitLayerRect;')();
   const projectCode = sourceBetween(eight, 'function projectRuntimeFrontToFittingCanvas(source)', 'function canonicalHeadReference(');
   const inverseDraws = [];
