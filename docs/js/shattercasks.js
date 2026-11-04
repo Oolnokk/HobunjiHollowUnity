@@ -466,6 +466,11 @@
     const activeAvatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group||null; // Canonical current player portrait, even while the previous PNG still belongs to this rig.
     if(activeAvatar){
       if(!isUnderBody(activeAvatar,body)){backPortraitCache=null;return null;} // During a rebuild, never mount onto a stale sibling.
+      const liveSkinned=activeAvatar.userData?.neckRig?.skinnedPlane; // A portrait plane can be rebuilt inside the SAME avatar root.
+      if(liveSkinned?.isSkinnedMesh&&isUnderBody(liveSkinned,activeAvatar)){
+        backPortraitCache={body,avatar:activeAvatar,plane:liveSkinned};
+        return liveSkinned; // Prefer the rig's current plane over a cached predecessor that has not been detached yet.
+      }
       if(backPortraitCache?.body===body&&backPortraitCache.avatar===activeAvatar
         &&backPortraitCache.plane?.parent&&isUnderBody(backPortraitCache.plane,activeAvatar))return backPortraitCache.plane;
     }else if(backPortraitCache?.body===body&&!backPortraitCache.avatar
