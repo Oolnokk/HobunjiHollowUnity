@@ -169,4 +169,50 @@ back.material.map.image = {
 frame++;
 assert.equal(window.FarmAnimals.aimedAnimal(), near, 'the shared-face shader mirror is honored when checking reverse-card PNG alpha');
 
+// Exercise the exact game.js helper and immediate action-dispatch resolver,
+// not just FarmAnimals in isolation: an object on the *reserved* tile must
+// never steal the press intended for a different, visibly targeted animal.
+const gameSource = fs.readFileSync('docs/game.js', 'utf8');
+const helperStart = gameSource.indexOf('function getAimedFarmInteractionObject(col, row) {');
+const helperEnd = gameSource.indexOf('\n      function worldObjectMorningTick()', helperStart);
+const actionStart = gameSource.indexOf('function resolveObjActionTarget(action) {');
+const actionEnd = gameSource.indexOf('\n      function useActiveAction()', actionStart);
+assert.ok(helperStart > 0 && helperEnd > helperStart && actionStart > 0 && actionEnd > actionStart, 'the real game interaction selectors are wired');
+const tileAnimal = { type: 'animal', id: 'reserved-tile-not-visible' }; // Wrong logical occupant that formerly won the livestock interaction.
+const furniture = { type: 'furniture', id: 'nearby-furniture' }; // Ordinary non-livestock target whose existing priority must remain.
+let logicalObject = tileAnimal; // Simulates getWorldObjectAt returning the tile reservation.
+let visualObject = near; // Simulates the actual selected live sprite, independent of the logical reservation.
+let focusedFurniture = null; // Optional furniture focus provided by the existing canonical furniture interaction owner.
+const actionContext = {
+  window: {
+    FarmAnimals: { aimedAnimal: () => visualObject },
+    FurnitureTableSystem: { objectAt: () => focusedFurniture },
+  },
+  currentArea: 'farm',
+  getReticleTile: () => ({ col: 9, row: 9 }),
+  getWorldObjectAt: () => logicalObject,
+  getCorpseObjectForAction: () => null,
+  _isBuildingArea: () => false,
+  _buildingInteractables: new Map(),
+};
+vm.runInNewContext(
+  `${gameSource.slice(helperStart, helperEnd)}\n${gameSource.slice(actionStart, actionEnd)}\nthis.pickAimed = getAimedFarmInteractionObject; this.dispatchTarget = resolveObjActionTarget;`,
+  actionContext,
+  { filename: 'livestock-game-interaction-integration.js' },
+);
+assert.equal(actionContext.pickAimed(9, 9), near, 'action UI uses the animal under the live 3D ray, not the reserved tile');
+assert.equal(actionContext.dispatchTarget('obj_pet_' + near.id), near, 'an immediate Pet press dispatches to that same visible animal');
+visualObject = null;
+assert.equal(actionContext.dispatchTarget('obj_pet_' + near.id), null, 'no visible animal means no press target, even if a logical animal occupies the reticle tile');
+logicalObject = furniture;
+visualObject = near;
+assert.equal(actionContext.pickAimed(9, 9), furniture, 'non-livestock world objects retain their original priority');
+logicalObject = null;
+focusedFurniture = furniture;
+assert.equal(actionContext.dispatchTarget('obj_pet_' + near.id), furniture, 'the pre-existing furniture focus priority survives this targeted livestock repair');
+focusedFurniture = null;
+actionContext.currentArea = 'town';
+logicalObject = furniture;
+assert.equal(actionContext.pickAimed(9, 9), furniture, 'outside the farm, the selector delegates to the ordinary world object path');
+
 console.log('Livestock camera-ray interaction regression checks passed.');
