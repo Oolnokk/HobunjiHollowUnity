@@ -16,15 +16,15 @@ assert(api?.open&&api?.spritePaths&&api?.exportData,'raw sprite picker is expose
 assert.deepEqual(Array.from(api.unique(['#ABCDEF','#abcdef','#987654','not-a-color'])),['#abcdef','#987654'],'exact HEX lists normalize case and discard duplicates/invalid colors');
 const tl=api.spritePaths(cosmetic,manifest.species.nelk,'tletingan_male','behind');
 const mashtz=api.spritePaths(cosmetic,manifest.species.nelk,'mashtzarr_male','front');
-assert.equal(tl.animalBack,'assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png','Tletingan Nelk back points to the planned post-merge sprite');
+assert.equal(tl.animalBack,'assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png','Tletingan Nelk back points to its shipped rear sprite');
 assert.equal(mashtz.animalBack,'assets/cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png','renamed Mashtzarr Nelk back is wired');
 assert(tl.base.endsWith('furhood-behind_tl_m.png'),'rear hood base comes from dedicated behind art');
 assert(tl.trim.endsWith('furhood-trim_tl_m.png'),'rear trim remains a separate sampleable source layer');
-assert.deepEqual(manifest.pendingAssets,['assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png'],'only the user-promised post-merge asset is marked pending');
+assert.deepEqual(manifest.pendingAssets,[],'all referenced Nelk sprites are now shipped');
 const sample=api.exportData(manifest,'nelk','animalBack'); // Lists are runtime-compatible while all sprite images remain unmodified.
 assert.equal(sample.schema,'hobunji_fur_exclusions.v1');
 assert.deepEqual(Array.from(sample.global),['#94858e','#567372'],'original protected source colors stay available');
-assert.equal(sample.byRole.animalBack.length,0,'a missing Nelk drawing does not invent exclusions');
+assert.equal(sample.byRole.animalBack.length,0,'Nelk rear drawing has no invented exclusions');
 manifest.species.nelk.excludedColorsByRole={animalBack:['#ABCDEF','#abcdef']};
 const exported=api.exportData(manifest,'nelk','animalBack');
 assert.deepEqual(Array.from(exported.effective),['#94858e','#567372','#abcdef'],'global and per-role exports deduplicate exact RGB');
@@ -35,5 +35,5 @@ assert(editor.includes('onChange:()=>{updateAssignments();preview();}'),'picked 
 const source=read('docs/js/fur-hood-exclusion-editor.js');
 assert(source.includes('spriteTintCanvas(image,zero,roles.value)'),'before preview uses no exclusions');
 assert(source.includes('spriteTintCanvas(image,excluded,roles.value)'),'after preview applies selected exclusions');
-assert(source.includes("manifest.pendingAssets?.includes(path)"),'pending post-merge sprite provides an actionable loading explanation');
-console.log('OK: raw sprite eyedropper, exported global/role HEX lists, live comparison, and pending Nelk asset reference');
+assert(source.includes("manifest.pendingAssets?.includes(path)"),'optional pending-asset diagnostics remain supported');
+console.log('OK: raw sprite eyedropper, exported global/role HEX lists, live comparison, and shipped Nelk rear sprite');
