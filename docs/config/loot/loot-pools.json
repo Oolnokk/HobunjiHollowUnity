@@ -170,7 +170,10 @@
         {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
         {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
         {"id": "trinket_harlyaoCrushingWeight", "itemKey": "trinket_harlyaoCrushingWeight", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.05, "conditions": {}}
+        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_evasion", "itemKey": "trinket_evasion", "min": 1, "max": 1, "chance": 0.04, "conditions": {}},
+        {"id": "trinket_companionPoise", "itemKey": "trinket_companionPoise", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_unshaken", "itemKey": "trinket_unshaken", "min": 1, "max": 1, "chance": 0.05, "conditions": {}}
       ]
     },
     "dungeonChest_tier3": {
@@ -187,7 +190,13 @@
         {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
         {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
         {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.04, "conditions": {}}
+        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.04, "conditions": {}},
+        {"id": "trinket_evasion", "itemKey": "trinket_evasion", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_rapidRecovery", "itemKey": "trinket_rapidRecovery", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_unshaken", "itemKey": "trinket_unshaken", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_secondBreath", "itemKey": "trinket_secondBreath", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_counterweight", "itemKey": "trinket_counterweight", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
+        {"id": "trinket_flaskmaster", "itemKey": "trinket_flaskmaster", "min": 1, "max": 1, "chance": 0.035, "conditions": {}}
       ]
     },
     "dungeonChest_tier4": {
@@ -200,7 +209,11 @@
         {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
         {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
         {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
-        {"id": "trinket_harlyaoWarCrown", "itemKey": "trinket_harlyaoWarCrown", "min": 1, "max": 1, "chance": 0.06, "conditions": {}}
+        {"id": "trinket_harlyaoWarCrown", "itemKey": "trinket_harlyaoWarCrown", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
+        {"id": "trinket_rapidRecovery", "itemKey": "trinket_rapidRecovery", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
+        {"id": "trinket_secondBreath", "itemKey": "trinket_secondBreath", "min": 1, "max": 1, "chance": 0.07, "conditions": {}},
+        {"id": "trinket_counterweight", "itemKey": "trinket_counterweight", "min": 1, "max": 1, "chance": 0.07, "conditions": {}},
+        {"id": "trinket_flaskmaster", "itemKey": "trinket_flaskmaster", "min": 1, "max": 1, "chance": 0.08, "conditions": {}}
       ]
     },
     "bandit_flasker": {
