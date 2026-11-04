@@ -165,7 +165,8 @@ class Group {
 class Matrix4 {makeTranslation(x,y,z){this.xyz=[x,y,z];return this}}
 class Geometry {rotateX(){return this}dispose(){}}
 class Mesh extends Group{
-  constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.visible=true;this.position={set(){}};}
+  constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.visible=true;
+    this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};} // Position changes are observable for moving rail targets.
 }
 class Material {clone(){return new Material()}dispose(){}}
 class InstancedMesh {
@@ -174,6 +175,38 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+// Real projectile challenges share the canonical ranged-hit bus; a stale
+// session must unregister every target and a projectile from another story
+// must never complete the current room.
+{
+  const parent=new Group(),targets=new Set(),bus={
+    registerExternalProjectileTarget(t){targets.add(t);return ()=>targets.delete(t)}
+  };
+  let elevation=4,active=true,completions=0; // Mutable player story and gate stage used by these acceptance cases.
+  const room={x:20,z:22,w:14,d:14};
+  const glyph=Challenges.compose({THREE,parent,room,y:4,id:'test-glyph',kind:'glyphObelisk',
+    isActive:()=>active,getPlayerPosition:()=>({x:27,z:29}),getPlayerY:()=>elevation,
+    projectileBus:bus,onSolved:()=>completions++});
+  glyph.tick(.05);assert(glyph.linked&&targets.size===3,'three glyphs use the real projectile bus');
+  elevation=0;glyph.simulateHit(0);assert.equal(glyph.hits,0,'wrong-story glyph hit is ignored');
+  elevation=4;
+  for(let i=0;i<glyph.targetCount;i++)glyph.simulateHit(i);
+  assert(glyph.solved&&completions===1,'real target callbacks solve the chamber once');
+  glyph.simulateHit(0);assert.equal(completions,1,'repeated projectiles do not retrigger rewards');
+  glyph.dispose();assert.equal(targets.size,0,'projectile targets unregister on reroll');
+  const rail=Challenges.compose({THREE,parent,room,y:8,id:'test-rail',kind:'ceilingRailTargets',
+    isActive:()=>true,getPlayerPosition:()=>({x:27,z:29}),getPlayerY:()=>8,
+    projectileBus:bus,onSolved:()=>completions++});
+  const before=rail.targets[0].rune.position.x;
+  rail.tick(.05);rail.tick(.05);
+  assert(rail.linked&&targets.size===2,'moving rail targets use the same bus');
+  assert(rail.targets[0].rune.position.x!==before||rail.targets[0].rune.position.z!==29,
+    'the ranged target changes world position along the rail');
+  rail.simulateHit(0);rail.simulateHit(1);
+  assert(rail.solved&&completions===2);
+  rail.dispose();assert.equal(targets.size,0,'moving rail hits unregister after disposal');
+}
+
 for(const side of ['north','east','south','west']){
   const isX=side==='west'||side==='east';
   const meta={cellSize:.5,worldWidth:54,worldDepth:49,
