@@ -519,7 +519,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 31, JSON.stringify(active.transport)); // V50 currently installs 31 runtime patches; 28 is the stale pre-#1294 count.
+    assert.ok(active.transport?.patchedBindings >= 31, JSON.stringify(active.transport)); // The 31 essential V50 patches must remain; multi-floor reservations add bindings without invalidating the bridge.
     assert.equal(active.transport?.runtimePuzzleGenerationOptions, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.headlessEmbeddedPreview, true, JSON.stringify(active.transport));
     assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
