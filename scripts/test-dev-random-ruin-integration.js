@@ -508,6 +508,9 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
   assert(simplePuzzles.includes('keepOpenForRopeChain=true') && simplePuzzles.includes('if(!keepOpen)restoreDoors()')
     && interior.includes('control.object?.userData?.ropeChainPassage!==true'),
     'only validated rope-chain hall doors may stay open, and their redundant prompts must be suppressed');
+  assert(!simplePuzzles.includes('chain[side]') && simplePuzzles.includes("side==='start'?chain.entry:chain.exit")
+    && sanctum.includes("chain.rewardSide==='start'?chain.entry:chain.exit"),
+    'the bank checkpoint updater and Great Door blue-brazier reward must resolve real chain.entry/exit points, not missing start/end properties');
   assert(sanctum.includes('function buildRopeChainBraziers(kit)') && sanctum.includes('chain.rewardSide') && !sanctum.includes('buildSafePathBraziers'),
     'the former grid-completion blue brazier now rewards crossing the rope-chain abyss');
   assert(simplePuzzles.includes('function debugRopeChainHop(') && simplePuzzles.includes('releaseRope(rope)'),
