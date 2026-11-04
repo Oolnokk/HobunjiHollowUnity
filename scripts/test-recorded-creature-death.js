@@ -69,10 +69,11 @@ const context = { window: windowStub, THREE, Math, Date, Float32Array };
 vm.runInNewContext(source('docs/js/combat/impact-ragdoll-playback.js'), context);
 vm.runInNewContext(source('docs/js/creature-death.js'), context);
 const corpses = new Set(); // The shared creature-death update drives this collection.
+let currentArea = 'farm'; // Switched in offscreen-death regression tests to simulate a real zone transition.
 const grid = Array.from({ length: 10 }, () => Array(10).fill(1)); // Provides an unobstructed one-tile test area.
 windowStub.CreatureDeath.init({
   TILE: 64, COLS: 10, ROWS: 10, corpseObjects: corpses, getGrid: () => grid,
-  getCurrentArea: () => 'farm', tileSurfaceYInArea: () => 0,
+  getCurrentArea: () => currentArea, tileSurfaceYInArea: () => 0,
   canOccupyAt: () => true, clamp: (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
   characterGroundShadowSurfaceOffset: () => 0,
 });
@@ -184,4 +185,37 @@ assert.equal(fallback.state, 'corpse');
 assert.equal(fallback.avatarRef.group.rotation.z, Math.PI / 2);
 assert.ok(corpses.has(fallback));
 assert.equal(windowStub.CreatureDeath.getDebug().activeSprays, 0);
-console.log('Recorded creature death: causes, recoil, spray, scorch, loot and fallback passed');
+// Visual sprays can survive a shorter-than-usual fall without being stranded.
+const shortFall = makeActor('other');
+assert.equal(windowStub.CreatureDeath.begin(shortFall.actor), true);
+shortFall.actor.deathDurationS = 0.08;
+for (let i = 0; i < 3; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.equal(shortFall.actor.state, 'corpse');
+assert.equal(windowStub.CreatureDeath.getDebug().activeDying, 0);
+assert.ok(windowStub.CreatureDeath.getDebug().activeSprays > 0, 'spray survives the short fall');
+for (let i = 0; i < 30; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.equal(windowStub.CreatureDeath.getDebug().activeSprays, 0);
+assert.equal(shortFall.scene.children.filter(child => child instanceof Points).length, 0);
+
+// Leaving the area cannot strand an unfinished death animation in the update set.
+const offscreen = makeActor('sharp');
+assert.equal(windowStub.CreatureDeath.begin(offscreen.actor), true);
+currentArea = 'town';
+windowStub.CreatureDeath.updateCorpses(0.016);
+assert.equal(offscreen.actor.state, 'corpse');
+assert.equal(windowStub.CreatureDeath.getDebug().activeDying, 0);
+for (let i = 0; i < 30; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.equal(windowStub.CreatureDeath.getDebug().activeSprays, 0);
+assert.equal(offscreen.scene.children.filter(child => child instanceof Points).length, 0);
+currentArea = 'farm';
+
+// Externally despawned corpses must also release their animation registry entry.
+const removed = makeActor('sharp');
+assert.equal(windowStub.CreatureDeath.begin(removed.actor), true);
+corpses.delete(removed.actor);
+windowStub.CreatureDeath.updateCorpses(0.016);
+assert.equal(windowStub.CreatureDeath.getDebug().activeDying, 0);
+for (let i = 0; i < 30; i++) windowStub.CreatureDeath.updateCorpses(0.04);
+assert.equal(windowStub.CreatureDeath.getDebug().activeSprays, 0);
+
+console.log('Recorded creature death: causes, recoil, spray, scorch, loot, fallback, offscreen and cleanup passed');

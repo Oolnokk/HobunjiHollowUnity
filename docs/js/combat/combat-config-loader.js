@@ -124,7 +124,7 @@
     ['js/day-progress-review-relationship-ui.js?v=20261016h4aa30ec', () => Number(window.DayProgressReviewRelationshipUi?.version) >= 1],
     ['js/menu-tab-icon-only.js?v=20261027h8d9a94c', () => Number(window.HobunjiMenuTabIcons?.version) >= 1],
     ['js/npc-social-seating-bridge.js?v=20261021h5c4cd26', () => !!window.HobunjiNpcSocialSeating],
-    ['js/performance-loop-optimizations.js?v=20260818a', () => !!window.HobunjiPerformanceLoopOptimizations],
+    ['js/performance-loop-optimizations.js?v=20261103cleanup2', () => !!window.HobunjiPerformanceLoopOptimizations],
     ['js/combat/enemy-target-facing.js?v=20261027hlock2', () => Number(window.EnemyTargetFacing?.version) >= 1],
     ['js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7', () => !!window.EnemyWeaponStances],
     ['js/npc-held-equipment-v4.js?v=20261101elevationxray1', () => Number(window.NpcHeldEquipment?.version) >= 4],

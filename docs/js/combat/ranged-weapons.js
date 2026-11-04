@@ -836,9 +836,11 @@
     p.visual?.traverse?.(child => {
       const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
       for (const material of materials) {
-        material.transparent = true;
-        material.opacity = alpha;
-        material.needsUpdate = true;
+        if (!material.transparent) {
+          material.transparent = true;
+          material.needsUpdate = true; // Only the first switch to transparency changes the shader variant.
+        }
+        if (material.opacity !== alpha) material.opacity = alpha; // Subsequent fades only update the opacity uniform.
       }
     });
   }
