@@ -104,6 +104,12 @@
     return resolvedLayout?.[selectedLayer] || null;
   }
 
+  function writeTransformValue(input, value) {
+    // Preview/config rebuilds can call syncUi while a mobile decimal keyboard is editing a field.
+    // Never rewrite the focused field: its unfinished "." or "-0." is a legitimate typing state.
+    if (document.activeElement !== input) input.value = String(value);
+  }
+
   function displayVector(inputIds, rawVector, resolvedVector, fallbackVector) {
     inputIds.forEach((id, axis) => {
       const input = $(id);
@@ -114,7 +120,7 @@
       const value = raw != null && raw !== '' && Number.isFinite(Number(raw)) ? Number(raw)
         : Number.isFinite(resolved) ? resolved
         : Number.isFinite(fallback) ? fallback : 0;
-      input.value = Number(value.toFixed(3));
+      writeTransformValue(input, Number(value.toFixed(6)));
       input.dataset.autoValue = Number.isFinite(resolved) ? String(resolved) : '';
       input.title = raw == null && Number.isFinite(resolved) ? `Auto default: ${resolved.toFixed(3)}` : '';
     });
@@ -127,7 +133,7 @@
       if (!input) return;
       const absolute = rawVector?.[axis];
       const offset = absolute == null ? 0 : Number(absolute) - base[axis];
-      input.value = Number((Number.isFinite(offset) ? offset : 0).toFixed(3));
+      writeTransformValue(input, Number((Number.isFinite(offset) ? offset : 0).toFixed(6)));
       input.dataset.autoValue = String(base[axis]);
       input.title = `Offset from automatic world center ${base[axis].toFixed(2)} (clear to restore automatic placement)`;
     });
@@ -180,6 +186,13 @@
     mountainScaleX:['scale',0], mountainScaleY:['scale',1], mountainScaleZ:['scale',2],
   }); // Maps each edited input to only its own stored axis, preserving unedited automatic coordinates.
 
+  function parseFinishedDecimal(raw) {
+    const normalized = String(raw).trim().replace(',', '.'); // Mobile decimal keyboards can supply a comma in some locales.
+    if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(normalized)) return null;
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function editTransformAxis(layer, id, rawInput, defaultPosition = [0,0,0]) {
     const field = TRANSFORM_FIELDS[id];
     if (!field) return false;
@@ -189,8 +202,8 @@
       layer.transform[kind][axis] = kind === 'position' ? null : kind === 'scale' ? 1 : 0;
       return true;
     }
-    const value = Number(raw);
-    if (!Number.isFinite(value) || (kind === 'scale' && value <= 0)) return false;
+    const value = parseFinishedDecimal(raw);
+    if (value == null || (kind === 'scale' && value <= 0)) return false;
     layer.transform[kind][axis] = kind === 'position' ? Number(defaultPosition[axis] || 0) + value : value;
     return true;
   }
@@ -201,6 +214,8 @@
     const layer = config.layers[selectedLayer];
     const id = event?.target?.id;
     if (TRANSFORM_FIELDS[id]) {
+      // Empty and incomplete text is only committed on change/blur, never per keystroke.
+      if (event.type === 'input' && (event.isComposing || !String(event.target.value).trim())) return;
       const baseline = Backdrops.resolveLayoutFromSizes(null, activeMap.cols, activeMap.rows, config)[selectedLayer]?.defaultPosition;
       if (!editTransformAxis(layer, id, event.target.value, baseline)) {
         if (event.type === 'change') syncUi();
@@ -324,9 +339,9 @@
         <div class="field"><label>Layer</label><select id="mountainLayerSelect"><option value="0">Layer 1 · near</option><option value="1">Layer 2 · middle</option><option value="2">Layer 3 · far</option></select></div>
         <div class="field"><label>Scenery</label><input id="mountainAsset" type="text" readonly value="8 decorative mine rocks"><label><input id="mountainVisible" type="checkbox" checked> Layer visible</label></div>
       </div>
-      <div class="field"><label>Position offset X / Y / Z (world units; clear = auto)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainPosX" type="number" step="0.25"><input id="mountainPosY" type="number" step="0.25"><input id="mountainPosZ" type="number" step="0.25"></div></div>
-      <div class="field"><label>Rotation X / Y / Z (degrees)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainRotX" type="number" step="1"><input id="mountainRotY" type="number" step="1"><input id="mountainRotZ" type="number" step="1"></div></div>
-      <div class="field"><label>Scale X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainScaleX" type="number" min="0.001" step="0.05"><input id="mountainScaleY" type="number" min="0.001" step="0.05"><input id="mountainScaleZ" type="number" min="0.001" step="0.05"></div></div>
+      <div class="field"><label>Position offset X / Y / Z (world units; clear = auto)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainPosX" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainPosY" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainPosZ" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"></div></div>
+      <div class="field"><label>Rotation X / Y / Z (degrees)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainRotX" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainRotY" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainRotZ" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"></div></div>
+      <div class="field"><label>Scale X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainScaleX" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainScaleY" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"><input id="mountainScaleZ" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"></div></div>
       <div id="mountainResolvedSize" class="muted" style="line-height:1.35;margin:5px 0">Load Western Slope to resolve the rock-ridge footprint.</div>
       <div class="row"><button class="sec" id="mountainFrameAll">Frame mountains</button><button class="sec" id="mountainResetLayer">Reset layer</button><button class="bad" id="mountainResetAll">Reset all</button></div>
     `;
@@ -349,6 +364,7 @@
     ]) {
       $(id)?.addEventListener('input', commitControls);
       $(id)?.addEventListener('change', commitControls);
+      $(id)?.addEventListener('blur', syncUi); // On leaving a field, normalize its display or restore the prior valid value.
     }
     $('mountainResetLayer')?.addEventListener('click', resetSelectedLayer);
     $('mountainResetAll')?.addEventListener('click', resetAllLayers);
