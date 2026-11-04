@@ -9,14 +9,13 @@
   return out;
 }
 function targetGarmentLayerXform(){
-  if(fitRegion()==='headwear'){
-    const record=headwearLayerRecords(garmentRecord(),E.species.value,E.gender.value)[0]||
-      headwearLayerRecords(garmentRecord(),E.sourceSpecies.value,E.sourceGender.value)[0];
-    const authoredXform=record?.layer?.spriteStyle?.base?.xform?.head;
-    if(authoredXform)return normalizedLayerXform(authoredXform);
-  }
-  return targetBodyLayerXform();
-} // In 3D use the actual garment's portrait xform rather than implicitly applying the torso preset to hats.
+  // portrait-utils._extractLayersFromParts assigns xformPreset:'B' to every
+  // wearable layer. That preset overrides spriteStyle AND the species torso
+  // transform in the live game's resolveXform, so use the same live preset here.
+  const runtimePreset=window.getPortraitXformPreset?.('B'); // Used to place fitted garments exactly where the game places their portrait layers.
+  if(!runtimePreset)throw new Error('Portrait transform preset B unavailable; cannot preview garment placement accurately.');
+  return normalizedLayerXform(runtimePreset);
+}
 function canonicalHeadReference(source){
   if(!source||!R.body)return null;
   const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
@@ -91,6 +90,13 @@ async function composeRuntimePortrait(){
       const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
       if(authored){fctx.drawImage(authored,0,0);bctx.drawImage(flipCanvasX(authored),0,0)}
     }
+    // The game draws torso clothing/overwear before the head in front view,
+    // unlike the rear portrait (where clothing follows the head). Pauldrons
+    // are a later front layer and intentionally stay over the head.
+    const hasBodyGarment=(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
+      (E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
+    if(hasBodyGarment&&garmentRecord()?.slot!=='pauldron'&&runtime.headOnlyFront)
+      fctx.drawImage(runtime.headOnlyFront,0,0);
   }
   return{...runtime,frontComposed:front,backComposed:back};
 }
