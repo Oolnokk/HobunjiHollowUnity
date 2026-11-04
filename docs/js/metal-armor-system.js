@@ -926,6 +926,20 @@
         if (choice === 'pattern') openVerdigrisPatternEditor(item);
         else applyTreatment(item, choice);
       });
+      if (treatment(item)?.mode === 'pattern') {
+        window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {
+          title: 'Armor pattern placement',
+          getPattern: () => {
+            const active = treatment(item);
+            return active?.mode === 'pattern' ? (active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null) : null;
+          },
+          onChange: pattern => {
+            const active = treatment(item);
+            if (active?.mode !== 'pattern') return;
+            commitTreatment(item, { ...active, pattern: clone(pattern) }, null); // Keeps the paid treatment and library provenance, editing only this armor's placement.
+          },
+        });
+      }
       list.appendChild(row);
     }
     return true;
