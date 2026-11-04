@@ -68,7 +68,7 @@ for (const [mapName, expectedRuns, firstCount] of [
 
 assert.deepEqual(active.nelk, nelk.headRig, 'actual game renderer must use the authored Nelk rig');
 assert.deepEqual(authored.nelk, nelk.headRig, 'painter-export table must match the bestiary');
-assert.match(index, /js\\/creature-genetics-render\\.js\\?v=20261104nelkRig1/,
+assert(index.includes('js/creature-genetics-render.js?v=20261104nelkRig1'),
   'the published game must load the refreshed renderer rather than a cached version');
 assert(index.indexOf('js/creature-genetics-render.js') < index.indexOf('game.js?v='),
   'creature rig must be registered before game startup');
