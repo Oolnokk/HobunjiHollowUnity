@@ -1277,10 +1277,22 @@
     const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same eight buttons as the normal puzzle instrument.
     const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
     const melody=Array.from({length:noteCount},()=>Math.min(noteSlots-1,Math.max(0,Math.floor(rng()*noteSlots))));
-    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,heardNotes:[],playbackTimers:[],attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Each set listens to the player's rolling note history independently of its pressure-plate playback.
+    const inscription=window.RuinMelodyGlyphDecal?.create?.({
+      root,plate:plates[0],notes:melody,
+      bounds:slot.bounds||roomBounds(context.meta,owner),
+      hallway:isHallway,hallAxis:owner?.axis,
+      sampleSupport,
+      blockedAt:(x,z,radius)=>Boolean(window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,radius) ||
+        window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,radius)),
+      makeStoneMaterial:()=>window.ProceduralFurniture.makePartMaterial({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#c2b39b',
+        materialFillEnabled:true,materialFillColor:'#c2b39b',materialFillMode:'always',
+      }),
+    }); // A carved floor inscription reads the actual generated notes and remains independent of the trigger's interaction surface.
+    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,inscription,heardNotes:[],playbackTimers:[],attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Each set listens to the player's rolling note history independently of its pressure-plate playback.
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
-    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount});
+    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount,hasGlyphDecal:!!inscription});
     return set;
   }
 
@@ -2199,12 +2211,21 @@
     try { set.onComplete?.(set); } catch (error) { console.warn('[Random Test Ruin] melody completion failed',error); }
   }
 
+  function syncEchoInscription(set) {
+    if (!set.inscription || set.inscription.sequenceKey===set.notes.join(',')) return;
+    if (set.inscription.setNotes(set.notes)) {
+      set.heardNotes.length=0; // Changing the authored phrase never inherits a partial attempt against the previous melody.
+      cancelEchoPlayback(set);
+    }
+  }
+
   window.addEventListener('hobunji-kurraya-puzzle-note', event => {
     if (!state || !inRuin() || event.detail?.area !== MAP_ID) return;
     const note=event.detail?.noteIndex; // Only player-entered single notes may advance a ruin melody; the plate's automatic example never emits them.
     if (!Number.isInteger(note) || note<0 || note>=(window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) return;
     for (const set of state.chordPlateSets) {
       if (set.solved) continue;
+      syncEchoInscription(set);
       set.heardNotes.push(note);
       if (set.heardNotes.length>set.notes.length) set.heardNotes.shift(); // A sliding suffix accepts the phrase anywhere in an uninterrupted stream of note events.
       if (window.KurrayaPuzzle?.matchSuffix?.(set.heardNotes,[{notes:set.notes}])) completeEchoSet(set);
@@ -2215,6 +2236,7 @@
     const player=playerWorld();
     if(!player)return;
     for(const set of state.chordPlateSets){
+      syncEchoInscription(set); // Live authoring/generator updates can replace the inscription without rebuilding the room.
       for(const plate of set.plates){
         const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39;
         plate.mesh.position.y=plate.y+.03-(down?.035:0);
@@ -2475,7 +2497,7 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
-      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),heardNotes:set.heardNotes.slice(),pendingDemoNotes:set.playbackTimers.length,attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),inscription:set.inscription?.diagnostics?.()||null,heardNotes:set.heardNotes.slice(),pendingDemoNotes:set.playbackTimers.length,attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),
