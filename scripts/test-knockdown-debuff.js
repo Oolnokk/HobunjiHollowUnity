@@ -71,6 +71,10 @@ function run() {
   const learning = { ITEM_DEFS: {}, inventoryItems: [], inventory: owned, saveMemberWorldData() {} }; // Registration creates readable inventory items.
   progression.registerItems(learning);
   for (const ability of ['opportunistJab', 'exhaustCutter', 'backstabFlick', 'mercySpike']) {
+    const legacyThirdRank = progression.getTree(ability, 'blunt')[2]; // Prior save indexes must retain their original meaning.
+    assert.equal(legacyThirdRank[3].quickBonusDebuff.id, 'exposed', ability + ' legacy Exposed index');
+    assert.equal(legacyThirdRank[4].quickBonusDebuff.id, 'sapped', ability + ' legacy Sapped index');
+    assert.equal(legacyThirdRank[5].quickBonusDebuff.id, 'unsteady', ability + ' legacy Unsteady index');
     for (let rank = 1; rank <= 5; rank++) {
       const row = progression.getTree(ability, 'blunt')[rank - 1];
       assert.equal(row.filter(option => option.effectId === id).length, 1, ability + ' rank ' + rank);
