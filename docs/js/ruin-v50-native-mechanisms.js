@@ -46,7 +46,7 @@
        !THREE?.Box3||!DS?.registerSurface||!DS?.registerBlocker||typeof addControl!=='function')
       throw new Error('Native V50 mechanisms require the original generator bridge, geometry and game interactions');
     const inventory=inspect(nativeRoot);
-    const boxScratch=new THREE.Box3(),vectorScratch=new THREE.Vector3();
+    const boxScratch=new THREE.Box3(); // Reused when sampling authored doors, push-block bounds and moving-surface support.
     const states=new Map(),controls=[],surfaceIds=[],blockerIds=[];
     const worldBox=object=>{
       object?.updateWorldMatrix?.(true,true);
