@@ -653,8 +653,9 @@
       const anchor=point(along),isFirst=i===0;
       const rope=createRopeObject({
         room,idSuffix:String(i),anchor:{...anchor,y:anchorY},yaw:direction,length:ropeLength,
-        maxLength:ropeLength,minBobY:floorY+.12,angle:isFirst?-.13:0,
-        grabPoint:isFirst?{...point(start+.10),y:floorY+.86}:null,
+        maxLength:ropeLength,minBobY:floorY+.12,angle:isFirst?-.13:(i===ropeCount-1?.13:0),
+        grabPoint:isFirst?{...point(start+.10),y:floorY+.86}:
+          i===ropeCount-1?{...point(finish-.10),y:floorY+.86}:null, // Either bank can start the chain without an added ledge.
       });
       rope.ropeChainHallId=String(hall.id); // Used to distinguish the bottomless hallway ropes in diagnostics and death handling.
       rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
@@ -665,9 +666,12 @@
     // distance heuristic. The final target is EXISTING floor, not a platform.
     const exitFloor={x:exit.x,z:exit.z,y:exit.y,topY:exit.y,width:axis==='x'?2.2:Math.min(2.4,crossWidth-1),
       depth:axis==='z'?2.2:Math.min(2.4,crossWidth-1)};
-    const reaches=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},
-      {maxAmp:1.15,minAmp:.55,floorY:floorY-.4})!==null); // A solver route below the lethal plane is not a valid airborne catch.
-    if(!reaches){ropes.forEach(disposeRopeObject);return null;} // Keep the original solid hallway if any catch or exit is unreachable.
+    const entryFloor={x:entry.x,z:entry.z,y:entry.y,topY:entry.y,width:exitFloor.width,depth:exitFloor.depth};
+    const viableFlight={maxAmp:1.15,minAmp:.55,floorY:floorY-.4}; // Any route descending below the fatal plane is unsolvable.
+    const forward=ropes.every((rope,i)=>ropeReachAmplitude(rope,i+1<ropes.length?{rope:ropes[i+1]}:{platform:exitFloor},viableFlight)!==null);
+    const reverse=ropes.every((rope,i)=>ropeReachAmplitude({...rope,yaw:direction+Math.PI},
+      i>0?{rope:ropes[i-1]}:{platform:entryFloor},viableFlight)!==null);
+    if(!forward||!reverse){ropes.forEach(disposeRopeObject);return null;} // Both checkpoint sides must lead to a physically solvable crossing.
 
     const disabledSurfaces=[]; // Original floor records are restored when the ruin session or this module is cleared.
     for(const cell of cells){
@@ -2243,7 +2247,7 @@
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
     for(const rope of state.ropes){ // Rope-to-rope: flying into an air-only rope's hanging length grabs it. Ordinary ropes idle over their launch deck, where catching one on landing would skip that deck's plate/chest.
-      if(!rope.airOnly||rope.attached||rope.id===f.ropeId)continue;
+      if((!rope.airOnly&&!rope.ropeChainHallId)||rope.attached||rope.id===f.ropeId)continue; // Endpoint ropes remain catchable from the air in either direction.
       if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
     }
     const support=sampleSupport(f.x,f.z,f.y+.25);
