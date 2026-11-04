@@ -1037,7 +1037,7 @@
     if (entity.exhaustion.active) {
       entity.stamina = 0; // Black Stamina recovery owns the stamina channel until the debt is completely cleared.
       if (!staminaRegenBlocked) {
-        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * staminaRegenMultiplier * mul * dt, 0, 100));
+        entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina + cfg.exhaustionRegenPerSec * STAMINA_RECOVERY_MULTIPLIER * staminaRegenMultiplier * statModifier(entity, 'exhaustionRecovery') * mul * dt, 0, 100));
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
@@ -1105,7 +1105,7 @@
   function resolveCongealedTick(entity, dt, rest, cfg, healthRecoveryBlocked = false) {
     const congealed = getAffliction(entity, "congealedHealth");
     if (congealed <= 0) return;
-    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * getAfflictionNaturalRecoveryScale('congealedHealth') * (rest.rested ? 2 : 1) * dt);
+    const amount = Math.min(congealed, cfg.afflictionRecoveryPerSec * getAfflictionNaturalRecoveryScale('congealedHealth') * statModifier(entity, 'afflictionRecovery') * (rest.rested ? 2 : 1) * dt);
     const recovered = recoverAfflictionNaturally(entity, "congealedHealth", amount);
     if (!healthRecoveryBlocked && recovered > 0) applyHealthRecovery(entity, recovered);
   }
@@ -1120,7 +1120,7 @@
       const elapsedSinceActionMs = getPunishedActionElapsedMs(entity, def.punishedAction); // Used after prone ends to reward refraining from whichever action this affliction explicitly punishes.
       if (forcedAvoidanceRecovery || elapsedSinceActionMs >= ACTION_PUNISHMENT_RECOVERY_GRACE_MS) multiplier *= ACTION_PUNISHMENT_RECOVERY_MULTIPLIER;
     }
-    return multiplier * getAfflictionNaturalRecoveryScale(id);
+    return multiplier * getAfflictionNaturalRecoveryScale(id) * statModifier(entity, 'afflictionRecovery');
   }
 
   function resolveGenericRecovery(entity, dt, rest, cfg) {
