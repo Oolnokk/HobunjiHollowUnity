@@ -169,15 +169,21 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       let nativeGates=0; // Count actual gated native meshes across all physical story roots, not just planner metadata.
       window.GridTileAccessors.getActiveScene()?.traverse(node=>{if(String(node.name||'').startsWith('v50-native-gate-'))nativeGates++;});
       const nativeRoots=window.DevRandomRuinHitPuzzles?.getNativeRoots?.()||[]; // Every story joins the real ranged-hit, torch and ladder runtime.
-      const actualFamilies=new Set();
-      for(const nativeRoot of nativeRoots)nativeRoot.traverse(object=>{
+      const actualFamilies=new Set();let cubeSolversExpected=0; // The real V50 iframe must retain every linked-cube actor despite its per-generation registry clears.
+      const scanV50=object=>{
         if(object.userData?.activatorType&&object.userData?.linkedMechanismId)
           actualFamilies.add(object.userData.activatorType);
-      }); // Inspects real V50-produced objects rather than the planned stage repertoire.
+        if(object.userData?.activatorType==='linkedCubePillars'
+          &&object.userData?.previewMotion?.type==='linkedCubePair'
+          &&object.userData?.interactive3D)cubeSolversExpected++;
+      };
+      window.DevRandomRuin.getRuntimeContext()?.root?.traverse?.(scanV50);
+      for(const nativeRoot of nativeRoots)nativeRoot.traverse(scanV50);
+      const cubeSolversLive=document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50?.getState?.()?.linkedCubeSolverRoots??null; // Assert original V50 source registry, not a game-side approximation.
       return {native:{...state.nativeV50Runtime,
         brazierControls:controls.filter(control=>control.kind==='v50NativeBrazier').length,
         gateMeshes:nativeGates,registeredPuzzleRoots:nativeRoots.length,
-        actualPuzzleFamilies:[...actualFamilies].sort()},ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
+        actualPuzzleFamilies:[...actualFamilies].sort(),cubeSolversExpected,cubeSolversLive},ok:!!state.shaftHub&&state.shaftConnection?.physical&&!hasTeleport&&state.shaftLayerPlan?.floorCount>=3&&!!state.shaftNavigation?.length,
         connection:state.shaftConnection,plannedFloors:state.shaftLayerPlan?.floorCount,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
@@ -188,6 +194,8 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(shaft.native.brazierControls,shaft.native.floors,'each native brazier must be bound to the real interaction resolver');
     assert.equal(shaft.native.gateMeshes,shaft.native.stagesTotal,'every native V50 challenge stage must mount its physical stone gate');
     assert.equal(shaft.native.registeredPuzzleRoots,shaft.native.floors,'every actual upper-floor root must be registered for native torch, glyph and ladder gameplay');
+    assert.equal(shaft.native.cubeSolversLive,shaft.native.cubeSolversExpected,
+      'every entrance and upper story linked-cube puzzle must stay registered with original V50 solver after generation');
     assert(shaft.native.perFloor.every(floor=>floor.nativeMechanisms&&Array.isArray(floor.nativeMechanisms.families)),
       'live game must mount a separate authored V50 mechanism runtime for every upper floor: '+JSON.stringify(shaft.native));
     assert(shaft.native.stagesTotal>=shaft.native.floors*2
@@ -196,6 +204,8 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert(shaft.teleported&&Math.abs(shaft.standing-shaft.topSupport)<.15,
       'upper balcony must be a real walkable support, not a visual-only ledge: '+JSON.stringify(shaft));
     await page.evaluate(async()=>window.DevRandomRuin.leave());
+    const afterExitCubes=await page.evaluate(()=>document.getElementById('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50?.getState?.()?.linkedCubeSolverRoots??null);
+    assert.equal(afterExitCubes,0,'V50 cube animations from all stories must unregister after leaving the ruin');
     assert.deepEqual(pageErrors,[],'no unhandled browser errors: '+pageErrors.join(' | '));
     console.log('Ruin construction browser smoke passed: '+JSON.stringify({trial:first.state,blast:afterBlast,shaft}));
   } finally {await browser.close();}
