@@ -503,7 +503,14 @@ async function arenaScenario() {
   assert.equal(rearState.skinnedBackOnlyPasses,1,'avatar rebuild replaces, not duplicates, the rear x-ray');
   assert.equal(portrait.material[1].visible,true,'replaced avatar rear material is restored');
   assert.equal(rebuilt.material[1].visible,false,'new rear group owns the overlay');
-  assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
+  assert.equal(game.Shattercasks.toolArchAction(),'pickup','held Burden claims Tool Select for the back slot');
+  assert(game.Shattercasks.toolArchTap(),'tool selection stows the original Burden on the back');
+  assert.equal(game.Shattercasks.debugSnapshot().held,null,'back stow frees both hands');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,first.id,'back slot references the physical original Burden');
+  assert.equal(game.Shattercasks.actionButtons(),null,'normal tool actions return while a back burden is stowed');
+  assert(game.Shattercasks.takeFromBack(),'the tool arch takes the back Burden into the hands');
+  assert.equal(game.Shattercasks.debugSnapshot().held,first.id,'retrieval does not replace the burden with an inventory copy');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'retrieval clears the back slot');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
   assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'desktop-mouse'}),
     'Action 1 press starts aiming through the shared cross-device input claim');
@@ -572,6 +579,16 @@ async function arenaScenario() {
   assert.equal(cancelledThrows,1,'incoming hit also cancels the shared held throw pose');
   assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'detonation clears aim');
   assert.equal(rebuilt.material[1].visible,true,'detonation restores the rear portrait');
+  const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
+  assert(spare,'a second real Burden is available for back impact validation');
+  player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
+  assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
+  assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
+  player.health-=10; // Emulates a successful direct hit from the unmodified game.js damage path.
+  game.Combat.update(.016);
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
+  assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
   assert.equal(modelBuilds,4,'no art created for rejected requests');
