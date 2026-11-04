@@ -334,6 +334,7 @@
       row.querySelector('[data-field="overpass"]')?.addEventListener('change', event => {
         setOverpassPattern(regionId, event.target.value);
         row.querySelector('[data-field="overpass-dye"]').disabled = !event.target.value;
+         overpassQuick?.refresh(); // Show slot-2 controls after selecting its first motif.
         drawPreview(); refreshDebug();
       });
       row.querySelector('[data-field="overpass-dye"]')?.addEventListener('change', event => {
@@ -346,7 +347,27 @@
         drawPreview();
         refreshDebug();
       });
-      row.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
+      const primaryQuick = window.PatternQuickControls?.mount(row, {
+         title: 'Primary pattern placement',
+         getPattern: () => paintPatternStack(paintDescriptor(regionId))[0] || null,
+         onChange: pattern => {
+           const paint = ensurePaint(regionId), overpass = paintPatternStack(paint)[1]; // The existing second slot remains unchanged.
+           paint.pattern = clone(pattern);
+           if (overpass) paint.patterns = [paint.pattern, overpass];
+           drawPreview(); refreshDebug();
+         },
+       });
+       const overpassQuick = overpassUnlocked() ? window.PatternQuickControls?.mount(row, {
+         title: 'Overpass pattern placement',
+         getPattern: () => paintPatternStack(paintDescriptor(regionId))[1] || null,
+         onChange: pattern => {
+           const paint = ensurePaint(regionId), primary = paintPatternStack(paint)[0];
+           if (!primary) return;
+           paint.patterns = [primary, clone(pattern)]; // Secondary paint retains its own dye without altering the library.
+           drawPreview(); refreshDebug();
+         },
+       }) : null;
+       row.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
         const paint = ensurePaint(regionId);
         const initial = paint.pattern || (paint.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
         window.PatternAuthoring?.openEditor?.({
