@@ -92,7 +92,14 @@
       if (Array.isArray(state.memory)) state.memory.push({ type: 'romance_rollover', day: today, amount: romanceFavor, sourceRomance: oldRomance });
       window.__farmLog?.(`Romance with ${npcId} became ${romanceFavor} permanent favor at midnight.`);
     }
-    if (favorGain) window.DialogueContent?.adjustNpcFavor?.(npcId, favorGain, 'rapport_romance_rollover'); // Permanent Favor settles through the same faction-rank and reputation authority.
+    if (favorGain) {
+      if (typeof window.DialogueContent?.adjustNpcFavor === 'function') {
+        window.DialogueContent.adjustNpcFavor(npcId, favorGain, 'rapport_romance_rollover'); // Real runtime: faction standing and personal Favor update together.
+      } else {
+        state.favor = num(state.favor, 0) + favorGain; // Older isolated contexts without DialogueContent's mutation entry point still settle Rapport.
+        if (favorGain > 0) window.WorldPopupText?.queueSocialGain?.('favor', favorGain, npcId);
+      }
+    }
     return favorGain;
   }
   function relationship(npcId) {
