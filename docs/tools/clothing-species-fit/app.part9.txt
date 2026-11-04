@@ -138,8 +138,28 @@ function scheduleThreePreview(delay=90){
 }
 function render(scheduleRig=true){
   if(!R.body)return;
+  if(scheduleRig!==false){
+    R.three.buildGeneration++; // Invalidate any in-flight portrait before an edit changes its visual inputs; avoids reinstalling an older wearer/garment during the debounce.
+    R.three.matchedFront2D=null;
+  }
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
-  if(fitRegion()==='headwear'){
+  const matched=E.match3D.checked&&E.showBody.checked&&
+    R.three.matchedFront2D?.buildGeneration===R.three.buildGeneration&&
+    R.three.matchedFront2D?.assetGeneration===R.assetGeneration&&
+    R.three.matchedFront2D?.species===E.species.value&&
+    R.three.matchedFront2D?.gender===E.gender.value
+    ?R.three.matchedFront2D.canvas:null; // The exact front texture used by the currently displayed 3D rig, inverse-mapped to the fit grid.
+  E.match3DStatus.textContent=!E.match3D.checked
+    ?'Raw sprite artwork (game tinting and head depth disabled in 2D).'
+    :!E.showBody.checked
+      ?'Body hidden for 2D editing. Enable body to see the game-matched portrait; the 3D rig remains complete.'
+      :matched
+        ?'Game-matched: both views use the same front portrait pixels. 3D adds neck, hands, feet and perspective.'
+        :'Rendering game-matched front portrait; showing raw art until the rig is ready…';
+  if(matched){
+    C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
+    R.warped=null;
+  }else if(fitRegion()==='headwear'){
     const warpedBack=mode!=='body'?headwearWarpForView('under'):null;
     const warpedFront=mode!=='body'?headwearWarpForView('front'):null;
     if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
