@@ -254,6 +254,12 @@
     }
   }
   function highestBelow(network, x, z, fromY, baseY = -Infinity) {
+    // Prefer the exact height-bounded DynamicSurfaces support query, as in
+    // the multi-story shaft. The pure graph fallback keeps headless tests
+    // and early unmounted-world generation independent of renderer state.
+    const bridge = typeof globalThis === 'object' ? globalThis.CliffElevatedSurfaces : null;
+    const support = bridge?.highestBelow?.(network, x, z, fromY, baseY);
+    if (support) return support;
     let found = null;
     for (const s of (network?.balconies || [])) {
       if (s.y < fromY - 0.08 && s.y > baseY + 0.08 && shelfContains(s, x, z) && (!found || s.y > found.y)) found = s;
