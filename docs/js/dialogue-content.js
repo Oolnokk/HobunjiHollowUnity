@@ -211,7 +211,8 @@
     for (const other of records) {
       if (!other?.id || other.id === npcId) continue;
       const home = source.homeId && other.homeId === source.homeId;
-      const work = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId;
+      const workId = source.workBuildingId || source.scheduleHooks?.workBuildingId; // Top-level workplace IDs and schedule hooks describe the same social link.
+      const work = workId && (other.workBuildingId || other.scheduleHooks?.workBuildingId) === workId;
       if (home || work) bonds.set(other.id, Math.max(bonds.get(other.id) || 0, home ? .25 : .15));
     }
     return [...bonds.entries()];
