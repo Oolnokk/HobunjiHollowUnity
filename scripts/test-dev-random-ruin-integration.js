@@ -498,6 +498,9 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
   assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true') && !interior.includes("['safePath',"),
     'mobile puzzle settings must retain rope-chain controls and remove the retired memory-grid option');
+  assert(simplePuzzles.includes('keepOpenForRopeChain=true') && simplePuzzles.includes('if(!keepOpen)restoreDoors()')
+    && interior.includes('control.object?.userData?.ropeChainPassage!==true'),
+    'only validated rope-chain hall doors may stay open, and their redundant prompts must be suppressed');
   assert(sanctum.includes('function buildRopeChainBraziers(kit)') && sanctum.includes('chain.rewardSide') && !sanctum.includes('buildSafePathBraziers'),
     'the former grid-completion blue brazier now rewards crossing the rope-chain abyss');
   assert(simplePuzzles.includes('function debugRopeChainHop(') && simplePuzzles.includes('releaseRope(rope)'),
