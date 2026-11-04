@@ -1,5 +1,6 @@
-// Combat ability progression — each of the 10 weapon-tool abilities has 5
-// levels; at each one the player picks ONE of 2+ upgrade options. No
+// Combat ability progression — the 10 weapon-tool abilities and two
+// conditional combo-finisher mastery tracks each have five levels.
+// At each level the player picks ONE of 2+ upgrade options. No
 // ability applies any affliction damage on its own — every affliction an
 // attack can inflict comes from a level chosen here (see resource-
 // system.js's applyDamage, which takes an explicit opts.afflictionBonuses
@@ -32,7 +33,8 @@
 // damage) and stat bonuses. Quick Attack affliction/debuff choices are
 // returned separately as quickBonusAfflictions/quickBonusDebuffs so their
 // condition + cooldown gate can own those burst effects without changing
-// Combo/Held/Flurry behavior.
+// ordinary Combo/Held/Flurry behavior. A Combo's separate Finisher mastery
+// track uses the same scroll-unlocked effects after two consecutive landed hits.
 (() => {
   "use strict";
   if (!window.Combat) { console.error('combat-progression.js requires combat-core.js to load first'); return; }
@@ -205,6 +207,17 @@
     return tree;
   }
 
+  // Uses EXACTLY the Quick Attack mastery payload and unlock identities, including
+  // scroll/tablet lessons; only its third-hit activation condition differs.
+  function comboFinisherTree(levels, isBlunt = false) {
+    return quickAttackTree(levels, isBlunt).map(row => row.map(option => ({
+      ...option,
+      desc: String(option.desc).replace(/Successful condition-bonus procs/g, 'Qualified third combo hits')
+        .replace(/ordinary Quick Attack hits/g, 'ordinary combo finishers')
+        .replace(/A successful Quick Attack condition bonus/g, 'A qualified third combo hit'),
+    })));
+  }
+
   // Ability id -> { sharp: levels, blunt: levels } for weapon-typed
   // abilities, or a flat levels array for the one that isn't (Blink Dodge).
   const TREES = {
@@ -214,6 +227,8 @@
     exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    swingComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
+    pokeComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
     chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
     acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
     counterShield: {
@@ -424,7 +439,9 @@
 
   // Merges every chosen level's ordinary afflictions/stats plus the
   // cooldown-gated Quick Attack bonus payloads for one ability *on this tool*.
-  function getEffects(toolKey, abilityId) {
+  // Special-finisher tracks use these same bonus fields with a different hit
+  // condition and no Quick Attack cooldown; the combo executor owns activation.
+  function getEffects(toolKey, abilityId, options = {}) {
     const afflictions = {};
     const stats = {};
     const quickBonusAfflictions = {}; // Used only by successful, cooldown-ready Quick Attack condition procs.
@@ -471,8 +488,10 @@
 
     // Increase AoE widens melee cones only; rangeMul remains reserved for
     // genuine reach upgrades such as Extended Reach mastery.
-    stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Consumed by every player melee cone and its HUD readiness profile.
-    stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    if (options.includePerks !== false) { // Combo finisher bonus effects do not reapply the base combo's global perks.
+      stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Shared combat perk remains on ordinary attacks.
+      stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    }
     return { afflictions, stats, quickBonusAfflictions, quickBonusDebuffs, quickBonusInstantEffects };
   }
 

@@ -20,6 +20,8 @@
   });
   const THRESHOLDS = Object.freeze([40, 90, 150, 220, 300]); // Used to preserve the existing five mastery thresholds.
   const COMBAT_SLOTS = new Set(['weapon', 'mainHand', 'melee', 'ranged']); // Used to detect weapon-only gear such as future swords.
+  const PROFICIENCY_LABELS = Object.freeze({ polearms: 'Polearms', blades: 'Blades', axes: 'Axes', bludgeons: 'Bludgeons', improvised: 'Improvised Weapons' }); // Canonical names for family progression.
+  const PROFICIENCY_XP_BONUS_PER_RANK = 0.10; // Applied only to combat kill mastery XP, using proficiency before the kill.
 
   let armed = false; // Used to allow normal save/bootstrap hydration before gameplay writes are gated.
   let permitDepth = 0; // Used to permit only policy/dev positive XP writes after arming.
@@ -180,6 +182,52 @@
   }
   const toolLabel = key => toolDefs()[key]?.label || key || 'Tool';
 
+  function weaponFamily(itemKey) {
+    if (!itemKey) return null;
+    const def = toolDefs()[itemKey] || combatDeps?.getWeaponDefinition?.(itemKey); // Existing equipment metadata takes priority over generated key text.
+    const modular = window.ModularWeapons?.decode?.(itemKey); // Foundry head determines the family, not the handle/shaft.
+    if (!def && !modular) return null;
+    const explicit = def?.weaponFamily;
+    if (Object.prototype.hasOwnProperty.call(PROFICIENCY_LABELS, explicit)) return explicit;
+    const headShape = modular && window.ModularWeapons?.getConfig?.()?.heads?.[modular.head]?.sourceShape;
+    const shape = String(headShape || def?.shapeKey || def?.sourceShape || itemKey).replace(/_(nativeCopper|lowTinBronze|tinBronze|highTinBronze|arsenicalBronze|leadedBronze)$/i, '').toLowerCase(); // Generated metal keys inherit their underlying shapes.
+    if (/pickshovel|workhammer|work-hammer|hoe|bshuakauitl|bgungku|shovel|pickaxe|torchstaff/.test(shape)) return 'improvised';
+    if (/hatchet|axe|warcleaver/.test(shape)) return 'axes';
+    if (/spear|staff|pike|glaive|halberd|polearm|harpoon/.test(shape)) return 'polearms';
+    if (/sword|dagger|knife|kylie|sabre|blade|rapier/.test(shape)) return 'blades';
+    if (/warhammer|club|mace|maul|flail|bludgeon|hammer/.test(shape)) return 'bludgeons';
+    const roles = Array.isArray(def?.slots) ? def.slots : []; // Backward compatibility for older tools missing shape metadata.
+    if (roles.includes('axe')) return 'axes';
+    if (roles.includes('harpoon') || roles.includes('spear')) return 'polearms';
+    if (roles.some(role => ['pick', 'shovel', 'hoe', 'fishing', 'instrument'].includes(role)) && roles.some(role => COMBAT_SLOTS.has(role))) return 'improvised';
+    return null; // Ranged-only bows/crossbows and unknown shapes don't receive a fabricated melee family.
+  }
+
+  function proficiencyForFamily(family) {
+    if (!Object.prototype.hasOwnProperty.call(PROFICIENCY_LABELS, family)) return null;
+    const storedXp = Number(currentGear()?.weaponFamilyProficiency?.[family]?.xp); // May be absent or malformed in old/imported character saves.
+    const xp = Number.isFinite(storedXp) ? Math.max(0, storedXp) : 0; // Invalid data must not produce an Infinity-rank record.
+    const level = masteryLevel(xp);
+    return { family, label: PROFICIENCY_LABELS[family], xp, level, maxLevel: THRESHOLDS.length, nextThreshold: THRESHOLDS[level] ?? null,
+      masteryXpMultiplier: round2(1 + level * PROFICIENCY_XP_BONUS_PER_RANK) };
+  }
+  const proficiencyForWeapon = itemKey => proficiencyForFamily(weaponFamily(itemKey));
+
+  function awardFamilyProficiency(gear, family, amount) {
+    if (!gear || !Object.prototype.hasOwnProperty.call(PROFICIENCY_LABELS, family) || !(amount > 0)) return;
+    const familyXp = gear.weaponFamilyProficiency ||= {}; // Persistent character-wide track distinct from individual toolMastery.
+    const storedXp = Number(familyXp[family]?.xp); // The saved family record can come from an older/imported profile.
+    const previous = Number.isFinite(storedXp) ? Math.max(0, storedXp) : 0; // Resume from zero rather than propagating Infinity or NaN.
+    const after = round2(previous + amount);
+    familyXp[family] = { xp: after };
+    const previousRank = masteryLevel(previous), nextRank = masteryLevel(after);
+    if (nextRank > previousRank) for (let rank = previousRank + 1; rank <= nextRank; rank++) {
+      if (window.WorldPopupText?.queueLevelUp?.(`${PROFICIENCY_LABELS[family]} Proficiency Rank ${rank}!`) !== true) equipmentDeps?.showToast?.(`${PROFICIENCY_LABELS[family]} Proficiency ${rank}/5`, true);
+    }
+    debug.lastFamilyAward = { family, amount: round2(amount), before: previous, after, rank: nextRank, at: now() };
+    try { window.dispatchEvent?.(new CustomEvent('hobunji-weapon-proficiency-award', { detail: { ...debug.lastFamilyAward } })); } catch (_) {}
+  }
+
   function award(itemKey, amount, reason, metadata = {}) {
     if (!itemKey || !(Number(amount) > 0)) return 0;
     const gear = currentGear();
@@ -193,6 +241,7 @@
     const delta = round2(amount);
     const after = round2(before + delta);
     withPermit(() => { record.xp = after; });
+    if (metadata.combatFamily && metadata.baseFamilyXp > 0) awardFamilyProficiency(gear, metadata.combatFamily, metadata.baseFamilyXp); // Both progressions save atomically.
     window.MetalArmorSystem?.awardExperience?.(delta, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery (same contract as tool-mastery.js); the save below persists both.
     try { equipmentDeps?.saveGearInventory?.(); } catch (_) {}
     debug.lastAward = { itemKey, label: toolLabel(itemKey), amount: delta, before, after, reason, metadata: { ...metadata }, at: now() };
@@ -251,9 +300,13 @@
     if (typeof enemy === 'object' && awardedEnemyKills.has(enemy)) return 0;
     const difficulty = enemyDifficulty(enemy);
     const multiplier = isPureCombatWeapon(itemKey, ranged) ? CONFIG.pureCombatMultiplier : 1;
-    const amount = round1(difficulty * multiplier);
-    debug.lastKill = { enemy: enemy?.def?.label || enemy?.label || enemy?.id || 'hostile', itemKey, ranged: !!ranged, difficulty: round1(difficulty), multiplier, amount, at: now() };
-    const granted = award(itemKey, amount, ranged ? 'ranged kill' : 'melee kill', { enemy: debug.lastKill.enemy, difficulty: debug.lastKill.difficulty, combatOnlyMultiplier: multiplier }); // Used to mark the defeated entity only after mastery storage actually accepts the award.
+    const baseAmount = round1(difficulty * multiplier); // Family XP grows at the unboosted combat rate.
+    const family = weaponFamily(itemKey); // Qualifies the actual killing weapon, including throwable dual-role items.
+    const proficiency = proficiencyForFamily(family);
+    const masteryMultiplier = proficiency?.masteryXpMultiplier || 1;
+    const amount = round2(baseAmount * masteryMultiplier);
+    debug.lastKill = { enemy: enemy?.def?.label || enemy?.label || enemy?.id || 'hostile', itemKey, ranged: !!ranged, difficulty: round1(difficulty), multiplier, amount, family, proficiencyRank: proficiency?.level || 0, masteryMultiplier, at: now() };
+    const granted = award(itemKey, amount, ranged ? 'ranged kill' : 'melee kill', { enemy: debug.lastKill.enemy, difficulty: debug.lastKill.difficulty, combatOnlyMultiplier: multiplier, combatFamily: family, baseFamilyXp: baseAmount }); // Used to mark the defeated entity only after mastery storage actually accepts the award.
     if (granted > 0 && typeof enemy === 'object') awardedEnemyKills.add(enemy);
     return granted;
   }
@@ -520,6 +573,8 @@
       lastBlocked: debug.lastBlocked ? { ...debug.lastBlocked } : null,
       lastAward: debug.lastAward ? { ...debug.lastAward } : null,
       lastKill: debug.lastKill ? { ...debug.lastKill } : null,
+      lastFamilyAward: debug.lastFamilyAward ? { ...debug.lastFamilyAward } : null,
+      weaponFamilyProficiencies: Object.fromEntries(Object.keys(PROFICIENCY_LABELS).map(family => [family, proficiencyForFamily(family)])),
       lastHarvest: debug.lastHarvest ? { ...debug.lastHarvest } : null,
       lastTreasure: debug.lastTreasure ? { ...debug.lastTreasure } : null,
       lastDeathRecovery: debug.lastDeathRecovery ? { ...debug.lastDeathRecovery } : null,
@@ -535,6 +590,7 @@
 
   window.HobunjiMasteryPolicy = {
     getDebug, formatDebug, worthMasteryXp: worthXp, enemyDifficultyScore: enemyDifficulty, isPureCombatWeapon, isDualRoleTool, awardToolUse, recordRangedKill,
+    PROFICIENCY_LABELS, weaponFamily, proficiencyForFamily, proficiencyForWeapon,
     _test: { awardMastery: award, guardGearInventory: guardGear, armPolicy: arm, treasureLootWorth: treasureWorth, detectTreasureDigTransitions: detectTreasure, recordTreasureStates: recordTreasure },
   };
 
