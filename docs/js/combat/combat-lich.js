@@ -498,7 +498,13 @@
     if (def.id === 'hronal') {
       const windupS = Math.max(0, Number(castTiming?.windupS) || 0.16); // Exact staged attack timing captured by beginLichCast.
       const strikeS = Math.max(0, Number(castTiming?.strikeS) || 0.10); // Paired with windup so the warning lasts exactly four attack phases.
-      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS));
+      if(lich.specialLichId==='azgarlu') {
+        const pillars=window.DevRandomRuinLichThemes?.spawnBossPillar?.(lich,target)||0; // The named boss summons preset-footprint exploding pillars instead of ordinary Hronal earth spells.
+        if(pillars>0){lastEvent='azgarlu:pillar-cast';return true;}
+        if(currentLichArea()!=='map_dev_arena')return false; // A blocked sanctum spawn must never silently turn back into a different attack.
+        return !!makeEruptingEarth(lich,target,4*(windupS+strikeS)); // Isolated Testing Arena has no dungeon composer: retain the existing visible eruption there.
+      }
+      return !!makeEruptingEarth(lich, target, 4 * (windupS + strikeS)); // Ordinary Hronal liches are unchanged.
     }
     const velocity = ballisticVelocity(lich, target, def.projectile); // Kanthic remains ballistic; Tothal uses this only as its initial heading before homing takes over.
     const mesh = makeSpellVisual(def.id); // Per-type procedural spell visual avoids adding un-authored sprite assets.
@@ -1868,7 +1874,7 @@
     const baseGroundLift = Number(lich._lichBaseGroundLift) || Number(lich.halfHeight) || Number(lich.avatarRef?.modelHeight) * 0.5 || 0.45; // Grounded baseline remains the collision/simulation origin.
     const legs = lich.avatarRef?.legs; // Existing two-bone procedural leg handle attached by BanditCombat's humanoid portrait builder.
     const hovering = isArena() && isLiveActor(lich) && !lich.prone; // Knockdown explicitly brings a lich back to ground instead of ragdolling in midair.
-    const hoverTarget = hovering ? (lich.isSpecialLich && Number(lich._specialHoverTarget) === 0 ? 0 : 1) : 0; // Azgarlu melee and Nanahi kneeling use grounded movement.
+    const hoverTarget = hovering ? (lich.isSpecialLich && Number(lich._specialHoverTarget) === 0 ? 0 : 1) : 0; // Nanahi's kneel can ground her; Azgarlu's melee never switches off hovering.
     const oldBlend = Number.isFinite(lich._specialHoverBlend) ? lich._specialHoverBlend : hoverTarget; // Lerp state is per-entity, independent of other liches.
     lich._specialHoverBlend = lich.isSpecialLich ? oldBlend + (hoverTarget - oldBlend) * Math.min(1, Math.max(0, dt) * 3.2) : hoverTarget;
     legs?.setHoverMode?.(hovering && lich._specialHoverBlend > .45);
@@ -1882,7 +1888,8 @@
     const hoverHeight = Math.max(HOVER_HEIGHT_MIN_WORLD, modelHeight * HOVER_HEIGHT_MODEL_FRACTION); // Main static separation above ordinary ground-following minions.
     const bobAmplitude = modelHeight * HOVER_BOB_MODEL_FRACTION; // Gentle secondary float, deliberately much smaller than the main lift.
     const bob = Math.sin((lich._lichHoverClockS / HOVER_BOB_PERIOD_S) * Math.PI * 2) * bobAmplitude;
-    lich._lichHoverOffsetWorld = (hoverHeight + bob) * lich._specialHoverBlend;
+    const aerialOffset = lich.specialLichId==='azgarlu' ? (Number(lich._specialHoverOffsetWorld)||0) : 0; // Azgarlu's current lunge/dodge altitude composes with, rather than replaces, natural lich bobbing.
+    lich._lichHoverOffsetWorld = (hoverHeight + aerialOffset + bob) * lich._specialHoverBlend;
     const kneel = lich.lichType === 'tothal' && lich.isSpecialLich ? Math.max(0, Math.min(1, Number(lich._specialKneelBlend) || 0)) : 0; // Nanahi's head/torso descends toward the sanctum floor during the deadly barrage.
     const crouch = modelHeight * .20 * kneel; // Visual-only crouch; combat collision and damage hitbox retain their normal authoritative size.
     lich.groundLift = baseGroundLift + lich._lichHoverOffsetWorld - crouch; // Existing creature renderer applies this lift without changing X/Z simulation.
@@ -1998,7 +2005,7 @@
     const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       specialLiches: window.SpecialHarlyaoLiches?.snapshot?.() || null, // Mobile debug source for named-boss effects and current stage.
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
