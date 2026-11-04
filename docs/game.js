@@ -31742,7 +31742,7 @@
       });
 
       window.ZonePlateauMesa?.init({
-        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
