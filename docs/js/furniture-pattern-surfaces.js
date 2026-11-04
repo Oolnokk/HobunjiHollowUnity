@@ -126,6 +126,7 @@
       input.addEventListener?.('input', () => { field(`dye-${name}`).value=dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id || ''; });
     }
     return {
+      addArrows, // The surrounding furniture/rug modal also has a separate tile-size slider.
       refresh(record = {}) {
         for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) populate(field(`dye-${name}`),dyes(),'Custom color',dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id);
         if (!overpassInput) field('dye-overpass').disabled = true;
@@ -628,6 +629,7 @@
     panel.style.cssText = 'position:fixed;inset:5% 3%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px;box-shadow:0 12px 40px #000b;display:flex;flex-direction:column;gap:12px;max-height:90dvh';
     panel.innerHTML = '<h2 style="margin:0">Furniture pattern</h2><p style="margin:0;color:#c6d0d2">Choose a surface, motif and dyes. Sliders are directly focusable with a controller.</p><section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Surface <select data-part data-ctrl-default></select></label><label>Pattern <select data-pattern></select></label><label>Pattern tile size <input data-scale-range type="range" min="0.05" max="20" step="0.05" aria-label="Pattern tile size"></label><output data-scale-value aria-live="polite"></output><label>Base dye <input data-base type="color"></label><label>Pattern dye <input data-dye type="color"></label><label>Overpass dye <input data-overpass-ink type="color"></label><label><input data-solid type="checkbox">Solid color (no motif)</label></section><h3 style="margin:4px 0 0">Pattern placement</h3><p style="margin:0;color:#c6d0d2">Adjust each layer independently. Repeat controls whether the motif tiles or appears once.</p><button data-edit>Choose / draw pattern</button><button data-apply>Apply settings</button><button data-close data-ctrl-cancel>Close</button><details><summary>Pattern diagnostics</summary><pre data-debug style="white-space:pre-wrap;max-height:180px;overflow:auto"></pre></details>';
     const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'),panel.querySelector('[data-overpass-ink]'));
+    placement.addArrows(panel); // Wrap tile-size too, while respecting already-stepped pattern sliders.
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
     const selected = () => candidates[Number(find('part').value) || 0]; // Selection is read at each action, never inferred from a global mesh name.
