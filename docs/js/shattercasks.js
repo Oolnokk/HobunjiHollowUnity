@@ -125,8 +125,12 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
+    // World/cycle identity changes retire both physical carries. Restore the
+    // avatar's materials and detach their actual groups, not just the state
+    // pointers, or a charge could remain visibly stuck on the next avatar.
+    if(held||backCarried||backXray.size)setHeldRearXray(null);
+    for(const burden of [held,backCarried])burden?.group?.parent?.remove?.(burden.group);
     storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();looseFruitHistory.clear();records.clear();placementCache.clear();
-    if(held||backCarried||backXray.size)setHeldRearXray(null); // Never leak either carried object's depth state into the next world.
     held=null;backCarried=null;observedCarrier=null;observedAttackAt=null; // A different world must not inherit physical charges.
     promptClaim='';
     if (identity.startsWith('session|')) return;
