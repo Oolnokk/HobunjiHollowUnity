@@ -215,7 +215,9 @@ async function buildBodyCanvas(species,gender){
     for(const image of images)x.drawImage(image,0,0); // Direct source-pixel compositing of the repository body layers.
     canvas._paths=layers.map(x=>x.path);return canvas;
   })();
-  R.bodyCanvases.set(key,p);return p;
+  R.bodyCanvases.set(key,p);
+  p.catch(()=>{if(R.bodyCanvases.get(key)===p)R.bodyCanvases.delete(key)}); // Failed target asset loads must be retryable; never cache a rejected promise indefinitely.
+  return p;
 }
 function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
 function headwearLayerRecords(garment,species,gender){
