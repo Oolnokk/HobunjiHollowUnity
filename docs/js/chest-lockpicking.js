@@ -291,6 +291,11 @@
   function close(outcome='cancelled') {
     const finished=session;
     if(!finished)return false;
+    if (outcome === 'success' && typeof finished.valid === 'function') {
+      try {
+        if (finished.valid() === false) outcome = 'invalid'; // The chest must still exist at the reward boundary, not just on the last animation frame.
+      } catch (error) { describeError(error); outcome = 'invalid'; }
+    }
     session=null; // Prevents reentrancy and grants loot once even if callback opens another chest.
     lastOutcome={id:finished.id,outcome,tier:finished.tier,misses:finished.misses};
     if(frameId)cancelAnimationFrame(frameId);
@@ -300,7 +305,12 @@
     window.removeEventListener('keyup',onKey,true);
     unsubscribePad?.();unsubscribePad=null;
     actionLock?.release?.();actionLock=null;
-    if(window.ControllerInput?.owner===OWNER)window.ControllerInput.setOwner(priorOwner||'gameplay');
+    if (window.ControllerInput?.owner === OWNER) {
+      const restoreOwner = priorOwner || 'gameplay'; // Keep the final shoulder/trigger input owned until the current controller frame finishes.
+      queueMicrotask(() => {
+        if (!session && window.ControllerInput?.owner === OWNER) window.ControllerInput.setOwner(restoreOwner);
+      }); // Synchronous restoration could forward the same winning press to a later gameplay subscriber.
+    }
     if(document.activeElement?.closest?.('#chestLockOverlay'))document.activeElement.blur?.();
     try {
       if(outcome==='success') finished.onSuccess?.();
