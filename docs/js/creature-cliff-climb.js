@@ -311,7 +311,13 @@
   function navigate(c, goalX, goalY, speed, dt) {
     if (!deps || !c || ![goalX, goalY, c.x, c.y].every(Number.isFinite)) return false;
     if (!deps.isZoneArea(deps.getCurrentArea()) || c.areaId !== deps.getCurrentArea()) return false;
-    if (c._cliffClimb || c._cliffRouteTravel) return true;
+    if (c._cliffClimb || c._cliffRouteTravel) {
+      // Passive herds and companion animals use moveCreatureToward instead
+      // of the hostile AI's dedicated update seam. Advance their climbs here
+      // too, rather than leaving them frozen on the first marked hold.
+      update(c, dt, null);
+      return true;
+    }
     if (c.health <= 0 || c.prone || c.knockbackT > 0 || c.onBranch) return false;
     const net = networkForCurrentArea();
     if (!net) return false;
