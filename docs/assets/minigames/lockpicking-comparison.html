@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#151512">
-<title>Hobunji Hollow · Four Lockpicking Experiments</title>
+<title>Hobunji Hollow · Lockpicking Comparison Lab</title>
 <style>
 :root { color-scheme:dark; --bg:#151512; --panel:#211e19; --panel2:#2d2821; --brass:#e5b86d; --bright:#ffebae; --text:#f3e5ca; --muted:#b9a78b; --line:#6d5a40; --cyan:#94cfce; --good:#a9e0ad; --bad:#e89d86; }
 * { box-sizing:border-box; }
@@ -49,9 +49,11 @@ h2 { margin:0; color:var(--bright); font-size:clamp(17px,3vmin,23px); font-weigh
 .big-btn { border:2px solid #d4a968; border-radius:7px; background:linear-gradient(160deg,#665036,#342b21); box-shadow:0 4px 0 #0c0a07; color:var(--bright); padding:10px 20px; min-width:min(59vw,235px); min-height:62px; font-size:clamp(17px,3vmin,21px); user-select:none; -webkit-user-select:none; }
 .big-btn:active, .big-btn.held { box-shadow:0 1px 0 #090805; transform:translateY(3px); background:linear-gradient(160deg,#957046,#564029); }
 .big-btn small { display:block; font:11px system-ui,sans-serif; margin-top:2px; color:#f3d59c; }
-.dual-controls { display:flex; justify-content:center; gap:8px; width:100%; }
-.dual-controls .big-btn { min-width:0; flex:1; max-width:215px; }
-.dual-controls .big-btn:nth-child(2) { border-color:#8cc5c2; background:linear-gradient(160deg,#436060,#1e3534); }
+/* The ring controls are a grid so all four triggers remain touchable on narrow phones. */
+.dual-controls { display:grid; grid-template-columns:repeat(var(--ring-count,2),minmax(0,1fr)); justify-content:center; gap:8px; width:100%; max-width:660px; }
+.dual-controls .big-btn { min-width:0; width:100%; padding:10px 5px; font-size:clamp(14px,2.7vmin,19px); }
+.dual-controls .big-btn small { white-space:nowrap; }
+@media (max-width:520px) { .dual-controls { grid-template-columns:repeat(min(var(--ring-count,2),2),minmax(0,1fr)); } }
 #restart { min-height:48px; border:1px solid #8b7152; border-radius:5px; background:#29241e; padding:9px 16px; font:600 13px system-ui,sans-serif; }
 .instructions { text-align:center; color:var(--muted); margin:0; font:12px/1.6 system-ui,sans-serif; }
 .instructions strong { color:var(--bright); }
@@ -73,23 +75,23 @@ svg text { font-family:Georgia,'Times New Roman',serif; fill:#ead5a6; text-ancho
   <nav class="mode-tabs" id="modeTabs" aria-label="Lockpicking designs">
     <button class="mode-tab" type="button" data-mode="hammer" aria-selected="true"><span>01</span>Strike Pins</button>
     <button class="mode-tab" type="button" data-mode="torque" aria-selected="false"><span>02</span>Spring Tension</button>
-    <button class="mode-tab" type="button" data-mode="dual" aria-selected="false"><span>03</span>Twin Tumblers</button>
+    <button class="mode-tab" type="button" data-mode="dual" aria-selected="false"><span>03</span>Ring Tumblers</button>
     <button class="mode-tab" type="button" data-mode="echo" aria-selected="false"><span>04</span>Echo Code</button>
   </nav>
   <div class="settings"><div class="group"><span class="caption">Difficulty</span><button type="button" class="small-btn" data-difficulty="easy" aria-pressed="false">Easy</button><button type="button" class="small-btn" data-difficulty="normal" aria-pressed="true">Normal</button><button type="button" class="small-btn" data-difficulty="hard" aria-pressed="false">Hard</button></div><button type="button" id="soundToggle" class="small-btn" aria-pressed="true">Sound: On</button></div>
   <section class="board" aria-label="Interactive lockpicking game"><div class="board-title"><h2 id="modeTitle">Strike Pins</h2><p id="mechanic"></p></div><div class="stage"><svg id="visual" viewBox="0 0 500 310" role="img" aria-label="Animated lock mechanism"></svg></div><div class="status-row"><div id="status" role="status" aria-live="polite">Ready</div><div id="detail"></div><div class="meters" id="meters"></div></div></section>
-  <div class="action-row" id="actions"><button type="button" id="primary" class="big-btn">Start<small>A · Space · Tap</small></button><div id="dualButtons" class="dual-controls" hidden><button type="button" id="innerButton" class="big-btn">Catch Inner<small>LB · Q</small></button><button type="button" id="outerButton" class="big-btn">Catch Outer<small>RB · E</small></button></div><button type="button" id="restart">Restart</button></div>
-  <p class="instructions"><span><strong>Controller:</strong> A = action, LB/RB = twin rings, B = restart, D-pad ←/→ = change game</span><span><strong>Keyboard:</strong> Space, Q/E, R, ←/→ or 1–4</span><span><strong>Touch:</strong> use large buttons</span></p>
+  <div class="action-row" id="actions"><button type="button" id="primary" class="big-btn">Start<small>A · Space · Tap</small></button><div id="dualButtons" class="dual-controls" hidden><button type="button" id="ringButton0" class="big-btn">Catch Outer<small>LB · Q</small></button><button type="button" id="ringButton1" class="big-btn">Catch Inner<small>RB · E</small></button><button type="button" id="ringButton2" class="big-btn" hidden>Catch Middle<small>LT · Z</small></button><button type="button" id="ringButton3" class="big-btn" hidden>Catch Inner<small>RT · C</small></button></div><button type="button" id="restart">Restart</button></div>
+  <p class="instructions"><span><strong>Controller:</strong> A = action, LB/RB/LT/RT = rings 1–4, B = restart, D-pad ←/→ = change game</span><span><strong>Keyboard:</strong> Space, Q/E/Z/C = rings 1–4, R = restart, ←/→ or 1–4</span><span><strong>Touch:</strong> use large buttons</span></p>
   <details id="diagnostics"><summary>Diagnostics &amp; self-test (mobile-friendly)</summary><pre id="debug"></pre><pre id="selfTest"></pre><button type="button" class="small-btn" id="runTests">Run self-test</button><button type="button" class="small-btn" id="copyDebug">Copy debug</button></details>
 </main>
 <script>
 (() => {
 'use strict';
 const $ = id => document.getElementById(id); // DOM lookup for one-time element caching.
-const ui = { visual:$('visual'), title:$('modeTitle'), mechanic:$('mechanic'), status:$('status'), detail:$('detail'), meters:$('meters'), primary:$('primary'), dual:$('dualButtons'), inner:$('innerButton'), outer:$('outerButton'), restart:$('restart'), debug:$('debug'), test:$('selfTest'), diagnostics:$('diagnostics'), sound:$('soundToggle') }; // UI nodes read by the four independent games.
+const ui = { visual:$('visual'), title:$('modeTitle'), mechanic:$('mechanic'), status:$('status'), detail:$('detail'), meters:$('meters'), primary:$('primary'), dual:$('dualButtons'), rings:[0,1,2,3].map(i=>$('ringButton'+i)), restart:$('restart'), debug:$('debug'), test:$('selfTest'), diagnostics:$('diagnostics'), sound:$('soundToggle') }; // UI nodes read by the four independent games.
 const MODES = ['hammer','torque','dual','echo']; // Ordered comparison modes for D-pad and arrow-key switching.
-const LABELS = { hammer:'Strike Pins', torque:'Spring Tension', dual:'Twin Tumblers', echo:'Echo Code' }; // Header/diagnostics labels for each mode.
-const SETTINGS = { easy:{pins:3,hammerTravel:1600,hammerWindow:190,torqueSpeed:.40,torqueWindow:.085,dualSpeed:105,dualWindow:18,dualLimit:4200,echoSteps:5,echoNotes:3,echoBeat:720,echoWindow:220}, normal:{pins:4,hammerTravel:1280,hammerWindow:140,torqueSpeed:.52,torqueWindow:.064,dualSpeed:145,dualWindow:14,dualLimit:3250,echoSteps:6,echoNotes:4,echoBeat:610,echoWindow:170}, hard:{pins:5,hammerTravel:1050,hammerWindow:110,torqueSpeed:.67,torqueWindow:.048,dualSpeed:190,dualWindow:10,dualLimit:2500,echoSteps:7,echoNotes:5,echoBeat:530,echoWindow:135} }; // Shared difficulty presets for independent tuning.
+const LABELS = { hammer:'Strike Pins', torque:'Spring Tension', dual:'Ring Tumblers', echo:'Echo Code' }; // Header/diagnostics labels for each mode.
+const SETTINGS = { easy:{pins:3,hammerTravel:1600,hammerWindow:190,torqueSpeed:.40,torqueWindow:.085,dualSpeed:105,dualWindow:18,dualLimit:4200,dualRings:2,dualStages:3,echoSteps:5,echoNotes:3,echoBeat:720,echoWindow:220}, normal:{pins:4,hammerTravel:1280,hammerWindow:140,torqueSpeed:.52,torqueWindow:.064,dualSpeed:145,dualWindow:14,dualLimit:6800,dualRings:3,dualStages:3,echoSteps:6,echoNotes:4,echoBeat:610,echoWindow:170}, hard:{pins:5,hammerTravel:1050,hammerWindow:110,torqueSpeed:.67,torqueWindow:.048,dualSpeed:190,dualWindow:11,dualLimit:10000,dualRings:4,dualStages:3,echoSteps:7,echoNotes:5,echoBeat:530,echoWindow:135} }; // Shared difficulty presets for independent tuning.
 const game = { mode:'hammer', difficulty:'normal', phase:'ready', elapsed:0, stage:0, misses:0, attempts:0, clock:0, activeDevice:'none', lastInput:'-', lastError:'', model:null, sound:true }; // A single active game prevents background mechanisms and input conflicts.
 const padPrevious = new Map(); // Gamepad-edge history; holding buttons never repeats an action.
 const keysDown = new Set(); // Keyboard-edge history also supports true hold/release on the tension prototype.
@@ -110,10 +112,11 @@ function beep(freq=430,duration=.09,vol=.09,type='triangle') { if(!game.sound) r
 function vibrate(duration=22) { try { const p=navigator.getGamepads?.();for(const item of p||[]){ if(item?.vibrationActuator?.playEffect){ item.vibrationActuator.playEffect('dual-rumble',{duration,startDelay:0,weakMagnitude:.16,strongMagnitude:.09}).catch(()=>{}); break;} } } catch(_) {} }
 function successFX() { beep(650,.09,.11);beep(960,.11,.06);vibrate(); }
 function missFX() { beep(125,.18,.08,'sawtooth');vibrate(50); }
-function setStageMeter() { const total=cfg().pins; let html='<span class="meter-label">LOCK</span>';for(let i=0;i<total;i++)html+=`<span class="meter${i<game.stage?' complete':i===game.stage?' current':''}" aria-label="${i<game.stage?'Complete':i===game.stage?'Current':'Unfinished'} stage ${i+1}"></span>`;html+=`<span class="meter-label" style="margin-left:10px">MISSES ${game.misses}</span>`;ui.meters.innerHTML=html; }
+function stageTotal() { return game.mode==='dual' ? cfg().dualStages : cfg().pins; } // Ring stages are fewer to offset the growing simultaneous catch count.
+function setStageMeter() { const total=stageTotal(); let html='<span class="meter-label">LOCK</span>';for(let i=0;i<total;i++)html+=`<span class="meter${i<game.stage?' complete':i===game.stage?' current':''}" aria-label="${i<game.stage?'Complete':i===game.stage?'Current':'Unfinished'} stage ${i+1}"></span>`;html+=`<span class="meter-label" style="margin-left:10px">MISSES ${game.misses}</span>`;ui.meters.innerHTML=html; }
 function strike(reason) { game.misses++;game.attempts++;missFX();message('Missed the timing',reason,'bad');setStageMeter(); }
-function completeStage() { game.stage++;game.attempts++;successFX();setStageMeter();if(game.stage>=cfg().pins){game.phase='won';message('The lock opens!',`Completed ${LABELS[game.mode]} in ${game.attempts} attempts.`,'good');return true;}return false; }
-function freezeReady() { game.phase='ready';message('Ready to pick', game.mode==='dual'?'Press LB/RB or tap either ring button to begin.':'Press A or tap Start.');ui.primary.firstChild.textContent='Start';ui.primary.classList.remove('held'); }
+function completeStage() { game.stage++;game.attempts++;successFX();setStageMeter();if(game.stage>=stageTotal()){game.phase='won';message('The lock opens!',`Completed ${LABELS[game.mode]} in ${game.attempts} attempts.`,'good');return true;}return false; }
+function freezeReady() { game.phase='ready';message('Ready to pick', game.mode==='dual'?'Press any ring control to begin; then catch every moving notch.':'Press A or tap Start.');ui.primary.firstChild.textContent='Start';ui.primary.classList.remove('held'); }
 const hammer = {
   // A series of physical pins drops to the strike line. Hit A once as each touches the anvil.
   reset() { game.model={ arrival:cfg().hammerTravel, pause:0, pinY:50 }; svgBase(`<g id="hammerTracks"></g><rect x="50" y="232" width="400" height="13" rx="3" fill="#171714" stroke="#c3a36c" stroke-width="2"/><rect x="50" y="227" width="400" height="5" fill="#f2d894" opacity=".75"/><rect x="54" y="215" width="392" height="26" fill="#d5efbf" opacity=".07"/><g id="movingPin"><rect x="-16" y="-29" width="32" height="53" rx="5" fill="url(#steel)" stroke="#f8df9b" stroke-width="2"/><path d="M-12 0 H12 M-12 8 H12" stroke="#4b4438" stroke-width="3"/></g><text x="250" y="270" font-size="14">STRIKE EACH PIN ON THE ANVIL</text>`);const tracks=$('hammerTracks');for(let i=0;i<cfg().pins;i++){const x=85+i*(330/Math.max(1,cfg().pins-1));tracks.insertAdjacentHTML('beforeend',`<rect x="${x-23}" y="40" width="46" height="194" rx="7" fill="#1a1b1a" stroke="#746247" stroke-width="3"/><rect x="${x-12}" y="47" width="24" height="176" rx="4" fill="#3b3630"/><text x="${x}" y="33" font-size="17">${i+1}</text>`);} this.prepare(); },
@@ -130,13 +133,97 @@ const torque = {
   tick(dt) {const m=game.model;if(game.phase!=='playing')return;if(m.cooldown>0){m.cooldown-=dt;return;}if(!m.held)return;const gain=cfg().torqueSpeed*(dt/1000)*(1+.7*m.pressure);m.pressure+=gain;if(m.pressure>=1){m.held=false;m.pressure=0;m.cooldown=530;strike('The spring over-wound and snapped back.');}},
   draw() {const m=game.model;if(!m)return;const angle=p=>220+280*p,half=cfg().torqueWindow;$('torqueTarget')?.setAttribute('d',arc(250,157,115,angle(m.target-half),angle(m.target+half)));$('torqueSweep')?.setAttribute('d',arc(250,157,115,220,angle(Math.max(.001,m.pressure))));$('torqueNeedle')?.setAttribute('transform',`rotate(${(angle(m.pressure)).toFixed(2)} 250 157)`);$('torquePercent').textContent=`${Math.round(m.pressure*100)}%`;ui.primary.classList.toggle('held',!!m.held);},
 };
+const RING_BUTTONS = ['LB · Q', 'RB · E', 'LT · Z', 'RT · C']; // Controller/keyboard hints used by each corresponding ring control.
+const RING_COLORS = ['#ffe0a0', '#aaf0ea', '#f4baae', '#a9c4f3']; // Distinct brass, teal, coral and blue accents tie the rotating rings to their buttons.
+const RING_SPEEDS = [1, -.79, .66, -1.13]; // Alternating direction and different speeds keep every additional ring a distinct timing problem.
+const ringName = (index, count) => count === 2 ? ['Outer', 'Inner'][index] : count === 3 ? ['Outer', 'Middle', 'Inner'][index] : ['Outer', 'Middle 1', 'Middle 2', 'Inner'][index]; // Names match outward-to-inward order for all difficulties.
+const ringRadius = (index, count) => 123 - index * (count === 2 ? 42 : count === 3 ? 33 : 26); // Maintains clear radial gaps for 2–4 rings inside the existing 500×310 viewport.
+function updateRingButtons() {
+  const count = cfg().dualRings; // Used to reveal only the buttons that have a corresponding visible ring.
+  ui.dual.style.setProperty('--ring-count', String(count));
+  ui.rings.forEach((button,index) => {
+    button.hidden = index >= count;
+    button.style.borderColor = RING_COLORS[index];
+    button.replaceChildren(document.createTextNode(`Catch ${ringName(index,count)}`));
+    const hint = document.createElement('small'); // Accessible text hint underneath each touch target.
+    hint.textContent = RING_BUTTONS[index];
+    button.append(hint);
+    button.setAttribute('aria-label', `Catch ${ringName(index,count)} ring, ${RING_BUTTONS[index]}`);
+  });
+}
 const dual = {
-  // Independent shoulder-button timing: stop one spinning ring, then catch the other before the first slips.
-  reset() {game.model={ rings:[], firstCatch:-1, pause:0 };svgBase(`<circle cx="250" cy="159" r="123" fill="#1a1e1e" stroke="#c69d61" stroke-width="15"/><circle cx="250" cy="159" r="94" fill="#33362f" stroke="#74614a" stroke-width="3"/><circle cx="250" cy="159" r="80" fill="#1d2929" stroke="#89c0bd" stroke-width="15"/><circle cx="250" cy="159" r="49" fill="#24241f" stroke="#716648" stroke-width="3"/><circle cx="250" cy="159" r="28" fill="#a58e66" stroke="#3a3225" stroke-width="5"/><path id="outerTarget" stroke="#ffe7ad" stroke-width="17" stroke-linecap="round" fill="none"/><path id="innerTarget" stroke="#aaf0ea" stroke-width="17" stroke-linecap="round" fill="none"/><g id="outerMarker"><rect x="244" y="33" width="12" height="27" rx="3" fill="#ffe0a0"/></g><g id="innerMarker"><rect x="244" y="71" width="12" height="21" rx="3" fill="#b8eee8"/></g><text x="250" y="165" font-size="12">LB  ·  RB</text><text id="dualTimer" x="250" y="189" font-size="12"></text><text x="250" y="271" font-size="13">FREEZE BOTH RINGS BEFORE EITHER SLIPS</text>`);this.newStage();},
-  newStage() {const m=game.model;m.firstCatch=-1;m.rings=[{angle:random(0,360),target:random(0,360),speed:cfg().dualSpeed,frozen:false},{angle:random(0,360),target:random(0,360),speed:-cfg().dualSpeed*.79,frozen:false}];},
-  altDown(which) {const m=game.model;if(game.phase!=='playing'||m.pause>0)return;const r=m.rings[which];if(!r||r.frozen)return;const off=Math.abs(circularDistance(r.angle,r.target));if(off>cfg().dualWindow){strike(`The ${which===0?'outer':'inner'} tumbler missed its notch.`);if(game.misses>=3){game.misses=0;game.stage=Math.max(0,game.stage-1);setStageMeter();}return;}r.frozen=true;beep(which===0?520:740,.09,.11);vibrate();if(m.firstCatch<0)m.firstCatch=game.elapsed;if(m.rings.every(ring=>ring.frozen)){const won=completeStage();if(!won){message('Both tumblers caught!', 'The mechanism clicks forward.','good');m.pause=620;}}else message(`${which===0?'Outer':'Inner'} ring caught!`,'Catch the other ring before the first slips.','good'); },
-  tick(dt) {const m=game.model;if(game.phase!=='playing')return;if(m.pause>0){m.pause-=dt;if(m.pause<=0)this.newStage();return;}for(const r of m.rings)if(!r.frozen)r.angle=wrap(r.angle+r.speed*dt/1000);if(m.firstCatch>=0&&game.elapsed-m.firstCatch>cfg().dualLimit){strike('The first ring slipped while you hunted for the second.');this.newStage();}},
-  draw() {const m=game.model;if(!m)return;for(const [i,label] of ['outer','inner'].entries()){const r=m.rings[i];const radius=i===0?123:80;$(`${label}Target`)?.setAttribute('d',arc(250,159,radius,r.target-cfg().dualWindow,r.target+cfg().dualWindow));const needle=$(`${label}Marker`);needle?.setAttribute('transform',`rotate(${r.angle.toFixed(3)} 250 159)`);needle?.setAttribute('opacity',r.frozen?'0.55':'1');}const left=m.firstCatch<0?null:Math.max(0,cfg().dualLimit-(game.elapsed-m.firstCatch));$('dualTimer').textContent=left==null?'':'SLIP IN '+(left/1000).toFixed(1)+'s';},
+  // Catch a configurable number of independently rotating tumblers before the first captured ring slips.
+  reset() {
+    game.model={rings:[],firstCatch:-1,pause:0};
+    const count=cfg().dualRings;
+    const grooves=[]; // SVG grooves, target arcs and needles are generated from the same radii as the live physics model.
+    for(let i=0;i<count;i++) {
+      const radius=ringRadius(i,count), color=RING_COLORS[i];
+      grooves.push(`<circle cx="250" cy="159" r="${radius}" fill="none" stroke="#161b1c" stroke-width="20"/><circle cx="250" cy="159" r="${radius}" fill="none" stroke="${color}" stroke-opacity=".48" stroke-width="14"/><path id="dualTarget${i}" stroke="${color}" stroke-width="17" stroke-linecap="round" fill="none"/><g id="dualMarker${i}"><rect x="244" y="${159-radius-11}" width="12" height="22" rx="3" fill="${color}" stroke="#201b17" stroke-width="1.5"/></g>`);
+    }
+    svgBase(`<circle cx="250" cy="159" r="137" fill="#1b1d1b" stroke="#b18f60" stroke-width="5"/>${grooves.join('')}<circle cx="250" cy="159" r="27" fill="#a58e66" stroke="#3a3225" stroke-width="4"/><text x="250" y="161" font-size="11">RING LOCK</text><text id="dualTimer" x="250" y="185" font-size="11"></text>`);
+    this.newStage();
+  },
+  newStage() {
+    const m=game.model;
+    m.firstCatch=-1;
+    m.pause=0;
+    m.rings=Array.from({length:cfg().dualRings},(_,i)=>({
+      angle:random(0,360), target:random(0,360),
+      speed:cfg().dualSpeed*RING_SPEEDS[i], frozen:false,
+      radius:ringRadius(i,cfg().dualRings), name:ringName(i,cfg().dualRings)
+    })); // Each ring maintains its own phase, notch and direction across frame ticks.
+  },
+  altDown(which) {
+    const m=game.model;
+    if(game.phase!=='playing'||!m||m.pause>0)return;
+    const ring=m.rings[which];
+    if(!ring||ring.frozen)return;
+    const off=Math.abs(circularDistance(ring.angle,ring.target));
+    if(off>cfg().dualWindow){
+      strike(`${ring.name} ring missed its notch.`);
+      if(game.misses>=3){
+        game.misses=0;
+        game.stage=Math.max(0,game.stage-1);
+        setStageMeter();
+        this.newStage();
+        message('One mechanism slipped!', 'Three misses cost a completed set. Try the current rings again.','bad');
+      }
+      return;
+    }
+    ring.frozen=true;
+    beep(490+which*150,.09,.11);
+    vibrate();
+    if(m.firstCatch<0)m.firstCatch=game.elapsed;
+    const caught=m.rings.filter(item=>item.frozen).length;
+    if(caught===m.rings.length){
+      const won=completeStage();
+      if(!won){message('All rings caught!', `Set ${game.stage} of ${stageTotal()} secured.`,'good');m.pause=620;}
+    }else message(`${ring.name} ring caught!`,`${caught} / ${m.rings.length} rings seated. Catch the rest before they slip.`,'good');
+  },
+  tick(dt) {
+    const m=game.model;
+    if(game.phase!=='playing')return;
+    if(m.pause>0){m.pause-=dt;if(m.pause<=0)this.newStage();return;}
+    for(const ring of m.rings)if(!ring.frozen)ring.angle=wrap(ring.angle+ring.speed*dt/1000);
+    if(m.firstCatch>=0&&game.elapsed-m.firstCatch>cfg().dualLimit){
+      strike('The caught rings slipped before you could secure the others.');
+      this.newStage();
+    }
+  },
+  draw() {
+    const m=game.model;
+    if(!m)return;
+    for(const [i,ring] of m.rings.entries()){
+      $(`dualTarget${i}`)?.setAttribute('d',arc(250,159,ring.radius,ring.target-cfg().dualWindow,ring.target+cfg().dualWindow));
+      const needle=$(`dualMarker${i}`);
+      needle?.setAttribute('transform',`rotate(${ring.angle.toFixed(3)} 250 159)`);
+      needle?.setAttribute('opacity',ring.frozen?'0.52':'1');
+    }
+    const left=m.firstCatch<0?null:Math.max(0,cfg().dualLimit-(game.elapsed-m.firstCatch));
+    const timer=$('dualTimer');
+    if(timer)timer.textContent=left===null?'':(left/1000).toFixed(1)+'s';
+  },
 };
 const echo = {
   // Call-and-response code: listen to a pattern, then reproduce the same timed knocks on the replay timeline.
@@ -153,22 +240,34 @@ const echo = {
   draw() {const m=game.model;if(!m)return;const n=cfg().echoSteps,beat=cfg().echoBeat,slot=m.phase==='listen'?m.litStep:-1;for(let i=0;i<n;i++){const el=$('slot'+i);if(!el)continue;const rect=el.firstElementChild;const reveal=m.phase==='listen'&&m.sequence.includes(i)&&slot===i;const matched=(m.phase==='repeat'||m.phase==='settle')&&m.sequence.slice(0,m.nextExpected).includes(i);rect.setAttribute('fill',reveal?'#e6c37c':matched?'#7fac9a':'#2e2923');rect.setAttribute('stroke',reveal?'#fff0bd':matched?'#c2e8bf':'#9c845d');}const show=m.phase==='repeat',progress=clamp(m.time/(n*beat),0,1);$('echoCursor')?.setAttribute('transform',`translate(${65+370*progress} 202)`);$('echoCursor')?.setAttribute('opacity',show?'1':'0');$('echoBell')?.setAttribute('fill',m.phase==='listen'&&slot>=0&&m.sequence.includes(slot)&&m.time%beat<150?'#fff4bd':'#d6bd87');},
 };
 const variants = { hammer, torque, dual, echo }; // Mode dictionary used only for active-game tick/draw/input calls.
-function changeMode(next) {if(!MODES.includes(next))return;if(game.model?.held)variants[game.mode].primaryUp?.();game.mode=next;game.stage=0;game.misses=0;game.attempts=0;game.elapsed=0;game.phase='ready';game.model=null;ui.title.textContent=LABELS[next];ui.mechanic.textContent={hammer:'A single well-timed strike catches each falling pin.',torque:'Hold tension, then release at the precise spring notch.',dual:'Use LB and RB to catch two independently rotating rings.',echo:'Memorize the knock pattern and replay it with perfect timing.'}[next];const isDual=next==='dual';ui.primary.hidden=isDual;ui.dual.hidden=!isDual;ui.primary.firstChild.textContent='Start';ui.primary.querySelector('small').textContent=next==='torque'?'Hold A / Space, then release':'A · Space · Tap';ui.outer.textContent='Catch Outer';ui.outer.insertAdjacentHTML('beforeend','<small>LB · Q</small>');ui.inner.textContent='Catch Inner';ui.inner.insertAdjacentHTML('beforeend','<small>RB · E</small>');document.querySelectorAll('[data-mode]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.mode===next)));variants[next].reset();freezeReady();setStageMeter();try{const url=new URL(location.href);url.searchParams.set('mode',next);history.replaceState(null,'',url.pathname+url.search+url.hash);}catch(_){} }
+function changeMode(next) {
+  if(!MODES.includes(next))return;
+  if(game.model?.held)variants[game.mode].primaryUp?.();
+  game.mode=next;game.stage=0;game.misses=0;game.attempts=0;game.elapsed=0;game.phase='ready';game.model=null;
+  ui.title.textContent=LABELS[next];
+  ui.mechanic.textContent={hammer:'A single well-timed strike catches each falling pin.',torque:'Hold tension, then release at the precise spring notch.',dual:`Catch ${cfg().dualRings} independently rotating rings using LB/RB${cfg().dualRings>=3?'/LT':''}${cfg().dualRings>=4?'/RT':''}.`,echo:'Memorize the knock pattern and replay it with perfect timing.'}[next];
+  const isDual=next==='dual';ui.primary.hidden=isDual;ui.dual.hidden=!isDual;
+  ui.primary.firstChild.textContent='Start';ui.primary.querySelector('small').textContent=next==='torque'?'Hold A / Space, then release':'A · Space · Tap';
+  updateRingButtons();
+  document.querySelectorAll('[data-mode]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.mode===next)));
+  variants[next].reset();freezeReady();setStageMeter();
+  try{const url=new URL(location.href);url.searchParams.set('mode',next);url.searchParams.set('difficulty',game.difficulty);history.replaceState(null,'',url.pathname+url.search+url.hash);}catch(_){}
+}
 function changeDifficulty(next) {if(!Object.hasOwn(SETTINGS,next))return;game.difficulty=next;document.querySelectorAll('[data-difficulty]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.difficulty===next)));changeMode(game.mode);}
-function start() {if(game.phase==='playing')return;if(game.phase==='won'){changeMode(game.mode);}game.phase='playing';game.elapsed=0;game.misses=0;game.stage=0;game.attempts=0;variants[game.mode].reset();setStageMeter();if(game.mode==='echo'){game.model.phase='listen';}else message('Lock engaged',game.mode==='torque'?'Hold, then release in the gold notch.':game.mode==='dual'?'Use LB and RB to catch the rings.':'Tap when the pin reaches the bright anvil.');ui.primary.firstChild.textContent=game.mode==='torque'?'Hold & Release':game.mode==='echo'?'Knock':'Strike';beep(390,.07,.04);}
+function start() {if(game.phase==='playing')return;if(game.phase==='won'){changeMode(game.mode);}game.phase='playing';game.elapsed=0;game.misses=0;game.stage=0;game.attempts=0;variants[game.mode].reset();setStageMeter();if(game.mode==='echo'){game.model.phase='listen';}else message('Lock engaged',game.mode==='torque'?'Hold, then release in the gold notch.':game.mode==='dual'?`Catch all ${cfg().dualRings} rings before any slip.`:'Tap when the pin reaches the bright anvil.');ui.primary.firstChild.textContent=game.mode==='torque'?'Hold & Release':game.mode==='echo'?'Knock':'Strike';beep(390,.07,.04);}
 function restart() {if(game.model?.held){game.model.held=false;ui.primary.classList.remove('held');}changeMode(game.mode);game.lastInput='Restart';}
-function press(kind,source) {game.lastInput=source+' → '+kind;game.activeDevice=source;if(kind==='restart'){restart();return;}if(kind==='switch-left'||kind==='switch-right'){const idx=MODES.indexOf(game.mode);changeMode(MODES[(idx+(kind==='switch-left'?-1:1)+MODES.length)%MODES.length]);return;}if(kind==='primary'||kind==='outer'||kind==='inner'){if(game.phase!=='playing'){start();if(game.mode!=='torque')return;}if(game.mode==='dual'){if(kind==='outer')dual.altDown(0);else if(kind==='inner')dual.altDown(1);return;}if(kind==='primary')variants[game.mode].primaryDown?.();}}
+function press(kind,source) {game.lastInput=source+' → '+kind;game.activeDevice=source;if(kind==='restart'){restart();return;}if(kind==='switch-left'||kind==='switch-right'){const idx=MODES.indexOf(game.mode);changeMode(MODES[(idx+(kind==='switch-left'?-1:1)+MODES.length)%MODES.length]);return;}if(kind==='primary'||kind==='outer'||kind==='inner'||/^ring[0-3]$/.test(kind)){if(game.phase!=='playing'){start();if(game.mode!=='torque')return;}if(game.mode==='dual'){const ringIndex=kind==='outer'?0:kind==='inner'?1:/^ring[0-3]$/.test(kind)?Number(kind.slice(-1)):-1;if(ringIndex>=0)dual.altDown(ringIndex);return;}if(kind==='primary')variants[game.mode].primaryDown?.();}}
 function release(kind,source){game.lastInput=source+' ↑ '+kind;if(kind==='primary'&&game.mode==='torque')torque.primaryUp();}
 function setupPointer(button,kind) {button.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();button.setPointerCapture?.(event.pointerId);pointers.set(event.pointerId,kind);press(kind,'touch');});const finish=event=>{if(pointers.get(event.pointerId)!==kind)return;pointers.delete(event.pointerId);release(kind,'touch');};button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',finish);button.addEventListener('lostpointercapture',finish);button.addEventListener('click',event=>{event.preventDefault();if(event.detail===0){press(kind,'accessibility');release(kind,'accessibility');}});}
-setupPointer(ui.primary,'primary');setupPointer(ui.outer,'outer');setupPointer(ui.inner,'inner');setupPointer(ui.restart,'restart');
+setupPointer(ui.primary,'primary');ui.rings.forEach((el,i)=>setupPointer(el,'ring'+i));setupPointer(ui.restart,'restart');
 document.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>changeMode(el.dataset.mode)));
 document.querySelectorAll('[data-difficulty]').forEach(el=>el.addEventListener('click',()=>changeDifficulty(el.dataset.difficulty)));
 ui.sound.addEventListener('click',()=>{game.sound=!game.sound;ui.sound.textContent=`Sound: ${game.sound?'On':'Off'}`;ui.sound.setAttribute('aria-pressed',String(game.sound));if(game.sound)beep();});
-const keyActions={Space:'primary',Enter:'primary',KeyQ:'outer',KeyE:'inner',KeyR:'restart',ArrowLeft:'switch-left',ArrowRight:'switch-right'}; // Explicit keys avoid browser focus navigation stealing gameplay actions.
+const keyActions={Space:'primary',Enter:'primary',KeyQ:'ring0',KeyE:'ring1',KeyZ:'ring2',KeyC:'ring3',KeyR:'restart',ArrowLeft:'switch-left',ArrowRight:'switch-right'}; // Explicit keys avoid browser focus navigation stealing gameplay actions.
 window.addEventListener('keydown',event=>{if(event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement)return;if(event.code==='KeyD'){ui.diagnostics.open=!ui.diagnostics.open;return;}if(/^Digit[1-4]$/.test(event.code)){changeMode(MODES[Number(event.code.slice(-1))-1]);return;}const kind=keyActions[event.code];if(!kind)return;event.preventDefault();if(keysDown.has(event.code))return;keysDown.add(event.code);press(kind,'keyboard');});
 window.addEventListener('keyup',event=>{const kind=keyActions[event.code];if(!kind)return;keysDown.delete(event.code);release(kind,'keyboard');});
 window.addEventListener('blur',()=>{for(const code of keysDown)release(keyActions[code],'keyboard-blur');keysDown.clear();if(game.mode==='torque'&&game.model?.held)torque.primaryUp();});
-const buttonKind={0:'primary',1:'restart',4:'outer',5:'inner',14:'switch-left',15:'switch-right'}; // Standard Gamepad API button numbers for controller A/B/LB/RB/D-pad.
+const buttonKind={0:'primary',1:'restart',4:'ring0',5:'ring1',6:'ring2',7:'ring3',14:'switch-left',15:'switch-right'}; // Standard Gamepad API button numbers for controller A/B/LB/RB/D-pad.
 function pollGamepads(){try{const pads=navigator.getGamepads?.()||[];let active=null;for(const pad of pads){if(!pad||pad.connected===false)continue;if(!active)active=pad;if([...Object.keys(buttonKind)].some(i=>pad.buttons?.[Number(i)]?.pressed)){active=pad;break;}}const codeNow=new Set();if(active){for(const [index,kind] of Object.entries(buttonKind)){const code=Number(index);if(active.buttons?.[code]?.pressed||Number(active.buttons?.[code]?.value)>0.55)codeNow.add(code);}for(const code of codeNow)if(!padPrevious.has(code))press(buttonKind[code],'controller');for(const code of padPrevious.keys())if(!codeNow.has(code))release(buttonKind[code],'controller');game.activeDevice='controller';}else{for(const code of padPrevious.keys())release(buttonKind[code],'disconnect');}padPrevious.clear();for(const code of codeNow)padPrevious.set(code,true);}catch(e){game.lastError='Gamepad: '+e.message;}}
 function draw() {variants[game.mode].draw?.();}
 function tick(dt) {if(game.phase!=='playing')return;game.elapsed+=dt;variants[game.mode].tick?.(dt);}
@@ -189,7 +288,7 @@ function runTests(){
   check('Target window inclusion',Math.abs(circularDistance(359,1))<=3);
   check('Timing window exclusion',Math.abs(400-600)>SETTINGS.normal.hammerWindow);
   check('All mode implementations present',MODES.every(m=>typeof variants[m].tick==='function'&&typeof variants[m].draw==='function'));
-  check('All three difficulties valid',Object.values(SETTINGS).every(s=>s.pins>1&&s.dualWindow>0&&s.echoWindow<s.echoBeat/2));
+  check('All three difficulties valid',Object.values(SETTINGS).every(s=>s.pins>1&&s.dualWindow>0&&s.echoWindow<s.echoBeat/2&&s.dualRings>=2&&s.dualRings<=4));
   for(const mode of MODES){
     changeMode(mode);check(mode+' reset is ready',game.phase==='ready'&&game.stage===0);
     start();check(mode+' start transitions to playing',game.phase==='playing'&&!!game.model);
@@ -199,22 +298,36 @@ function runTests(){
   changeMode('torque');start();press('primary','test');
   while(game.model.pressure<game.model.target&&game.phase==='playing')advanceForTest(10);
   release('primary','test');check('Spring Tension successful release seats one tumbler',game.stage===1);
-  changeMode('dual');start();game.model.rings[0].angle=game.model.rings[0].target;press('outer','test');
-  game.model.rings[1].angle=game.model.rings[1].target;press('inner','test');
-  check('Twin Tumblers requires and accepts both catches',game.stage===1);
+  changeMode('dual');start();
+  for(const [i,ring] of game.model.rings.entries()){ring.angle=ring.target;press('ring'+i,'test');}
+  check('Ring Tumblers accepts all the current difficulty rings',game.stage===1);
+  for(const [level,count] of [['easy',2],['normal',3],['hard',4]]){
+    changeDifficulty(level);changeMode('dual');start();
+    check(`${level} builds ${count} independent rings`,game.model.rings.length===count&&ui.rings.filter(button=>!button.hidden).length===count);
+    check(`${level} renders all ring target arcs`,game.model.rings.every((_,i)=>!!$(`dualTarget${i}`)&&!!$(`dualMarker${i}`)));
+    game.model.rings[0].angle=game.model.rings[0].target;
+    press('ring0','test');
+    const frozenBefore=game.model.rings.filter(r=>r.frozen).length;
+    press('ring0','test');
+    check(`${level} ignores repeated presses on a seated ring`,game.model.rings.filter(r=>r.frozen).length===frozenBefore);
+    advanceForTest(cfg().dualLimit+50);
+    check(`${level} slip releases all rings`,game.model.rings.every(r=>!r.frozen)&&game.phase==='playing');
+    for(let i=0;i<count;i++){game.model.rings[i].angle=game.model.rings[i].target;press('ring'+i,'test');}
+    check(`${level} completing ${count} rings advances one stage`,game.stage===1);
+  }
   changeMode('echo');start();game.model.phase='repeat';game.model.time=0;
   for(const note of [...game.model.sequence]){
     advanceForTest((note+.5)*cfg().echoBeat-game.model.time);
     press('primary','test');
   }
   check('Echo Code accepts the copied rhythm',game.stage===1);
-  changeMode(before);game.difficulty=beforeLevel;game.sound=beforeSound;
+  game.sound=beforeSound;changeDifficulty(beforeLevel);changeMode(before);
   ui.test.textContent=checks.join('\n')+`\n${checks.every(v=>v.startsWith('PASS'))?'ALL CHECKS PASS':'TESTS FAILED'}`;
   return checks;
 }
 $('runTests').addEventListener('click',runTests);$('copyDebug').addEventListener('click',()=>{const content=ui.debug.textContent+'\n'+ui.test.textContent;const fallback=()=>{ui.test.textContent='Copy unavailable; the text above is selectable.';};try{navigator.clipboard?.writeText(content).catch(fallback)||fallback();}catch(_){fallback();}});
-window.LockpickingLab=Object.freeze({snapshot:()=>({mode:game.mode,phase:game.phase,stage:game.stage,misses:game.misses,elapsed:game.elapsed,difficulty:game.difficulty,model:JSON.parse(JSON.stringify(game.model||{}))}),select:changeMode,difficulty:changeDifficulty,start,press,release,restart,selfTest:runTests,advanceForTest}); // Developer/QA API is optional and never required for play.
-const query=new URLSearchParams(location.search);const initial=query.get('mode');changeMode(MODES.includes(initial)?initial:'hammer');if(query.get('debug')==='1')ui.diagnostics.open=true;if(query.get('selftest')==='1'){ui.diagnostics.open=true;runTests();}requestAnimationFrame(frame);
+window.LockpickingLab=Object.freeze({snapshot:()=>({mode:game.mode,phase:game.phase,stage:game.stage,misses:game.misses,attempts:game.attempts,elapsed:game.elapsed,difficulty:game.difficulty,model:JSON.parse(JSON.stringify(game.model||{}))}),select:changeMode,difficulty:changeDifficulty,start,press,release,restart,selfTest:runTests,advanceForTest}); // Developer/QA API is optional and never required for play.
+const query=new URLSearchParams(location.search);const initial=query.get('mode');const initialDifficulty=query.get('difficulty');if(Object.hasOwn(SETTINGS,initialDifficulty))game.difficulty=initialDifficulty;document.querySelectorAll('[data-difficulty]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.difficulty===game.difficulty)));changeMode(MODES.includes(initial)?initial:'hammer');if(query.get('debug')==='1')ui.diagnostics.open=true;if(query.get('selftest')==='1'){ui.diagnostics.open=true;runTests();}requestAnimationFrame(frame);
 })();
 </script>
 </body>
