@@ -164,7 +164,7 @@
       const comboStep = comboIndex % steps.length;
       const step = steps[comboStep];
       const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
-      const qualifiedTargets = isFinisher ? new Set([...firstHits].filter(target => secondHits.has(target))) : new Set(); // Same enemy must have taken BOTH consecutive setup attacks.
+      const qualifiedTargets = isFinisher ? new Set([...firstHits].filter(target => secondHits.has(target) && target.health > 0 && target.areaId === deps.getCurrentArea())) : new Set(); // Dead/area-transferred enemies cannot empower a new finisher.
       const finisherEffects = qualifiedTargets.size ? window.CombatProgression?.getEffects(weaponKey, id + 'Finisher', { includePerks: false }) : null; // Scroll-unlocked Quick Attack payload; inert without a connected chain.
       const finisherStats = finisherEffects?.stats || {}; // Only non-damage geometry/cost choices apply to the whole qualified swing.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
@@ -347,7 +347,7 @@
           // silent: every swing already has its own weapon swing/impact
           // sfx — the generic confirm/error chime on top of that, on every
           // single hit or miss, was redundant and noisy.
-          deps.showToast(msg, hits > 0 || vegetationCleared > 0, true);
+          deps.showToast(specialProcs > 0 ? `${msg} — Special Finisher!` : msg, hits > 0 || vegetationCleared > 0, true); // Only a confirmed third-hit proc earns the special announcement.
           if (hits > 0) {
             window.PlayerLunge?.confirmEnemyHit?.(); // A real enemy hit grants the one-second slow-fall aerial follow-up window; misses grant nothing.
             deps.awardWeaponMasteryXp();
@@ -364,6 +364,7 @@
           }),
         },
       });
+      if (!busyAction) { comboIndex = 0; firstHits.clear(); secondHits.clear(); } // Failed action creation must not preserve phantom setup hits.
     }
 
     window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
