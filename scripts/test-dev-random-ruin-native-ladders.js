@@ -17,8 +17,9 @@ const makeRoot=(children=[])=>({parent:{},traverse(visit){
 const low={userData:{generatedAccessType:'stoneLadder',ladderHeight:1.5},floor:0,x:10,z:10};
 const high={userData:{generatedAccessType:'stoneLadder',ladderHeight:1.5},floor:4,x:10,z:10};
 const base=makeRoot([low]),native=makeRoot([high]);
-let physicalY=0,tagged=0,climbed=null,nativeAvailable=true;
+let physicalY=0,tagged=0,climbed=null,nativeAvailable=true,now=0;
 const frame={
+  performance:{now:()=>now}, // The shipped semantic scanner defaults to performance.now when checking its 250ms cache.
   root:base,preparedRoot:null,ladders:[],lastSemanticScanAt:-Infinity,
   SEMANTIC_RESCAN_MS:250,LADDER_RANGE:1.7,
   ruinRoot:()=>base,tagLadder:()=>{tagged++;},
@@ -51,8 +52,8 @@ assert.equal(frame.climbLadder(low),true);
 assert.equal(climbed.startWorldY,0,'climb starts at physical support, not the highest DynamicSurfaces floor or player mesh Y');
 physicalY=4;
 assert.equal(frame.nearestLadder()?.ladder,high,'the upper-story ladder wins when the player climbs up');
-nativeAvailable=false;native.parent=null;
-frame.prepareSemanticObjects(300);
+nativeAvailable=false;native.parent=null;now=300;
+frame.prepareSemanticObjects(now);
 assert.equal(frame.ladders.length,1,'native ladder registrations disappear after upper-floor teardown');
 assert.equal(frame.nearestLadder(),null,'upper-story player cannot select a lower-story ladder after teardown');
 console.log('ok V50 native ladders: both story roots scanned, nearest by physical Y, correct climb height, native cleanup');
