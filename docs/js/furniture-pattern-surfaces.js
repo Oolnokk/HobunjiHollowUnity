@@ -89,7 +89,7 @@
     host.appendChild(controls);
     // Keep arrows in both game furniture/rug menus and standalone furniture authoring tools.
     const addArrows = window.PatternQuickControls?.addArrowButtons || (node => {
-      for (const slider of node.querySelectorAll('input[type="range"]')) {
+      for (const slider of node.querySelectorAll?.('input[type="range"]') || []) {
         if (slider.dataset.arrowButtons) continue;
         slider.dataset.arrowButtons = 'yes';
         const wrap = document.createElement('span'); // Slider remains intact between native controller-focusable buttons.
