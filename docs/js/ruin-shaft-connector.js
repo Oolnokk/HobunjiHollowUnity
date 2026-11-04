@@ -72,11 +72,13 @@
     const mouth={x:Math.floor(placed.grid.colToX(placed.entrance.col+.5)),z:Math.floor(placed.grid.rowToZ(placed.entrance.row+.5))};
     const cols=Math.max(oldCols,Math.ceil(placed.grid.colToX(placed.cols))+3),rows=Math.max(oldRows,Math.ceil(placed.grid.rowToZ(placed.rows))+3);
     const mainBounds=authoredExit
-      ?{minX:0,minZ:0,maxX:oldCols,maxZ:authoredExit[1]+1} // Protect the fixed vault's walls while allowing its intentionally open final doorway.
-      :{minX:pad,minZ:pad,maxX:pad+(Number(meta.worldWidth)||0)*tileScale,maxZ:pad+(Number(meta.worldDepth)||0)*tileScale};
+      ?{minX:0,minZ:0,maxX:oldCols,maxZ:authoredExit[1]+1} // The fixed vault's authored walls end at its single south opening.
+      :null; // V50 entrance is at a ROOM edge, not necessarily the full layout edge. Existing occupied cells, not the overall rectangle, are the obstacles.
     const shaftBounds={minX:originX,minZ:originZ,maxX:originX+placed.cols,maxZ:originZ+placed.rows};
     const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:oldFloor,mainBounds,shaftBounds,maxX:cols,maxZ:rows});
-    if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason);
+    if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason+
+      ' (entry '+entrance.x+','+entrance.z+' → '+mouth.x+','+mouth.z+
+      '; main cells '+oldCols+'×'+oldRows+'; blocked floors '+oldFloor.size+')');
     // Avoid mutating the real map until the entire shaft/route has passed its proofs.
     const added=new Set(); // Used by the visual, support registration and mobile debug.
     const mark=(c,r)=>{const id=key(c,r);if(oldFloor.has(id)||added.has(id))return;added.add(id);};
