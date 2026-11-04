@@ -120,18 +120,18 @@ async function runtimePortraitSet(){
     await window.NpcAvatarPreview.renderProfileToCanvas(
       head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
     );
-    if(fitRegion()==='headwear'){
-      const isolatedFighter={...profile.fighter,
-        id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
-        headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
-        bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
-      }; // resolvePortraitFighter falls back by matching headUrl even when the ID is unique.
-         // A URL fragment keeps the actual sprite fetch identical but prevents accidental canonical full-body resolution.
-      const headProfile={...profile,fighter:isolatedFighter};
-      headOnlyFront=make();headOnlyBack=make();
-      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
-      await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyBack,headProfile,{seatId:'clothing-fit-head-back',portraitView:'behind',forceEyesOpen:true});
-    }
+    // The front game draws torso clothing and overwear before the head. Keep a
+    // head-only render for *both* fit regions so clothing overlays can restore
+    // the game's head/UR depth order without duplicating its portrait math.
+    const isolatedFighter={...profile.fighter,
+      id:`__clothing_fit_head_only_${safeName(E.species.value)}_${E.gender.value}`,
+      headUrl:profile.fighter?.headUrl?`${profile.fighter.headUrl}#clothing-fit-head-only`:null,
+      bodyLayers:[],opacityMaskLayer:null,fixedPortraitSlots:null
+    }; // Prevents canonical full-body lookup from replacing the isolated fighter.
+    const headProfile={...profile,fighter:isolatedFighter};
+    headOnlyFront=make();headOnlyBack=make();
+    await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyFront,headProfile,{seatId:'clothing-fit-head-front',forceEyesOpen:true});
+    await window.NpcAvatarPreview.renderProfileToCanvas(headOnlyBack,headProfile,{seatId:'clothing-fit-head-back',portraitView:'behind',forceEyesOpen:true});
     return{npc,profile,front,back,head,headOnlyFront,headOnlyBack,size};
   })();
   R.three.portraitCache.set(cacheKey,promise);
