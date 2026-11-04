@@ -23,6 +23,14 @@ const T=w.TrinketSystem,E=w.DoubleEdgedCombatTrinkets;
 const names=['unstableBalance','glassFang','leadKnuckles','bloodrush','ironAnchor','hollowLungs',
   'falseCourage','fracturedGuard','venomousBlood','berserkersBargain','shatterheart','deathsMomentum','gamblersEye'];
 const loot=read('docs/config/loot/loot-pools.json');
+const game=read('docs/game.js'); // Extracts the real Health/Footing routing rather than treating modifier fields as sufficient proof.
+const gameHitMarker='function hitResourceDamage(amount, dmgOpts) {'; // Exact utility invoked by actual damageCreature and damagePlayer.
+const gameHitStart=game.indexOf(gameHitMarker); // Finds the shared routing helper inside the large game closure.
+assert(gameHitStart>=0,'missing game.js resource damage routing');
+const gameHitEnd=game.indexOf('\n      }',gameHitStart); // The routing function ends at this indented closing brace.
+assert(gameHitEnd>gameHitStart,'missing game.js hitResourceDamage closing brace');
+const gameHitSource=game.slice(gameHitStart,gameHitEnd+8); // Self-contained function uses only window config and Number.
+const realHitResources=vm.runInNewContext(gameHitSource+'\n hitResourceDamage;', {window:w,Number}); // Executes the real damage-to-Footing formula after trinket modification.
 for(const name of names){const def=T.DEFINITIONS[name];assert(def,'missing '+name);
   assert.equal(def.category,'combat');assert(def.attunementCost>=1&&def.attunementCost<=2);
   assert.equal(def.source,undefined);assert(!loot.includes('trinket_'+name),'no loot entries for '+name);}
@@ -31,10 +39,16 @@ const unwear=id=>assert(T.unequip(id));
 const hit=(options={},target={health:100,prone:false},sourceX=0,sourceY=0)=>{
   calls.length=0;w.Combat.deps.damageCreature(target,10,sourceX,sourceY,0,options);assert.equal(calls.length,1);return calls[0];};
 let u=wear('unstableBalance');assert.equal(hit().options.footingDamageMultiplier,1.25);
-player.footing=100;R.spendFooting(player,20);assert.equal(player.footing,75);unwear(u);
+player.footing=100;R.spendFooting(player,20);assert.equal(player.footing,75);
+const unstableHit=hit(); // Verify the final Footing routed into game.js before ResourceSystem protection.
+assert.equal(realHitResources(unstableHit.amount,unstableHit.options).footing,12.5);
+unwear(u);
 u=wear('glassFang');let h=hit({afflictionBonuses:{bruisedHealth:.4}});
 assert.equal(h.amount,14);assert(Math.abs(h.options.footingDamageMultiplier-1/1.4)<1e-8);
 assert(Math.abs(h.options.afflictionBonuses.bruisedHealth-.4/1.4)<1e-8);
+assert.equal(realHitResources(h.amount,h.options).health,14,'Glass Fang boosts actual direct Health');
+assert.equal(realHitResources(h.amount,h.options).footing,10,'Glass Fang must not boost actual Footing');
+assert(Math.abs(h.amount*h.options.afflictionBonuses.bruisedHealth-4)<1e-8,'Glass Fang must not boost actual affliction buildup');
 player.health=100;R.applyDamage(player,10);assert.equal(player.health,87);
 assert.equal(hit({environmentalImpact:true}).amount,10,'Environmental collision damage must not inherit wearer bonuses');
 unwear(u);
