@@ -44,6 +44,7 @@
     landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
     chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
+    portals: null, // Optional floor-local wing door requests: {floor,side}, kept separate from climb buttress doors.
     originX: 0, originZ: 0, baseY: 0,
   });
 
@@ -51,8 +52,8 @@
   const inOctagon = (c,r,lo,hi,cut) => c>=lo&&r>=lo&&c<=hi&&r<=hi&&c+r>=2*lo+cut&&c+r<=2*hi-cut&&c-r<=hi-lo-cut&&r-c<=hi-lo-cut;
 
   // Cells of a side's buttress, its door tunnel and the front row (the climbable one), in grid coordinates.
-  function sideGeometry(side, o, cols, rows) {
-    const mid = o.wall + (o.shaft - 1) / 2, half = Math.floor(o.length / 2);
+  function sideGeometry(side, o, cols, rows, offset = 0) {
+    const mid = o.wall + (o.shaft - 1) / 2 + offset, half = Math.floor(o.length / 2);
     const span = [];
     for (let k = -half; k <= half; k++) span.push(mid + k);
     const lo = o.wall, hi = o.wall + o.shaft - 1; // interior extent on both axes
@@ -156,8 +157,34 @@
       grid.fillBox(cell.c,cell.r,0,cell.c,cell.r,1,KIND.AIR);
     const entrance = { side: entranceSide, level: 0, col: eg.edge.c, row: eg.edge.r, inside: eg.tunnel[0], outward: OUTWARD[entranceSide] };
 
+    // Every requested wing gets its own open, two-cell-high tunnel on its floor.
+    // Keep wing doors offset from central climbing buttresses and from the
+    // original western entrance. This leaves the climb route intact across
+    // all 3–5 stories, including the corner shared by the last balcony.
+    const wingPortals = []; // Physical level-specific passage endpoints consumed by the 2D wing builder.
+    const portalKeys = new Set(); // Reject duplicate floor/side openings at the same wall.
+    const portalOffset = Math.max(1, Math.min(8, Math.floor((o.shaft-1)/2)-Math.floor(o.shaft*.19)-2));
+    for (const request of Array.isArray(o.portals) ? o.portals : []) {
+      const floor = Number(request?.floor), side = String(request?.side || '').toUpperCase();
+      if (!Number.isInteger(floor) || floor < 0 || floor >= o.floors || !SIDES.includes(side))
+        throw new Error('Shaft wing portal has invalid floor or side.');
+      const id = floor + ':' + side;
+      if (portalKeys.has(id)) throw new Error('Duplicate shaft wing portal ' + id);
+      portalKeys.add(id);
+      const level = floor * o.spacing;
+      const geometry = sideGeometry(side, { ...o, depth: 1, length: 1 }, cols, rows, portalOffset);
+      for (const t of geometry.tunnel)
+        grid.fillBox(t.c, t.r, level, t.c, t.r, level + 1, KIND.AIR);
+      wingPortals.push({
+        id, floor, side, offset: portalOffset, level,
+        col: geometry.edge.c, row: geometry.edge.r,
+        inside: geometry.tunnel[0], tunnel: geometry.tunnel.map(t => ({col:t.c,row:t.r})),
+        outward: OUTWARD[side],
+        world: {x:grid.colToX(geometry.edge.c + .5), z:grid.rowToZ(geometry.edge.r + .5), y:grid.levelToY(level)}
+      });
+    }
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, surfaces, checks: [],
+    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
@@ -216,6 +243,16 @@
       add(`door${d.balcony}Reachable`, reach.has(d.col, d.row, d.level), 'the door’s outer end is reachable from the entrance');
       if (d.chamber.length) add(`door${d.balcony}ChamberReachable`, d.chamber.every(cell => reach.has(cell.col,cell.row,d.level)), 'all chamber cells are reachable at balcony height');
       add(`door${d.balcony}Clear`, d.tunnel.every(t => !grid.isSolid(t.col, t.row, d.level) && !grid.isSolid(t.col, t.row, d.level + 1)), 'the tunnel is open 2 cells high from the balcony to the outside');
+    }
+    for (const p of result.wingPortals || []) {
+      add('wingPortal-' + p.id + '-clear',
+        p.tunnel.every(t => grid.canStand(t.col,t.row,p.level)),
+        'a full-height physical tunnel has a continuous level-specific floor');
+      add('wingPortal-' + p.id + '-reachable', reach.has(p.col,p.row,p.level),
+        'the wing doorway connects by walking and climbing to the main entrance');
+      add('wingPortal-' + p.id + '-outside',
+        p.col === 0 || p.row === 0 || p.col === result.cols-1 || p.row === result.rows-1,
+        'the wing passage reaches the octagon exterior');
     }
     if (o.landings) add('landingsEnclosed', doors.every(d => grid.isSolid(d.col+d.outward.c,d.row+d.outward.r,d.level)), 'each corridor terminates inside the shaft shell');
     else add('doorsOutside', doors.every(d => d.col === 0 || d.row === 0 || d.col === result.cols - 1 || d.row === result.rows - 1), 'every door ends at the edge of the hub, where a corridor can attach');
