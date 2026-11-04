@@ -29,15 +29,24 @@ function startOptionalThreePreview(){
     return false;
   }
 } // Hardware/WebGL failures cannot interrupt independent 2D fitting and export.
+async function withThreePreviewDeadline(promise,timeoutMs,step){
+  let timer;
+  try{
+    return await Promise.race([
+      promise,
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(step+' exceeded '+Math.round(timeoutMs/1000)+' seconds; 2D fitting remains available. Tap Retry runtime to try again.')),timeoutMs)})
+    ]);
+  }finally{clearTimeout(timer)}
+} // A slow third-party 3D dependency cannot leave the preview in an infinite loading state.
 async function updateThreePreview(){
   if(!R.body||!startOptionalThreePreview())return;
   const buildId=++R.three.buildGeneration;
   try{
-    await ensureRigRuntime();
+    await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
     E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
 
-    const avatar=await composeRuntimePortrait();
+    const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
     if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
       const reference=canonicalHeadReference(avatar.headOnlyFront);
