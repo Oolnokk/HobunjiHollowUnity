@@ -53,7 +53,7 @@ for(const floors of [3,4,5]) for(const seed of [1,2,3,5,8,13,21,34]){
   assert.equal(r.cols,49);
   assert.equal(r.entrance.side,'W');
   assert(!r.grid.isSolid(0,0,1),'octagon must visibly clip the square shell corners');
-  assert(r.grid.isSolid(0,Math.floor(r.rows/2),1),'outer wall is solid');
+  assert(r.grid.isSolid(0,Math.floor(r.rows/2),2),'the wall remains solid above the ground entrance');
   assert.equal(r.balconies.length,floors-1);
   const reach=H.reachable(r);
   for(const story of r.stories.slice(1)){
