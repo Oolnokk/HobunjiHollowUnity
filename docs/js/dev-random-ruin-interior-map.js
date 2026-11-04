@@ -1612,8 +1612,16 @@
     const hachutu=ruin.hachutu?window.DevHachutuRuin?.brief?.():null; // A compact mobile-facing meter; full detailed snapshot remains accessible on the Dev Ruin API.
     setDebugBadgePart('hachutu',hachutu?(' · Hachutu weeds '+hachutu.weeds+'/3, wave '+hachutu.wave+'/3, boss '+hachutu.boss+' · root '+hachutu.tear+(hachutu.issue?' · ERR '+hachutu.issue.slice(0,120):'')):'');
     const layers=ruin.shaftLayerRuntime?.getState?.(); // Visible mobile count reflects instantiated gameplay, never just planning metadata.
-    setDebugBadgePart('shaft',layers?(' · shaft '+layers.floors+' floors · physical hall '+ruin.shaftConnection.length+' cells · '+layers.wings+' playable wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+' · braziers '+layers.lit+'/'+layers.braziers+(layers.pendingRuntimeLinks?.length?' · HOOK? '+layers.pendingRuntimeLinks.map(link=>link.kind+'@'+link.wingId).join(','):'')
-      ):ruin.shaftConnection?(' · shaft '+ruin.shaftConnection.floorCount+' floors · physical hall '+ruin.shaftConnection.length+' cells'):ruin.shaftGrids?.size?' · shaft: elevation-aware walls/climbs':'');
+    const layerBadge=layers?(' · shaft '+layers.floors+' floors · physical hall '+ruin.shaftConnection.length+
+      ' cells · '+layers.wings+' wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+
+      ' · braziers '+layers.lit+'/'+layers.braziers+
+      ' · rope '+layers.ropeChainsLinked+' ('+layers.floorlessCells+' void tiles)'+
+      ' · statue '+layers.defenseRoomsReady+' ready'+
+      (layers.defenseErrors?.length?' · STATUE ERR '+layers.defenseErrors.map(d=>d.id+': '+d.error).slice(0,2).join('; ').slice(0,210):'')+
+      (layers.pendingRuntimeLinks?.length?' · HOOK? '+layers.pendingRuntimeLinks.slice(0,4).map(link=>link.kind+'@'+link.wingId).join(','):''))
+      :ruin.shaftConnection?(' · shaft '+ruin.shaftConnection.floorCount+' floors · physical hall '+ruin.shaftConnection.length+' cells')
+      :ruin.shaftGrids?.size?' · shaft: elevation-aware walls/climbs':''; // Mobile diagnostic without opening a devtools console.
+    setDebugBadgePart('shaft',layerBadge);
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
