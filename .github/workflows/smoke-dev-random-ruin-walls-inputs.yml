@@ -170,9 +170,10 @@ jobs:
                 const scene = window.GridTileAccessors.getActiveScene();
                 const camera = window.__ruinSmokeRenderedCamera;
                 const walls = [];
-                scene.traverse(object => {
+                const sourceRoot = scene.children.find(object => /^dev_v50_ruin_/.test(object?.name || '')); // Match the same authoritative entrance-floor root used by DevRandomRuinWallPlanes.snapshot().
+                sourceRoot?.traverse(object => {
                   if (object.userData?.ruinInteriorWall === true && object.isMesh) walls.push(object);
-                });
+                }); // Upper V50 floors are separately mounted scene roots; their additional walls must not inflate this single-root parity check.
                 if (!renderer || !scene || !camera || !walls.length) {
                   return { changedPixels:0, totalDelta:0, wallCount:walls.length, width:0, height:0 };
                 }
