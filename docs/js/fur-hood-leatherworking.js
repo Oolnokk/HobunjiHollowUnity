@@ -52,6 +52,28 @@
     const match = String(value || '').trim().match(/^#?([a-f0-9]{6})$/i);
     return match ? '#' + match[1].toLowerCase() : null;
   }
+  function trimHexForName(name) {
+    const palettes = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {}; // Authoritative genotype color names resolve to a trim pigment at render time.
+    const wanted = String(name || '').trim().toLowerCase(); // The literal fur-lined article stores only this name, not a source species or genotype.
+    if (!wanted) return null;
+    for (const palette of Object.values(palettes)) {
+      if (!Array.isArray(palette)) continue;
+      const entry = palette.find(color => String(color?.name || '').trim().toLowerCase() === wanted);
+      if (entry) return colorHex(entry.hex);
+    }
+    return null;
+  }
+  function trimColorNameFor(record) {
+    const hex = colorHex(record?.genotype?.base?.color || record?.appearance?.baseColor);
+    if (!hex) return null;
+    const palettes = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.palettes || {}; // Exact palette identity prevents inventing a fur name from a near-but-different shade.
+    for (const palette of Object.values(palettes)) {
+      if (!Array.isArray(palette)) continue;
+      const entry = palette.find(color => colorHex(color?.hex) === hex);
+      if (entry) return entry.name;
+    }
+    return null;
+  }
   async function ensureManifest() {
     if (!loading) loading = fetch(manifestUrl).then(response => {
       if (!response.ok) throw new Error('Fur-hood manifest HTTP ' + response.status);
@@ -301,8 +323,10 @@
     overlay.innerHTML = '<section class="furhood-dialog" role="dialog" aria-modal="true" aria-label="Loom leatherworking">' +
       '<header><h2>Leatherworking · Fur Hoods</h2><button data-action="close" aria-label="Close">✕</button></header>' +
       '<nav><button data-action="cloth">Cloth weaving</button><button class="selected" disabled>Leatherworking</button></nav>' +
+      '<label>Hood style<select data-field="hood-kind"><option value="fur_lined_hood">Fur-lined Hood</option><option value="fur_hood">Species Fur Hood (trophy)</option></select></label>' +
+      '<label data-dye-row>Hood fabric dye<select data-field="dye"></select></label>' +
       '<label>Choose an individual hide from your pack<select data-field="hide"></select></label>' +
-      '<p class="furhood-help">Each animal species requires its own 2-Mote Crafting Mastery unlock. Natural coats cannot be dyed. Only the selected hide is consumed. Expressed markings keep their genetic colors; custom dyed weaving is added later by reweaving the hood in the ordinary loom.</p>' +
+      '<p class="furhood-help">Fur-lined Hood: dye the simple hood fabric; the trim takes only the selected hide\'s genotype base color. No species unlock or species-specific art. The older trophy Fur Hood still uses full hide markings and requires its species unlock.</p>' +
       '<div class="furhood-preview"><canvas data-view="preview" width="1" height="1"></canvas></div>' +
       '<div class="furhood-unlock"><button data-action="unlock" type="button">Unlock species · 2 Motes</button></div>' +
       '<div class="furhood-row"><button data-action="view">View behind</button><button data-action="craft">Craft fur hood</button></div>' +
@@ -318,11 +342,23 @@
       '.furhood-dialog button.selected{background:#416b54}.furhood-dialog button:disabled{opacity:.6}.furhood-help{font-size:12px;line-height:1.45;color:#c2d5c8}' +
       '.furhood-preview{min-height:200px;display:grid;place-items:center;background:#101915;margin:9px 0;border:1px solid #436857}' +
       '.furhood-preview canvas{max-width:100%;max-height:280px;image-rendering:pixelated}.furhood-row button{flex:1}.furhood-unlock{margin:8px 0}.furhood-unlock button{width:100%}' +
-      '.furhood-dialog output{display:block;white-space:pre-wrap;min-height:35px;font-size:12px;color:#c3e4d1;margin-top:7px}';
+      '.furhood-dialog [hidden]{display:none!important}.furhood-dialog output{display:block;white-space:pre-wrap;min-height:35px;font-size:12px;color:#c3e4d1;margin-top:7px}';
     overlay.appendChild(style);
     document.body.appendChild(overlay);
     activePanel = overlay;
     const select = overlay.querySelector('[data-field="hide"]');
+    const kindSelect = overlay.querySelector('[data-field="hood-kind"]'); // Selects the new color-only trim recipe versus the original species-art trophy hood.
+    const dyeSelect = overlay.querySelector('[data-field="dye"]'); // Ordinary owned fabric dye colors only the simplehood sprite, never its fur trim.
+    window.DyeSystem?.ensureCollection?.();
+    const dyes = (window.DyeSystem?.getCatalog?.() || []).filter(dye => window.DyeSystem?.owns?.(dye.id) && colorHex(dye.hex)); // No new dye unlock or special recipe is introduced.
+    for (const dye of dyes) {
+      const option = document.createElement('option');
+      option.value = dye.id;
+      option.textContent = dye.label;
+      dyeSelect.appendChild(option);
+    }
+    const isLined = () => kindSelect.value === 'fur_lined_hood';
+    const selectedDye = () => dyes.find(dye => dye.id === dyeSelect.value) || null;
     const status = overlay.querySelector('[data-field="status"]');
     const preview = overlay.querySelector('[data-view="preview"]');
     const craftButton = overlay.querySelector('[data-action="craft"]'); // Disabled until the selected hide's animal species is learned.
@@ -332,10 +368,14 @@
     let view = 'front'; // Shared with the View Behind button while this overlay is open.
     let revision = 0; // Rejects late async render completions after hide switching or panel close.
     const chosen = () => choices[Number(select.value)] || null;
+    const recipeKind = () => isLined() ? 'fur_lined_hood' : HOOD_ID; // Passed to the normal cosmetic and icon compositors.
     const unlockStatus = choice => {
       const kind = choice?.furHood?.kind; // The exact selected hide species controls both the visible button and authoritative craft check.
-      craftButton.disabled = !kind || !hasSpeciesUnlock(kind);
-      unlockButton.hidden = !kind || hasSpeciesUnlock(kind);
+      overlay.querySelector('[data-dye-row]').hidden = !isLined();
+      craftButton.textContent = isLined() ? 'Craft fur-lined hood' : 'Craft species fur hood';
+      craftButton.disabled = !kind || (isLined() ? !selectedDye() || !trimColorNameFor(choice?.record) : !hasSpeciesUnlock(kind));
+      unlockButton.hidden = isLined() || !kind || hasSpeciesUnlock(kind);
+      if (isLined()) return selectedDye() ? 'No species unlock required.' : 'Unlock at least one ordinary cloth dye to color the fabric.';
       if (!kind) return '';
       registerSpeciesUnlocks([kind]);
       const id = speciesUnlockId(kind);
@@ -352,12 +392,17 @@
       const recipeStatus = unlockStatus(choice); // Recomputed for every selected hide and after a Mote purchase.
       if (!choice) { status.textContent = 'No saved-genotype hides in Pack. Legacy hides without genotype cannot be used.'; return; }
       const details = choice.furHood;
-      status.textContent = choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + details.baseColor + ' base coat · ' + (details.appearance?.patterns?.length || 0) + ' expressed markings\n' + recipeStatus;
+      const furTrimColorName = trimColorNameFor(choice.record); // Selected full-genotype hide provides exactly one persisted trim color name.
+      status.textContent = isLined()
+        ? choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + (furTrimColorName || 'Unknown coat') + ' fur trim · cloth dye: ' + (selectedDye()?.label || 'None') + '\n' + recipeStatus
+        : choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + details.baseColor + ' base coat · ' + (details.appearance?.patterns?.length || 0) + ' expressed markings\\n' + recipeStatus;
       try {
         await ensureManifest();
-        const rendered = await window.ClothingWeavingSystem?.renderClothingLayers?.(HOOD_ID, {
-          primaryHex: details.baseColor, secondaryHex: details.baseColor,
-          furHood: details, view,
+        const rendered = await window.ClothingWeavingSystem?.renderClothingLayers?.(recipeKind(), {
+          primaryHex: isLined() ? selectedDye()?.hex : details.baseColor,
+          secondaryHex: isLined() ? trimHexForName(furTrimColorName) : details.baseColor,
+          furTrimColorName: isLined() ? furTrimColorName : null,
+          furHood: isLined() ? null : details, view,
         });
         if (request !== revision || activePanel !== overlay || !rendered?.canvas) return;
         canvas.width = rendered.canvas.width;
@@ -376,6 +421,8 @@
       select.appendChild(option);
     });
     select.onchange = refresh;
+    kindSelect.onchange = refresh;
+    dyeSelect.onchange = refresh;
     overlay.querySelector('[data-action="close"]').onclick = closePanel;
     overlay.querySelector('[data-action="cloth"]').onclick = () => {
       closePanel();
@@ -407,7 +454,14 @@
         status.textContent = 'Hide is no longer available. Reopen Leatherworking to refresh inventory.';
         return;
       }
-      if (!hasSpeciesUnlock(current.furHood.kind)) {
+      const lined = isLined(); // Recipe choice is checked again when spending a hide, not trusted from the button's previous disabled state.
+      const dye = selectedDye();
+      const trimName = trimColorNameFor(current.record);
+      if (lined && (!dye || !trimName)) {
+        status.textContent = 'Choose an available fabric dye and a hide with a recognized genotype base color.';
+        return;
+      }
+      if (!lined && !hasSpeciesUnlock(current.furHood.kind)) {
         status.textContent = speciesName(current.furHood.kind) + ' fur hoods are locked. Unlock this species with 2 Motes of Craft first.';
         unlockStatus(current); // Fail closed even if this button was enabled before the player changed worlds.
         return;
@@ -421,7 +475,16 @@
       const uid = 'gcloth_fur_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
       const sourceName = coat.kind.replace(/-/g, ' ');
       const naturalTrimHex = colorForRole(coat, 'trim') || coat.baseColor; // Save the resolved natural trim to B for older dye/portrait consumers; live rendering always re-resolves from the unchanged genotype.
-      const entry = {
+      const entry = lined ? {
+        uid, cosmeticId: 'fur_lined_hood#loom:' + uid, baseCosmeticId: 'fur_lined_hood', slot: 'hood',
+        label: trimName + ' Fur-lined Hood', baseLabel: 'Fur-lined Hood',
+        description: 'Leatherworked fur trim in ' + trimName + ' from a naturally colored hide; the simple hood fabric can be redyed.',
+        colorA: window.DyeSystem.toClothingColor(dye), colorB: null, colorC: null,
+        articleDyeIds: [dye.id], dyeable: true,
+        sellPrice: Math.max(1, Math.round(Number(source.sellPrice) * 1.5)),
+        qualityStars: source.stars || 1, weaveMaterial: 'light', weightUnits: 2,
+        weaving: null, furTrimColorName: trimName, craftedAt: Date.now(),
+      } : {
         uid, cosmeticId: HOOD_ID + '#loom:' + uid, baseCosmeticId: HOOD_ID, slot: 'hood',
         label: sourceName + ' Fur Hood', baseLabel: 'Fur Hood',
         description: 'Leatherworked from one ' + sourceName + ' hide. Natural coat and original inherited markings cannot be dyed.',
@@ -433,7 +496,9 @@
         weaving: null, furHood: coat, craftedAt: Date.now(),
       };
       pack.push(entry);
-      lastCraft = { uid, sourceKey: choice.key, sourceKind: coat.kind, stars: entry.qualityStars, baseColor: coat.baseColor, trimColor: naturalTrimHex }; // Mobile debug distinguishes base/trim pigmentation without opening devtools.
+      lastCraft = lined
+        ? { uid, style: 'fur_lined_hood', stars: entry.qualityStars, fabricDye: dye.id, furTrimColorName: trimName }
+        : { uid, sourceKey: choice.key, sourceKind: coat.kind, stars: entry.qualityStars, baseColor: coat.baseColor, trimColor: naturalTrimHex }; // Mobile debug distinguishes base/trim pigmentation without opening devtools.
       deps.saveMemberWorldData?.();
       deps.buildInventoryGrid?.();
       window.EquipmentPanel?.buildPackClothingSection?.();
@@ -453,11 +518,11 @@
       speciesUnlocks: Object.keys(manifest.species || {}).map(kind => ({ kind, id: speciesUnlockId(kind), unlocked: hasSpeciesUnlock(kind) })), // Copyable on-device evidence of world-specific species progress.
       leatherworkingOpen: !!activePanel?.isConnected,
       lastCraft: copy(lastCraft), lastError,
-      latestChange: 'Fur-hood species recipes now cost 2 Motes of Craft apiece, use world-scoped mastery ranks, and are enforced before hide consumption.',
+      latestChange: 'Leatherworking now crafts dyeable Fur-lined Hoods with base-genotype trim names and no unlock; the original species Fur Hood stays available separately.',
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    SPECIES_UNLOCK_COST, speciesUnlockId, registerSpeciesUnlocks, hasSpeciesUnlock, ensureManifest, isPendingAsset, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
+    trimHexForName, trimColorNameFor, SPECIES_UNLOCK_COST, speciesUnlockId, registerSpeciesUnlocks, hasSpeciesUnlock, ensureManifest, isPendingAsset, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
   });
   ensureManifest().then(() => registerSpeciesUnlocks()); // If the manifest loads after Mastery, register all known species immediately.
   if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', () => registerSpeciesUnlocks(), { once: true }); // Covers normal boot, where Mastery loads after this module.
