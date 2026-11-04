@@ -387,7 +387,7 @@ async function main() {
   // Failed rebuilds cannot keep the previous successful 3D avatar visible.
   const updateCode=sourceBetween(nine,'async function updateThreePreview()','function scheduleThreePreview(');
   const failedRig={ body:canvas('body'),three:{buildGeneration:0,matchedFront2D:projected} };
-  const failedE={ match3D:{checked:true},match3DStatus:{},threeStatus:{} };
+  const failedE={ species:{value:'tletingan'},gender:{value:'male'},match3D:{checked:true},match3DStatus:{},threeStatus:{} };
   const failEvents=[];
   const previewUpdate=new Function('R','E','startOptionalThreePreview',
     'withThreePreviewDeadline','ensureRigRuntime','disposeRuntimeRig','render','console','log',
