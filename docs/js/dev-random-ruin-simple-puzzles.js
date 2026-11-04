@@ -654,9 +654,9 @@
     const visibleLength=Math.max(.001,ropeDirection.length());
     ropeDirection.multiplyScalar(1/visibleLength);
     ropeMidpoint.set((rope.anchor.x+bob.x)*.5,(rope.anchor.y+bob.y)*.5,(rope.anchor.z+bob.z)*.5);
-    rope.mesh.position.copy(ropeMidpoint);
-    rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);
-    rope.mesh.scale.set(1,visibleLength,1);
+    if (window.DungeonRopeArt?.updateRopePlane && rope.mesh.userData?.dungeonRopeSprite)
+      window.DungeonRopeArt.updateRopePlane(rope.mesh,rope.anchor,bob,deps?.getActiveCamera?.());
+    else { rope.mesh.position.copy(ropeMidpoint);rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);rope.mesh.scale.set(1,visibleLength,1); }
     rope.marker.position.set(bob.x,bob.y,bob.z);
     return bob;
   }
@@ -742,7 +742,8 @@
       state.group.add(mount);
     }
 
-    const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
+    const ropeMesh=window.DungeonRopeArt?.createRopePlane?.('dev_ruin_swing_rope_'+room.id+suffix)
+      || new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
     const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
