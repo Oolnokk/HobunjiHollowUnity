@@ -244,12 +244,13 @@
     }
     bursts.push({mesh,particles,dummy:new THREE.Object3D(),elapsed:0});
   }
-  function breakAt(mapId,scene,x,y,z,source='melee') {
+  function breakAt(mapId,scene,x,y,z,source='melee',attacker=null) {
     woodBurst(scene,x,y,z);
     window.Shattercasks?.applyBlast?.(mapId,x,z,{
       radius:1,damage:7,minimumDamage:1,knockbackPxS:65,
       tag:'blunt',reason:'Smashed crate',afflictionBonuses:{bleedingHealth:.35},
-      footingDamage:90,footingDamageMultiplier:1,
+      footingDamage:90,footingDamageMultiplier:0,
+      excludeActor:source==='melee'?attacker:null, // Don't knock down the character smashing it by hand.
     });
     const groundY=window.Combat?.deps?.getGroundYAtWorld?.(x,z)
       ?? window.Combat?.deps?.worldSurfaceY?.(x*tileSize(),z*tileSize())
@@ -260,7 +261,7 @@
     window.__farmLog?.('[crates] '+lastEvent,'combat');
     return true;
   }
-  function shatterBurden(burden,cause='impact') {
+  function shatterBurden(burden,cause='impact',attacker=null) {
     if (!burden || burden.exploded) return false;
     const p=positionOf(burden.group);
     if (!p) return false;
@@ -270,7 +271,7 @@
       || [...piles.values()].find(v=>v.mapId===burden.mapId&&v.group.parent===v.scene)?.scene
       || null;
     if (!window.Shattercasks?.discardBurden?.(burden)) return false;
-    return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause);
+    return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause,attacker);
   }
   function sweepMelee(collider,opts={}) {
     if (!collider) return false;
@@ -290,7 +291,7 @@
       if (Math.abs(expectedY-(p.y+.35))>collider.halfHeightWorld+.32) continue;
       // The melee sweep strikes one crate at a time; ordinary decorative furniture has no registration.
       reducePile(pile);hit=true;
-      breakAt(mapId,pile.scene,p.x,p.y+.32,p.z,'melee');
+      breakAt(mapId,pile.scene,p.x,p.y+.32,p.z,'melee',opts.actor||null);
       break;
     }
     return hit;
@@ -345,7 +346,7 @@
     lastEvent,activePileCount:[...piles.values()].filter(validPile).length,
     piles:[...piles.values()].filter(p=>p.mapId===currentArea()).map(p=>({id:p.id,count:p.count,lootable:p.lootable,busy:p.busy})),
     looseJunk:[...junk.values()].filter(d=>d.mapId===currentArea()).length,
-    activeDebrisBursts:bursts.length,
+    activeDebrisBursts:bursts.length,savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
     shatterBurden,sweepMelee,tick,forgetPile,debugSnapshot};

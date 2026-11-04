@@ -1870,7 +1870,7 @@
     for(const actor of d?.npcWalkers||[])targets.push(actor);
     const seen=new Set();
     for(const actor of targets) {
-      if(!actor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
+      if(!actor||actor===options.excludeActor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
       seen.add(actor);
       const ax=Number(actor.x)/t, az=Number(actor.y)/t;
       if(!Number.isFinite(ax)||!Number.isFinite(az))continue;
@@ -1981,11 +1981,11 @@
     window.__farmLog?.('[burden] '+lastEvent,'world');
     return true;
   }
-  function detonate(cask,cause='weapon') {
+  function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
     if(cask.kind!=='soursap'&&cask.kind!=='shattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
-      return typeof handler==='function'?handler(cask,cause)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
+      return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
     }
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
     cask.exploded=true;
@@ -2043,7 +2043,7 @@
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
         if(handled)break;
       }
-      detonate(vase,'melee');break;
+      detonate(vase,'melee',opts.actor);break;
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
