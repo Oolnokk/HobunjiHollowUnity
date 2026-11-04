@@ -64,13 +64,16 @@
     };
     const levelAt=object=>{
       const c=center(object),level=heightAt?.(c.x,c.z);
-      return finite(level)?Number(level):Number(options.floorY)||0;
+      return level!=null&&finite(level)?Number(level):Number(options.floorY)||0; // A missing height must never fall back to Number(null) = 0.
     };
     const nearFloor=object=>{
       const y=Number(getPlayerY?.());
       return Number.isFinite(y)&&Math.abs(y-levelAt(object))<1;
     };
-    const control=record=>{addControl(record);controls.push(record);return record;};
+    const control=record=>{
+      if(record.floorY==null)record.floorY=levelAt(record.object); // Every native upper-story action is restricted to its own physical floor by the ordinary interaction provider.
+      addControl(record);controls.push(record);return record;
+    };
     const trackSurface=(id,object,priority=12,enabled=()=>true)=>{
       DS.registerSurface({id,scope,priority,bounds:()=>bounds(object),
         topY:()=>worldBox(object)?.max.y??0,enabled});
