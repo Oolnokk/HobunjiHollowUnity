@@ -1024,7 +1024,7 @@
 
     const overlay = document.createElement('div');
     overlay.className = 'loomcraft-overlay';
-    overlay.setAttribute('data-ctrl-panel', ''); // Include quick-setting arrows in the game's controller navigation surface.
+    overlay.setAttribute?.('data-ctrl-panel', ''); // Native browser dialog registration; optional on minimal test DOM stubs.
     overlay.innerHTML = `
       <div class="loomcraft-panel" role="dialog" aria-modal="true">
         <div class="loomcraft-head"><h2>🧶 ${advanced ? 'Advanced Loom' : 'Simple Loom'}</h2><button class="loomcraft-close" type="button" aria-label="Close">✕</button></div>
