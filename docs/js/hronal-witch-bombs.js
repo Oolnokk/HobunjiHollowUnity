@@ -322,12 +322,15 @@
         }
       }
       const fuse=Math.max(1,Number(bomb.fuseSeconds)||DEFAULT_FUSE_SECONDS);
-      const remaining=Math.max(0,fuse-(now()-Number(bomb.spawnedAtMs||now()))/1000);
-      const urgency=clamp((1-remaining/fuse-.52)/.48,0,1);
+      const elapsed=Math.max(0,(now()-bomb.spawnedAtMs)/1000); // Absolute fuse age keeps the pulse synchronized after dropped frames.
+      const remaining=Math.max(0,fuse-elapsed);
+      const urgency=clamp(elapsed/fuse,0,1);
+      const phase=2*Math.PI*(.9*elapsed+6.6*fuse*Math.pow(urgency,4)/4); // Integral of the accelerating frequency, so the glow never jumps phase.
       window.FurniturePatternSurfaces?.setGlowState?.(bomb.group,{
-        intensity:.68+.88*urgency,
-        pulseSpeed:1.25+10*Math.pow(urgency,2.1),
-        pulseDepth:.22+.72*urgency,
+        intensity:1.05+.65*urgency,
+        pulseSpeed:.9+6.6*Math.pow(urgency,3),
+        pulseDepth:.68+.24*urgency,
+        phase,
         color:'#ff7417',
       });
       bomb.group.userData.hronalFuse={remainingSeconds:remaining,totalSeconds:fuse,progress:1-remaining/fuse};
