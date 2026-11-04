@@ -36,6 +36,59 @@
   const interactionRayHits = []; // Reused mesh-hit buffer for all visible animals within reach.
   let aimedAnimalFrame = NaN; // Last game frame for which the camera ray was tested.
   let aimedAnimalCache = null; // Selection shared by action buttons, prompts, and the press handler in that frame.
+  const livestockAlphaMasks = new WeakMap(); // Cached, reduced-resolution opacity data per decoded sprite image; shared across the entire herd.
+  let livestockUvScratch = null; // Reused UV coordinate for checking the actual alpha at each Three.js mesh hit.
+  const LIVESTOCK_ALPHA_MASK_SIZE = 192; // Caps readback/memory for full-resolution animal sprite sheets.
+  const LIVESTOCK_ALPHA_FALLBACK_INSET = 0.18; // If cross-origin pixels are unreadable, allow only the sprite's central body rather than its transparent rectangle.
+
+  function _livestockAlphaMask(texture) {
+    const image = texture?.image; // Actual loaded frame (plain PNG or genotype CanvasTexture) currently visible on the plane.
+    const width = Number(image?.width), height = Number(image?.height); // Source dimensions used to build a bounded mask once per image.
+    if (!image || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    if (livestockAlphaMasks.has(image)) return livestockAlphaMasks.get(image);
+    let mask = null;
+    try {
+      const longest = Math.max(width, height); // Scales all species uniformly without allocating one full-resolution RGBA copy per livestock frame.
+      const maskWidth = Math.max(1, Math.round(width / longest * LIVESTOCK_ALPHA_MASK_SIZE)); // Horizontal sample count after downscaling.
+      const maskHeight = Math.max(1, Math.round(height / longest * LIVESTOCK_ALPHA_MASK_SIZE)); // Vertical sample count after downscaling.
+      const canvas = document.createElement('canvas'); // Temporary scratch used only on the first hit of each decoded image.
+      canvas.width = maskWidth;
+      canvas.height = maskHeight;
+      const context = canvas.getContext('2d', { willReadFrequently: true }); // Same opaque-pixel readback approach as den-nest-system.js.
+      if (context) {
+        context.drawImage(image, 0, 0, maskWidth, maskHeight);
+        mask = { width: maskWidth, height: maskHeight, data: context.getImageData(0, 0, maskWidth, maskHeight).data }; // Used by _livestockHitOpaque; canvas itself can be collected.
+      }
+    } catch (error) {
+      window.__farmLog?.(`[livestock-ray] alpha mask unavailable for ${texture?.name || 'sprite'}: ${error?.message || error}`, 'warn');
+    }
+    livestockAlphaMasks.set(image, mask); // Cache both successful masks and unreadable sources; never retry a tainted image every frame.
+    return mask;
+  }
+
+  function _livestockHitOpaque(hit, avatar) {
+    const mesh = hit?.object; // Exact front/back plane returned by Three.js raycasting, not the animal's reserved logical tile.
+    const uv = hit?.uv; // Mesh UVs follow even a skinned head rig; a rectangular geometry intersection alone does NOT test PNG transparency.
+    const texture = mesh?.material?.map; // This is the frame actually rendered (idle/run, genotype, blink, or plain texture).
+    if (!texture || !uv || !Number.isFinite(uv.x) || !Number.isFinite(uv.y)) return false;
+    const mask = _livestockAlphaMask(texture);
+    if (!mask) { // Missing/CORS-tainted pixel data: conservatively target the body, not the entire invisible rectangular plane.
+      return uv.x >= LIVESTOCK_ALPHA_FALLBACK_INSET && uv.x <= 1 - LIVESTOCK_ALPHA_FALLBACK_INSET
+        && uv.y >= LIVESTOCK_ALPHA_FALLBACK_INSET && uv.y <= 1 - LIVESTOCK_ALPHA_FALLBACK_INSET;
+    }
+    if (!livestockUvScratch) livestockUvScratch = new THREE.Vector2(); // Reused instead of allocating Vector2s for every potentially visible animal hit.
+    // PNGPlaneAvatar mirrors a shared front map on the back card in its vertex shader.
+    // When the back uses a separate pre-flipped map, Texture.transformUv itself supplies the mirror instead.
+    const isShaderMirroredBack = mesh === avatar.backPlane && texture === avatar.frontPlane?.material?.map; // Detects the shared-face shader's horizontal flip.
+    livestockUvScratch.set(isShaderMirroredBack ? 1 - uv.x : uv.x, uv.y);
+    texture.transformUv?.(livestockUvScratch); // Honors repeat/offset and flipY from the actual active texture.
+    const u = livestockUvScratch.x, v = livestockUvScratch.y; // Transformed image coordinates from 0 to 1.
+    if (!Number.isFinite(u) || !Number.isFinite(v)) return false;
+    const x = Math.min(mask.width - 1, Math.max(0, Math.floor(u * mask.width))); // One bounded alpha pixel, with no canvas readback on subsequent rays.
+    const y = Math.min(mask.height - 1, Math.max(0, Math.floor(v * mask.height))); // Canvas/ImageData uses top-left row 0 after texture flipY is applied.
+    const alpha = mask.data[(y * mask.width + x) * 4 + 3]; // The same alpha channel that the PNG-plane material uses for its visible silhouette.
+    return alpha >= Math.max(16, Math.round((Number(mesh.material?.alphaTest) || 0.35) * 255)); // Match the visual material's cutout threshold, ignoring transparent background.
+  }
 
   function aimedAnimal() {
     if (!deps || deps.getCurrentArea?.() !== 'farm') return null;
@@ -73,6 +126,7 @@
       if (avatar.backPlane?.isMesh && avatar.backPlane.visible) interactionRaycaster.intersectObject(avatar.backPlane, false, interactionRayHits);
       for (const hit of interactionRayHits) {
         if (!hit?.point || !Number.isFinite(hit.distance) || hit.distance >= nearestDistance) continue;
+        if (!_livestockHitOpaque(hit, avatar)) continue; // THREE.Raycaster tests triangles, not the PNG's visible alpha silhouette.
         // Only the part of the sprite inside interaction reach may be selected;
         // giant creatures cannot be activated from across the farm.
         if (Math.hypot(hit.point.x - playerX, hit.point.z - playerZ) > LIVESTOCK_INTERACTION_REACH) continue;
