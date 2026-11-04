@@ -69,18 +69,19 @@
       const position=defaultPos.map((v,a)=>finiteOr(layer?.transform?.position?.[a],v));
       const rotationDeg=defaultRot.map((v,a)=>finiteOr(layer?.transform?.rotationDeg?.[a],v));
       const scale=defaultScale.map((v,a)=>{const n=finiteOr(layer?.transform?.scale?.[a],v);return n>0?n:v;});
-      return {index:i,layer:i+1,asset:ASSET_URLS[i],visible:authored.enabled!==false&&layer?.visible!==false,sourceWidth:s.width,sourceHeight:s.height,unitsPerPixel:pixelScale,width,height,targetLength,lengthScale,position,rotationDeg,scale,x:position[0],y:position[1],z:position[2]};
+      return {index:i,layer:i+1,asset:ASSET_URLS[i],visible:authored.enabled!==false&&layer?.visible!==false,sourceWidth:s.width,sourceHeight:s.height,unitsPerPixel:pixelScale,width,height,targetLength,lengthScale,defaultPosition:defaultPos,position,rotationDeg,scale,x:position[0],y:position[1],z:position[2]};
     });
   }
   function applyLayer(group,layer){
     if(!group||!layer)return;
     const T=window.THREE;
     group.visible=layer.visible!==false;
-    group.position.set(...layer.position);
+    // Keep the base of the ridge fixed as Y scale changes; the authored Y offset remains a pure vertical translation.
+    group.position.set(layer.position[0],layer.position[1]+(layer.scale[1]-1)*layer.height*.5,layer.position[2]);
     group.rotation.set(T.MathUtils.degToRad(layer.rotationDeg[0]),T.MathUtils.degToRad(layer.rotationDeg[1]),T.MathUtils.degToRad(layer.rotationDeg[2]));
     const ridgeLocalDepth=Math.max(1e-5,Number(group.userData?.ridgeLocalDepth)||layer.width),lengthScale=layer.targetLength/ridgeLocalDepth;
     group.scale.set(layer.scale[0],layer.scale[1],lengthScale*layer.scale[2]);
-    Object.assign(group.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,targetWorldLength:layer.targetLength,ridgeLocalDepth,ridgeLengthScale:lengthScale,worldWidth:layer.targetLength*layer.scale[2],worldNorthSouthLength:layer.targetLength*layer.scale[2],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale],decorativeRockCount:ROCKS_PER_LAYER,snowCapped:true,visualOnly:true});
+    Object.assign(group.userData,{sourcePixelScale:layer.unitsPerPixel,sourceWidth:layer.sourceWidth,sourceHeight:layer.sourceHeight,baseWorldWidth:layer.width,baseWorldHeight:layer.height,targetWorldLength:layer.targetLength,ridgeLocalDepth,ridgeLengthScale:lengthScale,worldWidth:(layer.width/ROCKS_PER_LAYER)*layer.scale[0],worldNorthSouthLength:layer.targetLength*layer.scale[2],worldHeight:layer.height*layer.scale[1],authoredPosition:[...layer.position],authoredRotationDeg:[...layer.rotationDeg],authoredScale:[...layer.scale],decorativeRockCount:ROCKS_PER_LAYER,snowCapped:true,visualOnly:true});
   }
   function applyAuthorConfigToGroup(group,cols,rows,config=null){
     if(!group)return[];
@@ -88,7 +89,7 @@
     const sizes=ASSET_URLS.map((_,i)=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===i+1);return{width:layerGroup?.userData?.sourceWidth||SOURCE_SIZES[i].width,height:layerGroup?.userData?.sourceHeight||SOURCE_SIZES[i].height};});
     const layout=resolveLayoutFromSizes(sizes,cols,rows,normalized);group.visible=normalized.enabled!==false;Object.assign(group.userData,{authorConfig:normalized,decorativeRockRidges:true,rocksPerLayer:ROCKS_PER_LAYER});
     for(const layer of layout)applyLayer(group.children?.find?.(c=>Number(c?.userData?.layer)===layer.layer),layer);
-    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:l.targetLength*l.scale[2],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:ROCKS_PER_LAYER,snowCapped:true};});
+    stats.lastLayout=layout.map(l=>{const layerGroup=group.children?.find?.(c=>Number(c?.userData?.layer)===l.layer),actualLengthScale=layerGroup?.userData?.ridgeLengthScale??l.lengthScale;return{layer:l.layer,asset:l.asset,visible:l.visible,sourceWidth:l.sourceWidth,sourceHeight:l.sourceHeight,position:[...l.position],defaultPosition:[...l.defaultPosition],rotationDeg:[...l.rotationDeg],scale:[...l.scale],width:l.width,height:l.height,worldWidth:(l.width/ROCKS_PER_LAYER)*l.scale[0],worldNorthSouthLength:l.targetLength*l.scale[2],worldHeight:l.height*l.scale[1],targetLength:l.targetLength,ridgeLocalDepth:layerGroup?.userData?.ridgeLocalDepth??null,lengthScale:actualLengthScale,unitsPerPixel:l.unitsPerPixel,rocks:ROCKS_PER_LAYER,snowCapped:true};});
     return layout;
   }
 
@@ -123,7 +124,8 @@
     material.userData=Object.assign({},material.userData,{westernSlopeMineRockBackdrop:true,visualOnly:true});
     delete material.userData.sharedOreRockMaterial;
     material.depthTest=true;
-    material.depthWrite=false;
+    material.depthWrite=true; // Opaque rock faces must occlude each other and the snow caps regardless of render order.
+    material.side=T.DoubleSide; // Mine mounds are open terrain heightfields; distant views see both sides of their faces.
     material.fog=false;
     keepInFrontOfSky(material);
     record.materials.push(material);
@@ -226,6 +228,7 @@
     if(shared?.clone){
       const material=shared.clone(); // Each distant cap gets its own depth-clamped material; the shared ground snow must retain its normal terrain shader.
       material.userData=Object.assign({},material.userData,{westernSlopeSnowCapMaterial:true,visualOnly:true});
+      material.depthTest=true;material.depthWrite=true;material.side=T.DoubleSide; // Snow must share opaque depth and face-culling policy with its stone base.
       surface.bindSnowTexture?.(material); // The cap clone follows the canonical snow texture if the asynchronous canvas load has not finished yet.
       keepInFrontOfSky(material);
       record.materials.push(material);
