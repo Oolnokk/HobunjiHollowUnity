@@ -19061,6 +19061,9 @@
         // Combat and its selectors target actors/world space, including when
         // the centered camera reticle reaches a cave wall or leaves the grid.
         if (tool === 'weapon' || tool === 'ranged') return true;
+        // Mini-cliffs are real separate floor layers. Never let terrain
+        // tools edit the ground tile beneath an elevated balcony.
+        if (player.onCliffBalcony && ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
         const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
         if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
@@ -27137,14 +27140,15 @@
 
         if (_isZoneArea(currentArea) && !player.climbing) {
           const climbTarget = window.ClimbSystem?.getClimbTarget?.();
-          if (climbTarget?.type === 'wall') {
+          if (climbTarget?.type === 'wall' || climbTarget?.type === 'cliffRoute') {
             // Cliff face: the prompt floats on the wall itself, straight
             // ahead at camera height (same placement the Random Test Ruin
             // interaction list uses), so it reads as a mark on the rock.
             const rideState = window.Mounts?.rideState ?? 'none';
             const mounted = rideState === 'mounted';
-            const wallAllowed = rideState === 'none' || mounted;
-            const dir = climbTarget.dir;
+            const manualCliff = climbTarget.type === 'cliffRoute'; // Show the new controlled-hop route only while dismounted.
+            const wallAllowed = manualCliff ? rideState === 'none' : rideState === 'none' || mounted;
+            const dir = climbTarget.dir || { x: 0, y: 0 };
             const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
             const faceX = dir.x ? (startCol + (dir.x > 0 ? 1 : 0)) * TILE - dir.x * TILE * 0.12 : player.x;
             const faceY = dir.y ? (startRow + (dir.y > 0 ? 1 : 0)) * TILE - dir.y * TILE * 0.12 : player.y;
@@ -27152,11 +27156,11 @@
             const cameraY = camera?.position?.y;
             const promptY = Math.max(floorY + 0.9, Math.min(floorY + 2.4, Number.isFinite(cameraY) ? cameraY : floorY + 1.5));
             _climbPromptAnchor.position.set(faceX / TILE, promptY, faceY / TILE);
-            const wallLabel = climbTarget.descending
-              ? (mounted ? 'Leap Down' : 'Jump Down')
+            const wallLabel = manualCliff ? 'Climb Handholds'
+              : climbTarget.descending ? (mounted ? 'Leap Down' : 'Jump Down')
               : (mounted ? 'Leap Up' : 'Climb');
             btns.push({
-              icon: climbTarget.descending ? '🪂' : '🧗',
+              icon: climbTarget.descending && !manualCliff ? '🪂' : '🧗',
               label: wallAllowed ? wallLabel : 'Dismount to Climb',
               action: 'climb_branch', style: 'secondary', allowed: wallAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
@@ -27342,7 +27346,8 @@
         if (interactionButton) {
           _worldInteractionPromptAnchor.position.set(
             reticle.col + 0.5,
-            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            (interactionButton?.action?.startsWith('obj_balcony_') && player.onCliffBalcony
+              ? player._cliffBalconyY : activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5)) + 0.55,
             reticle.row + 0.5,
           );
         }
