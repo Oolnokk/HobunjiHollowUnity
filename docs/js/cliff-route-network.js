@@ -64,7 +64,10 @@
           const t = get(x, z);
           if (!t || opts.isBoundary?.(t)) break;
           if (t.incline) { walls++; continue; }
-          if (walls && walkable(x, z) && surface(t, opts) > surface(lower, opts) + 0.5) {
+          // Some authored cliffs are direct tier discontinuities without a
+          // painted incline strip. The shaft-style reachability proof found
+          // that ignoring these could strand an entire upper plateau.
+          if (walkable(x, z) && surface(t, opts) > surface(lower, opts) + 0.5) {
             const toComp = component[tileId(x, z)];
             if (toComp !== fromComp) candidates.push({ a: { c, r }, b: { c: x, r: z }, aComp: fromComp, bComp: toComp, dir, walls, y0: surface(lower, opts), y1: surface(t, opts), weight: walls * 12 + hash(c, r, x * 71 + z) % 12 });
           }
@@ -174,7 +177,8 @@
     };
     const tiers = network.components.map(c => Number(c.tier) || 0);
     const groundTier = Math.min(...tiers);
-    const queue = network.components.filter(c => c.tier === groundTier).map(c => c.id);
+    const groundSources = network.components.filter(c => c.tier === groundTier).map(c => c.id);
+    const queue = groundSources.slice(); // Only valid lowest-level ground regions are traversal origins.
     const reached = new Set(queue); // Multi-source walkable ground; isolated landmasses need not be joined by cliffs.
     for (let i = 0; i < queue.length; i++) {
       for (const edge of network.adjacency[queue[i]] || []) {
@@ -213,7 +217,7 @@
       }).map(s => s.id);
     return {
       ok: !unreachablePlateaus.length && !unreachableBalconies.length && !invalidHops.length,
-      groundComponents: queue.length - (reached.size - network.components.filter(c => c.tier === groundTier).length),
+      groundComponents: groundSources.length,
       checkedComponents: network.components.length,
       unreachablePlateaus, unreachableBalconies, invalidHops,
     };
