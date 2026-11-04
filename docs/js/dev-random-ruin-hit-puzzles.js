@@ -939,6 +939,11 @@
   window.DevRandomRuinHitPuzzles = Object.freeze({
     registerExternalRoot,
     getNativeRoots:()=>[...extraNativeRoots], // The ordinary stone-ladder and semantic interaction provider reuses the active native story roots.
+    debugEnsureRuntimeReady:()=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      preBaseFrame(); // Reuse the exact before-render lifecycle callback when software WebGL first-frame compilation is delayed in Chromium. Never invent a puzzle state.
+      return !!root&&currentArea()===MAP_ID;
+    },
     debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
     debugPickupTorch:()=>{
       if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
