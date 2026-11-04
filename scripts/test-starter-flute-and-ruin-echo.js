@@ -205,7 +205,7 @@ function testDemonstrationTimerLifecycle() {
   state.chordPlateSets.push(set);
   const win={KurrayaPuzzle:{settings:()=>({scale:'Pentatonic Minor',tonicMidi:60})}};
   const actual=new Function('window','setTimeout','clearTimeout','playKurrayaPlateNote','inRuin','state',
-    source.slice(begin,end)+'\\nreturn {cancelEchoPlayback,replayEchoSet};')(
+    source.slice(begin,end)+'\nreturn {cancelEchoPlayback,replayEchoSet};')(
     win,schedule,cancel,note=>played.push(note),()=>true,state);
   const advance=()=>{
     const entry=[...jobs].sort((a,b)=>a[1].delay-b[1].delay)[0]; // Executes the next scheduled note at its authored offset.
