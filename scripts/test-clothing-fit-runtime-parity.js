@@ -136,7 +136,7 @@ async function main() {
     species: { value: 'tletingan' }, gender: { value: 'male' },
     garment: { value: 'hood' }, sourceSpecies: { value: 'mao-ao' },
     sourceGender: { value: 'male' }, fitRegion: { value: 'body' },
-    clothPng: {}, compositePng: {}, label: {}, threeStatus: {},
+    clothPng: {}, compositePng: {}, label: {}, threeStatus: {}, match3DStatus: {},
     sourceLayerStatus: {}, authoredStatus: {}, exportHeadwearFront: {}, exportHeadwearBack: {}
   };
   const refC = {
