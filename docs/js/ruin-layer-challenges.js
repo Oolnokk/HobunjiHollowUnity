@@ -114,7 +114,7 @@
       const exit={x:alongX?finish+to*.8:centerX,z:alongX?centerZ:finish+to*.8,y};
       const count=Math.max(3,Math.min(8,Math.ceil((pitLength-1)/2.25)+1));
       const anchors=Array.from({length:count},(_,i)=>{
-        const t=(i+.5)*(pitLength-1)/(count-1); // Spread across the entire abyss, keeping a small margin at either bank.
+        const t=.5+(pitLength-1)*i/(count-1); // Spread across the entire abyss, keeping a small margin at either bank.
         const along=start+(positive?1:-1)*t;
         return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
       });
