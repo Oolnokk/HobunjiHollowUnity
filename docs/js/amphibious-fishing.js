@@ -259,7 +259,7 @@
     if (opts?.environmentalImpact === true) return false; // Wall impacts cannot cash out animal-applied scent as a second attack.
     if (opts?.amphibiousFish || opts?.animalAttack) return true;
     const attacker = opts?.attacker || opts?.fromCompanion; // The common animal hit source, including Whistle/Sicced companion wrappers.
-    return !!attacker && !attacker.isBandit && !attacker.isNpcWalker && !attacker.maskboundTroop &&
+    return !!attacker && !attacker.isBandit && !attacker.isNpcWalker && !attacker.isTribeHunter && !attacker.isPorakanekiHunter && !attacker.maskboundTroop &&
       (attacker.isCompanion === true || !!attacker.creatureKey);
   }
 
