@@ -95,8 +95,9 @@ async function flush(){
   assert.equal(one.encounters.length,1,'one real combat encounter per defence chamber');
   const combat=one.encounters[0];
   assert.equal(combat.objective.plinthId,rec.plinthId);
-  assert(combat.spawners.length>=1&&combat.schedule.length>=2,
-    'authored spawner pillars must schedule skeleton and demolitionist waves');
+  assert(combat.spawners.length>=1&&combat.schedule.length>=2
+    &&['skeleton','demolitionist'].every(kind=>combat.schedule.some(wave=>wave.kind===kind)),
+    'authored spawner pillars must schedule BOTH distractor skeletons and bomb-carrying demolitionists');
   assert(combat.spawners.every(s=>s.x>=101&&s.z>=161),
     'enemy spawners must be translated to the actual stacked-story arena, not spawn at the map origin');
   assert.equal(combat.surfaceY(108,169),8,'all generated skeletons retain this story elevation');
