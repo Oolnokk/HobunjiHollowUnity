@@ -64,6 +64,8 @@ rs.addAffliction(victim, 'scentMarkedHealth', 8);
 rs.applyDamage(victim, 6, { attacker: { creatureKey: 'harlyao', isBandit: true } });
 approximately(victim.health, 94, 'humanoid hit does not get animal bonus');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 8, 'humanoid does not spend scent');
+rs.applyDamage(victim, 2, { attacker: { creatureKey: 'porakaneki', isTribeHunter: true } });
+approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 8, 'tribal humanoid also cannot consume an animal-only mark');
 rs.applyDamage(victim, 0, { attacker: wildSource });
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 8, 'zero-damage hits do not spend scent');
 
@@ -103,6 +105,12 @@ const peaceful = actor({ creatureKey: 'puktuk', state: 'idle', homeX: 0, homeY: 
   def: { hostile: false, aggroRangePx: 100, leashRangePx: 100 } });
 assert.equal(targeting.prioritizeWild(peaceful, [player], [playerPet], 'forest', () => true), null,
   'passive wild animals cannot be provoked solely by a scent');
+const nearLeash = actor({
+  creatureKey: 'nelk', x: 110, y: 0, homeX: 0, homeY: 0, state: 'idle',
+  def: { hostile: true, aggroRangePx: 100, leashRangePx: 120 },
+});
+assert.equal(targeting.prioritizeWild(nearLeash, [player], [playerPet], 'forest', () => true, 0.85), null,
+  'scent does not bypass the existing 85% leash reacquisition threshold');
 predator._fleeCooldownUntil = 2000; // Post-flight grace still wins over an attractive mark.
 assert.equal(targeting.prioritizeWild(predator, [player], [playerPet], 'forest', () => true), null,
   'scent never bypasses a wild animal\'s post-retreat re-aggro cooldown');
