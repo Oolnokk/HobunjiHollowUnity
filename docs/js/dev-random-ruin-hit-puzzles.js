@@ -181,6 +181,7 @@
       progress:0,
       target:0,
       glyphRequired:0,
+      commandTarget:null, // V50 bridge-drop rooms use distinct ON and OFF projectile glyph commands, rather than an all-glyphs-complete gate.
       glyphTargets:[],
       ignitionTargets:[],
     };
@@ -234,6 +235,7 @@
       const required = Math.max(1, finite(inheritedData(entry.object, 'requiredTriggers'), 1));
       const state = signalFor(entry.mechanismId);
       if (!state) continue;
+      const command=String(inheritedData(entry.object,'bridgeCommand')||'').toUpperCase(); // The authored ON/OFF glyph groups carry this flag on their parent V50 set root.
       const target = {
         id:`glyph-${entry.object.id}`,
         kind:'glyph',
@@ -241,6 +243,7 @@
         mechanismId:entry.mechanismId,
         active:false,
         required,
+        command:command==='ON'||command==='OFF'?command:null,
       };
       glyphTargets.push(target);
       state.glyphTargets.push(target);
@@ -372,11 +375,27 @@
     window.DevRandomRuinGlyphCircuits?.refreshActivatedGlyph?.(target); // Immediate source tint; render-loop pulses and hit flash still follow.
     hitSerial++;
     const state = mechanismSignals.get(target.mechanismId);
-    const active = state?.glyphTargets.filter(entry => entry.active).length || 0;
-    const required = state?.glyphRequired || target.required || 1;
-    if (state && active >= required && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
-    const circuit = target.circuitName ? `${target.circuitName} ` : '';
-    devDeps?.showToast?.(active >= required ? `${circuit}glyph circuit complete (${active}/${required}) — its mechanism is moving.` : `${circuit}glyph struck (${active}/${required}).`, true);
+    let relevant=state?.glyphTargets||[],required=state?.glyphRequired||target.required||1;
+    if(target.command&&state){
+      relevant=relevant.filter(entry=>entry.command===target.command); // ON and OFF are separate multi-hit groups; shooting one must never count toward the other.
+      required=Math.max(1,...relevant.map(entry=>entry.required||1));
+    }
+    const active=relevant.filter(entry=>entry.active).length;
+    const complete=active>=required;
+    if(state&&complete){
+      if(target.command){
+        state.commandTarget=target.command==='ON'?.5:0; // Hold the V50 bridge in the extended midpoint; OFF returns to the retracted zero pose.
+        for(const other of state.glyphTargets)if(other.command&&other.command!==target.command)other.active=false;
+        window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+      }else if(state.target<1){
+        state.target=1;window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+      }
+    }
+    const circuit=target.circuitName?`${target.circuitName} `:'';
+    const result=target.command?`${target.command} glyph`:'glyph circuit';
+    devDeps?.showToast?.(complete
+      ?`${circuit}${result} complete (${active}/${required}) — its mechanism is moving.`
+      :`${circuit}glyph struck (${active}/${required}).`,true);
     window.__farmLog?.(`[random-ruin-hit] projectile glyph ${target.id} ${active}/${required}`, 'world');
     return true;
   }
@@ -414,7 +433,9 @@
 
   function updateSignalState(dt) {
     for (const state of mechanismSignals.values()) {
-      if (state.glyphTargets.length) {
+      if(state.commandTarget!=null){
+        state.target=state.commandTarget; // A native ON/OFF bridge must stay usable until the player shoots the opposite command.
+      }else if (state.glyphTargets.length) {
         const active = state.glyphTargets.filter(target => target.active).length;
         state.target = active >= Math.max(1, state.glyphRequired) ? 1 : 0;
       }
@@ -941,7 +962,7 @@
       temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnUntil-performance.now())):0 })),
       carryingTorch:carriedTorch?.id || null,
       activeSwing:!!activeSwing,
-      signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })),
+      signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, commandTarget:state.commandTarget, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })), // Includes ON/OFF bridge midpoint state for mobile puzzle diagnostics.
       suppressedBaseInteract,
       proximity:{playerGroundY:currentSupportY(),nearestPickup:nearestPickupControl()?.kind||null,
         nearestLadder:nearestLadderDistance(),nearestHitDriven:nearestHitDrivenDistance(),
