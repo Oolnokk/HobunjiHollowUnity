@@ -355,6 +355,54 @@ async function main() {
   assert(ext&&ext.width===200&&ext.height>200,'extended art stays in game portrait width and may grow downward');
   assert.equal(obsoleteMaskCalls,0,'extended art must not be destroyed by the removed cloud mask');
 
-  console.log('clothing fit/game portrait, head/body B alignment, retired cloud mask, 2D/3D parity, grid-only and switching tests passed');
+  // Grid-only truly excludes BOTH fitted and already-authored overlays.
+  state.authoredTargetCloth=canvas('authored');
+  options.showAuthored.checked=true;
+  const gridOnlyAuthored=await gridOnlyCompose();
+  assert.deepEqual(gridOnlyAuthored.frontComposed.draws,['baseFront'],
+    'grid-only mode must not leak an authored garment into 3D');
+  state.authoredTargetCloth=null;
+  options.showAuthored.checked=false;
+
+  // Hiding the raw body in the 2D editor must not hide a routed body patch
+  // from 3D; the two checkboxes intentionally have different scopes.
+  const patchedCompose=new Function(
+    'R','E','document','runtimePortraitSet','routedPatchIsBody',
+    'mainClothSource','currentWarp','renderRoutedBodyPatchOverlay','fitRegion',
+    'rawGarmentToRuntimeLayer','flipCanvasX','garmentRecord','mode',
+    composedSource+'\nreturn composeRuntimePortrait;'
+  )(
+    state,{ ...options, showBody:{checked:false} },
+    { createElement:()=>canvas('composed') },
+    async()=>({front:canvas('front'),back:canvas('back')}),
+    ()=>true,()=>canvas('source'),()=>canvas('warped'),
+    async()=>canvas('bodyPatch'),()=> 'body',async()=>canvas('garment'),
+    ()=>canvas('rearGarment'),()=>({slot:'torso'}),'fit'
+  );
+  const patched=await patchedCompose();
+  assert.deepEqual(patched.backComposed.draws,['back','bodyPatch'],
+    'hide-body checkbox in 2D cannot silently remove a 3D body patch');
+
+  // Failed rebuilds cannot keep the previous successful 3D avatar visible.
+  const updateCode=sourceBetween(nine,'async function updateThreePreview()','function scheduleThreePreview(');
+  const failedRig={ body:canvas('body'),three:{buildGeneration:0,matchedFront2D:projected} };
+  const failedE={ match3D:{checked:true},match3DStatus:{},threeStatus:{} };
+  const failEvents=[];
+  const previewUpdate=new Function('R','E','startOptionalThreePreview',
+    'withThreePreviewDeadline','ensureRigRuntime','disposeRuntimeRig','render','console','log',
+    updateCode+'\nreturn updateThreePreview;'
+  )(failedRig,failedE,()=>true,async promise=>promise,
+    async()=>{throw Error('simulated runtime load failure');},
+    ()=>failEvents.push('dispose'),schedule=>failEvents.push('fallback:'+schedule),
+    {error:()=>{}},()=>{});
+  await previewUpdate();
+  assert.deepEqual(failEvents,['dispose','fallback:false'],
+    'a failed 3D build disposes the old rig and paints the 2D fallback exactly once');
+  assert.equal(failedRig.three.matchedFront2D,null,
+    'failed rebuild cannot keep a stale game-matched 2D character');
+  assert(failedE.threeStatus.textContent.includes('simulated runtime load failure'),
+    '3D failure is reported visibly on mobile');
+
+  console.log('clothing fit/game portrait, head/body B alignment, retired cloud mask, 2D/3D parity, grid-only and failed-rig cleanup tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
