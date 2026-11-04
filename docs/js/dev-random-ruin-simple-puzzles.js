@@ -2519,7 +2519,8 @@
     // Layered shaft chambers are composed before this V50 puzzle state is
     // initialized; they retry registration after entering the map. Reuse
     // exactly the same swept-projectile interception as native rail targets.
-    if(!state||!inRuin()||!target?.object||typeof target.onHit!=='function')return null;
+    const runtime=window.DevRandomRuin?.getRuntimeContext?.(); // A fast reroll may leave the previous map's composer state alive for one frame.
+    if(!state||!inRuin()||state.root!==runtime?.root||!target?.object||typeof target.onHit!=='function')return null;
     if(state.projectileTargets.includes(target))return ()=>{};
     const records=state.projectileTargets; // Closure stays scoped to the owning build across rerolls.
     records.push(target);
