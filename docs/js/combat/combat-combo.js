@@ -260,7 +260,7 @@
       // visually inventing a fourth, unrelated-looking pose in gameplay that
       // the animation editor (which has no hit event) never showed.
       const impactAtS = windupS + strikeS;
-      busyAction = window.Combat.beginStagedAction({
+      const stagedAction = window.Combat.beginStagedAction({ // Capture the engine return before claiming a busy action: it may cancel synchronously for player action locks.
         windupS: impactAtS,
         strikeS: 0,
         recoverS: 0,
@@ -367,7 +367,8 @@
           }),
         },
       });
-      if (!busyAction) { comboIndex = 0; firstHits.clear(); secondHits.clear(); } // Failed action creation must not preserve phantom setup hits.
+      busyAction = stagedAction && !stagedAction.cancelled && stagedAction.phase !== 'done' ? stagedAction : null; // Synchronous cancel/zero-duration completion must not re-arm a dead action.
+      if (!busyAction) { comboIndex = 0; firstHits.clear(); secondHits.clear(); lastTapAt = -99; } // Failed action creation must not preserve phantom setup hits.
     }
 
     window.Combat.abilities.register(id, { label, slotFamily: 'tap', category: 'combo', onTap });
