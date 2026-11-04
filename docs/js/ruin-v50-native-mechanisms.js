@@ -87,24 +87,34 @@
       const motion=object.userData.previewMotion.type;
       const linked=inventory.activators.filter(activator=>String(activator.userData.linkedMechanismId)===id);
       const state={id,object,motion,linked,target:0,progress:0,solved:false,
-        requiresPuzzle:linked.length>0};
+        requiresPuzzle:linked.length>0,lastApplied:null,reapplyAfter:0}; // Cache the last native V50 pose to avoid traversing an unchanged mechanism sixty times a second.
       states.set(id,state);
       if(motion==='stoneDoor'){
         const panel=(object.children||[]).find(child=>child.isMesh&&child.geometry)||object;
         trackBlocker(scope+'-stone-door-'+id,panel,()=>state.progress<.88);
       }else if(motion==='bridge'||motion==='bridgeSequence'){
-        trackSurface(scope+'-moving-bridge-'+id,object,12,()=>state.progress>.55);
+        const bridgeExtended=()=>motion==='bridgeSequence'
+          ?(state.progress<.22?state.progress/.22:state.progress<.76?1:(1-state.progress)/.24)>.75
+          :state.progress>.55; // V50's sequence retracts again at the end of its activation curve.
+        trackSurface(scope+'-moving-bridge-'+id,object,12,bridgeExtended);
       }else if(motion==='movingDais'){
         trackSurface(scope+'-moving-dais-'+id,object.userData.movingDaisPlatform||object,14);
       }else if(motion==='collapsingStairs'){
         for(const [index,tread] of (object.userData.stairTreads||[]).entries())
           trackSurface(scope+'-stair-'+id+'-'+index,tread,12,()=>tread.scale.y>.08);
       }
-      if(!state.requiresPuzzle&&(motion==='stoneDoor'||motion==='movingDais'||motion==='bridge')){
+      if(!state.requiresPuzzle){
         control({kind:'v50NativeMechanism',object,promptRoot:object,
           range:1.9,priority:16,touchIcon:'✋',
-          label:()=>state.target>.5?'Reset Stone Mechanism':'Activate Stone Mechanism',
-          onPress:()=>{if(!nearFloor(object))return;state.target=state.target>.5?0:1;onStateChange?.();}});
+          label:()=>motion==='bridgeSequence'?'Trigger Timed Bridge'
+            :state.target>.5?'Reset Stone Mechanism':'Activate Stone Mechanism',
+          onPress:()=>{
+            if(!nearFloor(object))return;
+            if(motion==='bridgeSequence'){
+              state.progress=0;state.target=1; // The authored bridge opens, holds and retracts as the player crosses. Another press can retrigger it.
+            }else state.target=state.target>.5?0:1;
+            onStateChange?.();
+          }});
       }
     }
     for(const object of inventory.activators){
@@ -192,6 +202,7 @@
     if(typeof unreg!=='function')
       throw new Error('Original V50 glyph and torch hit runtime could not register the native floor');
     let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
+    function motionAllowsRetrigger(state){return state.motion==='bridgeSequence'&&!state.requiresPuzzle;}
     function tick(dt){
       if(disposed)return;
       const step=Math.max(0,Math.min(.05,Number(dt)||0));
@@ -204,7 +215,13 @@
         state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
         state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
         if(Math.abs(state.progress-desired)<.001)state.progress=desired;
-        api.applyProgress(state.object,state.progress);
+        if(motionAllowsRetrigger(state)&&state.progress>=.999)state.target=0; // A completed timed bridge is ready to fire again.
+        state.reapplyAfter-=step;
+        if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
+          api.applyProgress(state.object,state.progress);
+          state.lastApplied=state.progress;
+          state.reapplyAfter=1; // Unchanged authored stone still gets a periodic restoration pass.
+        }
       }
       for(const state of inventory.transitDoors){
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
