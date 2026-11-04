@@ -181,14 +181,18 @@ for(const side of ['north','east','south','west']){
   assert.equal(ruin.controls.filter(c=>c.kind==='layerBrazier').length,network.getState().braziers);
   const challenge=network.states[0].challenges[0];
   assert(challenge.gate,'first chamber must block its outbound corridor until solved');
-  assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='rock'));
+  const gateSolid=()=>challenge.gate.tiles.every(([c,r])=>challenge.grid.isSolid(
+    challenge.grid.xToCol(c+.5),challenge.grid.zToRow(r+.5),0));
+  assert(gateSolid(),'the first stone gate blocks only its floor-specific 3D collision grid');
+  assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='grass'),
+    'shared 2D occupancy may not block another story at the same X/Z');
   player={x:challenge.x,z:challenge.z,y:challenge.floorY+4};
   for(let i=0;i<17;i++)network.tick(.05);
   assert(!challenge.solved,'a plate must not activate when player is on another story');
   player={x:challenge.x,z:challenge.z,y:challenge.floorY};
   for(let i=0;i<17;i++)network.tick(.05);
   assert(challenge.solved,'standing on the stone plate for .8s opens its gate');
-  assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='grass'));
+  assert(!gateSolid(),'solving a plate removes the corresponding 3D gate obstruction');
   const first=network.states[0],brazierControl=ruin.controls.find(c=>c.kind==='layerBrazier');
   brazierControl.onPress();
   assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');
