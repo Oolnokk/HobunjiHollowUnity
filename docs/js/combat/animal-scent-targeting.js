@@ -34,7 +34,8 @@
     const focus = creature?._scentTarget;
     if (!focus) return;
     const previous = creature._scentPreviousTarget; // Original engagement is restored instead of fabricating a fresh enemy.
-    if (creature.targetCreature === focus || creature.targetPlayer === focus) {
+    if ((creature.state === 'chase' || creature.state === 'patrol-chase') &&
+        (creature.targetCreature === focus || creature.targetPlayer === focus)) { // Never cancel an independently ordered retreat, recovery, or sleep.
       if (previous?.target && previous.target.health > 0 &&
           (previous.target.areaId == null || previous.target.areaId === creature.areaId)) {
         creature.state = previous.state;
@@ -45,6 +46,9 @@
         creature.targetPlayer = null;
         creature.targetCreature = null;
       }
+    } else {
+      if (creature.targetCreature === focus) creature.targetCreature = null; // Clear stale scent pursuit without overwriting higher-priority behavioral state.
+      if (creature.targetPlayer === focus) creature.targetPlayer = null;
     }
     creature._scentTarget = null;
     creature._scentPreviousTarget = null;
