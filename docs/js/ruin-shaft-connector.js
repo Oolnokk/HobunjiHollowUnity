@@ -66,11 +66,14 @@
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
     if(!placed.ok)throw new Error('Octagonal shaft failed: '+placed.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
     const oldCols=rec.cols,oldRows=rec.rows,oldFloor=new Set(rec.floorSet); // Original geometry stays fixed and remains the gameplay entry.
-    const entrance=entranceOutside(meta,pad,tileScale);
+    const authoredExit=ruin.storyVault?rec.exits?.[0]?.tiles?.[0]:null; // The fixed Harlyao vault has an authored south-facing open doorway, but no V50 entrance metadata.
+    const entrance=authoredExit?{x:authoredExit[0],z:authoredExit[1]+1,side:'south'}:entranceOutside(meta,pad,tileScale);
     if(!entrance)throw new Error('Generated ruin has no physical doorway to connect.');
     const mouth={x:Math.floor(placed.grid.colToX(placed.entrance.col+.5)),z:Math.floor(placed.grid.rowToZ(placed.entrance.row+.5))};
     const cols=Math.max(oldCols,Math.ceil(placed.grid.colToX(placed.cols))+3),rows=Math.max(oldRows,Math.ceil(placed.grid.rowToZ(placed.rows))+3);
-    const mainBounds={minX:pad,minZ:pad,maxX:pad+(Number(meta.worldWidth)||0)*tileScale,maxZ:pad+(Number(meta.worldDepth)||0)*tileScale};
+    const mainBounds=authoredExit
+      ?{minX:0,minZ:0,maxX:oldCols,maxZ:authoredExit[1]+1} // Protect the fixed vault's walls while allowing its intentionally open final doorway.
+      :{minX:pad,minZ:pad,maxX:pad+(Number(meta.worldWidth)||0)*tileScale,maxZ:pad+(Number(meta.worldDepth)||0)*tileScale};
     const shaftBounds={minX:originX,minZ:originZ,maxX:originX+placed.cols,maxZ:originZ+placed.rows};
     const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:oldFloor,mainBounds,shaftBounds,maxX:cols,maxZ:rows});
     if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason);
