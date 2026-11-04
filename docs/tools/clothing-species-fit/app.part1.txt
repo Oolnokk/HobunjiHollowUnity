@@ -36,6 +36,7 @@ const R={
   body:null,sourceBody:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
   assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   repositoryGeneration:0, // Cancels stale catalog batches when a new repository reload starts.
+  garmentSelectionEpoch:0, // Distinguishes user selection changes from automatic catalog-population fallback.
   extendedLayers:{torso:null,torsoClothing:null,overwear:null},extendedSource:null,extendedWarped:null,
   patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
   three:{
