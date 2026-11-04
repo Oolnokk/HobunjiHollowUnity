@@ -266,7 +266,7 @@
     const T=window.DevRandomRuinTileOccupancy;
     const free=(x,z,r)=>{const sup=DS.sampleSupport(x,z,{minY:-2,maxY:3});return sup&&!T?.blocksAt?.(x,z,r)&&!T?.solidAt?.(x,z,r)?sup:null;};
     for(const chain of kit.state?.ropeChains||[]){
-      const bank=chain[chain.rewardSide]; // Reward bank is opposite the progression entry doorway.
+      const bank=chain.rewardSide==='start'?chain.entry:chain.exit; // Reward bank is opposite the progression entry doorway, using the chain's actual entry/exit data.
       if(!bank)continue;
       const axis=chain.axis,along=axis==='x'?bank.x:bank.z,cross=axis==='x'?bank.z:bank.x;
       const outward=chain.rewardSide==='end'?1:-1;
