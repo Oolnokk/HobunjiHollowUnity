@@ -40,6 +40,24 @@ for(let seed=1;seed<=1000;seed++){
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
+      if(seed<=80){
+        // Regression: even-sized rooms once had an invisible one-cell gap at
+        // their entry threshold. Flood from the actual shaft portal, not the
+        // room centre, and require every planned goal chamber to be reachable.
+        const walk=Playable.collect(wing),start=wing.entry.x+','+wing.entry.z;
+        assert(walk.has(start),'corridor must include the shaft-side threshold');
+        const seen=new Set([start]),queue=[start];
+        for(let n=0;n<queue.length;n++){
+          const [x,z]=queue[n].split(',').map(Number);
+          for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const next=(x+dx)+','+(z+dz);
+            if(walk.has(next)&&!seen.has(next)){seen.add(next);queue.push(next);}
+          }
+        }
+        for(const room of wing.rooms)assert(seen.has(
+          Math.floor(room.x+room.w/2)+','+Math.floor(room.z+room.d/2)),
+          'every room must be physically connected to its story portal: '+room.id);
+      }
     }
   }
 }
@@ -164,10 +182,23 @@ for(const side of ['north','east','south','west']){
   const challenge=network.states[0].challenges[0];
   assert(challenge.gate,'first chamber must block its outbound corridor until solved');
   assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='rock'));
+  player={x:challenge.x,z:challenge.z,y:challenge.floorY+4};
+  for(let i=0;i<17;i++)network.tick(.05);
+  assert(!challenge.solved,'a plate must not activate when player is on another story');
   player={x:challenge.x,z:challenge.z,y:challenge.floorY};
   for(let i=0;i<17;i++)network.tick(.05);
   assert(challenge.solved,'standing on the stone plate for .8s opens its gate');
   assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='grass'));
+  const first=network.states[0],brazierControl=ruin.controls.find(c=>c.kind==='layerBrazier');
+  brazierControl.onPress();
+  assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');
+  for(const remaining of first.challenges.slice(1)){
+    player={x:remaining.x,z:remaining.z,y:remaining.floorY};
+    for(let i=0;i<17;i++)network.tick(.05);
+    assert(remaining.solved);
+  }
+  brazierControl.onPress();
+  assert.equal(network.getState().lit,1,'a completed wing can ignite its real brazier');
   for(const p of [connected.route.path[0],connected.route.path.at(-1)])
     assert(rec.floorSet.has(p.x+','+p.z),'both path endpoints are actual walkable tiles');
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
