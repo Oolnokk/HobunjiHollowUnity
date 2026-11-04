@@ -8,7 +8,8 @@
   banner.setAttribute('aria-live','polite');
   banner.style.cssText='margin:8px 0;padding:8px;border:1px solid #526173;border-radius:6px;font-size:12px;overflow-wrap:anywhere';
   status?.insertAdjacentElement('afterend',banner);
-  const progress=(message)=>{banner.textContent=message;}; // Visible even when the app itself cannot initialize.
+  let failed=false; // Once an error occurs, slower concurrent requests must not overwrite it with progress.
+  const progress=(message)=>{if(!failed)banner.textContent=message;}; // Visible even when the app itself cannot initialize.
   async function fetchPart(name){
     const controller=new AbortController(); // Every individual module fetch has a bounded wait on mobile networks.
     const timer=setTimeout(()=>controller.abort(),15000);
@@ -45,8 +46,9 @@
     if(behindPanel)behindPanel.hidden=document.getElementById('fitRegion')?.value==='headwear';
     banner.remove();
   }catch(error){
+    failed=true;
     console.error(error);
-    progress('Clothing fit initialization failed: '+String(error?.message||error));
+    banner.textContent='Clothing fit initialization failed: '+String(error?.message||error);
     banner.style.borderColor='#fb7185';banner.style.color='#fb7185';
     if(status&&status.textContent==='Loading…')status.textContent='Editor startup failed; see the error below.';
     const retry=document.createElement('button'); // Mobile users can retry without browser developer tools.
