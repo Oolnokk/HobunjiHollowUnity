@@ -45,8 +45,10 @@
   const RANK_THRESHOLDS = Object.freeze([40, 120, 240, 400]); // Reputation required for ranks I–IV, in Favor-point units.
   function factionGroupsForNpc(npcId) {
     const rec = npcRecords().find(record => record?.id === npcId); // Reuse the live NPC roster and its authored affiliations.
-    if (!rec) return [];
-    const keys = [rec.homeId && 'home:' + rec.homeId, rec.scheduleHooks?.workBuildingId && 'work:' + rec.scheduleHooks.workBuildingId,
+    const tribe = ['porakaneki','omgurku'].find(id => String(npcId) === id + '_chief'
+      || rec?.species === id || rec?.appearance?.speciesId === id || rec?.tags?.includes(id)); // Hunter/chief factions work even when a procedural member has no household.
+    if (!rec) return tribe ? ['faction:' + tribe] : [];
+    const keys = [tribe && 'faction:' + tribe, rec.homeId && 'home:' + rec.homeId, rec.scheduleHooks?.workBuildingId && 'work:' + rec.scheduleHooks.workBuildingId,
       (rec.factionId || rec.socialFactionId) && 'faction:' + (rec.factionId || rec.socialFactionId)]; // An NPC can participate in multiple independent groups.
     return [...new Set(keys.filter(id => typeof id === 'string' && /^(home|work|faction):[a-z0-9_-]+$/i.test(id)))];
   }
