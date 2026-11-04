@@ -196,6 +196,14 @@ function testRuntime() {
   assert.equal(firstAvatar.parent,bodyRoot,'old portrait remains attached during asynchronous rebuild');
   assert.equal(charge.group.parent,nextPortrait,'stowed burden follows the canonical live portrait, not the stale cached plane');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
+  const newRigPlane=new SkinnedMesh(null,[
+    new MeshBasicMaterial({name:'npc_avatar_skinned_front_material'}),
+    new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]); // A later head/skin rebuild may replace the skinned mesh without replacing its avatar root.
+  nextAvatar.add(newRigPlane);
+  nextAvatar.userData.neckRig.skinnedPlane=newRigPlane;
+  window.Shattercasks.tick(.02);
+  assert.equal(nextPortrait.parent,nextAvatar,'previous skinned plane is still in the active avatar hierarchy');
+  assert.equal(charge.group.parent,newRigPlane,'live rig metadata overrides the cached portrait mesh during in-place rebuild');
   currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
   activeAvatar=new Group();activeAvatar.name='loading_player_avatar';currentBodyRoot.add(activeAvatar);
   window.Shattercasks.tick(.02);
