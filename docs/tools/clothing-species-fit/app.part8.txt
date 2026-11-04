@@ -53,7 +53,7 @@ async function composeRuntimePortrait(){
   fctx.drawImage(runtime.front,0,0);
 
   bctx.drawImage(runtime.back,0,0); // Canonical rear base body is always the backplane foundation.
-  if(mode!=='body'&&routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
+  if(mode!=='body'&&routedPatchIsBody()&&mainClothSource()){ // Body visibility checkbox only affects the 2D editing canvas.
     const warpedPatch=currentWarp();
     const patchLayer=await renderRoutedBodyPatchOverlay(
       runtime.profile,warpedPatch,R.patchWorkflow.descriptor,back.width,back.height
@@ -91,14 +91,14 @@ async function composeRuntimePortrait(){
       }
     };
     if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
-    if(E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
+    if(mode!=='body'&&E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
   }else{
     if(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
       const warped=currentWarp();
       const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
       if(layer){fctx.drawImage(layer,0,0);bctx.drawImage(flipCanvasX(layer),0,0)}
     }
-    if(E.showAuthored.checked&&R.authoredTargetCloth){
+    if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
       const authored=await rawGarmentToRuntimeLayer(R.authoredTargetCloth,+E.authoredOpacity.value);
       if(authored){fctx.drawImage(authored,0,0);bctx.drawImage(flipCanvasX(authored),0,0)}
     }
@@ -106,7 +106,7 @@ async function composeRuntimePortrait(){
     // unlike the rear portrait (where clothing follows the head). Pauldrons
     // are a later front layer and intentionally stay over the head.
     const hasBodyGarment=(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
-      (E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
+      (mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
     if(hasBodyGarment&&garmentRecord()?.slot!=='pauldron'&&runtime.headOnlyFront)
       fctx.drawImage(runtime.headOnlyFront,0,0);
   }
