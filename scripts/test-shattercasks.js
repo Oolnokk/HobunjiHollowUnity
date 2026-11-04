@@ -411,7 +411,7 @@ async function arenaScenario() {
   tiles[4][2]={type:'wall'};
   tiles[5][2]={type:'grass',solid:true};
   const activeScene=new Node();
-  const player={x:4.5*64,y:4.5*64,angle:0,health:100};
+  const player={x:4.5*64,y:4.5*64,angle:0,health:100,lastAttackReceivedAt:100};
   const deps={TILE:64,player,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
   const blasts=[]; // Captures the canonical WorldEvents blast origin to check carrier-centered detonation.
@@ -587,7 +587,7 @@ async function arenaScenario() {
   assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
   assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
-  player.health-=10; // Emulates a successful direct hit from the unmodified game.js damage path.
+  player.lastAttackReceivedAt+=500; // ResourceSystem's direct-hit timestamp advances for a real impact.
   game.Combat.update(.016);
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
   assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
