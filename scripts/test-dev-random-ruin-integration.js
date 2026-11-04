@@ -236,7 +236,7 @@ assert(interactions.includes("typeof control.onHoldStart") && interactions.inclu
 assert(game.includes("phase==='release'&&dispatchWorldInputClaim(actionId,'release','game-input')"), 'normal keyboard/controller input release must pair with held ruin interaction claims');
 assert(game.includes("dispatchWorldInputClaim(_claimedInputAction,'release'") || game.includes("dispatchWorldInputClaim(_claimedInputAction"), 'normal touch arch must pair claimed world-interaction press/release without a ruin-only pointer listener');
 assert(simplePuzzles.includes("'burningHealth',GRID_BURNING"), 'unsafe path plates must apply the existing Burning Health affliction');
-assert(simplePuzzles.includes("'burningHealth',HALL_FIRE_BURNING") && simplePuzzles.includes("'poisonedHealth',HALL_POISON"), 'hallway emitters must alternate existing fire and poison afflictions');
+assert(!simplePuzzles.includes('HALL_FIRE_BURNING') && !simplePuzzles.includes('HALL_POISON') && !simplePuzzles.includes('dev_ruin_hall_projectile_'), 'retired fireball/poison-dart hallway emitters must not apply afflictions or create projectiles');
 assert(simplePuzzles.includes('safePathCells') && simplePuzzles.includes('GRID_REVEAL_MS'), 'safe-path grids must generate one continuous route and reveal it only temporarily');
 assert(simplePuzzles.includes('devRandomRuinMandatoryTraversal') && simplePuzzles.includes('usedHallways.add(hall.id)'), 'safe-path grids must occupy a required hallway crossing rather than a bypassable room-center square');
 assert(simplePuzzles.includes('updateAttachedRope') && simplePuzzles.includes('ROPE_GRAVITY') && ropeCore.includes('rope.omega'), 'rope traversal must use a real pendulum state rather than teleporting between platforms');
