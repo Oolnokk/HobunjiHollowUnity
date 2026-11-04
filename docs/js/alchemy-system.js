@@ -381,8 +381,8 @@
     if (options.skipEmpower !== true) factor *= empowerFactor(definition); // Player-made effects keep perk scaling; NPC/environment flask hits can explicitly bypass the player's perk.
     const amount = (Number(definition.amount) || 0) * factor; // Instant magnitude.
     if (definition.application === 'restoreHealth') {
-      if (window.ResourceSystem?.applyHealthRecovery) window.ResourceSystem.applyHealthRecovery(entity, amount); // Preserve low-Health Berserker healing penalties and current cap through the central healing path.
-      else entity.health = Math.min(entity.maxHealth, (Number(entity.health) || 0) + amount); // Standalone alchemy previews without ResourceSystem still heal.
+      if (window.ResourceSystem?.applyHealthRecovery && Number(entity?.health) > 0) window.ResourceSystem.applyHealthRecovery(entity, amount); // Living actors respect Berserker's Bargain and central healing modifiers.
+      else entity.health = Math.min(window.ResourceSystem?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth, (Number(entity.health) || 0) + amount); // Preserve the original zero-Health/restorative-preview behavior; the central recovery API intentionally refuses to resurrect a dead actor.
     }
     else if (definition.application === 'restoreStamina') {
       window.ResourceSystem?.restoreStamina?.(entity, amount, {
