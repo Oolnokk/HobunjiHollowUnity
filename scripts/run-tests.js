@@ -29,6 +29,7 @@ const SLOW = new Set([
 // Need Playwright; run by their dedicated browser workflow steps.
 const BROWSER = new Set([
   'test-ruin-construction-browser.js', // Playwright runs after Chromium installation in the ruin smoke workflow.
+  'test-v50-native-playthrough-browser.js', // Seed-replayable V50 dungeon autoplayer runs only after Playwright/Chromium installation in its dedicated workflow.
   'test-dev-random-ruin-browser.js',
   'test-dev-random-ruin-collision-browser.js',
   'test-controller-ui-modal-pin.js',

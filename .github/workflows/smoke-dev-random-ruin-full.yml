@@ -18,6 +18,10 @@ on:
       - 'docs/js/ruin-composer*.js'
       - 'docs/config/furniture-authored/ruinPillarBridge.json'
       - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
       - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   pull_request:
@@ -36,6 +40,10 @@ on:
       - 'docs/js/ruin-composer*.js'
       - 'docs/config/furniture-authored/ruinPillarBridge.json'
       - 'scripts/test-ruin-construction-browser.js'
+      - 'scripts/v50-native-playthrough-browser.js'
+      - 'docs/js/ruin-v50-native-*.js'
+      - 'docs/js/ruin-layer-*.js'
+      - 'docs/tools/debris-ifier/debrisifier-v50-api.js'
       - 'scripts/test-ruin-composer-playable.js'
       - 'scripts/test-dev-random-ruin-*.js'
   workflow_dispatch:
@@ -62,6 +70,9 @@ jobs:
           node scripts/test-ruin-composer-playable.js
           node --check docs/js/ruin-composer-playable.js
           node --check scripts/test-ruin-construction-browser.js
+          node --check scripts/v50-native-playthrough-browser.js
+          node --check docs/js/ruin-v50-native-floors.js
+          node --check docs/js/ruin-v50-native-mechanisms.js
           node --check docs/js/root-snare-player-tear.js
           node --check docs/js/dev-hachutu-ruin.js
           node --check docs/js/hachutu-relics.js

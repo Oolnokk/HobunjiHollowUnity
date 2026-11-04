@@ -90,6 +90,10 @@
       "file": "config/furniture-authored/crateStack.json"
     },
     {
+      "key": "looseCrate",
+      "file": "config/furniture-authored/looseCrate.json"
+    },
+    {
       "key": "desk",
       "file": "config/furniture-authored/desk.json"
     },

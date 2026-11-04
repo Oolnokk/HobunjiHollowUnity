@@ -111,7 +111,9 @@
       focusedControlId: window.ControllerUI?.focusedElement?.()?.id || document.activeElement?.id || null,
       controller: window.ControllerUI?.debugState?.() || null,
       lastLoadoutControlChange,
-      weaponShapeStats: window.WeaponShapeStats?.snapshot?.() || null, // Mobile-copyable live weapon profile, including Foundry head mitigation.
+      weaponShapeStats: window.WeaponShapeStats?.snapshot?.() || null,
+      weaponProficiency: window.HobunjiMasteryPolicy?.proficiencyForWeapon?.(window.Combat.deps?.currentWeaponKey?.()) || null, // Family rank and next threshold for mobile debugging.
+      lastSpecialFinisher: window.Combat.comboData?.lastSpecialFinisher || null, // Latest resolved third hit, including any qualified special procs.
       weaponPreview: window.CombatLoadoutWeaponPreview?.debugSnapshot?.() || null, // Includes GPU/mesh/VFX status in the existing mobile-copyable debug report.
     };
   }
@@ -305,6 +307,14 @@
     weaponNote.style.marginBottom = '6px';
     weaponNote.textContent = `${weaponLabel} — Mastery ${mastery}/5 · ${motes}◆ Motes of Prowess`;
     pane.appendChild(weaponNote);
+    const proficiency = window.HobunjiMasteryPolicy?.proficiencyForWeapon?.(toolKey); // Read the canonical character-wide weapon family track.
+    if (proficiency) {
+      const familyNote = document.createElement('div'); // Player-readable rank, XP progress and mastery speed alongside individual tool Mastery.
+      familyNote.className = 'loadout-slot-combo-note';
+      const familyProgressText = proficiency.nextThreshold == null ? 'MAX' : `${proficiency.xp}/${proficiency.nextThreshold} XP`; // Shows a clean cap label rather than '300/MAX XP' after rank 5.
+      familyNote.textContent = `${proficiency.label} Proficiency ${proficiency.level}/${proficiency.maxLevel} · ${familyProgressText} · +${Math.round((proficiency.masteryXpMultiplier - 1) * 100)}% Mastery XP from kills`;
+      pane.appendChild(familyNote);
+    }
     if (toolKey !== 'none') {
       const stats = window.WeaponShapeStats?.forKey?.(toolKey, window.Combat.deps?.getWeaponDefinition?.(toolKey)); // Live equipped shape modifiers for the mobile loadout inspection pane.
       if (stats) {
@@ -424,6 +434,17 @@
       }
 
       if (abilityId) renderLevelPicker(card, toolKey, abilityId);
+      if (slot.readOnly && (abilityId === 'swingCombo' || abilityId === 'pokeCombo')) {
+        const specialNote = document.createElement('div'); // Special finisher is an additional mastery track on the SAME automatic combo, not a selectable attack slot.
+        specialNote.className = 'loadout-slot-combo-note';
+        specialNote.textContent = 'Special Finisher: hit the same enemy with the first two combo swings, then connect with the third. Otherwise Cleave / Long Lunge remains normal. Learn bonus choices with the existing Mastery Scrolls and Tablets.';
+        card.appendChild(specialNote);
+        const specialTitle = document.createElement('div'); // Visually separates finisher upgrades from the ordinary combo's five ranks.
+        specialTitle.className = 'settings-name';
+        specialTitle.textContent = 'Special Finisher Mastery';
+        card.appendChild(specialTitle);
+        renderLevelPicker(card, toolKey, abilityId + 'Finisher');
+      }
 
       pane.appendChild(card);
     }

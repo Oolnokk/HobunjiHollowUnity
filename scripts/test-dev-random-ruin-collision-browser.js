@@ -87,9 +87,9 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
 
     // Move one authored push block by a full runtime tile and refresh explicitly;
     // its red source must move without registering a new object blocker.
-    const scene = window.GridTileAccessors.getActiveScene();
+    const sourceRoot = window.DevRandomRuin.getRuntimeContext()?.root; // TileOccupancy indexes floor-zero V50 only; upper story push blocks have separate height-aware blocker registrations.
     let push = null;
-    scene?.traverse?.(object => { if (!push && object.userData?.pushable && object.userData?.previewMotion?.type === 'pushPuzzleBlock') push = object; });
+    sourceRoot?.traverse?.(object => { if (!push && object.userData?.pushable && object.userData?.previewMotion?.type === 'pushPuzzleBlock') push = object; });
     let pushChange = null;
     if (push) {
       const sourceId = push.userData.__devRuinOccupancySource;

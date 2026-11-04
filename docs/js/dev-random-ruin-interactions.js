@@ -128,10 +128,12 @@
     if (!root?.traverse || now - lastSemanticScanAt < SEMANTIC_RESCAN_MS) return;
     lastSemanticScanAt = now;
     const discoveredLadders = []; // Used to replace the live ladder list after each throttled V50 hierarchy rescan.
-    root.traverse(object => {
-      if (object.userData?.generatedAccessType === 'stoneLadder') discoveredLadders.push(object);
-    });
-    ladders = discoveredLadders;
+    const scanLadders=object=>{if(object.userData?.generatedAccessType==='stoneLadder')discoveredLadders.push(object);};
+    root.traverse(scanLadders);
+    for(const native of window.DevRandomRuinHitPuzzles?.getNativeRoots?.()||[]){
+      if(native&&native!==root&&native.parent)native.traverse?.(scanLadders); // These are real V50 ladder meshes on detached upper stories, not duplicate proxy geometry.
+    }
+    ladders=discoveredLadders;
     ladders.forEach(tagLadder);
   }
 
@@ -175,8 +177,9 @@
     for (const ladder of ladders) {
       const pos = worldPosition(ladder);
       if (!pos) continue;
-      const dist = (pos.x - player.x) ** 2 + (pos.z - player.z) ** 2;
-      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; }
+      const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladder);
+      const dist=Number.isFinite(reach)?reach**2:(pos.x-player.x)**2+(pos.z-player.z)**2;
+      if (dist <= bestDist) { bestDist = dist; best = { ladder, distance:Math.sqrt(dist) }; } // Never select a ladder on a different story because its X/Z matches.
     }
     return best;
   }
@@ -201,7 +204,7 @@
         const z = origin.z + axis.z * offset * sign + lateral.z * side;
         const support = DS.sampleSupport?.(x, z, { minY:expectedBottom - .65, maxY:expectedTop + .65, pad:.02 });
         if (!support || !Number.isFinite(Number(support.y))) continue;
-        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 }) || null;
+        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) }) || null; // Landings test blockers at their own physical elevation, not the player's current story.
         candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, blockerId:blocker?.id || null, offset, sign });
       }
     }
@@ -218,7 +221,7 @@
         const a = i / 16 * Math.PI * 2, x = pos.x + Math.cos(a) * radius, z = pos.z + Math.sin(a) * radius;
         const support = DS.sampleSupport?.(x, z, { minY:landing.y - .2, maxY:landing.y + .2, pad:.02 });
         if (!support || Math.abs(Number(support.y) - landing.y) > .15) continue;
-        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 })) continue;
+        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) })) continue; // The upper landing can be free even while a different floor has a stone blocker at the same X/Z.
         const d = (x - landing.x) ** 2 + (z - landing.z) ** 2;
         if (!best || d < best.d) best = { x, z, y:Number(support.y), supportId:support.id || null, blocked:false, offset:radius, sign:landing.sign, d };
       }
@@ -253,8 +256,12 @@
       deps.showToast?.('The ladder endpoints could not be resolved.', false);
       return false;
     }
-    const currentSupport = DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:12, pad:.02 });
-    const currentY = Number.isFinite(Number(currentSupport?.y)) ? Number(currentSupport.y) : Number(deps.playerMesh?.position?.y) || 0;
+    const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.();
+    const currentSupport=typeof physicalY==='number'&&Number.isFinite(physicalY)
+      ?null:DS.sampleSupport?.(deps.player.x / deps.TILE, deps.player.y / deps.TILE, { minY:-8, maxY:24, pad:.02 });
+    const currentY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY
+      :Number.isFinite(Number(currentSupport?.y))&&currentSupport?.y!=null?Number(currentSupport.y)
+        :Number(deps.playerMesh?.position?.y)||0; // Never choose the highest overlapping floor under the player's X/Z.
     const midpoint = (endpoints.top.y + endpoints.bottom.y) * .5;
     const target = currentY >= midpoint ? endpoints.bottom : endpoints.top;
     const deltaY=Math.abs(target.y-currentY);
@@ -310,6 +317,15 @@
       for (let index = 0; index < controls.length; index++) {
         const control = controls[index];
         if (!control || (typeof control.onPress !== 'function' && typeof control.onHoldStart !== 'function')) continue;
+        // Floor-local controls on stacked 2D layers must not show up through
+        // an upper deck or trigger a different story's brazier from below.
+        // Older V50 controls have no floorY and retain their legacy range.
+        if(Number.isFinite(Number(control.floorY))&&control.floorY!==null&&control.floorY!==undefined){
+          const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Floor checks use real supported feet, not the landing/sinking animation's presentation Y.
+          const presentedY=window.DevRandomRuin?.getPlayerSupportY?.();
+          const supportY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY:presentedY;
+          if(!Number.isFinite(supportY)||Math.abs(supportY-Number(control.floorY))>.9)continue;
+        }
         const kind = String(control.kind || 'interactive').toLowerCase();
         // Glyphs and ignition props are intentionally hit-driven. Never leak
         // the generator's DEV toggle into the ordinary interaction list.
@@ -505,7 +521,11 @@
         touchIcon:'🪜',
         owner:ladderHit.ladder,
         distance:ladderHit.distance,
-        onPress:() => climbLadder(ladderHit.ladder),
+        onPress:()=>{
+          const reach=window.DevRandomRuinHitPuzzles?.distanceToWorldObject?.(ladderHit.ladder);
+          if(Number.isFinite(reach)&&reach>LADDER_RANGE)return false; // A cached mobile/controller prompt cannot climb another story after the player moves.
+          return climbLadder(ladderHit.ladder);
+        },
         seenAt:now,
         source:'semantic-ladder',
       });

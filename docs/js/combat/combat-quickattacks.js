@@ -296,11 +296,12 @@
             const damage = Math.round(baseAbil.damage * hitTech.damageMul * (1 + (effects.stats.damageMul || 0)) * (attackContext.modifiers?.damage || 1));
             const knockbackPxS = baseAbil.knockbackPxS * hitTech.knockbackMul * (attackContext.modifiers?.knockback || 1);
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used to expose actual post-mitigation Health damage including a same-proc Bleedout.
+            const proneEffectMul = window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // Pre-impact snapshot prevents the first knockdown from powering up its own proc.
             if (conditionBonusUsed) {
               for (const effect of quickBonusInstantEffects) {
                 const effectPower = (Number.isFinite(Number(effect.power)) ? Number(effect.power) : 1) * BONUS_EFFECT_POWER_MULTIPLIER; // Same stronger-bonus tuning and Immundanity scaling used by duration effects.
                 if (effect.id === 'bleedout') {
-                  const requestedBleedout = Math.max(0, (Number(effect.amount) || 0) * effectPower); // Default 6 base × 2 bonus power realizes 12 Bleeding Health.
+                  const requestedBleedout = Math.max(0, (Number(effect.amount) || 0) * effectPower * proneEffectMul); // Instant bonus effects scale with the target's pre-impact prone state.
                   const result = window.ResourceSystem?.bleedOut?.(c, requestedBleedout, { source: `Quick Attack: ${def.label}` }); // Existing Bleeding only; the resource helper clamps to what is actually present.
                   if (result?.consumed > 0) appliedInstantEffects.push({ target: c.id || c.name || c.def?.label || 'enemy', id: effect.id, ...result });
                 }
@@ -319,7 +320,8 @@
             if (conditionBonusUsed && c.health > 0) {
               for (const debuff of quickBonusDebuffs) {
                 const applied = window.ResourceSystem?.applyTimedDebuff?.(c, debuff.id, debuff.durationS, {
-                  power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * BONUS_EFFECT_POWER_MULTIPLIER,
+                  power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * (debuff.id === 'knockdown' ? 1 : BONUS_EFFECT_POWER_MULTIPLIER) * proneEffectMul,
+                  fromX: deps.player.x, fromY: deps.player.y, // Full ragdoll launch needs the authentic attacker origin.
                   source: `Quick Attack: ${def.label}`,
                 });
                 if (applied) appliedDebuffs.push({ target: c.id || c.name || c.def?.label || 'enemy', id: debuff.id, durationS: applied.durationS, power: applied.power, stacks: applied.stacks, maxStacks: applied.maxStacks });
@@ -356,7 +358,7 @@
           for (const entry of appliedDebuffs) latestDebuffById.set(entry.id, entry);
           const debuffNames = [...latestDebuffById.values()].map(entry => {
             const label = window.ResourceSystem?.TIMED_DEBUFFS?.[entry.id]?.name || entry.id; // Registry label keeps player-facing text aligned with diagnostics.
-            return `${label} ×${entry.stacks || 1}`;
+            return entry.id === 'knockdown' ? `${label} ${Math.round(entry.durationS * 10) / 10}s` : `${label} ×${entry.stacks || 1}`;
           });
           const debuffText = debuffNames.length ? `; applied ${debuffNames.join(' + ')}` : '';
           const bleedoutTotal = round1(appliedInstantEffects.filter(entry => entry.id === 'bleedout').reduce((sum, entry) => sum + (Number(entry.consumed) || 0), 0)); // Reports real Bleeding consumed, not the requested amount when the target had less.

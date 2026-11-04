@@ -334,6 +334,7 @@
       row.querySelector('[data-field="overpass"]')?.addEventListener('change', event => {
         setOverpassPattern(regionId, event.target.value);
         row.querySelector('[data-field="overpass-dye"]').disabled = !event.target.value;
+         overpassQuick?.refresh(); // Show slot-2 controls after selecting its first motif.
         drawPreview(); refreshDebug();
       });
       row.querySelector('[data-field="overpass-dye"]')?.addEventListener('change', event => {
@@ -346,7 +347,27 @@
         drawPreview();
         refreshDebug();
       });
-      row.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
+      const primaryQuick = window.PatternQuickControls?.mount(row, {
+         title: 'Primary pattern placement',
+         getPattern: () => paintPatternStack(paintDescriptor(regionId))[0] || null,
+         onChange: pattern => {
+           const paint = ensurePaint(regionId), overpass = paintPatternStack(paint)[1]; // The existing second slot remains unchanged.
+           paint.pattern = clone(pattern);
+           if (overpass) paint.patterns = [paint.pattern, overpass];
+           drawPreview(); refreshDebug();
+         },
+       });
+       const overpassQuick = overpassUnlocked() ? window.PatternQuickControls?.mount(row, {
+         title: 'Overpass pattern placement',
+         getPattern: () => paintPatternStack(paintDescriptor(regionId))[1] || null,
+         onChange: pattern => {
+           const paint = ensurePaint(regionId), primary = paintPatternStack(paint)[0];
+           if (!primary) return;
+           paint.patterns = [primary, clone(pattern)]; // Secondary paint retains its own dye without altering the library.
+           drawPreview(); refreshDebug();
+         },
+       }) : null;
+       row.querySelector('[data-act="edit"]')?.addEventListener('click', async () => {
         const paint = ensurePaint(regionId);
         const initial = paint.pattern || (paint.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
         window.PatternAuthoring?.openEditor?.({
@@ -372,7 +393,7 @@
           onSave: async (patternData, libraryId) => {
             paint.patternLibraryId = libraryId || '';
             const priorOverpass = paintPatternStack(paint)[1]; // Authoring the first slot must preserve its secondary.
-            paint.pattern = clone(libraryId ? (window.PatternLibrary?.getById?.(libraryId) || patternData) : patternData);
+            paint.pattern = clone(patternData); // Keep edited instance placement; libraryId remains provenance, never overrides the authored snapshot.
             if (priorOverpass) paint.patterns = [paint.pattern, priorOverpass];
             else delete paint.patterns;
             if (!paint.dyeHex && !paint.dyeId) {
@@ -413,6 +434,7 @@
     deps.setInteractionBlocked?.(true);
     overlay = document.createElement('div');
     overlay.className = 'cp-overlay';
+    overlay.setAttribute?.('data-ctrl-panel', ''); // Native browser dialog registration; optional on minimal test DOM stubs.
     overlay.innerHTML = `
       <div class="cp-modal" role="dialog" aria-modal="true">
         <div class="cp-head"><h2>Color Pools</h2><button type="button" class="cp-close" aria-label="Close">✕</button></div>

@@ -301,6 +301,39 @@
       "w": 1,
       "h": 1,
       "rot": 0
+    },
+    {
+      "id": "obj_crate_nw_outer",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Supply Crates",
+      "col": 0,
+      "row": 4,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_crate_ne_outer",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Supply Crates",
+      "col": 8,
+      "row": 4,
+      "w": 1,
+      "h": 1,
+      "rot": 0
+    },
+    {
+      "id": "obj_crate_south",
+      "kind": "decor",
+      "key": "crateStack",
+      "label": "Supply Crates",
+      "col": 4,
+      "row": 6,
+      "w": 1,
+      "h": 1,
+      "rot": 0
     }
   ],
   "npcAnchors": [],

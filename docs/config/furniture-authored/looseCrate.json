@@ -1,0 +1,130 @@
+{
+  "schema": "hobunji_furniture_authored_runtime.v1",
+  "key": "looseCrate",
+  "name": "Wooden Crate",
+  "footprint": {
+    "w": 1,
+    "d": 1
+  },
+  "notes": "Throwable single crate, reused as the physical burden from wild crate piles. Carry anchors start from the Hronal Witch-bomb authoring profile.",
+  "parts": [
+    {
+      "id": "loose_crate_body",
+      "kind": "box",
+      "name": "Loose Wooden Crate",
+      "transform": {
+        "x": 0,
+        "y": 0.17,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0,
+        "sx": 0.5,
+        "sy": 0.34,
+        "sz": 0.5
+      },
+      "color": "#8b6540",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "crate_side.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 1
+    }
+  ],
+  "seatAnchors": [],
+  "particleEmitters": [],
+  "processingWarps": [],
+  "processTimelines": [],
+  "stompAttachPoints": [],
+  "carryable": {
+    "enabled": true,
+    "billboardAnchor": {
+      "coordinateSpace": "posterior-relative",
+      "position": {
+        "x": 0,
+        "y": -0.333,
+        "z": -0.256
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "posteriorOffset": {
+        "x": 0,
+        "y": -0.02,
+        "z": 0
+      },
+      "size": 1
+    },
+    "hitbox": {
+      "enabled": true,
+      "center": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "size": {
+        "x": 0.4377,
+        "y": 0.4321,
+        "z": 0.4349
+      }
+    },
+    "handTargets": {
+      "left": {
+        "x": 0.245,
+        "y": 0,
+        "z": 0.021,
+        "rotation": {
+          "x": 180,
+          "y": 0,
+          "z": -90
+        }
+      },
+      "right": {
+        "x": -0.217,
+        "y": 0,
+        "z": 0.017,
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 90
+        }
+      }
+    },
+    "enemyHoldAnchor": {
+      "position": {
+        "x": 0,
+        "y": 0.02,
+        "z": -0.18
+      },
+      "scale": 0.82
+    },
+    "explodeOnHit": false
+  }
+}

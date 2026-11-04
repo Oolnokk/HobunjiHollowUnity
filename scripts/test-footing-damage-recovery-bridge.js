@@ -112,7 +112,11 @@ const proneStateStart = gameSource.indexOf('function updateProneState(dt)');
 const proneStateEnd = gameSource.indexOf('const SOMERSAULT_RECOVERY_DUR_S', proneStateStart);
 assert.ok(proneStateStart >= 0 && proneStateEnd > proneStateStart, 'game keeps a dedicated prone-state update block');
 const proneStateSource = gameSource.slice(proneStateStart, proneStateEnd);
-assert.ok(proneStateSource.includes('player.footing >= proneRecoveryFootingTarget(player)'), 'restored Footing automatically qualifies the player to get up');
+assert.ok(proneStateSource.includes('proneRecoveryReady(player)'), 'restored Footing automatically qualifies the player to get up via the shared recovery policy');
+const pronePolicy = gameSource.slice(gameSource.indexOf('function proneRecoveryReady(entity)'), gameSource.indexOf('// Called from updateHostiles once a prone creature', gameSource.indexOf('function proneRecoveryReady(entity)')));
+assert.ok(pronePolicy.includes('entity.footing >= proneRecoveryFootingTarget(entity)'), 'genuine zero-Footing prone still demands full unshambled Footing recovery');
+assert.ok(pronePolicy.includes("hasTimedDebuff?.(entity, 'knockdown')"), 'active timed Knockdown must prevent premature recovery');
+assert.ok(pronePolicy.includes('entity._temporaryKnockdownProne === true'), 'temporary knockdown can recover without a full Footing refill');
 assert.ok(proneStateSource.includes('beginSomersaultRecovery();'), 'automatic prone recovery reuses the existing in-place somersault arc');
 assert.ok(proneStateSource.includes('!(player.proneThrowT > 0)') && proneStateSource.includes('!player._knockbackLedgeFall'), 'automatic get-up waits for prone throws and ledge falls to finish');
 
