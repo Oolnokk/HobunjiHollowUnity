@@ -446,9 +446,15 @@
           material.needsUpdate=true;
         }
     }
-    syncCarrierRearPortrait(carryDeps()?.playerMesh);
+    syncCarrierRearPortrait(backCarried===cask?backCarryRoot():carryDeps()?.playerMesh);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
+  // Back burdens mount to the registered whole-character rig root, never to a head/hand socket.
+  // If the rig is temporarily unregistered during avatar rebuild, retain the old parent until it returns.
+  function backCarryRoot(){
+    const composer=window.PlayerBodyTransformComposer; // Authoritative body root for back attachment and rear-portrait layering.
+    return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
+  }
   function heldItemHolder(){
     const d=carryDeps();
     return d?.getHeldItemHandTarget?.()?.holder
@@ -477,11 +483,11 @@
     return{holder,position,quaternion};
   }
   function alignHeldVase(vase) {
-    const body=carryDeps()?.playerMesh;
+    const isBack=backCarried===vase;
+    const body=isBack?backCarryRoot():carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     if(vase.group.parent!==body)body.add(vase.group);
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
-    const isBack=backCarried===vase;
     const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
     const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
     const playerGender=String(body.userData?.gender||'male').toLowerCase();
@@ -2370,7 +2376,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Single back-mounted Burden follows the avatar, tool arch, hit reactions, and fuse.',crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Back Burdens mount to the animation composer body root, independent of the neck and hand sockets.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,rigRootAttached:!!backCarryRoot()&&backCarried.group?.parent===backCarryRoot()}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
