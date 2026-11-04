@@ -73,7 +73,7 @@ const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fall
       const summary=await page.evaluate(()=>{
         const snap=window.DevRandomRuinSimplePuzzles.snapshot();
         return {chain:snap.ropeChains.find(chain=>chain.mandatoryTraversal)||null,
-          chains:snap.ropeChains.length,modules:snap.modules.filter(module=>module.slotKind==='hallway').map(module=>module.type)};
+          chains:snap.ropeChains.length,rejects:snap.ropeChainRejects||[],modules:snap.modules.filter(module=>module.slotKind==='hallway').map(module=>module.type)};
       });
       console.log('[rope-chain candidate]',JSON.stringify({seed,...summary}));
       if(summary.chain){selected={seed,chain:summary.chain};break;}
@@ -184,6 +184,7 @@ const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fall
       area:window.GridTileAccessors?.getCurrentArea?.(),
       generation:window.DevRandomRuin?.getGenerationProgress?.(),
       simple:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.ropeChains,
+      rejects:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.ropeChainRejects,
       checkpoints:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.checkpoints,
       playerDowned:window.PlayerDowned?.isDowned?.(),
     })).catch(()=>null);
