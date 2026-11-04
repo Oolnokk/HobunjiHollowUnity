@@ -366,6 +366,7 @@ async function main() {
 
   // Hiding the raw body in the 2D editor must not hide a routed body patch
   // from 3D; the two checkboxes intentionally have different scopes.
+  state.patchWorkflow={descriptor:{kind:'body',layerId:'torso'}}; // Stub the routed patch descriptor used by the shipped compositor.
   const patchedCompose=new Function(
     'R','E','document','runtimePortraitSet','routedPatchIsBody',
     'mainClothSource','currentWarp','renderRoutedBodyPatchOverlay','fitRegion',
