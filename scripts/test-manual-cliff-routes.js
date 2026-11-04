@@ -31,10 +31,12 @@ function build(g) {
 
 const baseGrid = gridWithCliffs();
 const network = build(baseGrid);
-assert.equal(network.components.length, 2, 'ground and upper plateau are separate walkable components');
+assert.equal(network.components.length, 3, 'an unpainted extra tier still becomes a separate reachable plateau');
 assert(network.routes.length > 0, 'some cliff faces receive carved climbing routes');
 assert(network.routes.length < network.candidateCount, 'not every cliff candidate is climbable');
 assert.equal(network.unconnectedComponents, 0, 'plateau has at least one actual climbing route');
+assert(network.verification.ok, 'every reachable plateau and balcony must pass shaft-style path validation');
+assert.equal(network.verification.invalidHops.length, 0, 'no overlong or unreciprocated handhold links');
 assert(routes.toward(network, 2, 10, 8, 10), 'wildlife can navigate toward the route');
 assert(routes.toward(network, 8, 10, 2, 10), 'wildlife can traverse down by the same route');
 
@@ -76,6 +78,7 @@ assert(routes.getRewardState(network.area, shelf.id).claimed, 'mined/looted balc
 const third = build(gridWithCliffs(28, true));
 assert.equal(third.components.length, 3, 'nested plateaus are distinct graph components');
 assert.equal(third.unconnectedComponents, 0, 'both plateau levels have generated connecting paths');
+assert(third.verification.ok, 'independent multi-height plateau routes pass traversal proof');
 assert(routes.toward(third, 2, 10, 16, 10), 'NPCs can path through two sequential cliff crossings');
 assert(!routes.toward(build(Array.from({ length: 4 }, () => [
   { type: 'grass' }, { type: 'wall' }, { type: 'grass', elevTier: 1 },
@@ -86,6 +89,7 @@ assert.equal(routes.forGrid(baseGrid), cached, 'unchanged grid reuses topology')
 assert.notEqual(routes.forGrid(baseGrid, { area: 'western-slope', rebuild: true }), cached, 'terrain rebuild invalidates old topology');
 
 assert(/cliff-route-network\.js\?v=/.test(html), 'runtime loads shared cliff graph');
+assert(html.includes('cliff-elevated-surfaces.js'), 'game loads the shared dungeon support adapter');
 assert(cliffClimb.includes('_cliffRouteSession') && cliffClimb.includes('jumpFromBalcony'), 'player controlled hops and balcony descents are wired');
 assert(wildlife.includes('function navigate(') && game.includes('CreatureCliffClimb?.navigate?.('), 'creature travel uses the route planner');
 assert(npcPath.includes('updateCliffClimb') && game.includes('NpcPathfinding?.updateCliffClimb?.('), 'scheduled NPCs use elevation-aware paths');
