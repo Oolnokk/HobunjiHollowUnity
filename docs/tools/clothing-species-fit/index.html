@@ -160,7 +160,10 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="loader.js"></script>
+<!-- The 2D editor must never wait for the optional Three.js CDN on mobile. -->
+<script async src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
+  onload="window.dispatchEvent(new Event('hobunji-clothing-fit-three-ready'))"
+  onerror="document.getElementById('threeStatus').textContent='Three.js could not load; 2D fitting is still available. Retry the 3D preview when connected.'"></script>
+<script src="loader.js" onerror="document.getElementById('status').textContent='Editor loader could not be fetched. Check your connection and reload this page.'"></script>
 </body>
 </html>
