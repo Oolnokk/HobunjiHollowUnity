@@ -155,8 +155,12 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert.equal(cleared.state,null,'ruin exit must clear the active map');
     assert.equal(cleared.ropes,0,'ruin exit must dispose the rope');
     assert.equal(cleared.puzzleNodes,0,'ruin exit must discard the authored puzzle graph');
-    const shaft=await page.evaluate(async()=>{
-      const entered=await window.DevRandomRuin.generate(4,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // No shaft option: every generated ruin receives one.
+    const seedInput=process.env.HOBUNJI_V50_PLAYTHROUGH_SEED; // Replay a failing V50 seed directly in this same browser test without changing its other gameplay fixtures.
+    const nativeSeed=seedInput==null?4:Number(seedInput);
+    assert(Number.isInteger(nativeSeed)&&nativeSeed>=0&&nativeSeed<=0xffffffff,
+      'HOBUNJI_V50_PLAYTHROUGH_SEED must be an unsigned 32-bit integer');
+    const shaft=await page.evaluate(async(seed)=>{
+      const entered=await window.DevRandomRuin.generate(seed,{theme:'hronal',rootMechanisms:false,stoneAge:false}); // Normal native V50 generation: no test-only puzzle-family flags.
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress()};
       const state=window.DevRandomRuin.getState();
       const controls=window.DevRandomRuin.getInteractionControls(); // The actual in-game interaction resolver must own one native V50 brazier per upper story.
@@ -187,7 +191,7 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
         connection:state.shaftConnection,plannedFloors:state.shaftLayerPlan?.floorCount,wing:state.shaftNavigation?.[0],surfaces:surfaces.length,
         topLevel:highest?.y1??null,topSupport:support?.y??null,teleported:!!teleported,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
-    });
+    },nativeSeed);
     assert(shaft.ok&&shaft.surfaces>=2&&shaft.topLevel>=8,'the live multi-floor shaft must expose its physical climb faces: '+JSON.stringify(shaft));
     assert.equal(shaft.native.floors,shaft.plannedFloors-1,'each planned upper story must mount its real V50 floor in the live game');
     assert.equal(shaft.native.totalBraziers,shaft.native.floors,'every native V50 floor must have one objective brazier');

@@ -80,6 +80,16 @@ module.exports=async function runNativeV50Playthrough(page){
       .flatMap(stage=>stage.gate.tiles.map(([x,z])=>key(x,z))));
     const trigger=async (control,record,stage)=>{
       if(!control||typeof control.onPress!=='function')fail('missing in-game interaction control',record,stage,control?.kind);
+      const player=window.Combat?.deps?.player,tile=Number(window.Combat?.deps?.TILE)||0;
+      const bounds=box(control.promptRoot||control.object);
+      const reach=Number(control.range)||1.7;
+      if(!player||!tile||!bounds)fail('cannot verify gameplay control reach',record,stage,{kind:control.kind});
+      const x=player.x/tile,z=player.y/tile;
+      const dx=Math.max(bounds.min.x-x,0,x-bounds.max.x),dz=Math.max(bounds.min.z-z,0,z-bounds.max.z);
+      const physicalY=Number(game.getPlayerGroundSupportY?.());
+      if(Math.hypot(dx,dz)>reach+.15||control.floorY!=null&&Math.abs(physicalY-Number(control.floorY))>.95)
+        fail('in-game interaction would not be available at this position',record,stage,{
+          kind:control.kind,distance:Math.hypot(dx,dz),range:reach,player:{x,z,y:physicalY},floorY:control.floorY});
       const result=await control.onPress(); // Same closure that the ordinary keyboard/controller/mobile action bar executes.
       await sleep(65);
       return result;
@@ -125,6 +135,7 @@ module.exports=async function runNativeV50Playthrough(page){
       for(const controlIndex of moves){
         const segment=data.rotatingSegments?.[controlIndex]?.segment;
         const control=puzzleControl('v50NativeLinkedCube',segment);
+        await put({...point(segment),y:Number(control?.floorY??floorY(record))},record,stage);
         await trigger(control,record,stage);
       }
       steps.push({floor:record.floor,stage:stage.id,event:'native-cube-controls',moves:moves.length,statesBefore:initial});
@@ -134,8 +145,11 @@ module.exports=async function runNativeV50Playthrough(page){
       await put({...point(actor),y:floorY(record)},record,stage);
       for(const entry of actor.userData.rotatingSegments||[]){
         const rotation=()=>((Math.round(entry.segment.rotation.y/(Math.PI*.5))%4)+4)%4;
-        for(let attempts=0;rotation()!==0&&attempts<4;attempts++)
-          await trigger(puzzleControl('v50NativeObelisk',entry.segment),record,stage);
+        for(let attempts=0;rotation()!==0&&attempts<4;attempts++){
+          const control=puzzleControl('v50NativeObelisk',entry.segment);
+          await put({...point(entry.segment),y:Number(control?.floorY??floorY(record))},record,stage);
+          await trigger(control,record,stage);
+        }
         if(rotation()!==0)fail('obelisk ring did not align',record,stage,entry);
       }
       steps.push({floor:record.floor,stage:stage.id,event:'native-rotating-obelisk-controls'});
@@ -268,6 +282,12 @@ module.exports=async function runNativeV50Playthrough(page){
           await solveNative(state,record,stage);
         }else await solveFallback(stage,record);
         await sleep(350);
+        if(stage.kind==='v50Authored'){
+          const sourceMechanism=record.nativeMechanisms.states.get(stage.nativeMechanism.id);
+          if(sourceMechanism?.motion==='stoneDoor'&&sourceMechanism.progress<.85)
+            fail('original V50 authored door has not moved with its accepted solution',record,stage,{
+              mechanismId:sourceMechanism.id,progress:sourceMechanism.progress});
+        }
         if(record.solved!==index+1||stage.gate?.object.visible!==false)
           fail('correct native puzzle input did not open exactly one stage gate',record,stage,{expected:index+1,actual:record.solved,gateVisible:stage.gate?.object.visible});
         for(const [x,z] of stage.gate.tiles){
