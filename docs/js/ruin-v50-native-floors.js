@@ -401,34 +401,36 @@
           const kind=i===0?'pressurePlate':i===1?RANGED[item.floor%RANGED.length]
             :kinds[(i+item.floor)%kinds.length];
           const challengeY=floor.y+(heights.get(key(Math.floor(world.x+world.w/2),Math.floor(world.z+world.d/2)))||0); // Match the actual V50 surface under the puzzle.
+          const authored=record.nativeMechanisms.stageCandidate(world); // Prefer V50's actual puzzles; never let an unrelated substitute plate bypass a real mechanism.
+          const challengeId='v50-f'+item.floor+'-'+native.id;
           let challenge=null;
-          challenge=Challenges.compose({
-            THREE,parent:group,room:world,id:'v50-f'+item.floor+'-'+native.id,kind,y:challengeY,
-            isActive:()=>!owner.disposed&&record.solved===i,
-            getPlayerPosition,getPlayerY,
-            addControl,removeControl,
-            onLink:options.onStateChange,onError:options.onError,
-            onSolved:()=>{
-              if(owner.disposed||record.solved!==i)return;
-              record.solved++;setGate(challenge,false);
-              options.showToast?.('The native chamber gate opens.',true);options.onStateChange?.();
-            },
-          });
-          challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
-          challenge.floorY=challengeY; // Shared stage diagnostics and native pressure-plate tests use exact V50 room centers.
-          const authored=record.nativeMechanisms.stageCandidate(world); // If V50 authored a real puzzle inside this chamber, solving it also opens the chamber gate.
           if(authored){
-            challenge.nativeMechanism=authored;
-            const regularTick=challenge.tick;
-            challenge.tick=dt=>{
-              regularTick?.(dt);
-              if(!challenge.solved&&record.nativeMechanisms.isSolved(authored.id)&&record.solved===i){
-                challenge.solved=true;
-                record.solved++;setGate(challenge,false);
+            challenge={id:challengeId,kind:'v50Authored',nativeMechanism:authored,
+              x:world.x+world.w/2,z:world.z+world.d/2,floorY:challengeY,
+              solved:false,disposed:false,
+              tick:()=>{
+                if(challenge.disposed||challenge.solved||owner.disposed||record.solved!==i
+                  ||!record.nativeMechanisms.isSolved(authored.id))return;
+                challenge.solved=true;record.solved++;setGate(challenge,false);
                 options.showToast?.('The V50 mechanism unlocks the chamber.',true);
                 options.onStateChange?.();
-              }
-            };
+              },
+              dispose(){this.disposed=true;},
+            }; // The original V50 source meshes, inputs and signal remain the only puzzle hardware in this room.
+          }else{
+            challenge=Challenges.compose({
+              THREE,parent:group,room:world,id:challengeId,kind,y:challengeY,
+              isActive:()=>!owner.disposed&&record.solved===i,
+              getPlayerPosition,getPlayerY,addControl,removeControl,
+              onLink:options.onStateChange,onError:options.onError,
+              onSolved:()=>{
+                if(owner.disposed||record.solved!==i)return;
+                record.solved++;setGate(challenge,false);
+                options.showToast?.('The native chamber gate opens.',true);options.onStateChange?.();
+              },
+            });
+            challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
+            challenge.floorY=challengeY;
           }
           const door=analysis.gates[i].door,span=Math.max(2,(Number(door.widthCells)||3)*place.cs);
           const x=place.originX+(door.axis==='x'?door.boundary:door.center)*place.cs;
@@ -491,7 +493,9 @@
       stagesTotal:owner.records.reduce((n,r)=>n+r.challenges.length,0),
       perFloor:owner.records.map(r=>({
         floor:r.floor,rooms:r.analysis.rooms,hallways:r.analysis.hallways,
-        stages:r.challenges.length,solved:r.solved,lit:r.lit,routeLength:r.route.length,
+        stages:r.challenges.length,solved:r.solved,lit:r.lit,
+        nativeAuthoredStages:r.challenges.filter(challenge=>challenge.kind==='v50Authored').length, // In-game diagnostics distinguish native puzzles from fallback stages.
+        routeLength:r.route.length,
         routeWallSegments:r.routeWallSegments,
         nativeMechanisms:r.nativeMechanisms?.getState?.()||null,
         allocation:r.place.width+'×'+r.place.depth+' / 180×180',
