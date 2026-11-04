@@ -512,6 +512,11 @@
     return network&&!network.complete?network:null;
   }
 
+  function awakeDoorLabel(){
+    const pending=shaftSealsPending(); // One read per context-menu refresh, not three redundant deep snapshots.
+    return pending?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')':'Open the Great Door';
+  }
+
   function buildGreatDoor(kit, context, site, decalCount) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
     s.hiddenDecor = clearDoorFootprint(context, site);
@@ -530,9 +535,7 @@
     door.control = {
       kind:'greatDoor', object:door.group, promptRoot:door.group, range:2.3, priority:24, claimAction1:true, touchIcon:'🚪',
       label:() => door.state === 'sealed' ? `Great Door (Sealed ${s.braziers.filter(b => b.lit).length}/${s.braziers.length})`
-        : door.state === 'awake' ? (shaftSealsPending()
-          ? 'Great Door (Shaft '+shaftSealsPending().lit+'/'+shaftSealsPending().braziers+')'
-          : 'Open the Great Door')
+        : door.state === 'awake' ? awakeDoorLabel()
         : door.state === 'opening' ? 'The Great Door is opening…'
         : 'Enter the Sanctum',
       onPress:() => pressGreatDoor(),
