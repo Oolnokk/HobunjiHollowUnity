@@ -32,6 +32,55 @@ assert.match(farm,/normalize\?\.\(tableAttachment\)/);
 assert.match(farm,/npcStationId: obj\.npcStationId/);
 const tableSystem=fs.readFileSync('docs/js/furniture-table-system.js','utf8');
 assert.match(tableSystem,/seat\.furnitureId/);
+// Execute the farm restore loop with the real table registry and transform code.
+const restoreDecor = new vm.Script(farm.slice(
+  farm.indexOf('(layout.decor || []).forEach'),
+  farm.indexOf('// House pieces — initWorldObjects()')
+));
+for (const tableFirst of [true, false]) {
+  const restoreWindow = { THREE: { Vector3 } };
+  const context = vm.createContext({ window: restoreWindow });
+  vm.runInContext(fs.readFileSync('docs/js/table-chair-placement.js', 'utf8'), context);
+  vm.runInContext(tableSystem, context);
+  const restored = []; // Published records let a moved child resolve its parent during load.
+  const stations = new Map(); // Captures the final navigation tile and stable station identity.
+  const register = (key, x, z, yaw, area, roles, lookAt, id, stationId) => {
+    if (key !== 'chair') return null;
+    stations.set(stationId, [Math.floor(x), Math.floor(z)]);
+    return stationId;
+  };
+  restoreWindow.HobunjiFurnitureTableAttachmentMoved = record => {
+    assert.ok(restored.some(parent => parent.id === record.tableId), 'parent is visible during child refresh');
+    register(record.key, record.mesh.position.x, record.mesh.position.z, 0, record.area,
+      null, null, record.id, record.npcStationId);
+  };
+  const tableRecord = { id: 'table', key: 'tableRound', area: 'interior', col: 4, row: 5, ownerPieceId: 'room' };
+  const chairRecord = { id: 'chair', key: 'chair', area: 'interior', col: 4.75, row: 6.75,
+    rotYDeg: 180, ownerPieceId: 'room', tableId: 'table', npcStationId: 'saved-chair',
+    tableAttachment: { mode: 'orbit', angleDeg: 0, distance: .75 } };
+  // Chair-first starts with a stale saved position so adding the parent must refresh the station.
+  if (!tableFirst) chairRecord.row -= 1;
+  context.layout = { decor: tableFirst ? [tableRecord, chairRecord] : [chairRecord, tableRecord] };
+  context.deps = {
+    DECORATIVE_FURNITURE_DEFS: { tableRound: { fw: 2, fd: 1 }, chair: { sit: true } },
+    getInteriorScene() {},
+    makeDecorativeFurnitureMesh(col, row, key, scene, area, yaw) {
+      const position = new Vector3(key === 'chair' ? col + .5 : 5.25, 0, key === 'chair' ? row + .5 : 5.5);
+      position.set = function (x, y, z) { Object.assign(this, { x, y, z }); };
+      const mesh = {
+        position, parent: {}, rotation: { y: yaw * Math.PI / 180 },
+        getWorldPosition() { return position.clone(); },
+        localToWorld(v) { return new Vector3(position.x + v.x, v.y, position.z + v.z); },
+      };
+      return { mesh };
+    },
+    interiorFurnitureObjects: restored,
+    normalizeNpcArea: area => area,
+    registerChairNpcStation: register,
+  };
+  restoreDecor.runInContext(context);
+  assert.deepEqual([...stations], [['saved-chair', [5, 7]]], 'restored station uses the chair center in either load order');
+}
 const game=fs.readFileSync('docs/game.js','utf8');
 assert.match(game,/stationId = null/);
 assert.match(game,/HobunjiFurnitureTableAttachmentMoved/);
