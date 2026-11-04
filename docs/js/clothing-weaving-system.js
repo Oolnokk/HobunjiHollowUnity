@@ -1069,15 +1069,16 @@
       blueprintSelect.appendChild(option);
     }
 
-    function populatePatternSelect(select, selectedId) {
+    function populatePatternSelect(select, selectedId, customLabel = '') {
       select.innerHTML = '<option value="">None</option>';
+      if (customLabel) select.add(new Option(customLabel, '__custom')); // Preserve custom snapshots without pretending a library entry exists.
       for (const entry of patternLibraryEntries()) {
         const option = document.createElement('option');
         option.value = entry.id;
         option.textContent = entry.label;
         select.appendChild(option);
       }
-      select.value = selectedId || '';
+      select.value = selectedId || (customLabel ? '__custom' : '');
     }
 
     const selectedBlueprint = () => isReweave
@@ -1190,7 +1191,7 @@
         label.textContent = patternRoles().length > 1 ? layerLabel(role) : 'Pattern library';
         row.appendChild(label);
         const select = document.createElement('select');
-        populatePatternSelect(select, state.layerPatterns[key]?.patternId);
+        populatePatternSelect(select, state.layerPatterns[key]?.patternId, state.layerPatterns[key]?.pattern && !state.layerPatterns[key]?.patternId ? 'Custom pattern' : '');
         row.appendChild(select);
         let overpassSelect = null; // Advanced Loom-only second pattern selector for this garment role.
         let overpassDyeSelect = null; // This garment role's optional independent overpass dye.
@@ -1199,13 +1200,15 @@
           overpassLabel.textContent = 'Overpass pattern';
           row.appendChild(overpassLabel);
           overpassSelect = document.createElement('select');
-          populatePatternSelect(overpassSelect, state.overpassPatterns[key]?.patternId);
+          populatePatternSelect(overpassSelect, state.overpassPatterns[key]?.patternId, state.overpassPatterns[key]?.pattern && !state.overpassPatterns[key]?.patternId ? 'Custom overpass' : '');
           overpassSelect.disabled = !state.layerPatterns[key];
           overpassSelect.onchange = () => {
             const patternId = overpassSelect.value, previous = state.overpassPatterns[key]; // Keep separate color while changing motifs.
+            if (patternId === '__custom') return; // The custom overpass is already stored as a snapshot.
             if (!patternId) delete state.overpassPatterns[key];
             else state.overpassPatterns[key] = { ...previous, pattern: clone(window.PatternLibrary?.getById?.(patternId)), patternId, patternLabel: overpassSelect.selectedOptions[0]?.textContent || 'None' };
             if (overpassDyeSelect) overpassDyeSelect.disabled = !patternId;
+            overpassQuick?.refresh();
             refreshPreview();
           };
           row.appendChild(overpassSelect);
@@ -1240,6 +1243,7 @@
         row.appendChild(swapWrap);
         select.onchange = () => {
           const patternId = select.value;
+          if (patternId === '__custom') return; // Do not accidentally discard a saved custom motif.
           const keepSwap = !!swapCheck.checked; // Carries this garment-layer choice across library-pattern changes without touching the pattern data.
           if (!patternId) {
             delete state.layerPatterns[key];
@@ -1254,6 +1258,8 @@
             if (overpassDyeSelect) overpassDyeSelect.disabled = !state.overpassPatterns[key];
             swapCheck.disabled = false;
           }
+          primaryQuick?.refresh(); overpassQuick?.refresh();
+          if (overpassAuthorBtn) overpassAuthorBtn.disabled = !state.layerPatterns[key];
           refreshPreview();
         };
         swapCheck.onchange = () => {
@@ -1262,6 +1268,16 @@
           entry.swapPatternColors = !!swapCheck.checked;
           refreshPreview();
         };
+        const primaryQuick = window.PatternQuickControls?.mount(row, {
+          title: 'Primary pattern placement',
+          getPattern: () => state.layerPatterns[key]?.pattern || null,
+          onChange: pattern => { state.layerPatterns[key].pattern = clone(pattern); refreshPreview(); },
+        }); // Placement belongs to this garment role, not to the reusable library.
+        const overpassQuick = advanced ? window.PatternQuickControls?.mount(row, {
+          title: 'Overpass pattern placement',
+          getPattern: () => state.overpassPatterns[key]?.pattern || null,
+          onChange: pattern => { state.overpassPatterns[key].pattern = clone(pattern); refreshPreview(); },
+        }) : null; // Pattern stack slot 2 has its own five independent transforms.
         const actions = document.createElement('div');
         actions.className = 'loomcraft-pattern-actions';
         const authorBtn = document.createElement('button');
@@ -1269,6 +1285,14 @@
         authorBtn.textContent = 'Author custom pattern…';
         authorBtn.onclick = () => openLayerPatternAuthor(role, key);
         actions.appendChild(authorBtn);
+        const overpassAuthorBtn = advanced ? document.createElement('button') : null; // Dedicated slot-2 authoring instead of overwriting slot 1.
+        if (overpassAuthorBtn) {
+          overpassAuthorBtn.type = 'button';
+          overpassAuthorBtn.textContent = 'Author overpass pattern…';
+          overpassAuthorBtn.disabled = !state.layerPatterns[key];
+          overpassAuthorBtn.onclick = () => openLayerPatternAuthor(role, key, 1);
+          actions.appendChild(overpassAuthorBtn);
+        }
         const clearBtn = document.createElement('button');
         clearBtn.type = 'button';
         clearBtn.textContent = 'Plain cloth';
@@ -1280,6 +1304,8 @@
             if (overpassDyeSelect) { overpassDyeSelect.value = ''; overpassDyeSelect.disabled = true; }
           swapCheck.checked = false;
           swapCheck.disabled = true;
+          primaryQuick?.refresh(); overpassQuick?.refresh();
+          if (overpassAuthorBtn) overpassAuthorBtn.disabled = true;
           refreshPreview();
         };
         actions.appendChild(clearBtn);
