@@ -11,7 +11,7 @@
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
-  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain']); // Shared by composer and acceptance proof.
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
@@ -67,7 +67,7 @@
     // ONLY puzzle families backed by an implemented real runtime may be
     // selected. Advanced rope/defence/fire variants will be added as their
     // actual mechanics are integrated, never disguised as plain floor plates.
-    const puzzles=PLAYABLE_PUZZLES;
+    const puzzles=PLAYABLE_PUZZLES.filter(type=>type!=='statueDefense'); // Ordinary-size rooms cannot fit the authored enemy pillars, so they exclude the oversized objective.
     const rangedPuzzles=RANGED_PUZZLES;
     for(let floor=0;floor<floorCount;floor++){
       const y=floor*o.floorHeight; // Physical y datum for this otherwise ordinary 2D map.
@@ -87,8 +87,9 @@
           z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
         let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
         for(let stage=1;stage<=challengeCount+1;stage++){ // Always at least two actual puzzle rooms BEFORE the goal brazier.
-          const rw=dir.dx?integer(rng,11,19):integer(rng,9,15);
-          const rd=dir.dz?integer(rng,11,19):integer(rng,9,15);
+          const defence=stage>=3&&stage<=challengeCount&&rng()<.24; // Only later wing stages may reserve a full authored statue-defense arena.
+          const rw=defence?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
+          const rd=defence?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
           const gap=integer(rng,7,15); // Variable-length hall, not a snapped room-grid separation.
           const offset=integer(rng,-5,5),depth=Math.floor((dir.dx?rw:rd)/2);
           const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
@@ -97,7 +98,7 @@
           const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
-            challenge:isGoal?null:stage===1?'pressurePlate'
+            challenge:isGoal?null:defence?'statueDefense':stage===1?'pressurePlate'
               :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
               :stage===3&&rng()<.58?'ropeChain'
               :rng()<.5?'melodyEcho':puzzles[integer(rng,0,puzzles.length-1)]};
@@ -150,7 +151,8 @@
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
-          r=>PLAYABLE_PUZZLES.includes(r.challenge))&&wing.rooms[0].challenge==='pressurePlate'
+          r=>PLAYABLE_PUZZLES.includes(r.challenge)
+            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))&&wing.rooms[0].challenge==='pressurePlate'
           &&RANGED_PUZZLES.includes(wing.rooms[1].challenge));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
