@@ -203,6 +203,9 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       'live native stories must have pre-reserved layouts, physical entrance corridors and staged gates: '+JSON.stringify(shaft.native));
     assert(shaft.teleported&&Math.abs(shaft.standing-shaft.topSupport)<.15,
       'upper balcony must be a real walkable support, not a visual-only ledge: '+JSON.stringify(shaft));
+    const playthrough=await require('./v50-native-playthrough-browser.js')(page); // Reuse the already-mounted actual multi-floor dungeon, exercising native puzzle controls before teardown rather than generating a second test map.
+    assert.equal(playthrough.braziers,playthrough.floors,'every physical native V50 story brazier must be reached by solving its stage gates');
+    console.log('V50 native instrumented browser playthrough: '+JSON.stringify(playthrough));
     await page.evaluate(async()=>window.DevRandomRuin.leave());
     const afterExitCubes=await page.evaluate(()=>{
       const frame=document.getElementById('devRandomRuinGeneratorFrame');

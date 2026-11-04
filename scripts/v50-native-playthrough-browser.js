@@ -280,9 +280,10 @@ module.exports=async function runNativeV50Playthrough(page){
         steps.push({floor:record.floor,stage:stage.id,event:'gate-open-route',tiles:passage.length});
       }
       const goal=window.RuinV50NativeFloors.nativeRoom(record.analysis.goalRoom,record.place);
-      await put({x:goal.x+goal.w/2,z:goal.z+goal.d/2,
-        y:Number(record.challenges.at(-1)?.floorY??floorY(record))},record,record.challenges.at(-1));
       const brazier=controls().find(control=>control.kind==='v50NativeBrazier'&&control.object===record.goalBrazier.pedestal);
+      if(!brazier)fail('the actual native goal brazier is missing its in-game interaction control',record,record.challenges.at(-1));
+      await put({x:goal.x+goal.w/2,z:goal.z+goal.d/2,
+        y:Number(brazier.floorY)},record,record.challenges.at(-1)); // The goal chamber can lie on a different authored plateau than the previous stage.
       await trigger(brazier,record,record.challenges.at(-1));
       if(!record.lit)fail('genuine native brazier refused completed chamber progression',record,record.challenges.at(-1));
       steps.push({floor:record.floor,event:'native-brazier-lit',stages:record.challenges.length});
