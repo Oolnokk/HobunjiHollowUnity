@@ -264,8 +264,20 @@
             valid: () => !placement.found && deps.getCurrentArea() === mapId
               && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH,
             onSuccess: () => {
-              placement.lockpickUnlocked = true; // Used only for the successful action's re-entry; the chest is then removed.
-              const result = chestObject.onAction('obj_open_treasure_chest'); // Must call the live object to preserve WeaponDiscoveryRewards' decorator.
+              let result; // The decorated action remains the only loot and rare-weapon reward authority.
+              try {
+                placement.lockpickUnlocked = true; // Only the successful minigame temporarily enables the original action.
+                result = chestObject.onAction('obj_open_treasure_chest'); // Calls the live WeaponDiscoveryRewards wrapper.
+              } finally {
+                if (!placement.found) placement.lockpickUnlocked = false; // A failed or interrupted loot operation must not bypass subsequent picks.
+              }
+              if (result?.ok) {
+                // The original world action was asynchronous, so its success never reached
+                // the caller's normal save dispatcher. Persist the rewards and spent chest.
+                const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'buried-chest-lockpicked' })
+                  ?? (typeof deps.saveMemberWorldData === 'function' ? (deps.saveMemberWorldData(), { ok: true }) : null);
+                if (saved?.ok === false) deps.showToast?.('Chest opened, but the save failed. Check Save Diagnostics.', false);
+              }
               if (result?.message) deps.showToast?.(result.message, result.ok === true);
             },
           });
