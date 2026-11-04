@@ -509,7 +509,7 @@
     return true;
   }
 
-  function refreshVisuals() {
+  function refreshVisuals({ rerenderSmith = true } = {}) {
     processedLayerUrlPromises.clear();
     visualRefreshes++;
     try {
@@ -520,7 +520,7 @@
     }
     deps?.buildEquipmentSlots?.();
     deps?.buildInventoryGrid?.();
-    deps?.rerenderSmith?.();
+    if (rerenderSmith) deps?.rerenderSmith?.(); // Keep active arrow-button/controller focus during rapid instance placement tweaks.
   }
 
   function awardExperience(amount, reason = 'experience', options = {}) {
@@ -697,11 +697,11 @@
     if (barKey) deps.inventory[barKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(deps.inventory[barKey]) || 0) + TREATMENT_BAR_COST);
   }
 
-  function commitTreatment(item, nextTreatment, toastText) {
+  function commitTreatment(item, nextTreatment, toastText, options = {}) {
     item.smithTreatment = nextTreatment ? clone(nextTreatment) : null;
     deps.saveGearInventory?.();
     deps.saveMemberWorldData?.();
-    refreshVisuals();
+    refreshVisuals(options);
     if (toastText) deps.showToast?.(toastText, true);
     return true;
   }
@@ -926,6 +926,20 @@
         if (choice === 'pattern') openVerdigrisPatternEditor(item);
         else applyTreatment(item, choice);
       });
+      if (treatment(item)?.mode === 'pattern') {
+        window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {
+          title: 'Armor pattern placement',
+          getPattern: () => {
+            const active = treatment(item);
+            return active?.mode === 'pattern' ? (active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null) : null;
+          },
+          onChange: pattern => {
+            const active = treatment(item);
+            if (active?.mode !== 'pattern') return;
+            commitTreatment(item, { ...active, pattern: clone(pattern) }, null, { rerenderSmith: false }); // Keeps the paid treatment and library provenance, editing only this armor's placement.
+          },
+        });
+      }
       list.appendChild(row);
     }
     return true;

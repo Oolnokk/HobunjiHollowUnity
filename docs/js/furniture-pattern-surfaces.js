@@ -64,6 +64,7 @@
       return {...pattern, renderRasterScale:raster,
         tiling:placement.tiling !== false,
         usageScaleMultiplier:finite(pattern.usageScaleMultiplier,1) * Math.max(.1, Math.min(20,finite(placement.scale,1))),
+         motifScale: Math.max(.05, Math.min(20, finite(pattern.motifScale,1) * finite(placement.motifScale,1))), // Instance-only motif zoom.
         usageRotationDeg:finite(pattern.usageRotationDeg,0) + finite(placement.rotationDeg,0),
         usageOffsetX:finite(pattern.usageOffsetX,0) * raster + finite(placement.offsetX,0) * TILE_PX / record.scale * raster,
         usageOffsetY:finite(pattern.usageOffsetY,0) * raster + finite(placement.offsetY,0) * TILE_PX / record.scale * raster}; // Offsets are surface tile units, independent of atlas resolution.
@@ -81,12 +82,38 @@
       [0,1].map(index => `<fieldset><legend>${index ? 'Overpass' : 'Primary pattern'}</legend>${index ? '<label>Overpass pattern <select data-overpass></select></label>' : ''}
         <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
         <label>Scale multiplier <input data-zoom-${index} type="range" min="0.1" max="20" step="0.1" value="1" aria-label="${index ? "Overpass" : "Primary"} pattern scale"></label><output data-zoom-value-${index}>1.0×</output>
+        <label>Motif scale <input data-motif-${index} type="range" min="0.1" max="3" step="0.05" value="1" aria-label="${index ? "Overpass" : "Primary"} motif scale"></label><output data-motif-value-${index}>1.00×</output>
         <label>Rotation (degrees) <input data-rotation-${index} type="range" min="-180" max="180" step="1" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern rotation"></label><output data-rotation-value-${index}>0°</output>
         <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
         <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
     host.appendChild(controls);
+    // Keep arrows in both game furniture/rug menus and standalone furniture authoring tools.
+    const addArrows = window.PatternQuickControls?.addArrowButtons || (node => {
+      for (const slider of node.querySelectorAll?.('input[type="range"]') || []) {
+        if (slider.dataset.arrowButtons) continue;
+        slider.dataset.arrowButtons = 'yes';
+        const wrap = document.createElement('span'); // Slider remains intact between native controller-focusable buttons.
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;max-width:100%';
+        slider.before(wrap); wrap.appendChild(slider);
+        for (const dir of [-1, 1]) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = dir < 0 ? '‹' : '›';
+          button.setAttribute('aria-label', (dir < 0 ? 'Decrease ' : 'Increase ') + (slider.getAttribute('aria-label') || 'pattern setting'));
+          button.style.cssText = 'min-width:30px;min-height:30px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff';
+          button.addEventListener('click', () => {
+            if (slider.disabled) return;
+            const next = Math.min(Number(slider.max), Math.max(Number(slider.min), Number((Number(slider.value) + dir * Number(slider.step || .1)).toFixed(5))));
+            slider.value = String(next);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            slider.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          if (dir < 0) wrap.prepend(button); else wrap.appendChild(button);
+        }
+      }
+    });
+    addArrows(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
-    for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
+    for(let index=0;index<2;index++) for(const name of ['zoom','motif','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
     const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
     const populate = (select, entries, first, selected) => {
       select.replaceChildren(); select.add(new Option(first,''));
@@ -99,6 +126,7 @@
       input.addEventListener?.('input', () => { field(`dye-${name}`).value=dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id || ''; });
     }
     return {
+      addArrows, // The surrounding furniture/rug modal also has a separate tile-size slider.
       refresh(record = {}) {
         for (const [name,input] of [['base',baseInput],['ink',dyeInput], ...(overpassInput ? [['overpass',overpassInput]] : [])]) populate(field(`dye-${name}`),dyes(),'Custom color',dyes().find(entry=>entry.hex?.toLowerCase()===input.value.toLowerCase())?.id);
         if (!overpassInput) field('dye-overpass').disabled = true;
@@ -108,7 +136,7 @@
         for(let index=0;index<2;index++) {
           const transform=record.layerTransforms?.[index] || {}, pattern=record.patterns?.[index] || (index===0 ? resolvePattern(record) : null);
           field(`repeat-${index}`).checked=transform.tiling ?? pattern?.tiling !== false;
-          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
+          for(const [name,key,fallback] of [['zoom','scale',1],['motif','motifScale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
         }
       },
       read(record) {
@@ -116,7 +144,7 @@
         if(!id)patterns.length=1;
         else if(id!==(record.overpassPatternId || '__custom') || !patterns[1])patterns[1]=resolvePattern({patternId:id});
         const layerTransforms=[0,1].map(index=>({tiling:field(`repeat-${index}`).checked,
-          scale:Math.max(.1,Math.min(20,finite(field(`zoom-${index}`).value,1))),rotationDeg:finite(field(`rotation-${index}`).value,0),
+          scale:Math.max(.1,Math.min(20,finite(field(`zoom-${index}`).value,1))),motifScale:Math.max(.1,Math.min(3,finite(field(`motif-${index}`).value,1))),rotationDeg:finite(field(`rotation-${index}`).value,0),
           offsetX:finite(field(`x-${index}`).value,0),offsetY:finite(field(`y-${index}`).value,0)}));
         return {...record,patterns,overpassPatternId:id || null,layerTransforms}; // Snapshot + transforms serialize with the existing part/instance record.
       }
@@ -601,6 +629,7 @@
     panel.style.cssText = 'position:fixed;inset:5% 3%;z-index:9400;background:#172126;color:white;padding:18px;overflow:auto;border:2px solid #b7a185;border-radius:12px;box-shadow:0 12px 40px #000b;display:flex;flex-direction:column;gap:12px;max-height:90dvh';
     panel.innerHTML = '<h2 style="margin:0">Furniture pattern</h2><p style="margin:0;color:#c6d0d2">Choose a surface, motif and dyes. Sliders are directly focusable with a controller.</p><section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"><label>Surface <select data-part data-ctrl-default></select></label><label>Pattern <select data-pattern></select></label><label>Pattern tile size <input data-scale-range type="range" min="0.05" max="20" step="0.05" aria-label="Pattern tile size"></label><output data-scale-value aria-live="polite"></output><label>Base dye <input data-base type="color"></label><label>Pattern dye <input data-dye type="color"></label><label>Overpass dye <input data-overpass-ink type="color"></label><label><input data-solid type="checkbox">Solid color (no motif)</label></section><h3 style="margin:4px 0 0">Pattern placement</h3><p style="margin:0;color:#c6d0d2">Adjust each layer independently. Repeat controls whether the motif tiles or appears once.</p><button data-edit>Choose / draw pattern</button><button data-apply>Apply settings</button><button data-close data-ctrl-cancel>Close</button><details><summary>Pattern diagnostics</summary><pre data-debug style="white-space:pre-wrap;max-height:180px;overflow:auto"></pre></details>';
     const placement = placementControls(panel,panel.querySelector('[data-base]'),panel.querySelector('[data-dye]'),panel.querySelector('[data-overpass-ink]'));
+    placement.addArrows(panel); // Wrap tile-size too, while respecting already-stepped pattern sliders.
     const find = name => panel.querySelector(`[data-${name}]`); // Dialog-scoped lookup avoids collisions with the furniture editor.
     candidates.forEach(({part}, index) => { const option = document.createElement('option'); option.value = index; option.textContent = part.name || part.id; find('part').appendChild(option); });
     const selected = () => candidates[Number(find('part').value) || 0]; // Selection is read at each action, never inferred from a global mesh name.
