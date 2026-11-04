@@ -94,10 +94,10 @@ function run() {
   }
 
   const game = fs.readFileSync('docs/game.js', 'utf8'); // Structural checks for the existing authored ragdoll and shared damage entrypoints.
-  assert.match(game, /window\\.HobunjiKnockdown = \\{ enter: enterTimedKnockdown \\}/);
-  assert.match(game, /startProneThrow\\(entity, isPlayer, facingAngle, direction\\)/);
-  assert.match(game, /function proneRecoveryReady\\(entity\\)/);
-  assert.ok((game.match(/getProneAttackMultiplier\\?\\.\\(/g) || []).length >= 2, 'player and creature damage paths use shared prone multipliers');
+  assert.match(game, /window\.HobunjiKnockdown = \{ enter: enterTimedKnockdown \}/);
+  assert.match(game, /startProneThrow\(entity, isPlayer, facingAngle, direction\)/);
+  assert.match(game, /function proneRecoveryReady\(entity\)/);
+  assert.ok((game.match(/getProneAttackMultiplier\?\.\(/g) || []).length >= 2, 'player and creature damage paths use shared prone multipliers');
   console.log('Knockdown duration, mastery choices, loot rewards, prone multipliers and live ragdoll wiring: OK');
 }
 run();
