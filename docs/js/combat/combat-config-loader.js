@@ -81,7 +81,7 @@
     ['js/text-entry-keybind-guard.js?v=20260901a', () => !!window.HobunjiTextInputGuard],
     ['js/controller-modern-flow-bridge.js?v=20261015h04b0f9f', () => Number(window.ControllerModernFlowBridge?.version) >= 1],
     ['js/player-body-transform-composer.js?v=20261031necklock5', () => !!window.PlayerBodyTransformComposer],
-    ['js/player-body-attachment-bridge.js?v=20261021habeb7c9', () => !!window.PlayerBodyAttachmentBridge],
+    ['js/player-body-attachment-bridge.js?v=20261104nelkRig2', () => !!window.PlayerBodyAttachmentBridge],
     ['js/front-hat-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiFrontHatHeadFacing],
     ['js/hat-xray-head-facing.js?v=20260914nofacing1', () => !!window.HobunjiHatXrayHeadFacing],
     ['js/town-player-body-elevation-bridge.js?v=20261022h9a7f960', () => !!window.HobunjiTownBodyElevationBridge],
