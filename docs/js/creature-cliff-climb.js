@@ -236,7 +236,7 @@
     const active = grid();
     return active && window.CliffRouteNetwork?.forGrid?.(active, {
       area: deps.getCurrentArea(),
-      blocked: tile => !tile || tile.incline || deps.isSolid(tile.type),
+      blocked: tile => !tile || tile.incline || deps.isSolid(tile.type) || ['river', 'stream', 'trench'].includes(String(tile.type).toLowerCase()),
       isBoundary,
       tileY: tile => deps.tileSurfaceYInArea(tile, deps.getCurrentArea()),
     });
