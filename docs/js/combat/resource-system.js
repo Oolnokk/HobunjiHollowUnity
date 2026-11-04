@@ -986,6 +986,7 @@
       }
     }
 
+    const buildupSourceDamage = finalDamage; // Harmful affliction buildup must be based on pre-defense impact strength, not Glass Fang or False Courage's Health-only modifier.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
@@ -1001,7 +1002,7 @@
         if (!AFFLICTIONS[id] || !(mul > 0)) continue;
         const perkId = FAMILY_PERK[AFFLICTIONS[id].family];
         const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
-        addAffliction(entity, id, finalDamage * mul * familyMul);
+        addAffliction(entity, id, buildupSourceDamage * mul * familyMul); // Incoming Health protection changes only Health loss; Venomous Blood separately changes harmful buildup.
       }
     }
     if (opts.fixedAfflictionBuildup) {
