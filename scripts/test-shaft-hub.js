@@ -9,6 +9,7 @@ const H=require('../docs/js/shaft-hub.js');
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
+const Playable=require('../docs/js/ruin-layer-playable.js'); // Tests mounted stone wings, challenge gates and braziers.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
@@ -17,7 +18,7 @@ assert(runtime.includes('attachShaftHub(rec,0);'),'story vault retains the shaft
 assert(runtime.includes('window.RuinShaftConnector'),'runtime must use physical hallway module');
 assert(!runtime.includes("passage('Enter Shaft Hub'"),'no gameplay teleporter into the shaft');
 assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out of the shaft');
-for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js'])
+for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js'])
   assert(index.includes(file),'game page must load '+file);
 
 // Every floor is an independent ordinary 2D plan, with one shared, grid-snapped,
@@ -122,13 +123,16 @@ class Group {
 }
 class Matrix4 {makeTranslation(x,y,z){this.xyz=[x,y,z];return this}}
 class Geometry {rotateX(){return this}dispose(){}}
+class Mesh extends Group{
+  constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.visible=true;this.position={set(){}};}
+}
 class Material {clone(){return new Material()}dispose(){}}
 class InstancedMesh {
-  constructor(geometry,material,count){this.geometry=geometry;this.material=material;this.count=count;this.instances=[]}
+  constructor(geometry,material,count){this.geometry=geometry;this.material=material;this.count=count;this.instances=[];this.instanceMatrix={needsUpdate:false};}
   setMatrixAt(i,matrix){this.instances[i]=matrix.xyz}
 }
-const THREE={Group,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
-  MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
+  CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
 for(const side of ['north','east','south','west']){
   const isX=side==='west'||side==='east';
   const meta={cellSize:.5,worldWidth:54,worldDepth:49,
@@ -138,23 +142,37 @@ for(const side of ['north','east','south','west']){
   const makeTile=walkable=>({type:walkable?'grass':'rock'});
   const rec={cols:150,rows:140,grid:Array.from({length:140},()=>Array.from({length:150},()=>makeTile(false))),
     floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group()};
-  const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[]};
+  const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[]};
+  let player={x:5,z:7,y:0}; // Mutable position to test upper-story plate activation.
   const DS={registerSurface(){},clearScope(){}};
   const climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
   const connected=Connector.connect({rec,ruin,seed:23,meta,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
-    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,getPlayerPosition:()=>({x:5,z:7})});
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,CellGrid3D:G,
+    getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
   assert.equal(ruin.shaftConnection.floorCount,connected.plan.floorCount);
   assert(ruin.shaftConnection.supportRects<100,'hallway support surfaces merged');
   assert.deepEqual(ruin.occupancy.getPosition(),{x:5,z:7},'occupancy must reuse injected player adapter');
+  const network=connected.layerRuntime;
+  assert.equal(network.getState().wings,connected.plan.totalWings,'every planned floor wing is instantiated');
+  assert.equal(network.getState().braziers,connected.plan.totalWings,'one physical brazier per wing');
+  assert.equal(ruin.controls.filter(c=>c.kind==='layerBrazier').length,network.getState().braziers);
+  const challenge=network.states[0].challenges[0];
+  assert(challenge.gate,'first chamber must block its outbound corridor until solved');
+  assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='rock'));
+  player={x:challenge.x,z:challenge.z,y:challenge.floorY};
+  for(let i=0;i<17;i++)network.tick(.05);
+  assert(challenge.solved,'standing on the stone plate for .8s opens its gate');
+  assert(challenge.gate.tiles.every(([c,r])=>rec.grid[r][c].type==='grass'));
   for(const p of [connected.route.path[0],connected.route.path.at(-1)])
     assert(rec.floorSet.has(p.x+','+p.z),'both path endpoints are actual walkable tiles');
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
   ruin.shaftConnectorCleanup();
+  assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
 }
 // The special story vault has no V50 `meta.entrance`: its authored southern
 // doorway at (6,27) must still lead to the shared room on ordinary floor tiles.
@@ -168,16 +186,17 @@ for(const side of ['north','east','south','west']){
     floorSet,mapData:{id:'map_i_dev_random_ruin',floor:[...floorSet].map(k=>k.split(',').map(Number))},
     exits:[{tiles:[[6,27]]}],scene:new Group()};
   const ruin={storyVault:true,localeRoot:new Group(),mechanisms:new Map(),
-    transitDoors:[],activators:[],pushBlocks:[]};
+    transitDoors:[],activators:[],pushBlocks:[],controls:[]};
   const ds={registerSurface(){},clearScope(){}};
   const climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const placed=Connector.connect({rec,ruin,seed:0,meta:{rooms:[{name:'vault'}]},
     THREE,makeTile,DynamicSurfaces:ds,ShaftHub:H,ClimbSurfaces:climb,
-    DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor});
+    DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
+    RuinLayerPlayable:Playable,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
   assert(placed.route.ok&&placed.route.path[0].x===6&&placed.route.path[0].z===28,
     'fixed story vault extends physically through its actual southern doorway');
   assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);
   ruin.shaftConnectorCleanup();
 }
-console.log('ok test-shaft-hub: 1000 layered layouts, '+plannedWings+' planned wings, 3–5 story octagons, four physical hallway approaches');
+console.log('ok test-shaft-hub: 1000 layouts, '+plannedWings+' layered wings, real gates/braziers, climbable multi-story octagons, four walk-in approaches');
