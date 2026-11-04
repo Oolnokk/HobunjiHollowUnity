@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -17,6 +17,22 @@
     return notes;
   }
   const TARGET_COLORS=Object.freeze({idle:0xff9e42,hit:0x55e886,stone:0x777267});
+  function ropePitForRoom(room,side){
+    if(!room||!['N','E','S','W'].includes(side))return null;
+    const alongX=side==='E'||side==='W';
+    const length=alongX?room.w:room.d;
+    if(length<11)return null; // Three supported cells on either bank and at least five cells of actual abyss.
+    const bank=3; // Physical ground left before/after the void, measured from the chamber's full exterior walls.
+    const bounds={
+      minX:room.x+(alongX?bank:0),maxX:room.x+room.w-(alongX?bank:0),
+      minZ:room.z+(alongX?0:bank),maxZ:room.z+room.d-(alongX?0:bank),
+    };
+    return {
+      ...bounds,axis:alongX?'x':'z',side,
+      contains:(x,z)=>x>=bounds.minX&&x<bounds.maxX&&z>=bounds.minZ&&z<bounds.maxZ,
+    };
+  }
+
   function compose(options={}){
     const {THREE,parent,room,id,kind,y,isActive,onSolved,getPlayerPosition,getPlayerY}=options;
     if(!THREE?.Mesh||!THREE?.MeshBasicMaterial||!parent?.add||!room||!TYPES.includes(kind)
@@ -35,12 +51,14 @@
     const stone=authoredStone||basic(TARGET_COLORS.stone),idle=basic(TARGET_COLORS.idle),hit=basic(TARGET_COLORS.hit);
     const plateMat=basic(0x776452);
     const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
+    const side=options.side||'E'; // Used by rope chambers to orient the traversal away from the shaft.
     const music=options.music||root.MusicMinigame; // Existing eight-note flute performance/puzzle bridge is authoritative.
     const fire=options.dungeonFire||root.DungeonFire; // Reuse real ranged-weapon ignition + projectile contact/heat checks.
     const events=options.events||root; // Reuses the standard hobunji-ruin-melody-result event, not a new music input bridge.
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
+    let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
     const body=(name,geometry,mat,x,py,z)=>{
       const mesh=new THREE.Mesh(geometry,mat);
       mesh.name=name;mesh.position.set(x,py,z);
@@ -79,6 +97,39 @@
         new THREE.BoxGeometry(2.2,.18,2.2),plateMat,cx,y+.05,cz);
       rec.plate=surface;
       rec.requiredSeconds=.8;
+    }else if(kind==='ropeChain'){
+      // A real open abyss occupies the entire width of this chamber. The
+      // physical floor and DynamicSurfaces supports are omitted by
+      // RuinLayerPlayable, while the V50 rope runtime handles player grabs,
+      // release flights, mid-air rope catches and fatal checkpoint respawns.
+      const pit=ropePitForRoom(room,side);
+      if(!pit)throw new Error('Rope chamber cannot hold two safe banks: '+id);
+      const centerX=(pit.minX+pit.maxX)/2,centerZ=(pit.minZ+pit.maxZ)/2;
+      const pitLength=pit.axis==='x'?pit.maxX-pit.minX:pit.maxZ-pit.minZ;
+      const positive=side==='E'||side==='S',from=positive?-1:1,to=-from;
+      const alongX=pit.axis==='x';
+      const start=alongX?(positive?pit.minX:pit.maxX):(positive?pit.minZ:pit.maxZ);
+      const finish=alongX?(positive?pit.maxX:pit.minX):(positive?pit.maxZ:pit.minZ);
+      const entry={x:alongX?start+from*.8:centerX,z:alongX?centerZ:start+from*.8,y};
+      const exit={x:alongX?finish+to*.8:centerX,z:alongX?centerZ:finish+to*.8,y};
+      const count=Math.max(3,Math.min(8,Math.ceil((pitLength-1)/2.25)+1));
+      const anchors=Array.from({length:count},(_,i)=>{
+        const t=(i+.5)*(pitLength-1)/(count-1); // Spread across the entire abyss, keeping a small margin at either bank.
+        const along=start+(positive?1:-1)*t;
+        return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
+      });
+      const beam=body('ruin-abyss-ceiling-beam-'+id,
+        new THREE.BoxGeometry(alongX?pitLength+1:0.5,.3,alongX?.5:pitLength+1),
+        stone,centerX,y+3.4,centerZ);
+      beam.userData.devRuinCeilingBeam=true;
+      const fog=body('ruin-bottomless-abyss-'+id,
+        new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
+        basic(0x08090b),centerX,y-.15,centerZ);
+      fog.rotation.x=-Math.PI/2;fog.userData.devRuinBottomlessFog=true;
+      rec.pit=pit;rec.ropesRequested=count;
+      rec.ropeSpec={id,roomId:id,bounds:pit,entry,exit,floorY:y,anchors,
+        yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
+        length:2.43, maxLength:2.55,parent:group};
     }else if(kind==='dungeonFire'){
       // The standard DungeonFire runtime owns shot ignition and plume-to-ice
       // collision. The room merely authors a source brazier, a heat target,
@@ -209,6 +260,22 @@
           t.rune.position.set(t.base.position.x,t.base.position.y,t.base.position.z);
         }
       }
+      if(kind==='ropeChain'){
+        if(!ropeChain&&bus?.hasActiveRuinState?.()===true){
+          ropeChain=bus?.registerExternalRopeChain?.(rec.ropeSpec)||null;
+          rec.ropeLinked=!!ropeChain;
+          if(ropeChain)options.onLink?.(rec);
+        }
+        if(ropeChain&&!rec.solved&&isActive()&&player&&Number.isFinite(currentY)
+          &&Math.abs(currentY-y)<.9){
+          const finish=rec.ropeSpec.exit;
+          const along=rec.pit.axis==='x'?player.x:player.z;
+          const gateAlong=rec.pit.axis==='x'?finish.x:finish.z;
+          const beyond=(side==='E'||side==='S')?along>=gateAlong-.2:along<=gateAlong+.2;
+          const cross=rec.pit.axis==='x'?Math.abs(player.z-finish.z):Math.abs(player.x-finish.x);
+          if(beyond&&cross<1.6)complete(); // The ACTUAL opposite bank, not a decorative activator, opens the gate.
+        }
+      }
       if(kind==='dungeonFire'&&!rec.solved&&!fireTargetId
         &&bus?.hasActiveRuinState?.()===true){
         fireTargetId=fire?.registerTarget?.(rec.fireRecord)||null;
@@ -237,6 +304,7 @@
       rec.disposed=true;
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
+      if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       group.parent?.remove(group);
       for(const m of owned)m.geometry?.dispose?.();
@@ -249,5 +317,5 @@
     };
     return rec;
   }
-  return Object.freeze({TYPES,compose,melodyFor});
+  return Object.freeze({TYPES,compose,melodyFor,ropePitForRoom});
 });
