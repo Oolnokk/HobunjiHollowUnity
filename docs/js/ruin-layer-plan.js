@@ -11,6 +11,8 @@
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets']); // Shared by composer and acceptance proof.
+  const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
     shaftSize:33, // Interior octagon width; actual masonry spans shaftSize + 2*shaftWall.
@@ -65,8 +67,8 @@
     // ONLY puzzle families backed by an implemented real runtime may be
     // selected. Advanced rope/defence/fire variants will be added as their
     // actual mechanics are integrated, never disguised as plain floor plates.
-    const puzzles=['pressurePlate','glyphObelisk','ceilingRailTargets'];
-    const rangedPuzzles=['glyphObelisk','ceilingRailTargets'];
+    const puzzles=PLAYABLE_PUZZLES;
+    const rangedPuzzles=RANGED_PUZZLES;
     for(let floor=0;floor<floorCount;floor++){
       const y=floor*o.floorHeight; // Physical y datum for this otherwise ordinary 2D map.
       const shuffled=DIRS.map(d=>({d,roll:rng()})).sort((a,b)=>a.roll-b.roll).map(x=>x.d);
@@ -147,8 +149,8 @@
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
-          r=>puzzles.includes(r.challenge))&&wing.rooms[0].challenge==='pressurePlate'
-          &&rangedPuzzles.includes(wing.rooms[1].challenge));
+          r=>PLAYABLE_PUZZLES.includes(r.challenge))&&wing.rooms[0].challenge==='pressurePlate'
+          &&RANGED_PUZZLES.includes(wing.rooms[1].challenge));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
         add(wing.id+'-clearShaft', wing.rooms.every(room=>!
