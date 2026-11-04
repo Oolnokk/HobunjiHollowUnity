@@ -34,7 +34,7 @@
   const BLOWGUN_AFFLICTION_SCALE = 40; // Multiplies the ranged system's normal 0.15-per-rank buildup into a huge 6.0x raw-damage multiplier per chosen affliction rank.
   const BLOWGUN_AFFLICTION_EFFECT_IDS = Object.freeze([
     'bleedingHealth', 'woundedStamina', 'congealedHealth', 'infectedStamina',
-    'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth',
+    'windedStamina', 'bruisedHealth', 'shatteredStamina', 'poisonedHealth', 'scentMarkedHealth',
   ]); // Used by Blowgun mastery to offer the full authored affliction set instead of a physical-damage-biased subset.
   const KYLIE_BLUNT_EFFECT_IDS = Object.freeze([
     'bruisedHealth', 'windedStamina', 'congealedHealth', 'shatteredStamina', 'knockback',
@@ -303,7 +303,7 @@
     const highBuildup = Number(config.basicAfflictionScale) > 1;
     const shotNoun = config.rangedType === BLOWGUN_TYPE ? 'dart' : (config.rangedType === THROWN_TYPE ? 'throw' : 'shot');
     return baseBasicAmmoDescriptors
-      .filter(effect => allowed.has(effect.id))
+      .filter(effect => allowed.has(effect.id) && (!effect.onlyRangedType || effect.onlyRangedType === config.rangedType))
       .map(effect => ({
         ...effect,
         desc: highBuildup && effect.afflictionId
@@ -387,6 +387,7 @@
       label: effect.label,
       desc: effect.desc,
       afflictionId: effect.afflictionId || null,
+      onlyRangedType: effect.onlyRangedType || null,
       knockbackMul: effect.knockbackMul || 0,
     }));
 
