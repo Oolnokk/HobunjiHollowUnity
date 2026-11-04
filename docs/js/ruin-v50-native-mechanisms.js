@@ -202,7 +202,6 @@
     if(typeof unreg!=='function')
       throw new Error('Original V50 glyph and torch hit runtime could not register the native floor');
     let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
-    function motionAllowsRetrigger(state){return state.motion==='bridgeSequence'&&!state.requiresPuzzle;}
     function tick(dt){
       if(disposed)return;
       const step=Math.max(0,Math.min(.05,Number(dt)||0));
@@ -215,7 +214,6 @@
         state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
         state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
         if(Math.abs(state.progress-desired)<.001)state.progress=desired;
-        if(motionAllowsRetrigger(state)&&state.progress>=.999)state.target=0; // A completed timed bridge is ready to fire again.
         state.reapplyAfter-=step;
         if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
           api.applyProgress(state.object,state.progress);
