@@ -16,13 +16,14 @@
   }
 
   function onDodge(player) {
-    const mul = modifier('dodgeEfficacy'); // Multiplies the existing outfit penalty rather than replacing it.
-    if (!player || mul === 1) return;
+    const travelMul = modifier('dodgeEfficacy') * modifier('dodgeTravel'); // Iron Anchor shortens travel without granting or shortening invulnerability.
+    const iframeMul = modifier('dodgeEfficacy') * modifier('dodgeIframe'); // Fractured Guard extends i-frames independently from travel.
+    if (!player || (travelMul === 1 && iframeMul === 1)) return;
     const now = performance.now(); // Common base for the remaining dodge invulnerability.
-    if (Number.isFinite(player.dodgeT)) player.dodgeT = Math.max(0, player.dodgeT * mul);
+    if (Number.isFinite(player.dodgeT)) player.dodgeT = Math.max(0, player.dodgeT * travelMul);
     const remaining = Math.max(0, (Number(player.invulnUntil) || 0) - now);
-    if (remaining > 0) player.invulnUntil = now + remaining * mul;
-    lastEvent = { kind: 'dodge', multiplier: mul };
+    if (remaining > 0) player.invulnUntil = now + remaining * iframeMul;
+    lastEvent = { kind: 'dodge', travelMultiplier: travelMul, iframeMultiplier: iframeMul };
   }
 
   function onNewUnwrappedKnockback(player) {
@@ -77,7 +78,7 @@
   };
   combat.update.__specializedCombatTrinkets = true;
   window.SpecializedCombatTrinketHooks = Object.freeze({
-    debugSnapshot: () => ({ lastDodge, lastKnockback, lastEvent, dodgeMultiplier: modifier('dodgeEfficacy'), knockbackMultiplier: modifier('knockbackDistance') }),
+    debugSnapshot: () => ({ lastDodge, lastKnockback, lastEvent, dodgeMultiplier: modifier('dodgeEfficacy'), dodgeTravelMultiplier: modifier('dodgeTravel'), dodgeIframeMultiplier: modifier('dodgeIframe'), knockbackMultiplier: modifier('knockbackDistance') }),
   });
   window.__specializedCombatTrinketDebug = () => window.SpecializedCombatTrinketHooks.debugSnapshot(); // Mobile diagnostics without DevTools.
 })();
