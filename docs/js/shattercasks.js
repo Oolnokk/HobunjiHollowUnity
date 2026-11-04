@@ -1118,13 +1118,28 @@
   function transferBackToArea(mapId){
     const burden=backCarried,targetScene=scene();
     if(!burden||burden.mapId===mapId||!mapId||!targetScene)return;
-    const oldRecord=records.get(burden.mapId);
+    const oldMapId=burden.mapId,oldId=burden.id; // Used to retire the original static spawn before changing the physical object's identity.
+    const oldRecord=records.get(oldMapId);
     const newRecord=recordFor(mapId,targetScene);
-    if(oldRecord?.vases.get(burden.id)===burden)oldRecord.vases.delete(burden.id);
-    newRecord.vases.set(burden.id,burden);
+    if(oldRecord?.vases.get(oldId)===burden)oldRecord.vases.delete(oldId);
+    // Shattercasks are normally regenerated from their stable area-local IDs.
+    // Mark the ORIGINAL placement consumed on first departure, without
+    // destroying the item in the player's possession.
+    if(burden.kind==='shattercask'&&!burden._backOriginalSpawnRetired){
+      burden._backOriginalSpawnRetired=true;
+      saveConsumed(oldMapId+':'+oldId);
+    }
+    // Static room IDs are not global IDs. Never overwrite another physical
+    // burden if the destination generated one with the same name.
+    let nextId=oldId,serial=1;
+    while(newRecord.vases.has(nextId)&&newRecord.vases.get(nextId)!==burden)
+      nextId=oldId+'_back_'+serial++;
+    burden.id=nextId;
+    newRecord.vases.set(nextId,burden);
     burden.mapId=mapId;
+    burden.group.userData.shattercaskId=nextId;
     burden.group.userData.shattercaskMap=mapId;
-    lastEvent='carried '+burden.id+' into '+mapId;
+    lastEvent='carried '+nextId+' into '+mapId;
   }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
   // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
