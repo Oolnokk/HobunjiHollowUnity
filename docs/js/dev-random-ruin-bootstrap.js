@@ -32,7 +32,7 @@
   document.write('<script src="js/live-root-growth.js?v=20261101htempleroot1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></scr' + 'ipt>');
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261102h20daaea"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261104shaftPlayableR3"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261104shaftPlayableR4"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260930plaquesources1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
@@ -54,7 +54,7 @@
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261103nanahi-target1"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261103spritenet3"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261103h3ebe449"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261104layerInteractions1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261018badge1"></scr' + 'ipt>');
 })();
