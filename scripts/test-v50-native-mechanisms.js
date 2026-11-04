@@ -193,8 +193,8 @@ assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or b
     hitPuzzles:{registerExternalRoot:()=>()=>{}},heightAt:()=>4,showToast(){}});
   const pushing=controls.find(c=>c.kind==='v50NativePushBlock');
   assert(pushing,'native bridge-drop burden must receive its own push interaction');
-  assert.equal(dropRuntime.stageCandidate({x:29,z:28,w:3,d:3}),null,
-    'a preparatory ON glyph never substitutes for the final pressure-plate solution');
+  assert.equal(dropRuntime.stageCandidate({x:29,z:28,w:3,d:3})?.kind,'pressurePlate',
+    'the final pressure plate, not a preparatory ON glyph, owns the chamber solution');
   player.x=29.4;player.z=30;player.y=4;
   pushing.onPress();assert.equal(dropBlock.position.x,30.4,
     'block cannot be pushed onto a bridge before the ON command extends it');
