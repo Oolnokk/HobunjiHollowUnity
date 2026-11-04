@@ -241,6 +241,23 @@
     return { materials:[...materials], lights, mount };
   }
 
+  // A projectile hit can occur between render callbacks (or during a heavy first frame).
+  // Colour the real source decals immediately so a struck target never remains orange
+  // until the next renderer update. The normal circuit frame still owns pulse and flash.
+  function refreshActivatedGlyph(target) {
+    if(!target?.active||!target.object)return false;
+    const decals=glyphDecals(target.object);
+    const hex='#'+new THREE.Color(DECAL_ACTIVE).getHexString();
+    for(const material of decals.materials){
+      material.userData ||= {};
+      material.userData.baseColor=hex;material.userData.activeColor=hex; // V50's next applyProgress must not restore an idle-orange source.
+      material.color?.set(hex);
+      if(material.emissive){material.emissive.setHex(DECAL_ACTIVE).multiplyScalar(.85);material.emissiveIntensity=1;}
+    }
+    for(const light of decals.lights)light.color?.setHex(DECAL_ACTIVE);
+    return decals.materials.length>0;
+  }
+
   // Swap V50's placeholder decal meshes for authored ruinGlyphTarget plaques
   // (docs/config/furniture-authored/ruinGlyphTarget.json) once that loads.
   function mountPlaques(entry) {
@@ -379,7 +396,7 @@
 
   window.DevRandomRuinGlyphCircuits = Object.freeze({
     palette:PALETTE,
-    attachRune,
+    attachRune,refreshActivatedGlyph,
     setDebugMarkers,
     getDebugMarkers:() => debugMarkers,
     rebuild:() => { const root = window.DevRandomRuinHitPuzzles?.getRoot?.(); return root ? build(root) : false; },
