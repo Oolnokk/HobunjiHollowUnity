@@ -104,16 +104,14 @@ async function runtimePortraitSet(){
     const front=make(),back=make(),head=make();
     let headOnlyFront=null,headOnlyBack=null; // Head/UR anatomy overlay restores the skull in front of rear hood fabric during headwear preview.
 
-    // This is the important V11 change: the preview transform is installed
-    // while portrait-utils renders the WHOLE front/back portrait. Its canonical
-    // destination-out pass therefore cuts base torso, base arms, torso clothing,
-    // overwear, etc. exactly at the normal full-portrait mask stage.
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+    // Use the unchanged game portrait renderer for both views. The retired
+    // full-portrait mask must not alter clothing or base body pixels.
+    await window.NpcAvatarPreview.renderProfileToCanvas(
       front,profile,{seatId:'clothing-fit-runtime',forceEyesOpen:true}
-    ));
-    await withPreviewCloudMaskTransform(()=>window.NpcAvatarPreview.renderProfileToCanvas(
+    );
+    await window.NpcAvatarPreview.renderProfileToCanvas(
       back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
-    ));
+    );
 
     // Keep the neck/head-only texture on the ordinary runtime path. The cloud
     // mask belongs to the body portrait and should not be authored by these sliders.
