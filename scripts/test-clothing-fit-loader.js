@@ -95,18 +95,8 @@ async function testNetworkFailure(){
 }
 async function testHungNetwork(){
   const immediate=(fn,delay)=>setTimeout(fn,delay>=15000?5:delay);
-  const {host,status}=makeHost(name=>new Promise((resolve,reject)=>{
-    if(name!=='app.part1.txt'){resolve({ok:true,text:async()=>''});return}
-    // An intentionally stalled network request only exits when AbortController fires.
-    host.currentRequestAborted=false;
-    host.abortSignalListener=(signal)=>{
-      signal.addEventListener('abort',()=>{
-        host.currentRequestAborted=true;
-        reject(Object.assign(new Error('Aborted'),{name:'AbortError'}));
-      },{once:true});
-    };
-    // See fetch signal in the wrapped fetch function below.
-  }),immediate);
+  const {host,status}=makeHost(async()=>({ok:true,text:async()=>''}),immediate);
+  host.currentRequestAborted=false; // Assert that AbortController, rather than a global spinner, ends the hung request.
   host.fetch=(name,options)=>{
     if(name!=='app.part1.txt')return Promise.resolve({ok:true,text:async()=>''});
     return new Promise((resolve,reject)=>{
