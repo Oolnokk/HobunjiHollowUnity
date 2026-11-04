@@ -286,10 +286,10 @@
 
   function segmentBoxInterval(start,end,rawBox,radius=0) {
     if(!rawBox)return null;
-    const box=rawBox.clone();box.expandByScalar(Math.max(0,Number(radius)||0));
+    const padding=Math.max(0,Number(radius)||0); // Voxel hitboxes are plain {min,max}; Three.Box3 projectile targets use the same arithmetic.
     let enter=0,exit=1;
     for(const axis of ['x','y','z']){
-      const delta=end[axis]-start[axis],min=box.min[axis],max=box.max[axis];
+      const delta=end[axis]-start[axis],min=rawBox.min[axis]-padding,max=rawBox.max[axis]+padding;
       if(Math.abs(delta)<1e-9){if(start[axis]<min||start[axis]>max)return null;continue;}
       let a=(min-start[axis])/delta,b=(max-start[axis])/delta;if(a>b)[a,b]=[b,a];
       enter=Math.max(enter,a);exit=Math.min(exit,b);if(enter>exit)return null;
