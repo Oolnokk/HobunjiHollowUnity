@@ -52,6 +52,31 @@ assert.deepEqual(Object.values(inputs).map(input => input.value), [-194,160,100]
 formatterContext.displayVector(['x','y','z'], [0,-4,12], [-194,160,100], [0,0,0]);
 assert.deepEqual(Object.values(inputs).map(input => input.value), [0,-4,12], 'explicit zero and negative positions must survive');
 
+// The author displays base-relative offsets and updates only the axis actually edited.
+const positionInputs = Object.fromEntries(['pX','pY','pZ'].map(id => [id, { dataset: {} }]));
+const positionFormatSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayPositionOffsets('), mountainAuthor.indexOf('  function syncUi('));
+const positionFormatContext = { $: id => positionInputs[id] };
+vm.createContext(positionFormatContext);
+vm.runInContext(positionFormatSource, positionFormatContext);
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [null,null,null], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), [0,0,0], 'automatic position fields must present as zero offsets');
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,99], { defaultPosition: [-74,160,100] });
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), [9,5,-1], 'offset fields must subtract the automatic map-dependent origin');
+
+const transformEditSource = mountainAuthor.slice(mountainAuthor.indexOf('  const TRANSFORM_FIELDS ='), mountainAuthor.indexOf('  function commitControls('));
+const transformEditContext = {};
+vm.createContext(transformEditContext);
+vm.runInContext(transformEditSource, transformEditContext);
+const editableLayer = { transform: { position: [null,null,null], rotationDeg: [0,0,0], scale: [1,1,1] } };
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '10', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,170,null], 'editing Y offset must preserve X and Z automatic positions');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.5'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'editing length must not change thickness or height');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleY', '-2'), 'negative height scale must be rejected');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'rejected input cannot mutate scale');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '', [-74,160,100]));
+assert.deepEqual(editableLayer.transform.position, [null,null,null], 'clearing the edited axis restores automatic positioning');
+
 function transformSlot(defaults = { x: 0, y: 0, z: 0 }) {
   return { ...defaults, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
 }
@@ -124,6 +149,7 @@ let geometryCalls = 0;
 let fitCalls = 0;
 const THREE = {
   Group, Mesh, LineSegments, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial,
+  DoubleSide: 2, // The distant rock/snow faces render from both camera directions.
   BufferGeometry: FakeGeometry,
   BufferAttribute: FakeBufferAttribute,
   Float32BufferAttribute: FakeBufferAttribute,
@@ -254,7 +280,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     '  window.testSkyDepth = { setSkyLayerDepth, CLOUD_DEPTH_NDC, CELESTIAL_DEPTH_NDC };'), skyContext);
   const skyDepth = skyContext.window.testSkyDepth;
   assert.equal(firstMaterial.fog, false, 'distant rock ridges must not inherit near-ground fog');
-  assert.equal(firstMaterial.depthWrite, false, 'distant rocks must not write depth over foreground terrain');
+  assert.equal(firstMaterial.depthWrite, true, 'opaque ridge rocks must write depth to occlude overlapping stone and snow faces');
+  assert.equal(firstMaterial.side, THREE.DoubleSide, 'ridges must show the back of their open mine-rock heightfields');
   assert.equal(firstMaterial.depthTest, true, 'foreground terrain must continue to occlude distant rocks');
   const backgroundShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
   firstMaterial.onBeforeCompile(backgroundShader);
@@ -263,7 +290,10 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
   assert(allParts.every(part => part.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped rock parts');
   const snowShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
-  root.children[0].children[0].children[1].material.onBeforeCompile(snowShader);
+  const capMaterial = root.children[0].children[0].children[1].material;
+  assert.equal(capMaterial.depthWrite, true, 'snow caps must depth-occlude nearer faces of other rocks');
+  assert.equal(capMaterial.side, THREE.DoubleSide, 'snow caps must have the same two-sided culling policy as stone');
+  capMaterial.onBeforeCompile(snowShader);
   assert.match(snowShader.vertexShader, /uBackgroundMaxDepth/, 'snow cap clones must share the far-background depth ordering');
   assert.equal(sharedSnowMaterial.onBeforeCompile, undefined, 'ground snow must retain its original terrain depth shader');
   for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
@@ -299,9 +329,14 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   authored.layers[1].visible = false;
   api.saveAuthorConfig(authored);
   api.applyAuthorConfigToGroup(root, 200, 200, api.readAuthorConfig());
-  assert.deepEqual([root.children[0].position.x, root.children[0].position.y, root.children[0].position.z], [-40, 180, 95], 'editor-authored position must reach the complete ridge');
+  assert.equal(root.children[0].position.x, -40, 'authored X is the actual ridge X');
+  assert.equal(root.children[0].position.z, 95, 'authored Z is the actual ridge Z');
+  assert(Math.abs(root.children[0].position.y - (180 + (0.85 - 1) * root.children[0].userData.baseWorldHeight * 0.5)) < 1e-8,
+    'Y scaling compensates the center pivot so the base remains at its original authored elevation');
   assert(Math.abs(root.children[0].rotation.y - (82 * Math.PI / 180)) < 1e-9, 'editor-authored Y rotation must reach the complete ridge');
   assert.equal(root.children[0].scale.x, 1.2, 'editor-authored X scale must reach the complete ridge');
+  assert.equal(root.children[0].userData.worldWidth, root.children[0].userData.baseWorldWidth / 8 * 1.2,
+    'X thickness must be measured across one rock, not mislabeled as Z ridge length');
   assert.equal(root.children[0].scale.y, 0.85, 'editor-authored Y scale must reach the complete ridge');
   assert(Math.abs(root.children[0].scale.z - root.children[0].userData.ridgeLengthScale) < 1e-9, 'automatic ridge-length normalization must compose with author Z scale');
   assert.equal(root.children[1].visible, false, 'per-layer visibility must remain authorable');
