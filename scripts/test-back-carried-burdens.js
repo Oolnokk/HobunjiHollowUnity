@@ -115,13 +115,17 @@ function testRuntime() {
     new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]);
   portrait.name='player_avatar_skinned_plane_assembly'; // Active skinned portrait and its back-only x-ray clone.
   portrait.position.set(.08,.2,-.12);portrait.scale.setScalar(1.2);
-  bodyRoot.add(portrait);
+  const firstAvatar=new Group();firstAvatar.name='original_player_avatar'; // Live avatar instance can be swapped without removing its predecessor immediately.
+  firstAvatar.userData.neckRig={skinnedPlane:portrait};
+  bodyRoot.add(firstAvatar);firstAvatar.add(portrait);
+  let activeAvatar=firstAvatar; // Canonical WorldPortraitLife instance used to distinguish current portrait from stale ancestors.
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
   const window={
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     ProceduralHandAttachments:{gameDeps:deps},
     PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
+    WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
     ResourceSystem:{spendFooting(){}},ActionArcUI:{stowForCarry(){}},
@@ -180,12 +184,25 @@ function testRuntime() {
   const expectedBodyMotion=portrait.localToWorld(charge.group.position.clone()); // Nested body rotation still reaches plane and burden once.
   for(const axis of ['x','y','z'])assert(Math.abs(afterBodyMotion[axis]-expectedBodyMotion[axis])<1e-8,
     'the burden follows the rotated/moved character root along '+axis);
+  const nextPortrait=new SkinnedMesh(null,[
+    new MeshBasicMaterial({name:'npc_avatar_skinned_front_material'}),
+    new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]); // A same-root cosmetic rebuild gives the old portrait time to linger.
+  nextPortrait.name='replaced_player_skinned_plane';
+  const nextAvatar=new Group();nextAvatar.name='replacement_player_avatar';
+  nextAvatar.userData.neckRig={skinnedPlane:nextPortrait};
+  bodyRoot.add(nextAvatar);nextAvatar.add(nextPortrait);
+  activeAvatar=nextAvatar; // The previous, fully mounted avatar remains in the scene graph to expose a stale-cache bug.
+  window.Shattercasks.tick(.02);
+  assert.equal(firstAvatar.parent,bodyRoot,'old portrait remains attached during asynchronous rebuild');
+  assert.equal(charge.group.parent,nextPortrait,'stowed burden follows the canonical live portrait, not the stale cached plane');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
+  activeAvatar=new Group();activeAvatar.name='loading_player_avatar';currentBodyRoot.add(activeAvatar);
   window.Shattercasks.tick(.02);
   assert.equal(charge.group.parent,currentBodyRoot,'missing portrait temporarily falls back to the rebuilt character root');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.rootFallback,true);
   const rigidPortrait=new Group();rigidPortrait.name='npc_avatar_front_plane';rigidPortrait.isMesh=true; // Rebuilt legacy avatar lacks the skinned plane.
-  rigidPortrait.position.set(0,.14,.02);currentBodyRoot.add(rigidPortrait);
+  rigidPortrait.position.set(0,.14,.02);activeAvatar.add(rigidPortrait);
   window.Shattercasks.tick(.02);
   assert.equal(charge.group.parent,rigidPortrait,'late-loaded rigid portrait replaces the root fallback automatically');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
@@ -272,4 +289,4 @@ function testRuntime() {
 
 testEditorAuthoring();
 testRuntime();
-console.log('PASS back-carried burdens: portrait deadzone parenting, carrier collision, transitions, rebuilds, explosions, editor');
+console.log('PASS back-carried burdens: live portrait selection, deadzone parenting, carrier collision, transitions, rebuilds, explosions, editor');
