@@ -314,7 +314,9 @@
         // an upper deck or trigger a different story's brazier from below.
         // Older V50 controls have no floorY and retain their legacy range.
         if(Number.isFinite(Number(control.floorY))&&control.floorY!==null&&control.floorY!==undefined){
-          const supportY=window.DevRandomRuin?.getPlayerSupportY?.();
+          const physicalY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Floor checks use real supported feet, not the landing/sinking animation's presentation Y.
+          const presentedY=window.DevRandomRuin?.getPlayerSupportY?.();
+          const supportY=typeof physicalY==='number'&&Number.isFinite(physicalY)?physicalY:presentedY;
           if(!Number.isFinite(supportY)||Math.abs(supportY-Number(control.floorY))>.9)continue;
         }
         const kind = String(control.kind || 'interactive').toLowerCase();
