@@ -12605,6 +12605,7 @@
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
         npcGridForArea,
+        npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
         npcMovementConfig,
         npcTransitionPool,
         buildingScenes: _buildingScenes,
@@ -13053,6 +13054,7 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
             // a visible nonlethal flight instead of a fake resource-system death.
             // Existing moveToward stays responsible for walking/collision and
@@ -13264,7 +13266,7 @@
               // normally from wherever it was left.
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
-                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                const wty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
@@ -13413,7 +13415,7 @@
               this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
-            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+            const ty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
