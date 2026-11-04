@@ -342,6 +342,7 @@
   }
   function settlePotluckWinnings() {
     if (!deps || !window.CalendarSystem?.isInitialized?.() || !window.FestivalPotluckContest) return;
+    if (potluckRecoveryPending) recoverPotluckEntries(); // Restore an accepted entry before deciding the champion, including older save snapshots.
     for (const [key, contest] of Object.entries(state.potluckContests || {})) {
       const match = /^(\d+):gorkunash$/.exec(key); // This saved seven-day entry is judged only after the gathering ends.
       if (!match || !contest?.entry || contest.favorAwarded || day() < Number(match[1]) * 336 + GORKUNASH_START + 7) continue;
@@ -518,7 +519,7 @@
   }
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
-    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
+    state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
     heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
     window.FestivalLocaleActivities?.clear?.();
