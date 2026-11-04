@@ -475,9 +475,18 @@
         if(!support||support.id!=='devruin-floor-'+key||!support.record)return reject('floor cell missing or overridden',{key,supportId:support?.id||null});
         if(floorY===null)floorY=Number(support.y);
         if(Math.abs(Number(support.y)-floorY)>.08)return reject('uneven floor',{key,y:Number(support.y),floorY}); // Never carve a tiered corridor or a bridge/dais support.
-        if(occupancy?.blocksAt?.(x,z,.24)||occupancy?.solidAt?.(x,z,.24))return reject('floor obstructed',{key});
         cells.push({support,record:support.record,col,row,x,z});
       }
+    }
+    // Walls flank the outside edges of V50's walkable floor cells. Checking
+    // every crosswise cell with the player's radius rejected *every* hallway
+    // even when the central rope route was clear. Sweep only the corridor's
+    // actual rope centerline, leaving the first and last doorway cells to
+    // the ordinary door collision and opener.
+    for(let step=1;step<longCells-1;step++){
+      const lane=point(start+(step+.5)*cs);
+      if(occupancy?.blocksAt?.(lane.x,lane.z,.24)||occupancy?.solidAt?.(lane.x,lane.z,.24))
+        return reject('rope center lane obstructed',{step,point:lane});
     }
     if(floorY===null||Math.abs(entry.y-floorY)>.42||Math.abs(exit.y-floorY)>.42)return reject('bank height mismatch',{floorY,entryY:entry.y,exitY:exit.y});
     const anchorY=(Number(context.meta?.floorSurfaceY)||floorY)+(Number(context.meta?.wallHeight)||3)-.09;
