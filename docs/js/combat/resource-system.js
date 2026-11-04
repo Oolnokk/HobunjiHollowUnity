@@ -1004,10 +1004,13 @@
     if (opts.afflictionBonuses) {
       const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (!AFFLICTIONS[id] || !(mul > 0)) continue;
-        const perkId = FAMILY_PERK[AFFLICTIONS[id].family];
+        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
+        if (!definition || !(mul > 0)) continue;
+        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
+        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
+        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
         const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
-        addAffliction(entity, id, finalDamage * mul * familyMul);
+        addAffliction(entity, actualId, finalDamage * mul * aliasScale * familyMul);
       }
     }
     if (opts.fixedAfflictionBuildup) {
