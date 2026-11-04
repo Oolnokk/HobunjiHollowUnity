@@ -253,6 +253,15 @@
     if (entity.health > cap) entity.health = Math.round(cap * 10) / 10;
   }
 
+  const scentDamageDebug = { consumed: 0, hits: 0, last: null }; // Mobile diagnostics count successful animal-attack scent conversions, not mere targeting.
+
+  function isAnimalDamage(opts) {
+    if (opts?.amphibiousFish || opts?.animalAttack) return true;
+    const attacker = opts?.attacker || opts?.fromCompanion; // The common animal hit source, including Whistle/Sicced companion wrappers.
+    return !!attacker && !attacker.isBandit && !attacker.isNpcWalker && !attacker.maskboundTroop &&
+      (attacker.isCompanion === true || !!attacker.creatureKey);
+  }
+
   function installResourceRules(RS = window.ResourceSystem) {
     if (resourceRulesInstalled || !RS?.AFFLICTIONS || !RS?.applyDamage || !RS?.tick) return false;
     RS.AFFLICTIONS.woundedHealth ||= {
@@ -263,7 +272,7 @@
     RS.AFFLICTIONS.scentMarkedHealth ||= {
       name: 'Scent-marked Health', resource: 'health', extend: 'currentBack', priority: 61, recovers: false,
       family: 'offensiveDebuff', tags: ['scent', 'amphibious'],
-      desc: 'Amphibious fish attacks consume the mark for bonus damage. The scent fades slowly on its own.'
+      desc: 'Animal attacks, including companion attacks, consume this mark for bonus damage (up to one normal hit). Wild animals and enemy animal companions prioritize marked opponents until the scent is spent. It fades slowly.'
     };
 
     const originalApplyDamage = RS.applyDamage.bind(RS);
@@ -272,15 +281,32 @@
     const originalEnforceCaps = RS.enforceCaps.bind(RS);
 
     RS.applyDamage = (entity, amount, opts = {}) => {
-      if (!opts?.amphibiousFish) return originalApplyDamage(entity, amount, opts);
-      const baseAmount = Math.max(0, Number(amount) || 0); // Used so new affliction buildup is based on the attack itself, not the scent bonus it consumed.
+      const baseAmount = Math.max(0, Number(amount) || 0); // Original hit size is the sole budget for spending the scent and new affliction buildup.
+      if (!isAnimalDamage(opts) || !(baseAmount > 0)) return originalApplyDamage(entity, amount, opts);
       const scent = Math.max(0, RS.getAffliction(entity, 'scentMarkedHealth') || 0);
-      const scentBonus = Math.min(scent, baseAmount); // Mirrors Bruised Health's cap: bonus damage can at most double this hit.
-      if (scentBonus > 0) RS.removeAffliction(entity, 'scentMarkedHealth', scentBonus);
+      const scentBonus = Math.min(scent, baseAmount); // An animal can cash out at most its own base damage, never a free second full-health bar.
+      if (!(scentBonus > 0) && !opts.amphibiousFish) return originalApplyDamage(entity, amount, opts);
+      const spent = scentBonus > 0 ? RS.removeAffliction(entity, 'scentMarkedHealth', scentBonus) : 0;
+      if (spent > 0) {
+        scentDamageDebug.consumed += spent;
+        scentDamageDebug.hits++;
+        scentDamageDebug.last = { attacker: opts?.attacker?.id || opts?.attacker?.creatureKey || 'animal', spent };
+      }
+      if (!opts.amphibiousFish) {
+        // Keep ordinary affliction perks/flat buildup/heavy behavior in the central damage path;
+        // only scale coefficient-based buildup back to this attack's ORIGINAL damage.
+        const adjusted = opts.afflictionBonuses && spent > 0
+          ? Object.fromEntries(Object.entries(opts.afflictionBonuses).map(([id, multiplier]) =>
+            [id, multiplier * baseAmount / (baseAmount + spent)])) : opts.afflictionBonuses;
+        return originalApplyDamage(entity, baseAmount + spent,
+          adjusted === opts.afflictionBonuses ? opts : { ...opts, afflictionBonuses: adjusted });
+      }
+      // Fish Leap retains its existing special Wounded Health cap/buildup semantics,
+      // while sharing exactly the same scent payout with every other animal.
       const bonuses = opts.afflictionBonuses || null;
       const cleanOpts = { ...opts, afflictionBonuses: null };
       const before = entity.health;
-      originalApplyDamage(entity, baseAmount + scentBonus, cleanOpts);
+      originalApplyDamage(entity, baseAmount + spent, cleanOpts);
       if (bonuses) {
         for (const [id, multiplier] of Object.entries(bonuses)) {
           if (RS.AFFLICTIONS[id] && multiplier > 0) RS.addAffliction(entity, id, baseAmount * multiplier);
@@ -520,6 +546,7 @@
       playerInWater: playerInWater(),
       playerTile: playerTile() ? { col: playerTile().col, row: playerTile().row, type: String(playerTile().tile?.type || '') } : null,
       resourceRulesInstalled,
+      scentDamage: { ...scentDamageDebug },
       fishLeapInstalled,
       creatureDefInstalled: !!wildlifeDeps?.CREATURE_DB?.[GURUMAHI_KIND],
       liveCreatures: [...liveAmphibiousCreatures].map(c => ({ id: c.id, state: c.state, key: c._amphibiousFishItemKey, health: c.health, stamina: c.stamina })),
