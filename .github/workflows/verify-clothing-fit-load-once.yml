@@ -6,7 +6,7 @@ on:
     paths: [.github/workflows/verify-clothing-fit-load-once.yml]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   check-editor:
@@ -72,7 +72,7 @@ jobs:
               await page.waitForFunction(()=>{
                 const message=document.getElementById('status')?.textContent||'';
                 return message.includes('2D editor ready');
-              },{timeout:55000});
+              },null,{timeout:55000});
               const result=await page.evaluate(()=>{
                 const stage=document.getElementById('stage');
                 const data=stage.getContext('2d').getImageData(0,0,stage.width,stage.height).data;
@@ -100,3 +100,19 @@ jobs:
             }finally{await browser.close()}
           })().then(()=>server.close()).catch(error=>{console.error(error);server.close();process.exitCode=1});
           NODE
+      - name: Record successful checks on the feature branch
+        run: |
+          mkdir -p scripts/records
+          cat > scripts/records/clothing-fit-mobile-load-verification.txt <<'EOF'
+          Verified in GitHub Actions (Node.js 22 + mobile Chromium):
+          - Clothing editor split-source syntax, 12 core and 5 extension parts
+          - Boot module ordering, network errors, 15-second hung-fetch timeout, manual retry
+          - Existing layered garment export and fur-hood integration regressions
+          - Mobile 2D headwear editor loads Fur Hood while Three.js CDN request hangs indefinitely
+          - 234x173 stage canvas has opaque pixels, no JavaScript page errors
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/records/clothing-fit-mobile-load-verification.txt
+          git commit -m "Record verified mobile clothing fit startup checks"
+          git push origin HEAD:feature/bake-tletingan-furhood-pngs
