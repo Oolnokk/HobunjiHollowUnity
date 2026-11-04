@@ -60,8 +60,8 @@ assert.equal(livestock[2].heartLevel, 1.8);
 
 const festivalSource = fs.readFileSync('docs/js/festival-system.js', 'utf8'); // Executes the actual Festival Fun mutation without loading festival scenery.
 const funBody = festivalSource.slice(festivalSource.indexOf('  function addFestivalFun('), festivalSource.indexOf('  function settleFestivalFun('));
-const festivalState = { festivalFun: {} }; // Minimal authoritative member-state shape.
-const addFun = new Function('window', 'state', funBody + '; return addFestivalFun;')(window, festivalState);
+const festivalState = { festivalFun: {}, festivalFunEarned: {} }; // Minimal event-scoped member-state shape.
+const addFun = new Function('window', 'state', 'festival', 'eventKey', 'GORKUNASH_MAX_FUN', funBody + '; return addFestivalFun;')(window, festivalState, () => ({id:'gorkunash'}), () => '1156:gorkunash', 96);
 addFun('a', 25); addFun('a', -4); addFun('a', Infinity);
 assert.equal(festivalState.festivalFun.a, 25);
 const funFlush = [...callbacks.values()][0]; callbacks.clear(); funFlush();
