@@ -282,11 +282,18 @@
     const originalEnforceCaps = RS.enforceCaps.bind(RS);
 
     RS.applyDamage = (entity, amount, opts = {}) => {
-      const baseAmount = Math.max(0, Number(amount) || 0); // Original hit size is the sole budget for spending the scent and new affliction buildup.
-      if (!isAnimalDamage(opts) || !(baseAmount > 0)) return originalApplyDamage(entity, amount, opts);
+      const originalAmount = Math.max(0, Number(amount) || 0); // Original incoming Health hit; used to cap scent spending and prevent bogus zero-hits.
+      if (!isAnimalDamage(opts) || !(originalAmount > 0)) return originalApplyDamage(entity, amount, opts);
       const scent = Math.max(0, RS.getAffliction(entity, 'scentMarkedHealth') || 0);
-      const scentBonus = Math.min(scent, baseAmount); // An animal can cash out at most its own base damage, never a free second full-health bar.
-      if (!(scentBonus > 0) && !opts.amphibiousFish) return originalApplyDamage(entity, amount, opts);
+      const initialBonus = Math.min(scent, originalAmount); // One hit cannot spend more scent than its own base Health damage.
+      if (!(initialBonus > 0) && !opts.amphibiousFish) return originalApplyDamage(entity, amount, opts);
+      const skirmishFloor = Number(opts.wildlifeSkirmishFloor); // Optional nonlethal ecology boundary forwarded from WildlifeSpawn's ordinary bite path.
+      const hasSkirmishFloor = opts.wildlifeSkirmishFloor != null && Number.isFinite(skirmishFloor) && skirmishFloor >= 0;
+      const skirmishBudget = hasSkirmishFloor ? Math.max(0, (Number(entity?.health) || 0) - skirmishFloor) : Infinity;
+      const scale = originalAmount + initialBonus > skirmishBudget
+        ? skirmishBudget / (originalAmount + initialBonus) : 1; // Reserve room for BOTH the bite and its scent payout; cannot kill a wildlife skirmish opponent.
+      const baseAmount = originalAmount * scale; // Proportionately capped ordinary Health damage; all other hits remain unchanged.
+      const scentBonus = initialBonus * scale;
       const spent = scentBonus > 0 ? RS.removeAffliction(entity, 'scentMarkedHealth', scentBonus) : 0;
       if (spent > 0) {
         scentDamageDebug.consumed += spent;
@@ -299,7 +306,8 @@
         const adjusted = opts.afflictionBonuses && spent > 0
           ? Object.fromEntries(Object.entries(opts.afflictionBonuses).map(([id, multiplier]) =>
             [id, multiplier * baseAmount / (baseAmount + spent)])) : opts.afflictionBonuses;
-        return originalApplyDamage(entity, baseAmount + spent,
+        const combinedAmount = Math.min(baseAmount + spent, skirmishBudget); // Clamp again after 0.1-unit affliction rounding to maintain nonlethal wildlife Health.
+        return originalApplyDamage(entity, combinedAmount,
           adjusted === opts.afflictionBonuses ? opts : { ...opts, afflictionBonuses: adjusted });
       }
       // Fish Leap retains its existing special Wounded Health cap/buildup semantics,
