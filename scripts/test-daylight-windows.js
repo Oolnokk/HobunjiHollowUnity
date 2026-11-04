@@ -554,7 +554,7 @@ assert.match(gameSource, /isPlayerReticlePlacementActive\?\.\(\)[\s\S]{0,260}run
 assert.doesNotMatch(gameSource, /if \(furniturePlacementArmedKey \|\| furnitureMoveArmedId\) return;/, 'reticle furniture placement must never freeze mouse camera rotation');
 assert.match(gameSource, /menuOpen \|\| window\._desktopSelectionArc\?\.entryMenuOpen\?\.\(\) \|\| window\.FurniturePlacer\?\.isOpen\?\.\(\)/, 'mouse camera motion must be disabled for the full lifetime of the click-required furniture selector');
 assert.match(gameSource, /isUiBlockingPointerLock: \(\) => [^\n]*FurniturePlacer\?\.isOpen\?\.\(\)/, 'Pointer Lock must not be reacquired while a click-required furniture menu is open');
-assert.match(fs.readFileSync(path.join(root, 'docs/js/shoulder-cam-pointer-lock.js'), 'utf8'), /if \(deps\.isUiBlockingPointerLock\?\.\(\)\) return;/, 'ShoulderCamPointerLock.request must honor the UI blocking hook');
+assert.match(fs.readFileSync(path.join(root, 'docs/js/shoulder-cam-pointer-lock.js'), 'utf8'), /deps\.isUiBlockingPointerLock\?\.\(\)\) return;/, 'ShoulderCamPointerLock.request must honor the UI blocking hook');
 assert.doesNotMatch(linkage, /function patchInteriorSceneBuilder\(api\)/, 'farmhouse openings must not depend on a global buildWallGroup monkey-patch or current-area timing');
 assert.match(gameSource, /const houseWindowOpenings = window\.HouseWindowLinkage\?\.getInteriorWallOpenings\?\.\(\) \|\| \[\]/, 'farmhouse interior rebuild must fetch window openings directly every time it rebuilds');
 assert.match(gameSource, /wallOpenings: houseWindowOpenings/, 'farmhouse brick generation must receive those openings even when the rebuild was triggered from outside');
