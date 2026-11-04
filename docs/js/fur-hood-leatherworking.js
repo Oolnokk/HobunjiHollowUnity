@@ -3,6 +3,8 @@
   if (window.FurHoodLeatherworking) return;
 
   const HOOD_ID = 'fur_hood'; // The one reusable cosmetic definition; literal coats are saved separately on each crafted article.
+  const SPECIES_UNLOCK_COST = 2; // Every animal species has its own one-time world-shared Crafting Mastery purchase.
+  const SPECIES_UNLOCK_PREFIX = 'furHoodSpecies:'; // Stable saved rank IDs distinguish recipes for each source animal.
   const MANIFEST = 'config/patterns/fur-hoods.json'; // Repo-authored source of genotype motif definitions and optional animal silhouette sprites.
   const scriptUrl = document.currentScript?.src || ''; // Resolve manifest from this script, regardless of whether the game or a tool loads it.
   const manifestUrl = scriptUrl ? new URL('../' + MANIFEST, scriptUrl).href : MANIFEST;
@@ -18,6 +20,33 @@
     const name = String(value || '').trim(); // Hide producers use canonical creature keys; aliases share the same animal coat motifs.
     const alias = window.CreatureGenetics?.SPECIES_ALIAS?.[name] || name;
     return String(alias).replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[_\s]+/g, '-').replace(/[’']/g, '');
+  }
+  function speciesUnlockId(kind) {
+    const normalized = normalizeKind(kind); // Canonical creature species (including alpha aliases) owns the unlock, not a particular hide variant.
+    return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized) ? SPECIES_UNLOCK_PREFIX + normalized : null;
+  }
+  function speciesName(kind) {
+    return normalizeKind(kind).split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' '); // Shared label for Mastery nodes and the leatherworking popup.
+  }
+  function registerSpeciesUnlocks(extraKinds = []) {
+    const mastery = window.CraftingMasterySystem; // Reuses the world's existing Mote balance, rank registry, and persistence.
+    if (!mastery?.registerNode || !mastery?.node) return 0;
+    const kinds = new Set([...Object.keys(manifest.species || {}), ...(Array.isArray(extraKinds) ? extraKinds : [])]); // Known coat species appear before a hide is acquired; future species appear once a hide is seen.
+    let added = 0;
+    for (const kind of kinds) {
+      const id = speciesUnlockId(kind);
+      if (!id || mastery.node(id)) continue;
+      const label = speciesName(kind);
+      if (mastery.registerNode({
+        id, name: label + ' Fur Hoods', category: 'leatherworking', tier: 1, maxRank: 1, cost: SPECIES_UNLOCK_COST,
+        desc: () => 'Learn to craft fur hoods from ' + label + ' hides at any loom.',
+      })) added++;
+    }
+    return added;
+  }
+  function hasSpeciesUnlock(kind) {
+    const id = speciesUnlockId(kind); // Fail closed when the world or this specific recipe has not been unlocked.
+    return !!id && window.CraftingMasterySystem?.hasUnlock?.(id) === true;
   }
   function colorHex(value) {
     const match = String(value || '').trim().match(/^#?([a-f0-9]{6})$/i);
@@ -273,8 +302,9 @@
       '<header><h2>Leatherworking · Fur Hoods</h2><button data-action="close" aria-label="Close">✕</button></header>' +
       '<nav><button data-action="cloth">Cloth weaving</button><button class="selected" disabled>Leatherworking</button></nav>' +
       '<label>Choose an individual hide from your pack<select data-field="hide"></select></label>' +
-      '<p class="furhood-help">Natural coats cannot be dyed. Only the selected hide is consumed. Expressed markings keep their genetic colors; custom dyed weaving is added later by reweaving the hood in the ordinary loom.</p>' +
+      '<p class="furhood-help">Each animal species requires its own 2-Mote Crafting Mastery unlock. Natural coats cannot be dyed. Only the selected hide is consumed. Expressed markings keep their genetic colors; custom dyed weaving is added later by reweaving the hood in the ordinary loom.</p>' +
       '<div class="furhood-preview"><canvas data-view="preview" width="1" height="1"></canvas></div>' +
+      '<div class="furhood-unlock"><button data-action="unlock" type="button">Unlock species · 2 Motes</button></div>' +
       '<div class="furhood-row"><button data-action="view">View behind</button><button data-action="craft">Craft fur hood</button></div>' +
       '<output data-field="status" aria-live="polite"></output>' +
       '</section>';
@@ -287,7 +317,7 @@
       '.furhood-dialog button{background:#284f40;color:#fff;border:1px solid #699c83;border-radius:8px;min-height:43px;padding:9px 12px}' +
       '.furhood-dialog button.selected{background:#416b54}.furhood-dialog button:disabled{opacity:.6}.furhood-help{font-size:12px;line-height:1.45;color:#c2d5c8}' +
       '.furhood-preview{min-height:200px;display:grid;place-items:center;background:#101915;margin:9px 0;border:1px solid #436857}' +
-      '.furhood-preview canvas{max-width:100%;max-height:280px;image-rendering:pixelated}.furhood-row button{flex:1}' +
+      '.furhood-preview canvas{max-width:100%;max-height:280px;image-rendering:pixelated}.furhood-row button{flex:1}.furhood-unlock{margin:8px 0}.furhood-unlock button{width:100%}' +
       '.furhood-dialog output{display:block;white-space:pre-wrap;min-height:35px;font-size:12px;color:#c3e4d1;margin-top:7px}';
     overlay.appendChild(style);
     document.body.appendChild(overlay);
@@ -295,18 +325,34 @@
     const select = overlay.querySelector('[data-field="hide"]');
     const status = overlay.querySelector('[data-field="status"]');
     const preview = overlay.querySelector('[data-view="preview"]');
+    const craftButton = overlay.querySelector('[data-action="craft"]'); // Disabled until the selected hide's animal species is learned.
+    const unlockButton = overlay.querySelector('[data-action="unlock"]'); // Purchases the selected species node through the existing Mastery API.
     const choices = hideChoices(deps.inventory); // Recomputed after a craft so one-of-a-kind hides cannot be selected twice.
+    registerSpeciesUnlocks(choices.map(choice => choice.furHood.kind)); // Include future hide species missing from the original artwork manifest.
     let view = 'front'; // Shared with the View Behind button while this overlay is open.
     let revision = 0; // Rejects late async render completions after hide switching or panel close.
     const chosen = () => choices[Number(select.value)] || null;
+    const unlockStatus = choice => {
+      const kind = choice?.furHood?.kind; // The exact selected hide species controls both the visible button and authoritative craft check.
+      craftButton.disabled = !kind || !hasSpeciesUnlock(kind);
+      unlockButton.hidden = !kind || hasSpeciesUnlock(kind);
+      if (!kind) return '';
+      registerSpeciesUnlocks([kind]);
+      const id = speciesUnlockId(kind);
+      const verdict = window.CraftingMasterySystem?.canPurchase?.(id);
+      unlockButton.textContent = 'Unlock ' + speciesName(kind) + ' Fur Hoods · ' + SPECIES_UNLOCK_COST + ' Motes';
+      unlockButton.disabled = !verdict?.ok;
+      return hasSpeciesUnlock(kind) ? 'Species recipe unlocked in this world.' : 'Species recipe locked · ' + (verdict?.reason || 'Crafting Mastery is unavailable.');
+    };
     const refresh = async () => {
       const choice = chosen(), request = ++revision;
       const canvas = preview;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const recipeStatus = unlockStatus(choice); // Recomputed for every selected hide and after a Mote purchase.
       if (!choice) { status.textContent = 'No saved-genotype hides in Pack. Legacy hides without genotype cannot be used.'; return; }
       const details = choice.furHood;
-      status.textContent = choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + details.baseColor + ' base coat · ' + (details.appearance?.patterns?.length || 0) + ' expressed markings';
+      status.textContent = choice.count + ' available · ' + (choice.stars || '?') + '★ · ' + details.baseColor + ' base coat · ' + (details.appearance?.patterns?.length || 0) + ' expressed markings\n' + recipeStatus;
       try {
         await ensureManifest();
         const rendered = await window.ClothingWeavingSystem?.renderClothingLayers?.(HOOD_ID, {
@@ -340,7 +386,18 @@
       event.target.textContent = view === 'front' ? 'View behind' : 'View front';
       refresh();
     };
-    overlay.querySelector('[data-action="craft"]').onclick = async () => {
+    unlockButton.onclick = () => {
+      const kind = chosen()?.furHood?.kind; // Selecting a different hide never purchases the previous species accidentally.
+      const id = speciesUnlockId(kind);
+      if (!id) return;
+      registerSpeciesUnlocks([kind]);
+      const mastery = window.CraftingMasterySystem;
+      const verdict = mastery?.canPurchase?.(id);
+      if (!verdict?.ok) { status.textContent = verdict?.reason || 'Crafting Mastery is unavailable.'; return; }
+      if (mastery.purchaseRank(id)) refresh();
+      else status.textContent = 'Could not save the fur-hood species unlock.';
+    };
+    craftButton.onclick = async () => {
       await ensureManifest(); // Prefer the fully loaded per-species trim-gene priority before saving natural color B.
       if (activePanel !== overlay) return; // Ignore a craft click whose overlay was closed while the manifest was loading.
       const choice = chosen();
@@ -348,6 +405,11 @@
       const pack = deps.getPackClothing?.();
       if (!current || !Array.isArray(pack)) {
         status.textContent = 'Hide is no longer available. Reopen Leatherworking to refresh inventory.';
+        return;
+      }
+      if (!hasSpeciesUnlock(current.furHood.kind)) {
+        status.textContent = speciesName(current.furHood.kind) + ' fur hoods are locked. Unlock this species with 2 Motes of Craft first.';
+        unlockStatus(current); // Fail closed even if this button was enabled before the player changed worlds.
         return;
       }
       const source = current.record;
@@ -387,13 +449,16 @@
     return {
       manifestLoaded: manifest !== fallbackManifest,
       species: Object.keys(manifest.species || {}),
+      speciesUnlockCost: SPECIES_UNLOCK_COST,
+      speciesUnlocks: Object.keys(manifest.species || {}).map(kind => ({ kind, id: speciesUnlockId(kind), unlocked: hasSpeciesUnlock(kind) })), // Copyable on-device evidence of world-specific species progress.
       leatherworkingOpen: !!activePanel?.isConnected,
       lastCraft: copy(lastCraft), lastError,
-      latestChange: 'Genotype colors natural trim without motifs; source-keyed Grehlr white/gray and mint remain independently tinted; species front/back routes are authorable.',
+      latestChange: 'Fur-hood species recipes now cost 2 Motes of Craft apiece, use world-scoped mastery ranks, and are enforced before hide consumption.',
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
-    ensureManifest, isPendingAsset, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
+    SPECIES_UNLOCK_COST, speciesUnlockId, registerSpeciesUnlocks, hasSpeciesUnlock, ensureManifest, isPendingAsset, fromHide, expressedGenes, patternColorFor, colorForRole, protectedColorsFor, normalizeExclusions, isProtectedSourcePixel, restoreProtectedPixels, preserveProtectedColors, recolorAnimalPart, markingsFor, specialPartsFor, orderLayersForView, hideChoices, openLoom, closePanel, debugSnapshot,
   });
-  ensureManifest();
+  ensureManifest().then(() => registerSpeciesUnlocks()); // If the manifest loads after Mastery, register all known species immediately.
+  if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', () => registerSpeciesUnlocks(), { once: true }); // Covers normal boot, where Mastery loads after this module.
 })();
