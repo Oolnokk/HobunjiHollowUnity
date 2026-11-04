@@ -37,7 +37,7 @@
   const FRUIT_DAMAGE = 12; // Raw blunt icicle-style impact damage before defensive mitigation.
   let held = null; // The one intact Burden held in front of the local player.
   let backCarried = null; // The one back-mounted physical Burden, shared by the tool arch and damage reactions.
-  let observedCarrier = null, observedHealth = null; // Tracks direct health changes when hits bypass Combat's injected callback.
+  let observedCarrier = null, observedAttackAt = null; // Tracks ResourceSystem's direct-hit timestamp without treating bleeding/burning ticks as physical hits.
   let aimingThrow=null,flight=null,throwRing=null;
   const MAX_THROW_RADIUS=14;
   const SHATTER_RELEASE_FALLBACK=.28;
@@ -127,7 +127,7 @@
     if (storeIdentity===identity) return;
     storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();looseFruitHistory.clear();records.clear();placementCache.clear();
     if(held||backCarried||backXray.size)setHeldRearXray(null); // Never leak either carried object's depth state into the next world.
-    held=null;backCarried=null;observedCarrier=null;observedHealth=null; // A different world must not inherit physical charges.
+    held=null;backCarried=null;observedCarrier=null;observedAttackAt=null; // A different world must not inherit physical charges.
     promptClaim='';
     if (identity.startsWith('session|')) return;
     try {
@@ -1074,7 +1074,7 @@
     alignHeldVase(burden);
     setHeldRearXray(burden);
     observedCarrier=deps()?.player||null;
-    observedHealth=Number.isFinite(Number(observedCarrier?.health))?Number(observedCarrier.health):null;
+    observedAttackAt=Number.isFinite(Number(observedCarrier?.lastAttackReceivedAt))?Number(observedCarrier.lastAttackReceivedAt):null;
     lastEvent='stowed '+burden.id+' on back';
     prompt();syncToolArchPickup();deps()?.refreshActionBar?.();
     deps()?.showToast?.(burden.displayName+' stowed on back — select it from the tool arch to take it out.',false);
@@ -1102,11 +1102,18 @@
     return detonate(burden,cause);
   }
   function trackCarrierDamage(){
-    const player=deps()?.player||null,health=Number(player?.health);
-    if(observedCarrier!==player){observedCarrier=player;observedHealth=Number.isFinite(health)?health:null;return;}
-    if(Number.isFinite(health)&&Number.isFinite(observedHealth)&&health<observedHealth){
-      observedHealth=health;impactBackOnCarrierHit('carrier-health-hit');
-    }else if(Number.isFinite(health))observedHealth=health;
+    const player=deps()?.player||null,receivedAt=Number(player?.lastAttackReceivedAt);
+    if(observedCarrier!==player){
+      observedCarrier=player;
+      observedAttackAt=Number.isFinite(receivedAt)?receivedAt:null;
+      return;
+    }
+    // ResourceSystem.applyDamage writes this timestamp for a direct hit even
+    // when enhanced Health absorbs the impact. Affliction ticks never write it.
+    if(Number.isFinite(receivedAt)&&Number.isFinite(observedAttackAt)&&receivedAt>observedAttackAt){
+      observedAttackAt=receivedAt;
+      impactBackOnCarrierHit('carrier-direct-hit');
+    }else if(Number.isFinite(receivedAt))observedAttackAt=receivedAt;
   }
   function transferBackToArea(mapId){
     const burden=backCarried,targetScene=scene();
@@ -2144,7 +2151,8 @@
             const result=originalDamage(...args);
             const after=Number(player?.health);
             if(Number.isFinite(before)&&Number.isFinite(after)&&after<before){
-              observedCarrier=player;observedHealth=after;
+              observedCarrier=player;
+              observedAttackAt=Number.isFinite(Number(player?.lastAttackReceivedAt))?Number(player.lastAttackReceivedAt):null;
               impactBackOnCarrierHit('carrier-combat-hit');
             }
             return result;
