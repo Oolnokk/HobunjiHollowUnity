@@ -30,7 +30,7 @@ assert.equal(authored.parts.length,3);
 assert.deepEqual(authored.runtimeVariants.states.map(s=>s.hiddenPartIds.length),[0,1,2,3]);
 assert.deepEqual(single.carryable.handTargets,bomb.carryable.handTargets);
 const runtime=read('docs/js/authored-furniture-runtime.js'); // Real authored state visibility, not a copied implementation.
-const begin=runtime.indexOf('function setRuntimeValues('),end=runtime.indexOf('\\n  function seatCount(',begin);
+const begin=runtime.indexOf('function setRuntimeValues('),end=runtime.indexOf('\n  function seatCount(',begin);
 assert.ok(begin>0&&end>begin,'authored runtime exposes state-value setter');
 const setRuntimeValues=vm.runInNewContext('('+runtime.slice(begin,end).trim()+')');
 const parts=new Map(authored.parts.map(part=>[part.id,{visible:true}]));
