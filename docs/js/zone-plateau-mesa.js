@@ -291,7 +291,7 @@
     // sub-map coordinates). Mini-cliff caps occupy their own Y layers, so
     // overlapping footprint tiles never overwrite the ground beneath them.
     const network = window.CliffRouteNetwork?.forGrid?.(zGrid, {
-      area: mapId,
+      area: mapId, rebuild: true, // Recompute after dug/changed tiles, not from a stale cached cliff graph.
       blocked: t => !t || t.incline || deps.isSolid(t.type) || [deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.TRENCH].includes(t.type),
       isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
       tileY: t => Number.isFinite(t?.surfaceY) ? t.surfaceY
