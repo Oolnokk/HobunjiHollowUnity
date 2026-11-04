@@ -99,6 +99,10 @@ assert.equal(controls.filter(c=>c.kind==='v50NativeLinkedCube').length,4);
 assert.equal(controls.filter(c=>c.kind==='v50NativeObelisk').length,3);
 assert(controls.some(c=>c.kind==='v50NativeTransitDoor'));
 assert.equal(runtime.stageCandidate({x:9,z:3,w:3,d:3})?.kind,'glyphObelisk');
+assert.equal(runtime.stageCandidate({x:9,z:3,w:3,d:3},'door_plate')?.id,
+  'native-v50-f2-door_plate','a generator-declared final mechanism takes precedence over nearer preparatory glyphs');
+assert.equal(runtime.stageCandidate({x:9,z:3,w:3,d:3},'missing-final'),null,
+  'unresolvable nested final IDs must never silently promote a different activator');
 runtime.tick(.05);
 assert.equal(runtime.isSolved(plateDoor.userData.mechanismId),false,'plate requires real V50 weight signal');
 plate.userData.weightProgress=1;runtime.tick(.05);
