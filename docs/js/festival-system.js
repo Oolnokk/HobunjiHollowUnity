@@ -326,7 +326,7 @@
     return credited;
   }
   function settleFestivalFun() {
-    if (!deps || !window.CalendarSystem?.isInitialized?.()) return;
+    if (!deps || !window.CalendarSystem?.isInitialized?.() || typeof window.DialogueContent?.adjustNpcFavor !== 'function') return; // Keep earned Fun pending until the Favor service is hydrated; never erase an unpaid social reward.
     const today = day();
     if (!Number.isFinite(state.funDay)) { state.funDay=today; return; }
     if (today<=state.funDay) return;
