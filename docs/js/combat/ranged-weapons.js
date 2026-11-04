@@ -530,12 +530,12 @@
     if (!def || playerAction) return false;
     const loaded = isLoaded(itemKey);
     const kind = loaded ? 'fire' : 'load';
-    if (kind === 'fire' && def.rangedType !== 'thrown') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
+    if (kind === 'fire' && def.rangedType !== 'thrown') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`, { actionKind: 'rangedWeaponFire', abilityId: String(itemKey || 'rangedWeapon') });
     if (kind === 'load') {
       spendRangedLoadStamina(deps.player, itemKey, def);
       setRangedLoadRegenBlocked(deps.player, true);
     }
-    const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
+    const durationS = (kind === 'fire' ? def.fireDurationS : def.reloadDurationS) / (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1);
     const pose = poseForAction(def, kind);
     const rawDamageScale = Number(options?.damageScale);
     const damageScale = Number.isFinite(rawDamageScale) ? Math.max(0, Math.min(1, rawDamageScale)) : 1;
@@ -943,7 +943,7 @@
     scene.add(mesh);
 
     const flightStats = projectileFlightStats(def); // Resolves every generic per-weapon flight/persistence stat exactly once at launch.
-    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier; // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
+    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier * (team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedProjectileSpeed') || 1) : 1); // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
     const horizSpeedPxS = projectileSpeedPxS * Math.cos(pitch); // Used by the X/Z velocity components below.
     const direction = new THREE.Vector3(
       Math.cos(angle) * Math.cos(pitch),
