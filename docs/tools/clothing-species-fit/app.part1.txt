@@ -13,7 +13,7 @@ const MICRO_TRIANGLE_COUNT=(GRID_SIZE-1)*(GRID_SIZE-1)*CELL_SUBDIVISIONS*CELL_SU
 
 const $=id=>document.getElementById(id);
 const E={
-  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),sourceSpecies:$('sourceSpecies'),sourceGender:$('sourceGender'),sourceLayerStatus:$('sourceLayerStatus'),garment:$('garment'),fitRegion:$('fitRegion'),
+  repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),sourceSpecies:$('sourceSpecies'),sourceGender:$('sourceGender'),useStartingAsTarget:$('useStartingAsTarget'),sourceLayerStatus:$('sourceLayerStatus'),garment:$('garment'),fitRegion:$('fitRegion'),
   help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
