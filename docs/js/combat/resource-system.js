@@ -879,7 +879,7 @@
     if (entity === window.Combat?.deps?.player) {
       const actionKind = String(transaction?.actionKind || ''); // Structured action type is authoritative when callers provide one.
       const label = String(reason || ''); // Legacy combat actions that don't yet supply a type still retain their costs.
-      const dodge = actionKind === 'combatDodge' || /\\bdodge\\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
+      const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
       const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
       const heavy = transaction?.heavy === true || /^(offensiveHeldCharge|offensiveHeldFlurry)$/.test(actionKind); // Lead Knuckles applies only to heavy attacks, not other weapon actions.
       if (dodge) amount *= statModifier(entity, 'dodgeStaminaCost');
