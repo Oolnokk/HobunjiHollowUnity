@@ -119,7 +119,8 @@
           const idx = clamp(Math.round(spans * (j + 1) / (count + 1)), 2, spans - 2), anchor = nodes[idx];
           const shelf = {
             id: 'cliff-balcony-' + id + '-' + j, routeId: id, nodeId: nodes.length,
-            x: anchor.x + normal.x * 0.19, z: anchor.z + normal.z * 0.19,
+            x: anchor.x + tan.x * (j % 2 ? -0.4 : 0.4) + normal.x * 0.19,
+            z: anchor.z + tan.z * (j % 2 ? -0.4 : 0.4) + normal.z * 0.19,
             y: anchor.y, width: 1.25, depth: 0.95, tangent: tan, normal,
             footprint: [{ c: Math.floor(anchor.x), r: Math.floor(anchor.z), elevation: anchor.y }],
             reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
