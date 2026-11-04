@@ -50,5 +50,5 @@ assert.ok(motion.parts.cliff_door_slab.on.y - motion.parts.cliff_door_slab.off.y
 assert.equal(motion.parts.cliff_door_slab.on.x, motion.parts.cliff_door_slab.off.x);
 assert.equal(motion.parts.cliff_door_slab.on.z, motion.parts.cliff_door_slab.off.z);
 assert.equal(catalog.furniture.filter(item => item.key === door.key && item.file === 'config/furniture-authored/cliffDoor.json').length, 1);
-assert.match(read('docs/tools/furniture-avatar-author/index.html'), /docs\\/config\\/furniture-authored\\/cliffDoor\\.json/);
+assert.ok(read('docs/tools/furniture-avatar-author/index.html').includes("'docs/config/furniture-authored/cliffDoor.json'"), 'Furniture Author must list the Cliff Door');
 console.log('Cliff Door authored geometry, stationary backing, vertical motion and catalog registration OK.');
