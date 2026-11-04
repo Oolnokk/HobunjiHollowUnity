@@ -173,6 +173,107 @@ async function main() {
   assert(refE.sourceLayerStatus.textContent.includes('mammakhbuur'), 'load failure names the missing target');
   assert(refE.threeStatus.textContent.includes('No rig for mammakhbuur'), 'load failure cannot leave a misleading old rig status');
 
-  console.log('clothing fit/game portrait preset, front/back depth, and species switching parity passed');
+  // The 2D appearance-matching path must use the EXACT front texture passed
+  // to the 3D rig, inverse-projected by the same game-space preset B rectangle.
+  const rectCode = sourceBetween(part(7), 'function portraitLayerRect(', 'function previewedCloudMaskXform(');
+  const portraitLayerRect = new Function(rectCode + '\nreturn portraitLayerRect;')();
+  const projectCode = sourceBetween(eight, 'function projectRuntimeFrontToFittingCanvas(source)', 'function canonicalHeadReference(');
+  const inverseDraws = [];
+  const project = new Function('R', 'document', 'portraitLayerRect', 'targetGarmentLayerXform',
+    projectCode + '\nreturn projectRuntimeFrontToFittingCanvas;')(
+      { body: { width: 120, height: 240 } },
+      { createElement: () => ({ getContext: () => ({
+        drawImage: (...args) => inverseDraws.push(args)
+      }) }) },
+      portraitLayerRect, garmentXform
+    );
+  const gameFrontTexture = canvas('same 3D front pixels');
+  const projected = project(gameFrontTexture);
+  assert.equal(projected.width, 120, 'matching 2D artwork uses native target sprite width');
+  assert.equal(projected.height, 240, 'matching 2D artwork uses native target sprite height');
+  assert.equal(inverseDraws[0][0], gameFrontTexture, '2D must use the identical 3D portrait raster');
+  const expectedRect = portraitLayerRect(120, 240, presetB, 200, 200);
+  for (const [index, expected] of [
+    -expectedRect.x * 120 / expectedRect.w,
+    -expectedRect.y * 240 / expectedRect.h,
+    200 * 120 / expectedRect.w,
+    200 * 240 / expectedRect.h
+  ].entries()) {
+    assert(Math.abs(inverseDraws[0][index+1]-expected)<1e-7,
+      'inverse projection must cancel the preset B placement on axis '+index);
+  }
+
+  // A real 2D render reads the completed texture; edits invalidate it until
+  // the paired 3D build updates. An obsolete painted character must not survive.
+  const nine = part(9);
+  assert(nine.includes('buildSinglePlaneAvatarModel(THREE,avatar.frontComposed'),
+    '3D construction uses the same frontComposed texture offered to 2D');
+  assert(nine.includes('canvas:projectRuntimeFrontToFittingCanvas(avatar.frontComposed)'),
+    '3D commit must provide its final frontComposed pixels to the 2D fitting canvas');
+  const renderCode = sourceBetween(nine, 'function render(scheduleRig=true)', 'function refreshHelp()');
+  const paintCalls = [];
+  const matchR = {
+    assetGeneration: 3, body: canvas('raw pixels'), authoredTargetCloth: null,
+    three: { buildGeneration: 7, matchedFront2D: {
+      canvas: projected, buildGeneration: 7, assetGeneration: 3,
+      species: 'tletingan', gender: 'female'
+    } }
+  };
+  const matchE = {
+    stage: { width: 120, height: 240 }, label: {}, match3D: { checked: true },
+    match3DStatus: {}, showBody: { checked: true }, showGarment: { checked: true },
+    showMeshes: { checked: false }, showAuthored: { checked: false },
+    species: { value: 'tletingan', selectedIndex: 0, options: [{ text: 'Tletingan' }] },
+    gender: { value: 'female' }, sourceSpecies: { value: 'mao-ao' }, sourceGender: { value: 'male' },
+    garment: { value: '' }
+  };
+  const matchC = {
+    setTransform: () => {}, clearRect: () => {},
+    drawImage: image => paintCalls.push(image===projected?'game-matched':image.label),
+    imageSmoothingEnabled: false
+  };
+  let rebuilds = 0;
+  const renderMatched = new Function(
+    'R','E','C','fitRegion','sizeStage','headwearWarpForView','mode','routedPatchIsBody',
+    'currentWarp','mainClothSource','garmentRecord','drawGrid','SOURCE_GRID',
+    'transformedSourceGrid','targetGrid','refreshHelp','refreshDebug','scheduleThreePreview',
+    renderCode + '\nreturn render;'
+  )(
+    matchR,matchE,matchC,()=> 'body',()=>{},()=>null,'preview',
+    ()=>false,()=>null,()=>null,()=>null,()=>{},[],
+    ()=>[],()=>[],()=>{},()=>{},()=>{rebuilds++;}
+  );
+  renderMatched(false);
+  assert.deepEqual(paintCalls, ['game-matched'],
+    'the 2D canvas must paint the same 3D front texture, not a separate raw character');
+  assert(matchE.match3DStatus.textContent.startsWith('Game-matched:'),
+    'mobile status must confirm that both portrait textures agree');
+  assert.equal(rebuilds, 0, 'synchronizing the 2D canvas must not trigger a recursive 3D build');
+  renderMatched();
+  assert.equal(matchR.three.matchedFront2D, null,
+    'a transform update invalidates the old 3D portrait before the next 2D paint');
+  assert(paintCalls.includes('raw pixels'),
+    'the temporary raw artwork remains available during an asynchronous rig rebuild');
+  assert.equal(rebuilds, 1, 'editing still schedules the paired 3D refresh');
+
+  // Both front portraits must hide the source garment in Grid Only mode.
+  options.showGarment.checked=true;
+  const gridOnlyCompose = new Function(
+    'R', 'E', 'document', 'runtimePortraitSet', 'routedPatchIsBody',
+    'mainClothSource', 'currentWarp', 'renderRoutedBodyPatchOverlay', 'fitRegion',
+    'rawGarmentToRuntimeLayer', 'flipCanvasX', 'garmentRecord', 'mode',
+    composedSource + '\nreturn composeRuntimePortrait;'
+  )(
+    state, options, { createElement: () => canvas('composed') },
+    async () => ({ front: canvas('baseFront'), back: canvas('baseBack'), headOnlyFront: canvas('headOnly') }),
+    () => false, () => canvas('source'), () => canvas('warped'),
+    async () => null, () => 'body', async () => canvas('garment'),
+    () => canvas('rearGarment'), () => ({ slot: 'torso' }), 'body'
+  );
+  const gridOnlyPortrait = await gridOnlyCompose();
+  assert.deepEqual(gridOnlyPortrait.frontComposed.draws, ['baseFront'],
+    'Grid Only cannot display clothing on 3D while 2D hides it');
+
+  console.log('clothing fit/game portrait, 2D/3D texture parity, grid-only, species switching and depth tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
