@@ -6,6 +6,8 @@ const assert = require('node:assert/strict'); // Verifies generated note order, 
 const fs = require('node:fs'); // Reads the shipped module so this cannot accidentally test a replica.
 const vm = require('node:vm'); // Runs browser globals in a deterministic headless harness.
 const loaded = []; // Counts image loads to catch needless texture reallocation on every ruin reroll.
+const configured = []; // Confirms all loaded Scratchbone images use the shared PNG-plane settings.
+const madeMaterials = []; // Confirms all numeral planes use the same canonical sprite material factory.
 
 class SceneObject {
   constructor() {
@@ -35,7 +37,12 @@ class TextureLoader {
 const win = {THREE:{
   Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,MeshBasicMaterial:Material,TextureLoader,
   DoubleSide:2,SRGBColorSpace:'srgb',
-},KurrayaPuzzle:{NOTE_CODES:Array(8).fill('note')}};
+},KurrayaPuzzle:{NOTE_CODES:Array(8).fill('note')},
+  HobunjiSpritePngSurface:{
+    configureTexture(THREE,texture,name){configured.push(name);texture.canonical=true;return texture;},
+    makeMaterial(THREE,texture,name,options){madeMaterials.push(name);return new Material({map:texture,...options});},
+    alphaTest:()=>.001,
+  }};
 vm.runInNewContext(fs.readFileSync('docs/js/ruin-melody-glyph-decal.js','utf8'),{window:win});
 const api=win.RuinMelodyGlyphDecal;
 assert(api?.create && api?.layoutFor, 'the game exports a reusable Scratchbone inscription builder');
@@ -75,6 +82,8 @@ const second=api.create({root,plate,notes:[0,7],bounds,sampleSupport,blockedAt:(
 assert(second,'a new ruin may reuse the same glyph assets with entirely different notes');
 assert.equal(new Set(loaded).size,8);
 assert.equal(loaded.length,8,'each of the eight Scratchbone PNGs loads only once for all generated inscriptions');
+assert.equal(configured.length,8,'each number PNG uses the canonical color/filter pipeline');
+assert(madeMaterials.length>=next.length+first.length,'real glyph decals use canonical sprite materials rather than ad hoc UI textures');
 
 const tight=api.create({root:new Group(),plate,notes:[4,3,2,1],bounds:{minX:-.4,maxX:.4,minZ:-.4,maxZ:.4},
   sampleSupport,blockedAt:()=>true}); // Cramped generation cannot suppress its sequence clue entirely.
