@@ -39,11 +39,11 @@
     const g = typeof deps.npcGridForArea === 'function' ? deps.npcGridForArea(area) : (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
     const tile = g?.[r]?.[c];
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
-    if (deps.isZoneArea(area) && tile.incline) return false; // Cliff faces may be crossed only by selected route-hops.
+    if (deps.isZoneArea?.(area) && tile.incline) return false; // Cliff faces may be crossed only by selected route-hops.
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;
     // skipFloor means the mesa's continuous lid owns the floor, NOT an absent walkable surface.
-    if (deps.isZoneArea(area) && (tile.mapBoundary || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Keep true escarpment walls blocked without stranding NPCs on plateau lids.
+    if (deps.isZoneArea?.(area) && (tile.mapBoundary || deps.isTownBuildingCollisionTile(c, r, area))) return false; // Keep true escarpment walls blocked without stranding NPCs on plateau lids.
     return true;
   }
 
@@ -90,9 +90,9 @@
   // keep their authored arrival tile. Maps that are not loaded yet are left alone.
   function nearestWalkableTile(area, c, r, maxRadius = 6) {
     // Wilderness entries need the same safe-arrival search as building doors; unloaded areas cannot be probed yet.
-    if (!deps || (!deps.isBuildingArea(area) && !deps.isZoneArea(area)) || !deps.npcGridForArea(area)) return { c, r };
+    if (!deps || (!deps.isBuildingArea(area) && !deps.isZoneArea?.(area)) || !deps.npcGridForArea(area)) return { c, r };
     // Building seats intentionally preserve their furniture-overlapped station tile; wilderness spawns must not emerge inside a blocking prop.
-    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5) && (!deps.isZoneArea(area) || isNpcTileWalkable(area, c, r))) return { c, r };
+    if (isNpcPositionStructurallyWalkable(area, c + 0.5, r + 0.5) && (!deps.isZoneArea?.(area) || isNpcTileWalkable(area, c, r))) return { c, r };
     let fallback = null; // Structurally clear but furniture-blocked tile, used only when no free tile is in range.
     for (let radius = 1; radius <= maxRadius; radius++) {
       let best = null, bestDist = Infinity;
@@ -125,7 +125,7 @@
       : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
     const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Explicit seat tiles stay stable across small per-frame steps; path edges may derive theirs from the edge endpoint.
-    const zoneGrid = deps.isZoneArea(area) ? deps.npcGridForArea(area) : null; // Used for same-elevation swept checks, not just horizontal occupancy.
+    const zoneGrid = deps.isZoneArea?.(area) ? deps.npcGridForArea(area) : null; // Used for same-elevation swept checks, not just horizontal occupancy.
     let lastTile = zoneGrid?.[Math.floor(fromZ)]?.[Math.floor(fromX)] || null;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
@@ -361,7 +361,7 @@
   function _npcStepIsClear(walker, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile = null } = {}) {
     const travel = Math.hypot(desiredX - startX, desiredZ - startZ);
     const shortStep = Math.max(0.04, npcCollisionRadiusTiles() * 0.45);
-    if (travel <= shortStep && !deps.isZoneArea(walker.area)) {
+    if (travel <= shortStep && !deps.isZoneArea?.(walker.area)) {
       return isNpcPositionWalkable(walker.area, desiredX, desiredZ, npcCollisionRadiusTiles(), { ignoreFurnitureTile });
     }
     return canNpcTraverse(walker.area, startX, startZ, desiredX, desiredZ, { ignoreFurnitureTile });
@@ -414,7 +414,7 @@
 
   const cliffDebug = { started: 0, completed: 0, replanFailures: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
   function cliffNetwork(area) {
-    const g = deps?.isZoneArea(area) && deps.npcGridForArea(area);
+    const g = deps?.isZoneArea?.(area) && deps.npcGridForArea(area);
     return g && window.CliffRouteNetwork?.forGrid?.(g, {
       area,
       blocked: t => !t || t.incline || deps.isSolid(t.type) || t.type === deps.TileType.TRENCH || t.type === deps.TileType.STREAM || t.type === deps.TileType.RIVER,
@@ -446,7 +446,7 @@
     const climb = walker?._npcCliffClimb;
     if (!climb) return false;
     const root = walker.root;
-    if (!root?.position || !deps?.isZoneArea(walker.area)) { walker._npcCliffClimb = null; return false; }
+    if (!root?.position || !deps?.isZoneArea?.(walker.area)) { walker._npcCliffClimb = null; return false; }
     if (climb.index === climb.exit && !climb.start) {
       walker._npcCliffClimb = null;
       walker._cliffNpcY = null;
