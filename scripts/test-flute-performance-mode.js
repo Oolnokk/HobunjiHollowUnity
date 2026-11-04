@@ -42,7 +42,7 @@ async function missingFluteSample() {
   const played = []; // Verifies sampled-note bridge calls are released after the optional file lookup.
   class Frame {}
   const frame = new Frame();
-  frame.getAttribute = () => 'assets/minigames/lyre-performance.html?v=test&instrument=flute';
+  frame.getAttribute = () => 'assets/minigames/lyre-performance.html?instrument=flute';
   frame.contentDocument = {getElementById:id => id === 'analysisReadout' ? {textContent:''} : id === 'audioFile' ? {} : null};
   frame.contentWindow = {HobunjiMusicControlBridge:{wakeAudio:async()=>{},noteDown:(index)=>played.push(index)}};
   const doc = {addEventListener:(type,handler) => listeners[type] = handler};
