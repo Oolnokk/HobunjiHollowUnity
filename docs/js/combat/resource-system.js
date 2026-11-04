@@ -1012,10 +1012,11 @@
     }
     if (opts.fixedAfflictionBuildup) {
       // On-hit flat buildup belongs inside the authoritative damage transaction: invulnerability,
-      // blocked attacks and intercepted damage never call applyDamage, and player offensive perks
-      // must not accidentally amplify a monster's authored Rent Health.
+      // blocked attacks and intercepted damage never call applyDamage. Unlike percentage-based
+      // afflictions, flat buildup cannot inherit prone vulnerability from the scaled hit amount.
+      const flatProneMul = opts.environmentalImpact === true ? 1 : getProneAttackMultiplier(entity); // Applies 1.75x/2.5x to authored flat attack effects only, never ambient collision damage.
       for (const [id, amount] of Object.entries(opts.fixedAfflictionBuildup)) {
-        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount);
+        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount * flatProneMul);
       }
     }
 
