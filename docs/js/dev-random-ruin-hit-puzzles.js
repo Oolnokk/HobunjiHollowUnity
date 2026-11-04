@@ -939,6 +939,17 @@
   window.DevRandomRuinHitPuzzles = Object.freeze({
     registerExternalRoot,
     getNativeRoots:()=>[...extraNativeRoots], // The ordinary stone-ladder and semantic interaction provider reuses the active native story roots.
+    debugTorchSources:()=>window.localStorage?.getItem('hobunjiDevMode')==='1'?[...torchSources]:[], // CI locates the actual lit torch fixtures; the result is never a replacement pickup object.
+    debugPickupTorch:()=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      const pickup=nearestPickupControl();
+      return pickup?.kind==='torchSource'&&pickup.onPress()===true; // Use the production range-checked pickup callback, not a forced held-weapon state.
+    },
+    debugIgniteTarget:object=>{
+      if(window.localStorage?.getItem('hobunjiDevMode')!=='1')return false;
+      const target=ignitionTargets.find(candidate=>candidate.object===object);
+      return !!target&&worldDistanceTo(object)<=CONTROL_RANGE&&transferFire(target); // CI invokes the genuine fire-transfer callback within reach; weapon sweep/aiming is a separate browser test.
+    },
     distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
     isCarryingTorch:() => !!carriedTorch,
     dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
