@@ -309,6 +309,7 @@ const Defense={create:options=>({
     id:'ice-test',kind:'dungeonFire',y:4,isActive:()=>true,
     getPlayerPosition:()=>({x:27,z:29}),getPlayerY:()=>currentY,
     projectileBus:bus,dungeonFire:fire,addControl:control=>controls.push(control),
+    removeControl:control=>{const index=controls.indexOf(control);if(index>=0)controls.splice(index,1);},
     onSolved:()=>solved++});
   challenge.tick(.05);
   assert(challenge.fireLinked&&targets.has('layer-fire-target-ice-test'));
@@ -325,6 +326,7 @@ const Defense={create:options=>({
   assert(challenge.meltProgress===1&&!challenge.fireSeal.visible,
     'the DungeonFire ice target reverses its growth to fully disappear after contact');
   challenge.dispose();assert.equal(targets.size,0,'fire contact target must unregister on reroll');
+  assert.equal(controls.length,0,'fire source control must unregister on challenge disposal');
 }
 
 // A generated Scratchbone melody belongs to the game's existing eight-note
@@ -515,6 +517,8 @@ for(const side of ['north','east','south','west']){
   if(echo)assert.equal(musicClosed,1,'teardown must close the active stacked-story flute session');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
+  assert.equal(ruin.controls.filter(control=>control.kind==='layerBrazier'||control.kind==='dungeonFireSource').length,0,
+    'reroll clears the authored wing brazier and fire-source interactions');
   assert.equal(liveChains.size,0,'leaving a generated ruin never leaks rope grabs and mid-air catch records');
 }
 // The special story vault has no V50 `meta.entrance`: its authored southern
