@@ -10,7 +10,8 @@
   const restoredScenes = new Map(); // Track one rehydration pass per active area scene.
   let persistenceIdentity = null; // World and Tothal cycle, partitioned like Shattercasks.
   let identityPollSeconds = 0; // Avoid repeatedly reading world-settings storage on every combat frame.
-  const bursts = []; // Bounded translucent-texture (opaque material) wood shard effects.
+  const bursts = []; // Active crate-textured wood shard effects.
+  const spareBursts = []; // At most ten reusable instanced meshes and matrices; no per-shatter GPU buffer churn.
   const shardCount = 42; // Instanced crate-textured debris per individual crate.
   const maxBursts = 10; // GPU/CPU cap for chain reactions in combat.
   let serial = 0; // Identity used by detached burdens and one-time loot drops.
@@ -225,6 +226,7 @@
     if (bursts.length >= maxBursts) {
       const old=bursts.shift();
       old.mesh.parent?.remove(old.mesh);
+      spareBursts.push(old); // Recycle the oldest blast instead of discarding its GPU instance buffer.
     }
     if (!shardArt) {
       const texture=new THREE.TextureLoader().load('assets/textures/crate_side.png');
@@ -235,14 +237,26 @@
         material:new THREE.MeshBasicMaterial({map:texture,color:0xffffff,side:THREE.DoubleSide,
           transparent:false,depthWrite:true})};
     }
-    const mesh=new THREE.InstancedMesh(shardArt.geometry,shardArt.material,shardCount);
-    mesh.frustumCulled=false;mesh.position.set(x,y,z);scene.add(mesh);
-    const particles=[];
-    for(let i=0;i<shardCount;i++) {
-      const a=i*2.399963,velocity=1.3+(i%9)*.27;
-      particles.push({x:0,y:0,z:0,vx:Math.cos(a)*velocity,vy:1+(i%7)*.36,vz:Math.sin(a)*velocity});
+    let burst=spareBursts.pop(); // Reuse the same 42 instance transforms after a previous burst finishes.
+    if(!burst){
+      const mesh=new THREE.InstancedMesh(shardArt.geometry,shardArt.material,shardCount);
+      mesh.frustumCulled=false;
+      burst={mesh,particles:Array.from({length:shardCount},()=>({x:0,y:0,z:0,vx:0,vy:0,vz:0})),
+        dummy:new THREE.Object3D(),elapsed:0};
     }
-    bursts.push({mesh,particles,dummy:new THREE.Object3D(),elapsed:0});
+    burst.elapsed=0;
+    burst.mesh.position.set(x,y,z);
+    scene.add(burst.mesh);
+    for(let i=0;i<shardCount;i++){
+      const angle=i*2.399963,velocity=1.3+(i%9)*.27,part=burst.particles[i];
+      Object.assign(part,{x:0,y:0,z:0,vx:Math.cos(angle)*velocity,
+        vy:1+(i%7)*.36,vz:Math.sin(angle)*velocity});
+      burst.dummy.position.set(0,0,0);burst.dummy.rotation.set(0,0,0);
+      burst.dummy.scale.setScalar(0);burst.dummy.updateMatrix();
+      burst.mesh.setMatrixAt(i,burst.dummy.matrix); // No stale shard flash during the one frame before the first tick.
+    }
+    burst.mesh.instanceMatrix.needsUpdate=true;
+    bursts.push(burst);
   }
   function breakAt(mapId,scene,x,y,z,source='melee',attacker=null) {
     woodBurst(scene,x,y,z);
@@ -315,7 +329,7 @@
     for(let i=bursts.length-1;i>=0;i--) {
       const burst=bursts[i];burst.elapsed+=step;
       const age=burst.elapsed,done=age>=.75;
-      if(done){burst.mesh.parent?.remove(burst.mesh);bursts.splice(i,1);continue;}
+      if(done){burst.mesh.parent?.remove(burst.mesh);bursts.splice(i,1);spareBursts.push(burst);continue;}
       burst.particles.forEach((part,index)=>{
         part.x+=part.vx*step;part.y+=part.vy*step;part.z+=part.vz*step;part.vy-=9*step;
         burst.dummy.position.set(part.x,part.y,part.z);
@@ -346,7 +360,8 @@
     lastEvent,activePileCount:[...piles.values()].filter(validPile).length,
     piles:[...piles.values()].filter(p=>p.mapId===currentArea()).map(p=>({id:p.id,count:p.count,lootable:p.lootable,busy:p.busy})),
     looseJunk:[...junk.values()].filter(d=>d.mapId===currentArea()).length,
-    activeDebrisBursts:bursts.length,savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
+    activeDebrisBursts:bursts.length,reusableDebrisBuffers:spareBursts.length,
+    savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
     shatterBurden,sweepMelee,tick,forgetPile,debugSnapshot};
