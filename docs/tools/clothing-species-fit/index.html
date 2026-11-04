@@ -57,6 +57,9 @@
           <label class="small"><input id="showGarment" type="checkbox" checked> garment</label>
           <label class="small"><input id="showMeshes" type="checkbox" checked> grids</label>
         </div>
+        <div class="row"><label class="small"><input id="match3D" type="checkbox" checked> Match 3D portrait in 2D</label></div>
+        <div id="match3DStatus" class="small" aria-live="polite">Preparing game-matched front portrait…</div>
+        <div class="small">When enabled, the 2D canvas shows the same front portrait texture used by the 3D rig, projected onto the editable 6×6 canvas. Turn off to inspect uncolored original PNG pixels. Grid coordinates and PNG exports remain unchanged. Procedural neck, hands, and feet appear only in 3D.</div>
         <div class="field"><label for="opacity">Warped garment opacity</label><input id="opacity" type="range" min="0" max="1" step=".05" value=".78"></div>
         <div class="row">
           <label class="small"><input id="showAuthored" type="checkbox"> authored target variant</label>
@@ -141,7 +144,7 @@
 
     <main class="panel">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:7px">
-        <div><h2 style="margin:0">Reference canvas</h2><div id="label" class="small"></div></div>
+        <div><h2 style="margin:0">2D front portrait / fitting canvas</h2><div id="label" class="small"></div></div>
         <div class="legend">
           <span><i class="dot" style="background:var(--orange)"></i>fixed Mao grid</span>
           <span><i class="dot" style="background:var(--green)"></i>base transform</span>
