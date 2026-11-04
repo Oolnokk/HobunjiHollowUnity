@@ -1,0 +1,91 @@
+name: One-shot bake of newly uploaded Tletingan Nelk rear hood
+
+on:
+  push:
+    branches: [feature/bake-tletingan-furhood-pngs]
+    paths:
+      - '.github/workflows/bake-tletingan-nelk-back.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bake:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bake-tletingan-furhood-pngs
+          fetch-depth: 0
+      - name: Install pixel-art support
+        run: python3 -m pip install --break-system-packages 'Pillow==11.3.0'
+      - name: Fetch only the new source PNG from its pinned main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset='docs/assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png'
+          test ! -e "$asset"
+          git fetch --no-tags origin 632258462154c00ecd6868d0286454f37e497689
+          git show FETCH_HEAD:"$asset" > "$asset"
+          test "$(git hash-object "$asset")" = "1080bfd758b43a25b279745aa160f7bfdbe58b78"
+      - name: Apply the previously approved Tletingan transform and update provenance
+        run: |
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          from PIL import Image
+
+          asset=Path('docs/assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png')
+          record=Path('scripts/records/tletingan-furhood-bake-2026-11-03.json')
+          data=json.loads(record.read_text())
+          expected_before='1080bfd758b43a25b279745aa160f7bfdbe58b78'
+          def blob_sha(content):
+              return hashlib.sha1(f'blob {len(content)}\0'.encode()+content).hexdigest()
+          assert blob_sha(asset.read_bytes())==expected_before, 'Source must be exactly the new main PNG'
+          assert data['sourceFitKey']=='from::tletingan_male::headwear::tletingan_male'
+          assert (data['scaleX'],data['scaleY'],data['translateX'],data['translateY'])==(.835,.835,-3.5,-11.25)
+          assert data['localOffsetCountNonzero']==0 and data['canvas']==[234,173]
+          assert data['missingUnchanged']==[asset.name], 'Refusing to run on an already completed batch'
+          assert len(data['files'])==12 and all(e['file']!=asset.name for e in data['files'])
+          for entry in data['files']:
+              path=asset.parent/entry['file']
+              assert blob_sha(path.read_bytes())==entry['afterGitBlob'], f'Other baked sprite changed: {path.name}'
+
+          with Image.open(asset) as source:
+              assert source.mode=='RGBA' and source.size==(234,173), 'Expected original 234x173 RGBA image'
+              src=source.copy()
+          w,h=src.size
+          out=Image.new('RGBA',(w,h),(0,0,0,0))
+          source,target=src.load(),out.load()
+          # Identical inverse pixel-center map as the 12 previously baked PNGs.
+          xs=[int((x+.5-w/2+3.5)/.835+w/2) for x in range(w)]
+          ys=[int((y+.5-h/2+11.25)/.835+h/2) for y in range(h)]
+          for y,sy in enumerate(ys):
+              if not (0<=sy<h):continue
+              for x,sx in enumerate(xs):
+                  if 0<=sx<w:target[x,y]=source[sx,sy]
+          out.save(asset,format='PNG',optimize=True)
+          with Image.open(asset) as check:
+              assert check.mode=='RGBA' and check.size==(234,173)
+              assert check.tobytes()==out.tobytes()
+          assert blob_sha(asset.read_bytes())!=expected_before, 'Baking must change the sprite'
+          data['files'].append({'file':asset.name,'beforeGitBlob':expected_before,
+                                'afterGitBlob':blob_sha(asset.read_bytes())})
+          data['files'].sort(key=lambda x:x['file'])
+          data['missingUnchanged']=[]
+          data['addedNelkBackFromMainCommit']='632258462154c00ecd6868d0286454f37e497689'
+          assert len(data['files'])==13
+          record.write_text(json.dumps(data,indent=2)+'\n')
+          print('Verified all 12 prior PNGs and baked Nelk rear hood',data['files'][-1])
+          PY
+      - name: Commit only the new PNG and provenance to feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/assets/cosmetics/clothes/hood/furhood_nelk-back_tl_m.png scripts/records/tletingan-furhood-bake-2026-11-03.json
+          git diff --cached --stat
+          git diff --cached --quiet && { echo 'ERROR: no output'; exit 1; }
+          git commit -m "Bake newly uploaded Tletingan Nelk rear fur hood PNG"
+          git push origin HEAD:feature/bake-tletingan-furhood-pngs
