@@ -131,12 +131,16 @@ const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fall
         const snap=window.DevRandomRuinSimplePuzzles.snapshot();
         const c=snap.ropeChains.find(chain=>chain.hallId===hallId),id=c.ropeIds[bankSide==='start'?0:c.ropeIds.length-1];
         const rope=snap.ropes.find(candidate=>candidate.id===id);
-        window.DevRandomRuin.setPlayerWorldPoint(c[bankSide],{grounded:true});
+        const support=window.DynamicSurfaces.sampleSupport(rope.grabPoint.x,rope.grabPoint.z,{
+          minY:rope.grabPoint.y-2,maxY:rope.grabPoint.y+1,pad:.02,
+        }); // The Grab Rope interaction must be reached from retained shore floor, not an unsupported abyss or distant teleport.
+        if(!support)return {id,available:false,grabbed:false,shoreSupported:false};
+        window.DevRandomRuin.setPlayerWorldPoint({...rope.grabPoint,y:support.y},{grounded:true});
         const control=window.DevRandomRuinSimplePuzzles.getInteractionControls()
           .find(candidate=>candidate.kind==='ropeGrab'&&Math.hypot(candidate.point.x-rope.grabPoint.x,candidate.point.z-rope.grabPoint.z)<.01);
-        return {id,available:!!control,grabbed:control?.onPress?.()===true};
+        return {id,shoreSupported:true,available:!!control,grabbed:control?.onPress?.()===true};
       },{hallId:chain.hallId,bankSide:side});
-      assert(result.available&&result.grabbed,'bank Grab Rope action must attach: '+JSON.stringify(result));
+      assert(result.shoreSupported&&result.available&&result.grabbed,'supported shore Grab Rope action must attach: '+JSON.stringify(result));
       await page.waitForFunction(id=>window.DevRandomRuinSimplePuzzles.snapshot().ropes.some(rope=>rope.id===id&&rope.attached),result.id,
         {timeout:10000,polling:100});
     };
