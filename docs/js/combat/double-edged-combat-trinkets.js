@@ -18,10 +18,10 @@
   }
 
   function isWearerWeaponHit(options, fromX, fromY, player) {
-    if (!player || options?.friendlyFire || options?.environmental || options?.playerAttack === false) return false;
+    if (!player || options?.friendlyFire || options?.environmental || options?.environmentalImpact || options?.playerAttack === false) return false;
     if (options?.attacker && options.attacker !== player) return false; // Companion/NPC attacks never borrow the wearer's buffs.
     if (options?.attacker === player) return true;
-    if (options?.ranged === true && !!options?.rangedItemKey) return true; // Player ranged projectiles originate away from the player's live position.
+    if (options?.ranged === true && !!options?.rangedItemKey) return true; // Explicit player-shot metadata is authoritative when projectiles originate away from the player's live position.
     return Number.isFinite(fromX) && Number.isFinite(fromY) && Math.hypot(fromX - player.x, fromY - player.y) <= 0.01;
   }
 
