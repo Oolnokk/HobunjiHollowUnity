@@ -6237,6 +6237,17 @@
         // Map-boundary escarpments are airtight to creatures too (fromX/Y lets
         // one that is already standing on one walk off it).
         if (window.MapBoundaryGuard?.blocksCreatureStep?.(window.GridTileAccessors.getActiveGrid(), TILE, fromX, fromY, wx, wy)) return false;
+        if (_isZoneArea(currentArea)) {
+          const g = actor?.areaGrid || window.GridTileAccessors.getActiveGrid();
+          const toTile = g?.[row]?.[col];
+          if (toTile?.incline && !actor?._cliffClimb) return false; // Faces require selected handholds, even for animals with canClimb.
+          if (!toTile) return false;
+          if (Number.isFinite(fromX) && Number.isFinite(fromY) && !actor?._cliffClimb) {
+            const fromTile = g?.[Math.floor(fromY / TILE)]?.[Math.floor(fromX / TILE)];
+            if (fromTile && fromTile !== toTile && fromTile.type !== TileType.RAMP && toTile.type !== TileType.RAMP &&
+                Math.abs(tileSurfaceYInArea(toTile, currentArea) - tileSurfaceYInArea(fromTile, currentArea)) > 0.55) return false;
+          }
+        }
         return true;
       }
 
@@ -6292,6 +6303,9 @@
         // silently false rather than throwing, and c.x/c.y would end up
         // permanently NaN with nothing downstream ever catching it directly.
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
+        // One central navigation entry for herds, prey, companions and
+        // returning wildlife. The route graph prevents shortcutting vertically.
+        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, speed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
@@ -9394,6 +9408,7 @@
         member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
+        member.cliffBalconyRewards = window.CliffRouteNetwork?.serializeRewards?.() || {}; // Layer-specific dig/mining state independent of the ground tile.
         member.wildernessChunkState = serializeWildernessChunkState();
         member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
         member.felledTreeState = serializeZoneFelledTreeState();
@@ -10248,6 +10263,7 @@
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
         if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
+        if (player.onCliffBalcony && window.ClimbSystem?.jumpFromBalcony?.()) return; // Side/back dodge leaps from the raised ledge to the highest lower support.
         performDodge();
       }
 
@@ -12665,6 +12681,8 @@
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
         npcGridForArea,
+        npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
+        tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
         buildingScenes: _buildingScenes,
@@ -13113,6 +13131,7 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
             // a visible nonlethal flight instead of a fake resource-system death.
             // Existing moveToward stays responsible for walking/collision and
@@ -13324,7 +13343,7 @@
               // normally from wherever it was left.
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
-                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                const wty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
@@ -13473,7 +13492,7 @@
               this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
-            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+            const ty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
@@ -15645,6 +15664,8 @@
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
+        window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
+        window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
       }
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
@@ -16415,6 +16436,103 @@
         });
       }
 
+      function getCliffBalconyResourceAt(col, row) {
+        if (!_isZoneArea(currentArea) || !player.onCliffBalcony) return null;
+        const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
+        const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
+        if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
+        if (state.claimed) return null;
+        const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
+        const isAvailable = () => currentArea === areaAtCreation && player.onCliffBalcony === shelf.id &&
+          window.CliffRouteNetwork.shelfAt(window.CliffRouteNetwork.forArea(currentArea), shelf.id) === shelf &&
+          !window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).claimed;
+        const award = () => {
+          const rewards = [];
+          if (shelf.reward === 'oreRock') {
+            const amount = 2 + (shelf.routeId % 3); // Fixed per-rock amount; prevents rerolling on repeated failed actions.
+            inventory.stone = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.stone || 0) + amount);
+            rewards.push(amount + ' Stone');
+            const metals = Object.keys(ORE_DEFS || {});
+            const oreKey = metals.length ? metals[shelf.routeId % metals.length] : null;
+            const oreItem = oreKey ? metalOreItemKey(oreKey) : null;
+            if (oreItem) {
+              inventory[oreItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[oreItem] || 0) + 2);
+              window.TownMine?.recordHeldOres?.([oreKey]);
+              rewards.push('2 ' + (ORE_DEFS[oreKey]?.label || oreKey));
+              window.HobunjiActivityEvents?.emit('ore_mined', { oreKey });
+            }
+            window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
+            window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          } else {
+            const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
+            for (const [itemKey, amount] of Object.entries(metalLoot)) {
+              inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
+              rewards.push(amount + ' ' + (ITEM_DEFS[itemKey]?.label || itemKey));
+            }
+            const gold = 14 + (shelf.routeId % 7) * 4;
+            inventory.gold = (inventory.gold || 0) + gold;
+            rewards.push(gold + 'g');
+            window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId: currentArea });
+          }
+          window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'claimed');
+          refreshItemScroll(); buildInventoryGrid(); buildPackClothingSection();
+          return { ok: true, zoneVisualsUpdated: true, message: 'Found: ' + rewards.join(', ') };
+        };
+        return {
+          id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          getButtons() {
+            if (shelf.reward === 'oreRock') return [{
+              icon: '⛏️', label: 'Mine the balcony ore rock',
+              action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'pick' && heldMode === 'tool',
+            }];
+            if (!state.revealed) return [{
+              icon: '🪏', label: 'Dig for buried treasure',
+              action: 'obj_balcony_dig', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'shovel' && heldMode === 'tool',
+            }];
+            return [{
+              icon: '🗝️', label: 'Open the cliff chest',
+              action: 'obj_balcony_open', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
+          },
+          onAction(action) {
+            if (!isAvailable()) return { ok: false, message: 'That ledge is no longer accessible.' };
+            if (action === 'obj_balcony_mine' && shelf.reward === 'oreRock') {
+              if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
+              return award();
+            }
+            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+              if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
+              window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
+              awardToolUseMasteryXp('shovel');
+              return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
+            }
+            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+              const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
+              const started = window.ChestLockpicking?.open?.({
+                id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
+                onSuccess: () => {
+                  if (!valid()) return;
+                  const result = award();
+                  if (result.message) showToast(result.message, result.ok);
+                  if (result.ok) {
+                    const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'cliff-balcony-chest-opened' })
+                      ?? (saveMemberWorldData(), { ok: true });
+                    if (saved?.ok === false || saved?.captured === false) showToast('Chest opened, but save was not confirmed.', false);
+                  }
+                },
+              });
+              return { ok: false, deferMemberSave: true, message: started ? '' : 'Lockpicking unavailable.' };
+            }
+            return { ok: false, message: 'Unavailable.' };
+          },
+        };
+      }
+
       function getWorldObjectAt(col, row) {
         // FurnitureTableSystem.objectAt answers "what is the camera ray focused on" and ignores
         // col/row, so only the reticle tile may use it; placement/occupancy probes of other
@@ -16422,6 +16540,8 @@
         const aim = getReticleTile();
         const furniture = aim.col === col && aim.row === row ? window.FurnitureTableSystem?.objectAt(currentArea, col, row) : null; // Exterior chairs and attached surface furniture use ordinary world inputs.
         if (furniture) return furniture;
+        const cliffResource = getCliffBalconyResourceAt(col, row); // Real elevation layer wins over objects on ground below.
+        if (cliffResource) return cliffResource;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
@@ -18456,6 +18576,10 @@
           return;
         }
 
+        // Real stacked mini-cliff footprints own movement while the player
+        // stands on them, independently of any underlying ground tile.
+        if (player.onCliffBalcony && window.ClimbSystem?.updateBalcony?.(dt)) return;
+
         if (player.onBranch) {
           window.ClimbSystem.updateBranchMovement(dt);
           return;
@@ -19015,6 +19139,10 @@
         // Combat and its selectors target actors/world space, including when
         // the centered camera reticle reaches a cave wall or leaves the grid.
         if (tool === 'weapon' || tool === 'ranged') return true;
+        // Mini-cliffs are real separate floor layers. Never let terrain
+        // tools edit the ground tile beneath an elevated balcony.
+        if (typeof player !== 'undefined' && player?.onCliffBalcony &&
+            ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
         const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
         if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
@@ -25015,6 +25143,7 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
@@ -27090,14 +27219,15 @@
 
         if (_isZoneArea(currentArea) && !player.climbing) {
           const climbTarget = window.ClimbSystem?.getClimbTarget?.();
-          if (climbTarget?.type === 'wall') {
+          if (climbTarget?.type === 'wall' || climbTarget?.type === 'cliffRoute') {
             // Cliff face: the prompt floats on the wall itself, straight
             // ahead at camera height (same placement the Random Test Ruin
             // interaction list uses), so it reads as a mark on the rock.
             const rideState = window.Mounts?.rideState ?? 'none';
             const mounted = rideState === 'mounted';
-            const wallAllowed = rideState === 'none' || mounted;
-            const dir = climbTarget.dir;
+            const manualCliff = climbTarget.type === 'cliffRoute'; // Show the new controlled-hop route only while dismounted.
+            const wallAllowed = manualCliff ? rideState === 'none' : rideState === 'none' || mounted;
+            const dir = climbTarget.dir || { x: 0, y: 0 };
             const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
             const faceX = dir.x ? (startCol + (dir.x > 0 ? 1 : 0)) * TILE - dir.x * TILE * 0.12 : player.x;
             const faceY = dir.y ? (startRow + (dir.y > 0 ? 1 : 0)) * TILE - dir.y * TILE * 0.12 : player.y;
@@ -27105,11 +27235,11 @@
             const cameraY = camera?.position?.y;
             const promptY = Math.max(floorY + 0.9, Math.min(floorY + 2.4, Number.isFinite(cameraY) ? cameraY : floorY + 1.5));
             _climbPromptAnchor.position.set(faceX / TILE, promptY, faceY / TILE);
-            const wallLabel = climbTarget.descending
-              ? (mounted ? 'Leap Down' : 'Jump Down')
+            const wallLabel = manualCliff ? 'Climb Handholds'
+              : climbTarget.descending ? (mounted ? 'Leap Down' : 'Jump Down')
               : (mounted ? 'Leap Up' : 'Climb');
             btns.push({
-              icon: climbTarget.descending ? '🪂' : '🧗',
+              icon: climbTarget.descending && !manualCliff ? '🪂' : '🧗',
               label: wallAllowed ? wallLabel : 'Dismount to Climb',
               action: 'climb_branch', style: 'secondary', allowed: wallAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
@@ -27295,7 +27425,8 @@
         if (interactionButton) {
           _worldInteractionPromptAnchor.position.set(
             reticle.col + 0.5,
-            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            (interactionButton?.action?.startsWith('obj_balcony_') && player.onCliffBalcony
+              ? player._cliffBalconyY : activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5)) + 0.55,
             reticle.row + 0.5,
           );
         }
@@ -31689,7 +31820,9 @@
       });
 
       window.ZonePlateauMesa?.init({
-        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
+        tileSurfaceYInArea, // The renderer and navigation graph must agree on exact terrain Y, including ramps and raised tiles.
+        getCurrentArea: () => currentArea, // Keeps offscreen cliff supports out of the dungeon and other zones.
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
@@ -31824,6 +31957,7 @@
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getActiveCols: window.GridTileAccessors.getActiveCols,
         getActiveRows: window.GridTileAccessors.getActiveRows,
+        creatureCanEnterTile,
       });
 
       window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
@@ -32677,6 +32811,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        window.CliffRouteNetwork?.restoreRewards?.(playerData.cliffBalconyRewards);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
