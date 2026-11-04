@@ -26,6 +26,32 @@ assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out
 for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js','ruin-v50-native-floors.js'])
   assert(index.includes(file),'game page must load '+file);
 
+// A forced trial substitutes one regular challenge slot across the generated floors.
+{
+  const stages=new Set(),floors=new Set(); // Check that selection is not limited to the end of one wing or the entrance floor.
+  for(let seed=1;seed<=100;seed++){
+    const options={seed,nativeV50:true};
+    const baseline=Plan.compose(options);
+    const trial=Plan.compose({...options,plinthTrial:true});
+    assert(trial.ok,trial.checks.filter(check=>!check.ok).map(check=>check.name).join(', '));
+    assert.equal(trial.totalWings,baseline.totalWings);
+    assert.equal(trial.totalBraziers,baseline.totalBraziers);
+    const floor=trial.floors.find(f=>f.rooms.some(room=>room.id===trial.trialRoomId));
+    const wing=floor.wings.find(w=>w.rooms.some(room=>room.id===trial.trialRoomId));
+    const stage=wing.rooms.findIndex(room=>room.id===trial.trialRoomId);
+    const room=wing.rooms[stage];
+    assert.equal(room.kind,'challenge-room');
+    assert.equal(room.challenge,'statueDefense');
+    assert(room.w>=18&&room.d>=18);
+    assert.equal(wing.corridors[stage].to,room.id);
+    assert.equal(wing.corridors[stage+1].from,room.id);
+    stages.add(stage);
+    floors.add(floor.floor);
+  }
+  assert.equal(stages.size,4);
+  assert(floors.size>1);
+}
+
 // Native V50 upper stories reserve a concrete full-size footprint before
 // ANY V50 floor is generated. Generated V50 rooms must fit inside it, and
 // none of the authored wings or their corridors may intrude on that space.

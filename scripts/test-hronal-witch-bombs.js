@@ -54,7 +54,6 @@ assert(bombs.includes('if (active&&!active.exploded) return false'),'each ceilin
 assert(bombs.includes('dispenser.dispensing=true'),'concurrent activator signals cannot start overlapping async spawns');
 assert(bombs.includes('fuseSeconds:clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120)'));
 assert(bombs.includes('bomb.spawnedAtMs=now()'),'the fuse begins at physical spawn time');
-assert(bombs.includes('pulseSpeed:1.25+10*Math.pow(urgency,2.1)'),'glyph pulse frequency accelerates close to detonation');
 assert(bombs.includes('BLAST_KNOCKBACK_PX_S'));
 assert(bombs.includes('BURNING_HEALTH'));
 assert(bombs.includes('triggerBurdenBlastAt'),'nearby burdens participate in chain reactions');
@@ -174,9 +173,11 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  const blocked=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
  assert.equal(blocked,false,'one live bomb locks its ceiling tube');
  runtimeWindow.HronalWitchBombs.tick(.016);
- const initialPulse=glowStates.at(-1)?.pulseSpeed;
+ const initialPulse=glowStates.at(-1);
+ assert.equal(initialPulse.color,'#ff7417');
+ assert(initialPulse.intensity>1&&initialPulse.pulseDepth>.6,'the fuse gives a visible warning from spawn');
  clock=7000;runtimeWindow.HronalWitchBombs.tick(.016);
- assert(glowStates.at(-1).pulseSpeed>initialPulse,'the glyph pulse accelerates as the spawn-time fuse runs down');
+ assert(glowStates.at(-1).pulseSpeed>initialPulse.pulseSpeed,'the glyph pulse accelerates as the spawn-time fuse runs down');
  assert(first.group.userData.hronalFuse.remainingSeconds<2,'live fuse debug data tracks elapsed spawn time');
  const broken=[];
  for(const name of ['throwing callback','adjacent prop']){

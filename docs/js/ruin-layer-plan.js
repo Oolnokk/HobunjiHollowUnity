@@ -44,6 +44,13 @@
   const inRect=(p,r)=>p.x>=r.x&&p.x<r.x+r.w&&p.z>=r.z&&p.z<r.z+r.d;
   const connectedRects=(a,b)=>a.x<=b.x+b.w&&a.x+a.w>=b.x&&a.z<=b.z+b.d&&a.z+a.d>=b.z;
   function compose(options={}){
+    const baseline=composeLayout(options);
+    if(!options.plinthTrial)return baseline;
+    const slots=baseline.floors.flatMap(floor=>floor.rooms.filter(room=>room.kind==='challenge-room')); // Every ordinary wing challenge slot is eligible.
+    const pick=random((Number(options.seed)^0x452b9813)>>>0); // Separate from layout RNG so the replacement keeps the same topology.
+    return composeLayout(options,slots[integer(pick,0,slots.length-1)].id);
+  }
+  function composeLayout(options,trialRoomId=null){
     const o={...DEFAULTS,...options};
     o.spacing=Math.max(48,Math.min(128,Math.round(Number(o.spacing)||DEFAULTS.spacing)));
     o.shaftSize=Math.max(17,Math.min(o.spacing-12,(Math.round(Number(o.shaftSize)||33)|1)));
@@ -112,14 +119,16 @@
           const offset=integer(rng,-5,5),depth=Math.floor((dir.dx?rw:rd)/2);
           const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
           const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
-          const area=rect(rx,rz,rw,rd);
           const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
+          const challenge=isGoal?null:defence?'statueDefense':stage===1?'pressurePlate'
+            :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
+            :stage===3&&rng()<.58?'ropeChain'
+            :rng()<.5?'melodyEcho':puzzles[integer(rng,0,puzzles.length-1)]; // Roll the original room even when replacing it to keep subsequent rolls stable.
+          const plinthTrial=id===trialRoomId;
+          const area=plinthTrial?rect(rx+dir.dx*(9-depth),rz+dir.dz*(9-depth),18,18):rect(rx,rz,rw,rd); // Keep the planned approach gap while reserving room for the authored spawners.
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
-            challenge:isGoal?null:defence?'statueDefense':stage===1?'pressurePlate'
-              :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
-              :stage===3&&rng()<.58?'ropeChain'
-              :rng()<.5?'melodyEcho':puzzles[integer(rng,0,puzzles.length-1)]};
+            challenge:plinthTrial?'statueDefense':challenge};
           nodes.push(room);rooms.push(room);
           // Thresholds derive from the actual rectangle bounds, not the
           // conceptual centre. Even-width rooms otherwise leave a one-cell
@@ -151,7 +160,7 @@
       }
       floors.push({floor,y,anchor:{...shaft.anchor},rooms,hallways,doorways,wings,braziers,nativePort,entry:floor===0?{kind:'external-wing',side:'S'}:null});
     }
-    const plan={schema:'hobunji.ruin-layer-plan.v1',options:o,shaft,floorCount,floors,
+    const plan={schema:'hobunji.ruin-layer-plan.v1',options:o,shaft,floorCount,floors,trialRoomId,
       totalWings:floors.reduce((n,f)=>n+f.wings.length,0),
       totalBraziers:floors.reduce((n,f)=>n+f.braziers.length,0),
       nativeFloorCount:floors.filter(f=>!!f.nativePort).length}; // Upper V50 native layouts are counted separately until their actual brazier is mounted.
@@ -180,8 +189,8 @@
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
           r=>PLAYABLE_PUZZLES.includes(r.challenge)
-            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))&&wing.rooms[0].challenge==='pressurePlate'
-          &&RANGED_PUZZLES.includes(wing.rooms[1].challenge));
+            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))&&(wing.rooms[0].id===plan.trialRoomId||wing.rooms[0].challenge==='pressurePlate')
+          &&(wing.rooms[1].id===plan.trialRoomId||RANGED_PUZZLES.includes(wing.rooms[1].challenge)));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
         add(wing.id+'-clearShaft', wing.rooms.every(room=>!
