@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#151311">
+<title>Hobunji Hollow · Lockpicking Prototype</title>
+<style>
+:root { color-scheme: dark; --ink:#e9e0cf; --muted:#ab9a81; --brass:#e2ba70; --rim:#756044; --gold:#fff0b7; --error:#ed8c74; --good:#b1dfb1; --shadow:#15120e; }
+* { box-sizing:border-box; }
+html,body { min-height:100%; margin:0; }
+body { background:radial-gradient(ellipse at 50% 42%,#302a23 0,#1b1916 45%,#11110f 100%); color:var(--ink); font-family:Georgia,'Times New Roman',serif; overflow-x:hidden; }
+body::before { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent 0px,transparent 3px,#fff 4px); opacity:.012; pointer-events:none; }
+button { font:inherit; cursor:pointer; color:inherit; }
+button:focus-visible,summary:focus-visible { outline:2px solid var(--gold); outline-offset:4px; }
+button:disabled { opacity:.5; cursor:default; }
+main { width:min(96vw,760px); min-height:100dvh; margin:auto; display:flex; flex-direction:column; align-items:center; padding:clamp(13px,3vh,30px) 10px max(18px,env(safe-area-inset-bottom)); gap:12px; }
+.eyebrow { letter-spacing:.23em; color:var(--brass); font:600 clamp(10px,1.9vmin,13px) system-ui,sans-serif; text-transform:uppercase; text-align:center; }
+h1 { font-size:clamp(27px,5.4vmin,44px); font-weight:400; margin:0; letter-spacing:.055em; text-align:center; }
+.intro { color:var(--muted); font-size:clamp(12px,2.2vmin,16px); text-align:center; line-height:1.45; max-width:540px; margin:0; }
+.toolbar { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:8px 18px; font:600 12px system-ui,sans-serif; }
+.toolbar fieldset { display:flex; border:0; padding:0; margin:0; align-items:center; gap:5px; }
+.toolbar legend { float:left; padding-right:8px; color:var(--muted); line-height:32px; }
+.difficulty { padding:6px 10px; border:1px solid #635039; background:#211e1a; color:var(--muted); min-height:34px; border-radius:3px; }
+.difficulty[aria-pressed=true] { background:#51422e; color:var(--gold); border-color:#d2aa66; }
+.tool { border:1px solid #625441; border-radius:3px; background:#26231f; color:#d9c9ae; padding:7px 10px; min-height:34px; }
+.housing { position:relative; width:min(100%,min(60dvh,470px)); aspect-ratio:1; flex:0 0 auto; touch-action:manipulation; }
+#lockFace { width:100%; height:100%; display:block; filter:drop-shadow(0 15px 14px #0008); user-select:none; -webkit-user-select:none; }
+#lockFace .etched { fill:none; stroke:#3c342b; stroke-width:1.5; }
+#lockFace .notch { stroke:#e6cb85; stroke-linecap:round; fill:none; }
+#lockFace .dial-tick { stroke:#ad946e; stroke-width:1; opacity:.72; }
+#targetOuter { transition:opacity .14s; }
+#needle { transform-origin:200px 200px; }
+#needle .shaft { fill:#f5d290; stroke:#56402b; stroke-width:2; }
+#needle .point { fill:#fff2bd; }
+#progressArc { transition:stroke-dashoffset .2s ease; }
+.center-tag { text-anchor:middle; fill:#ead0a0; font-size:15px; font-family:Georgia,serif; letter-spacing:2px; }
+#lockFace.shake { animation:shake .24s ease-in-out; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 60%{transform:translateX(4px)} }
+.pin-row { display:flex; justify-content:center; gap:clamp(8px,3vw,24px); width:100%; margin:-8px 0 0; }
+.pin { display:flex; flex-direction:column; align-items:center; gap:4px; font:600 10px system-ui,sans-serif; letter-spacing:.1em; color:var(--muted); }
+.pin .pin-head { display:grid; place-items:center; width:clamp(30px,6vmin,41px); height:clamp(30px,6vmin,41px); background:linear-gradient(#665641,#302b23); border:2px solid #b89a6c; border-radius:5px; box-shadow:inset 0 2px 4px #100e0b; font-size:18px; }
+.pin.active .pin-head { border-color:#ffe7a0; box-shadow:0 0 15px #ffdf8c55,inset 0 2px 4px #100e0b; }
+.pin.done .pin-head { background:#596046; border-color:#b4d4a3; color:#e5ffda; }
+.readout { text-align:center; min-height:57px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+#status { font-size:clamp(17px,3.8vmin,24px); line-height:1.2; }
+#substatus { color:var(--muted); font:12px/1.5 system-ui,sans-serif; min-height:18px; }
+#status.good { color:var(--good); }
+#status.bad { color:var(--error); }
+.controls { display:flex; justify-content:center; align-items:center; gap:10px; width:100%; flex-wrap:wrap; }
+#action { min-width:min(68vw,260px); min-height:62px; padding:10px 18px; border:2px solid #e0ba74; border-radius:7px; background:linear-gradient(165deg,#645034,#30271b); color:#fff1c5; font-size:clamp(18px,3vmin,23px); box-shadow:0 5px 0 #100e0c; touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+#action:active { transform:translateY(3px); box-shadow:0 2px 0 #100e0c; }
+#action small { display:block; font:11px system-ui,sans-serif; color:#e0c99f; margin-top:4px; }
+#retry { min-width:96px; min-height:44px; padding:10px; border:1px solid #7f6545; background:#27221c; border-radius:5px; font:600 13px system-ui,sans-serif; }
+.hints { font:12px/1.65 system-ui,sans-serif; color:var(--muted); text-align:center; margin:0; }
+.hints strong { color:#f2d6a1; }
+#strainArea { display:flex; justify-content:center; align-items:center; gap:7px; min-height:18px; font:11px system-ui,sans-serif; letter-spacing:.11em; color:var(--muted); text-transform:uppercase; }
+.strain { width:22px; height:8px; background:#362c24; border:1px solid #856346; border-radius:2px; }
+.strain.filled { background:#d6785b; border-color:#f1a282; box-shadow:0 0 6px #df8a6266; }
+#debugPanel { width:min(100%,560px); margin-top:4px; border:1px solid #5d5244; padding:7px 10px; background:#14120fe8; font:11px/1.55 ui-monospace,SFMono-Regular,monospace; overflow-wrap:anywhere; }
+#debugPanel summary { cursor:pointer; color:#ecd0a2; }
+#debugText { white-space:pre-wrap; margin:9px 0; color:#c3baac; }
+#testOutput { white-space:pre-wrap; color:#a8e3bc; }
+@media (max-height:750px) { main { gap:7px; } .housing { width:min(100%,min(48dvh,380px)); } .eyebrow { font-size:9px; } .intro { font-size:12px; } .readout { min-height:45px; } }
+@media (prefers-reduced-motion:reduce) { #lockFace.shake { animation:none; } .pin .pin-head { transition:none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Hobunji Hollow · Standalone Mechanic Test</div>
+  <h1>Lockpicking</h1>
+  <p class="intro">Catch the sweeping brass needle inside the glowing notch. Each good tap sets a pin; an ill-timed tap strains the pick.</p>
+  <div class="toolbar">
+    <fieldset aria-label="Lock difficulty">
+      <legend>Lock</legend>
+      <button type="button" class="difficulty" data-level="easy" aria-pressed="false">Simple</button>
+      <button type="button" class="difficulty" data-level="normal" aria-pressed="true">Sturdy</button>
+      <button type="button" class="difficulty" data-level="hard" aria-pressed="false">Intricate</button>
+    </fieldset>
+    <button type="button" class="tool" id="soundToggle" aria-pressed="true">Sound: On</button>
+  </div>
+  <div class="housing" id="housing" aria-label="A lock dial with a moving needle and a highlighted success notch">
+    <svg id="lockFace" viewBox="0 0 400 400" role="img" aria-labelledby="dialTitle dialDesc">
+      <title id="dialTitle">Lock timing dial</title>
+      <desc id="dialDesc">Press Set Pin when the rotating needle touches the illuminated notch.</desc>
+      <defs>
+        <radialGradient id="iron"><stop stop-color="#75674f"/><stop offset=".65" stop-color="#413b31"/><stop offset="1" stop-color="#171715"/></radialGradient>
+        <radialGradient id="brass"><stop stop-color="#e6cc91"/><stop offset=".55" stop-color="#b18d55"/><stop offset="1" stop-color="#56432c"/></radialGradient>
+        <filter id="glow"><feGaussianBlur stdDeviation="4"/></filter>
+      </defs>
+      <circle cx="200" cy="200" r="194" fill="#13120f" stroke="#61513d" stroke-width="3"/>
+      <circle cx="200" cy="200" r="187" fill="url(#iron)" stroke="#bf9c67" stroke-width="5"/>
+      <circle cx="200" cy="200" r="174" class="etched"/>
+      <circle cx="200" cy="200" r="163" fill="#25241f" stroke="#6e583c" stroke-width="8"/>
+      <circle cx="200" cy="200" r="151" fill="#312b22" stroke="#bc955d" stroke-width="2"/>
+      <circle id="progressArc" cx="200" cy="200" r="148" fill="none" stroke="#a6ce93" stroke-width="5" transform="rotate(-90 200 200)" stroke-dasharray="930" stroke-dashoffset="930" opacity=".82"/>
+      <g id="ticks"></g>
+      <path id="targetGlow" fill="none" stroke="#ffe48e" stroke-width="27" opacity=".45" filter="url(#glow)"/>
+      <path id="targetOuter" fill="none" stroke="#ffe5a0" stroke-width="17" stroke-linecap="round"/>
+      <path id="targetCore" fill="none" stroke="#fff6ca" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="200" cy="200" r="119" fill="url(#iron)" stroke="#564939" stroke-width="8"/>
+      <circle cx="200" cy="200" r="103" fill="none" stroke="#877456" stroke-width="1" stroke-dasharray="2 10"/>
+      <circle cx="200" cy="200" r="82" fill="url(#brass)" stroke="#292218" stroke-width="5"/>
+      <circle cx="200" cy="200" r="63" fill="#2f2a23" stroke="#b49b6b" stroke-width="3"/>
+      <path d="M181 186 L219 186 L219 193 L210 193 L210 206 L217 206 L217 215 L183 215 L183 206 L190 206 L190 193 L181 193 Z" fill="#161614" stroke="#d2b77c" stroke-width="2"/>
+      <text x="200" y="245" class="center-tag">PIN <tspan id="pinNumber">1</tspan></text>
+      <g id="needle">
+        <path class="shaft" d="M192 200 L197 83 L200 72 L203 83 L208 200 Z"/>
+        <path class="point" d="M200 67 L194 88 L206 88 Z"/>
+        <circle cx="200" cy="200" r="17" fill="url(#brass)" stroke="#51402b" stroke-width="3"/>
+        <circle cx="200" cy="200" r="6" fill="#372a1e"/>
+      </g>
+    </svg>
+  </div>
+  <div class="pin-row" id="pins" aria-label="Lock pins"></div>
+  <div class="readout" aria-live="polite" aria-atomic="true">
+    <div id="status">Ready to pick</div>
+    <div id="substatus">Press A, Space, or Start Lock to begin.</div>
+  </div>
+  <div id="strainArea" aria-label="Pick strain"><span>Pick strain</span><span class="strain"></span><span class="strain"></span><span class="strain"></span></div>
+  <div class="controls">
+    <button type="button" id="action">Start Lock<small>A · Space · Tap</small></button>
+    <button type="button" id="retry">Restart</button>
+  </div>
+  <p class="hints"><strong>Controller:</strong> A to set · B to restart · LB/RB to change lock<br><strong>Keyboard:</strong> Space / Enter to set · R to restart · ←/→ to change lock<br><strong>Touch:</strong> Tap the large button or the lock dial</p>
+  <details id="debugPanel"><summary>Diagnostics (mobile-friendly)</summary><div id="debugText"></div><div id="testOutput"></div><button type="button" class="tool" id="copyDebug">Copy diagnostics</button></details>
+</main>
+<script>
+(() => {
+  'use strict';
+  // All timing lives in this standalone file, not in the game runtime.
+  const LEVELS = Object.freeze({
+    easy:   {label:'Simple', pins:3, speed:112, window:18, strikes:3},
+    normal: {label:'Sturdy', pins:4, speed:142, window:15, strikes:3},
+    hard:   {label:'Intricate', pins:5, speed:172, window:13, strikes:3},
+  }); // Difficulty presets set length, needle speed, and angular catch width.
+  const SETTLE_MS = 520; // Hit animation pause before a new target can be judged.
+  const TAU = Math.PI * 2; // Converts circular lock angles for SVG arcs.
+  const $ = id => document.getElementById(id);
+  const ui = {
+    dial:$('lockFace'), needle:$('needle'), targetGlow:$('targetGlow'), targetOuter:$('targetOuter'), targetCore:$('targetCore'),
+    pins:$('pins'), pinNumber:$('pinNumber'), status:$('status'), substatus:$('substatus'), strain:$('strainArea'),
+    action:$('action'), retry:$('retry'), sound:$('soundToggle'), debug:$('debugText'), panel:$('debugPanel'),
+  }; // Cached DOM nodes updated during the single shared animation frame.
+  const state = {
+    phase:'ready', level:'normal', pin:0, misses:0, angle:0, target:180, dir:1,
+    settleUntil:0, lastAt:0, lockStartedAt:0, pressCount:0, lastMissDegrees:null,
+    lastResult:'-', lastDevice:'none', sound:true, controllerIndex:null,
+  }; // One authoritative state machine; exposed read-only by snapshot().
+  const prevPadButtons = new Map(); // Edge detection prevents held buttons from triggering multiple hits.
+  let audioContext = null; // Lazily created after a user gesture to avoid autoplay errors.
+  let lastRenderFrame = 0; // Timing origin for consistent movement independent of frame rate.
+  let previousWarning = false; // Plays the approach cue only on entering a target's warning zone.
+  let debugLastUpdate = 0; // Throttles diagnostics text independently of the visual frame rate.
+  let lastSoundError = ''; // Shown in diagnostics, never required for gameplay.
+  let flashTimer = 0; // Clears a transient lock shake without a permanent CSS class.
+
+  function wrap(angle) { return ((angle % 360) + 360) % 360; }
+  function shortest(a, b) { return ((wrap(a - b) + 540) % 360) - 180; }
+  function arcPath(center, half, radius=149) {
+    const p = degree => {
+      const radians = (degree - 90) * TAU / 360;
+      return [200 + Math.cos(radians) * radius, 200 + Math.sin(radians) * radius];
+    };
+    const [x1,y1] = p(center - half), [x2,y2] = p(center + half);
+    return `M ${x1.toFixed(3)} ${y1.toFixed(3)} A ${radius} ${radius} 0 0 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`;
+  }
+  function currentSettings() { return LEVELS[state.level]; }
+  function setMessage(main, sub, kind='') {
+    ui.status.textContent=main;
+    ui.status.className=kind;
+    ui.substatus.textContent=sub;
+  }
+  function makePins() {
+    const count = currentSettings().pins;
+    ui.pins.replaceChildren();
+    for(let i=0;i<count;i++) {
+      const pin = document.createElement('div'); // Pin indicator remains visually distinct after a successful catch.
+      pin.className='pin';
+      const head=document.createElement('div'); head.className='pin-head'; head.textContent='•';
+      const label=document.createElement('span'); label.textContent=String(i+1);
+      pin.append(head,label); ui.pins.append(pin);
+    }
+  }
+  function renderPins() {
+    const pins=ui.pins.children;
+    for(let i=0;i<pins.length;i++) {
+      const complete=i<state.pin, active=i===state.pin && state.phase!=='won';
+      pins[i].className=`pin${complete?' done':''}${active?' active':''}`;
+      pins[i].firstElementChild.textContent=complete?'✓':active?'◆':'•';
+    }
+    ui.pinNumber.textContent=String(Math.min(state.pin+1,currentSettings().pins));
+    $('progressArc').setAttribute('stroke-dashoffset',String(930*(1-state.pin/currentSettings().pins)));
+    [...ui.strain.querySelectorAll('.strain')].forEach((el,i)=>el.classList.toggle('filled',i<state.misses));
+  }
+  function renderDial() {
+    ui.needle.setAttribute('transform',`rotate(${state.angle.toFixed(3)} 200 200)`);
+    const half=currentSettings().window;
+    const path=arcPath(state.target,half);
+    ui.targetOuter.setAttribute('d',path);
+    ui.targetCore.setAttribute('d',path);
+    ui.targetGlow.setAttribute('d',path);
+    const close=Math.abs(shortest(state.angle,state.target)) <= half;
+    const show=state.phase==='playing';
+    ui.targetOuter.setAttribute('opacity',show?'1':'.45');
+    ui.targetCore.setAttribute('opacity',show?'1':'.45');
+    ui.targetGlow.setAttribute('opacity',show?(close?'.9':'.36'):'0');
+    ui.needle.style.filter=close && show?'drop-shadow(0 0 9px #fff3aa)':'';
+  }
+  function chooseTarget() {
+    // Place the next notch visibly ahead of the needle: no unavoidable instant taps.
+    const ahead=100+Math.random()*130;
+    state.target=wrap(state.angle+state.dir*ahead);
+    previousWarning=false;
+  }
+  function audioReady() {
+    if (!state.sound) return null;
+    try {
+      if (!audioContext) audioContext=new (window.AudioContext||window.webkitAudioContext)();
+      if(audioContext.state==='suspended') audioContext.resume().catch(error=>{lastSoundError=String(error);});
+      return audioContext;
+    } catch(error) { lastSoundError=String(error); return null; }
+  }
+  function tone(freq,duration=.08,type='sine',gain=.11,delay=0) {
+    const ctx=audioReady(); if(!ctx) return;
+    try {
+      const now=ctx.currentTime+delay;
+      const osc=ctx.createOscillator(), volume=ctx.createGain();
+      osc.type=type; osc.frequency.setValueAtTime(freq,now);
+      volume.gain.setValueAtTime(.0001,now);
+      volume.gain.exponentialRampToValueAtTime(Math.max(.001,gain),now+.008);
+      volume.gain.exponentialRampToValueAtTime(.0001,now+duration);
+      osc.connect(volume); volume.connect(ctx.destination);
+      osc.start(now);osc.stop(now+duration+.02);
+    } catch(error) {lastSoundError=String(error);}
+  }
+  function vibrate(duration,strong=.22) {
+    try {
+      const pad=[...(navigator.getGamepads?.()||[])].find(p=>p?.index===state.controllerIndex);
+      const actuator=pad?.vibrationActuator;
+      if(actuator?.playEffect) actuator.playEffect('dual-rumble',{duration,strongMagnitude:strong,weakMagnitude:strong*.75}).catch(()=>{});
+    } catch(_) { /* Haptics are a progressive enhancement. */ }
+  }
+  function updateAction() {
+    const label=state.phase==='ready'?'Start Lock':state.phase==='won'?'Pick Another':'Set Pin';
+    ui.action.firstChild.textContent=label;
+    ui.action.disabled=state.phase==='settling';
+  }
+  function reset(level=state.level) {
+    if(!LEVELS[level]) return false;
+    state.level=level;
+    state.pin=0; state.misses=0; state.angle=0; state.target=180; state.dir=1;
+    state.phase='ready';state.settleUntil=0;state.lockStartedAt=0;state.pressCount=0;
+    state.lastResult='-';state.lastMissDegrees=null;
+    previousWarning=false;
+    document.querySelectorAll('.difficulty').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.level===level)));
+    makePins();renderPins();renderDial();updateAction();
+    setMessage(`${currentSettings().label} lock`, 'Press A, Space, or Start Lock to begin.');
+    return true;
+  }
+  function start(now=performance.now()) {
+    if(state.phase!=='ready' && state.phase!=='won') return false;
+    state.pin=0;state.misses=0;state.angle=0;state.dir=1;state.phase='playing';
+    state.lockStartedAt=now;state.pressCount=0;state.lastMissDegrees=null;
+    state.lastResult='Started';
+    chooseTarget();renderPins();renderDial();updateAction();
+    setMessage('Find the glowing notch','Tap when the needle reaches the highlighted section.');
+    tone(370,.055,'triangle',.06);
+    return true;
+  }
+  function flashBad() {
+    ui.dial.classList.remove('shake');void ui.dial.getBoundingClientRect();ui.dial.classList.add('shake');
+    clearTimeout(flashTimer); flashTimer=setTimeout(()=>ui.dial.classList.remove('shake'),260);
+  }
+  function strike(now=performance.now()) {
+    if(state.phase==='ready'||state.phase==='won') return start(now);
+    if(state.phase!=='playing') return false;
+    state.pressCount++;
+    const delta=Math.abs(shortest(state.angle,state.target));
+    const half=currentSettings().window;
+    if(delta<=half) {
+      state.pin++;
+      state.misses=0;
+      state.lastResult=`Set pin at ${delta.toFixed(1)}°`;
+      tone(480+state.pin*60,.11,'triangle',.14);
+      tone(740+state.pin*45,.12,'sine',.10,.08);
+      vibrate(55,.18);
+      if(state.pin>=currentSettings().pins) {
+        state.phase='won';state.settleUntil=0;
+        setMessage('The lock opens!',`All ${state.pin} pins set · ${((now-state.lockStartedAt)/1000).toFixed(1)} seconds · ${state.pressCount} taps`,'good');
+        tone(1050,.35,'sine',.09,.15);
+      } else {
+        state.phase='settling';state.settleUntil=now+SETTLE_MS;
+        setMessage(`Pin ${state.pin} set!`,'Feel the tumblers shift…','good');
+      }
+    } else {
+      state.misses++;
+      state.lastMissDegrees=Number(delta.toFixed(2));
+      state.lastResult=`Miss ${state.misses}: ${delta.toFixed(1)}° away`;
+      tone(130,.13,'sawtooth',.09);
+      flashBad();vibrate(100,.42);
+      if(state.misses>=currentSettings().strikes) {
+        // A snapped pick drops one seated pin, rather than wiping the whole lock.
+        state.pin=Math.max(0,state.pin-1);
+        state.misses=0;
+        state.phase='settling';state.settleUntil=now+SETTLE_MS;
+        setMessage('The pick slips!',state.pin?'One pin falls back. Keep going.':'Try again; no picks are consumed in this prototype.','bad');
+      } else {
+        setMessage('Missed the notch',`${currentSettings().strikes-state.misses} safe taps left before a pin slips.`,'bad');
+      }
+    }
+    renderPins();renderDial();updateAction();
+    return true;
+  }
+  function update(now) {
+    if(!lastRenderFrame) lastRenderFrame=now;
+    const dt=Math.max(0,Math.min(0.05,(now-lastRenderFrame)/1000));
+    lastRenderFrame=now;
+    if(document.visibilityState==='hidden') return;
+    if(state.phase==='settling' && now>=state.settleUntil) {
+      state.phase='playing';chooseTarget();
+      setMessage(`Pin ${state.pin+1} of ${currentSettings().pins}`,'Wait for the needle to meet the notch.');
+      updateAction();
+    }
+    if(state.phase==='playing') {
+      const speed=currentSettings().speed*(1+state.pin*.045);
+      state.angle=wrap(state.angle+state.dir*speed*dt);
+      const distance=Math.abs(shortest(state.angle,state.target));
+      const warning=distance<=currentSettings().window+22 && distance>currentSettings().window;
+      if(warning&&!previousWarning) tone(260,.025,'triangle',.025);
+      previousWarning=warning;
+    }
+    renderDial();
+    if(ui.panel.open && now-debugLastUpdate>=100) {debugLastUpdate=now;renderDebug();}
+  }
+  function renderDebug() {
+    ui.debug.textContent=[
+      `state: ${state.phase} · lock: ${state.level} · pin: ${state.pin}/${currentSettings().pins}`,
+      `angle: ${state.angle.toFixed(2)}° · notch: ${state.target.toFixed(2)}° · signed delta: ${shortest(state.angle,state.target).toFixed(2)}°`,
+      `catch window: ±${currentSettings().window}° · speed: ${(currentSettings().speed*(1+state.pin*.045)).toFixed(1)}°/s`,
+      `misses: ${state.misses}/${currentSettings().strikes} · attempts: ${state.pressCount} · last: ${state.lastResult}`,
+      `device: ${state.lastDevice} · pad index: ${state.controllerIndex ?? '-'} · sound: ${state.sound?'on':'off'}`,
+      `frame: ${lastRenderFrame.toFixed(0)} · audio error: ${lastSoundError||'none'}`,
+    ].join('\n');
+  }
+  function handleAction(device) {state.lastDevice=device;strike();}
+  // Pointerdown instead of click preserves timing accuracy on mobile browsers.
+  for(const el of [ui.action,$('housing')]) {
+    el.addEventListener('pointerdown',event=>{
+      if(event.button!==0) return;
+      event.preventDefault();handleAction(event.pointerType||'touch');
+    });
+  }
+  ui.retry.addEventListener('click',()=>{state.lastDevice='touch/mouse';reset();});
+  document.querySelectorAll('.difficulty').forEach(button=>button.addEventListener('click',()=>reset(button.dataset.level)));
+  ui.sound.addEventListener('click',()=>{
+    state.sound=!state.sound; ui.sound.setAttribute('aria-pressed',String(state.sound));
+    ui.sound.textContent=state.sound?'Sound: On':'Sound: Off';
+    if(state.sound) tone(550,.08,'triangle',.07);
+  });
+  $('copyDebug').addEventListener('click',()=>{
+    renderDebug();
+    const result=ui.debug.textContent;
+    if(navigator.clipboard?.writeText) navigator.clipboard.writeText(result).then(()=>{$('copyDebug').textContent='Copied';}).catch(()=>{$('copyDebug').textContent='Copy unavailable';});
+    else $('copyDebug').textContent='Clipboard unavailable';
+  });
+  window.addEventListener('keydown',event=>{
+    const target=event.target;
+    if(event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if(target?.matches?.('input,textarea,select,[contenteditable=true]')) return;
+    if((event.code==='Space' && (!target?.closest?.('button') || target===ui.action)) || (event.code==='Enter' && (target===document.body || target===ui.action))) {
+      event.preventDefault();handleAction('keyboard');
+    } else if(event.code==='KeyR') {event.preventDefault();state.lastDevice='keyboard';reset();}
+    else if(event.code==='ArrowLeft'||event.code==='ArrowRight') {
+      if(target?.closest?.('button') && target!==ui.action) return;
+      event.preventDefault();changeLevel(event.code==='ArrowRight'?1:-1);
+    }
+  });
+  function changeLevel(step) {
+    const levels=Object.keys(LEVELS);
+    reset(levels[(levels.indexOf(state.level)+step+levels.length)%levels.length]);
+  }
+  function gamepadFrame() {
+    const pads=navigator.getGamepads?.()||[];
+    const live=[...pads].filter(p=>p && p.connected!==false);
+    let pad=live.find(p=>p.index===state.controllerIndex)||null;
+    const active=live.find(p=>[0,1,4,5,14,15].some(i=>p.buttons?.[i]?.pressed));
+    if(active) pad=active;
+    state.controllerIndex=pad?.index??null;
+    const pressed=new Set();
+    if(pad){
+      for(const i of [0,1,4,5,14,15]) if((pad.buttons?.[i]?.value||0)>.55 || pad.buttons?.[i]?.pressed) pressed.add(i);
+      if(pressed.has(0)&&!prevPadButtons.get(0)) handleAction('controller');
+      if(pressed.has(1)&&!prevPadButtons.get(1)) {state.lastDevice='controller';reset();}
+      if((pressed.has(4)&&!prevPadButtons.get(4))||(pressed.has(14)&&!prevPadButtons.get(14))) changeLevel(-1);
+      if((pressed.has(5)&&!prevPadButtons.get(5))||(pressed.has(15)&&!prevPadButtons.get(15))) changeLevel(1);
+    }
+    for(const i of [0,1,4,5,14,15]) prevPadButtons.set(i,pressed.has(i));
+  }
+  function frame(now) {update(now);gamepadFrame();requestAnimationFrame(frame);}
+  window.addEventListener('blur',()=>{lastRenderFrame=0;});
+  document.addEventListener('visibilitychange',()=>{lastRenderFrame=0;});
+  function selfTest() {
+    const test=(name,pass)=>{if(!pass)throw Error('FAIL: '+name);return name+' OK';};
+    const results=[];
+    results.push(test('angle wraps positive',wrap(370)===10));
+    results.push(test('angle wraps negative',wrap(-10)===350));
+    results.push(test('shortest signed distance',shortest(359,1)===-2));
+    results.push(test('arc path finite',!arcPath(360,15).includes('NaN')));
+    reset('easy');start(1000);state.angle=state.target;strike(1250);
+    results.push(test('correct tap seats a pin',state.pin===1&&state.phase==='settling'));
+    state.phase='playing';state.angle=wrap(state.target+100);strike(1400);strike(1450);strike(1500);
+    results.push(test('three misses drop one pin',state.pin===0&&state.phase==='settling'&&state.misses===0));
+    state.phase='playing';state.pin=2;state.angle=state.target;strike(1800);
+    results.push(test('last pin opens the lock',state.phase==='won'));
+    reset('normal');
+    $('testOutput').textContent=results.join('\n');
+    ui.panel.open=true;renderDebug();
+    document.documentElement.dataset.selfTest='passed';
+    return results;
+  }
+  // Host integration seam for later: no game locks or loot systems touched here.
+  window.LockpickingDemo=Object.freeze({ start, strike, reset, snapshot:()=>({ ...state, settings:{...currentSettings()} }), selfTest });
+  const ticks=$('ticks');
+  for(let i=0;i<60;i++) {
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1','200');line.setAttribute('x2','200');
+    line.setAttribute('y1',i%5===0?'35':'39');line.setAttribute('y2','45');
+    line.setAttribute('transform',`rotate(${i*6} 200 200)`);
+    line.setAttribute('class','dial-tick'); ticks.append(line);
+  }
+  reset();
+  if(new URLSearchParams(location.search).has('selftest')) {
+    try { selfTest(); } catch(error) {$('testOutput').textContent=String(error.stack||error);ui.panel.open=true;document.documentElement.dataset.selfTest='failed';}
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
