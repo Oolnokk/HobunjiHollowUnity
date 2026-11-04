@@ -245,10 +245,10 @@ civilDay++;
 assert.equal(api.feastMenu().length,7,'the seven-pot layout persists next day');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contribution remains on display for the full festival');
 api.addFestivalFun('sloomi',5);
-api.update();
-civilDay++;
 const pendingFunPay = W.DialogueContent.adjustNpcFavor; // A world may advance a day before the relationship module has hydrated.
 W.DialogueContent.adjustNpcFavor = undefined;
+api.update(); // First observation of a civil-day change must not convert and discard Fun.
+civilDay++;
 realMs+=1000;api.update();
 assert.equal(api.serialize().festivalFun.sloomi,5,'offline Favor authority keeps all five earned Fun pending rather than marking it paid');
 W.DialogueContent.adjustNpcFavor = pendingFunPay;
