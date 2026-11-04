@@ -37,6 +37,8 @@
   let equipmentDeps = null;
   let combatDeps = null;
   let root = null;
+  const extraNativeRoots = new Set(); // The upper V50 floor owner registers/deregisters its real authored puzzle roots here.
+  let nativeRootsChanged = false; // Rebuilds the shared glyph/torch scan only when a native floor is mounted or removed.
   let generatorApi = null;
   let glyphTargets = [];
   let ignitionTargets = [];
@@ -147,6 +149,16 @@
     return scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name || '')) || null;
   }
 
+  function scanGeneratedRoots(visitor) {
+    root?.traverse?.(visitor);
+    for(const native of extraNativeRoots)if(native!==root)native?.traverse?.(visitor);
+  }
+  function registerExternalRoot(native) {
+    if(!native?.traverse)return null;
+    extraNativeRoots.add(native);nativeRootsChanged=true;
+    return () => {if(extraNativeRoots.delete(native))nativeRootsChanged=true;}; // Cleanup is owned by its native floor, not by the base root.
+  }
+
   function makeSignalProxy(mechanismId, mechanismRoot) {
     const proxy = { userData:{ solveProgress:0, __devRuinHitSignal:true, mechanismId } };
     const originalLinkedCube = mechanismRoot.userData?.linkedCubePuzzleRoot || null;
@@ -181,7 +193,7 @@
 
   function deepestGlyphNodes() {
     const candidates = [];
-    root?.traverse?.(object => {
+    scanGeneratedRoots(object => {
       if (object.userData?.activatorType !== 'glyphObelisk') return;
       if (rootContainsActivatorDescendant(object, 'glyphObelisk')) return;
       const mechanismId = inheritedData(object, 'linkedMechanismId');
@@ -202,7 +214,7 @@
     torchSources = [];
     ladders = [];
 
-    root.traverse(object => {
+    scanGeneratedRoots(object => {
       const data = object.userData || {};
       if (data.mechanismId && data.previewMotion?.type) mechanismRoots.set(data.mechanismId, object);
       if (data.generatedAccessType === 'stoneLadder') ladders.push(object);
@@ -226,7 +238,7 @@
       state.glyphRequired = Math.max(state.glyphRequired, required);
     }
 
-    root.traverse(object => {
+    scanGeneratedRoots(object => {
       const type = object.userData?.activatorType;
       if (type !== 'brazier' && type !== 'torch') return;
       const mechanismId = inheritedData(object, 'linkedMechanismId');
@@ -838,7 +850,11 @@
       return;
     }
     const activeRoot = activeGeneratedRoot();
-    if (activeRoot && activeRoot !== root) buildForRoot(activeRoot);
+    if (activeRoot && (activeRoot !== root || nativeRootsChanged)) {
+      buildForRoot(activeRoot);
+      nativeRootsChanged = false;
+      window.DevRandomRuinGlyphCircuits?.rebuild?.(); // Native glyphs get the same visible plaques/hitboxes as base-level glyphs.
+    }
     if (!root) return;
     const now = performance.now();
     const dt = clamp((now-lastFrameMs)/1000, 0, .05);
@@ -887,6 +903,7 @@
   setTimeout(() => setTimeout(() => DS.addBeforeRenderClient(postBaseFrame), 0), 0);
 
   window.DevRandomRuinHitPuzzles = Object.freeze({
+    registerExternalRoot,
     isCarryingTorch:() => !!carriedTorch,
     dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
     debugActivateGlyph(object = null) {
