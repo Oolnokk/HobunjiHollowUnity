@@ -63,7 +63,7 @@ function metadata(){
   host.add(original);host.add(particles);original.add(child);particles.add(spark);
   const detach=obj=>obj.parent?.remove(obj);
   const take=new Function('localePreviewRoot','mechanismParticleRoot','detachObject','THREE',
-    source.slice(begin,end)+'\\nreturn takePreviewRoots;')(original,particles,detach,THREE);
+    source.slice(begin,end)+String.fromCharCode(10)+'return takePreviewRoots;')(original,particles,detach,THREE);
   const snap=take({snapshot:true,floor:2});
   assert(child.parent===snap.localeRoot&&spark.parent===snap.particleRoot);
   assert(original.children.length===0&&particles.children.length===0);
