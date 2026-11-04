@@ -1102,7 +1102,7 @@
       deps = kit.deps || deps;
       if (!s.built) { try { build(kit); } catch (error) { s.built = true; s.rejects.push(String(error?.message || error)); console.warn('[Random Test Ruin sanctum] build failed', error); } }
       tryAwakenDoor(); // Cheap scalar check; respond immediately to the last upper-floor brazier.
-      const allLit = s.door?.state !== 'sealed';
+      const allLit = !!s.door && s.door.state !== 'sealed';
       for (const brazier of s.braziers) updateFire(brazier.fire, now, dt);
       for (const fire of s.arenaFires || []) updateFire(fire, now, dt);
       for (const fire of s.vaultFires || []) {
