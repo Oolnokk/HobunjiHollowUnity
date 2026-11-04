@@ -1449,6 +1449,7 @@
     }
   };
 
+  const HOSTED_FLUTE_PERFORMANCE = /(?:[?&])instrument=flute(?:&|$)/.test(window.location?.search || ''); // The game's instrument slot selects the performance timbre without changing chords, controls or song scheduling.
   const state = {
     audioContext:null,
     audioPromise:null,
@@ -1459,7 +1460,7 @@
     outputRms:0, // Updated each animation frame to prove whether Web Audio is generating signal.
     outputPeak:0, // Holds the latest analyser peak for the mobile diagnostics.
     buffer:null,
-    sampleName:'Fallback pluck',
+    sampleName:HOSTED_FLUTE_PERFORMANCE ? 'MIDI flute fallback' : 'Fallback pluck',
     sampleRootMidi:60,
     sampleImported:false,
     samplePeakDb:0,
@@ -1679,7 +1680,7 @@
             log('Audio state changed', state.audioContext.state);
           });
           createFallbackBuffer();
-          if (state.pendingCachedSample) hydrateCachedSampleRecord(state.pendingCachedSample, 'startup cache');
+          if (!HOSTED_FLUTE_PERFORMANCE && state.pendingCachedSample) hydrateCachedSampleRecord(state.pendingCachedSample, 'startup cache');
           if (state.pendingMetronomeSampleRecord) hydrateAuxiliarySampleRecord(state.pendingMetronomeSampleRecord, 'metronome');
           if (state.pendingRootPadSampleRecord) hydrateAuxiliarySampleRecord(state.pendingRootPadSampleRecord, 'rootPad');
           log('Audio context created', `${state.audioContext.sampleRate} Hz`);
@@ -1703,7 +1704,7 @@
   function createFallbackBuffer() {
     if (!state.audioContext) return;
     const sampleRate = state.audioContext.sampleRate;
-    const duration = 1.55;
+    const duration = HOSTED_FLUTE_PERFORMANCE ? 2.1 : 1.55; // A held flute tone needs a longer breath envelope than the Kurraya's decaying pluck.
     const length = Math.floor(sampleRate * duration);
     const buffer = state.audioContext.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
@@ -1713,14 +1714,24 @@
       const time = i / sampleRate;
       noiseState = (1664525 * noiseState + 1013904223) >>> 0;
       const noise = (noiseState / 0xffffffff) * 2 - 1;
-      const attack = Math.min(1, time / 0.006);
-      const envelope = attack * Math.exp(-3.15 * time);
-      const body = Math.sin(2*Math.PI*frequency*time) + 0.46*Math.sin(2*Math.PI*frequency*2.01*time+0.22) + 0.2*Math.sin(2*Math.PI*frequency*3.02*time+0.7) + 0.09*Math.sin(2*Math.PI*frequency*5.04*time);
-      data[i] = Math.tanh((body * 0.34 + noise * Math.exp(-50*time) * 0.22) * envelope * 1.4);
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        // A MIDI-pitched, breathy flute fallback. The existing polyphonic sampler
+        // transposes this C4 buffer and schedules every chord/roll voice as before.
+        const attack = Math.min(1, time / 0.055);
+        const release = Math.min(1, Math.max(0, duration - time) / 0.23);
+        const phase = 2 * Math.PI * frequency * time + 0.018 * Math.sin(2 * Math.PI * 5.2 * time);
+        const body = 0.56 * Math.sin(phase) + 0.13 * Math.sin(2 * phase) + 0.035 * Math.sin(3 * phase);
+        data[i] = (body + 0.012 * noise) * attack * release * (0.94 - 0.1 * time / duration);
+      } else {
+        const attack = Math.min(1, time / 0.006);
+        const envelope = attack * Math.exp(-3.15 * time);
+        const body = Math.sin(2*Math.PI*frequency*time) + 0.46*Math.sin(2*Math.PI*frequency*2.01*time+0.22) + 0.2*Math.sin(2*Math.PI*frequency*3.02*time+0.7) + 0.09*Math.sin(2*Math.PI*frequency*5.04*time);
+        data[i] = Math.tanh((body * 0.34 + noise * Math.exp(-50*time) * 0.22) * envelope * 1.4);
+      }
     }
     state.buffer = buffer;
     invalidatePitchCache('fallback restored');
-    state.sampleName = 'Fallback pluck';
+    state.sampleName = HOSTED_FLUTE_PERFORMANCE ? 'MIDI flute fallback' : 'Fallback pluck';
     state.sampleRootMidi = 60;
     state.sampleImported = false;
     clearGestureMediaChannels();
@@ -1731,7 +1742,9 @@
     state.monoStrategy = 'generated mono';
     state.samplePeakDb = -0.8;
     state.sampleNormalizationGain = 1;
-    state.markers = {trimStart:0,loopIn:0.36,loopOut:1.03,trimEnd:1.45};
+    state.markers = HOSTED_FLUTE_PERFORMANCE
+      ? {trimStart:0,loopIn:0.45,loopOut:1.6,trimEnd:duration - 0.02}
+      : {trimStart:0,loopIn:0.36,loopOut:1.03,trimEnd:1.45};
     syncMarkerSlidersFromState();
     updateSampleUI();
     drawWaveform();
@@ -4962,7 +4975,7 @@
 
   function schedulePersistImportedSample(delay = 650) {
     clearTimeout(state.samplePersistTimer);
-    if (!state.sampleImported) return;
+    if (!state.sampleImported || HOSTED_FLUTE_PERFORMANCE) return; // A gameplay flute recording must never replace the Music Lab's saved Kurraya sample.
     state.samplePersistTimer = setTimeout(() => scheduleIdleTask(() => persistCurrentSampleToIndexedDB(), 900), delay);
   }
 
@@ -5010,6 +5023,7 @@
   }
 
   async function restoreLastSampleFromIndexedDB() {
+    if (HOSTED_FLUTE_PERFORMANCE) { state.sampleCacheStatus = 'flute-isolated'; return; } // A cached Kurraya pluck must not override the flute's own fallback or later flute recording.
     state.sampleCacheStatus = 'loading';
     try {
       const record = await readLastCachedSample();
