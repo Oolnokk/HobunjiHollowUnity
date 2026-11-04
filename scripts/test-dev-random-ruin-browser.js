@@ -474,8 +474,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         puzzleTowers,
         nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
-        runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
-        runtimeHallways:generatorState?.runtimeHallways || null,
+        runtimeWallPlanes:window.DevRandomRuin.getState()?.runtimeWallPlanes || null,
+        runtimeHallways:window.DevRandomRuin.getState()?.runtimeHallways || null, // The generator's hidden preview has already handed every floor root to the game; these are its accepted entrance-floor audit values.
         solvability:window.DevRandomRuin.getState()?.solvability || null,
         generationAttempt:window.DevRandomRuin.getState()?.generationAttempt || 0,
         acceptedSeed:window.DevRandomRuin.getState()?.seed ?? null,
