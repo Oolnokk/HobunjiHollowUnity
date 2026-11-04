@@ -294,8 +294,7 @@
       area: mapId, rebuild: true, // Recompute after dug/changed tiles, not from a stale cached cliff graph.
       blocked: t => !t || t.incline || deps.isSolid(t.type) || [deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.TRENCH].includes(t.type),
       isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
-      tileY: t => Number.isFinite(t?.surfaceY) ? t.surfaceY
-        : (deps.NORMAL_TOP + (t?.elevTier || 0) * deps.PLATEAU_UNIT),
+      tileY: t => deps.tileSurfaceYInArea(t, mapId), // Same Y authority used by the player, creatures and scheduled NPCs.
     });
     if (network) {
       // The dungeon's registered-support system is authoritative for all
