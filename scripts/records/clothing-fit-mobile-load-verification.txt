@@ -1,0 +1,6 @@
+Verified in GitHub Actions (Node.js 22 + mobile Chromium):
+- Clothing editor split-source syntax, 12 core and 5 extension parts
+- Boot module ordering, network errors, 15-second hung-fetch timeout, manual retry
+- Existing layered garment export and fur-hood integration regressions
+- Mobile 2D headwear editor loads Fur Hood while Three.js CDN request hangs indefinitely
+- 234x173 stage canvas has opaque pixels, no JavaScript page errors
