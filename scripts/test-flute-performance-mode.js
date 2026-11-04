@@ -62,6 +62,78 @@ async function missingFluteSample() {
   assert.equal(win.KurrayaInstrument.fluteDiagnostics().active,false);
 }
 
+
+function testFluteMouthMount() {
+  const pixels = new Uint8ClampedArray(4 * 8 * 4); // A narrow opaque flute silhouette exercises the real PNG trim path.
+  for (let y = 1; y < 7; y++) pixels.set([165, 119, 45, 255], (y * 4 + 2) * 4);
+  const canvas = () => ({
+    width:0,height:0,
+    getContext:() => ({drawImage:noop,getImageData:() => ({data:pixels.slice()}),putImageData:noop}),
+  }); // Mimics the origin-clean canvas already tested in the starter-flute sprite test.
+  const mounted = []; // Records each actual call into the shared head-relative blowgun pose helper.
+  const renderHooks = []; // Captures the world before-render client used when the avatar changes scene.
+  const loadedAssets = []; // Guards against refetching and rebuilding the flute between modes.
+  class Group {
+    constructor(){this.children=[];this.visible=true;this.parent=null;}
+    add(child) {
+      if(child.parent)child.parent.children=child.parent.children.filter(item=>item!==child);
+      this.children.push(child);child.parent=this;
+    }
+  }
+  class Mesh {
+    constructor(geometry,material){this.geometry=geometry;this.material=material;this.rotation={x:0};this.position={z:0};}
+  }
+  class PlaneGeometry {constructor(width,height){this.width=width;this.height=height;}}
+  const THREE = {Group,Mesh,PlaneGeometry,DoubleSide:2};
+  const avatar = {parent:new Group(),userData:{neckRig:{available:true}}}; // A live avatar whose scene parent may change.
+  const loadedPose = {headRelative:true,pitch:-180,yaw:0,roll:4,scale:1.3}; // The actual runtime resolves this from HeldActionAnimations.
+  const win = {
+    Combat:{deps:{playerMesh:avatar}},
+    HeldActionAnimations:{blowgunReady:{poses:{strike:loadedPose}}},
+    DynamicSurfaces:{addBeforeRenderClient:fn => renderHooks.push(fn)},
+    SharedAttackPose:{
+      createHeadFrame:() => ({}),
+      headFrame:(frame,actor) => actor === avatar,
+      placeAtMouth:(root,frame,pose,scale,aperture) => mounted.push({root,pose,scale,aperture}),
+    },
+    HobunjiSpritePngSurface:{makeCanvasTexture:() => ({}),makeMaterial:() => ({})},
+    __farmLog:noop,
+  };
+  const doc = {addEventListener:noop,createElement:canvas};
+  vm.runInNewContext(read('docs/js/kurraya-instrument.js'),{window:win,document:doc});
+  win.KurrayaInstrument.init({
+    THREE,toolTexLoader:{
+      setCrossOrigin:noop,
+      load:(path,onLoaded) => {loadedAssets.push(path);onLoaded({image:{width:4,height:8},dispose:noop});},
+    },
+    heldObjectRenderOrder:1.5,
+  });
+  assert.equal(renderHooks.length,1,'one world-render updater must own the flute');
+  win.KurrayaInstrument.beginFlute();
+  assert.equal(loadedAssets[0],'assets/toolsprites/flute.png');
+  assert.equal(loadedAssets.length,1);
+  assert.equal(mounted.length,1,'start attaches the flute through shared mouth placement');
+  assert.equal(mounted[0].pose,loadedPose,'the actual B’shuakauitl loaded strike pose drives the flute');
+  assert.equal(mounted[0].scale,1.3);
+  assert.equal(mounted[0].root.parent,avatar.parent,'the flute belongs to the player’s current scene');
+  const mesh=mounted[0].root.children[0];
+  assert(mesh.geometry.width>0 && mesh.geometry.height>0,'the flute silhouette must form a visible plane');
+  assert(Math.abs(mesh.rotation.x-Math.PI/2)<1e-8,'the flute mouthpiece aligns with the blowgun’s local aperture');
+  assert(mesh.position.z<0,'the flute barrel extends away from its mouth anchor');
+  const nextScene=new Group();
+  avatar.parent=nextScene;
+  renderHooks[0]();
+  assert.equal(mounted[0].root.parent,nextScene,'zone transitions must reparent the active flute');
+  win.KurrayaInstrument.endFlute();
+  assert.equal(mounted[0].root.visible,false,'closing the performance hides the mouth prop');
+  const count=mounted.length;
+  renderHooks[0]();
+  assert.equal(mounted.length,count,'closed sessions must stop touching the avatar');
+  win.KurrayaInstrument.beginFlute();
+  assert.equal(loadedAssets.length,1,'returning to performance reuses the loaded flute sprite');
+  assert.equal(win.KurrayaInstrument.fluteDiagnostics().ready,true);
+}
+
 function fallbackSound(flute) {
   const html = read('docs/assets/minigames/lyre-performance.html'); // Extracts the shipped sampler function, rather than reimplementing its synthesis in the test.
   const begin = html.indexOf('  function createFallbackBuffer() {');
@@ -97,6 +169,7 @@ function fallbackSound(flute) {
   assert.equal(flute.calls.twitch,0,'flute notes must not trigger the Kurraya string twitch');
   assert.equal(kurraya.calls.twitch,1,'Kurraya retains its original live note response');
   await missingFluteSample();
+  testFluteMouthMount();
   const fluteAudio = fallbackSound(true), kurrayaAudio = fallbackSound(false);
   assert.equal(fluteAudio.sampleName,'MIDI flute fallback');
   assert.equal(kurrayaAudio.sampleName,'Fallback pluck');
