@@ -37,7 +37,8 @@
     const id = key(options.mapId,options.id);
     const existing = piles.get(id);
     if (existing?.scene === options.scene && existing.group === options.group) return existing;
-    const count = Math.max(0,Math.min(3,Math.floor(Number(options.count ?? 3))));
+    const rawCount=Number(options.count ?? 3); // Runtime variants accept only finite, bounded integral crate counts.
+    const count=Number.isFinite(rawCount)?Math.max(0,Math.min(3,Math.floor(rawCount))):3;
     const pile = { id:String(options.id),mapId:String(options.mapId),scene:options.scene,
       group:options.group,count,lootable:true,busy:false,onChange:options.onChange||null };
     if(existing?.scene!==options.scene){
@@ -207,9 +208,11 @@
     if (!burden || burden.exploded) return false;
     const p=positionOf(burden.group);
     if (!p) return false;
-    const scene=burden.group?.parent && burden.group.parent.isScene?burden.group.parent
-      : (piles.values().find(v=>v.mapId===burden.mapId)?.scene
-         || window.GridTileAccessors?.getActiveScene?.());
+    const activeScene=window.GridTileAccessors?.getActiveScene?.(); // Use the live area before any cached camp scene.
+    const scene=burden.group?.parent?.isScene?burden.group.parent
+      :(currentArea()===burden.mapId?activeScene:null)
+      || [...piles.values()].find(v=>v.mapId===burden.mapId&&v.group.parent===v.scene)?.scene
+      || null;
     if (!window.Shattercasks?.discardBurden?.(burden)) return false;
     return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause);
   }
@@ -259,7 +262,7 @@
       if (Math.hypot(p.x-q.x,p.z-q.z)>.65) continue;
       // Grant first: a missing inventory service must not silently destroy a pickup.
       const awarded=window.Shattercasks?.grantBurdenLoot?.(drop.loot);
-      if (!awarded) continue;
+      if (!awarded || (Array.isArray(awarded)&&awarded.length===0)) continue;
       junk.delete(id);drop.group.parent?.remove(drop.group);
       const summary=Object.keys(drop.loot).slice(0,3).join(', ');
       window.Combat?.deps?.showToast?.('Collected crate junk: '+summary,false);

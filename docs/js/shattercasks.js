@@ -1468,11 +1468,12 @@
   const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
   const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  const CARRIED_CRATE_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   function actionButtons(){
     if(!held)return null;
     const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
-    if(held.kind==='looseCrate')return canHang?[CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]:CARRIED_CRATE_ACTION_BUTTONS;
+    if(held.kind==='looseCrate')return canHang?CARRIED_CRATE_HANG_ACTION_BUTTONS:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
   }
   function grantLoot(items) {
@@ -1623,8 +1624,10 @@
     // Interact or the optional, normally unbound Action 4/5 inputs. A nearby
     // intact cask claims Interact; rubble is an ordinary arch button instead
     // (see contextButtons) so touch players can collect it too.
-    const vase=nearVase();
-    const crate=!held&&!vase?window.CratePiles?.nearestInteractable?.(area(),playerPosition()?.x,playerPosition()?.z):null;
+    // Prompt the same nearest object that interact() will actually operate on.
+    const target=held?null:nearInteraction();
+    const vase=target?.type==='vase'?target.obj:null;
+    const crate=target?.type==='cratePile'?target.obj:null;
     const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
     const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:crate?'crate:'+crate.id:'';
     if(claim!==promptClaim){

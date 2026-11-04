@@ -320,8 +320,12 @@
           const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
           const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
           meshes.set(obj.id, { mesh, light, sfxSource, collisionTiles: [], propId: obj.id });
-        } else if (obj.key === 'crateStack' && window.AuthoredFurniture?.peek?.('crateStack')) {
-          const mesh=window.AuthoredFurniture.buildGroup(window.AuthoredFurniture.peek('crateStack'));
+        } else if (obj.key === 'crateStack') {
+          // Do not create a non-interactive placeholder while the authored recipe loads.
+          // init() invokes ensureBanditCampMeshes again after that promise resolves.
+          const recipe=window.AuthoredFurniture?.peek?.('crateStack');
+          if(!recipe)continue;
+          const mesh=window.AuthoredFurniture.buildGroup(recipe);
           mesh.position.set(obj.x+.5,y,obj.y+.5);
           deps.markOutline(mesh);zi.scene.add(mesh);
           meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
