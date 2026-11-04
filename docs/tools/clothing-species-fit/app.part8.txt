@@ -92,7 +92,7 @@ async function composeRuntimePortrait(){
     if(E.showGarment.checked&&mode!=='body')await drawHeadwear(R.cloth,+E.opacity.value,true);
     if(E.showAuthored.checked)await drawHeadwear(R.authoredTargetCloth,+E.authoredOpacity.value,false);
   }else{
-    if(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
+    if(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked){
       const warped=currentWarp();
       const layer=await rawGarmentToRuntimeLayer(warped,+E.opacity.value);
       if(layer){fctx.drawImage(layer,0,0);bctx.drawImage(flipCanvasX(layer),0,0)}
@@ -104,7 +104,7 @@ async function composeRuntimePortrait(){
     // The game draws torso clothing/overwear before the head in front view,
     // unlike the rear portrait (where clothing follows the head). Pauldrons
     // are a later front layer and intentionally stay over the head.
-    const hasBodyGarment=(mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
+    const hasBodyGarment=(mode!=='body'&&mainClothSource()&&!routedPatchIsBody()&&E.showGarment.checked)||
       (E.showAuthored.checked&&R.authoredTargetCloth); // Only restore head depth when a garment was overlaid.
     if(hasBodyGarment&&garmentRecord()?.slot!=='pauldron'&&runtime.headOnlyFront)
       fctx.drawImage(runtime.headOnlyFront,0,0);
