@@ -215,7 +215,7 @@ assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'dislike
 assert(!awarded.some(e=>e.reason==='festival_potluck_win'),'entering a dish does not prematurely grant the seven-day championship reward');
 assert.equal(api.feastMenu().length,7,'the seven pots remain after donation');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','seventh serving pot permanently holds the contest entry');
-assert.equal(api.claimed('potluck').favorRewardVersion,1,'newly donated entries keep their championship eligibility in the annual claim ledger');
+assert.equal(api.claims().potluck.favorRewardVersion,1,'newly donated entries keep their championship eligibility in the annual claim ledger');
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingHours>0,'meal remaining in-game hours are portable');
 api.restore(state);
