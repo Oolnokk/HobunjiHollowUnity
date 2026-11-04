@@ -439,7 +439,7 @@
   // cooldown-gated Quick Attack bonus payloads for one ability *on this tool*.
   // Special-finisher tracks use these same bonus fields with a different hit
   // condition and no Quick Attack cooldown; the combo executor owns activation.
-  function getEffects(toolKey, abilityId) {
+  function getEffects(toolKey, abilityId, options = {}) {
     const afflictions = {};
     const stats = {};
     const quickBonusAfflictions = {}; // Used only by successful, cooldown-ready Quick Attack condition procs.
@@ -486,8 +486,10 @@
 
     // Increase AoE widens melee cones only; rangeMul remains reserved for
     // genuine reach upgrades such as Extended Reach mastery.
-    stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Consumed by every player melee cone and its HUD readiness profile.
-    stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    if (options.includePerks !== false) { // Combo finisher bonus effects do not reapply the base combo's global perks.
+      stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Shared combat perk remains on ordinary attacks.
+      stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    }
     return { afflictions, stats, quickBonusAfflictions, quickBonusDebuffs, quickBonusInstantEffects };
   }
 
