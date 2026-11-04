@@ -66,7 +66,7 @@ globalThis.HronalWitchBombs={
   registerDispenser(_map,id,root){tubes.set(id,root);return true;},
   dispenseFromMechanism:async()=>({id:'witch-bomb-test'}),
 };
-globalThis.KeyStatues={registerDispenser(_map,id,root){statuary.set(id,root);return true;}};
+globalThis.KeyStatues={registerDispenser(_map,id,root,_puzzle,options={}){statuary.set(id,{root,feedPlinthId:options.feedPlinthId});return true;}};
 const burdens=new Map(),rewardChests=[]; // Tracks the optional physical Shattercask source and its reward chest.
 globalThis.Shattercasks={
   registerHangingBurden(options){const burden={...options,exploded:false};burdens.set(burden.id,burden);return burden;},
@@ -122,6 +122,8 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert(ropes.size>0 && [...ropes.values()].every(r=>r.mapId==='map_i_dev_random_ruin'),'rope mounts become real hanging rope records');
   assert.equal(tubes.size,1,'Witch-bomb tubes are registered with the live factory');
   assert.equal(statuary.size,1,'Key Statue mount is registered with the live factory');
+  assert.equal(wing.feedPlinthId,composition.records.find(r=>r.piece==='plinth').id,'the composer publishes its own defense plinth as the statue destination');
+  assert.equal([...statuary.values()][0].feedPlinthId,wing.feedPlinthId,'the dispenser always feeds its own Key Statue plinth');
   assert.equal(encounters.size,1,'defence spawners create exactly one live encounter');
   const enc=[...encounters.values()][0];
   assert(enc.spawners.every(s=>s.x>3+12.9 && s.z>=24),'enemy spawners are translated into world coordinates');
