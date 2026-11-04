@@ -126,6 +126,8 @@ async function testIframeEchoInput() {
   };
   vm.runInNewContext(embedded,sandbox,{filename:'kurraya-puzzle.html inline'});
   const api=sandbox.window.HobunjiPuzzleInstrument;
+  assert.equal(api.playNote(0),true);
+  assert.equal(messages.filter(entry=>entry.type==='puzzle-note'&&entry.noteIndex===0).length,1,'ordinary instrument note is sent to the ruin regardless of audio loading');
   assert(api.startEchoChallenge('test-puzzle',[0,1,7]));
   const settle=async()=>{for(let i=0;i<80;i++)await Promise.resolve();};
   await settle();
@@ -152,7 +154,7 @@ function testChallengeHandoff() {
   frame.addEventListener=(name,callback)=>{loads[name]=callback;};
   const win={
     addEventListener:(name,callback)=>{(fns[name]||=[]).push(callback);},
-    dispatchEvent:event=>out.push(['event',event.type,event.detail.id]),
+    dispatchEvent:event=>out.push(['event',event.type,event.detail.id ?? event.detail.noteIndex]),
     KurrayaInstrument:{beginFlute:()=>out.push('flute-begin'),endFlute:()=>out.push('flute-end')},
   };
   class CustomEvent {constructor(type,options){this.type=type;this.detail=options.detail;}}
@@ -180,6 +182,26 @@ function testChallengeHandoff() {
   timers.forEach(fn=>fn());
   assert.equal(win.MusicMinigame.state,null);
   assert(out.includes('flute-end'));
+  assert.equal(win.MusicMinigame.beginPlayerSession(),true,'ordinary instrument mode is independent of the ruin pressure plate');
+  const sendNote=noteIndex=>fns.message.forEach(fn=>fn({source:frame.contentWindow,data:{source:'hobunji-music-minigame',type:'puzzle-note',noteIndex}}));
+  sendNote(5);
+  sendNote(99);
+  assert.equal(out.filter(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note').length,1,'the bridge forwards only valid single-note events');
+  assert(out.some(item=>Array.isArray(item)&&item[1]==='hobunji-kurraya-puzzle-note'&&item[2]===5));
+  win.MusicMinigame.close();
+}
+
+function testUnrestrictedMelodySuffix() {
+  const {matchSuffix}=require('../docs/js/kurraya-puzzle.js');
+  const target={notes:[0,1,0,7]}; // The production song matcher handles overlapping partial starts.
+  const recent=[]; // Tracks the latest notes irrespective of time, plate position, or prior wrong notes.
+  const matches=[];
+  [2,3,0,1,0,1,0,7,4,0,1,0,7].forEach((note,index)=>{
+    recent.push(note);
+    if(recent.length>target.notes.length)recent.shift();
+    if(matchSuffix(recent,[target]))matches.push(index);
+  });
+  assert.deepEqual(matches,[7,12],'wrong notes must not require a retry or suppress subsequent matches');
 }
 
 (async()=>{
@@ -188,10 +210,16 @@ function testChallengeHandoff() {
   await testMidiFallback();
   await testIframeEchoInput();
   testChallengeHandoff();
+  testUnrestrictedMelodySuffix();
   const ruin=read('docs/js/dev-random-ruin-simple-puzzles.js');
   assert.match(ruin,/melodyEchoTrigger/);
-  assert.match(ruin,/window\.addEventListener\('hobunji-ruin-melody-result'/);
-  assert.match(ruin,/beginPlayerSession\?\.\(\{echoChallenge:challenge\}\)/);
-  assert.match(ruin,/if \(!set \|\| set\.solved\) return/,'success should be idempotent');
-  console.log('starter flute + echo melody tests passed');
+  assert.match(ruin,/window\.addEventListener\('hobunji-kurraya-puzzle-note'/);
+  assert.match(ruin,/replayEchoSet\(set\)/,'stepping onto the pressure plate replays the phrase');
+  assert.match(ruin,/KurrayaPuzzle\?\.matchSuffix\?\.\(set\.heardNotes/,'notes are matched as an uninterrupted sliding suffix');
+  assert.doesNotMatch(ruin,/beginPlayerSession\?\.\(\{echoChallenge:challenge\}\)/,'a plate no longer forcibly opens the instrument overlay');
+  const complete=ruin.slice(ruin.indexOf('  function completeEchoSet('),ruin.indexOf("  window.addEventListener('hobunji-kurraya-puzzle-note'"));
+  assert.match(complete,/if \(!set \|\| set\.solved\) return/,'a complete melody activates the mechanism once');
+  assert.match(complete,/playStoneUnlockKchunk\(\)/);
+  assert.doesNotMatch(complete,/showToast|retry/i,'the mechanism communicates success without text');
+  console.log('starter flute + passive ocarina melody tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
