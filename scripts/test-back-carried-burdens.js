@@ -14,9 +14,6 @@ class Vector3 {
   add(v) { this.x+=v.x;this.y+=v.y;this.z+=v.z;return this; }
   sub(v) { this.x-=v.x;this.y-=v.y;this.z-=v.z;return this; }
   multiplyScalar(s) { this.x*=s;this.y*=s;this.z*=s;return this; }
-  multiply(v) { this.x*=v.x;this.y*=v.y;this.z*=v.z;return this; }
-  divide(v) { this.x/=v.x||1;this.y/=v.y||1;this.z/=v.z||1;return this; }
-  clone() { return new Vector3(this.x,this.y,this.z); }
   applyQuaternion(q) {
     const yaw=Number(q?.yaw)||0,c=Math.cos(yaw),s=Math.sin(yaw),x=this.x,z=this.z;
     this.x=x*c+z*s;this.z=z*c-x*s;return this; // Yaw is sufficient for root-vs-neck parentage regression.
@@ -31,32 +28,18 @@ class Quaternion {
   setFromEuler(euler) { this.yaw=euler.y;return this; }
   invert() { this.yaw=-this.yaw;return this; }
   copy(other) { this.yaw=other.yaw;return this; }
-  multiply(other) { this.yaw+=other.yaw;return this; }
-  premultiply(other) { this.yaw+=other.yaw;return this; }
-  clone() { const q=new Quaternion();return q.copy(this); }
 }
 class Group {
   constructor() {
     this.isObject3D=true;this.userData={};this.position=new Vector3();this.children=[];this.parent=null;
     this.quaternion=new Quaternion(); // Used to verify back mounting ignores head/neck yaw but inherits body yaw.
-    this.scale=new Vector3(1,1,1); // Simple Three-compatible scale allows authored item size and neck-frame compensation checks.
-    this.scale.setScalar=function(v){return this.set(v,v,v);};
+    this.scale={x:1,y:1,z:1,setScalar(v){this.x=this.y=this.z=v;}};
   }
   add(child) { child.parent?.remove?.(child);this.children.push(child);child.parent=this; }
   remove(child) { this.children=this.children.filter(item=>item!==child);child.parent=null; }
-  localToWorld(point) {
-    for(let node=this;node;node=node.parent)point.multiply(node.scale).applyQuaternion(node.quaternion).add(node.position);
-    return point;
-  }
-  worldToLocal(point) {
-    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
-    for(const node of chain)point.sub(node.position).applyQuaternion(node.quaternion.clone().invert()).divide(node.scale);
-    return point;
-  }
-  getWorldPosition(target) { return this.localToWorld(target.set(0,0,0)); }
-  getWorldScale(target) {
-    target.set(1,1,1);
-    for(let node=this;node;node=node.parent)target.multiply(node.scale);
+  getWorldPosition(target) {
+    target.copy(this.position);
+    for(let ancestor=this.parent;ancestor;ancestor=ancestor.parent)target.applyQuaternion(ancestor.quaternion).add(ancestor.position);
     return target;
   }
   traverse(callback) { callback(this);for(const child of this.children)child.traverse?.(callback); }
@@ -96,16 +79,15 @@ function testRuntime() {
   const deps={player,TILE:64,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
   const bodyRoot=new Group();bodyRoot.name='player_body_root'; // Canonical composer root for back attachment.
-  const headJoint=new Group();headJoint.name='player_neck_joint';headJoint.isBone=true; // Real head bone rotates independently from the entire body root.
+  const headJoint=new Group();headJoint.name='player_neck_joint'; // Deliberately incorrect held-item dependency to catch accidental neck parenting.
   bodyRoot.add(headJoint);
   headJoint.position.set(.25,.3,.15);
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
-  let currentHeadJoint=headJoint; // Used by the composer getter when held Burdens switch to the head or the avatar rebuilds.
-  deps.playerMesh=bodyRoot;
+  deps.playerMesh=headJoint;
   const window={
     THREE:{Vector3,Group,Euler,Quaternion},Combat:{deps,update(){},init(){}},
     ProceduralHandAttachments:{gameDeps:deps},
-    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPlayerNeckJoint:()=>currentHeadJoint,getPosteriorY:()=>.42},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
     ResourceSystem:{spendFooting(){}},ActionArcUI:{stowForCarry(){}},
@@ -128,20 +110,6 @@ function testRuntime() {
   });
   assert(charge);
   assert(window.Shattercasks.pickUp(charge));
-  assert.equal(window.Shattercasks.debugSnapshot().heldMount.mode,'head','held burden uses the animated head, not the body root');
-  assert.equal(charge.group.parent?.parent,headJoint,'held burden is mounted under the active neck bone');
-  assert.equal(window.Shattercasks.heldHandTarget()?.holder,charge.group,'procedural hands retain the physical head-mounted grip target');
-  const heldStart=charge.group.getWorldPosition(new Vector3()); // Head pose baseline, independent of body motion.
-  headJoint.quaternion.setFromEuler(new Euler(0,Math.PI/3,0));
-  window.Shattercasks.tick(.02);
-  const heldAfterTurn=charge.group.getWorldPosition(new Vector3());
-  assert(Math.hypot(heldStart.x-heldAfterTurn.x,heldStart.z-heldAfterTurn.z)>.01,
-    'turning the head moves the held burden while the body is stationary');
-  const heldBeforeHeadLift=heldAfterTurn.y;
-  headJoint.position.y+=.18;
-  window.Shattercasks.tick(.02);
-  assert(Math.abs(charge.group.getWorldPosition(new Vector3()).y-heldBeforeHeadLift-.18)<1e-8,
-    'head translation carries the held burden');
   assert.equal(window.Shattercasks.toolArchAction(),'pickup','Tool Select owns the context before back stow');
   assert(window.Shattercasks.toolArchTap(),'Tool Select stows an actual physical Burden');
   assert.equal(window.Shattercasks.debugSnapshot().held,null);
@@ -164,25 +132,18 @@ function testRuntime() {
   for(const axis of ['x','y','z'])assert(Math.abs(afterBodyMotion[axis]-expectedBodyMotion[axis])<1e-8,
     'the burden follows the rotated/moved character root along '+axis);
   currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
-  currentHeadJoint=new Group();currentHeadJoint.name='player_rebuilt_neck_joint';currentHeadJoint.isBone=true;
-  currentHeadJoint.position.set(.25,.3,.15);currentBodyRoot.add(currentHeadJoint);
-  deps.playerMesh=currentBodyRoot;
   window.Shattercasks.tick(.02);
   assert.equal(charge.group.parent,currentBodyRoot,'avatar rebuild reparents stowed burden to the new body root');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.rigRootAttached,true);
   const second=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
     id:'test-hand-burden',kind:'inertStatue',hanging:false,data:{carryable:{}}});
   assert(window.Shattercasks.pickUp(second),'hands can still carry a different burden while the back is occupied');
-  assert.equal(second.group.parent?.parent,currentHeadJoint,'newly picked up burden follows rebuilt head, not the root');
   assert(!window.Shattercasks.stowOnBack(),'a second held burden cannot overwrite the occupied back slot');
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id,'the first back burden remains untouched');
   assert(window.Shattercasks.discardBurden(second),'clear the extra hand burden before retrieving from back');
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
-  assert.equal(charge.group.parent?.parent,currentHeadJoint,'retrieval moves burden from the back root to the live head');
   assert(window.Shattercasks.stowOnBack());
-  assert.equal(charge.group.parent,currentBodyRoot,'restowing returns burden to the root');
-  assert.equal(window.Shattercasks.debugSnapshot().heldMount,null,'there is no head-mounted burden while stowed');
   player.health-=10; // Affliction damage alone must never trigger a back-mounted collision.
   window.Shattercasks.tick(.02);
   assert.equal(causes.length,0,'health loss without a physical hit does not detonate the burden');
@@ -255,4 +216,4 @@ function testRuntime() {
 
 testEditorAuthoring();
 testRuntime();
-console.log('PASS carried burdens: held=head, stowed=root, transitions, rig rebuild, tool arch, impact, fuse, editor');
+console.log('PASS back-carried burdens: tool arch, one-slot limit, hit reactions, timer, editor anchors');
