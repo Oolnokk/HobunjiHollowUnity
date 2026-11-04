@@ -367,7 +367,7 @@
   function debugSnapshot() {
     const state = activeShopState();
     return {
-      mostRecentChange: 'The General Store sells a Native Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
+      mostRecentChange: 'The General Store sells a Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
       poolId: state.poolId,
       label: state.shop.label,
       mapId: currentMapId(),

@@ -1798,7 +1798,7 @@
       // Sloomi/Kzubug can craft real tools from and reinforce a tool up
       // through (see toolEffectiveMetalKey). Placeholder tuning throughout.
       const METAL_DEFS = {
-        nativeCopper:    { label: 'Native Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
+        nativeCopper:    { label: 'Copper',    hex: '#B87333', verdigrisHex: '#3FAF9F', tier: 1 },
         lowTinBronze:    { label: 'Low-Tin Bronze',   hex: '#B66A2E', verdigrisHex: '#4EAA86', tier: 2 },
         tinBronze:       { label: 'Tin Bronze',       hex: '#CD7F32', verdigrisHex: '#57B38B', tier: 3 },
         highTinBronze:   { label: 'High-Tin Bronze',  hex: '#BAA06A', verdigrisHex: '#78BFA5', tier: 4 },
@@ -1810,7 +1810,7 @@
         gold:            { label: 'Gold',              hex: '#D4AF37', verdigrisHex: null, tier: null },
         electrumGold:    { label: 'Electrum',          hex: '#DCCB71', verdigrisHex: null, tier: null },
         electrumSilver:  { label: 'Pale Electrum',     hex: '#CEC88E', verdigrisHex: null, tier: null },
-        pewter:          { label: 'Early Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
+        pewter:          { label: 'Pewter',      hex: '#AEB4B5', verdigrisHex: null, tier: null },
       };
       const ORE_DEFS = {
         copper:  { label: 'Copper Ore',  hex: '#B87333', verdigrisHex: METAL_DEFS.nativeCopper.verdigrisHex, oxidationAmount: 0.58 },
