@@ -333,7 +333,15 @@ for(const side of ['north','east','south','west']){
   for(const p of [connected.route.path[0],connected.route.path.at(-1)])
     assert(rec.floorSet.has(p.x+','+p.z),'both path endpoints are actual walkable tiles');
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
+  const oldMusic=globalThis.MusicMinigame; // Simulate leaving during a shaft melody without closing the flute overlay.
+  const echo=network.states.flatMap(state=>state.challenges).find(challenge=>challenge.kind==='melodyEcho');
+  let musicClosed=0;
+  if(echo)globalThis.MusicMinigame={
+    state:{echoChallenge:{id:echo.id}},close:()=>{musicClosed++;}
+  };
   ruin.shaftConnectorCleanup();
+  if(echo)assert.equal(musicClosed,1,'teardown must close the active stacked-story flute session');
+  globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
 }
 // The special story vault has no V50 `meta.entrance`: its authored southern
