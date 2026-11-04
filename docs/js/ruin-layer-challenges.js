@@ -213,6 +213,7 @@
         &&bus?.hasActiveRuinState?.()===true){
         fireTargetId=fire?.registerTarget?.(rec.fireRecord)||null;
         rec.fireLinked=!!fireTargetId;
+        if(rec.fireLinked)options.onLink?.(rec); // One-time mobile diagnostic update on a successful fire hook.
       }
       // External target registration may precede this module (the V50
       // puzzle runtime initializes on its first *in-map* frame). Retry until
@@ -224,7 +225,10 @@
           if(typeof disposer!=='function')break;
           registered.push(disposer);
         }
-        if(registered.length===targets.length){linkDisposers=registered;rec.linked=true;}
+        if(registered.length===targets.length){
+          linkDisposers=registered;rec.linked=true;
+          options.onLink?.(rec); // The first active ranged challenge is now attached to the canonical hit loop.
+        }
         else for(const remove of registered)remove();
       }
     };
