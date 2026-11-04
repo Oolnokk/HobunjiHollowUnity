@@ -1767,8 +1767,8 @@
     for(const burden of rec.vases.values()) {
       if(!burden||burden.id===ignoreId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent)continue;
       burden.group.updateWorldMatrix?.(true,true);
-      const world=burden.group.getWorldPosition(new THREE.Vector3());
-      if(Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
+      const world=burden.group.getWorldPosition?.(new THREE.Vector3()) || burden.group.position; // Real Three groups use world coordinates; headless/test or provisional Burdens can use their stable local position.
+      if(world && Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
     }
     let count=0;
     for(const burden of hit) {
