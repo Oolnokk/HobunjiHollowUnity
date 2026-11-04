@@ -71,7 +71,9 @@ class G{dispose(){}}
 class M{constructor(fields={}){Object.assign(this,fields);}dispose(){}}
 class Mesh extends O{constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 let composer;const footprints=new Map(); // Records exact XZ occupied boxes and their separate lifecycle tags.
+const arenaProviders=new Map(); // Native area collision providers used by the real player/creature movement pipeline.
 const rockWindow={
+  AreaFootprintBlockers:{register:(id,provider)=>{arenaProviders.set(id,provider);return ()=>arenaProviders.delete(id);}},
   THREE:{Group:O,Object3D:O,Vector3:V,Mesh,BoxGeometry:G,PlaneGeometry:G,MeshBasicMaterial:M,DoubleSide:2},
   DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   DevRandomRuinSanctum:{getState:()=>({layout:{arena:{minX:1,maxX:11,minZ:1,maxZ:11}}})},
@@ -104,11 +106,18 @@ arenaDeps.hostileObjects.add(arenaBoss);
 assert.equal(rockWindow.DevRandomRuinLichThemes.spawnBossPillar(arenaBoss,simulatedPlayer),1,'Testing Arena summons a rising pillar, not the old earth eruption');
 const arenaPillar=arenaScene.children[0].children[0]; // Body of the stand-alone fixed-width arena column.
 assert.equal(arenaPillar.scale.y,.001);
+assert.equal(footprints.size,0,'Arena pillar must not register a footprint on the generated ruin model');
+assert.equal(arenaProviders.size,1,'Testing Arena registers a native player/enemy/projectile blocker');
+const arenaBlocker=arenaProviders.get('azgarlu-arena-pillars'); // Same provider used by canOccupyAt, enemy sweeps and projectile terrain tests.
+assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,.2),false,'Column stays nonblocking while rising');
 rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
 assert(arenaPillar.scale.y>.001&&arenaPillar.scale.y<1,'Testing Arena advances the same grounded height lerp');
 rockWindow.DevRandomRuinLichThemes.updateArenaBossPillars(.36);
 assert.equal(arenaPillar.scale.y,1);
+assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,.2),true,'Full-height arena pillar physically blocks traversal');
+assert.equal(arenaBlocker.blocksBox(arenaPillar.position.x,arenaPillar.position.z,0,100),false,'Projectile collision respects the actual pillar height');
 rockWindow.DevRandomRuinLichThemes.clearArenaBossPillars();
-assert.equal(footprints.size,0,'Leaving the arena removes summoned pillar footprints');
+assert.equal(footprints.size,0,'Leaving the arena never touches generated-ruin pillar footprints');
+assert.equal(arenaProviders.size,0,'Leaving the arena unregisters the live native collision provider');
 assert.equal(arenaScene.children.length,0,'Leaving the arena removes the pillar render scene');
 console.log('Azgarlu aerial combat and rising-pillar regressions passed');
