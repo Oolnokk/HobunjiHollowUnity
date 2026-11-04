@@ -170,13 +170,13 @@
 
       setGlow(0);
       deps.showToast('Charged Breaker charging — release to strike.', true);
-      deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / shapeStats.speed, {
+      deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)), {
         anim: 'sweep',
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
         power: 1,
-        holdS: HOLD_S / shapeStats.speed,
+        holdS: HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         windupSlowdown: WINDUP_SLOWDOWN,
         afflictionIds: Object.keys(effects.afflictions),
         afflictions: effects.afflictions,
@@ -275,7 +275,7 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
@@ -394,7 +394,7 @@
         paidChargeCost += Math.max(0, Number(payment.enhancedPaid || 0) + Number(payment.spent || 0) + Number(payment.excess || 0));
         const tempo = Math.max(1, Number(payment.tempoMultiplier) || 1);
         if (tempo > 1 && MAX_CHARGE_S > 0) {
-          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * shapeStats.speed / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
+          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
         }
       }
       const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
