@@ -273,10 +273,12 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
   const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
   assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
-  assert(root.children.every(group => group.children.length === 8), 'each ridge must contain exactly eight rock assemblies');
-  assert.equal(geometryCalls, 24, 'exactly 24 mine-rock geometries must be built');
-  assert.equal(fitCalls, 24, 'every stone base must retain the normal mine-rock surface treatment');
-  assert.equal(root.children.reduce((sum, group) => sum + group.children.length, 0), 24, 'the complete replacement must contain 24 rocks');
+  assert.deepEqual(root.children.map(group => group.children.length), [8,8,0], 'gameplay must omit the eight hidden layer-3 rocks entirely, not merely make them invisible');
+  assert.equal(geometryCalls, 16, 'only the two visible ridges should allocate mine-rock geometry');
+  assert.equal(fitCalls, 16, 'every built stone base must retain the normal mine-rock surface treatment');
+  assert.equal(root.children.reduce((sum, group) => sum + group.children.length, 0), 16, 'the default runtime must build only 16 visible rocks');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 16, 'mobile debug snapshot must expose the actual default built-rock count');
+  assert.deepEqual(api.getDebugState().lastLayout.map(l => l.rocks), [8,8,0], 'layout debug must identify the omitted third ridge');
   assert(sourceGeometries.every(geometry => geometry.disposed), 'source mine-rock geometries must be disposed after the snow/stone split');
   assert(unusedGrassGeometries.every(geometry => !geometry.disposed), 'the unused grass half must retain its shared-attribute lifecycle');
 
@@ -288,6 +290,10 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     const expectedLength=index<2?1200:400; // Approved Z scale 3 triples each visible ridge's 400-unit baseline; hidden layer 3 remains unscaled.
     assert(Math.abs(group.userData.worldNorthSouthLength - expectedLength) < 1e-8, 'each authored ridge length must apply its per-layer Z scale');
     assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - expectedLength) < 1e-8, 'parent-group scaling must compose with the uploaded Z scale');
+    if(index===2){
+      assert.equal(group.children.length, 0, 'the omitted third ridge must allocate no scene-rock geometry');
+      return;
+    }
     assert.equal(group.children.length, 8, 'ridge scaling must not increase the eight-rock count');
     assert(group.children.every(rock => rock instanceof Group && rock.children.length === 3), 'each rock assembly must contain stone, snow and a boundary line');
     const stoneMaterials = new Set(group.children.map(rock => rock.children[0].material));
@@ -386,6 +392,21 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert(Math.abs(root.children[0].scale.z - root.children[0].userData.ridgeLengthScale) < 1e-9, 'automatic ridge-length normalization must compose with author Z scale');
   assert.equal(root.children[1].visible, false, 'per-layer visibility must remain authorable');
 
+  const revealThird = api.readAuthorConfig(); // Runtime overrides may reveal a previously omitted layer without rebuilding the zone.
+  revealThird.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(root.children[2].visible, true, 'revealed third ridge must be visible');
+  assert.equal(root.children[2].children.length, 8, 'revealing the omitted layer must materialize its eight rocks on demand');
+  assert.equal(geometryCalls, 24, 'revealing the hidden ridge must allocate precisely eight additional rocks');
+  assert.equal(fitCalls, 24, 'newly materialized stone geometry must get the same mine-rock UV treatment');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'live debug must update the actual built-rock count after reveal');
+  allParts.push(...root.children[2].children.flatMap(rock => rock.children)); // Include newly allocated geometry in the existing lifecycle/disposal checks below.
+  api.applyAuthorConfigToGroup(root, 200, 200, revealThird);
+  assert.equal(geometryCalls, 24, 'reapplying a visible layer must not duplicate previously materialized geometry');
+  const hideAgain = api.readAuthorConfig();
+  api.applyAuthorConfigToGroup(root, 200, 200, hideAgain);
+  assert.equal(root.children[2].visible, false, 'hiding a revealed ridge must immediately stop rendering it');
+
   window.BorderTerrain.buildZoneBorderTerrain(scene, 200, 200, 'map_western_slope');
   assert.equal(scene.children.filter(child => child.name === 'WesternSlopeMountainBackdrops').length, 1, 'repeated zone-border builds must not duplicate the rock ridges');
 
@@ -411,8 +432,22 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert.equal(debug.snowBoundaryLinesBuilt, 24, 'debug snapshot must report every stone/snow outline');
   assert.equal(debug.snowCapHeightFraction, 2 / 3, 'debug snapshot must expose the snow coverage setting');
   assert.equal(debug.visualOnly, true, 'debug snapshot must make the non-interactive scenery status explicit');
+  assert.equal(debug.builtDecorativeRocks, 0, 'detached runtime scenery must report zero currently allocated rocks');
   assert.deepEqual(debug.lastLayout[0].position, [-40, 180, 95], 'debug snapshot must expose the author-edited transform');
   assert.equal(debug.lastLayout[0].worldNorthSouthLength, 400, 'debug layout must report the complete doubled ridge length');
+
+  const editorScene = new Group(); // The standalone scenery tool explicitly retains hidden geometry for immediate visibility toggles.
+  await api.attach(editorScene, 200, 200, 'map_western_slope', { config: api.defaultAuthorConfig(), buildHiddenLayers: true });
+  const editorRoot = editorScene.getObjectByName('WesternSlopeMountainBackdrops');
+  assert.deepEqual(editorRoot.children.map(group => group.children.length), [8,8,8], 'scenery author must keep all three layers immediately editable');
+  assert.deepEqual(editorRoot.children.map(group => group.visible), [true,true,false], 'author preview must still hide layer 3 by default');
+  const editorReveal = api.defaultAuthorConfig();
+  editorReveal.layers[2].visible = true;
+  api.applyAuthorConfigToGroup(editorRoot, 200, 200, editorReveal);
+  assert.equal(editorRoot.children[2].visible, true, 'author visibility checkbox must reveal an already-built hidden ridge');
+  assert.equal(api.getDebugState().builtDecorativeRocks, 24, 'editor debug must report all three built layers');
+  api.detach();
+  assert(!editorScene.getObjectByName('WesternSlopeMountainBackdrops'), 'editor scene cleanup must release the hidden-geometry preview');
 
   console.log('Western Slope mine-rock ridge checks passed.');
 })().catch(error => {
