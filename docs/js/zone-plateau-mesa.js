@@ -484,7 +484,7 @@
     const buckets = new Map(); // batchKey|bx,bz -> source meshes
     for (const mesh of meshes) {
       const g = mesh?.geometry;
-      if (!mesh?.isMesh || !g || mesh.parent !== zScene) continue;
+      if (!mesh?.isMesh || !g || mesh.parent !== zScene || mesh.userData?.cliffGenerated) continue; // Mini-cliff inverted silhouettes must retain their own mesh and raycast/occlusion tags.
       batchStats.sourceMeshes++;
       const verts = triangleVertexCount(g);
       if (verts === 0 && mesh.visible) {
