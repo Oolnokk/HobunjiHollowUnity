@@ -101,7 +101,8 @@ async function main() {
   assert(corpseStart >= 0 && corpseEnd > corpseStart, 'The production corpse interaction is available');
   const corpseInventory = {}; // Actual loot additions are verified here before looking up per-hide metadata.
   windowStub.InventoryStacks = { MAX_TOTAL: 99 }; // The production corpse action consults the normal maximum inventory stack size.
-  windowStub.SkillSystem = { recordItemQuality() {}, rollQuality: () => 3 }; // Actual butchering also records general item-quality metadata.
+  windowStub.SkillSystem = { rollQuality: () => 3 }; // The actual loot star roll uses the ordinary skill quality source.
+  windowStub.CookingSystem = { recordItemQuality() {} }; // The production corpse action routes quality bookkeeping through CookingSystem.
   windowStub.FarmAnimals = { queueItemGenotype() {} }; // Existing Herd-Mother baby-loot compatibility hook.
   const corpseContext = vm.createContext({
     window: windowStub,
