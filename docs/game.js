@@ -9337,9 +9337,13 @@
       function saveMemberWorldData() {
         try {
           const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null'); // Existing canonical metadata receives the shared live serialization.
-          if (!meta) return;
+          if (!meta) return false;
           localStorage.setItem('hobunjiSaveMeta', JSON.stringify(captureMemberWorldData(meta)));
-        } catch {}
+          return true; // The imperial custody handoff must know the character inventory really reached persistent storage.
+        } catch (error) {
+          window.__farmLog?.('[member-save] Failed to persist world-member data: ' + String(error?.message || error), 'warn');
+          return false; // Existing callers may ignore this result; custody uses it to avoid finalizing incomplete transfers.
+        }
       }
 
       // ── Owner/farmhand content visibility ─────────────────────────────
@@ -10145,6 +10149,7 @@
       }
 
       function performContextAction() {
+        if (window.PlayerDowned?.isDowned?.()) return; // While down, only the held Dodge input may cause a respawn; never climb/travel on a tap.
         // During a Headtaker grip, dodge must take priority over nearby doors,
         // climbing, fishing panels and other context actions: it is the only escape.
         if (window.Combat?.attach?.attachersOf?.(player)?.some(attacker => attacker._attachment?.id === 'maskbound-headtaker')) {
@@ -16072,6 +16077,7 @@
       }
 
       function enterTown(col, row) {
+        const fromArea = currentArea; // Used to distinguish a genuine exterior-to-town gate crossing from other town spawns.
         const fromScene = window.GridTileAccessors.getActiveScene();
         buildTownScene();
         farmPlayerSave = { x: player.x, y: player.y, angle: player.angle };
@@ -16102,6 +16108,7 @@
           townScene.add(reticleWavyGroup);
         }
         refreshActionBar();
+        window.TownMagicCheckpoint?.onTownEntered?.({ fromArea, col, row }); // The imperial perimeter is checked only after canonical town travel completes.
       }
 
       // Processing-station recipe resolution, berry/dew/alcohol key & color
@@ -25889,6 +25896,7 @@
         window.Music?.logAudioTickDiagnostics();
         window.PerfProfiler?.end(prePausePerf);
 
+        if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
         if (!paused) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
@@ -27827,13 +27835,30 @@
       joystickZone.addEventListener('pointerup', window.VirtualJoystick.handleJoystickPointerUp);
       joystickZone.addEventListener('pointercancel', window.VirtualJoystick.handleJoystickPointerUp);
 
-      // Dodge button: a plain tap, dodging in the current facing direction.
-      // Always visible on touch (see #dodgeBtn in style.css);
-      // while fishing it dismisses the cast or catch view.
+      // Touch Dodge keeps its normal press-to-dodge behavior while standing.
+      // Downed uses this same physical button as a cancellable held input.
+      let downedDodgePointerId = null; // Tracks the single pointer allowed to own the voluntary-respawn hold.
+      function finishDownedDodgePointer(event) {
+        if (downedDodgePointerId === null || (event && event.pointerId !== downedDodgePointerId)) return;
+        downedDodgePointerId = null;
+        window.PlayerDowned?.setGiveUpHeld?.(false);
+      }
       dodgeBtn?.addEventListener('pointerdown', ev => {
         ev.preventDefault();
+        if (window.PlayerDowned?.isDowned?.()) {
+          if (downedDodgePointerId !== null) return; // A second finger cannot restart or steal an active hold.
+          downedDodgePointerId = ev.pointerId;
+          try { dodgeBtn.setPointerCapture?.(ev.pointerId); } catch (_) {}
+          window.PlayerDowned.setGiveUpHeld(true);
+          return;
+        }
         performContextAction();
       });
+      dodgeBtn?.addEventListener('pointerup', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('pointercancel', finishDownedDodgePointer);
+      dodgeBtn?.addEventListener('lostpointercapture', finishDownedDodgePointer);
+      window.addEventListener('blur', () => finishDownedDodgePointer());
+      document.addEventListener('visibilitychange', () => { if (document.hidden) finishDownedDodgePointer(); });
 
       // Weapon quick-switch button: a plain tap toggles in/out of the
       // weapon tool slot (see toggleQuickWeaponSwitch) — this is how you
@@ -28176,6 +28201,10 @@
       }
       function runInputAction(actionId, phase = 'press') {
         if (window.HobunjiOnboarding?.creatorSessionInfo?.()?.cosmeticsOnly) return; // The grooming modal owns inputs before any held tool selector can open.
+        if (actionId === 'dodge' && window.PlayerDowned?.isDowned?.()) {
+          window.PlayerDowned.setGiveUpHeld(phase === 'press'); // Keyboard and controller share the same downed hold, respecting remapped physical inputs.
+          return; // Never let a downed Dodge press reach travel, climb, placement, or an ordinary evade.
+        }
         if (actionId === 'perceptionMode') {
           if (phase === 'press') window.PerceptionMode?.toggle(); // No cooldown; the cost is half movement speed while active.
           return;
@@ -31832,6 +31861,12 @@
       window.ArtifactCollection?.init({
         ITEM_DEFS, inventoryItems, inventory, tothalWorldId: _tothalWorldId,
         saveMemberWorldData, buildInventoryGrid, showToast,
+        getCurrentArea: () => currentArea, // Used to cancel checkpoint cutscenes when the player leaves town.
+        isExteriorArrival: area => area === 'farm' || _isZoneArea(area), // Town shops, homes and the temple never trigger an imperial gate inspection.
+        getTownGrid: () => townGrid, // Watchmen stage on actual walkable gate tiles.
+        isSolidTile: tile => isSolid(tile?.type), // Uses the same collision classifier as gameplay.
+        getPackClothing: () => packClothing, // Shares the live cursed-clothing array with EquipmentPanel.
+        buildPackClothingSection: () => window.EquipmentPanel?.buildPackClothingSection?.(), // Updates garments after custody transfer or return.
         showUnlockDialogue: () => {
           const walker = npcWalkers.find(w => w.rec?.id === 'garanki_gabu'); // Reuse the real NPC dialogue camera, portrait and input handling.
           if (walker) { closeMenu(); openNpcDialogue(walker); }

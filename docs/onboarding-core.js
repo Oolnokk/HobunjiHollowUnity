@@ -509,7 +509,8 @@
       // VERDIGRIS_METAL_KEYS/METAL_DEFS/toolMetalMultiplier) rather than the
       // old unscaled legacy keys, which fought at a flat, mid-hierarchy 1.0x
       // multiplier with no room to grow into.
-      tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true },
+      tools:    { hoe_nativeCopper: true, hatchet_nativeCopper: true, fishingmace_nativeCopper: true, fishingspear_nativeCopper: true, pickshovel_nativeCopper: true, flute: true },
+      starterFluteGranted: true, // Every newly created character owns their own flute; EquipmentPanel migrates existing characters once.
       clothing: { hat: null, hood: null, mask: null, pauldron: null, torso: null, overwear: null, pants: null },
       charms: [], whistles: [],
       keyItems: [], // Character-scoped progression keys (for example Banubu's War-Paint Kit) travel with this gear save between worlds.
@@ -529,6 +530,18 @@
       toolReinforcement: {},
       motesOfProwess: 0,
     };
+  }
+
+  function ensureCharacterStarterFlute(character) {
+    if (!character) return false;
+    const gear = character.gearInventory || (character.gearInventory = makeDefaultGear()); // Authoritative character gear saved with the character, before any game instance starts.
+    if (gear.starterFluteGranted) return false;
+    gear.tools ||= {};
+    gear.tools.flute = true;
+    gear.starterFluteGranted = true;
+    character.equipmentSlots ||= {};
+    if (!character.equipmentSlots.instrument) character.equipmentSlots.instrument = 'flute'; // Preserve an older player's existing choice.
+    return true;
   }
 
   function makeClothingItem(catalogItem, colorA, colorB) {
@@ -1435,6 +1448,7 @@
     }
     const memberState = ensureWorldMember(world, char.id);
     char.lastPlayed = Date.now();
+    ensureCharacterStarterFlute(char); // Persist the flute before constructing the live player snapshot; no dependency on Gear UI opening.
     saveSaveMeta(_saveMeta);
 
     const playerData = {
@@ -1817,6 +1831,7 @@
           }
           return gear;
         })(),
+        equipmentSlots:  { instrument: 'flute' }, // A fresh character starts with the owned flute already assigned.
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
         combatTechniqueUnlocks: [],
@@ -1842,6 +1857,7 @@
       playerData.isWorldOwner   = true;
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
+      playerData.equipmentSlots = { ...newChar.equipmentSlots }; // Carry starter instrument assignment into the just-created live player.
       playerData.combatTechniqueUnlocks = [...(newChar.combatTechniqueUnlocks || [])];
       playerData.skillLevels    = newChar.skillLevels;
       playerData.skillExperience = newChar.skillExperience;

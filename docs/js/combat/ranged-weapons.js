@@ -1967,7 +1967,7 @@
     window.WorldPopupText?.setAimLabel?.(bandit.avatarRef.group, (bandit.name || 'Bandit') + (bandit.combatRoleLabel ? ' - ' : ' · ') + rank);
   }
 
-  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }
+  function update(dt) { updatePlayerAction(dt); updateProjectiles(dt); window.DungeonFire?.updateHeldVisual?.(dt); updateAmmoDebuffs(); updateBanditAimLabel(); }
   function playerLockRangePx(itemKey) { return (defFor(itemKey)?.rangeTiles || 7) * (deps?.TILE || 64); }
 
   window.RangedWeapons = {

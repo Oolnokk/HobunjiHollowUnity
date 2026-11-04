@@ -19,6 +19,7 @@
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
   const OIL_TEXTURE = 'assets/textures/canvas.png'; // Same petroleum-surface texture as HarlyaoLichCombat.
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
+  const BOSS_ICICLE_TRACK_SPEED = 9; // Ceiling emitter pursuit speed in tiles/sec during Nanahi's kneeling attack.
   let world = null; // Active composer state, invalidated on reroll/exit.
   let audioContext = null; // Hronal warning gain and independently pitched icicle-impact playback.
   let rockHitBuffer=null,rockHitLoading=null; // Once-per-session 1.5x-pitched, 1x-duration break-rock sample.
@@ -226,19 +227,17 @@
     world.iceMaterial=new THREE.MeshBasicMaterial({color:0x8bcdf5,transparent:true,opacity:.31,depthWrite:false,side:THREE.DoubleSide});
     world.iceMesh=renderCurvedTiles(kit,world.iceTiles,world.iceMaterial,.025,'tothal_ice_sheen');
   }
-  function clusterGeometry(variant) {
-    // One authored cluster draws as one mesh: 5–8 narrow, nonuniform tapered
-    // cones fused into a single BufferGeometry (instead of 5–8 draw calls).
-    // Each individual needle is at most .052 radius: under one-third of the
-    // previous .16u cone. Heights and offsets vary within each cluster.
-    const vertices=[],spikes=5+variant%4;
+  function clusterGeometry(variant, single = false) {
+    // Ordinary room hazards keep their 5–8-needle batched clusters. Nanahi's
+    // emitter uses the same builder in single-needle mode for individual drops.
+    const vertices=[],spikes=single?1:5+variant%4; // One visible boss icicle per release, never a cluster.
     let deepest=0;
     for(let n=0;n<spikes;n++){
       const jitter=seeded(variant*43+n*11,0x8172),angle=n*2.399963+variant*.47;
       const radial=n===0?0:.11+seeded(variant*71+n,0x109b)*.23;
       const cx=Math.cos(angle)*radial,cz=Math.sin(angle)*radial;
-      const radius=.021+seeded(variant*19+n,0x222f)*.031;
-      const height=.56+seeded(variant*37+n,0x8891)*.86;
+      const radius=single ? .09+seeded(variant*19+n,0x222f)*.045 : .021+seeded(variant*19+n,0x222f)*.031;
+      const height=single ? 1.05+seeded(variant*37+n,0x8891)*.55 : .56+seeded(variant*37+n,0x8891)*.86; // Single falling spikes are legible at gameplay distance.
       const top=-seeded(variant*27+n,0x331c)*.11;
       deepest=Math.max(deepest,height-top);
       for(let side=0;side<7;side++){
@@ -255,6 +254,7 @@
   function makeIcicles(kit) {
     const variants=Array.from({length:5},(_,i)=>clusterGeometry(i));
     world.icicleGeometries=variants.map(v=>v.geometry);
+    world.bossIcicleVariants=Array.from({length:5},(_,i)=>clusterGeometry(i,true)); // Shared single-spike shapes and their exact impact depths.
     world.icicleMaterial=new THREE.MeshBasicMaterial({color:0xa0d7ef,transparent:true,opacity:.82,side:THREE.DoubleSide});
     for(const room of world.rooms){
       const b=room.bounds;
@@ -290,31 +290,50 @@
       }
     }
   }
+  function trackBossBlizzard(boss, target, dt) {
+    if (!world || world.theme !== 'tothal' || !boss?.isSpecialLich || boss.lichType !== 'tothal' || !target) return false;
+    const arena = window.DevRandomRuinSanctum?.getState?.()?.layout?.arena; // Only Nanahi's actual sanctum supports this ceiling emitter.
+    const tile = Number(world.kit?.deps?.TILE) || 64; // Convert the chosen actor's horizontal gameplay coordinates into ruin tiles.
+    const px = Number(target.x), pz = Number(target.y);
+    if (!arena || !Number.isFinite(px) || !Number.isFinite(pz)) return false;
+    const minX = Number(arena.minX) + .75, maxX = Number(arena.maxX) - .75;
+    const minZ = Number(arena.minZ) + .75, maxZ = Number(arena.maxZ) - .75; // Keep the emitter inside the sanctum walls.
+    if (![minX,maxX,minZ,maxZ].every(Number.isFinite) || minX > maxX || minZ > maxZ) return false;
+    const x = between(px / tile, minX, maxX), z = between(pz / tile, minZ, maxZ); // Follow Nanahi's currently chosen target, not the room.
+    let emitter = world.bossIcicleEmitter; // One moving origin exists per active boss phase, never one per ceiling tile.
+    if (!emitter || emitter.boss !== boss) {
+      emitter = {boss,x,z,sequence:0}; // Retain spawn position and count so later drops pursue smoothly and vary their cluster shape.
+      world.bossIcicleEmitter = emitter;
+      return true;
+    }
+    const dx = x - emitter.x, dz = z - emitter.z, distanceToTarget = Math.hypot(dx,dz);
+    const maxStep = BOSS_ICICLE_TRACK_SPEED * Math.max(0,Number(dt) || 0); // Speed cap makes the single spawn point move instead of teleporting each frame.
+    if (distanceToTarget > 0 && maxStep > 0) {
+      const fraction = Math.min(1,maxStep / distanceToTarget);
+      emitter.x += dx * fraction; emitter.z += dz * fraction;
+    }
+    return true;
+  }
+  function stopBossBlizzard(boss) {
+    if (world?.bossIcicleEmitter?.boss === boss) world.bossIcicleEmitter = null; // A finished or interrupted kneel leaves no stale emitter.
+  }
   function triggerBossBlizzard(boss) {
     if (!world || world.theme !== 'tothal' || !boss?.isSpecialLich || boss.lichType !== 'tothal') return 0;
-    const arena = window.DevRandomRuinSanctum?.getState?.()?.layout?.arena; // Existing boss chamber is the only ceiling-wide blizzard target.
-    if (!arena || !world.icicleGeometries?.length || !world.icicleMaterial) return 0;
-    const tiles = [], kit = world.kit; // Shares real ceiling geometry, impacts, and floor support.
-    const wave = world.bossBlizzardWave || 0; // Pattern offset staggers the repeated overlapping waves.
-    world.bossBlizzardWave = wave + 1; // Monotonic per-ruin phase, reset when the ruin is rebuilt.
-    for (let z = arena.minZ + 1 + (wave % 2) * .7; z < arena.maxZ - 1; z += 2)
-      for (let x = arena.minX + 1 + (wave % 3) * .6; x < arena.maxX - 1; x += 2) {
-        if (tiles.length >= 32 || !clearAt(x, z, floorY(kit, x, z))) continue;
-        tiles.push({x,z});
-      }
-    for (const [index,p] of tiles.entries()) {
-      const geometry = world.icicleGeometries[(index + wave) % world.icicleGeometries.length]; // Reuses shared low-draw-call cluster shapes.
-      const mesh = new THREE.Mesh(geometry,world.icicleMaterial);
-      const ceiling = Math.max(world.ceilingY,(Number(world.context.meta?.floorSurfaceY)||0)+4.2);
-      mesh.position.set(p.x,ceiling-.05,p.z);
-      mesh.name='tothal_boss_ceiling_icicles';
-      world.group.add(mesh);
-      geometry.computeBoundingBox?.();
-      const deepest = Math.max(.7,Math.abs(Number(geometry.boundingBox?.min?.y) || -1.2));
-      world.icicles.push({...p,ground:floorY(kit,p.x,p.z),mesh,deepest,phase:'falling',speed:1.1+index%3*.2,owner:boss,temporary:true});
-    }
-    lastEvent='tothal:boss-overlap-wave-'+wave;
-    return tiles.length;
+    const emitter = world.bossIcicleEmitter, kit = world.kit; // Nanahi's tracked ceiling location is the ONLY origin for this release.
+    if (!emitter || emitter.boss !== boss || !world.bossIcicleVariants?.length || !world.icicleMaterial) return 0;
+    const x = emitter.x, z = emitter.z, ground = floorY(kit,x,z);
+    if (!clearAt(x,z,ground)) return 0; // Never conjure an icicle over a blocked/nonexistent floor cell.
+    const shape = world.bossIcicleVariants[emitter.sequence % world.bossIcicleVariants.length]; // Each release is one tapered needle, with no runtime geometry rebuild.
+    const mesh = new THREE.Mesh(shape.geometry,world.icicleMaterial);
+    const ceiling = Math.max(world.ceilingY,(Number(world.context.meta?.floorSurfaceY)||0)+4.2);
+    mesh.position.set(x,ceiling-.05,z);
+    mesh.name = 'tothal_boss_falling_icicle';
+    world.group.add(mesh);
+    world.icicles.push({x,z,ground,mesh,deepest:shape.deepest,phase:'falling',speed:1.1+emitter.sequence%3*.2,owner:boss,temporary:true}); // Released icicles keep their original impact location as the emitter moves on.
+    emitter.sequence++;
+    playRockPulse(.8,2);
+    lastEvent = 'tothal:boss-targeted-icicle-'+emitter.sequence;
+    return 1;
   }
   function emitShards(x, y, z, color, radius, count, pillarHeight = 0, pillarWidth = 0) {
     const group = new THREE.Group();
@@ -969,7 +988,7 @@
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
-      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],icicleMaterial:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null,
+      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],bossIcicleVariants:[],icicleMaterial:null,bossIcicleEmitter:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null, // The single boss emitter belongs to this ruin and is discarded on clear.
       spellPlasm:new Set(),plasmMesh:null,plasmRoomMeshes:new Map(),plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
@@ -996,7 +1015,7 @@
       badgeClock = 0;
       const report = snapshot();
       const segment = ' · lich '+world.theme[0].toUpperCase()+' P'+report.burstPillars+'/'+report.totalPillars+
-        ' I'+report.iceTiles+' C'+report.fallenIcicles+'/'+report.icicles+' K'+report.plasmTiles+
+        ' I'+report.iceTiles+' C'+report.fallenIcicles+'/'+report.icicles+' B'+report.activeBossIcicles+' K'+report.plasmTiles+
         ' sink'+Math.round(report.sinking*100)+'% '+report.lastEvent;
       window.DevRandomRuin?.setDebugBadgePart?.('lich',segment); // A keyed segment cannot accumulate duplicate warnings over time.
     }
@@ -1005,6 +1024,7 @@
     if (!world) return;
     for(const spike of world.icicles)spike.mesh.parent?.remove(spike.mesh); // Each cluster is a shared-variant single-mesh draw.
     for(const geometry of world.icicleGeometries||[])geometry.dispose();
+    for(const shape of world.bossIcicleVariants||[])shape.geometry.dispose(); // Release the distinct single-icicle variants at ruin teardown.
     world.icicleMaterial?.dispose();
     for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
     for (const pillar of world.pillars) {
@@ -1045,6 +1065,8 @@
       totalPillars:world.pillars.length,reusedDecoyPillars:world.pillars.filter(p=>!!p.sourcePillar).length,
       iceTiles:world.iceTiles.size,
       icicles:world.icicles.length,fallenIcicles:world.icicles.filter(p=>p.phase==='done').length,
+      activeBossIcicles:world.icicles.filter(p=>p.temporary && p.phase!=='done').length, // Mobile diagnostics expose simultaneous falling boss icicles.
+      bossIcicleEmitter:world.bossIcicleEmitter ? {x:world.bossIcicleEmitter.x,z:world.bossIcicleEmitter.z} : null, // Reports where Nanahi's sole spawn point is pursuing.
       plasmTiles:world.rooms.reduce((n,r)=>n+(r.plasm?.size||0),0),
       plasmCapacity:world.rooms.reduce((n,r)=>n+(r.plasmCap||0),0),
       plasmCulled:world.rooms.reduce((n,r)=>n+(r.plasmCulls||0),0),
@@ -1061,7 +1083,7 @@
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
-    triggerBossBlizzard, // Named Tothal phase uses the normal icicle physics, hit and shatter handlers.
+    trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
     clearPlasmRadius, // Dungeon Fire removes only live Kanthic tiles, rebuilding just the connected surfaces it actually changes.

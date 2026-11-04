@@ -114,7 +114,7 @@ context.DevSpawner.init({ grantLoot: loot => { grants.push(plain(loot)); return 
   const npc = context.LocalDBOverrides.applyShopDialogueAccess({ npcs: [{ id: 'garanki_gabu' }] }, shops).npcs[0];
   const service = npc.dialogueTrees.find(tree => tree.shopPool === 'garankiEnchanting');
   assert.deepEqual(plain(service.conditions.maps), ['map_i_researchers_tent', 'map_northern_cliffs']);
-  assert.equal(service.nodes[0].choices[0].label, 'Artifacts & Enchanting', 'service is clearly named in the camp conversation');
+  assert.equal(service.nodes[0].choices[0].label, 'Artifacts, Custody & Enchanting', 'the camp conversation exposes Garanki\'s confiscated-items inventory alongside his artifact services');
   const generator = require('../docs/js/wilderness-map-generator.js');
   const terrain = require('../docs/js/terrain-preview.js');
   const camp = JSON.parse(fs.readFileSync('docs/config/locales/locale_researchers_tent.json', 'utf8'));

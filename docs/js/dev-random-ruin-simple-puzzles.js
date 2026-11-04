@@ -53,7 +53,7 @@
   const CHORD_PLATE_IDLE_COLOR = 0x3f7a78;
   const CHORD_PLATE_PLAYED_COLOR = 0x8ff3ea;
   const CHORD_PLATE_SOLVED_COLOR = 0xffd66a;
-  const CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749]); // Equal-tempered root, major third, fifth, major seventh; four independent plates form one real chord without requiring an order.
+  const CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749]); // Legacy sample pitches remain available to external composer-kit clients; the new melody trigger uses KurrayaPuzzle's five scale pitches.
 
   const DS = window.DynamicSurfaces;
   const GridTileAccessors = window.GridTileAccessors;
@@ -409,6 +409,8 @@
     if (!state) return;
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     restoreRopeEquipment();
+    const activeEchoId = window.MusicMinigame?.state?.echoChallenge?.id; // Only an instrument session launched by this ruin is closed when the scene is discarded.
+    if (activeEchoId && state.chordPlateSets.some(set => set.id === activeEchoId)) window.MusicMinigame?.close?.();
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
@@ -652,9 +654,9 @@
     const visibleLength=Math.max(.001,ropeDirection.length());
     ropeDirection.multiplyScalar(1/visibleLength);
     ropeMidpoint.set((rope.anchor.x+bob.x)*.5,(rope.anchor.y+bob.y)*.5,(rope.anchor.z+bob.z)*.5);
-    rope.mesh.position.copy(ropeMidpoint);
-    rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);
-    rope.mesh.scale.set(1,visibleLength,1);
+    if (window.DungeonRopeArt?.updateRopePlane && rope.mesh.userData?.dungeonRopeSprite)
+      window.DungeonRopeArt.updateRopePlane(rope.mesh,rope.anchor,bob,deps?.getActiveCamera?.());
+    else { rope.mesh.position.copy(ropeMidpoint);rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);rope.mesh.scale.set(1,visibleLength,1); }
     rope.marker.position.set(bob.x,bob.y,bob.z);
     return bob;
   }
@@ -740,7 +742,8 @@
       state.group.add(mount);
     }
 
-    const ropeMesh=new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
+    const ropeMesh=window.DungeonRopeArt?.createRopePlane?.('dev_ruin_swing_rope_'+room.id+suffix)
+      || new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
     const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
@@ -1040,7 +1043,7 @@
     }
   }
 
-  // Four plate spots on fixed V50 floor cells at one height, clear of props:
+  // Trigger spots on fixed V50 floor cells at one height, clear of props:
   // never on a dais, bridge, lift or other surface that moves.
   function squareOnStaticFloor(points) {
     let y=null;
@@ -1068,11 +1071,28 @@
       const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
       const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
       const centerCross=crossStart+crossWidth*.5;
-      for(let i=0;i<4;i++){
-        const along=longStart+longLength*((i+1)/5);
-        const cross=centerCross+(i%2?1:-1)*Math.min(.65,crossWidth*.18);
-        points.push(axis==='x'?{x:along,z:cross}:{x:cross,z:along});
+      // A single bronze trigger replaces the old four notes. Keep it on supported, empty floor and away from other hallway mechanisms.
+      const accepted = [];
+      for (const fraction of [.5,.4,.6,.3,.7]) {
+        for (const crossOffset of [0,-.15,.15]) {
+          const along=longStart+longLength*fraction,cross=centerCross+crossOffset;
+          const candidate=axis==='x'?{x:along,z:cross}:{x:cross,z:along};
+          if (window.DevRandomRuinTileOccupancy?.blocksAt?.(candidate.x,candidate.z,.34) ||
+              window.DevRandomRuinTileOccupancy?.solidAt?.(candidate.x,candidate.z,.34)) continue;
+          const samples=[[0,0],[-.3,-.3],[.3,-.3],[-.3,.3],[.3,.3]]
+            .map(([dx,dz])=>sampleSupport(candidate.x+dx,candidate.z+dz));
+          if (samples.some(support=>!support)) continue;
+          if (samples.some(support=>Math.abs(Number(support.y)-Number(samples[0].y))>.05)) continue;
+          accepted.push(candidate);
+          break;
+        }
+        if (accepted.length) break;
       }
+      if (!accepted.length) {
+        recordModulePlacement('melodyEchoRejected','hallway',id,{reason:'no supported, clear trigger surface'});
+        return null;
+      }
+      points.push(accepted[0]);
     }else{
       const bounds=slot.bounds||roomBounds(context.meta,owner); // Explicit bounds let the same plate-set module live inside generated micro-rooms as well as ordinary V50 rooms.
       const centerX=(bounds.minX+bounds.maxX)*.5,centerZ=(bounds.minZ+bounds.maxZ)*.5;
@@ -1081,7 +1101,7 @@
       // The room centre is often V50's core dais or another moving surface;
       // plates there stayed floating when it lowered. Try the centre, then
       // quarter points, and keep the first square that is all static floor.
-      const square=(cx,cz)=>[{x:cx-d,z:cz-d},{x:cx+d,z:cz-d},{x:cx-d,z:cz+d},{x:cx+d,z:cz+d}];
+      const square=(cx,cz)=>[{x:cx,z:cz}]; // Reuse static-floor validation, but the new puzzle occupies just one cell.
       const centres=[];
       for(let cx=bounds.minX+d+.6;cx<=bounds.maxX-d-.6+1e-6;cx+=.5)for(let cz=bounds.minZ+d+.6;cz<=bounds.maxZ-d-.6+1e-6;cz+=.5)centres.push({cx,cz,dist:Math.hypot(cx-centerX,cz-centerZ)});
       centres.sort((a,b)=>a.dist-b.dist); // Closest free square to the room centre wins.
@@ -1090,30 +1110,31 @@
         const candidate=square(cx,cz);
         if(squareOnStaticFloor(candidate)){chosen=candidate;break;}
       }
-      if(!chosen){recordModulePlacement('chordPlatesRejected','room',id,{reason:'no static floor square'});return null;}
+      if(!chosen){recordModulePlacement('melodyEchoRejected','room',id,{reason:'no static floor square'});return null;}
       points.push(...chosen);
     }
     const root=new THREE.Group();
-    root.name='dev_ruin_chord_plates_'+id;
-    root.userData.devRandomRuinSimplePuzzle='chordPlates';
+    root.name='dev_ruin_melody_echo_'+id;
+    root.userData.devRandomRuinSimplePuzzle='melodyEcho';
     state.group.add(root);
     const plates=[];
-    for(let i=0;i<4;i++){
+    for(let i=0;i<points.length;i++){
       const p=points[i],support=sampleSupport(p.x,p.z);
       if(!support){disposeObject(root);return null;}
       const material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#b08d57',materialFillEnabled:true,materialFillColor:'#b08d57',materialFillMode:'always'}); // Verdigris bronze: distinct from the grey floor and from the sandstone safe-path trap plates.
       const mesh=new THREE.Mesh(sharedBoxGeometry(.68,.06,.68),material);
-      mesh.name='dev_ruin_chord_plate_'+id+'_'+i;
+      mesh.name='dev_ruin_melody_trigger_'+id;
       mesh.position.set(p.x,Number(support.y)+.03,p.z);
-      mesh.userData.devRandomRuinChordPlate=true;
-      mesh.userData.chordNoteIndex=i;
+      mesh.userData.devRandomRuinMelodyTrigger=true;
       root.add(mesh);
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,down:false,played:false,pressCount:0});
     }
-    const set={id,slotKind:isHallway?'hallway':'room',root,plates,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
-    state.chordPlateSets.push(set);
+    const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same five buttons as the normal puzzle instrument.
+    const melody=Array.from({length:noteCount},()=>Math.min(4,Math.max(0,Math.floor(rng()*5)))); // Clamp seeded RNG endpoints to the five supported note indices.
+    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
+    state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
-    recordModulePlacement('chordPressurePlates',set.slotKind,id,{plateCount:4});
+    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount});
     return set;
   }
 
@@ -1268,7 +1289,7 @@
       state.ropeElevatorComposers.push(module);
       recordModulePlacement('balconyRopeElevatorComposer','room',module.id,{
         roomId:String(room.id),
-        wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator'].concat(ossuary?['sunkenRoomShell','lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']:[]),
+        wires:['ropeTraverse','stoneCanopy','ceilingProjectileGlyph','cyclingElevator'].concat(ossuary?['sunkenRoomShell','lockableStoneDoor','sarcophagusSpawner','melodyEchoTrigger']:[]),
         opensUpstairsMechanism:nextDoorMechanismId||null,
       });
       return rope;
@@ -1564,7 +1585,7 @@
     if(!lockDoor||!sarcophagi||!chord)return null;
     const module={id:'ossuary-composer-'+roomId,roomId,bounds,lockDoor,sarcophagi,chord,entered:false,completed:false};
     state.ossuaryComposers.push(module);
-    recordModulePlacement('ossuaryComposer','room',module.id,{roomId,wires:['lockableStoneDoor','sarcophagusSpawner','chordPressurePlates']});
+    recordModulePlacement('ossuaryComposer','room',module.id,{roomId,wires:['lockableStoneDoor','sarcophagusSpawner','melodyEchoTrigger']});
     return module;
   }
 
@@ -1855,9 +1876,9 @@
     const freeRooms=shuffle(usableRoomCandidates(context).filter(room=>!usedRooms.has(room.id)),rng);
     const ossuaryIndex=freeRooms.findIndex(room=>roomDoorways(context,room).length===1); // A lock-in composer only claims a cul-de-sac room; standalone modules remain valid in rooms with arbitrary connectivity.
     if(ossuaryIndex>=0&&rng()<cfg('moduleChances.ossuaryChord',.55)){
-      const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and chord plates remain separately recorded modules.
+      const [room]=freeRooms.splice(ossuaryIndex,1);usedRooms.add(room.id);buildOssuaryChordComposer(context,rng,room); // Compound encounter is wiring only; door, sarcophagi and melody-echo trigger remains an independently recorded module.
     }else if(freeRooms.length&&rng()<cfg('moduleChances.chordPlates',.5)){
-      const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // Same four-note module can appear by itself with no skeleton encounter at all.
+      const room=freeRooms.shift();usedRooms.add(room.id);buildChordPlateSet(context,rng,{kind:'room',owner:room}); // The same melody-echo module can appear by itself with no skeleton encounter at all.
     }
     if(freeRooms.length&&rng()<cfg('moduleChances.standaloneCanopy',.35)){
       const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
@@ -1996,6 +2017,24 @@
     }
   }
 
+  function completeEchoSet(set) {
+    if (!set || set.solved) return;
+    set.solved = true; set.solveCount++;
+    for (const plate of set.plates) plate.material.color.setHex(CHORD_PLATE_SOLVED_COLOR);
+    playStoneUnlockKchunk();
+    deps?.showToast?.(set.onComplete ? 'The melody echoes through the stone. Machinery unlocks.' : 'The melody echoes through the stone.',true);
+    try { set.onComplete?.(set); } catch (error) { console.warn('[Random Test Ruin] melody completion failed',error); }
+  }
+
+  window.addEventListener('hobunji-ruin-melody-result', event => {
+    if (!state || !inRuin()) return;
+    const set = state.chordPlateSets.find(entry => entry.id === event.detail?.id);
+    if (!set || set.solved) return;
+    set.mistakes = Math.max(set.mistakes,Number(event.detail.mistakes)||0);
+    if (event.detail.solved === true) completeEchoSet(set);
+    else deps?.showToast?.('Not quite. Hear the sequence again and retry.',false);
+  });
+
   function updateChordPlateSets() {
     const player=playerWorld();
     if(!player)return;
@@ -2003,23 +2042,18 @@
       for(const plate of set.plates){
         const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39;
         plate.mesh.position.y=plate.y+.03-(down?.035:0);
-        if(down&&!plate.down){
+        if(down&&!plate.down&&!set.solved){
           plate.pressCount++;
-          if(!plate.played){
-            plate.played=true;plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
-            const played=set.plates.filter(entry=>entry.played).length;
-            if(played<set.plates.length)deps?.showToast?.(`A note rings out (${played}/${set.plates.length}). Step on every bronze plate to complete the chord.`,true);
-          }
-          playKurrayaPlateNote(plate.index);
+          const challenge={id:set.id,notes:set.notes}; // The normal five-note instrument owns playback/answer checking, not another hand-built input or audio path.
+          const started=window.MusicMinigame?.beginPlayerSession?.({echoChallenge:challenge});
+          if(started){
+            set.attempts++;
+            plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
+            deps?.showToast?.('Listen to the bronze trigger’s melody, then repeat its notes on your instrument.',true);
+          }else deps?.showToast?.(window.MusicMinigame?.state?.active?'Finish or close your current instrument session first.':'Equip an instrument to hear and repeat this melody.',false);
         }
+        if (!set.solved && !window.MusicMinigame?.state?.active) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
         plate.down=down;
-      }
-      if(!set.solved&&set.plates.every(plate=>plate.played)){
-        set.solved=true;set.solveCount++;
-        for(const plate of set.plates)plate.material.color.setHex(CHORD_PLATE_SOLVED_COLOR);
-        playStoneUnlockKchunk();
-        deps?.showToast?.(set.onComplete?'The four notes settle into a chord. Stone machinery unlocks.':'The four notes settle into a chord.',true); // Standalone plate sets are ambient; only claim an unlock when a composer actually wired one.
-        try{set.onComplete?.(set);}catch(error){console.warn('[Random Test Ruin] chord completion failed',error);}
       }
     }
   }
@@ -2264,7 +2298,7 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
-      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,played:set.plates.filter(plate=>plate.played).length,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount),pitches:set.plates.map(plate=>CHORD_PITCHES[plate.index]||1)})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),

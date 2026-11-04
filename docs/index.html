@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Tropical Wet/Dry Trench Farm</title>
-  <link rel="stylesheet" href="utility-spyglass.css?v=20261101spyglassToggle3" />
+  <link rel="stylesheet" href="utility-spyglass.css?v=20261103spyglassControls1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Parser-time dependency gate used by modules that may be dynamically
        injected long before game.js. Keep this near the top: livestock
@@ -36,7 +36,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261028hfuryformat1"></script>
+  <script src="js/format-utils.js?v=20261103crf2"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -78,7 +78,7 @@
   <script src="js/den-nest-system.js?v=20261027sense1"></script>
   <script src="js/corpse-hold-loot.js?v=20261031honey3d1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
-  <script src="js/player-downed.js?v=20261031headtakerfatal1"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
+  <script src="js/player-downed.js?v=20261103downedhold3"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
   <script src="js/player-crawl.js?v=20261024crawl1"></script> <!-- Procedural left-side lean crawl for the downed player; driven by player-downed.js. -->
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
@@ -91,7 +91,7 @@
        window.HudUpdate.refreshItemScroll, so must load after it and before
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
-  <script src="js/action-arc-ui.js?v=20261101spyglass1"></script>
+  <script src="js/action-arc-ui.js?v=20261103spyglassControls1"></script>
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. Must load before game.js, which calls
        window.FarmEditor.init(...) very early (right after
@@ -198,7 +198,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261029h4aff487"></script>
+  <script src="js/character-action-locks.js?v=20261103crl3"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -244,7 +244,9 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/foliage-generator.js?v=20261031h87aa596"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261103doorice1"></script>
+  <script src="js/foliage-generator.js?v=20261103ice1"></script>
+  <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
@@ -254,8 +256,9 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261103h373b138"></script>
-  <script src="js/authored-furniture-runtime.js?v=20261102burdenplinth1"></script>
+  <script src="js/furniture-table-system.js?v=20261103h6f4dc6e"></script>
+  <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
+  <script src="js/authored-furniture-runtime.js?v=20261103surfacematerialv2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
@@ -305,7 +308,7 @@
   <script src="config/farm-specializations.js?v=20261023h27b1956"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261102-animalhides1"></script>
+  <script src="onboarding.js?v=20261103fluteEchoAudit2"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261026renthealth2"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -355,7 +358,7 @@
   <script src="js/combat/combat-loadout-ui.js?v=20261027shape2"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
-  <script src="js/combat/weapon-enchantment-vfx.js?v=20261102dungeonfire1"></script>
+  <script src="js/combat/weapon-enchantment-vfx.js?v=20261103particlesheld1"></script>
   <!-- A separate WebGL scene, activated only while the Loadout pane is open. -->
   <script src="js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
@@ -367,7 +370,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261103h94b647d"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261103particlesheld1"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -388,8 +391,8 @@
   <script src="js/combat/combat-enemy-dodge.js?v=20261017h21bbf84"></script>
   <script src="js/combat/combat-maskbound-headtaker.js?v=20261101h33d9d71"></script> <!-- Unarmed Skyfall Head Grip: leap, dodge-only attached struggle, reversible headless portrait and thrown head. -->
   <!-- Testing Arena-only Harlyao Lich class: wraps the final humanoid AI seam after enemy-dodge, owns elemental projectiles and static Kanthic spell-plasm puddles, and summons ordinary Minions. -->
-  <script src="js/combat/combat-lich.js?v=20261028h66c69cd"></script>
-  <script src="js/combat/combat-special-liches.js?v=20261031h362266d"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
+  <script src="js/combat/combat-lich.js?v=20261103nanahi-cancel1"></script>
+  <script src="js/combat/combat-special-liches.js?v=20261103nanahi-target1"></script> <!-- Named Azgarlu/Nanahi/Imlao guardian phases and their key-stone encounters. -->
   <!-- Bandit camps (zone adapter, tent props, camp lifecycle, companion
        perception, corpse loot) — window.BanditCamps. Calls
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
@@ -476,7 +479,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261028hfurytrough1"></script>
+  <script src="js/farm-troughs.js?v=20261103crt2"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -517,8 +520,8 @@
        calls window.JubmirShop.init(...) during its own setup. -->
   <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
-  <script src="js/artifact-collection.js?v=20261101hbeb03c2"></script>
-  <script src="js/harlyao-relics.js?v=20261101hf69c13e"></script>
+  <script src="js/artifact-collection.js?v=20261103magicCustody5"></script>
+  <script src="js/harlyao-relics.js?v=20261103magicCustody5"></script>
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
   <script src="js/npc-shop-buttons.js?v=20261022h0605f09"></script>
@@ -799,7 +802,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261103furpaint1"></script>
+  <script src="js/equipment-panel.js?v=20261103fluteEcho1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -884,7 +887,8 @@
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>
-  <script src="js/hanging-ropes.js?v=20261103h8f96c4f"></script>
+  <script src="js/dungeon-rope-art.js?v=20261103ropepng3"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
+  <script src="js/hanging-ropes.js?v=20261103spriteplanes1"></script>
   <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/rope-launch.js?v=1"></script>
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
@@ -893,7 +897,7 @@
   <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
   <script src="js/ruin-composer-playable.js?v=20261103h961d7ee"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261102keyStatues1"></script>
-  <script src="js/dungeon-fire.js?v=20261102dungeonfire4"></script>
+  <script src="js/dungeon-fire.js?v=20261103particlesheld1"></script>
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
@@ -2692,7 +2696,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261102h932403c"></script>
+  <script src="js/tool-icon-render.js?v=20261103dungeonplumepadding3"></script>
   <script src="js/sprite-recolor.js?v=20261028hspriterecoloraudit2"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2721,7 +2725,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261102surfaceprobe1"></script>
+  <script src="js/pixel-probe.js?v=20261103dungeonparticles1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2772,16 +2776,16 @@
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
        load before game.js, which injects the shared thrown-weapon pose seams
        used by fishing's held Windup → Strike presentation. -->
-  <script src="js/fishing-minigame.js?v=20261029maskSlots2"></script>
+  <script src="js/fishing-minigame.js?v=20261103downedhold2"></script>
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261103puzzleMode2"></script>
+  <script src="js/kurraya-instrument.js?v=20261103fluteEcho1"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-puzzle.js?v=20261103puzzleReview4"></script>
-  <script src="js/music-minigame.js?v=20261103puzzleReview4"></script>
+  <script src="js/kurraya-puzzle.js?v=20261103fluteEcho1"></script>
+  <script src="js/music-minigame.js?v=20261103fluteEcho1"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2866,9 +2870,9 @@
   <!-- Directional camera pitch policy is isolated from controller bindings/gameplay dispatch. -->
   <script src="js/camera-look-clamp.js?v=20261102vertical90"></script>
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
-  <script src="js/utility-spyglass.js?v=20261101spyglassToggle3"></script>
+  <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261103h9c44cda"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261103spriteplanes3"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -2908,11 +2912,12 @@
   <script src="js/inventory-search.js?v=20261025qol1"></script>
   <!-- Guild state is registered before game.js initializes artifact and quest adapters. OpeningStoryCutscene will be available by the first story event. -->
   <!-- Garanki Guild membership, authored private tent scenes, licensed ruin access and the three key-stones quest. -->
-  <script src="js/delvers-guild-story.js?v=20261031storyVault2"></script>
+  <script src="js/delvers-guild-story.js?v=20261103magicCustody5"></script>
+  <script src="js/town-magic-checkpoint.js?v=20261103magicCustody6"></script> <!-- Spearhead and Oddclaw exterior gate check, legal item registration and Garanki's persistent custody. -->
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261103h88591e6"></script>
+  <script src="game.js?v=20261104h9d53284"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

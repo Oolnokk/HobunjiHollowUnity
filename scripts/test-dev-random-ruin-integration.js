@@ -177,11 +177,11 @@ assert(simplePuzzles.includes('generatedMechanismId=nearestGeneratedStoneDoorMec
 assert(simplePuzzles.includes("window.DevRandomRuin?.setMechanismTarget?.(module.generatedMechanismId,module.targetOpen?1:0)"), 'ossuary completion must open the same generated stone door that visually seals the room');
 assert(interior.includes('mechanism.externalTarget=normalized') && interior.includes('if(hasExternalTarget)'), 'explicit modular door unlocks must override stale V50 puzzle signals and drive visible mechanism progress');
 assert(simplePuzzles.includes("playObjectSfxKey?.('puzzleComplete')") && simplePuzzles.includes('playStoneUnlockKchunk();'), 'four-note completion must play an unmistakable low stone unlock cue');
-assert(simplePuzzles.includes('CHORD_PITCHES = Object.freeze([1, 1.259921, 1.498307, 1.887749])'), 'the four chord pressure plates must retain four distinct authored pitch ratios');
+assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('notes:melody'), 'the retired chord collection must be replaced by a one-trigger echo melody module');
 assert(simplePuzzles.includes("mesh.name='dev_ruin_rope_lava'") && simplePuzzles.includes("textureUrl:'assets/textures/wibbly_surface.png'"), 'rope fall/burn zones must be visibly represented by the existing animated water surface treatment recolored as lava');
 assert(simplePuzzles.includes("HobunjiDrenkirraPellet?.sfx?.acidSizzle"), 'visible lava contact must reuse the Drenkirra pellet acid-sizzle cue');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
-assert(simplePuzzles.includes("recordModulePlacement('chordPressurePlates'"), 'musical pressure plates must be reusable in hallway or room slots');
+assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('beginPlayerSession?.({echoChallenge:challenge})'), 'musical echo triggers must be reusable in hallway/room slots and launch the actual five-note instrument');
 assert(simplePuzzles.includes("recordModulePlacement('stoneCanopy'"), 'stone canopies must exist as independent modules instead of rope-only geometry');
 assert(simplePuzzles.includes("recordModulePlacement('sarcophagusSpawner'"), 'sarcophagus skeleton spawners must exist as independent modules');
 assert(simplePuzzles.includes("recordModulePlacement('lockableStoneDoor'"), 'lockable room doors must exist as independently wired modules');
@@ -198,7 +198,7 @@ assert(simplePuzzles.includes("window.MinionCombat?.makeEntity?.({") && simplePu
 assert(simplePuzzles.includes('spawnedMinions:new Set()') && simplePuzzles.includes('disposeSpawnedMinion(entity)'), 'sarcophagus-spawned minions must be owned and torn down by the generated ruin run');
 assert(game.includes('c.surfaceYOverride?.()') && simplePuzzles.includes('creature.surfaceYOverride=()=>'), 'sarcophagus Minions must render against live ruin DynamicSurfaces instead of the flat building grid');
 assert(simplePuzzles.includes('state===ownerState') && simplePuzzles.includes('ownerState.sarcophagusModules.includes(module)'), 'late async skeleton spawns must not leak across ruin rerolls');
-assert(simplePuzzles.includes('KURRAYA_NOTE_URL') && simplePuzzles.includes('CHORD_PITCHES'), 'musical pressure plates must use the Kurraya pluck placeholder at authored chord pitches');
+assert(simplePuzzles.includes('notes:melody') && simplePuzzles.includes('const melody=Array.from({length:noteCount}'), 'the repeat-by-ear challenge must generate a per-puzzle sequence of five-note inputs');
 assert(audioSystem.includes('playGeneratedStoneKchunk'), 'four-note completion must expose a generated placeholder kchunk until a recorded cue replaces it');
 assert(simplePuzzles.includes('opensUpstairsMechanism') && interior.includes('setMechanismTarget'), 'compound lower-room completion must be able to open an ordinary generated stone door upstairs');
 assert(simplePuzzles.includes('onwardGeneratedStoneDoorMechanism') && simplePuzzles.includes('const authoredDoorways=roomDoorways(context,room)'), 'compound completion must choose an onward door only from the current room graph');
